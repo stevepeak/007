@@ -188,6 +188,11 @@ export const wfConfig: WfSdkConfig<HostDeps> = {
 
 Key rules:
 
+- **Wrap the object in `defineWfConfig<TDeps>({ … })`** (from `@stevepeak/007`).
+  It returns the config unchanged but validates it at construction, so a
+  forgotten `buildRunDeps` or a `toolRegistry` that isn't a `Map` fails loudly at
+  startup instead of as an opaque runtime error mid-run or an empty editor
+  dropdown.
 - **`getModel` returns an AI SDK `LanguageModel`.** Any provider works (`ai`
   package). It receives `RunContext`, so read your API key from `ctx.env`.
 - **Never construct clients at module scope.** `buildRunDeps` and `getModel` run
@@ -469,7 +474,10 @@ type StartGraphRunInput = {
 
 If your web Worker starts runs, add a **service binding** from web → workflows
 (this repo calls it `WORKFLOWS`) and call `startGraphRun` over RPC, falling back
-to `POST /graph-runs` in local dev.
+to `POST /graph-runs` in local dev. For that fallback, don't hand-roll the fetch —
+use `createHttpGraphRunClient({ baseUrl })` (from `@stevepeak/007/cloudflare`),
+which implements the `WfGraphRunClient` interface so the binding and the HTTP
+client are interchangeable at the call site.
 
 ---
 
@@ -519,7 +527,10 @@ export const POST = createWfSdkHandlers({
 - **`resolveContext` → `{ tenantId, userId? }`** is the security boundary. Every
   handler scopes reads and authorizes mutations by `tenantId`; a workflow owned
   by another tenant returns `null`.
-- **`resolveDb` → `WfDb`** per request.
+- **`resolveDb` → `WfDb`** per request. In dev, gate it once with
+  `assertWfSchema(db)` (from `@stevepeak/007/storage`) — it throws a
+  migrate-me hint if the bound D1 has no `wf_*` tables, turning an unmigrated
+  database from a confusing empty-editor symptom into a clear error.
 - The wire protocol is `{ method, params }` over POST; the full method set is the
   `WfDataClient` interface in `src/server/protocol.ts`.
 - **Typecheck:** this route imports SDK source (`createWfDb`, `createWfSdkHandlers`,
