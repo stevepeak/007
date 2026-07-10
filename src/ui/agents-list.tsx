@@ -8,7 +8,7 @@ import { useWfComponents } from './context'
 import { useAgents, useCreateAgent, useModels } from './hooks'
 import { useWfNav } from './nav'
 
-// The firm's reusable agents (wf_agent via the injected data client), shown as
+// The tenant's reusable agents (wf_agent via the injected data client), shown as
 // cards so richer metadata (last run, referencing workflows…) can layer in.
 // Each card links into the agent editor. Reached from the hub's Agents card.
 //
@@ -95,7 +95,7 @@ export function AgentsList({ className, templates = [] }: AgentsListProps) {
       ) : null}
       {error ? (
         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {(error as Error).message} — are you logged in and viewing as a firm?
+          {(error as Error).message} — are you signed in with an active tenant?
         </div>
       ) : null}
       {data?.length === 0 ? (

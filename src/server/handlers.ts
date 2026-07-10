@@ -541,7 +541,7 @@ export function createWfSdkHandlers<TDeps>(
               ? 'resume'
               : 'restart'
           const result = await getRun(db, runId)
-          // Same tenant-scoping as getRun — never re-dispatch another firm's run.
+          // Same tenant-scoping as getRun — never re-dispatch another tenant's run.
           if (!result || result.run.tenantId !== ctx.tenantId) {
             throw new Error('Run not found.')
           }

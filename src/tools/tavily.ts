@@ -99,7 +99,7 @@ export function createTavilyTool<TDeps>(
           }
           if (!apiKey) {
             throw new Error(
-              'Tavily search is not configured — set the Tavily API key for this firm.',
+              'Tavily search is not configured — set the Tavily API key for this tenant.',
             )
           }
           const res = await fetch(endpoint, {
