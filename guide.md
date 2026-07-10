@@ -281,16 +281,31 @@ submodule, the checkout **must** fetch it (else `migrations/` is empty):
 - uses: actions/checkout@v4
   with:
     submodules: recursive # required, or migrations_dir is empty
-- uses: cloudflare/wrangler-action@v3
-  with:
-    apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }} # HOST repo secret
-    accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }} # HOST repo secret
-    workingDirectory: packages/wf-host
-    command: d1 migrations apply your-db --remote
+- uses: ./.github/actions/setup # your normal install (bun/pnpm/npm ci)
+# Invoke the workspace-hoisted wrangler with YOUR package manager — NOT
+# cloudflare/wrangler-action. See the caveat below.
+- name: Apply wf_* D1 migrations
+  working-directory: packages/wf-host
+  env:
+    CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }} # HOST repo secret
+    CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }} # HOST repo secret
+  run: bunx wrangler d1 migrations apply your-db --remote
 ```
 
 The only secrets needed are your host's existing `CLOUDFLARE_API_TOKEN` and
 `CLOUDFLARE_ACCOUNT_ID` — set them on the **host** repo, never here.
+
+> ⚠️ **Caveat (`cloudflare/wrangler-action` + workspace deps):** don't reach for
+> `cloudflare/wrangler-action` here unless your host-glue package declares
+> `wrangler` as a direct dependency. When the action can't find a local wrangler
+> it falls back to `npm i wrangler@<pinned>` **in `workingDirectory`**, and npm
+> cannot parse a monorepo host package's `workspace:*` deps — it fails with
+> `npm error code EUNSUPPORTEDPROTOCOL / Unsupported URL Type "workspace:"`. The
+> `wrangler-action` you may have for _other_ steps works only because those
+> packages happen to declare wrangler directly. Running the hoisted binary via
+> your own package manager (`bunx wrangler …`, `pnpm exec wrangler …`) sidesteps
+> the npm shell-out entirely. wrangler reads `CLOUDFLARE_API_TOKEN` /
+> `CLOUDFLARE_ACCOUNT_ID` from the env, so no extra flags are needed.
 
 **3. Local dev:** point wrangler at the same config against your local D1:
 
