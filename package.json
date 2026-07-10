@@ -13,8 +13,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./cloudflare": "./src/cloudflare/index.ts",
-    "./cloudflare/extract-text": "./src/cloudflare/extract-text.ts",
     "./cloudflare/blob-resolver": "./src/cloudflare/blob-resolver.ts",
+    "./cloudflare/extract-text": "./src/cloudflare/extract-text.ts",
     "./engine": "./src/engine/index.ts",
     "./eval": "./src/eval/index.ts",
     "./server": "./src/server/index.ts",

@@ -153,7 +153,8 @@ export async function runIteration(args: {
 
   if (stopOnError && firstError !== null) {
     for (let i = 0; i < total; i++) {
-      if (!statuses[i]) statuses[i] = { index: i, status: 'skipped' }
+      if (statuses[i] === undefined)
+        statuses[i] = { index: i, status: 'skipped' }
     }
     throw firstError instanceof Error
       ? firstError
