@@ -1,0 +1,69 @@
+{
+  "name": "@stevepeak/007",
+  "type": "module",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Whitelabeled AI-workflow SDK — host-injected engine, Cloudflare Workflows execution, SQL storage, and editor/run-viewer UI",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stevepeak/007.git"
+  },
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./cloudflare": "./src/cloudflare/index.ts",
+    "./cloudflare/extract-text": "./src/cloudflare/extract-text.ts",
+    "./cloudflare/blob-resolver": "./src/cloudflare/blob-resolver.ts",
+    "./engine": "./src/engine/index.ts",
+    "./eval": "./src/eval/index.ts",
+    "./server": "./src/server/index.ts",
+    "./storage": "./src/storage/index.ts",
+    "./storage/schema": "./src/storage/schema.ts",
+    "./tools": "./src/tools/index.ts",
+    "./ui": "./src/ui/index.ts"
+  },
+  "scripts": {
+    "clean": "rm -rf node_modules dist .turbo",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.ui.json",
+    "test": "bun test",
+    "lint": "eslint --ignore-pattern='./migrations/' .",
+    "fix": "eslint --fix --quiet --ignore-pattern='./migrations/' .",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply law-db --local --persist-to .wrangler/state",
+    "db:migrate": "wrangler d1 migrations apply law-db --remote"
+  },
+  "dependencies": {
+    "@cloudflare/puppeteer": "1.1.0",
+    "@dagrejs/dagre": "^3.0.0",
+    "@tanstack/react-query": "^5.101.2",
+    "@tiptap/extension-placeholder": "^3.27.3",
+    "@tiptap/pm": "^3.26.1",
+    "@tiptap/react": "^3.27.3",
+    "@tiptap/starter-kit": "^3.27.3",
+    "@xyflow/react": "^12.11.2",
+    "ai": "^7.0.18",
+    "clsx": "^2.1.1",
+    "drizzle-orm": "^0.45.2",
+    "lucide-react": "^1.24.0",
+    "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "react": "^19",
+    "react-dom": "^19"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260708.1",
+    "@dexaai/config": "^0.0.10",
+    "@ocavue/eslint-config": "^4.11.0",
+    "@types/node": "^26.1.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.2",
+    "drizzle-kit": "^0.31.8",
+    "eslint": "^10.6.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.107.1"
+  }
+}

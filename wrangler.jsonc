@@ -1,0 +1,21 @@
+{
+  // Dev-only config so `wrangler d1 migrations apply` can run from this package
+  // (where the wf_* schema + migrations live). NOT a deployable Worker and NOT
+  // shipped to consumers — in production the HOST app points its own wrangler
+  // `migrations_dir` at this package's ./migrations.
+  //
+  // The account_id / database_* below are placeholders. A host that wants to run
+  // migrations directly from this repo sets them to its own D1 instance (or,
+  // preferred, applies ./migrations from the host app's own wrangler config).
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "account_id": "<CLOUDFLARE_ACCOUNT_ID>",
+  "name": "wf-sdk-migrations",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "<D1_DATABASE_NAME>",
+      "database_id": "<D1_DATABASE_ID>",
+      "migrations_dir": "./migrations",
+    },
+  ],
+}

@@ -1,0 +1,15 @@
+{
+  // The React UI targets the browser (DOM lib + JSX). It is typechecked
+  // separately from the rest of the package, whose `cloudflare/` + `storage/`
+  // code uses @cloudflare/workers-types globals (WebSocket, Response, …) that
+  // conflict with the DOM lib. Same split the web app uses for its worker code.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "skipLibCheck": true,
+    "lib": ["DOM", "DOM.Iterable", "ES2023"],
+    "jsx": "react-jsx",
+    "types": ["node", "react", "react-dom"]
+  },
+  "include": ["src/ui"],
+  "exclude": ["**/node_modules", "src/**/*.test.ts", "src/**/*.test.tsx"]
+}

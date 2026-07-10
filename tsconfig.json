@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "skipLibCheck": true,
+    "types": ["@cloudflare/workers-types", "node"]
+  },
+  "include": ["src", "drizzle.config.ts"],
+  "exclude": [
+    "**/node_modules",
+    "**/.*/",
+    "migrations",
+    "src/ui",
+    "src/**/*.test.ts"
+  ]
+}

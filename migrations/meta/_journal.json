@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1782850418224,
+      "tag": "0000_amusing_klaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1782937585314,
+      "tag": "0001_gorgeous_maggott",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1783003272696,
+      "tag": "0002_wooden_lady_deathstrike",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1783631180970,
+      "tag": "0003_medical_vance_astro",
+      "breakpoints": true
+    }
+  ]
+}
