@@ -242,49 +242,79 @@ versions). They use **opaque text identity** (no foreign keys into your tables),
 so they coexist with any host schema in the same D1.
 
 The generated SQL lives in this repo's `migrations/` dir. **Applying it is the
-host's job** — this repo's CI only validates (lint/typecheck/test) and never
-touches a database, so a host's Cloudflare secrets never live here. The
-committed `wrangler.jsonc` carries generic placeholders precisely so no specific
-host's IDs are stored in this (potentially public, multi-consumer) repo. Two host
-options:
+host's job.** This repo's CI only validates (lint/typecheck/test) and never
+touches a database — the committed `wrangler.jsonc` carries generic placeholders,
+so no specific host's Cloudflare IDs or secrets ever live in this (potentially
+public, multi-consumer) repo. Wire it up in your **host** repo instead.
 
-1. **A host-owned migration config + CI step (recommended).** In your (private)
-   host repo, add a small wrangler config that binds your D1 with real IDs and
-   points `migrations_dir` at this repo's `migrations/`, then apply it from the
-   host's CI with the host's own secrets:
+### Setup: apply the `wf_*` migrations from your host (recommended)
 
-   ```jsonc
-   // host repo, e.g. packages/wf-host/wrangler.jsonc — migrations_dir is relative
-   // to this file (submodule mounted at ../wf-sdk)
-   "account_id": "<your-account-id>",
-   "d1_databases": [{
-     "binding": "DB",
-     "database_name": "your-db",
-     "database_id": "<your-db-id>",
-     "migrations_dir": "../wf-sdk/migrations"
-   }]
-   ```
+Assumes you consume this SDK as a git submodule (mounted at, say,
+`packages/wf-sdk`) or vendored dir; adjust paths to match.
 
-   ```yaml
-   # host CI (secrets belong to the HOST repo, not this one)
-   - uses: cloudflare/wrangler-action@v3
-     with:
-       apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-       accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-       workingDirectory: packages/wf-host
-       command: d1 migrations apply your-db --remote
-   ```
+**1. Add a host-owned wrangler config** next to your host glue (e.g.
+`packages/wf-host/wrangler.jsonc`). It binds _your_ D1 with real IDs — safe
+because it lives in your **private** host repo — and points `migrations_dir` at
+this package's `migrations/`. `migrations_dir` is resolved relative to this file:
 
-2. **Apply manually** against the target D1 via this package's own scripts
-   (`db:migrate:local` for local D1; `db:migrate` for `--remote` — fill the
-   `wrangler.jsonc` placeholders with real IDs first, or pass a host config).
+```jsonc
+// packages/wf-host/wrangler.jsonc  (../wf-sdk == the submodule mount)
+{
+  "account_id": "<your-account-id>",
+  "name": "wf-sdk-migrations", // not a deployable Worker; migrations-only
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "your-db",
+      "database_id": "<your-db-id>",
+      "migrations_dir": "../wf-sdk/migrations",
+    },
+  ],
+}
+```
 
-> ⚠️ **Gotcha (shared D1):** a host that keeps its own migrations dir (e.g.
-> 1121law points `apps/*` at `packages/db/migrations` for its _own_ schema) cannot
-> put two `migrations_dir` on one binding — the `wf_*` migrations must be applied
-> as a **separate** step (a second config/step, as in option 1). Both dirs share
-> the target D1's default `d1_migrations` tracking table with distinct filenames,
-> so they coexist without collision.
+**2. Apply from your host's CI** with your host's own secrets. If the SDK is a
+submodule, the checkout **must** fetch it (else `migrations/` is empty):
+
+```yaml
+# host repo .github/workflows/*.yml — gate on your deploy branch
+- uses: actions/checkout@v4
+  with:
+    submodules: recursive # required, or migrations_dir is empty
+- uses: cloudflare/wrangler-action@v3
+  with:
+    apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }} # HOST repo secret
+    accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }} # HOST repo secret
+    workingDirectory: packages/wf-host
+    command: d1 migrations apply your-db --remote
+```
+
+The only secrets needed are your host's existing `CLOUDFLARE_API_TOKEN` and
+`CLOUDFLARE_ACCOUNT_ID` — set them on the **host** repo, never here.
+
+**3. Local dev:** point wrangler at the same config against your local D1:
+
+```sh
+wrangler d1 migrations apply your-db --local \
+  --persist-to .wrangler/state --config packages/wf-host/wrangler.jsonc
+```
+
+**Regenerating** after a schema bump (edit `src/storage/schema.ts`):
+`bun run db:generate` inside this package (drizzle-kit; needs no credentials),
+then commit the new SQL here and let the host apply it.
+
+> ⚠️ **Gotcha (shared D1):** if your host also has its own migrations dir (e.g.
+> 1121law applies `packages/db/migrations` for its _own_ schema), you can't put
+> two `migrations_dir` on one binding — the `wf_*` migrations need a **separate**
+> config + `apply` step (exactly step 2 above). Both dirs share the D1's default
+> `d1_migrations` tracking table with distinct filenames, so they coexist without
+> collision. Worked example: 1121law runs two `d1 migrations apply law-db` steps
+> back-to-back in its `deploy-migrations` job — one for `packages/db`, one for
+> `packages/wf-host`.
+
+You can also **skip CI** and apply manually via this package's `db:migrate`
+script — fill the `wrangler.jsonc` placeholders with real IDs first, or pass
+`--config` to your host config as in step 3.
 
 Get a `WfDb` handle from a D1 binding inside the request/step path:
 
@@ -292,9 +322,6 @@ Get a `WfDb` handle from a D1 binding inside the request/step path:
 import { createWfDb } from '@app/wf-sdk/storage'
 const db = createWfDb(env.DB) // never at module load — DB is a request binding
 ```
-
-To regenerate migrations after a schema bump: `bun --cwd packages/wf-sdk run
-db:generate` (drizzle-kit; needs no credentials).
 
 ---
 
