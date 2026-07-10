@@ -1,4 +1,4 @@
-# `@app/wf-sdk` — Layout & How It Works
+# `@stevepeak/007` — Layout & How It Works
 
 A whitelabeled AI-workflow SDK: one package owns the **execution engine**, the
 **SQL storage + migrations**, the **Cloudflare Workflows runtime**, the
@@ -9,7 +9,7 @@ the host**, so the same package drops into any project.
 In this repo the host wiring lives in a thin companion package **`@app/wf-host`**
 (the AI provider — Venice here, but any AI-SDK model works — plus legal tools, the
 chat trigger, the seed helper). Both `apps/web` and `apps/workflows` consume the
-SDK through it. Removing `wf-host` + `@app/wf-sdk` from a fork is all it takes to
+SDK through it. Removing `wf-host` + `@stevepeak/007` from a fork is all it takes to
 reuse the engine elsewhere. The SDK core imports **no** AI provider — a fork on
 OpenRouter, OpenAI, etc. only changes `getModel` in its host package.
 
@@ -19,7 +19,7 @@ OpenRouter, OpenAI, etc. only changes `getModel` in its host package.
 
 ```
 packages/wf-sdk/
-├── package.json            @app/wf-sdk  (exports: ., /cloudflare, /cloudflare/extract-text,
+├── package.json            @stevepeak/007  (exports: ., /cloudflare, /cloudflare/extract-text,
 │                                          /engine, /eval, /server, /storage, /storage/schema,
 │                                          /tools, /ui)
 ├── drizzle.config.ts       → generates migrations from storage/schema.ts
@@ -99,7 +99,7 @@ publishable and reusable.
                         │ injected once                       │ registers bindings
                         ▼                                     ▼
         ┌──────────────────────────────┐      apps/workflows/wrangler.jsonc:
-        │   @app/wf-sdk  (generic)      │        workflows:    GRAPH_WORKFLOW
+        │   @stevepeak/007  (generic)      │        workflows:    GRAPH_WORKFLOW
         │                               │        durable_objs: RUN_ROOM
         │   makeGraphWorkflow(config)   │        d1:           DB + migrations_dir
         │           │                   │
@@ -305,7 +305,7 @@ import { getModel } from '@app/ai-model' // Venice
 import { createSearchKnowledgeBaseTool } from '@app/tools'
 import { getClient as getQdrantClient } from '@app/qdrant'
 import { createDb } from '@app/db'
-import type { WfSdkConfig, ToolRegistry } from '@app/wf-sdk'
+import type { WfSdkConfig, ToolRegistry } from '@stevepeak/007'
 
 // 1121law's private TDeps — what the old ToolRegistryDeps used to be.
 type LegalDeps = {
@@ -420,7 +420,7 @@ This is a **live, wired feature**, not just an interface:
   spills its extracted text to R2 and returns a `WfBlobRef` once it exceeds
   ~128 KB (`spillThreshold`), keeping a short inline `preview` for traces.
 - **Resolver:** the SDK ships `createR2BlobResolver` (`cloudflare/blob-resolver.ts`,
-  exported from `@app/wf-sdk/cloudflare`) — point it at the same R2 bucket. A host
+  exported from `@stevepeak/007/cloudflare`) — point it at the same R2 bucket. A host
   on other storage writes its own `resolveBlobRef`.
 - **In 1121law:** the document-ingestion workflow uses both — `wf-host/config.ts`
   registers `extract_text` and sets `resolveBlobRef: createR2BlobResolver(...)`
@@ -534,7 +534,7 @@ import {
   makeGraphWorkflow,
   RunRoom as RunRoomImpl,
   startGraphRun,
-} from '@app/wf-sdk/cloudflare'
+} from '@stevepeak/007/cloudflare'
 
 // makeGraphWorkflow is generic over <TDeps, Env> so the class satisfies the
 // Sentry wrapper's (env: Env) signature.
@@ -637,7 +637,7 @@ agents + runs) via `apps/web/components/wf/provider.tsx`; chat's
 mock tools + in-memory recorder — no DB, no Cloudflare:
 
 ```ts
-import { runWorkflowUnderConditions } from '@app/wf-sdk/eval'
+import { runWorkflowUnderConditions } from '@stevepeak/007/eval'
 import { MockLanguageModelV3 } from 'ai/test'
 
 const run = await runWorkflowUnderConditions({

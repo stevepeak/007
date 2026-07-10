@@ -1,4 +1,4 @@
-# Integrating `@app/wf-sdk` into a new project
+# Integrating `@stevepeak/007` into a new project
 
 This guide is the practical companion to `README.md` (which explains how the SDK
 works internally). Here we cover **what a host project must supply** to stand the
@@ -43,40 +43,43 @@ cycles (`ui → server → storage → engine`, `cloudflare → storage → engi
 
 | Import                                | Runtime                 | Use it in                                       |
 | ------------------------------------- | ----------------------- | ----------------------------------------------- |
-| `@app/wf-sdk`                         | any                     | barrel: engine + storage + eval                 |
-| `@app/wf-sdk/engine`                  | any (only `ai` + `zod`) | custom backends, graph types                    |
-| `@app/wf-sdk/storage`                 | Workers (D1)            | `createWfDb`, data access, schema               |
-| `@app/wf-sdk/storage/schema`          | build-time              | drizzle-kit / migrations                        |
-| `@app/wf-sdk/cloudflare`              | Workers **only**        | `makeGraphWorkflow`, `RunRoom`, `startGraphRun` |
-| `@app/wf-sdk/cloudflare/blob-resolver`| any server route        | `createR2BlobResolver` (engine-only leaf)       |
-| `@app/wf-sdk/cloudflare/extract-text` | any server route¹       | `createExtractTextTool` (R2/Vision OCR tool)    |
-| `@app/wf-sdk/server`                  | any server route        | `createWfSdkHandlers`, `createHttpWfDataClient` |
-| `@app/wf-sdk/tools`                   | any (fetch + deps)      | built-in tools (`createTavilyTool`)             |
-| `@app/wf-sdk/ui`                      | browser (React 19)      | `WfApp`, `WfSdkProvider`, `RunViewer`, hooks    |
-| `@app/wf-sdk/eval`                    | test                    | `runWorkflowUnderConditions`                    |
+| `@stevepeak/007`                         | any                     | barrel: engine + storage + eval                 |
+| `@stevepeak/007/engine`                  | any (only `ai` + `zod`) | custom backends, graph types                    |
+| `@stevepeak/007/storage`                 | Workers (D1)            | `createWfDb`, data access, schema               |
+| `@stevepeak/007/storage/schema`          | build-time              | drizzle-kit / migrations                        |
+| `@stevepeak/007/cloudflare`              | any server route²       | `startGraphRun`, `createHttpGraphRunClient`, `createR2BlobResolver`, `createExtractTextTool` |
+| `@stevepeak/007/cloudflare/runtime`      | Workers **only**        | `makeGraphWorkflow`, `RunRoom` (durable classes — import `cloudflare:workers`) |
+| `@stevepeak/007/cloudflare/blob-resolver`| any server route        | `createR2BlobResolver` (engine-only leaf)       |
+| `@stevepeak/007/cloudflare/extract-text` | any server route¹       | `createExtractTextTool` (R2/Vision OCR tool)    |
+| `@stevepeak/007/server`                  | any server route        | `createWfSdkHandlers`, `createHttpWfDataClient` |
+| `@stevepeak/007/tools`                   | any (fetch + deps)      | built-in tools (`createTavilyTool`)             |
+| `@stevepeak/007/ui`                      | browser (React 19)      | `WfApp`, `WfSdkProvider`, `RunViewer`, hooks    |
+| `@stevepeak/007/ui/styles.css`           | host CSS (Tailwind v4)  | `@import` once — emits the SDK's utilities + xyflow CSS (§6) |
+| `@stevepeak/007/eval`                    | test                    | `runWorkflowUnderConditions`                    |
 
-¹ Import-safe anywhere (it does not `import 'cloudflare:workers'` at module
-scope), but its OCR path only _runs_ with R2 + Workers AI bindings present.
+¹ Import-safe anywhere (no `cloudflare:workers` at module scope), but its OCR
+path only _runs_ with R2 + Workers AI bindings present.
+² The barrel value-exports only import-safe modules; the two durable classes that
+`import 'cloudflare:workers'` are isolated in `/cloudflare/runtime`.
 
-> ⚠️ **The `/cloudflare` barrel is import-unsafe outside a Worker — never let it
-> into `wfConfig`'s module graph.** `wfConfig` is imported by **both** runtimes:
-> the workflows Worker _and_ the host's data-API route (§5), which runs in the
-> host's Node/edge server (Next.js, etc.). The `/cloudflare` **barrel**
-> (`@app/wf-sdk/cloudflare`) re-exports `graph-workflow`/`run-room`/`start-run`,
-> which `import { WorkflowEntrypoint, DurableObject } from 'cloudflare:workers'`
-> at module scope. That module does not exist in a Node runtime, so the moment
-> `wfConfig` (or anything the route imports) pulls in the barrel, the route
-> **crashes at module-eval** — you'll see `Cannot find module 'cloudflare:workers'`
-> in an import trace ending at your config, and every `/api/wf` call 500s.
+> ⚠️ **Keep `cloudflare:workers` out of `wfConfig`'s module graph — import the
+> durable classes only from `/cloudflare/runtime`, only in your Worker.**
+> `wfConfig` is imported by **both** runtimes: the workflows Worker _and_ the
+> host's data-API route (§5), which runs in the host's Node/edge server (Next.js,
+> etc.), where `cloudflare:workers` does not exist. The two durable classes —
+> `makeGraphWorkflow` and `RunRoom` — `import { WorkflowEntrypoint, DurableObject }
+> from 'cloudflare:workers'` at module scope, so they are isolated in the
+> **Worker-only** `@stevepeak/007/cloudflare/runtime` subpath. Import them **only
+> from your Worker entry** (§4). The `@stevepeak/007/cloudflare` barrel and the
+> `/cloudflare/*` leaf subpaths are import-safe from any runtime.
 >
-> **Rule:** in host code that runs anywhere other than the Worker (your
-> `WfSdkConfig`, tools registered into it, the data route), import Cloudflare
-> **leaf helpers** from their **narrow subpaths** —
-> `@app/wf-sdk/cloudflare/blob-resolver`, `@app/wf-sdk/cloudflare/extract-text` —
-> which only reach into `engine`. Only the workflows Worker (§4) may import the
-> `/cloudflare` barrel. The dependency direction is one-way with no cycles, but
-> **the barrel bundles Workers-runtime modules with runtime-neutral ones** — the
-> subpaths are how you pick out the neutral parts.
+> Historically the barrel re-exported the durable classes, so pulling `wfConfig`
+> into a Node route crashed at module-eval with `Cannot find module
+> 'cloudflare:workers'` (an import trace ending at your config; every `/api/wf`
+> call 500s). Splitting `/runtime` out removed the trap. Belt-and-suspenders: add
+> a `no-restricted-imports` eslint rule in the web app forbidding
+> `@stevepeak/007/cloudflare/runtime` and `cloudflare:workers`, so the mistake
+> can't reappear.
 
 ---
 
@@ -106,7 +109,7 @@ editor's model/tool lists) and the workflows Worker (to actually run nodes).
 
 ```ts
 // your-host/src/config.ts
-import type { WfSdkConfig, ToolRegistry } from '@app/wf-sdk'
+import type { WfSdkConfig, ToolRegistry } from '@stevepeak/007'
 import { z } from 'zod'
 
 // (a) The live Cloudflare bindings you read out of RunContext.env at run time.
@@ -195,7 +198,7 @@ Key rules:
   pointer instead of a large value (the built-in `extract_text` tool does when its
   output exceeds ~128 KB); it reads the pointer back to text inside the consuming
   node's step. Omit it and refs pass through as-is. For R2 the SDK ships
-  `createR2BlobResolver` (`@app/wf-sdk/cloudflare/blob-resolver` — the narrow
+  `createR2BlobResolver` (`@stevepeak/007/cloudflare/blob-resolver` — the narrow
   subpath, **not** the `/cloudflare` barrel; see §0) — point it at the same
   bucket; other storage needs your own resolver.
 - The UI needs `listModels` + `toolRegistry` (editor dropdowns) and `triggers`
@@ -227,7 +230,7 @@ import {
   createWorkflow,
   assignWorkflow,
   type WfDb,
-} from '@app/wf-sdk'
+} from '@stevepeak/007'
 
 export async function seedChatWorkflow(
   db: WfDb,
@@ -373,7 +376,7 @@ script — fill the `wrangler.jsonc` placeholders with real IDs first, or pass
 Get a `WfDb` handle from a D1 binding inside the request/step path:
 
 ```ts
-import { createWfDb } from '@app/wf-sdk/storage'
+import { createWfDb } from '@stevepeak/007/storage'
 const db = createWfDb(env.DB) // never at module load — DB is a request binding
 ```
 
@@ -387,11 +390,13 @@ plus the `RunRoom` DO:
 ```ts
 // apps/workflows/src/index.ts (or your equivalent)
 import { wfConfig, type HostDeps } from 'your-host'
+import { startGraphRun } from '@stevepeak/007/cloudflare'
+// Durable classes from the Worker-only `/runtime` subpath (they import
+// `cloudflare:workers`). This is the ONE place that subpath may be imported.
 import {
   makeGraphWorkflow,
   RunRoom as RunRoomImpl,
-  startGraphRun,
-} from '@app/wf-sdk/cloudflare'
+} from '@stevepeak/007/cloudflare/runtime'
 
 // makeGraphWorkflow is generic over <TDeps, Env> so it satisfies any wrapper's
 // (env: Env) signature (e.g. a Sentry instrumenter).
@@ -487,8 +492,8 @@ the barrel-import trap — fix it per §0, don't work around it.)
 
 ```ts
 // apps/web/app/api/wf/route.ts
-import { createWfSdkHandlers } from '@app/wf-sdk/server'
-import { createWfDb } from '@app/wf-sdk/storage'
+import { createWfSdkHandlers } from '@stevepeak/007/server'
+import { createWfDb } from '@stevepeak/007/storage'
 import { wfConfig } from 'your-host'
 
 export const POST = createWfSdkHandlers({
@@ -537,7 +542,7 @@ chrome: a router adapter and design-system primitives are injected.
 ```tsx
 // components/wf/provider.tsx
 'use client'
-import { createHttpWfDataClient, WfSdkProvider } from '@app/wf-sdk/ui'
+import { createHttpWfDataClient, WfSdkProvider } from '@stevepeak/007/ui'
 import { useState } from 'react'
 
 export function WfProvider({ children }) {
@@ -569,7 +574,7 @@ navigate from your router:
 ```tsx
 // app/(app)/wf/[[...slug]]/page.tsx
 'use client'
-import { WfApp } from '@app/wf-sdk/ui'
+import { WfApp } from '@stevepeak/007/ui'
 import { usePathname, useRouter } from 'next/navigation'
 import { WfProvider } from '@/components/wf/provider'
 
@@ -604,7 +609,7 @@ render `RunViewer` inside the same provider, keyed on the `workflowRunId`
 (= `wf_run.id`) returned by `startGraphRun`:
 
 ```tsx
-import { RunViewer } from '@app/wf-sdk/ui'
+import { RunViewer } from '@stevepeak/007/ui'
 ;<WfProvider>
   <RunViewer runId={workflowRunId} />
 </WfProvider>
@@ -615,21 +620,25 @@ polls `getRun`.
 
 ### Styling setup
 
-- Ensure **Tailwind** scans the SDK's files so its utility classes are generated
-  — **the mechanism differs by major version:**
-  - **Tailwind v3:** add `./node_modules/@app/wf-sdk/src/**/*.{ts,tsx}` (or the
-    workspace path in a monorepo) to your `content` array.
-  - **Tailwind v4:** a JS `content` config is **ignored** unless you load it with
-    `@config`, and v4 does **not** scan `node_modules` by default. Register the SDK
-    source from your CSS instead, with a path relative to the CSS file:
-    `@source '../../packages/wf-sdk/src/**/*.{ts,tsx}';`. Symptom when missing: the
-    editor/list render with correct structure but **no styling** (utilities like
-    `flex`, `text-neutral-500` were never emitted).
-- Import **`@xyflow/react`** CSS once (for the editor canvas). Under a bundler that
-  resolves CSS `@import` through `node_modules` (Turbopack/webpack), add
-  `@xyflow/react` as a **direct dependency of the host web app** — a transitive
-  copy (installed only for the SDK) won't resolve from the app's CSS and the build
-  fails with `Can't resolve '@xyflow/react/dist/style.css'`.
+- **Tailwind v4 (recommended):** after your `@import 'tailwindcss';`, add one line:
+
+  ```css
+  @import '@stevepeak/007/ui/styles.css';
+  ```
+
+  This ships-with-the-package entry registers the SDK's own source with Tailwind
+  (`@source`, resolved relative to the package — v4 doesn't scan `node_modules`
+  and ignores the legacy JS `content`) **and** bundles the editor-canvas
+  (`@xyflow/react`) CSS from the package's own dependency. So you write no
+  `@source` path and don't need `@xyflow/react` as a direct dependency. Symptom
+  when the SDK source isn't scanned: the editor/list render with correct
+  structure but **no styling** (utilities like `flex`, `text-neutral-500` were
+  never emitted).
+- **Tailwind v3:** the CSS `@source` entry above is v4-only. Instead add
+  `./node_modules/@stevepeak/007/src/**/*.{ts,tsx}` (or the workspace path) to
+  your `content` array, and `@import '@xyflow/react/dist/style.css';` yourself
+  (make `@xyflow/react` a direct dep of the host web app, or the CSS `@import`
+  won't resolve from a transitive copy).
 - The agent editor's prompt body uses **Tiptap**; its CSS comes with the components.
 
 ---
@@ -640,8 +649,8 @@ The end-to-end pattern (this repo's chat route): resolve the tenant's assigned
 workflow (seeding on first use), then start a run.
 
 ```ts
-import { resolveAssignedVersion } from '@app/wf-sdk'
-import { createWfDb } from '@app/wf-sdk/storage'
+import { resolveAssignedVersion } from '@stevepeak/007'
+import { createWfDb } from '@stevepeak/007/storage'
 import { seedChatWorkflow } from 'your-host'
 
 const db = createWfDb(env.DB)
@@ -691,11 +700,11 @@ consistent across the two.
 
 ## 9. Testing without Cloudflare
 
-`@app/wf-sdk/eval` runs a graph through the in-process executor with a mock model
+`@stevepeak/007/eval` runs a graph through the in-process executor with a mock model
 and mock tools — no D1, no Workers:
 
 ```ts
-import { runWorkflowUnderConditions } from '@app/wf-sdk/eval'
+import { runWorkflowUnderConditions } from '@stevepeak/007/eval'
 import { MockLanguageModelV3 } from 'ai/test'
 
 const run = await runWorkflowUnderConditions({
@@ -727,7 +736,7 @@ The package is _architecturally_ independent (engine depends only on `ai` +
 still wired to **this** monorepo and must be changed when you lift it into a new
 project:
 
-1. **Package scope `@app/wf-sdk`.** Rename the package + all subpath imports for
+1. **Package scope `@stevepeak/007`.** Rename the package + all subpath imports for
    your scope, or keep `@app/*` and add it to your workspace.
 2. **`catalog:` dependency versions.** `package.json` uses the workspace catalog
    for `ai`, `zod`, `drizzle-orm`, `@tanstack/react-query`, `@types/node`. Pin
@@ -756,7 +765,7 @@ project:
    `resolveBlobRef` (see next).
 9. **Blob-ref (`resolveBlobRef` / `WfBlobRef`) is a live, R2-backed feature.** The
    engine plumbing is complete _and_ used: `extract_text` produces refs and the SDK
-   ships `createR2BlobResolver` (`@app/wf-sdk/cloudflare/blob-resolver` — the narrow
+   ships `createR2BlobResolver` (`@stevepeak/007/cloudflare/blob-resolver` — the narrow
    subpath, **not** the barrel; see §0) to read them back. If you register
    `extract_text` (or any ref-producing tool), also set `config.resolveBlobRef` —
    point `createR2BlobResolver` at the same R2 bucket, or write your own resolver

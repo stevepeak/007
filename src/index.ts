@@ -1,12 +1,12 @@
-// @app/wf-sdk — a whitelabeled AI-workflow SDK.
+// @stevepeak/007 — a whitelabeled AI-workflow SDK.
 //
 // Subpath entries keep heavy concerns isolated so hosts import only what they
 // need:
-//   • '@app/wf-sdk'           — engine + config + storage (this barrel)
-//   • '@app/wf-sdk/engine'    — pure execution engine (no DB, no Cloudflare)
-//   • '@app/wf-sdk/storage'   — Drizzle schema + data access + durable recorder
-//   • '@app/wf-sdk/cloudflare'— GraphWorkflow + RunRoom (Workers runtime only)
-//   • '@app/wf-sdk/eval'      — testing harness
+//   • '@stevepeak/007'           — engine + config + storage (this barrel)
+//   • '@stevepeak/007/engine'    — pure execution engine (no DB, no Cloudflare)
+//   • '@stevepeak/007/storage'   — Drizzle schema + data access + durable recorder
+//   • '@stevepeak/007/cloudflare'— GraphWorkflow + RunRoom (Workers runtime only)
+//   • '@stevepeak/007/eval'      — testing harness
 
 export * from './engine'
 export * from './storage'
