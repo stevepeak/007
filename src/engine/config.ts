@@ -81,3 +81,42 @@ export interface WfSdkConfig<TDeps = unknown> {
    */
   triggers: TriggerRegistry
 }
+
+/**
+ * Identity helper that validates a {@link WfSdkConfig} at construction and
+ * returns it unchanged (so `wfConfig` stays a plain object). Wrap your host
+ * config with it to turn silent under-wiring into a loud, early failure:
+ *
+ * ```ts
+ * export const wfConfig = defineWfConfig<HostDeps>({ getModel, ... })
+ * ```
+ *
+ * It checks that every required injection point is present and is the right
+ * broad shape — the class of mistake (a forgotten `buildRunDeps`, a
+ * `toolRegistry` that isn't a Map) that otherwise surfaces as an opaque runtime
+ * error deep inside a run or an empty editor dropdown.
+ */
+export function defineWfConfig<TDeps = unknown>(
+  config: WfSdkConfig<TDeps>,
+): WfSdkConfig<TDeps> {
+  const fn = (k: keyof WfSdkConfig<TDeps>) => typeof config[k] === 'function'
+  const problems: string[] = []
+  if (!fn('getModel')) problems.push('`getModel` must be a function')
+  if (!fn('listModels')) problems.push('`listModels` must be a function')
+  if (!fn('buildRunDeps')) problems.push('`buildRunDeps` must be a function')
+  if (!(config.toolRegistry instanceof Map)) {
+    problems.push('`toolRegistry` must be a Map (see ToolRegistry)')
+  }
+  if (config.triggers == null || typeof config.triggers !== 'object') {
+    problems.push('`triggers` must be an object (`{}` if you have no events)')
+  }
+  if (config.resolveBlobRef != null && typeof config.resolveBlobRef !== 'function') {
+    problems.push('`resolveBlobRef`, if set, must be a function')
+  }
+  if (problems.length > 0) {
+    throw new Error(
+      `defineWfConfig: invalid WfSdkConfig —\n  - ${problems.join('\n  - ')}`,
+    )
+  }
+  return config
+}

@@ -113,6 +113,7 @@ export {
 } from './trigger-registry'
 export { createMemorySink, noopSink, type StreamSink } from './stream-sink'
 export {
+  defineWfConfig,
   type BlobRefResolver,
   type ModelFactory,
   type ModelOption,

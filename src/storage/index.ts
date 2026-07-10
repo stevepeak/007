@@ -18,6 +18,7 @@ export {
   WF_RUN_STATUSES,
   WF_RUN_STEP_STATUSES,
 } from './schema'
+export { assertWfSchema } from './assert-schema'
 export { createDurableRunRecorder } from './run-recorder'
 export {
   assignWorkflow,

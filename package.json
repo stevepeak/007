@@ -13,6 +13,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./cloudflare": "./src/cloudflare/index.ts",
+    "./cloudflare/runtime": "./src/cloudflare/runtime.ts",
     "./cloudflare/blob-resolver": "./src/cloudflare/blob-resolver.ts",
     "./cloudflare/extract-text": "./src/cloudflare/extract-text.ts",
     "./engine": "./src/engine/index.ts",
@@ -21,7 +22,8 @@
     "./storage": "./src/storage/index.ts",
     "./storage/schema": "./src/storage/schema.ts",
     "./tools": "./src/tools/index.ts",
-    "./ui": "./src/ui/index.ts"
+    "./ui": "./src/ui/index.ts",
+    "./ui/styles.css": "./src/ui/styles.css"
   },
   "scripts": {
     "clean": "rm -rf node_modules dist .turbo",

@@ -1,0 +1,20 @@
+/*
+ * Style entry for the 007 UI. In a Tailwind v4 host, add — after your
+ * `@import 'tailwindcss';`:
+ *
+ *   @import '@stevepeak/007/ui/styles.css';
+ *
+ * This does the two things every host otherwise wires by hand:
+ *   1. Registers the SDK's own UI source with Tailwind (`@source`, resolved
+ *      relative to THIS file) so its utility classes are generated — v4 does
+ *      not scan node_modules by default and ignores the legacy JS `content`.
+ *   2. Bundles the editor-canvas (xyflow) CSS, resolved from this package's
+ *      dependency — so hosts need neither an `@source` path nor `@xyflow/react`
+ *      as a direct dependency.
+ *
+ * Requires the host to be on Tailwind v4 (the `@source` at-rule). Hosts that
+ * inject their own design-system primitives still rely on the SDK's layout
+ * utilities, which this covers.
+ */
+@import '@xyflow/react/dist/style.css';
+@source './**/*.{js,ts,jsx,tsx}';

@@ -27,33 +27,18 @@ export function createHttpWfDataClient(
     // Hard backstop: no single call may hang the UI indefinitely. If the
     // response never arrives (dev-proxy buffering, a stalled connection), abort
     // so the caller settles with an error instead of an eternal spinner.
-    //
-    // TEMP diagnostic: trace each RPC's client-side lifecycle in the browser
-    // console. `←` logs when response headers arrive, `✓` when the body is
-    // parsed — so a call that reaches `←` but never `✓` is hanging on the body
-    // read (the dev-proxy-buffering case). Remove once the spinner is resolved.
-    const t0 = performance.now()
-    const ms = () => `${Math.round(performance.now() - t0)}ms`
-    console.log(`[wf:client] → ${method}`)
-    try {
-      const res = await doFetch(opts.baseUrl, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...opts.headers },
-        body: JSON.stringify({ method, params }),
-        signal: AbortSignal.timeout(timeoutMs ?? opts.timeoutMs ?? 20000),
-      })
-      console.log(`[wf:client] ← ${method} status=${res.status} (${ms()})`)
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string }
-        throw new Error(body.error ?? `wf-sdk request failed (${res.status})`)
-      }
-      const data = (await res.json()) as T
-      console.log(`[wf:client] ✓ ${method} parsed (${ms()})`)
-      return data
-    } catch (err) {
-      console.error(`[wf:client] ✗ ${method} (${ms()})`, err)
-      throw err
+    const res = await doFetch(opts.baseUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...opts.headers },
+      body: JSON.stringify({ method, params }),
+      signal: AbortSignal.timeout(timeoutMs ?? opts.timeoutMs ?? 20000),
+    })
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string }
+      throw new Error(body.error ?? `wf-sdk request failed (${res.status})`)
     }
+    const data = (await res.json()) as T
+    return data
   }
 
   return {
