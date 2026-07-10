@@ -241,43 +241,50 @@ agents share one lifecycle shape (entity + 1:1 editable draft + immutable publis
 versions). They use **opaque text identity** (no foreign keys into your tables),
 so they coexist with any host schema in the same D1.
 
-The generated SQL lives in this repo's `migrations/` dir. You must apply it to
-your D1. Three options:
+The generated SQL lives in this repo's `migrations/` dir. **Applying it is the
+host's job** — this repo's CI only validates (lint/typecheck/test) and never
+touches a database, so a host's Cloudflare secrets never live here. The
+committed `wrangler.jsonc` carries generic placeholders precisely so no specific
+host's IDs are stored in this (potentially public, multi-consumer) repo. Two host
+options:
 
-1. **Let this repo's CI apply them (recommended for the submodule setup).** The
-   `deploy-migrations` job in `.github/workflows/ci.yml` runs `wrangler d1
-   migrations apply … --remote` against `./migrations` on every push to `main`,
-   after tests pass. The committed `wrangler.jsonc` carries generic placeholders;
-   CI injects the real identifiers from repo secrets, so this repo never stores a
-   specific host's Cloudflare IDs. Set these secrets on the repo:
-
-   | secret | meaning |
-   | --- | --- |
-   | `CLOUDFLARE_API_TOKEN` | token with D1 edit on the target account |
-   | `CLOUDFLARE_ACCOUNT_ID` | target Cloudflare account id |
-   | `D1_DATABASE_NAME` | target D1 database name (e.g. `law-db`) |
-   | `D1_DATABASE_ID` | target D1 database id |
-
-2. **Point your host wrangler at this dir** (the classic design intent):
+1. **A host-owned migration config + CI step (recommended).** In your (private)
+   host repo, add a small wrangler config that binds your D1 with real IDs and
+   points `migrations_dir` at this repo's `migrations/`, then apply it from the
+   host's CI with the host's own secrets:
 
    ```jsonc
+   // host repo, e.g. packages/wf-host/wrangler.jsonc — migrations_dir is relative
+   // to this file (submodule mounted at ../wf-sdk)
+   "account_id": "<your-account-id>",
    "d1_databases": [{
      "binding": "DB",
      "database_name": "your-db",
-     "migrations_dir": "packages/wf-sdk/migrations" // this repo's path in your host
+     "database_id": "<your-db-id>",
+     "migrations_dir": "../wf-sdk/migrations"
    }]
    ```
 
-3. **Apply them manually** against the target D1 via the package's own scripts
+   ```yaml
+   # host CI (secrets belong to the HOST repo, not this one)
+   - uses: cloudflare/wrangler-action@v3
+     with:
+       apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+       accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+       workingDirectory: packages/wf-host
+       command: d1 migrations apply your-db --remote
+   ```
+
+2. **Apply manually** against the target D1 via this package's own scripts
    (`db:migrate:local` for local D1; `db:migrate` for `--remote` — fill the
-   `wrangler.jsonc` placeholders with real IDs first).
+   `wrangler.jsonc` placeholders with real IDs first, or pass a host config).
 
 > ⚠️ **Gotcha (shared D1):** a host that keeps its own migrations dir (e.g.
 > 1121law points `apps/*` at `packages/db/migrations` for its _own_ schema) cannot
 > put two `migrations_dir` on one binding — the `wf_*` migrations must be applied
-> as a **separate** step. Option 1 (this repo's CI) is exactly that separate step.
-> Both dirs share the target D1's default `d1_migrations` tracking table with
-> distinct filenames, so they coexist without collision.
+> as a **separate** step (a second config/step, as in option 1). Both dirs share
+> the target D1's default `d1_migrations` tracking table with distinct filenames,
+> so they coexist without collision.
 
 Get a `WfDb` handle from a D1 binding inside the request/step path:
 
@@ -621,12 +628,13 @@ project:
 4. **`wrangler.jsonc` in the package is dev/migration-only and generic.** It
    carries **placeholders** (`<CLOUDFLARE_ACCOUNT_ID>`, `<D1_DATABASE_NAME>`,
    `<D1_DATABASE_ID>`) — no host's real IDs are committed. It is _not_ a deployed
-   Worker; it only lets `wrangler d1 migrations apply` run against `./migrations`.
-   The `deploy-migrations` CI job injects real IDs from repo secrets at apply time
-   (see §3, option 1); for a manual `db:migrate` run, fill the placeholders first.
-5. **Migrations wiring.** Decide up front how `wf_*` migrations reach your D1:
-   this repo's CI (§3 option 1), your host wrangler's `migrations_dir` pointed at
-   this repo's `migrations/` (§3 option 2), or a manual step (§3 option 3).
+   Worker; it only lets a manual `wrangler d1 migrations apply` run against
+   `./migrations` once you fill the placeholders. This repo's CI never applies
+   migrations — that's the host's job (see §3).
+5. **Migrations wiring.** Decide up front how `wf_*` migrations reach your D1: a
+   host-owned config + CI step pointing at this repo's `migrations/` (§3 option 1),
+   or a manual step (§3 option 2). Keep the host's Cloudflare secrets in the host
+   repo — never here.
 6. **Tailwind + React 19.** Hard requirements for the UI. The SDK's markup uses
    Tailwind utility classes directly, so Tailwind must scan the package's files.
 7. **`RunContext.env` is untyped (`unknown`).** You own the `HostEnv` type and the
