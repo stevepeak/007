@@ -47,12 +47,36 @@ cycles (`ui → server → storage → engine`, `cloudflare → storage → engi
 | `@app/wf-sdk/engine`                  | any (only `ai` + `zod`) | custom backends, graph types                    |
 | `@app/wf-sdk/storage`                 | Workers (D1)            | `createWfDb`, data access, schema               |
 | `@app/wf-sdk/storage/schema`          | build-time              | drizzle-kit / migrations                        |
-| `@app/wf-sdk/cloudflare`              | Workers only            | `makeGraphWorkflow`, `RunRoom`, `startGraphRun` |
-| `@app/wf-sdk/cloudflare/extract-text` | Workers only            | `createExtractTextTool` (R2/Vision OCR tool)    |
+| `@app/wf-sdk/cloudflare`              | Workers **only**        | `makeGraphWorkflow`, `RunRoom`, `startGraphRun` |
+| `@app/wf-sdk/cloudflare/blob-resolver`| any server route        | `createR2BlobResolver` (engine-only leaf)       |
+| `@app/wf-sdk/cloudflare/extract-text` | any server route¹       | `createExtractTextTool` (R2/Vision OCR tool)    |
 | `@app/wf-sdk/server`                  | any server route        | `createWfSdkHandlers`, `createHttpWfDataClient` |
 | `@app/wf-sdk/tools`                   | any (fetch + deps)      | built-in tools (`createTavilyTool`)             |
 | `@app/wf-sdk/ui`                      | browser (React 19)      | `WfApp`, `WfSdkProvider`, `RunViewer`, hooks    |
 | `@app/wf-sdk/eval`                    | test                    | `runWorkflowUnderConditions`                    |
+
+¹ Import-safe anywhere (it does not `import 'cloudflare:workers'` at module
+scope), but its OCR path only _runs_ with R2 + Workers AI bindings present.
+
+> ⚠️ **The `/cloudflare` barrel is import-unsafe outside a Worker — never let it
+> into `wfConfig`'s module graph.** `wfConfig` is imported by **both** runtimes:
+> the workflows Worker _and_ the host's data-API route (§5), which runs in the
+> host's Node/edge server (Next.js, etc.). The `/cloudflare` **barrel**
+> (`@app/wf-sdk/cloudflare`) re-exports `graph-workflow`/`run-room`/`start-run`,
+> which `import { WorkflowEntrypoint, DurableObject } from 'cloudflare:workers'`
+> at module scope. That module does not exist in a Node runtime, so the moment
+> `wfConfig` (or anything the route imports) pulls in the barrel, the route
+> **crashes at module-eval** — you'll see `Cannot find module 'cloudflare:workers'`
+> in an import trace ending at your config, and every `/api/wf` call 500s.
+>
+> **Rule:** in host code that runs anywhere other than the Worker (your
+> `WfSdkConfig`, tools registered into it, the data route), import Cloudflare
+> **leaf helpers** from their **narrow subpaths** —
+> `@app/wf-sdk/cloudflare/blob-resolver`, `@app/wf-sdk/cloudflare/extract-text` —
+> which only reach into `engine`. Only the workflows Worker (§4) may import the
+> `/cloudflare` barrel. The dependency direction is one-way with no cycles, but
+> **the barrel bundles Workers-runtime modules with runtime-neutral ones** — the
+> subpaths are how you pick out the neutral parts.
 
 ---
 
@@ -171,8 +195,9 @@ Key rules:
   pointer instead of a large value (the built-in `extract_text` tool does when its
   output exceeds ~128 KB); it reads the pointer back to text inside the consuming
   node's step. Omit it and refs pass through as-is. For R2 the SDK ships
-  `createR2BlobResolver` (`@app/wf-sdk/cloudflare`) — point it at the same bucket;
-  other storage needs your own resolver.
+  `createR2BlobResolver` (`@app/wf-sdk/cloudflare/blob-resolver` — the narrow
+  subpath, **not** the `/cloudflare` barrel; see §0) — point it at the same
+  bucket; other storage needs your own resolver.
 - The UI needs `listModels` + `toolRegistry` (editor dropdowns) and `triggers`
   (the create-workflow event picker + its data-field preview); the runtime needs
   `getModel` + `toolRegistry` + `buildRunDeps` + `triggers` (and `resolveBlobRef`
@@ -314,6 +339,20 @@ wrangler d1 migrations apply your-db --local \
   --persist-to .wrangler/state --config packages/wf-host/wrangler.jsonc
 ```
 
+> ⚠️ **Shared local D1 across processes.** In dev the data route (web, running
+> under `next dev`/OpenNext miniflare) and the workflows Worker (`wrangler dev
+> --persist-to X`) are **separate processes** that must open the **same** local
+> SQLite, or the editor writes rows the runtime can't see (and vice versa).
+> Miniflare keys local D1 by `database_id`, so both bindings need the **same
+> id**, and the web side must be pointed at the Worker's persist dir — with
+> OpenNext that's `initOpenNextCloudflareForDev({ persist: { path: X + '/v3' } })`
+> in `next.config` (note the `v3` segment asymmetry: `wrangler --persist-to X`
+> writes under `X/v3/…`, but `getPlatformProxy({ persist: { path } })` treats
+> `path` as the already-`v3` root). Apply the migrations against that shared dir
+> once, before either process reads it (a one-shot task in your dev orchestrator
+> works well). Symptom when it's wrong: an empty editor or "no such table:
+> wf_workflow" despite a Worker that boots fine.
+
 **Regenerating** after a schema bump (edit `src/storage/schema.ts`):
 `bun run db:generate` inside this package (drizzle-kit; needs no credentials),
 then commit the new SQL here and let the host apply it.
@@ -436,6 +475,16 @@ every `WfDataClient` method; you supply the D1 handle and the authenticated
 tenant scope. The SDK stays auth-free — identity is resolved server-side and
 never trusted from the client.
 
+This route runs **in the host web app**, against the web app's **own D1 binding**
+to the same database the workflows Worker uses (bind it in the web app's
+`wrangler.jsonc` too — it's a plain D1 read/write path, available in `next dev`
+via miniflare). Do **not** proxy this data plane to the workflows Worker: only
+run-_starting_ needs the cross-Worker service binding (§4, §7); the editor/
+run-viewer only needs D1. Tunnelling it through the Worker forces a dev-only HTTP
+endpoint with an untrusted `tenantId` header — avoid that. (If you were pushed
+toward a proxy by a `cloudflare:workers` crash when importing `wfConfig`, that's
+the barrel-import trap — fix it per §0, don't work around it.)
+
 ```ts
 // apps/web/app/api/wf/route.ts
 import { createWfSdkHandlers } from '@app/wf-sdk/server'
@@ -468,6 +517,13 @@ export const POST = createWfSdkHandlers({
 - **`resolveDb` → `WfDb`** per request.
 - The wire protocol is `{ method, params }` over POST; the full method set is the
   `WfDataClient` interface in `src/server/protocol.ts`.
+- **Typecheck:** this route imports SDK source (`createWfDb`, `createWfSdkHandlers`,
+  and your `wfConfig`) that references ambient Cloudflare globals (`D1Database`,
+  `R2Bucket`, `Ai`). Add `@cloudflare/workers-types` to your host **web app's**
+  tsconfig `types` (it coexists with the DOM libs under `skipLibCheck`, since the
+  app runs on the Workers runtime via OpenNext), or `tsc` fails with
+  `Cannot find name 'D1Database'`. Keep it out of the browser bundle by scoping it
+  to this app's config, not the shared base.
 
 ---
 
@@ -559,10 +615,21 @@ polls `getRun`.
 
 ### Styling setup
 
-- Ensure **Tailwind** scans the SDK's files (add
-  `./node_modules/@app/wf-sdk/src/**/*.{ts,tsx}` to your Tailwind `content`, or
-  the workspace path in a monorepo).
-- Import **`@xyflow/react`** CSS once (for the editor canvas).
+- Ensure **Tailwind** scans the SDK's files so its utility classes are generated
+  — **the mechanism differs by major version:**
+  - **Tailwind v3:** add `./node_modules/@app/wf-sdk/src/**/*.{ts,tsx}` (or the
+    workspace path in a monorepo) to your `content` array.
+  - **Tailwind v4:** a JS `content` config is **ignored** unless you load it with
+    `@config`, and v4 does **not** scan `node_modules` by default. Register the SDK
+    source from your CSS instead, with a path relative to the CSS file:
+    `@source '../../packages/wf-sdk/src/**/*.{ts,tsx}';`. Symptom when missing: the
+    editor/list render with correct structure but **no styling** (utilities like
+    `flex`, `text-neutral-500` were never emitted).
+- Import **`@xyflow/react`** CSS once (for the editor canvas). Under a bundler that
+  resolves CSS `@import` through `node_modules` (Turbopack/webpack), add
+  `@xyflow/react` as a **direct dependency of the host web app** — a transitive
+  copy (installed only for the SDK) won't resolve from the app's CSS and the build
+  fails with `Can't resolve '@xyflow/react/dist/style.css'`.
 - The agent editor's prompt body uses **Tiptap**; its CSS comes with the components.
 
 ---
@@ -689,11 +756,11 @@ project:
    `resolveBlobRef` (see next).
 9. **Blob-ref (`resolveBlobRef` / `WfBlobRef`) is a live, R2-backed feature.** The
    engine plumbing is complete _and_ used: `extract_text` produces refs and the SDK
-   ships `createR2BlobResolver` (`@app/wf-sdk/cloudflare`) to read them back. If you
-   register `extract_text` (or any ref-producing tool), also set
-   `config.resolveBlobRef` — point `createR2BlobResolver` at the same R2 bucket, or
-   write your own resolver for non-R2 storage. Tools with no large outputs can leave
-   it unset.
+   ships `createR2BlobResolver` (`@app/wf-sdk/cloudflare/blob-resolver` — the narrow
+   subpath, **not** the barrel; see §0) to read them back. If you register
+   `extract_text` (or any ref-producing tool), also set `config.resolveBlobRef` —
+   point `createR2BlobResolver` at the same R2 bucket, or write your own resolver
+   for non-R2 storage. Tools with no large outputs can leave it unset.
 
 Once those are addressed, dropping the SDK into a new Cloudflare + React 19
 project is: write a `WfSdkConfig`, mount one API route, mount `WfApp`, export
