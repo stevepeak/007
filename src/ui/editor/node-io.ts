@@ -354,6 +354,23 @@ export function accessibleData(
 ): AccessibleNode[] {
   const byId = new Map(graph.nodes.map((n) => [n.id, n]))
   const result: AccessibleNode[] = []
+  // The iteration `Item` trigger starts its subgraph, so it has no ancestors —
+  // but it *is* the data source inside the loop. Surface its own (element) output
+  // so selecting it shows the current item's fields instead of "no upstream nodes".
+  const self = byId.get(nodeId)
+  if (
+    self?.kind === 'trigger' &&
+    self.config.triggerKind === ITERATION_ITEM_TRIGGER_KIND
+  ) {
+    const out = nodeOutput(self, maps, graph, byId, new Set())
+    result.push({
+      nodeId: self.id,
+      label: self.label,
+      kind: self.kind,
+      fields: out.fields,
+      wholeType: out.type,
+    })
+  }
   for (const id of ancestorIds(graph, nodeId)) {
     const node = byId.get(id)
     if (!node) continue

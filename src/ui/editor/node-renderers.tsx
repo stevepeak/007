@@ -219,6 +219,56 @@ function NodeCard({
   )
 }
 
+// A minimal one-row pill for the iteration bookends (the `Item` start and
+// `Result` output). No uppercase kind row / subtitle — it stays tight inside the
+// iteration container instead of reading as a bulky card.
+function NodePill({
+  kind,
+  label,
+  selected,
+  invalid,
+  status,
+  subtitle,
+}: {
+  kind: WorkflowNode['kind']
+  label: string
+  selected?: boolean
+  invalid?: boolean
+  status?: string
+  /** Shown only as a hover title so the pill stays a single line. */
+  subtitle?: string
+}) {
+  const style = KIND_STYLE[kind]
+  const Icon = style.icon
+  const failed = status === 'failed'
+  const running = status === 'running'
+  return (
+    <div
+      title={subtitle}
+      className={cn(
+        'bg-card relative inline-flex items-center gap-1.5 rounded-full border border-l-4 px-2.5 py-1 shadow-sm transition-colors',
+        invalid || failed
+          ? 'border-rose-300 border-l-rose-500 ring-1 ring-rose-300'
+          : running
+            ? 'border-blue-300 border-l-blue-500 ring-1 ring-blue-200'
+            : style.accent,
+        status === 'skipped' && 'opacity-60',
+        selected && 'ring-ring ring-2 ring-offset-1',
+      )}
+    >
+      {status ? <RunStatusDot status={status} /> : null}
+      <Icon className="text-muted-foreground size-3.5 shrink-0" />
+      <span className="truncate text-xs font-medium">{label}</span>
+      {invalid ? (
+        <AlertTriangle
+          className="size-3.5 shrink-0 text-rose-500"
+          aria-label="This node has an issue"
+        />
+      ) : null}
+    </div>
+  )
+}
+
 function TriggerNodeRenderer(props: NodeProps) {
   const data = props.data as unknown as EditorNodeData
   const invalid = useIsNodeInvalid(props.id)
@@ -231,16 +281,30 @@ function TriggerNodeRenderer(props: NodeProps) {
   const eventLabel = events.data?.find(
     (e) => e.kind === triggerKind,
   )?.description
+  // The iteration `Item` bookend renders as a tiny pill so the loop container
+  // stays tight; every other trigger keeps the full card.
+  if (triggerKind === ITERATION_ITEM_TRIGGER_KIND) {
+    return (
+      <>
+        <NodePill
+          kind="trigger"
+          label="Current item"
+          selected={props.selected}
+          invalid={invalid}
+          status={status}
+        />
+        <Handle type="source" position={Position.Right} />
+      </>
+    )
+  }
   const subtitle =
-    triggerKind === ITERATION_ITEM_TRIGGER_KIND
-      ? 'Current item'
-      : triggerKind === MANUAL_TRIGGER_KIND
-        ? 'Manual'
-        : triggerKind === PERIODIC_TRIGGER_KIND
-          ? `Schedule · ${cron ?? '—'}`
-          : eventLabel
-            ? `Event · ${eventLabel}`
-            : 'Event'
+    triggerKind === MANUAL_TRIGGER_KIND
+      ? 'Manual'
+      : triggerKind === PERIODIC_TRIGGER_KIND
+        ? `Schedule · ${cron ?? '—'}`
+        : eventLabel
+          ? `Event · ${eventLabel}`
+          : 'Event'
   return (
     <>
       <NodeCard
@@ -558,6 +622,23 @@ function OutputNodeRenderer(props: NodeProps) {
   const invalid = useIsNodeInvalid(props.id)
   const status = useNodeRunStatus(props.id)
   if (data.kind !== 'output') return null
+  // The `Result` bookend inside an iteration (a nested child has a `parentId`)
+  // renders as a tiny pill; a top-level output keeps the full card.
+  if (props.parentId != null) {
+    return (
+      <>
+        <Handle type="target" position={Position.Left} />
+        <NodePill
+          kind="output"
+          label={data.label}
+          selected={props.selected}
+          invalid={invalid}
+          status={status}
+          subtitle="Forwards the live upstream result"
+        />
+      </>
+    )
+  }
   return (
     <>
       <Handle type="target" position={Position.Left} />
