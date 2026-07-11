@@ -1,4 +1,10 @@
-import { isDecisionKind, type WorkflowGraph, type WorkflowNode } from './graph'
+import {
+  isBinaryDecisionKind,
+  isDecisionKind,
+  SWITCH_DEFAULT_CASE,
+  type WorkflowGraph,
+  type WorkflowNode,
+} from './graph'
 
 // Author-time graph diagnostics. Where `workflowGraphSchema`'s superRefine is
 // the strict *runtime* gate (a failing graph can't run), this collects the same
@@ -177,8 +183,8 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
       })
     }
 
-    // Decision nodes need both a yes and a no path.
-    if (isDecisionKind(node.kind)) {
+    // Binary decision nodes (branch/judge) need both a yes and a no path.
+    if (isBinaryDecisionKind(node.kind)) {
       const hasYes = out.some((e) => e.condition === 'yes')
       const hasNo = out.some((e) => e.condition === 'no')
       if (!hasYes || !hasNo) {
@@ -189,6 +195,31 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
           ...base,
           severity: 'error',
           message: `Missing the "${missing}" branch path — a ${node.kind} needs both.`,
+        })
+      }
+    }
+
+    // A switch needs an outgoing edge per case plus a 'default' fallback.
+    if (node.kind === 'switch') {
+      const conds = new Set(out.map((e) => e.condition))
+      const missingCases = node.config.cases
+        .map((c) => c.key)
+        .filter((k) => !conds.has(k))
+      if (missingCases.length > 0) {
+        const many = missingCases.length > 1
+        issues.push({
+          ...base,
+          severity: 'error',
+          message: `Switch case${many ? 's' : ''} ${missingCases
+            .map((k) => `"${k}"`)
+            .join(', ')} ${many ? 'have' : 'has'} no outgoing edge.`,
+        })
+      }
+      if (!conds.has(SWITCH_DEFAULT_CASE)) {
+        issues.push({
+          ...base,
+          severity: 'error',
+          message: `Switch needs a "${SWITCH_DEFAULT_CASE}" (fallback) path.`,
         })
       }
     }
