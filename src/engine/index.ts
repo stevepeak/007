@@ -25,6 +25,8 @@ export {
   type JudgeNode,
   type FeatureRequestNode,
   type IterationNode,
+  nodeExecutionSchema,
+  type NodeExecution,
   type NoteNode,
   type OutputNode,
   type ToolNode,
@@ -117,7 +119,9 @@ export {
   type BlobRefResolver,
   type ModelFactory,
   type ModelOption,
+  type RunCompletion,
   type RunContext,
+  type RunFailure,
   type WfSdkConfig,
 } from './config'
 // Per-kind node executors — exported for hosts that compose custom backends.

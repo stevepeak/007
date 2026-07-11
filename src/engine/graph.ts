@@ -18,11 +18,39 @@ const positionSchema = z.object({
   y: z.number(),
 })
 
+// Provider-agnostic per-node execution policy. The engine defines the SHAPE;
+// the runtime backend (e.g. Cloudflare Workflows) maps it to its own step
+// config — this schema deliberately carries NO Cloudflare types. Omitted, or
+// any omitted field, falls back to the backend's per-kind defaults.
+export const nodeExecutionSchema = z.object({
+  // Best-effort node. If it still fails after any retries, the backend records
+  // the failure but continues the run with a `null` output instead of aborting
+  // — downstream `ref`s to this node resolve to null. Ignored for decision
+  // nodes (branch/judge): a routing decision has no safe default.
+  continueOnError: z.boolean().optional(),
+  // Wall-clock budget for ONE attempt, in milliseconds.
+  timeoutMs: z.number().int().positive().optional(),
+  // Retry policy for a failed attempt. `limit` is the number of retries AFTER
+  // the first attempt (0 = no retry).
+  retries: z
+    .object({
+      limit: z.number().int().min(0).max(10),
+      delayMs: z.number().int().min(0).optional(),
+      backoff: z.enum(['constant', 'linear', 'exponential']).optional(),
+    })
+    .optional(),
+})
+export type NodeExecution = z.infer<typeof nodeExecutionSchema>
+
 const baseNode = z.object({
   id: z.string().min(1),
   // Editor-only — does not affect execution.
   position: positionSchema,
   label: z.string().min(1),
+  // Optional per-node retry/timeout/best-effort policy. Provider-agnostic; the
+  // runtime backend maps it to its own step config. Meaningless on the trigger/
+  // output/note bookends, but harmless there (they never run as steps).
+  execution: nodeExecutionSchema.optional(),
 })
 
 const triggerNodeSchema = baseNode.extend({
@@ -292,6 +320,7 @@ export interface IterationNode {
   id: string
   position: { x: number; y: number }
   label: string
+  execution?: NodeExecution
   kind: 'iteration'
   config: {
     itemsPath?: string

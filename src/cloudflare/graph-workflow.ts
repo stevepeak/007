@@ -7,7 +7,9 @@ import {
 
 import type { WfSdkConfig } from '../engine/config'
 import {
+  isDecisionKind,
   workflowGraphSchema,
+  type NodeExecution,
   type WfNodeKind,
   type WfRunManifestEntry,
 } from '../engine/graph'
@@ -74,7 +76,8 @@ export type GraphWorkflowResult = {
   outputNodeId: string
 }
 
-// Per-kind step.do retry/timeout policy. LLM nodes get longer, retried steps.
+// Per-kind step.do retry/timeout policy defaults. LLM nodes get longer, retried
+// steps. A node's optional `execution` policy overrides these field-by-field.
 const AI_STEP_OPTS = {
   retries: { limit: 3, delay: '5 seconds', backoff: 'exponential' },
   timeout: '3 minutes',
@@ -84,10 +87,59 @@ const DEFAULT_STEP_OPTS = {
   timeout: '1 minute',
 } as const
 
-function optsFor(kind: string): WorkflowStepConfig {
+// Return type is intentionally inferred (not widened to `WorkflowStepConfig`)
+// so the const defaults keep their guaranteed `retries`, which `stepOptsFor`
+// reads when layering a partial override.
+function kindDefaultOpts(kind: string) {
   // `judge` is the LLM decision node; the deterministic `branch` needs no
   // retries/long timeout and falls through to the default policy.
   return kind === 'agent' || kind === 'judge' ? AI_STEP_OPTS : DEFAULT_STEP_OPTS
+}
+
+// Map a node's provider-agnostic `execution` policy onto Cloudflare's
+// `WorkflowStepConfig`, layered over the per-kind default so an author can
+// override just a timeout or just the retry limit and inherit the rest. The
+// engine schema speaks milliseconds; `step.do` accepts a number-of-ms for both
+// `timeout` and retry `delay`, so we pass them straight through.
+function stepOptsFor(node: {
+  kind: string
+  execution?: NodeExecution
+}): WorkflowStepConfig {
+  const base = kindDefaultOpts(node.kind)
+  const ex = node.execution
+  if (!ex || (ex.timeoutMs == null && ex.retries == null)) {
+    return base
+  }
+  return {
+    timeout: ex.timeoutMs ?? base.timeout,
+    retries: ex.retries
+      ? {
+          limit: ex.retries.limit,
+          delay: ex.retries.delayMs ?? base.retries.delay,
+          backoff: ex.retries.backoff ?? base.retries.backoff,
+        }
+      : base.retries,
+  }
+}
+
+// Best-effort host lifecycle notification. Runs in its own durable step (so it
+// retries), but a callback that ultimately throws is swallowed (logged) rather
+// than changing the run outcome — the run's success/failure is already settled
+// by the time we notify. Keeps a broken host callback from turning a completed
+// run into a failed one, or masking the real error on the failure path.
+async function notifyHost(
+  step: WorkflowStep,
+  name: string,
+  fn: () => void | Promise<void>,
+): Promise<void> {
+  try {
+    await stepDo(step, name, async () => {
+      await fn()
+      return null
+    })
+  } catch (err) {
+    console.error(`[wf] lifecycle callback '${name}' failed:`, errorMessage(err))
+  }
 }
 
 // Cloudflare's `step.do` constrains return values to `Serializable<T>`, which
@@ -310,7 +362,7 @@ export function makeGraphWorkflow<
             result = await stepDo(
               step,
               `run:${node.id}`,
-              optsFor(node.kind),
+              stepOptsFor(node),
               async () => {
                 const rc = { ...p.runContext, env }
                 const toolDeps = await config.buildRunDeps(rc)
@@ -342,6 +394,13 @@ export function makeGraphWorkflow<
               error: message,
             }),
           )
+          // Best-effort node: swallow the failure and let the run continue with a
+          // `null` output (downstream refs resolve to null). Never for decision
+          // nodes — a routing decision has no safe default, so it must still
+          // abort. The failed step above keeps the failure visible in the trace.
+          if (node.execution?.continueOnError && !isDecisionKind(node.kind)) {
+            return { nodeId: node.id, report: { output: null } }
+          }
           throw err
         }
 
@@ -401,6 +460,14 @@ export function makeGraphWorkflow<
               }),
             )
             await stepDo(step, 'room-output', () => room.setOutput(output))
+            if (config.onRunComplete) {
+              await notifyHost(step, 'on-complete', () =>
+                config.onRunComplete!(
+                  { ...p.runContext, env },
+                  { output, outputNodeId },
+                ),
+              )
+            }
             return { output, outputNodeId }
           }
 
@@ -441,6 +508,11 @@ export function makeGraphWorkflow<
           })
           await room.setError(message)
         })
+        if (config.onRunFailed) {
+          await notifyHost(step, 'on-failed', () =>
+            config.onRunFailed!({ ...p.runContext, env }, { error: message }),
+          )
+        }
         throw err
       }
     }

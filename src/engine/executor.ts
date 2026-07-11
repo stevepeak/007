@@ -1,4 +1,5 @@
 import type { RunContext, WfSdkConfig } from './config'
+import { isDecisionKind } from './graph'
 import { errorMessage, runNode } from './run-node'
 import type { RunRecorder } from './run-recorder'
 import {
@@ -119,51 +120,84 @@ export async function executeWorkflow<TDeps>(
         status: 'failed',
         error: errorMessage(err),
       })
+      // Best-effort node: continue the run with a `null` output rather than
+      // aborting. Mirrors the Cloudflare backend; never for decision nodes.
+      if (node.execution?.continueOnError && !isDecisionKind(node.kind)) {
+        return { nodeId: node.id, report: { output: null } }
+      }
       throw err
     }
   }
 
-  while (true) {
-    const instruction = scheduler.nextBatch()
-
-    if (instruction.type === 'stall') {
-      throw new WorkflowStalledError()
+  // Lifecycle callbacks mirror the Cloudflare backend: best-effort host
+  // notifications that never change the run outcome (a throwing callback is
+  // swallowed and logged). No durable step here — the in-process backend awaits
+  // inline — but the contract the host sees is identical.
+  const notifyHost = async (fn: () => void | Promise<void>): Promise<void> => {
+    try {
+      await fn()
+    } catch (err) {
+      console.error('[wf] lifecycle callback failed:', errorMessage(err))
     }
+  }
 
-    if (instruction.type === 'output') {
-      await recorder.record({
-        nodeId: instruction.nodeId,
-        nodeKind: 'output',
-        sequence: sequence++,
-        input: instruction.output,
-        status: 'completed',
-        output: instruction.output,
-      })
-      return { output: instruction.output, outputNodeId: instruction.nodeId }
-    }
+  try {
+    while (true) {
+      const instruction = scheduler.nextBatch()
 
-    // Sequences assigned up front in stable batch order → deterministic trace
-    // regardless of settle order. Batch nodes are independent (antichain), so
-    // they run concurrently.
-    const batch = instruction.nodes.map((n) => ({
-      node: n.node,
-      input: n.input,
-      seq: sequence++,
-    }))
+      if (instruction.type === 'stall') {
+        throw new WorkflowStalledError()
+      }
 
-    const settled = await Promise.allSettled(
-      batch.map((b) => dispatchNode(b.node, b.input, b.seq)),
-    )
+      if (instruction.type === 'output') {
+        await recorder.record({
+          nodeId: instruction.nodeId,
+          nodeKind: 'output',
+          sequence: sequence++,
+          input: instruction.output,
+          status: 'completed',
+          output: instruction.output,
+        })
+        const result = {
+          output: instruction.output,
+          outputNodeId: instruction.nodeId,
+        }
+        if (config.onRunComplete) {
+          await notifyHost(() => config.onRunComplete!(runContext, result))
+        }
+        return result
+      }
 
-    const rejected = settled.find((s) => s.status === 'rejected')
-    if (rejected && rejected.status === 'rejected') {
-      throw rejected.reason
-    }
+      // Sequences assigned up front in stable batch order → deterministic trace
+      // regardless of settle order. Batch nodes are independent (antichain), so
+      // they run concurrently.
+      const batch = instruction.nodes.map((n) => ({
+        node: n.node,
+        input: n.input,
+        seq: sequence++,
+      }))
 
-    for (const s of settled) {
-      if (s.status === 'fulfilled') {
-        scheduler.report(s.value.nodeId, s.value.report)
+      const settled = await Promise.allSettled(
+        batch.map((b) => dispatchNode(b.node, b.input, b.seq)),
+      )
+
+      const rejected = settled.find((s) => s.status === 'rejected')
+      if (rejected && rejected.status === 'rejected') {
+        throw rejected.reason
+      }
+
+      for (const s of settled) {
+        if (s.status === 'fulfilled') {
+          scheduler.report(s.value.nodeId, s.value.report)
+        }
       }
     }
+  } catch (err) {
+    if (config.onRunFailed) {
+      await notifyHost(() =>
+        config.onRunFailed!(runContext, { error: errorMessage(err) }),
+      )
+    }
+    throw err
   }
 }

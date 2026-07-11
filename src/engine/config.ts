@@ -13,6 +13,11 @@ import type { TriggerRegistry } from './trigger-registry'
 /** A model the editor can offer and `getModel` can resolve. */
 export type ModelOption = { id: string; label: string }
 
+/** Payload handed to {@link WfSdkConfig.onRunComplete} when a run finalizes. */
+export type RunCompletion = { output: unknown; outputNodeId: string }
+/** Payload handed to {@link WfSdkConfig.onRunFailed} when a run aborts. */
+export type RunFailure = { error: string }
+
 /**
  * Node-facing model factory — resolves a `modelId` to an AI SDK model. The
  * backend binds the run context in (so the host's `getModel` can read live
@@ -80,6 +85,22 @@ export interface WfSdkConfig<TDeps = unknown> {
    * periodic triggers need no registry entry.
    */
   triggers: TriggerRegistry
+  /**
+   * Optional: called once when a run reaches a terminal Output node, so the
+   * host can reflect completion onto its own domain entity (the one named by
+   * `ctx.subjectId`). The SDK owns `wf_run`; this is how the host learns the
+   * run is done. Runs in a durable step so it retries, but it is **best-effort**
+   * — a callback that ultimately throws is logged and does NOT fail the run
+   * (the run already produced its output). Symmetric with {@link onRunFailed}.
+   */
+  onRunComplete?: (ctx: RunContext, result: RunCompletion) => void | Promise<void>
+  /**
+   * Optional: called once when a run aborts (a node failed, or the graph
+   * stalled), so the host can mark its own entity failed with the error — the
+   * seam that otherwise leaves a host row stuck "pending" forever. Same
+   * best-effort, durable-step semantics as {@link onRunComplete}.
+   */
+  onRunFailed?: (ctx: RunContext, failure: RunFailure) => void | Promise<void>
 }
 
 /**
@@ -112,6 +133,12 @@ export function defineWfConfig<TDeps = unknown>(
   }
   if (config.resolveBlobRef != null && typeof config.resolveBlobRef !== 'function') {
     problems.push('`resolveBlobRef`, if set, must be a function')
+  }
+  if (config.onRunComplete != null && typeof config.onRunComplete !== 'function') {
+    problems.push('`onRunComplete`, if set, must be a function')
+  }
+  if (config.onRunFailed != null && typeof config.onRunFailed !== 'function') {
+    problems.push('`onRunFailed`, if set, must be a function')
   }
   if (problems.length > 0) {
     throw new Error(
