@@ -11,7 +11,8 @@ import {
 
 import { BOOLEAN_OUTPUT_SCHEMA } from '../agent-output'
 import { resolveBinding } from '../binding'
-import type { ModelFactory } from '../config'
+import { isBlobRef, type WfBlobRef } from '../blob-ref'
+import type { ModelFactory, ResolvedImage } from '../config'
 import {
   agentFromManifest,
   type AgentConfig,
@@ -108,6 +109,81 @@ async function resolveNodeInputs(
   return vars
 }
 
+// A model-ready image message part (AI SDK UIMessage `file` part). `url` is a
+// data: or http(s) URL; `mediaType` is the image MIME type.
+type ImagePart = { type: 'file'; mediaType: string; url: string }
+
+function isResolvedImage(v: unknown): v is ResolvedImage {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    typeof (v as { url?: unknown }).url === 'string' &&
+    typeof (v as { mediaType?: unknown }).mediaType === 'string'
+  )
+}
+
+// Resolve the agent node's `imageInputs` bindings into image message parts.
+// Each binding resolves to a WfBlobRef (read via the host `resolveImage`) or an
+// already-formed `{ url, mediaType }`; null/undefined bindings are skipped.
+async function resolveImageInputs(
+  node: AgentNode,
+  nodeOutputs: Map<string, unknown>,
+  resolveImage?: (ref: WfBlobRef) => Promise<ResolvedImage>,
+): Promise<ImagePart[]> {
+  const entries = Object.entries(node.config.imageInputs)
+  if (entries.length === 0) return []
+  const parts = await Promise.all(
+    entries.map(async ([name, binding]): Promise<ImagePart | null> => {
+      const value = resolveBinding(binding, nodeOutputs, {
+        nodeId: node.id,
+        name,
+      })
+      if (value == null) return null
+      if (isBlobRef(value)) {
+        if (!resolveImage) {
+          throw new Error(
+            `Agent node ${node.id} image input '${name}' is a blob ref but no resolveImageRef is configured.`,
+          )
+        }
+        const img = await resolveImage(value)
+        return { type: 'file', mediaType: img.mediaType, url: img.url }
+      }
+      if (isResolvedImage(value)) {
+        return { type: 'file', mediaType: value.mediaType, url: value.url }
+      }
+      throw new Error(
+        `Agent node ${node.id} image input '${name}' did not resolve to an image (expected a blob ref or { url, mediaType }).`,
+      )
+    }),
+  )
+  return parts.filter((p): p is ImagePart => p !== null)
+}
+
+// Attach image parts to the conversation. If the last message is already a user
+// turn, fold them in (avoids two consecutive user messages some providers
+// reject); otherwise add a fresh user message carrying just the images.
+function attachImages(
+  messages: UIMessage[],
+  imageParts: ImagePart[],
+): UIMessage[] {
+  if (imageParts.length === 0) return messages
+  const last = messages[messages.length - 1]
+  if (last && last.role === 'user') {
+    return [
+      ...messages.slice(0, -1),
+      { ...last, parts: [...last.parts, ...imageParts] },
+    ]
+  }
+  return [
+    ...messages,
+    {
+      id: crypto.randomUUID(),
+      role: 'user',
+      parts: imageParts,
+    } satisfies UIMessage,
+  ]
+}
+
 export type ExecuteAgentNodeDeps<TDeps> = {
   node: AgentNode
   input: unknown
@@ -136,6 +212,12 @@ export type ExecuteAgentNodeDeps<TDeps> = {
    * through unchanged.
    */
   rehydrate?: (value: unknown) => Promise<unknown>
+  /**
+   * Resolves an image blob-ref (from an `imageInputs` binding) to a model-ready
+   * image. Bound to the run's deps by the caller. Omitted → an image blob-ref
+   * input throws (a text-only run wires no image resolver).
+   */
+  resolveImage?: (ref: WfBlobRef) => Promise<ResolvedImage>
 }
 
 // Resolve the agent an agent node points at from the frozen run manifest. The
@@ -168,6 +250,7 @@ export async function executeAgentNode<TDeps>(
     manifest,
     input,
     rehydrate,
+    resolveImage,
   } = deps
   const config = resolveAgentConfig(node, manifest)
   const model = getModel(config.modelId)
@@ -178,7 +261,9 @@ export async function executeAgentNode<TDeps>(
     ...(await resolveNodeInputs(node, nodeOutputs, rehydrate)),
   }
   const systemPrompt = substituteVariables(config.prompt, vars)
-  const messages = coerceToMessages(input)
+  // Any bound image inputs ride along as vision parts on the user turn.
+  const imageParts = await resolveImageInputs(node, nodeOutputs, resolveImage)
+  const messages = attachImages(coerceToMessages(input), imageParts)
 
   // generateObject path — for the structured-object and YES/NO output kinds we
   // return the parsed object as the node output. No tool loop, no progress.

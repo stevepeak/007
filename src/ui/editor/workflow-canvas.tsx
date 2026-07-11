@@ -156,7 +156,10 @@ function edgeToEngine(e: EditorEdge): WorkflowEdge {
     id: e.id,
     source: e.source,
     target: e.target,
-    condition: (e.sourceHandle ?? null) as 'yes' | 'no' | null,
+    // The source handle id IS the edge condition — 'yes'/'no' for a binary
+    // decision, a case key or 'default' for a switch. Non-decision edges have no
+    // handle id, so this is null.
+    condition: e.sourceHandle ?? null,
   }
 }
 
@@ -724,7 +727,7 @@ function defaultDataForKind(
     return {
       kind: 'agent',
       label: 'New agent',
-      config: { agentId: '', inputs: {} },
+      config: { agentId: '', inputs: {}, imageInputs: {} },
     }
   }
   if (kind === 'tool') {
@@ -742,6 +745,16 @@ function defaultDataForKind(
       kind: 'branch',
       label: 'New branch',
       config: { path: '', operator: 'is_not_empty' },
+    }
+  }
+  if (kind === 'switch') {
+    // Seeded with no cases — the author adds them in the inspector, which grows
+    // one outgoing handle per case plus the always-present `default`. Until a
+    // 'default' edge exists the graph flags a (non-blocking) issue.
+    return {
+      kind: 'switch',
+      label: 'New switch',
+      config: { path: '', cases: [] },
     }
   }
   if (kind === 'iteration') {

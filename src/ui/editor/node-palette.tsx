@@ -4,6 +4,7 @@ import {
   Repeat,
   Scale,
   Sparkles,
+  Split,
   StickyNote,
   Wrench,
   type LucideIcon,
@@ -19,6 +20,7 @@ type PaletteItem = {
     | 'tool'
     | 'judge'
     | 'branch'
+    | 'switch'
     | 'iteration'
     | 'feature-request'
     | 'note'
@@ -51,6 +53,12 @@ const PALETTE: PaletteItem[] = [
     label: 'Branch',
     description: 'Yes / no routing from a deterministic condition — no LLM.',
     icon: GitBranch,
+  },
+  {
+    kind: 'switch',
+    label: 'Switch',
+    description: 'Multi-way routing — match a value to one of many cases.',
+    icon: Split,
   },
   {
     kind: 'iteration',

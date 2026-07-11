@@ -41,8 +41,9 @@ function scalarString(v: unknown): string {
 
 // Walk a dotted path into the input. '' returns the whole input. A miss (or a
 // null/undefined along the way) yields `undefined`. Array indices work as
-// numeric keys (e.g. "pages.0.text").
-function resolvePath(input: unknown, path: string): unknown {
+// numeric keys (e.g. "pages.0.text"). Shared with the Switch node so both route
+// off the same path semantics.
+export function resolvePath(input: unknown, path: string): unknown {
   if (!path) {
     return input
   }
@@ -77,8 +78,9 @@ function isEmptyValue(v: unknown): boolean {
 
 // Type-loose equality: if both sides parse as finite numbers, compare
 // numerically; otherwise compare by string form. Lets an authored `"3"` match a
-// numeric `3` without the author worrying about JSON types.
-function looseEquals(a: unknown, b: unknown): boolean {
+// numeric `3` without the author worrying about JSON types. Shared with the
+// Switch node so its case matching mirrors Branch's `equals` operator.
+export function looseEquals(a: unknown, b: unknown): boolean {
   const na = toNumber(a)
   const nb = toNumber(b)
   if (na != null && nb != null) {

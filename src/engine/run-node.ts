@@ -1,11 +1,16 @@
 import { rehydrateBlobRefs } from './blob-ref'
-import type { BlobRefResolver, ModelFactory } from './config'
+import type {
+  BlobRefResolver,
+  ImageRefResolver,
+  ModelFactory,
+} from './config'
 import type { WfRunManifestEntry } from './graph'
 import { executeAgentNode } from './nodes/agent'
 import { executeBranchNode } from './nodes/branch'
 import { executeFeatureRequestNode } from './nodes/feature-request'
 import { executeSubgraph, runIteration } from './nodes/iteration'
 import { executeJudgeNode } from './nodes/judge'
+import { executeSwitchNode } from './nodes/switch'
 import { executeToolNode } from './nodes/tool'
 import type { ExecuteInstruction } from './scheduler'
 import type { StreamSink } from './stream-sink'
@@ -23,8 +28,12 @@ export type NodeRunResult = {
   /** Persisted to the run-step row's `output`. */
   recordedOutput: unknown
   meta?: unknown
-  /** Decision nodes only (judge/branch) — the yes/no routing decision. */
-  branchResult?: 'yes' | 'no'
+  /**
+   * Decision nodes only (judge/branch/switch) — the routing decision that
+   * selects the live outgoing edge. Binary nodes emit 'yes'|'no'; a switch
+   * emits a case key or 'default'. Matched against `edge.condition`.
+   */
+  branchResult?: string
   branchReasoning?: string
 }
 
@@ -44,6 +53,13 @@ export type RunNodeContext<TDeps> = {
    * their real value before the node runs. Omitted → refs pass through as-is.
    */
   resolveBlobRef?: BlobRefResolver<TDeps>
+  /**
+   * Host image-ref resolver (from `WfSdkConfig.resolveImageRef`). When present,
+   * an agent node's `imageInputs` that resolve to a {@link WfBlobRef} are read
+   * to model-ready images inside the node's step. Omitted → image-ref inputs
+   * throw (a text-only run wires none).
+   */
+  resolveImageRef?: ImageRefResolver<TDeps>
 }
 
 export async function runNode<TDeps>(
@@ -63,6 +79,12 @@ export async function runNode<TDeps>(
         )
     : undefined
 
+  // Bind the host image resolver to this run's deps, mirroring `rehydrate`.
+  const resolveImage = ctx.resolveImageRef
+    ? (ref: Parameters<typeof ctx.resolveImageRef>[0]) =>
+        ctx.resolveImageRef!(ref, ctx.toolDeps)
+    : undefined
+
   switch (node.kind) {
     case 'agent': {
       const r = await executeAgentNode({
@@ -76,6 +98,7 @@ export async function runNode<TDeps>(
         nodeOutputs: ctx.nodeOutputs,
         manifest: ctx.manifest ?? [],
         rehydrate,
+        resolveImage,
       })
       return {
         schedulerOutput: r.output,
@@ -114,6 +137,17 @@ export async function runNode<TDeps>(
       // Deterministic sibling of `judge`: same pass-through + decision contract,
       // but the yes/no comes from a code predicate rather than a model.
       const r = executeBranchNode({ node, input })
+      return {
+        schedulerOutput: input,
+        recordedOutput: { result: r.result, reasoning: r.reasoning },
+        branchResult: r.result,
+        branchReasoning: r.reasoning,
+      }
+    }
+    case 'switch': {
+      // Multi-way sibling of `branch`: passes its input through, but the routing
+      // decision is a case key (or 'default') rather than yes/no.
+      const r = executeSwitchNode({ node, input })
       return {
         schedulerOutput: input,
         recordedOutput: { result: r.result, reasoning: r.reasoning },

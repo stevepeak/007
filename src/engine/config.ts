@@ -38,6 +38,26 @@ export type BlobRefResolver<TDeps> = (
 ) => Promise<string>
 
 /**
+ * A resolved image, ready to hand to a vision model as a message part. `url` is
+ * either a `data:` URL (host base64-encoded the bytes) or an `http(s)` URL the
+ * model can fetch (e.g. a signed link); `mediaType` is its MIME type.
+ */
+export type ResolvedImage = { url: string; mediaType: string }
+
+/**
+ * Reads a {@link WfBlobRef} that points at an IMAGE back to a model-ready
+ * {@link ResolvedImage}. This is the vision counterpart to
+ * {@link BlobRefResolver} (which returns text): an agent node's `imageInputs`
+ * bind to image blob-refs, and the SDK calls this — inside the agent's own step
+ * — to turn each into an image message part. The host owns the storage read and
+ * the bytes→URL choice, keeping the engine provider-agnostic.
+ */
+export type ImageRefResolver<TDeps> = (
+  ref: WfBlobRef,
+  deps: TDeps,
+) => Promise<ResolvedImage>
+
+/**
  * Per-run context handed to `buildRunDeps`. Identity is opaque to the SDK:
  * `tenantId` scopes ownership, `subjectId` ties a run to a host entity (a chat,
  * a document, …), `correlationId` is a free-form host reference. `env` carries
@@ -79,6 +99,12 @@ export interface WfSdkConfig<TDeps = unknown> {
    * resolved text before use. Omit if no tool spills values to storage.
    */
   resolveBlobRef?: BlobRefResolver<TDeps>
+  /**
+   * Optional: resolve an agent node's `imageInputs` that are {@link WfBlobRef}
+   * pointers into model-ready images (vision). Omit if no agent consumes image
+   * inputs; an image-ref input with no resolver configured is a run-time error.
+   */
+  resolveImageRef?: ImageRefResolver<TDeps>
   /**
    * Host-declared **events** + their data schemas. These are the "on an event"
    * trigger options offered in the creation flow; the built-in manual and
@@ -133,6 +159,9 @@ export function defineWfConfig<TDeps = unknown>(
   }
   if (config.resolveBlobRef != null && typeof config.resolveBlobRef !== 'function') {
     problems.push('`resolveBlobRef`, if set, must be a function')
+  }
+  if (config.resolveImageRef != null && typeof config.resolveImageRef !== 'function') {
+    problems.push('`resolveImageRef`, if set, must be a function')
   }
   if (config.onRunComplete != null && typeof config.onRunComplete !== 'function') {
     problems.push('`onRunComplete`, if set, must be a function')

@@ -14,6 +14,7 @@ import {
   Repeat,
   Scale,
   Sparkles,
+  Split,
   StickyNote,
   Wrench,
   type LucideIcon,
@@ -24,6 +25,7 @@ import {
   ITERATION_ITEM_TRIGGER_KIND,
   MANUAL_TRIGGER_KIND,
   PERIODIC_TRIGGER_KIND,
+  SWITCH_DEFAULT_CASE,
   type WorkflowNode,
 } from '../../engine'
 import { agentColor, agentIcon } from '../agent-appearance'
@@ -120,6 +122,7 @@ const KIND_STYLE: Record<
   tool: { icon: Wrench, accent: 'border-l-sky-400', label: 'Tool' },
   judge: { icon: Scale, accent: 'border-l-amber-400', label: 'Judge' },
   branch: { icon: GitBranch, accent: 'border-l-orange-400', label: 'Branch' },
+  switch: { icon: Split, accent: 'border-l-orange-500', label: 'Switch' },
   iteration: {
     icon: Repeat,
     accent: 'border-l-fuchsia-400',
@@ -453,6 +456,47 @@ function BranchNodeRenderer(props: NodeProps) {
   )
 }
 
+// Multi-way routing: one source handle per case key plus the `default`
+// fallback, stacked down the right edge. Each handle's `id` is the case key, so
+// xyflow lands an edge's `sourceHandle` on the arm whose `edge.condition`
+// matches — the same id↔condition contract the yes/no DecisionHandles use.
+function SwitchNodeRenderer(props: NodeProps) {
+  const data = props.data as unknown as EditorNodeData
+  const invalid = useIsNodeInvalid(props.id)
+  const status = useNodeRunStatus(props.id)
+  if (data.kind !== 'switch') return null
+  const arms = [...data.config.cases.map((c) => c.key), SWITCH_DEFAULT_CASE]
+  const subject = data.config.path || 'input'
+  return (
+    <>
+      <Handle type="target" position={Position.Left} />
+      <NodeCard
+        kind="switch"
+        label={data.label}
+        selected={props.selected}
+        invalid={invalid}
+        status={status}
+        subtitle={`${subject} → ${arms.length} route${arms.length === 1 ? '' : 's'}`}
+      />
+      {arms.map((key, i) => (
+        <Handle
+          key={key}
+          type="source"
+          position={Position.Right}
+          id={key}
+          style={{
+            top: `${Math.round(((i + 1) / (arms.length + 1)) * 100)}%`,
+            background:
+              key === SWITCH_DEFAULT_CASE
+                ? 'rgb(148, 163, 184)'
+                : 'rgb(249, 115, 22)',
+          }}
+        />
+      ))}
+    </>
+  )
+}
+
 // The iteration node is a resizable CONTAINER: its subgraph nodes render as React
 // Flow children inside this box. The box itself carries the outer handles — the
 // list flows into the left, the collected results leave the right — while the
@@ -669,6 +713,7 @@ export const NODE_TYPES = {
   [editorTypeForKind('tool')]: ToolNodeRenderer,
   [editorTypeForKind('judge')]: JudgeNodeRenderer,
   [editorTypeForKind('branch')]: BranchNodeRenderer,
+  [editorTypeForKind('switch')]: SwitchNodeRenderer,
   [editorTypeForKind('iteration')]: IterationNodeRenderer,
   [editorTypeForKind('feature-request')]: FeatureRequestNodeRenderer,
   [editorTypeForKind('note')]: NoteNodeRenderer,

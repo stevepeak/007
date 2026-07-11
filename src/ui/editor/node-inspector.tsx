@@ -253,6 +253,85 @@ export function NodeInspector({
         </>
       ) : null}
 
+      {node.kind === 'switch' ? (
+        <>
+          <div className={field}>
+            <Label>Input path</Label>
+            <Input
+              value={node.config.path}
+              placeholder="e.g. source  ·  empty = whole input"
+              onChange={(e) =>
+                onChange({
+                  ...node,
+                  config: { ...node.config, path: e.target.value },
+                })
+              }
+            />
+            <p className="text-muted-foreground text-xs">
+              The value at this path is matched against each case in order.
+            </p>
+          </div>
+          <div className={field}>
+            <Label>Cases</Label>
+            {node.config.cases.map((c, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <Input
+                  value={c.key}
+                  placeholder="key (edge label)"
+                  onChange={(e) => {
+                    const cases = node.config.cases.map((x, j) =>
+                      j === i ? { ...x, key: e.target.value } : x,
+                    )
+                    onChange({ ...node, config: { ...node.config, cases } })
+                  }}
+                />
+                <Input
+                  value={c.value == null ? '' : String(c.value)}
+                  placeholder="equals value"
+                  onChange={(e) => {
+                    const cases = node.config.cases.map((x, j) =>
+                      j === i ? { ...x, value: e.target.value } : x,
+                    )
+                    onChange({ ...node, config: { ...node.config, cases } })
+                  }}
+                />
+                <button
+                  type="button"
+                  className="text-muted-foreground hover:text-foreground shrink-0 rounded px-1.5 py-1 text-xs"
+                  aria-label="Remove case"
+                  onClick={() => {
+                    const cases = node.config.cases.filter((_, j) => j !== i)
+                    onChange({ ...node, config: { ...node.config, cases } })
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="border-input hover:bg-accent self-start rounded-md border px-2 py-1 text-xs"
+              onClick={() =>
+                onChange({
+                  ...node,
+                  config: {
+                    ...node.config,
+                    cases: [...node.config.cases, { key: '', value: '' }],
+                  },
+                })
+              }
+            >
+              + Add case
+            </button>
+          </div>
+          <p className="text-muted-foreground text-xs">
+            Deterministic — no model call. Each case grows an outgoing edge; a
+            value matching none takes the always-present <strong>default</strong>{' '}
+            edge.
+          </p>
+        </>
+      ) : null}
+
       {node.kind === 'iteration' ? (
         <>
           <div className={field}>

@@ -157,6 +157,11 @@ const agentNodeSchema = baseNode.extend({
     // or a `ref` into an upstream node's output). Resolved at run time into the
     // node's promptVariables; a bound var overrides the run-level value.
     inputs: z.record(z.string(), argBindingSchema).default({}),
+    // Vision inputs: bindings that resolve to images appended to the agent's
+    // message as image parts. Each resolves to a WfBlobRef (read via the host
+    // `resolveImageRef`) or an already-formed `{ url, mediaType }`. The binding
+    // key is a label only. Empty for text-only agents.
+    imageInputs: z.record(z.string(), argBindingSchema).default({}),
   }),
 })
 
@@ -206,6 +211,31 @@ const branchNodeSchema = baseNode.extend({
     // Operand for equals/not_equals/contains/greater_than/less_than; ignored by
     // is_empty/is_not_empty.
     value: z.unknown().optional(),
+  }),
+})
+
+// Reserved case key for a Switch node's fallback edge — taken when no case
+// matches. Not usable as a user-defined case key.
+export const SWITCH_DEFAULT_CASE = 'default' as const
+
+const switchNodeSchema = baseNode.extend({
+  kind: z.literal('switch'),
+  // Multi-way deterministic routing: the code sibling of the binary Branch.
+  // Selects the value at `path` (dotted, '' = whole input) and picks the FIRST
+  // case whose `value` loosely-equals it (same type-loose compare as Branch's
+  // `equals`); if none match, the reserved `default` edge is taken. Each case
+  // `key` labels one outgoing edge (`edge.condition === key`), plus one edge
+  // with `condition === 'default'`.
+  config: z.object({
+    path: z.string().default(''),
+    cases: z
+      .array(
+        z.object({
+          key: z.string().min(1),
+          value: z.unknown(),
+        }),
+      )
+      .default([]),
   }),
 })
 
@@ -295,6 +325,7 @@ export const workflowNodeSchema = z.discriminatedUnion('kind', [
   toolNodeSchema,
   judgeNodeSchema,
   branchNodeSchema,
+  switchNodeSchema,
   featureRequestNodeSchema,
   iterationNodeSchema,
   noteNodeSchema,
@@ -313,6 +344,7 @@ export type AgentNode = z.infer<typeof agentNodeSchema>
 export type ToolNode = z.infer<typeof toolNodeSchema>
 export type JudgeNode = z.infer<typeof judgeNodeSchema>
 export type BranchNode = z.infer<typeof branchNodeSchema>
+export type SwitchNode = z.infer<typeof switchNodeSchema>
 export type FeatureRequestNode = z.infer<typeof featureRequestNodeSchema>
 export type NoteNode = z.infer<typeof noteNodeSchema>
 export type OutputNode = z.infer<typeof outputNodeSchema>
@@ -339,6 +371,7 @@ export type WorkflowNode =
   | ToolNode
   | JudgeNode
   | BranchNode
+  | SwitchNode
   | FeatureRequestNode
   | IterationNode
   | NoteNode
@@ -351,6 +384,7 @@ export const WF_NODE_KINDS = [
   'tool',
   'judge',
   'branch',
+  'switch',
   'feature-request',
   'iteration',
   'note',
@@ -358,21 +392,32 @@ export const WF_NODE_KINDS = [
 ] as const
 export type WfNodeKind = (typeof WF_NODE_KINDS)[number]
 
-// Node kinds that emit a yes/no routing decision and own conditional outgoing
-// edges: the LLM `judge` and the deterministic `branch`. The scheduler and
-// graph validation treat the two identically for routing purposes.
-export const DECISION_NODE_KINDS = ['judge', 'branch'] as const
+// Node kinds that route via a conditional outgoing edge (`edge.condition`
+// selects the live arm). The binary `judge` (LLM) and `branch` (predicate) emit
+// 'yes'/'no'; the multi-way `switch` emits a case key or 'default'. The
+// scheduler and cone/join validation treat all three uniformly for routing.
+export const DECISION_NODE_KINDS = ['judge', 'branch', 'switch'] as const
 export function isDecisionKind(kind: string): boolean {
+  return kind === 'judge' || kind === 'branch' || kind === 'switch'
+}
+
+// The binary decision kinds specifically — those whose only valid outgoing
+// conditions are exactly 'yes' and 'no' (Switch is multi-way, so it is
+// excluded and validated separately).
+export function isBinaryDecisionKind(kind: string): boolean {
   return kind === 'judge' || kind === 'branch'
 }
 
 // Edges connect node outputs to node inputs. `condition` is only meaningful
-// when `source` is a branch node; ignored otherwise.
+// when `source` is a decision node (branch/judge → 'yes'|'no'; switch → a case
+// key or 'default'); `null` on every non-decision edge. Kept a free string so
+// switch case keys fit; validation constrains the allowed values per source
+// kind.
 export const workflowEdgeSchema = z.object({
   id: z.string().min(1),
   source: z.string().min(1),
   target: z.string().min(1),
-  condition: z.enum(['yes', 'no']).nullable().default(null),
+  condition: z.string().min(1).nullable().default(null),
 })
 export type WorkflowEdge = z.infer<typeof workflowEdgeSchema>
 
@@ -448,9 +493,10 @@ export const workflowGraphSchema = workflowGraphShapeSchema.superRefine(
         }
       }
     }
-    // Validate every decision node (judge/branch) has both yes and no edges.
+    // Validate every binary decision node (judge/branch) has both yes and no
+    // edges. Switch is multi-way and validated separately just below.
     for (const n of g.nodes) {
-      if (!isDecisionKind(n.kind)) {
+      if (!isBinaryDecisionKind(n.kind)) {
         continue
       }
       const outs = g.edges.filter((e) => e.source === n.id)
@@ -461,6 +507,56 @@ export const workflowGraphSchema = workflowGraphShapeSchema.superRefine(
           code: 'custom',
           message: `${n.kind === 'judge' ? 'Judge' : 'Branch'} node ${n.id} must have both yes and no outgoing edges.`,
         })
+      }
+    }
+
+    // Validate every switch node: unique, non-reserved case keys; an outgoing
+    // edge for each case key; a single 'default' fallback edge; and no outgoing
+    // edge whose condition matches neither a declared case nor 'default'.
+    for (const n of g.nodes) {
+      if (n.kind !== 'switch') {
+        continue
+      }
+      const keys = n.config.cases.map((c) => c.key)
+      const keySet = new Set(keys)
+      if (keySet.size !== keys.length) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `Switch node ${n.id} has duplicate case keys.`,
+        })
+      }
+      if (keySet.has(SWITCH_DEFAULT_CASE)) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `Switch node ${n.id} uses the reserved case key '${SWITCH_DEFAULT_CASE}'.`,
+        })
+      }
+      const outs = g.edges.filter((e) => e.source === n.id)
+      const conds = new Set(outs.map((e) => e.condition))
+      for (const k of keySet) {
+        if (!conds.has(k)) {
+          ctx.addIssue({
+            code: 'custom',
+            message: `Switch node ${n.id} case '${k}' has no outgoing edge.`,
+          })
+        }
+      }
+      if (!conds.has(SWITCH_DEFAULT_CASE)) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `Switch node ${n.id} must have a '${SWITCH_DEFAULT_CASE}' (fallback) outgoing edge.`,
+        })
+      }
+      for (const e of outs) {
+        if (
+          e.condition == null ||
+          (!keySet.has(e.condition) && e.condition !== SWITCH_DEFAULT_CASE)
+        ) {
+          ctx.addIssue({
+            code: 'custom',
+            message: `Switch node ${n.id} edge ${e.id} condition '${e.condition ?? 'null'}' matches no declared case or '${SWITCH_DEFAULT_CASE}'.`,
+          })
+        }
       }
     }
 
@@ -569,7 +665,7 @@ export const workflowGraphSchema = workflowGraphShapeSchema.superRefine(
         const cone = ancestorsOf(n.id)
         for (const d of decisionIds) {
           if (!cone.has(d)) continue
-          const arms = new Set<'yes' | 'no'>()
+          const arms = new Set<string>()
           for (const e of g.edges) {
             if (e.source !== d || !e.condition) continue
             // This arm feeds `n` iff its target can still reach `n`.

@@ -66,9 +66,10 @@ export type SchedulerInstruction =
 export type ReportResult = {
   /** Whatever the node produced — becomes its `nodeOutputs` entry. */
   output: unknown
-  /** Only for decision nodes (judge/branch): the yes/no decision that routes
-   * outgoing edges. */
-  branchResult?: 'yes' | 'no'
+  /** Only for decision nodes (judge/branch/switch): the decision that routes
+   * outgoing edges — 'yes'|'no' for binary nodes, a case key or 'default' for a
+   * switch. Matched against `edge.condition`. */
+  branchResult?: string
 }
 
 // Soft safety bound — graphs that loop or stall hit this rather than the CF
@@ -99,7 +100,7 @@ export class Scheduler {
   private readonly incoming = new Map<string, WorkflowEdge[]>()
 
   private readonly completed = new Set<string>()
-  private readonly branchResults = new Map<string, 'yes' | 'no'>()
+  private readonly branchResults = new Map<string, string>()
   private readonly nodeOutputs = new Map<string, unknown>()
   private nodesFired = 0
 

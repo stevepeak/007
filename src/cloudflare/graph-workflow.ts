@@ -278,14 +278,14 @@ export function makeGraphWorkflow<
         for (const s of prior) {
           const seedSeq = sequence++
           const branchResult = s.branchResult as {
-            result: 'yes' | 'no'
+            result: string
             reasoning: string
           } | null
-          // A decision node (branch/judge) RECORDS its {result, reasoning} but
-          // passes its INPUT through to downstream nodes. Re-record the decision
-          // for the trace, but seed the scheduler with the passthrough input so
-          // downstream `ref`s resolve exactly as they did originally.
-          const isDecision = s.nodeKind === 'branch' || s.nodeKind === 'judge'
+          // A decision node (branch/judge/switch) RECORDS its {result, reasoning}
+          // but passes its INPUT through to downstream nodes. Re-record the
+          // decision for the trace, but seed the scheduler with the passthrough
+          // input so downstream `ref`s resolve exactly as they did originally.
+          const isDecision = isDecisionKind(s.nodeKind)
           await stepDo(step, `seed:${s.nodeId}`, () =>
             recordOne({
               nodeId: s.nodeId,
@@ -349,6 +349,7 @@ export function makeGraphWorkflow<
                       manifest,
                       sink,
                       resolveBlobRef: config.resolveBlobRef,
+                      resolveImageRef: config.resolveImageRef,
                     })
                   },
                 ),
@@ -377,6 +378,7 @@ export function makeGraphWorkflow<
                     manifest,
                     sink,
                     resolveBlobRef: config.resolveBlobRef,
+                    resolveImageRef: config.resolveImageRef,
                   },
                 )
               },

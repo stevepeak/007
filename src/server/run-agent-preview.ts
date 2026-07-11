@@ -69,7 +69,7 @@ export async function executeAgentPreview<TDeps>(opts: {
     kind: 'agent',
     label: 'Playground',
     position: { x: 0, y: 0 },
-    config: { agentId: PREVIEW_AGENT_ID, inputs: {} },
+    config: { agentId: PREVIEW_AGENT_ID, inputs: {}, imageInputs: {} },
   }
 
   const result = await executeAgentNode<unknown>({

@@ -211,7 +211,7 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
         const cone = ancestorCone(node.id, incoming)
         for (const d of decisionIds) {
           if (!cone.has(d)) continue
-          const arms = new Set<'yes' | 'no'>()
+          const arms = new Set<string>()
           for (const e of graph.edges) {
             if (e.source !== d || !e.condition) continue
             if (e.target === node.id || cone.has(e.target))

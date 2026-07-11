@@ -22,6 +22,9 @@ export {
   BRANCH_OPERATORS,
   DECISION_NODE_KINDS,
   isDecisionKind,
+  isBinaryDecisionKind,
+  SWITCH_DEFAULT_CASE,
+  type SwitchNode,
   type JudgeNode,
   type FeatureRequestNode,
   type IterationNode,
@@ -117,8 +120,10 @@ export { createMemorySink, noopSink, type StreamSink } from './stream-sink'
 export {
   defineWfConfig,
   type BlobRefResolver,
+  type ImageRefResolver,
   type ModelFactory,
   type ModelOption,
+  type ResolvedImage,
   type RunCompletion,
   type RunContext,
   type RunFailure,
@@ -130,8 +135,13 @@ export {
   type AgentNodeMeta,
   type AgentNodeResult,
 } from './nodes/agent'
-export { executeBranchNode, type BranchNodeResult } from './nodes/branch'
+export {
+  executeBranchNode,
+  looseEquals,
+  type BranchNodeResult,
+} from './nodes/branch'
 export { executeJudgeNode, type JudgeNodeResult } from './nodes/judge'
+export { executeSwitchNode, type SwitchNodeResult } from './nodes/switch'
 export { executeToolNode, type ToolNodeResult } from './nodes/tool'
 export {
   executeFeatureRequestNode,

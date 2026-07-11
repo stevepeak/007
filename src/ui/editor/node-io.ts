@@ -157,9 +157,9 @@ function repath(fields: DataField[], prefix: string): DataField[] {
 }
 
 // The output shape a node produces (for the accessible-data tree). Pass-through
-// nodes (judge/branch/feature-request) forward their input, so their shape is
-// resolved recursively from their predecessor(s); `seen` guards against a
-// malformed cycle.
+// nodes (judge/branch/switch/feature-request) forward their input, so their
+// shape is resolved recursively from their predecessor(s); `seen` guards against
+// a malformed cycle.
 function nodeOutput(
   node: WorkflowNode,
   maps: IoMaps,
@@ -200,7 +200,8 @@ function nodeOutput(
     return { fields: [], type: 'array' }
   }
 
-  // Pass-through: judge/branch/feature-request emit exactly what they received.
+  // Pass-through: judge/branch/switch/feature-request emit exactly what they
+  // received.
   const preds = predecessorIds(graph, node.id)
     .map((id) => byId.get(id))
     .filter((n): n is WorkflowNode => Boolean(n))
