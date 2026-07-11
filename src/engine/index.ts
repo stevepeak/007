@@ -1,6 +1,7 @@
 export {
   agentConfigSchema,
   agentFromManifest,
+  workflowFromManifest,
   agentOutputSchema,
   argBindingSchema,
   buildIterationSubgraph,
@@ -35,8 +36,10 @@ export {
   type ToolNode,
   type TriggerNode,
   type WfAgentManifestEntry,
+  type WfWorkflowManifestEntry,
   type WfNodeKind,
   type WfRunManifestEntry,
+  type WorkflowCallNode,
   type WorkflowEdge,
   type WorkflowGraph,
   type WorkflowNode,
@@ -154,3 +157,8 @@ export {
   type IterationItemStatus,
   type IterationResult,
 } from './nodes/iteration'
+export {
+  executeWorkflowNode,
+  type WorkflowNodeMeta,
+  type WorkflowNodeResult,
+} from './nodes/workflow'

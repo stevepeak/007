@@ -194,6 +194,13 @@ function nodeOutput(
     return { fields: fieldsOf(schema, ''), type: schema ? 'event' : 'trigger' }
   }
   if (node.kind === 'output') return { fields: [], type: 'none' }
+  if (node.kind === 'workflow') {
+    // A workflow node emits the CALLEE's output, whose shape isn't known here
+    // (it's the other workflow's Output value). Surface it as one opaque leaf
+    // rather than guessing — and never fall through to the pass-through branch,
+    // which would wrongly show this node's INPUT shape as its output.
+    return { fields: [], type: 'workflow' }
+  }
   if (node.kind === 'iteration') {
     // A collection of per-item results. The element shape isn't known at author
     // time, so surface the whole array as one bindable leaf rather than guessing.
@@ -245,6 +252,10 @@ function nodeOutputSchema(
     return maps.toolsById.get(node.config.toolId)?.outputSchema
   if (node.kind === 'trigger') {
     return maps.triggersByKind.get(node.config.triggerKind)?.inputSchema
+  }
+  if (node.kind === 'workflow') {
+    // The callee's output shape is unknown at author time — don't claim one.
+    return undefined
   }
   if (node.kind === 'iteration') {
     // An iteration produces an array of per-item RESULTS. We don't infer the

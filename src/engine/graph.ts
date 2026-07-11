@@ -239,6 +239,28 @@ const switchNodeSchema = baseNode.extend({
   }),
 })
 
+// A Workflow node calls ANOTHER workflow and awaits its result. Like an agent
+// node, it is a pure pointer at a reusable entity by id: it floats to that
+// workflow's latest published version, frozen into the run manifest at run start
+// (`WfWorkflowManifestEntry`) so a run replays against an exact graph even as the
+// callee drifts. At run time the frozen graph runs inline as a subgraph (the same
+// `executeSubgraph` path iteration uses); its Output value becomes this node's
+// output. Reference cycles (A→B→A) are rejected at manifest resolution, not here
+// — the graph alone can't see the callee's graph.
+const workflowCallNodeSchema = baseNode.extend({
+  kind: z.literal('workflow'),
+  config: z.object({
+    // The called workflow's stable `wf_workflow.id`. Empty while an author hasn't
+    // picked one in a draft.
+    workflowId: z.string().default(''),
+    // Optional trigger-input mapping. Empty → the node's upstream input is passed
+    // straight through as the called workflow's trigger output (like an iteration
+    // item). Non-empty → each key/binding (a literal or a `ref` into an upstream
+    // node's output) builds one field of a trigger-input object.
+    inputs: z.record(z.string(), argBindingSchema).default({}),
+  }),
+})
+
 const featureRequestNodeSchema = baseNode.extend({
   kind: z.literal('feature-request'),
   config: z.object({
@@ -326,6 +348,7 @@ export const workflowNodeSchema = z.discriminatedUnion('kind', [
   judgeNodeSchema,
   branchNodeSchema,
   switchNodeSchema,
+  workflowCallNodeSchema,
   featureRequestNodeSchema,
   iterationNodeSchema,
   noteNodeSchema,
@@ -345,6 +368,7 @@ export type ToolNode = z.infer<typeof toolNodeSchema>
 export type JudgeNode = z.infer<typeof judgeNodeSchema>
 export type BranchNode = z.infer<typeof branchNodeSchema>
 export type SwitchNode = z.infer<typeof switchNodeSchema>
+export type WorkflowCallNode = z.infer<typeof workflowCallNodeSchema>
 export type FeatureRequestNode = z.infer<typeof featureRequestNodeSchema>
 export type NoteNode = z.infer<typeof noteNodeSchema>
 export type OutputNode = z.infer<typeof outputNodeSchema>
@@ -372,6 +396,7 @@ export type WorkflowNode =
   | JudgeNode
   | BranchNode
   | SwitchNode
+  | WorkflowCallNode
   | FeatureRequestNode
   | IterationNode
   | NoteNode
@@ -385,6 +410,7 @@ export const WF_NODE_KINDS = [
   'judge',
   'branch',
   'switch',
+  'workflow',
   'feature-request',
   'iteration',
   'note',
@@ -479,16 +505,24 @@ export const workflowGraphSchema = workflowGraphShapeSchema.superRefine(
         })
       }
     }
-    // Validate ref bindings point at real nodes.
+    // Validate ref bindings point at real nodes. Tool `args` and Workflow
+    // `inputs` share the ArgBinding shape; check both.
     for (const n of g.nodes) {
-      if (n.kind !== 'tool') {
+      const bindings =
+        n.kind === 'tool'
+          ? n.config.args
+          : n.kind === 'workflow'
+            ? n.config.inputs
+            : null
+      if (!bindings) {
         continue
       }
-      for (const [argName, binding] of Object.entries(n.config.args)) {
+      const label = n.kind === 'tool' ? 'arg' : 'input'
+      for (const [argName, binding] of Object.entries(bindings)) {
         if (binding.kind === 'ref' && !ids.has(binding.nodeId)) {
           ctx.addIssue({
             code: 'custom',
-            message: `Tool node ${n.id} arg '${argName}' references missing node ${binding.nodeId}.`,
+            message: `${n.kind === 'tool' ? 'Tool' : 'Workflow'} node ${n.id} ${label} '${argName}' references missing node ${binding.nodeId}.`,
           })
         }
       }
@@ -822,7 +856,22 @@ export type WfAgentManifestEntry = {
   config: AgentConfig
 }
 
-export type WfRunManifestEntry = WfAgentManifestEntry
+// A called workflow resolved to the exact published version it ran against, with
+// its graph frozen in so the sub-run replays even as the callee drifts. Its
+// graph may itself reference agents / further workflows; run-start resolution is
+// transitive, so every reachable entry lands in the same flat manifest.
+export type WfWorkflowManifestEntry = {
+  kind: 'workflow'
+  /** The stable `wf_workflow.id` a workflow node references. */
+  id: string
+  versionId: string
+  versionNumber: number
+  name: string
+  /** The frozen published graph, executed inline as a subgraph at run time. */
+  graph: WorkflowGraph
+}
+
+export type WfRunManifestEntry = WfAgentManifestEntry | WfWorkflowManifestEntry
 
 /** Look up the resolved agent entry for an `agentId` in a run manifest. */
 export function agentFromManifest(
@@ -831,5 +880,16 @@ export function agentFromManifest(
 ): WfAgentManifestEntry | undefined {
   return manifest.find(
     (e): e is WfAgentManifestEntry => e.kind === 'agent' && e.id === agentId,
+  )
+}
+
+/** Look up the resolved workflow entry for a `workflowId` in a run manifest. */
+export function workflowFromManifest(
+  manifest: readonly WfRunManifestEntry[],
+  workflowId: string,
+): WfWorkflowManifestEntry | undefined {
+  return manifest.find(
+    (e): e is WfWorkflowManifestEntry =>
+      e.kind === 'workflow' && e.id === workflowId,
   )
 }

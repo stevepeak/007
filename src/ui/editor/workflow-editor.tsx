@@ -587,6 +587,7 @@ function EditorInner({
                 node={selection.node}
                 graph={selection.graph}
                 itemSchema={selection.itemSchema}
+                currentWorkflowId={workflowId}
                 onChange={(next) => patcherRef.current?.(next.id, next)}
               />
             ) : null}

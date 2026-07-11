@@ -771,6 +771,15 @@ function defaultDataForKind(
       },
     }
   }
+  if (kind === 'workflow') {
+    // A pointer node — the inspector picks which workflow to call. Left empty so
+    // it reads as "no workflow selected" (an error) until the author picks one.
+    return {
+      kind: 'workflow',
+      label: 'Call workflow',
+      config: { workflowId: '', inputs: {} },
+    }
+  }
   if (kind === 'feature-request') {
     return {
       kind: 'feature-request',

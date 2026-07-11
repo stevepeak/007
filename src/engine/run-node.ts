@@ -12,6 +12,7 @@ import { executeSubgraph, runIteration } from './nodes/iteration'
 import { executeJudgeNode } from './nodes/judge'
 import { executeSwitchNode } from './nodes/switch'
 import { executeToolNode } from './nodes/tool'
+import { executeWorkflowNode } from './nodes/workflow'
 import type { ExecuteInstruction } from './scheduler'
 import type { StreamSink } from './stream-sink'
 import type { ToolRegistry } from './tool-registry'
@@ -153,6 +154,18 @@ export async function runNode<TDeps>(
         recordedOutput: { result: r.result, reasoning: r.reasoning },
         branchResult: r.result,
         branchReasoning: r.reasoning,
+      }
+    }
+    case 'workflow': {
+      // Call another workflow inline: its frozen graph runs as a subgraph and
+      // its Output value becomes this node's output. The same `ctx` threads
+      // through, so the callee's nodes (including nested workflow/agent nodes)
+      // resolve against the identical model factory, tools, and manifest.
+      const r = await executeWorkflowNode({ node, input, ctx })
+      return {
+        schedulerOutput: r.output,
+        recordedOutput: r.output,
+        meta: r.meta,
       }
     }
     case 'feature-request': {

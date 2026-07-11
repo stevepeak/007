@@ -87,6 +87,41 @@ export async function createWorkflow(
   return { workflowId, versionId }
 }
 
+/**
+ * Delete a workflow and everything hanging off it — its versions, draft,
+ * trigger assignments, and the runs (+ steps) recorded against those versions.
+ * The wf_* tables carry no FK constraints, so this does the cascade by hand.
+ * Used by the seed's `--replace` path to drop a workflow before recreating it.
+ */
+export async function deleteWorkflow(db: WfDb, workflowId: string) {
+  const versions = await db
+    .select({ id: wfWorkflowVersion.id })
+    .from(wfWorkflowVersion)
+    .where(eq(wfWorkflowVersion.workflowId, workflowId))
+  const versionIds = versions.map((v) => v.id)
+  if (versionIds.length > 0) {
+    const runs = await db
+      .select({ id: wfRun.id })
+      .from(wfRun)
+      .where(inArray(wfRun.workflowVersionId, versionIds))
+    const runIds = runs.map((r) => r.id)
+    if (runIds.length > 0) {
+      await db.delete(wfRunStep).where(inArray(wfRunStep.runId, runIds))
+      await db.delete(wfRun).where(inArray(wfRun.id, runIds))
+    }
+  }
+  await db
+    .delete(wfWorkflowVersion)
+    .where(eq(wfWorkflowVersion.workflowId, workflowId))
+  await db
+    .delete(wfWorkflowDraft)
+    .where(eq(wfWorkflowDraft.workflowId, workflowId))
+  await db
+    .delete(wfWorkflowAssignment)
+    .where(eq(wfWorkflowAssignment.workflowId, workflowId))
+  await db.delete(wfWorkflow).where(eq(wfWorkflow.id, workflowId))
+}
+
 async function latestVersion(db: WfDb, workflowId: string) {
   const rows = await db
     .select()
@@ -260,36 +295,109 @@ function agentIdsInGraph(graph: WorkflowGraph): string[] {
   return [...ids]
 }
 
+// Distinct workflow ids called by workflow nodes in a graph.
+function workflowIdsInGraph(graph: WorkflowGraph): string[] {
+  const ids = new Set<string>()
+  for (const node of graph.nodes) {
+    if (node.kind === 'workflow' && node.config.workflowId) {
+      ids.add(node.config.workflowId)
+    }
+  }
+  return [...ids]
+}
+
+// Hard cap on nested-workflow depth. A guard against pathological chains; real
+// graphs never come close. Reference cycles are caught earlier (by `stack`), so
+// this only bounds honest but absurdly deep call trees.
+const MAX_WORKFLOW_DEPTH = 16
+
 /**
- * Resolve every floating reference in a graph (agents) to its latest published
- * version — called once at run start and frozen into `wf_run.manifest`.
+ * Resolve every floating reference reachable from a graph — its agents AND the
+ * workflows it calls, transitively — to their latest published versions, and
+ * flatten them into one manifest frozen into `wf_run.manifest` at run start.
+ * A called workflow's graph is frozen in whole (it runs inline as a subgraph);
+ * its own agents and sub-workflows are resolved into the SAME flat manifest, so
+ * nested nodes find their entries. Reference cycles (A calls B calls A) are a
+ * hard error — inline execution would otherwise recurse forever.
  */
 export async function resolveRunManifest(
   db: WfDb,
   graph: WorkflowGraph,
 ): Promise<WfRunManifestEntry[]> {
   const entries: WfRunManifestEntry[] = []
-  for (const agentId of agentIdsInGraph(graph)) {
-    const version = await latestAgentVersion(db, agentId)
-    if (!version) {
-      continue
+  const seenAgents = new Set<string>()
+  const seenWorkflows = new Set<string>()
+
+  const resolveInto = async (
+    g: WorkflowGraph,
+    // The chain of workflow ids currently being resolved, for cycle detection.
+    stack: string[],
+  ): Promise<void> => {
+    if (stack.length > MAX_WORKFLOW_DEPTH) {
+      throw new Error(
+        `Workflow nesting too deep (> ${MAX_WORKFLOW_DEPTH}): ${stack.join(' → ')}.`,
+      )
     }
-    const agent = (
-      await db
-        .select({ name: wfAgent.name })
-        .from(wfAgent)
-        .where(eq(wfAgent.id, agentId))
-        .limit(1)
-    )[0]
-    entries.push({
-      kind: 'agent',
-      id: agentId,
-      versionId: version.id,
-      versionNumber: version.versionNumber,
-      name: agent?.name ?? '',
-      config: agentConfigSchema.parse(version.config),
-    })
+    for (const agentId of agentIdsInGraph(g)) {
+      if (seenAgents.has(agentId)) {
+        continue
+      }
+      seenAgents.add(agentId)
+      const version = await latestAgentVersion(db, agentId)
+      if (!version) {
+        continue
+      }
+      const agent = (
+        await db
+          .select({ name: wfAgent.name })
+          .from(wfAgent)
+          .where(eq(wfAgent.id, agentId))
+          .limit(1)
+      )[0]
+      entries.push({
+        kind: 'agent',
+        id: agentId,
+        versionId: version.id,
+        versionNumber: version.versionNumber,
+        name: agent?.name ?? '',
+        config: agentConfigSchema.parse(version.config),
+      })
+    }
+    for (const workflowId of workflowIdsInGraph(g)) {
+      if (stack.includes(workflowId)) {
+        throw new Error(
+          `Workflow reference cycle: ${[...stack, workflowId].join(' → ')}.`,
+        )
+      }
+      if (seenWorkflows.has(workflowId)) {
+        continue
+      }
+      seenWorkflows.add(workflowId)
+      const version = await latestVersion(db, workflowId)
+      if (!version) {
+        continue
+      }
+      const workflow = (
+        await db
+          .select({ name: wfWorkflow.name })
+          .from(wfWorkflow)
+          .where(eq(wfWorkflow.id, workflowId))
+          .limit(1)
+      )[0]
+      const calleeGraph = version.graph as WorkflowGraph
+      entries.push({
+        kind: 'workflow',
+        id: workflowId,
+        versionId: version.id,
+        versionNumber: version.versionNumber,
+        name: workflow?.name ?? '',
+        graph: calleeGraph,
+      })
+      await resolveInto(calleeGraph, [...stack, workflowId])
+    }
   }
+
+  await resolveInto(graph, [])
   return entries
 }
 

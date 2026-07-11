@@ -72,6 +72,11 @@ function configIssue(node: WorkflowNode): GraphIssue | null {
       }
       return null
     }
+    case 'workflow':
+      if (!node.config.workflowId) {
+        return { ...base, severity: 'error', message: 'No workflow selected.' }
+      }
+      return null
     case 'feature-request':
       if (!node.config.description.trim()) {
         return {

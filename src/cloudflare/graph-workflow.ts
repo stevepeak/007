@@ -92,8 +92,13 @@ const DEFAULT_STEP_OPTS = {
 // reads when layering a partial override.
 function kindDefaultOpts(kind: string) {
   // `judge` is the LLM decision node; the deterministic `branch` needs no
-  // retries/long timeout and falls through to the default policy.
-  return kind === 'agent' || kind === 'judge' ? AI_STEP_OPTS : DEFAULT_STEP_OPTS
+  // retries/long timeout and falls through to the default policy. A `workflow`
+  // node runs a whole callee subgraph inline (often several LLM nodes) in one
+  // step, so it gets the longer, retried AI policy — authors can raise the
+  // timeout further per-node via `execution` for long callees.
+  return kind === 'agent' || kind === 'judge' || kind === 'workflow'
+    ? AI_STEP_OPTS
+    : DEFAULT_STEP_OPTS
 }
 
 // Map a node's provider-agnostic `execution` policy onto Cloudflare's

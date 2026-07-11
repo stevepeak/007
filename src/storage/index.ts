@@ -26,6 +26,7 @@ export {
   createAgent,
   createRun,
   createWorkflow,
+  deleteWorkflow,
   discardAgentDraft,
   discardDraft,
   failRun,

@@ -6,6 +6,7 @@ import {
   Sparkles,
   Split,
   StickyNote,
+  Workflow,
   Wrench,
   type LucideIcon,
 } from 'lucide-react'
@@ -22,6 +23,7 @@ type PaletteItem = {
     | 'branch'
     | 'switch'
     | 'iteration'
+    | 'workflow'
     | 'feature-request'
     | 'note'
   label: string
@@ -65,6 +67,12 @@ const PALETTE: PaletteItem[] = [
     label: 'Iteration',
     description: 'Run a subgraph once per item in a list, in parallel.',
     icon: Repeat,
+  },
+  {
+    kind: 'workflow',
+    label: 'Workflow',
+    description: 'Call another workflow and wait for its result.',
+    icon: Workflow,
   },
   {
     kind: 'feature-request',

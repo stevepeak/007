@@ -16,6 +16,7 @@ import {
   Sparkles,
   Split,
   StickyNote,
+  Workflow,
   Wrench,
   type LucideIcon,
 } from 'lucide-react'
@@ -30,7 +31,7 @@ import {
 } from '../../engine'
 import { agentColor, agentIcon } from '../agent-appearance'
 import { cn } from '../cn'
-import { useAgents, useTools, useTriggerEvents } from '../hooks'
+import { useAgents, useTools, useTriggerEvents, useWorkflows } from '../hooks'
 import { ToolIcon } from '../tool-icon'
 import { NoteMarkdown } from './note-markdown'
 
@@ -127,6 +128,11 @@ const KIND_STYLE: Record<
     icon: Repeat,
     accent: 'border-l-fuchsia-400',
     label: 'Iteration',
+  },
+  workflow: {
+    icon: Workflow,
+    accent: 'border-l-indigo-400',
+    label: 'Workflow',
   },
   'feature-request': {
     icon: Lightbulb,
@@ -579,6 +585,31 @@ function IterationNodeRenderer(props: NodeProps) {
   )
 }
 
+function WorkflowNodeRenderer(props: NodeProps) {
+  const data = props.data as unknown as EditorNodeData
+  const workflows = useWorkflows()
+  const invalid = useIsNodeInvalid(props.id)
+  const status = useNodeRunStatus(props.id)
+  if (data.kind !== 'workflow') return null
+  const called = data.config.workflowId
+    ? (workflows.data ?? []).find((w) => w.id === data.config.workflowId)
+    : undefined
+  return (
+    <>
+      <Handle type="target" position={Position.Left} />
+      <NodeCard
+        kind="workflow"
+        label={data.label}
+        selected={props.selected}
+        invalid={invalid}
+        status={status}
+        subtitle={called ? called.name : 'No workflow selected'}
+      />
+      <Handle type="source" position={Position.Right} />
+    </>
+  )
+}
+
 function FeatureRequestNodeRenderer(props: NodeProps) {
   const data = props.data as unknown as EditorNodeData
   const invalid = useIsNodeInvalid(props.id)
@@ -715,6 +746,7 @@ export const NODE_TYPES = {
   [editorTypeForKind('branch')]: BranchNodeRenderer,
   [editorTypeForKind('switch')]: SwitchNodeRenderer,
   [editorTypeForKind('iteration')]: IterationNodeRenderer,
+  [editorTypeForKind('workflow')]: WorkflowNodeRenderer,
   [editorTypeForKind('feature-request')]: FeatureRequestNodeRenderer,
   [editorTypeForKind('note')]: NoteNodeRenderer,
   [editorTypeForKind('output')]: OutputNodeRenderer,
