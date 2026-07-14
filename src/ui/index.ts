@@ -33,6 +33,7 @@ export {
   useWorkflow,
   useWorkflows,
 } from './hooks'
+export { DataView, type DataViewProps } from './data-view'
 export { RunViewer, StepRow, type RunViewerProps } from './run-viewer'
 export { RunPage, type RunPageProps } from './run-page'
 export { RunsExplorer, type RunsExplorerProps } from './runs-explorer'

@@ -29,6 +29,13 @@
       "when": 1783631180970,
       "tag": "0003_medical_vance_astro",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1784036113701,
+      "tag": "0004_exotic_sunspot",
+      "breakpoints": true
     }
   ]
 }

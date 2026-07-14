@@ -14,6 +14,7 @@ export type {
   AgentPreviewResult,
   ModelOption,
   ToolOption,
+  WfChangeSummary,
   WfDataClient,
   WfRunDetail,
   WfRunListInput,

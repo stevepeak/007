@@ -31,6 +31,7 @@ import {
   publishAgent,
   renameWorkflow,
   saveVersion,
+  setVersionAiSummary,
   updateAgentDraft,
   updateAgentMeta,
   updateDraft,
@@ -42,12 +43,14 @@ import type {
   RetryRunMode,
   WfAgentDetail,
   WfAgentSummary,
+  WfChangeSummary,
   WfRunDetail,
   WfRunStepDTO,
   WfRunSummary,
   WfWorkflowDetail,
   WfWorkflowSummary,
 } from './protocol'
+import { summarizeWorkflowChanges } from './summarize-changes'
 
 // Converts a tool's Zod schema to JSON Schema for the wire. Zod v4 ships a
 // native converter; anything it can't represent falls back to "no schema"
@@ -71,20 +74,44 @@ function toJsonSchema(schema: z.ZodType | undefined): JsonSchema | undefined {
 export type WfServerContext = { tenantId: string; userId?: string }
 
 export type CreateWfSdkHandlersOptions<TDeps> = {
-  config: Pick<WfSdkConfig<TDeps>, 'listModels' | 'toolRegistry' | 'triggers'>
+  config: Pick<
+    WfSdkConfig<TDeps>,
+    'getModel' | 'listModels' | 'toolRegistry' | 'triggers'
+  >
   resolveDb: (req: Request) => WfDb | Promise<WfDb>
   resolveContext: (req: Request) => WfServerContext | Promise<WfServerContext>
   /**
-   * Optional AI summarizer for the publish dialog — the host supplies the model
-   * (per the injection contract). If omitted, a heuristic structural summary is
-   * returned instead.
+   * Optional: the host's live bindings (Cloudflare `env`), passed to
+   * `config.getModel` so the SDK can generate publish-dialog change summaries
+   * itself. The SDK owns the summarization (prompt, diff, schema, persistence);
+   * the host only supplies the same model seam it already wires for agents. If
+   * omitted (and no `summarizeChanges` override), summaries fall back to a
+   * heuristic structural diff.
+   */
+  resolveEnv?: (req: Request) => unknown
+  /**
+   * Optional: which model the SDK summarizes changes with. Defaults to the
+   * host's first offered model (`listModels()[0]`).
+   */
+  summaryModelId?: string
+  /**
+   * Optional override for the built-in AI summarizer — supply this only to
+   * replace the SDK's summarization entirely (most hosts don't need to). Returns
+   * a git-style `{ short, long }`.
    */
   summarizeChanges?: (input: {
     previousGraph: WorkflowGraph | null
     nextGraph: WorkflowGraph
     ctx: WfServerContext
     req: Request
-  }) => Promise<string>
+  }) => Promise<WfChangeSummary>
+  /**
+   * Optional background-work scheduler. When a version is published *without* a
+   * ready AI summary, the SDK uses this to generate + persist the summary after
+   * the response is sent (on Cloudflare, pass `ctx.waitUntil`). If omitted, the
+   * summary is simply left null until the next explicit `summarizeChanges` call.
+   */
+  waitUntil?: (promise: Promise<unknown>) => void
   /**
    * Optional playground runner for the agent editor — runs one agent draft in
    * isolation against a scratch input. The host supplies live bindings (`env`)
@@ -134,8 +161,8 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
 function heuristicChangeSummary(
   prev: WorkflowGraph | null,
   next: WorkflowGraph,
-): string {
-  if (!prev) return 'Initial version.'
+): WfChangeSummary {
+  if (!prev) return { short: 'Initial version.', long: '' }
   const prevNodes = new Map(prev.nodes.map((n) => [n.id, n]))
   const nextNodes = new Map(next.nodes.map((n) => [n.id, n]))
   const added = [...nextNodes.keys()].filter((id) => !prevNodes.has(id)).length
@@ -162,9 +189,49 @@ function heuristicChangeSummary(
   if (edgeDelta > 0) parts.push(`added ${plural(edgeDelta, 'connection')}`)
   else if (edgeDelta < 0)
     parts.push(`removed ${plural(-edgeDelta, 'connection')}`)
-  if (parts.length === 0) return 'No structural changes.'
+  if (parts.length === 0) return { short: 'No structural changes.', long: '' }
   const joined = parts.join(', ')
-  return joined.charAt(0).toUpperCase() + joined.slice(1) + '.'
+  const short = joined.charAt(0).toUpperCase() + joined.slice(1) + '.'
+  return { short, long: '' }
+}
+
+// One place that resolves a change summary. Order of precedence:
+//   1. a host `summarizeChanges` override (rare — most hosts don't set it),
+//   2. the SDK's own AI summarizer via the host's `getModel` seam (the default),
+//   3. a structural heuristic when no model is available.
+// Used by the `summarizeChanges` method and by the background summary generated
+// when a version is published before its summary is ready. `env` is resolved by
+// the caller (inside the request scope) and passed through to `getModel`.
+async function computeChangeSummary<TDeps>(
+  opts: CreateWfSdkHandlersOptions<TDeps>,
+  input: {
+    previousGraph: WorkflowGraph | null
+    nextGraph: WorkflowGraph
+    ctx: WfServerContext
+    req: Request
+    env: unknown
+  },
+): Promise<WfChangeSummary> {
+  if (opts.summarizeChanges) {
+    return await opts.summarizeChanges({
+      previousGraph: input.previousGraph,
+      nextGraph: input.nextGraph,
+      ctx: input.ctx,
+      req: input.req,
+    })
+  }
+  const modelId = opts.summaryModelId ?? opts.config.listModels()[0]?.id
+  if (modelId) {
+    return await summarizeWorkflowChanges({
+      getModel: opts.config.getModel,
+      modelId,
+      env: input.env,
+      tenantId: input.ctx.tenantId,
+      previousGraph: input.previousGraph,
+      nextGraph: input.nextGraph,
+    })
+  }
+  return heuristicChangeSummary(input.previousGraph, input.nextGraph)
 }
 
 function toEpoch(d: Date | null | undefined): number | null {
@@ -300,10 +367,6 @@ export function createWfSdkHandlers<TDeps>(
     if (!method) {
       return json({ error: 'Missing method' }, 400)
     }
-    // TEMP diagnostic: shows the method for each POST /api/wf in the dev
-    // terminal so we can tell if a call (e.g. summarizeChanges) fires once or
-    // loops. Remove once the publish-dialog spinner is resolved.
-    console.log('[wf] method:', method)
 
     try {
       const ctx = await opts.resolveContext(req)
@@ -382,14 +445,56 @@ export function createWfSdkHandlers<TDeps>(
         case 'saveVersion': {
           const workflowId = str(params, 'workflowId')
           const graph = parseGraph(params)
-          const changeNote = (params as { changeNote?: string }).changeNote
-          await requireOwned(db, workflowId, ctx.tenantId)
+          const p = params as {
+            changeNote?: string
+            aiSummary?: WfChangeSummary
+          }
+          // Authorize AND capture the outgoing latest version's graph as the
+          // "previous" for a possible background summary — before saveVersion
+          // bumps the latest pointer.
+          const owner = await getWorkflow(db, workflowId)
+          if (!owner || owner.workflow.tenantId !== ctx.tenantId) {
+            throw new Error('Workflow not found')
+          }
+          const previousGraph =
+            (owner.currentVersion?.graph as WorkflowGraph) ?? null
           const out = await saveVersion(db, {
             workflowId,
             graph,
-            changeNote,
+            changeNote: p.changeNote,
+            aiSummaryShort: p.aiSummary?.short,
+            aiSummaryLong: p.aiSummary?.long,
             publishedBy: ctx.userId,
           })
+          // Published before the summary was ready: generate + persist it in the
+          // background so the response returns immediately. Only when the host
+          // wired a scheduler — otherwise the summary stays null until a later
+          // explicit summarizeChanges call. `env` is resolved now, inside the
+          // request scope, so the deferred work doesn't depend on request-bound
+          // context that may be gone once the response is sent.
+          if (!p.aiSummary && opts.waitUntil) {
+            const env = opts.resolveEnv ? await opts.resolveEnv(req) : undefined
+            opts.waitUntil(
+              (async () => {
+                try {
+                  const summary = await computeChangeSummary(opts, {
+                    previousGraph,
+                    nextGraph: graph,
+                    ctx,
+                    req,
+                    env,
+                  })
+                  await setVersionAiSummary(db, {
+                    versionId: out.versionId,
+                    short: summary.short,
+                    long: summary.long,
+                  })
+                } catch (err) {
+                  console.error('[wf] background summary failed:', err)
+                }
+              })(),
+            )
+          }
           return json(out)
         }
 
@@ -402,15 +507,15 @@ export function createWfSdkHandlers<TDeps>(
           }
           const previousGraph =
             (owner.currentVersion?.graph as WorkflowGraph) ?? null
-          const summary = opts.summarizeChanges
-            ? await opts.summarizeChanges({
-                previousGraph,
-                nextGraph,
-                ctx,
-                req,
-              })
-            : heuristicChangeSummary(previousGraph, nextGraph)
-          return json({ summary })
+          const env = opts.resolveEnv ? await opts.resolveEnv(req) : undefined
+          const summary = await computeChangeSummary(opts, {
+            previousGraph,
+            nextGraph,
+            ctx,
+            req,
+            env,
+          })
+          return json(summary)
         }
 
         case 'renameWorkflow': {
@@ -437,6 +542,8 @@ export function createWfSdkHandlers<TDeps>(
               id: v.id,
               versionNumber: v.versionNumber,
               changeNote: v.changeNote,
+              aiSummaryShort: v.aiSummaryShort,
+              aiSummaryLong: v.aiSummaryLong,
               createdAt: v.createdAt.getTime(),
               publishedAt: toEpoch(v.publishedAt),
             })),

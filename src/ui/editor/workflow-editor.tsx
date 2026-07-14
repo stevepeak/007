@@ -394,9 +394,19 @@ function EditorInner({
     else clearStoredEdit(workflowId)
   }, [dirty, graph, name, workflowId])
 
-  function publishVersion(changeNote: string) {
+  function publishVersion(input: {
+    changeNote: string
+    aiSummary: { short: string; long: string } | null
+  }) {
     saveVersion.mutate(
-      { workflowId, graph, changeNote: changeNote.trim() || undefined },
+      {
+        workflowId,
+        graph,
+        changeNote: input.changeNote.trim() || undefined,
+        // If the dialog already has the AI summary, store it with the version;
+        // otherwise the server generates it in the background after publish.
+        aiSummary: input.aiSummary ?? undefined,
+      },
       {
         onSuccess: (result) => {
           setSavedIndex(indexRef.current)
@@ -527,9 +537,14 @@ function EditorInner({
                     >
                       <span className="font-medium">v{v.versionNumber}</span>
                       {v.changeNote ? (
-                        <span className="text-neutral-500">
-                          {' '}
-                          — {v.changeNote}
+                        <span className="text-neutral-600"> — {v.changeNote}</span>
+                      ) : null}
+                      {v.aiSummaryShort ? (
+                        <span className="mt-0.5 flex items-start gap-1 text-xs text-neutral-500">
+                          <Sparkles className="mt-0.5 size-3 shrink-0 text-indigo-500" />
+                          <span className="line-clamp-2">
+                            {v.aiSummaryShort}
+                          </span>
                         </span>
                       ) : null}
                     </button>
@@ -616,8 +631,9 @@ function EditorInner({
   )
 }
 
-// Publish flow — AI-summarizes the changes since the last version into an
-// editable change note, then publishes with that note stored on the version.
+// Publish flow — the human writes their own note; an AI summary of the changes
+// is generated alongside (shown when ready) but NEVER blocks publishing. If the
+// user publishes before it lands, the server fills it in afterward.
 function PublishDialog({
   workflowId,
   graph,
@@ -631,38 +647,26 @@ function PublishDialog({
   publishing: boolean
   error: string | null
   onCancel: () => void
-  onConfirm: (changeNote: string) => void
+  onConfirm: (input: {
+    changeNote: string
+    aiSummary: { short: string; long: string } | null
+  }) => void
 }) {
   const { Button, Textarea } = useWfComponents()
   const summarize = useSummarizeChanges()
   const [note, setNote] = useState('')
+  const [aiSummary, setAiSummary] = useState<{
+    short: string
+    long: string
+  } | null>(null)
 
-  // TEMP diagnostic: trace the dialog's state so the browser console shows
-  // whether onSuccess fires and whether isPending settles. Remove once fixed.
-  console.log('[wf:dialog] render', {
-    status: summarize.status,
-    isPending: summarize.isPending,
-    noteLen: note.length,
-  })
-
-  // Don't clobber a note the user has already started typing when the async
-  // summary lands.
-  const editedRef = useRef(false)
+  // Kick off the AI summary once when the dialog opens. It populates the panel
+  // below when it lands; it never gates the Publish button.
   const ranRef = useRef(false)
   useEffect(() => {
-    console.log('[wf:dialog] effect fired, ranRef=', ranRef.current)
     if (ranRef.current) return
     ranRef.current = true
-    summarize.mutate(
-      { workflowId, graph },
-      {
-        onSuccess: (r) => {
-          console.log('[wf:dialog] onSuccess summary=', JSON.stringify(r))
-          if (!editedRef.current) setNote(r.summary)
-        },
-        onError: (e) => console.error('[wf:dialog] onError', e),
-      },
-    )
+    summarize.mutate({ workflowId, graph }, { onSuccess: (r) => setAiSummary(r) })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -676,48 +680,71 @@ function PublishDialog({
           </h2>
         </div>
         <p className="mb-3 text-sm text-neutral-500">
-          A summary of what changed since the last version — edit it if you
-          like. It's saved with the version.
+          Add a note about what changed. We'll also summarize the changes with
+          AI — you can publish without waiting for it.
         </p>
 
-        <div className="relative">
-          <Textarea
-            value={note}
-            onChange={(e) => {
-              editedRef.current = true
-              setNote(e.target.value)
-            }}
-            rows={4}
-            placeholder={
-              summarize.isPending
-                ? 'Summarizing changes…'
-                : 'Describe the changes in this version…'
-            }
-            className="w-full"
-          />
-          {summarize.isPending ? (
-            <div className="pointer-events-none absolute right-2 top-2 flex items-center gap-1 text-xs text-neutral-400">
-              <Loader2 className="size-3.5 animate-spin" />
-              Summarizing…
-            </div>
-          ) : null}
+        {/* AI summary — fixed height so the dialog never resizes; content
+            scrolls/crops when it's long. */}
+        <div className="mb-3">
+          <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-neutral-500">
+            <Sparkles className="size-3 text-indigo-500" />
+            AI summary of changes
+          </div>
+          <div className="h-24 overflow-y-auto rounded-md border border-neutral-200 bg-neutral-50 p-2 text-sm">
+            {summarize.isPending ? (
+              <div className="flex items-center gap-1.5 text-neutral-400">
+                <Loader2 className="size-3.5 animate-spin" />
+                Generating summary of changes…
+              </div>
+            ) : summarize.error ? (
+              <span className="text-amber-600">
+                Couldn't generate a summary (
+                {(summarize.error as Error).message}). It'll be generated after
+                you publish.
+              </span>
+            ) : aiSummary ? (
+              <div className="space-y-1">
+                <p className="font-medium text-neutral-800">
+                  {aiSummary.short}
+                </p>
+                {aiSummary.long ? (
+                  <p className="whitespace-pre-wrap text-neutral-500">
+                    {aiSummary.long}
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <span className="text-neutral-400">No summary.</span>
+            )}
+          </div>
         </div>
 
-        {summarize.error ? (
-          <p className="mt-2 text-xs text-amber-600">
-            Couldn't auto-summarize ({(summarize.error as Error).message}). You
-            can still write a note and publish.
-          </p>
-        ) : null}
+        <label className="mb-1 block text-xs font-medium text-neutral-500">
+          Your note (optional)
+        </label>
+        <Textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={3}
+          placeholder="Describe the changes in this version…"
+          className="w-full"
+        />
+
         {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
 
         <div className="mt-4 flex justify-end gap-2">
-          <Button variant="ghost" size="sm" onClick={onCancel}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onCancel}
+            disabled={publishing}
+          >
             Cancel
           </Button>
           <Button
             size="sm"
-            onClick={() => onConfirm(note)}
+            onClick={() => onConfirm({ changeNote: note, aiSummary })}
             disabled={publishing}
           >
             {publishing ? 'Publishing…' : 'Publish version'}

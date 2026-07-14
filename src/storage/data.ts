@@ -188,6 +188,9 @@ export async function saveVersion(
     workflowId: string
     graph: WorkflowGraph
     changeNote?: string
+    /** The AI summary, when the publish dialog already had it (else filled later). */
+    aiSummaryShort?: string
+    aiSummaryLong?: string
     publishedBy?: string
   },
 ) {
@@ -200,6 +203,8 @@ export async function saveVersion(
     versionNumber,
     graph: input.graph,
     changeNote: input.changeNote ?? null,
+    aiSummaryShort: input.aiSummaryShort ?? null,
+    aiSummaryLong: input.aiSummaryLong ?? null,
     createdBy: input.publishedBy ?? null,
     publishedBy: input.publishedBy ?? null,
     publishedAt: new Date(),
@@ -214,6 +219,21 @@ export async function saveVersion(
     })
     .where(eq(wfWorkflowDraft.workflowId, input.workflowId))
   return { versionId, versionNumber }
+}
+
+/**
+ * Write the AI change summary onto a version after the fact — used when a
+ * version is published before its summary was ready, and the host generates it
+ * in the background (e.g. via `waitUntil`).
+ */
+export async function setVersionAiSummary(
+  db: WfDb,
+  input: { versionId: string; short: string; long: string },
+) {
+  await db
+    .update(wfWorkflowVersion)
+    .set({ aiSummaryShort: input.short, aiSummaryLong: input.long })
+    .where(eq(wfWorkflowVersion.id, input.versionId))
 }
 
 export async function getVersionGraph(
@@ -246,6 +266,8 @@ export async function listVersions(db: WfDb, workflowId: string) {
       id: wfWorkflowVersion.id,
       versionNumber: wfWorkflowVersion.versionNumber,
       changeNote: wfWorkflowVersion.changeNote,
+      aiSummaryShort: wfWorkflowVersion.aiSummaryShort,
+      aiSummaryLong: wfWorkflowVersion.aiSummaryLong,
       createdAt: wfWorkflowVersion.createdAt,
       publishedAt: wfWorkflowVersion.publishedAt,
     })

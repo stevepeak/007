@@ -60,10 +60,21 @@ export type WfWorkflowDetail = {
   } | null
 }
 
+// A git-style change summary: a one-line subject (`short`) and an optional
+// longer body (`long`). Produced by the AI summarizer (or a heuristic fallback).
+export type WfChangeSummary = {
+  short: string
+  long: string
+}
+
 export type WfVersionSummary = {
   id: string
   versionNumber: number
+  /** The human's own note about the change (may be empty). */
   changeNote: string | null
+  /** The AI's git-style summary — null until generated. */
+  aiSummaryShort: string | null
+  aiSummaryLong: string | null
   createdAt: number
   publishedAt: number | null
 }
@@ -210,13 +221,19 @@ export interface WfDataClient {
   saveVersion(input: {
     workflowId: string
     graph: WorkflowGraph
+    /** The human's own note about what changed. */
     changeNote?: string
+    /**
+     * The AI summary, if the publish dialog already had it in hand. When
+     * omitted, the server generates one asynchronously after publishing.
+     */
+    aiSummary?: WfChangeSummary
   }): Promise<{ versionId: string; versionNumber: number }>
   /** AI-summarize the changes since the latest published version (publish dialog). */
   summarizeChanges(input: {
     workflowId: string
     graph: WorkflowGraph
-  }): Promise<{ summary: string }>
+  }): Promise<WfChangeSummary>
   renameWorkflow(input: { workflowId: string; name: string }): Promise<void>
   discardDraft(input: { workflowId: string }): Promise<void>
   listVersions(workflowId: string): Promise<WfVersionSummary[]>

@@ -1,5 +1,6 @@
 import { useWfComponents } from './context'
 import { cn } from './cn'
+import { DataView } from './data-view'
 import { useRun } from './hooks'
 import type { WfRunStepDTO } from '../server/protocol'
 
@@ -15,17 +16,6 @@ const statusClass: Record<string, string> = {
   queued: 'bg-neutral-100 text-neutral-600 border-neutral-200',
   cancelled: 'bg-neutral-100 text-neutral-500 border-neutral-200',
   skipped: 'bg-neutral-100 text-neutral-500 border-neutral-200',
-}
-
-function Json({ value }: { value: unknown }) {
-  if (value === null || value === undefined) {
-    return <span className="text-neutral-400">—</span>
-  }
-  return (
-    <pre className="overflow-x-auto rounded bg-neutral-50 p-2 text-xs text-neutral-700">
-      {JSON.stringify(value, null, 2)}
-    </pre>
-  )
 }
 
 export function StepRow({ step }: { step: WfRunStepDTO }) {
@@ -58,13 +48,13 @@ export function StepRow({ step }: { step: WfRunStepDTO }) {
         ) : null}
         <div>
           <div className="mb-1 text-xs font-medium text-neutral-500">Input</div>
-          <Json value={step.input} />
+          <DataView value={step.input} />
         </div>
         <div>
           <div className="mb-1 text-xs font-medium text-neutral-500">
             Output
           </div>
-          <Json value={step.output} />
+          <DataView value={step.output} />
         </div>
         {step.error ? (
           <div className="text-xs text-red-600">{step.error}</div>

@@ -141,6 +141,7 @@ export function useSaveVersion() {
       workflowId: string
       graph: WorkflowGraph
       changeNote?: string
+      aiSummary?: { short: string; long: string }
     }) => client.saveVersion(input),
     onSuccess: (_r, input) => {
       void qc.invalidateQueries({ queryKey: keys.workflow(input.workflowId) })
@@ -162,6 +163,21 @@ export function useVersions(workflowId: string) {
   return useQuery({
     queryKey: keys.versions(workflowId),
     queryFn: () => client.listVersions(workflowId),
+    // A version published before its AI summary was ready gets one generated in
+    // the background — poll briefly so it shows up without a manual refresh.
+    // Bounded to recently-published versions so we never poll forever over old
+    // rows that will never get one (pre-feature versions, or a failed gen).
+    refetchInterval: (query) => {
+      const rows = query.state.data
+      if (!rows) return false
+      const pending = rows.some(
+        (v) =>
+          !v.aiSummaryShort &&
+          v.publishedAt != null &&
+          Date.now() - v.publishedAt < 90_000,
+      )
+      return pending ? 3000 : false
+    },
   })
 }
 
