@@ -6,6 +6,7 @@ import { WfNavProvider } from './nav'
 import { RunPage } from './run-page'
 import { RunsExplorer } from './runs-explorer'
 import { WfShell } from './shell'
+import { ToolsList } from './tools-list'
 import { DEFAULT_WF_SECTIONS, WfHub, type WfHubSection } from './wf-hub'
 import { WorkflowsList } from './workflows-list'
 
@@ -141,6 +142,13 @@ function WfAppRoutes({
       return (
         <WfShell crumbs={[{ home: true }, { label: 'Agents' }]} scroll>
           <AgentsList templates={agentTemplates} />
+        </WfShell>
+      )
+    }
+    if (key === 'tools') {
+      return (
+        <WfShell crumbs={[{ home: true }, { label: 'Tools' }]} scroll>
+          <ToolsList />
         </WfShell>
       )
     }

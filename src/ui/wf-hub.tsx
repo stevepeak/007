@@ -2,6 +2,7 @@ import {
   Activity,
   Bot,
   FlaskConical,
+  Wrench,
   Workflow as WorkflowIcon,
   type LucideIcon,
 } from 'lucide-react'
@@ -53,6 +54,16 @@ export const DEFAULT_WF_SECTIONS: WfHubSection[] = [
     accent: {
       card: 'hover:border-violet-300 hover:shadow-lg hover:shadow-violet-100',
       icon: 'group-hover:bg-violet-100 group-hover:text-violet-600 group-hover:shadow-md group-hover:shadow-violet-200',
+    },
+  },
+  {
+    key: 'tools',
+    title: 'Tools',
+    description: 'Browse the tools agents and workflows can call.',
+    icon: Wrench,
+    accent: {
+      card: 'hover:border-emerald-300 hover:shadow-lg hover:shadow-emerald-100',
+      icon: 'group-hover:bg-emerald-100 group-hover:text-emerald-600 group-hover:shadow-md group-hover:shadow-emerald-200',
     },
   },
   {

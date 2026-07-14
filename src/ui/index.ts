@@ -72,6 +72,7 @@ export {
   type AgentColor,
 } from './agent-appearance'
 export { ComingSoon, type ComingSoonProps } from './coming-soon'
+export { ToolsList, type ToolsListProps } from './tools-list'
 export { ToolIcon, type ToolIconProps } from './tool-icon'
 export { Tooltip, type WfTooltipProps } from './tooltip'
 export {
