@@ -1,4 +1,5 @@
 import {
+  Bot,
   Brain,
   ChevronRight,
   CircleCheck,
@@ -6,6 +7,7 @@ import {
   FileText,
   GitBranch,
   Repeat,
+  User,
   Wrench,
 } from 'lucide-react'
 import type { ReactNode } from 'react'
@@ -23,13 +25,23 @@ import { NoteMarkdown } from './editor/note-markdown'
 // a tool call expands into its OWN Input → logs → Output sub-timeline (step-into
 // depth). The rows are strung down a connector rail so the flow reads top-down.
 
-type Tone = 'input' | 'thinking' | 'tool' | 'output' | 'branch' | 'iteration'
+type Tone =
+  | 'input'
+  | 'user'
+  | 'thinking'
+  | 'tool'
+  | 'output'
+  | 'response'
+  | 'branch'
+  | 'iteration'
 
 const toneRing: Record<Tone, string> = {
   input: 'border-neutral-300 bg-white text-neutral-500',
+  user: 'border-neutral-300 bg-neutral-100 text-neutral-600',
   thinking: 'border-violet-200 bg-violet-50 text-violet-600',
   tool: 'border-sky-200 bg-sky-50 text-sky-600',
   output: 'border-green-200 bg-green-50 text-green-600',
+  response: 'border-green-200 bg-green-50 text-green-600',
   branch: 'border-amber-200 bg-amber-50 text-amber-600',
   iteration: 'border-neutral-300 bg-neutral-50 text-neutral-600',
 }
@@ -117,6 +129,51 @@ function outputStep(value: unknown): LogStep {
   }
 }
 
+// Chat framing for agent (AI) steps: the incoming Input reads as the user's
+// message and the final Output as the model's reply. Both keep the full payload
+// one click away in the expandable body.
+function userStep(value: unknown): LogStep {
+  return {
+    tone: 'user',
+    icon: <User className="size-3.5" />,
+    title: previewText(value) || 'Message',
+    body: <DataView value={value} />,
+  }
+}
+
+function responseStep(value: unknown): LogStep {
+  return {
+    tone: 'response',
+    icon: <Bot className="size-3.5" />,
+    title: previewText(value) || 'Response',
+    body: <DataView value={value} />,
+  }
+}
+
+// Best-effort one-line preview of a message/response payload. Handles chat
+// triggers (`{messages: [...]}`), agent output (`{text}`), plain strings, and
+// falls back to a compact JSON glimpse for anything else.
+function previewText(value: unknown): string {
+  if (value == null) return ''
+  if (typeof value === 'string') return firstLine(value)
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>
+    if (typeof obj.text === 'string') return firstLine(obj.text)
+    if (Array.isArray(obj.messages) && obj.messages.length) {
+      const last = obj.messages[obj.messages.length - 1] as {
+        parts?: Array<{ type?: string; text?: string }>
+        content?: unknown
+      }
+      const partText = last.parts?.find(
+        (p) => p.type === 'text' && typeof p.text === 'string',
+      )?.text
+      if (partText) return firstLine(partText)
+      if (typeof last.content === 'string') return firstLine(last.content)
+    }
+  }
+  return firstLine(JSON.stringify(value))
+}
+
 // A tool call is itself a mini run: Input → (any logs) → Output. Nesting a
 // Timeline in the body gives the "step-into depth" — expand the call, then
 // expand its input or output.
@@ -165,12 +222,26 @@ export function RunLog({ step }: { step: WfRunStepDTO }) {
     reasoning?: string
   } | null
 
-  const steps: LogStep[] = [inputStep(step.input)]
+  // Agent steps read as a chat: user message → thinking/tool calls → response.
+  // Everything else keeps the neutral Input → … → Output framing.
+  const steps: LogStep[] = [
+    agentMeta ? userStep(step.input) : inputStep(step.input),
+  ]
 
-  // AI steps only: the model's thinking + tool calls between Input and Output.
+  // AI steps only: the model's thinking + tool calls between the message and
+  // the response. Two things read as "thinking": the model's real reasoning
+  // (`reasoning`), and any assistant `text` that ISN'T the final answer — i.e.
+  // the model narrating its plan before a tool call. The final step's text is
+  // the response we render at the end, so we skip it here to avoid showing the
+  // same text as both a Brain row and the Bot row.
   if (agentMeta) {
+    const responseText =
+      step.output && typeof step.output === 'object'
+        ? (step.output as { text?: unknown }).text
+        : step.output
     agentMeta.steps.forEach((s) => {
-      if (s.text) steps.push(thinkingStep(s.text))
+      if (s.reasoning) steps.push(thinkingStep(s.reasoning))
+      if (s.text && s.text !== responseText) steps.push(thinkingStep(s.text))
       s.toolCalls.forEach((tc) => steps.push(toolStep(tc)))
     })
   }
@@ -207,7 +278,7 @@ export function RunLog({ step }: { step: WfRunStepDTO }) {
     })
   }
 
-  steps.push(outputStep(step.output))
+  steps.push(agentMeta ? responseStep(step.output) : outputStep(step.output))
 
   return (
     <div>

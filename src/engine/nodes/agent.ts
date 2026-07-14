@@ -28,6 +28,9 @@ export type AgentNodeMeta = {
   steps: Array<{
     stepNumber: number
     finishReason?: string
+    /** The model's internal reasoning for this step, if it emitted any. */
+    reasoning?: string
+    /** The assistant's generated output text for this step. */
     text?: string
     toolCalls: Array<{
       toolCallId: string
@@ -329,6 +332,7 @@ export async function executeAgentNode<TDeps>(
       stepTraces.push({
         stepNumber: step.stepNumber,
         finishReason: step.finishReason,
+        reasoning: step.reasoningText,
         text: step.text,
         toolCalls,
         usage: step.usage

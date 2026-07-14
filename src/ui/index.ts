@@ -25,7 +25,10 @@ export {
   useSaveAgentDraft,
   useSaveDraft,
   useSaveVersion,
+  useRunToolPreview,
   useSummarizeChanges,
+  useToolContextFields,
+  useToolInvocations,
   useTools,
   useTriggerEvents,
   useUpdateAgentMeta,
@@ -73,6 +76,8 @@ export {
 } from './agent-appearance'
 export { ComingSoon, type ComingSoonProps } from './coming-soon'
 export { ToolsList, type ToolsListProps } from './tools-list'
+export { ToolDetail, type ToolDetailProps } from './tool-detail'
+export { ToolForm, type ToolFormProps } from './tool-form'
 export { ToolIcon, type ToolIconProps } from './tool-icon'
 export { Tooltip, type WfTooltipProps } from './tooltip'
 export {
@@ -123,8 +128,11 @@ export type {
   WfRunDetail,
   WfRunListInput,
   WfRunListResult,
+  ToolContextField,
   WfRunStepDTO,
   WfRunSummary,
+  WfToolInvocation,
+  WfToolPreviewResult,
   WfWorkflowDetail,
   WfWorkflowSummary,
 } from '../server/protocol'

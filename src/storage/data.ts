@@ -916,6 +916,53 @@ export async function listRuns(db: WfDb, input: ListRunsFilter) {
   }
 }
 
+/**
+ * Recent invocations of one tool across a tenant's runs. A tool call is a
+ * `wf_run_step` with `nodeKind = 'tool'` whose recorded `meta.toolId` matches;
+ * we join back to the run (for tenant scoping + timestamps) and its owning
+ * workflow (for a display name). Newest first. Powers the tool detail page's
+ * "recent calls" list.
+ */
+export async function listToolInvocations(
+  db: WfDb,
+  input: { tenantId: string; toolId: string; limit?: number },
+) {
+  const limit = Math.min(Math.max(input.limit ?? 20, 1), 100)
+  const rows = await db
+    .select({
+      runId: wfRunStep.runId,
+      nodeId: wfRunStep.nodeId,
+      status: wfRunStep.status,
+      meta: wfRunStep.meta,
+      output: wfRunStep.output,
+      error: wfRunStep.error,
+      startedAt: wfRunStep.startedAt,
+      finishedAt: wfRunStep.finishedAt,
+      workflowId: wfWorkflowVersion.workflowId,
+      workflowName: wfWorkflow.name,
+    })
+    .from(wfRunStep)
+    .innerJoin(wfRun, eq(wfRunStep.runId, wfRun.id))
+    .innerJoin(
+      wfWorkflowVersion,
+      eq(wfRun.workflowVersionId, wfWorkflowVersion.id),
+    )
+    .innerJoin(wfWorkflow, eq(wfWorkflowVersion.workflowId, wfWorkflow.id))
+    .where(
+      and(
+        eq(wfRun.tenantId, input.tenantId),
+        eq(wfRunStep.nodeKind, 'tool'),
+        eq(
+          sql`json_extract(${wfRunStep.meta}, '$.toolId')`,
+          input.toolId,
+        ),
+      ),
+    )
+    .orderBy(desc(wfRunStep.startedAt))
+    .limit(limit)
+  return rows
+}
+
 /** Distinct trigger kinds present in the tenant's runs (filter dropdown). */
 export async function listRunTriggerKinds(db: WfDb, tenantId: string) {
   const rows = await db

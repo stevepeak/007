@@ -1,11 +1,12 @@
 import { cn } from './cn'
 import { useTools } from './hooks'
+import { WfLink } from './nav'
 import { ToolIcon } from './tool-icon'
 
 // The tools registered in the host's `toolRegistry` (via the injected data
-// client's `listTools`), shown as read-only cards — name, icon, and one-line
-// description. Reached from the hub's Tools card. Cards aren't clickable yet;
-// this is just a catalog of what's available to agents and workflows.
+// client's `listTools`), shown as cards — name, icon, and one-line description.
+// Reached from the hub's Tools card. Each card links to that tool's detail page
+// (`tools/<id>`): recent calls + a real-execution playground.
 export type ToolsListProps = {
   className?: string
 }
@@ -36,9 +37,10 @@ export function ToolsList({ className }: ToolsListProps) {
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {data?.map((t) => (
-          <div
+          <WfLink
             key={t.id}
-            className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-white p-4 text-left"
+            to={`tools/${t.id}`}
+            className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-white p-4 text-left transition-colors hover:border-neutral-300 hover:bg-neutral-50"
           >
             <div className="flex w-full items-center gap-3">
               <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-neutral-100">
@@ -51,7 +53,7 @@ export function ToolsList({ className }: ToolsListProps) {
             <p className="line-clamp-2 min-h-[2.5rem] text-sm text-neutral-500">
               {t.description || 'No description yet.'}
             </p>
-          </div>
+          </WfLink>
         ))}
       </div>
     </div>

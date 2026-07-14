@@ -6,6 +6,7 @@ import { WfNavProvider } from './nav'
 import { RunPage } from './run-page'
 import { RunsExplorer } from './runs-explorer'
 import { WfShell } from './shell'
+import { ToolDetail } from './tool-detail'
 import { ToolsList } from './tools-list'
 import { DEFAULT_WF_SECTIONS, WfHub, type WfHubSection } from './wf-hub'
 import { WorkflowsList } from './workflows-list'
@@ -87,6 +88,23 @@ function WfAppRoutes({
         className="h-full"
         onPublished={() => navigate('agents')}
       />
+    )
+  }
+
+  // Single tool detail, full-page: `tools/<toolId>` — recent calls + a
+  // real-execution playground.
+  if (parts.length === 2 && parts[0] === 'tools') {
+    return (
+      <WfShell
+        crumbs={[
+          { home: true },
+          { label: 'Tools', to: 'tools' },
+          { label: 'Tool' },
+        ]}
+        scroll
+      >
+        <ToolDetail toolId={parts[1]} />
+      </WfShell>
     )
   }
 

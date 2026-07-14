@@ -44,6 +44,11 @@ export function createHttpWfDataClient(
   return {
     listModels: () => call('listModels', {}),
     listTools: () => call('listTools', {}),
+    listToolInvocations: (input) => call('listToolInvocations', input),
+    listToolContextFields: () => call('listToolContextFields', {}),
+    // A real tool call can run past the default 20s UI backstop (external
+    // services), so give the playground its own longer budget.
+    runToolPreview: (input) => call('runToolPreview', input, 120000),
     listTriggerEvents: () => call('listTriggerEvents', {}),
     listWorkflows: () => call('listWorkflows', {}),
     getWorkflow: (workflowId) => call('getWorkflow', { workflowId }),

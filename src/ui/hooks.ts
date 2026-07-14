@@ -19,6 +19,9 @@ import { useWfClient } from './context'
 const keys = {
   models: ['wf', 'models'] as const,
   tools: ['wf', 'tools'] as const,
+  toolContextFields: ['wf', 'tool-context-fields'] as const,
+  toolInvocations: (toolId: string, limit?: number) =>
+    ['wf', 'tool-invocations', toolId, limit ?? null] as const,
   triggerEvents: ['wf', 'trigger-events'] as const,
   workflows: ['wf', 'workflows'] as const,
   workflow: (id: string) => ['wf', 'workflow', id] as const,
@@ -39,6 +42,41 @@ export function useModels() {
 export function useTools() {
   const client = useWfClient()
   return useQuery({ queryKey: keys.tools, queryFn: () => client.listTools() })
+}
+
+export function useToolContextFields() {
+  const client = useWfClient()
+  return useQuery({
+    queryKey: keys.toolContextFields,
+    queryFn: () => client.listToolContextFields(),
+  })
+}
+
+export function useToolInvocations(toolId: string, limit?: number) {
+  const client = useWfClient()
+  return useQuery({
+    queryKey: keys.toolInvocations(toolId, limit),
+    queryFn: () => client.listToolInvocations({ toolId, limit }),
+    enabled: !!toolId,
+  })
+}
+
+// Playground — run one tool FOR REAL against scratch args. Not cached (each run
+// is a one-off, deliberate action); the detail page reads `data`/`isPending`
+// straight off the mutation. On success the tool's invocation list is
+// invalidated so the fresh call shows up in "recent calls".
+export function useRunToolPreview(toolId: string) {
+  const client = useWfClient()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: {
+      toolId: string
+      args: Record<string, unknown>
+      context?: Record<string, string>
+    }) => client.runToolPreview(input),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ['wf', 'tool-invocations', toolId] }),
+  })
 }
 
 export function useTriggerEvents() {

@@ -26,6 +26,7 @@ import {
   listAgentVersions,
   listRuns,
   listRunTriggerKinds,
+  listToolInvocations,
   listVersions,
   listWorkflows,
   publishAgent,
@@ -45,8 +46,11 @@ import type {
   WfAgentSummary,
   WfChangeSummary,
   WfRunDetail,
+  ToolContextField,
   WfRunStepDTO,
   WfRunSummary,
+  WfToolInvocation,
+  WfToolPreviewResult,
   WfWorkflowDetail,
   WfWorkflowSummary,
 } from './protocol'
@@ -126,6 +130,36 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
     ctx: WfServerContext
     req: Request
   }) => Promise<AgentPreviewResult>
+  /**
+   * Optional playground runner for the tool detail page — runs one tool FOR REAL
+   * against scratch args. Unlike `runAgentPreview` (which simulates tools), this
+   * executes the actual tool with the host's live per-run deps, so it can hit
+   * external services, incur cost, and mutate real data. The host supplies live
+   * bindings (`env`) and typically delegates to the SDK's `executeToolPreview`
+   * helper. If omitted, the `runToolPreview` method rejects with a "not
+   * configured" error.
+   */
+  runToolPreview?: (input: {
+    toolId: string
+    args: Record<string, unknown>
+    /**
+     * The playground's context inputs (keyed by the `key`s declared in
+     * `toolContextFields`). The host maps these into the RunContext it hands
+     * `executeToolPreview` — e.g. `context.clientOrgId` → `correlationId`.
+     */
+    context: Record<string, string>
+    ctx: WfServerContext
+    req: Request
+  }) => Promise<WfToolPreviewResult>
+  /**
+   * Optional: the context inputs the tool playground should collect before a
+   * real run — the ambient scope (client, acting user, …) that a tool reads from
+   * its per-run deps rather than from its AI-visible arguments. Surfaced to the
+   * UI verbatim via `listToolContextFields`; the values come back through
+   * `runToolPreview`'s `context` bag for the host to map into the RunContext.
+   * Omit if the host's tools need no ambient context.
+   */
+  toolContextFields?: ToolContextField[]
   /**
    * Optional re-dispatch hook for the run viewer's Retry button. The SDK loads
    * the finished run, reconstructs its trigger input from the recorded trigger
@@ -388,6 +422,41 @@ export function createWfSdkHandlers<TDeps>(
               outputSchema: toJsonSchema(entry.outputSchema),
             })),
           )
+
+        case 'listToolInvocations': {
+          const toolId = str(params, 'toolId')
+          const limit = (params as { limit?: number }).limit
+          const rows = await listToolInvocations(db, {
+            tenantId: ctx.tenantId,
+            toolId,
+            limit,
+          })
+          const invocations: WfToolInvocation[] = rows.map((r) => {
+            // `meta` is the untyped tool-step meta ({ toolId, args }); pull the
+            // args out defensively so a malformed row degrades to `{}`.
+            const meta = (r.meta ?? {}) as { args?: unknown }
+            const args =
+              meta.args && typeof meta.args === 'object'
+                ? (meta.args as Record<string, unknown>)
+                : {}
+            return {
+              runId: r.runId,
+              nodeId: r.nodeId,
+              status: r.status,
+              args,
+              output: r.output,
+              error: r.error,
+              startedAt: toEpoch(r.startedAt),
+              finishedAt: toEpoch(r.finishedAt),
+              workflowId: r.workflowId ?? null,
+              workflowName: r.workflowName ?? null,
+            }
+          })
+          return json(invocations)
+        }
+
+        case 'listToolContextFields':
+          return json(opts.toolContextFields ?? [])
 
         case 'listTriggerEvents':
           return json(describeTriggerEvents(opts.config.triggers))
@@ -820,6 +889,35 @@ export function createWfSdkHandlers<TDeps>(
             config,
             input,
             promptVariables,
+            ctx,
+            req,
+          })
+          return json(result)
+        }
+
+        case 'runToolPreview': {
+          if (!opts.runToolPreview) {
+            throw new Error(
+              'The tool playground is not configured on this host.',
+            )
+          }
+          const toolId = str(params, 'toolId')
+          // Guard against calling an unregistered tool before we build real deps.
+          if (!opts.config.toolRegistry.has(toolId)) {
+            throw new Error(`Tool '${toolId}' is not registered.`)
+          }
+          const rawArgs = (params as { args?: unknown }).args
+          const args =
+            rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs)
+              ? (rawArgs as Record<string, unknown>)
+              : {}
+          const context = parseStringRecord(
+            (params as { context?: unknown }).context,
+          )
+          const result = await opts.runToolPreview({
+            toolId,
+            args,
+            context,
             ctx,
             req,
           })
