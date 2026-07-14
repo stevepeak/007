@@ -66,6 +66,6 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "typescript": "^5.9.3",
-    "wrangler": "^4.107.1"
+    "wrangler": "^4.110.0"
   }
 }
