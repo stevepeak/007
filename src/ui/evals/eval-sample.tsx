@@ -1,5 +1,7 @@
 import {
   Bot,
+  Check,
+  ChevronDown,
   ChevronRight,
   FlaskConical,
   Play,
@@ -8,9 +10,13 @@ import {
   Workflow as WorkflowIcon,
   X,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
+import type { WfAgentSummary } from '../../server/protocol'
+import { agentColor, agentIcon } from '../agent-appearance'
+import { cn } from '../cn'
 import { useWfComponents } from '../context'
+import { useAgents } from '../hooks'
 import { useWfNav } from '../nav'
 import { ArchiveButton } from '../archive-button'
 import { WfShell } from '../shell'
@@ -274,7 +280,7 @@ function TargetStep({
   form: SampleConfig
   patch: (p: Partial<SampleConfig>) => void
 }) {
-  const { Input, Label } = useWfComponents()
+  const { Label } = useWfComponents()
   return (
     <PickerCards
       value={form.kind}
@@ -290,27 +296,10 @@ function TargetStep({
           detail: form.targetName || 'Unnamed agent',
           setting: (
             <div className="space-y-1">
-              <div className="flex items-center gap-1">
-                <Label>Which agent</Label>
-                <TodoSpark title="Target picker — choose an agent or workflow">
-                  <p>
-                    Instead of a free-text field, <strong>Target</strong> should
-                    be a dropdown listing your agents and workflows — each shown
-                    with its icon and name.
-                  </p>
-                  <p>
-                    Selecting one wires the sample to that agent/workflow
-                    (float-to-latest), and drives both the dynamic Given fields
-                    and the available Mocks.
-                  </p>
-                </TodoSpark>
-              </div>
-              <Input
+              <Label>Which agent</Label>
+              <AgentTargetSelect
                 value={form.targetName}
-                placeholder="Agent name"
-                onChange={(e) =>
-                  patch({ targetName: e.target.value, kind: 'agent' })
-                }
+                onChange={(targetName) => patch({ targetName, kind: 'agent' })}
               />
             </div>
           ),
@@ -326,6 +315,142 @@ function TargetStep({
         },
       ]}
     />
+  )
+}
+
+/** A small icon chip for an agent — its lucide icon on its color tint. */
+function AgentChip({ agent }: { agent: WfAgentSummary }) {
+  const Icon = agentIcon(agent.icon)
+  const color = agentColor(agent.color)
+  return (
+    <span
+      className={cn(
+        'inline-flex size-6 shrink-0 items-center justify-center rounded-md',
+        color.chip,
+      )}
+    >
+      <Icon className="size-3.5" />
+    </span>
+  )
+}
+
+// The Target picker: a dropdown of the host's agents (icon + name), replacing
+// the old free-text name field. Selecting one wires the sample to that agent by
+// name (float-to-latest). Workflow targets are still "Coming soon".
+function AgentTargetSelect({
+  value,
+  onChange,
+}: {
+  /** Selected agent's name. */
+  value: string
+  onChange: (name: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  const agentsQuery = useAgents()
+  const agents = agentsQuery.data ?? []
+  const selected = agents.find((a) => a.name === value)
+
+  // Close on outside-click or Escape.
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="flex h-9 w-full items-center gap-2 rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none transition focus:border-neutral-500"
+      >
+        {selected ? (
+          <AgentChip agent={selected} />
+        ) : (
+          <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-neutral-100 text-neutral-400">
+            <Bot className="size-3.5" />
+          </span>
+        )}
+        <span
+          className={cn(
+            'min-w-0 flex-1 truncate text-left',
+            selected || value ? 'text-neutral-800' : 'text-neutral-400',
+          )}
+        >
+          {selected?.name ?? value ?? 'Select an agent'}
+          {value && !selected && !agentsQuery.isLoading ? (
+            <span className="ml-1 text-xs text-amber-600">(not found)</span>
+          ) : null}
+        </span>
+        <ChevronDown className="size-4 shrink-0 text-neutral-400" />
+      </button>
+
+      {open ? (
+        <div className="absolute z-50 mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-neutral-200 bg-white py-1 shadow-lg">
+          {agentsQuery.isLoading ? (
+            <div className="px-3 py-6 text-center text-sm text-neutral-400">
+              Loading agents…
+            </div>
+          ) : agents.length === 0 ? (
+            <div className="px-3 py-6 text-center text-sm text-neutral-500">
+              No agents yet. Create one first.
+            </div>
+          ) : (
+            agents.map((a) => {
+              const isSel = a.name === value
+              return (
+                <button
+                  key={a.id}
+                  type="button"
+                  role="option"
+                  aria-selected={isSel}
+                  onClick={() => {
+                    onChange(a.name)
+                    setOpen(false)
+                  }}
+                  className={cn(
+                    'flex w-full items-center gap-2 px-3 py-1.5 text-left transition',
+                    isSel ? 'bg-neutral-100' : 'hover:bg-neutral-50',
+                  )}
+                >
+                  <AgentChip agent={a} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-neutral-800">
+                      {a.name}
+                    </span>
+                    {a.description ? (
+                      <span className="block truncate text-xs text-neutral-400">
+                        {a.description}
+                      </span>
+                    ) : null}
+                  </span>
+                  <Check
+                    className={cn(
+                      'size-4 shrink-0 text-neutral-900',
+                      isSel ? 'opacity-100' : 'opacity-0',
+                    )}
+                  />
+                </button>
+              )
+            })
+          )}
+        </div>
+      ) : null}
+    </div>
   )
 }
 
