@@ -77,7 +77,7 @@ export {
 export { ComingSoon, type ComingSoonProps } from './coming-soon'
 export { ToolsList, type ToolsListProps } from './tools-list'
 export { ToolDetail, type ToolDetailProps } from './tool-detail'
-export { ToolForm, type ToolFormProps } from './tool-form'
+export { WfAutoForm, type WfAutoFormProps } from './autoform/wf-auto-form'
 export { ToolIcon, type ToolIconProps } from './tool-icon'
 export { Tooltip, type WfTooltipProps } from './tooltip'
 export {

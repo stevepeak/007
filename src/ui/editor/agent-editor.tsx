@@ -1,14 +1,9 @@
 import { AlertTriangle, Loader2, Play, Wrench } from 'lucide-react'
-import {
-  type KeyboardEvent as ReactKeyboardEvent,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { inferPromptVariables, type AgentConfig } from '../../engine'
-import type { AgentPreviewResult } from '../../server/protocol'
+import type { AgentPreviewResult, JsonSchema } from '../../server/protocol'
+import { WfAutoForm } from '../autoform/wf-auto-form'
 import {
   AGENT_COLORS,
   AGENT_ICONS,
@@ -401,42 +396,47 @@ function AgentEditorInner({
 // An agent's inputs are the `${…}` variables in its prompt (inferred live), so
 // the form renders one field per variable — e.g. a classifier reading
 // `${title}`/`${text}` gets a field for each. An agent with no variables gets a
-// single free-form message box instead.
+// single free-form message box instead. Both are expressed as a JSON Schema and
+// rendered through the same AutoForm playground as tools.
+function agentInputSchema(variables: string[]): JsonSchema {
+  const names = variables.length > 0 ? variables : ['input']
+  return {
+    type: 'object',
+    required: names,
+    properties: Object.fromEntries(
+      names.map((name) => [
+        name,
+        {
+          type: 'string',
+          title: variables.length > 0 ? name : 'Test input',
+          format: 'textarea',
+        },
+      ]),
+    ),
+  }
+}
+
 function PlaygroundPanel({ config }: { config: AgentConfig }) {
   const variables = useMemo(
     () => inferPromptVariables(config.prompt),
     [config.prompt],
   )
   const hasVars = variables.length > 0
+  const schema = useMemo(() => agentInputSchema(variables), [variables])
 
-  const [message, setMessage] = useState('')
-  const [vars, setVars] = useState<Record<string, string>>({})
   const run = useRunAgentPreview()
   const result = run.data
   const error = (run.error as Error | null)?.message ?? null
 
-  const allVarsFilled = variables.every(
-    (v) => (vars[v] ?? '').trim().length > 0,
-  )
-  const canRun =
-    !run.isPending && (hasVars ? allVarsFilled : message.trim().length > 0)
-
-  function onRun() {
-    if (!canRun) return
+  function onRun(values: Record<string, unknown>) {
     if (hasVars) {
       const promptVariables: Record<string, string> = {}
-      for (const v of variables) promptVariables[v] = (vars[v] ?? '').trim()
+      for (const v of variables) {
+        promptVariables[v] = String(values[v] ?? '').trim()
+      }
       run.mutate({ config, promptVariables })
     } else {
-      run.mutate({ config, input: message.trim() })
-    }
-  }
-
-  // ⌘/Ctrl+Enter from any field runs, matching common "submit" affordances.
-  function onKeyDown(e: ReactKeyboardEvent) {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-      e.preventDefault()
-      onRun()
+      run.mutate({ config, input: String(values.input ?? '').trim() })
     }
   }
 
@@ -458,54 +458,14 @@ function PlaygroundPanel({ config }: { config: AgentConfig }) {
         </p>
       ) : null}
 
-      {hasVars ? (
-        <div className="space-y-3">
-          {variables.map((name) => (
-            <div key={name} className="space-y-1">
-              <label className="block font-mono text-xs text-neutral-600">
-                {name}
-              </label>
-              <textarea
-                rows={2}
-                value={vars[name] ?? ''}
-                onChange={(e) =>
-                  setVars((v) => ({ ...v, [name]: e.target.value }))
-                }
-                onKeyDown={onKeyDown}
-                placeholder={`Value for \${${name}}…`}
-                className="w-full resize-none rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:border-neutral-500"
-              />
-            </div>
-          ))}
-        </div>
-      ) : (
-        <textarea
-          rows={4}
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder="Test input…"
-          className="w-full resize-none rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:border-neutral-500"
-        />
-      )}
-      <button
-        type="button"
-        onClick={onRun}
-        disabled={!canRun}
-        className="flex w-full items-center justify-center gap-1.5 rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        {run.isPending ? (
-          <>
-            <Loader2 className="size-3.5 animate-spin" />
-            Running…
-          </>
-        ) : (
-          <>
-            <Play className="size-3.5" />
-            Run agent
-          </>
-        )}
-      </button>
+      <WfAutoForm
+        schema={schema}
+        disabled={run.isPending}
+        pending={run.isPending}
+        submitLabel="Run agent"
+        submitIcon={<Play className="size-3.5" />}
+        onSubmit={onRun}
+      />
 
       {error ? (
         <div className="flex items-start gap-1.5 rounded-md border border-red-200 bg-red-50 p-2.5 text-xs text-red-700">

@@ -6,6 +6,7 @@ import type {
   ToolOption,
   WfToolInvocation,
 } from '../server/protocol'
+import { WfAutoForm } from './autoform/wf-auto-form'
 import { cn } from './cn'
 import { useWfComponents } from './context'
 import { DataView } from './data-view'
@@ -16,7 +17,6 @@ import {
   useTools,
 } from './hooks'
 import { useWfNav } from './nav'
-import { ToolForm } from './tool-form'
 import { ToolIcon } from './tool-icon'
 
 // The tool detail page: one tool's identity, a real-execution playground, and
@@ -68,7 +68,7 @@ export function ToolDetail({ toolId, className }: ToolDetailProps) {
     return (
       <div className="p-6 text-sm text-neutral-500">
         Tool <span className="font-mono text-neutral-700">{toolId}</span> is not
-        registered for this tenant.
+        registered.
       </div>
     )
   }
@@ -108,8 +108,6 @@ function ToolHeader({ tool }: { tool: ToolOption }) {
 }
 
 function Playground({ tool }: { tool: ToolOption }) {
-  const { Button } = useWfComponents()
-  const [args, setArgs] = useState<Record<string, unknown> | null>({})
   const [context, setContext] = useState<Record<string, string>>({})
   const contextFields = useToolContextFields()
   const run = useRunToolPreview(tool.id)
@@ -121,12 +119,11 @@ function Playground({ tool }: { tool: ToolOption }) {
     () => fields.filter((f) => f.required && !(context[f.key]?.trim())),
     [fields, context],
   )
-  const canRun =
-    !run.isPending && args !== null && missingContext.length === 0
 
-  const submit = () => {
-    if (!canRun || !args) return
-    // Only send filled context keys — the host maps them into the run scope.
+  // Called by the arguments form once it validates. Merge in the filled
+  // context keys (the host maps them into the run scope) and run for real.
+  const submit = (args: Record<string, unknown>) => {
+    if (missingContext.length > 0) return
     const filled: Record<string, string> = {}
     for (const [k, v] of Object.entries(context)) {
       if (v.trim()) filled[k] = v
@@ -192,43 +189,33 @@ function Playground({ tool }: { tool: ToolOption }) {
           </p>
         </div>
         <div className="p-4">
-          <ToolForm
+          <WfAutoForm
             schema={tool.inputSchema}
             disabled={run.isPending}
-            onArgsChange={setArgs}
+            pending={run.isPending}
+            submitLabel="Run tool for real"
+            submitIcon={<Play className="size-4" />}
+            submitDisabled={missingContext.length > 0}
+            submitTitle={
+              missingContext.length > 0
+                ? `Provide ${missingContext.map((f) => f.label).join(', ')} first`
+                : undefined
+            }
+            emptyLabel="Arguments (JSON)"
+            onSubmit={submit}
           />
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <Button
-          onClick={submit}
-          disabled={!canRun}
-          title={
-            missingContext.length > 0
-              ? `Provide ${missingContext.map((f) => f.label).join(', ')} first`
-              : args === null
-                ? 'Fix the highlighted argument before running'
-                : undefined
-          }
-        >
-          <Play className="size-4" />
-          {run.isPending ? 'Running…' : 'Run tool for real'}
-        </Button>
-        {args === null ? (
-          <span className="text-xs text-red-600">
-            An argument isn&apos;t valid JSON yet.
-          </span>
-        ) : missingContext.length > 0 ? (
-          <span className="text-xs text-neutral-500">
-            Provide{' '}
-            <span className="font-medium text-neutral-700">
-              {missingContext.map((f) => f.label).join(', ')}
-            </span>{' '}
-            to run.
-          </span>
-        ) : null}
-      </div>
+      {missingContext.length > 0 ? (
+        <p className="text-xs text-neutral-500">
+          Provide{' '}
+          <span className="font-medium text-neutral-700">
+            {missingContext.map((f) => f.label).join(', ')}
+          </span>{' '}
+          to run.
+        </p>
+      ) : null}
 
       {run.error ? (
         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
