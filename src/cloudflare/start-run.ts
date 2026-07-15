@@ -16,7 +16,6 @@ export interface GraphRunBindings {
 
 export type StartGraphRunInput = {
   workflowVersionId: string
-  tenantId: string
   triggerKind: string
   triggerInput: unknown
   subjectId?: string
@@ -42,7 +41,6 @@ export async function startGraphRun(
   const db = createWfDb(env.DB)
   const workflowRunId = await createRun(db, {
     workflowVersionId: input.workflowVersionId,
-    tenantId: input.tenantId,
     triggerKind: input.triggerKind,
     subjectId: input.subjectId,
     correlationId: input.correlationId,
@@ -59,7 +57,6 @@ export async function startGraphRun(
       workflowVersionId: input.workflowVersionId,
       triggerInput: input.triggerInput,
       runContext: {
-        tenantId: input.tenantId,
         subjectId: input.subjectId,
         correlationId: input.correlationId,
         triggerKind: input.triggerKind,

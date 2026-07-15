@@ -15,7 +15,7 @@ import { runWorkflowUnderConditions } from './index'
 // ---------------------------------------------------------------------------
 
 describe('eval harness — tool graph', () => {
-  type ToolDeps = { tenant: string }
+  type ToolDeps = { subject: string }
 
   const toolRegistry: ToolRegistry<ToolDeps> = new Map([
     [
@@ -27,10 +27,10 @@ describe('eval harness — tool graph', () => {
         description: 'Uppercases its text arg.',
         build: (deps) => (args) => {
           const { text } = args as { text: string }
-          // `deps.tenant` proves the host-built TDeps reached the tool.
+          // `deps.subject` proves the host-built TDeps reached the tool.
           return Promise.resolve({
             shouted: text.toUpperCase(),
-            tenant: deps.tenant,
+            subject: deps.subject,
           })
         },
       },
@@ -49,7 +49,7 @@ describe('eval harness — tool graph', () => {
         inputSchema: z.object({ message: z.string() }),
       },
     },
-    buildRunDeps: (ctx) => ({ tenant: ctx.tenantId }),
+    buildRunDeps: (ctx) => ({ subject: ctx.subjectId ?? '' }),
   }
 
   const graph = {
@@ -92,10 +92,10 @@ describe('eval harness — tool graph', () => {
       graph,
       triggerInput: { message: 'hello' },
       config,
-      runContext: { tenantId: 'acme' },
+      runContext: { subjectId: 'acme' },
     })
 
-    expect(run.output).toEqual({ shouted: 'HELLO', tenant: 'acme' })
+    expect(run.output).toEqual({ shouted: 'HELLO', subject: 'acme' })
     expect(run.outputNodeId).toBe('o')
     expect(run.steps.map((s) => s.nodeKind)).toEqual([
       'trigger',

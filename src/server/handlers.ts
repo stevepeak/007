@@ -71,11 +71,11 @@ function toJsonSchema(schema: z.ZodType | undefined): JsonSchema | undefined {
 // Server-side implementation of the data protocol. The host mounts the returned
 // handler at one POST route (e.g. `app/api/wf/route.ts`) and supplies:
 //   • resolveDb      — the request-scoped WfDb (from its D1 binding)
-//   • resolveContext — the authenticated { tenantId, userId } (never trusted
-//                      from the client)
-// so the SDK stays auth-free while every query is tenant-scoped.
+//   • resolveContext — the authenticated { userId } for attribution
+// Workflows and agents are a single global set; the host gatekeeps who may
+// reach this route (e.g. admins only), so the SDK itself stays auth-free.
 
-export type WfServerContext = { tenantId: string; userId?: string }
+export type WfServerContext = { userId?: string }
 
 export type CreateWfSdkHandlersOptions<TDeps> = {
   config: Pick<
@@ -260,7 +260,6 @@ async function computeChangeSummary<TDeps>(
       getModel: opts.config.getModel,
       modelId,
       env: input.env,
-      tenantId: input.ctx.tenantId,
       previousGraph: input.previousGraph,
       nextGraph: input.nextGraph,
     })
@@ -427,7 +426,6 @@ export function createWfSdkHandlers<TDeps>(
           const toolId = str(params, 'toolId')
           const limit = (params as { limit?: number }).limit
           const rows = await listToolInvocations(db, {
-            tenantId: ctx.tenantId,
             toolId,
             limit,
           })
@@ -462,15 +460,14 @@ export function createWfSdkHandlers<TDeps>(
           return json(describeTriggerEvents(opts.config.triggers))
 
         case 'listWorkflows': {
-          const rows = await listWorkflows(db, ctx.tenantId)
+          const rows = await listWorkflows(db)
           return json(rows.map(workflowSummary))
         }
 
         case 'getWorkflow': {
           const workflowId = str(params, 'workflowId')
           const result = await getWorkflow(db, workflowId)
-          // Tenant authorization — never leak another tenant's workflow.
-          if (!result || result.workflow.tenantId !== ctx.tenantId) {
+          if (!result) {
             return json(null)
           }
           const detail: WfWorkflowDetail = {
@@ -494,7 +491,6 @@ export function createWfSdkHandlers<TDeps>(
           const graph = parseGraph(params)
           const description = (params as { description?: string }).description
           const out = await createWorkflow(db, {
-            tenantId: ctx.tenantId,
             name,
             description,
             createdBy: ctx.userId,
@@ -506,7 +502,7 @@ export function createWfSdkHandlers<TDeps>(
         case 'updateDraft': {
           const workflowId = str(params, 'workflowId')
           const graph = parseGraph(params)
-          await requireOwned(db, workflowId, ctx.tenantId)
+          await requireExists(db, workflowId)
           await updateDraft(db, { workflowId, graph, lastEditedBy: ctx.userId })
           return json({ ok: true })
         }
@@ -518,11 +514,11 @@ export function createWfSdkHandlers<TDeps>(
             changeNote?: string
             aiSummary?: WfChangeSummary
           }
-          // Authorize AND capture the outgoing latest version's graph as the
-          // "previous" for a possible background summary — before saveVersion
-          // bumps the latest pointer.
+          // Capture the outgoing latest version's graph as the "previous" for a
+          // possible background summary — before saveVersion bumps the latest
+          // pointer.
           const owner = await getWorkflow(db, workflowId)
-          if (!owner || owner.workflow.tenantId !== ctx.tenantId) {
+          if (!owner) {
             throw new Error('Workflow not found')
           }
           const previousGraph =
@@ -571,7 +567,7 @@ export function createWfSdkHandlers<TDeps>(
           const workflowId = str(params, 'workflowId')
           const nextGraph = parseGraph(params)
           const owner = await getWorkflow(db, workflowId)
-          if (!owner || owner.workflow.tenantId !== ctx.tenantId) {
+          if (!owner) {
             throw new Error('Workflow not found')
           }
           const previousGraph =
@@ -590,21 +586,21 @@ export function createWfSdkHandlers<TDeps>(
         case 'renameWorkflow': {
           const workflowId = str(params, 'workflowId')
           const name = str(params, 'name')
-          await requireOwned(db, workflowId, ctx.tenantId)
+          await requireExists(db, workflowId)
           await renameWorkflow(db, { workflowId, name })
           return json({ ok: true })
         }
 
         case 'discardDraft': {
           const workflowId = str(params, 'workflowId')
-          await requireOwned(db, workflowId, ctx.tenantId)
+          await requireExists(db, workflowId)
           await discardDraft(db, { workflowId })
           return json({ ok: true })
         }
 
         case 'listVersions': {
           const workflowId = str(params, 'workflowId')
-          await requireOwned(db, workflowId, ctx.tenantId)
+          await requireExists(db, workflowId)
           const rows = await listVersions(db, workflowId)
           return json(
             rows.map((v) => ({
@@ -623,11 +619,6 @@ export function createWfSdkHandlers<TDeps>(
           const versionId = str(params, 'versionId')
           const v = await getVersionGraph(db, versionId)
           if (!v) {
-            return json(null)
-          }
-          // Authorize via the version's owning workflow.
-          const owner = await getWorkflow(db, v.workflowId)
-          if (!owner || owner.workflow.tenantId !== ctx.tenantId) {
             return json(null)
           }
           return json({
@@ -649,7 +640,6 @@ export function createWfSdkHandlers<TDeps>(
             offset?: number
           }
           const result = await listRuns(db, {
-            tenantId: ctx.tenantId,
             workflowVersionId: p.workflowVersionId,
             workflowId: p.workflowId,
             triggerKind: p.triggerKind,
@@ -669,14 +659,14 @@ export function createWfSdkHandlers<TDeps>(
         }
 
         case 'listRunTriggerKinds': {
-          const kinds = await listRunTriggerKinds(db, ctx.tenantId)
+          const kinds = await listRunTriggerKinds(db)
           return json(kinds)
         }
 
         case 'getRun': {
           const runId = str(params, 'runId')
           const result = await getRun(db, runId)
-          if (!result || result.run.tenantId !== ctx.tenantId) {
+          if (!result) {
             return json(null)
           }
           const steps: WfRunStepDTO[] = result.steps.map((s) => ({
@@ -717,8 +707,7 @@ export function createWfSdkHandlers<TDeps>(
               ? 'resume'
               : 'restart'
           const result = await getRun(db, runId)
-          // Same tenant-scoping as getRun — never re-dispatch another tenant's run.
-          if (!result || result.run.tenantId !== ctx.tenantId) {
+          if (!result) {
             throw new Error('Run not found.')
           }
           // Reconstruct the trigger input from the recorded trigger step — the
@@ -747,14 +736,14 @@ export function createWfSdkHandlers<TDeps>(
         }
 
         case 'listAgents': {
-          const rows = await listAgents(db, ctx.tenantId)
+          const rows = await listAgents(db)
           return json(rows.map((r) => agentSummary(r, r.config)))
         }
 
         case 'getAgent': {
           const agentId = str(params, 'agentId')
           const result = await getAgent(db, agentId)
-          if (!result || result.agent.tenantId !== ctx.tenantId) {
+          if (!result) {
             return json(null)
           }
           const detail: WfAgentDetail = {
@@ -782,7 +771,6 @@ export function createWfSdkHandlers<TDeps>(
             color?: string
           }
           const out = await createAgent(db, {
-            tenantId: ctx.tenantId,
             name,
             description: p.description,
             icon: p.icon,
@@ -796,7 +784,7 @@ export function createWfSdkHandlers<TDeps>(
         case 'updateAgentDraft': {
           const agentId = str(params, 'agentId')
           const config = parseAgentConfig(params)
-          await requireAgentOwned(db, agentId, ctx.tenantId)
+          await requireAgentExists(db, agentId)
           await updateAgentDraft(db, {
             agentId,
             config,
@@ -809,7 +797,7 @@ export function createWfSdkHandlers<TDeps>(
           const agentId = str(params, 'agentId')
           const config = parseAgentConfig(params)
           const changeNote = (params as { changeNote?: string }).changeNote
-          await requireAgentOwned(db, agentId, ctx.tenantId)
+          await requireAgentExists(db, agentId)
           const out = await publishAgent(db, {
             agentId,
             config,
@@ -821,7 +809,7 @@ export function createWfSdkHandlers<TDeps>(
 
         case 'listAgentVersions': {
           const agentId = str(params, 'agentId')
-          await requireAgentOwned(db, agentId, ctx.tenantId)
+          await requireAgentExists(db, agentId)
           const rows = await listAgentVersions(db, agentId)
           return json(
             rows.map((v) => ({
@@ -836,7 +824,7 @@ export function createWfSdkHandlers<TDeps>(
 
         case 'updateAgentMeta': {
           const agentId = str(params, 'agentId')
-          await requireAgentOwned(db, agentId, ctx.tenantId)
+          await requireAgentExists(db, agentId)
           const p = params as {
             name?: string
             description?: string
@@ -855,16 +843,15 @@ export function createWfSdkHandlers<TDeps>(
 
         case 'discardAgentDraft': {
           const agentId = str(params, 'agentId')
-          await requireAgentOwned(db, agentId, ctx.tenantId)
+          await requireAgentExists(db, agentId)
           await discardAgentDraft(db, { agentId })
           return json({ ok: true })
         }
 
         case 'countAgentReferences': {
           const agentId = str(params, 'agentId')
-          await requireAgentOwned(db, agentId, ctx.tenantId)
+          await requireAgentExists(db, agentId)
           const workflows = await countWorkflowsReferencingAgent(db, {
-            tenantId: ctx.tenantId,
             agentId,
           })
           return json({ workflows })
@@ -936,25 +923,17 @@ export function createWfSdkHandlers<TDeps>(
   }
 }
 
-// Guard a mutation to the caller's tenant before writing.
-async function requireOwned(
-  db: WfDb,
-  workflowId: string,
-  tenantId: string,
-): Promise<void> {
+// Guard a mutation against a missing target before writing.
+async function requireExists(db: WfDb, workflowId: string): Promise<void> {
   const result = await getWorkflow(db, workflowId)
-  if (!result || result.workflow.tenantId !== tenantId) {
+  if (!result) {
     throw new Error('Workflow not found')
   }
 }
 
-async function requireAgentOwned(
-  db: WfDb,
-  agentId: string,
-  tenantId: string,
-): Promise<void> {
+async function requireAgentExists(db: WfDb, agentId: string): Promise<void> {
   const result = await getAgent(db, agentId)
-  if (!result || result.agent.tenantId !== tenantId) {
+  if (!result) {
     throw new Error('Agent not found')
   }
 }

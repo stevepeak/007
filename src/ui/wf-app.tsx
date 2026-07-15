@@ -2,6 +2,10 @@ import { AgentsList, type AgentTemplate } from './agents-list'
 import { ComingSoon } from './coming-soon'
 import { AgentEditor } from './editor/agent-editor'
 import { WorkflowEditor } from './editor/workflow-editor'
+import { EvalSample } from './evals/eval-sample'
+import { EvalSet } from './evals/eval-set'
+import { EvalTest } from './evals/eval-test'
+import { EvalsList } from './evals/evals-list'
 import { WfNavProvider } from './nav'
 import { RunPage } from './run-page'
 import { RunsExplorer } from './runs-explorer'
@@ -108,6 +112,41 @@ function WfAppRoutes({
     )
   }
 
+  // Single test: `evals/<setId>/samples/<sampleId>/tests/<testId>` (own shell).
+  if (
+    parts.length === 6 &&
+    parts[0] === 'evals' &&
+    parts[2] === 'samples' &&
+    parts[4] === 'tests'
+  ) {
+    return (
+      <EvalTest
+        key={parts[5]}
+        setId={parts[1]}
+        sampleId={parts[3]}
+        testId={parts[5]}
+        className="h-full"
+      />
+    )
+  }
+
+  // Single eval sample: `evals/<setId>/samples/<sampleId>` (renders own shell).
+  if (parts.length === 4 && parts[0] === 'evals' && parts[2] === 'samples') {
+    return (
+      <EvalSample
+        key={parts[3]}
+        setId={parts[1]}
+        sampleId={parts[3]}
+        className="h-full"
+      />
+    )
+  }
+
+  // Eval set detail: `evals/<setId>` (renders own shell with the set name crumb).
+  if (parts.length === 2 && parts[0] === 'evals') {
+    return <EvalSet key={parts[1]} setId={parts[1]} className="h-full" />
+  }
+
   // Workflow-scoped routes: `<id>/edit`, `<id>/runs`.
   if (parts.length === 2) {
     const [workflowId, leaf] = parts
@@ -167,6 +206,13 @@ function WfAppRoutes({
       return (
         <WfShell crumbs={[{ home: true }, { label: 'Tools' }]} scroll>
           <ToolsList />
+        </WfShell>
+      )
+    }
+    if (key === 'evals') {
+      return (
+        <WfShell crumbs={[{ home: true }, { label: 'Evals' }]} scroll>
+          <EvalsList />
         </WfShell>
       )
     }

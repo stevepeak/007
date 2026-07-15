@@ -9,6 +9,7 @@ import {
   lte,
   or,
   sql,
+  type SQL,
 } from 'drizzle-orm'
 
 import {
@@ -31,27 +32,22 @@ import {
   wfWorkflowVersion,
 } from './schema'
 
-// Pure data-access functions over a `WfDb` handle. No auth, no tenancy logic
-// beyond the opaque columns — the host scopes by passing `tenantId`. These back
-// both the Cloudflare backend (load graph, create/finalize run) and the UI's
-// route handlers (list/get/save).
+// Pure data-access functions over a `WfDb` handle. No auth and no tenancy —
+// workflows and agents are one global set. These back both the Cloudflare
+// backend (load graph, create/finalize run) and the UI's route handlers
+// (list/get/save).
 
 // ---------------------------------------------------------------------------
 // Workflows + versions + drafts
 // ---------------------------------------------------------------------------
 
-export async function listWorkflows(db: WfDb, tenantId: string) {
-  return await db
-    .select()
-    .from(wfWorkflow)
-    .where(eq(wfWorkflow.tenantId, tenantId))
-    .orderBy(desc(wfWorkflow.createdAt))
+export async function listWorkflows(db: WfDb) {
+  return await db.select().from(wfWorkflow).orderBy(desc(wfWorkflow.createdAt))
 }
 
 export async function createWorkflow(
   db: WfDb,
   input: {
-    tenantId: string
     name: string
     description?: string
     createdBy?: string
@@ -61,7 +57,6 @@ export async function createWorkflow(
   const workflowId = crypto.randomUUID()
   await db.insert(wfWorkflow).values({
     id: workflowId,
-    tenantId: input.tenantId,
     name: input.name,
     description: input.description ?? null,
     createdBy: input.createdBy ?? null,
@@ -424,19 +419,16 @@ export async function resolveRunManifest(
 }
 
 /**
- * How many of a tenant's workflows reference an agent (in their draft or their
- * latest published version) — powers the agent publish-warning dialog. Workflow
- * agent nodes float to the agent's latest published version, so publishing
- * updates every referencing workflow immediately.
+ * How many workflows reference an agent (in their draft or their latest
+ * published version) — powers the agent publish-warning dialog. Workflow agent
+ * nodes float to the agent's latest published version, so publishing updates
+ * every referencing workflow immediately.
  */
 export async function countWorkflowsReferencingAgent(
   db: WfDb,
-  input: { tenantId: string; agentId: string },
+  input: { agentId: string },
 ): Promise<number> {
-  const workflows = await db
-    .select({ id: wfWorkflow.id })
-    .from(wfWorkflow)
-    .where(eq(wfWorkflow.tenantId, input.tenantId))
+  const workflows = await db.select({ id: wfWorkflow.id }).from(wfWorkflow)
   let count = 0
   for (const wf of workflows) {
     const draft = (
@@ -468,11 +460,10 @@ export async function countWorkflowsReferencingAgent(
 // (model, prompt, tools, output contract); name/icon/color are display metadata
 // on the entity, edited in place via `updateAgentMeta`.
 
-export async function listAgents(db: WfDb, tenantId: string) {
+export async function listAgents(db: WfDb) {
   const agents = await db
     .select()
     .from(wfAgent)
-    .where(eq(wfAgent.tenantId, tenantId))
     .orderBy(desc(wfAgent.createdAt))
   if (agents.length === 0) {
     return []
@@ -503,7 +494,6 @@ export async function listAgents(db: WfDb, tenantId: string) {
 export async function createAgent(
   db: WfDb,
   input: {
-    tenantId: string
     name: string
     description?: string
     icon?: string
@@ -515,7 +505,6 @@ export async function createAgent(
   const agentId = crypto.randomUUID()
   await db.insert(wfAgent).values({
     id: agentId,
-    tenantId: input.tenantId,
     name: input.name,
     description: input.description ?? null,
     icon: input.icon ?? null,
@@ -682,13 +671,12 @@ export async function discardAgentDraft(db: WfDb, input: { agentId: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// Assignments (trigger kind → workflow, per tenant)
+// Assignments (trigger kind → workflow, one global mapping)
 // ---------------------------------------------------------------------------
 
 export async function assignWorkflow(
   db: WfDb,
   input: {
-    tenantId: string
     triggerKind: string
     workflowId: string
     assignedBy?: string
@@ -698,13 +686,12 @@ export async function assignWorkflow(
     .insert(wfWorkflowAssignment)
     .values({
       id: crypto.randomUUID(),
-      tenantId: input.tenantId,
       triggerKind: input.triggerKind,
       workflowId: input.workflowId,
       assignedBy: input.assignedBy ?? null,
     })
     .onConflictDoUpdate({
-      target: [wfWorkflowAssignment.tenantId, wfWorkflowAssignment.triggerKind],
+      target: wfWorkflowAssignment.triggerKind,
       set: {
         workflowId: input.workflowId,
         assignedBy: input.assignedBy ?? null,
@@ -712,21 +699,16 @@ export async function assignWorkflow(
     })
 }
 
-/** Resolve the published version a trigger should run for a tenant. */
+/** Resolve the published version a trigger should run. */
 export async function resolveAssignedVersion(
   db: WfDb,
-  input: { tenantId: string; triggerKind: string },
+  input: { triggerKind: string },
 ): Promise<{ workflowId: string; versionId: string } | null> {
   const assignment = (
     await db
       .select()
       .from(wfWorkflowAssignment)
-      .where(
-        and(
-          eq(wfWorkflowAssignment.tenantId, input.tenantId),
-          eq(wfWorkflowAssignment.triggerKind, input.triggerKind),
-        ),
-      )
+      .where(eq(wfWorkflowAssignment.triggerKind, input.triggerKind))
       .limit(1)
   )[0]
   if (!assignment) {
@@ -747,7 +729,6 @@ export async function createRun(
   db: WfDb,
   input: {
     workflowVersionId: string
-    tenantId: string
     triggerKind: string
     subjectId?: string
     correlationId?: string
@@ -757,7 +738,6 @@ export async function createRun(
   await db.insert(wfRun).values({
     id,
     workflowVersionId: input.workflowVersionId,
-    tenantId: input.tenantId,
     triggerKind: input.triggerKind,
     subjectId: input.subjectId ?? null,
     correlationId: input.correlationId ?? null,
@@ -816,7 +796,6 @@ export async function failRun(
 }
 
 export type ListRunsFilter = {
-  tenantId: string
   workflowVersionId?: string
   workflowId?: string
   triggerKind?: string
@@ -834,7 +813,7 @@ const RUN_PAGE_MAX = 200
 // owning workflow so callers can display + search by workflow name. Returns the
 // page plus the unpaginated total so the UI can render "N of M".
 export async function listRuns(db: WfDb, input: ListRunsFilter) {
-  const conds = [eq(wfRun.tenantId, input.tenantId)]
+  const conds: SQL[] = []
   if (input.workflowVersionId) {
     conds.push(eq(wfRun.workflowVersionId, input.workflowVersionId))
   }
@@ -917,15 +896,15 @@ export async function listRuns(db: WfDb, input: ListRunsFilter) {
 }
 
 /**
- * Recent invocations of one tool across a tenant's runs. A tool call is a
+ * Recent invocations of one tool across all runs. A tool call is a
  * `wf_run_step` with `nodeKind = 'tool'` whose recorded `meta.toolId` matches;
- * we join back to the run (for tenant scoping + timestamps) and its owning
- * workflow (for a display name). Newest first. Powers the tool detail page's
- * "recent calls" list.
+ * we join back to the run (for timestamps) and its owning workflow (for a
+ * display name). Newest first. Powers the tool detail page's "recent calls"
+ * list.
  */
 export async function listToolInvocations(
   db: WfDb,
-  input: { tenantId: string; toolId: string; limit?: number },
+  input: { toolId: string; limit?: number },
 ) {
   const limit = Math.min(Math.max(input.limit ?? 20, 1), 100)
   const rows = await db
@@ -950,7 +929,6 @@ export async function listToolInvocations(
     .innerJoin(wfWorkflow, eq(wfWorkflowVersion.workflowId, wfWorkflow.id))
     .where(
       and(
-        eq(wfRun.tenantId, input.tenantId),
         eq(wfRunStep.nodeKind, 'tool'),
         eq(
           sql`json_extract(${wfRunStep.meta}, '$.toolId')`,
@@ -963,12 +941,11 @@ export async function listToolInvocations(
   return rows
 }
 
-/** Distinct trigger kinds present in the tenant's runs (filter dropdown). */
-export async function listRunTriggerKinds(db: WfDb, tenantId: string) {
+/** Distinct trigger kinds present in the runs (filter dropdown). */
+export async function listRunTriggerKinds(db: WfDb) {
   const rows = await db
     .selectDistinct({ triggerKind: wfRun.triggerKind })
     .from(wfRun)
-    .where(eq(wfRun.tenantId, tenantId))
     .orderBy(asc(wfRun.triggerKind))
   return rows.map((r) => r.triggerKind)
 }

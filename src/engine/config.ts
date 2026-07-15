@@ -7,8 +7,8 @@ import type { TriggerRegistry } from './trigger-registry'
 
 // The host-injection contract — the single object a host app supplies to make
 // the SDK do real work. The SDK is generic over an opaque per-run deps bundle
-// `TDeps`; everything provider/domain-specific (the model provider, the tools,
-// the tenant scope) lives behind this interface, never inside the SDK.
+// `TDeps`; everything provider/domain-specific (the model provider, the tools)
+// lives behind this interface, never inside the SDK.
 
 /** A model the editor can offer and `getModel` can resolve. */
 export type ModelOption = { id: string; label: string }
@@ -59,13 +59,12 @@ export type ImageRefResolver<TDeps> = (
 
 /**
  * Per-run context handed to `buildRunDeps`. Identity is opaque to the SDK:
- * `tenantId` scopes ownership, `subjectId` ties a run to a host entity (a chat,
- * a document, …), `correlationId` is a free-form host reference. `env` carries
- * the host's live Cloudflare bindings so `buildRunDeps` can construct clients
- * inside a `step.do` boundary.
+ * `subjectId` ties a run to a host entity (a chat, a document, …),
+ * `correlationId` is a free-form host reference. `env` carries the host's live
+ * Cloudflare bindings so `buildRunDeps` can construct clients inside a `step.do`
+ * boundary.
  */
 export type RunContext = {
-  tenantId: string
   subjectId?: string
   correlationId?: string
   triggerKind: string

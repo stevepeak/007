@@ -16,7 +16,7 @@ import type { ToolRegistry } from './tool-registry'
 // imported here (it pulls in `cloudflare:workers`), so we assert the engine-side
 // contract both backends share.
 
-type Deps = { tenant: string }
+type Deps = { subject: string }
 
 const toolRegistry: ToolRegistry<Deps> = new Map([
   [
@@ -55,7 +55,7 @@ function makeConfig(
     triggers: {
       go: { description: 'Go', inputSchema: z.object({ n: z.number() }) },
     },
-    buildRunDeps: (ctx) => ({ tenant: ctx.tenantId }),
+    buildRunDeps: (ctx) => ({ subject: ctx.subjectId ?? '' }),
     ...hooks,
   }
 }
@@ -111,7 +111,7 @@ describe('executor — continueOnError', () => {
       graph: chainGraph({ continueOnError: true }),
       triggerInput: { n: 1 },
       config: makeConfig(),
-      runContext: { tenantId: 'acme', triggerKind: 'go' },
+      runContext: { subjectId: 'acme', triggerKind: 'go' },
       recorder,
     })
 
@@ -135,7 +135,7 @@ describe('executor — continueOnError', () => {
         graph: chainGraph(),
         triggerInput: { n: 1 },
         config: makeConfig(),
-        runContext: { tenantId: 'acme', triggerKind: 'go' },
+        runContext: { subjectId: 'acme', triggerKind: 'go' },
         recorder,
       }),
     ).rejects.toThrow('boom failed')
@@ -155,7 +155,7 @@ describe('executor — lifecycle callbacks', () => {
           seen = result
         },
       }),
-      runContext: { tenantId: 'acme', triggerKind: 'go' },
+      runContext: { subjectId: 'acme', triggerKind: 'go' },
       recorder: createMemoryRunRecorder(),
     })
     expect(seen).toEqual({ output: { ok: true }, outputNodeId: 'o' })
@@ -172,7 +172,7 @@ describe('executor — lifecycle callbacks', () => {
             failure = f
           },
         }),
-        runContext: { tenantId: 'acme', triggerKind: 'go' },
+        runContext: { subjectId: 'acme', triggerKind: 'go' },
         recorder: createMemoryRunRecorder(),
       }),
     ).rejects.toThrow('boom failed')
@@ -189,7 +189,7 @@ describe('executor — lifecycle callbacks', () => {
           throw new Error('host callback exploded')
         },
       }),
-      runContext: { tenantId: 'acme', triggerKind: 'go' },
+      runContext: { subjectId: 'acme', triggerKind: 'go' },
       recorder: createMemoryRunRecorder(),
     })
     expect(result.output).toEqual({ ok: true })
@@ -294,7 +294,7 @@ function switchConfig(): WfSdkConfig<Deps> {
     triggers: {
       go: { description: 'Go', inputSchema: z.object({ kind: z.string() }) },
     },
-    buildRunDeps: (ctx) => ({ tenant: ctx.tenantId }),
+    buildRunDeps: (ctx) => ({ subject: ctx.subjectId ?? '' }),
   }
 }
 
@@ -305,7 +305,7 @@ describe('executor — switch (multi-way routing)', () => {
       graph: switchGraph(),
       triggerInput: { kind: 'image' },
       config: switchConfig(),
-      runContext: { tenantId: 'acme', triggerKind: 'go' },
+      runContext: { subjectId: 'acme', triggerKind: 'go' },
       recorder,
     })
     expect(result.output).toEqual({ arm: 'image' })
@@ -323,7 +323,7 @@ describe('executor — switch (multi-way routing)', () => {
       graph: switchGraph(),
       triggerInput: { kind: 'audio' },
       config: switchConfig(),
-      runContext: { tenantId: 'acme', triggerKind: 'go' },
+      runContext: { subjectId: 'acme', triggerKind: 'go' },
       recorder: createMemoryRunRecorder(),
     })
     expect(result.output).toEqual({ arm: 'default' })

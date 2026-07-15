@@ -47,7 +47,6 @@ export interface GraphWorkflowEnv {
 
 // Serializable run context carried in the workflow params (no live `env`).
 export type GraphRunContextInput = {
-  tenantId: string
   subjectId?: string
   correlationId?: string
   triggerKind: string

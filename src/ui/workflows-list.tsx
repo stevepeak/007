@@ -8,7 +8,7 @@ import { useWfNav, WfLink } from './nav'
 import { NewWorkflowDialog } from './new-workflow-dialog'
 import { Tooltip } from './tooltip'
 
-// The tenant's workflows (from the wf_* tables via the injected data client). Each
+// The workflows (from the wf_* tables via the injected data client). Each
 // row links into the editor and the workflow-scoped runs table. Reached from the
 // hub's Workflows card.
 export type WorkflowsListProps = {
@@ -52,12 +52,12 @@ export function WorkflowsList({ className }: WorkflowsListProps) {
       ) : null}
       {error ? (
         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {(error as Error).message} — are you signed in with an active tenant?
+          {(error as Error).message} — are you signed in?
         </div>
       ) : null}
       {data?.length === 0 ? (
         <div className="text-sm text-neutral-500">
-          No workflows in the wf_* tables for this tenant yet. Seed one first.
+          No workflows in the wf_* tables yet. Seed one first.
         </div>
       ) : null}
       <div className="space-y-2">

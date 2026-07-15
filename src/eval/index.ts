@@ -24,7 +24,7 @@ export type WorkflowTestCase<TDeps> = {
   triggerInput: unknown
   /** Host config — point `getModel`/`toolRegistry` at mocks for deterministic runs. */
   config: WfSdkConfig<TDeps>
-  /** Partial run context; tenant/subject default to eval placeholders. */
+  /** Partial run context; subject/correlation default to eval placeholders. */
   runContext?: Partial<Omit<RunContext, 'triggerKind'>>
   /** Frozen run manifest — resolves agent nodes' `agentId` to their config. */
   manifest?: WfRunManifestEntry[]
@@ -50,7 +50,6 @@ export async function runWorkflowUnderConditions<TDeps>(
     createMemorySink()
 
   const runContext: RunContext = {
-    tenantId: tc.runContext?.tenantId ?? 'eval-tenant',
     subjectId: tc.runContext?.subjectId,
     correlationId: tc.runContext?.correlationId,
     triggerKind: triggerKindOf(tc.graph),

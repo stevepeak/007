@@ -86,8 +86,7 @@ export const DEFAULT_WF_SECTIONS: WfHubSection[] = [
       card: 'hover:border-rose-300 hover:shadow-lg hover:shadow-rose-100',
       icon: 'group-hover:bg-rose-100 group-hover:text-rose-600 group-hover:shadow-md group-hover:shadow-rose-200',
     },
-    disabled: true,
-    badge: 'Not implemented yet',
+    badge: 'Preview',
   },
 ]
 

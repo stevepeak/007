@@ -37,15 +37,21 @@ The user's original framing:
   checks.
 - **Versioning:** **float to latest** — tests always run the current
   assigned/latest version, so edits surface regressions immediately.
-- **Side effects:** real tools are prevented from firing real side effects by
-  reading a **`simulate` signal on the run context** (NOT a tool argument, so the
-  model can't be prompted around it). Each tool decides what to do when
-  simulated (no-op, return canned data, etc.). This is distinct from the existing
-  `buildSimulatedRegistry` (`src/server/simulated-tools.ts`), which fabricates
-  every tool result via an LLM for the agent playground.
-- **Isolation:** eval runs execute under a **dedicated eval tenant** so their
-  `wf_run` rows never mix into a real firm's run history. Eval targets still
-  resolve the real agent/workflow versions.
+- **Side effects & reads:** real tools are neutralized by a **`simulate` signal
+  on the run context** (NOT a tool argument, so the model can't be prompted around
+  it). Under `simulate`: **write/side-effect tools no-op** (`send_email`,
+  `update_document`); **read tools return canned fixtures the row supplies**, or a
+  safe empty default if none. Fixtures are threaded to tools via the run context
+  (`RunContext.simulate` + a `fixtures` map → `buildRunDeps` → deps), making evals
+  **reproducible**. This is distinct from `buildSimulatedRegistry`
+  (`src/server/simulated-tools.ts`), which LLM-fabricates every result for the
+  agent playground (non-deterministic — not what evals want).
+- **Isolation & tenancy:** there is **one host-provided `EVAL_TENANT`** (a
+  platform/builder scope). It owns the `wf_eval_*` suites, owns the `wf_run` rows
+  eval runs produce, **and** is the tenant targets resolve under (agents/workflows
+  are authored centrally, eval'd, then shipped to firms). Tenant isolation alone
+  keeps eval runs out of any firm's Runs view, so an `is_eval` flag on `wf_run` is
+  **optional** (nice-to-have for filtering within the eval tenant itself).
 - **Expectations:** **hand-authored** outcome checks (AND/OR). Each check is
   either **binary/deterministic** (e.g. a tool was called, a node received a
   given input argument) or **subjective/LLM-judged**. Binary checks are pure
@@ -63,6 +69,27 @@ The user's original framing:
 - **Row** — one case: `initial condition` + `expected` (≥1 outcome checks).
 - **Test run** (the user's "initialize a new test") — pick ≥1 eval sets, execute
   every row under the eval tenant with `simulate=true`, grade, store a **report**.
+
+### UI vocabulary vs. code identifiers (deliberate split)
+
+The **user-facing vocabulary** and the **code/schema identifiers** intentionally
+diverge, and we are **not** reconciling them for now:
+
+| Concept        | UI label (what users see) | Code / schema identifier                                  |
+| -------------- | ------------------------- | --------------------------------------------------------- |
+| the suite/goal | **Goal**                  | `set` — `wf_eval_set`, `setId`, `EvalSet`, `MockEvalSet`, route `evals/<setId>` |
+| one case       | **Sample**                | `row` — `wf_eval_row`, `rowId` _(current UI uses `Sample`; code still says `row`)_ |
+| one assertion  | **Test**                  | `check` — `checks` JSON, `MockCheck` _(UI says `Test`)_    |
+
+Why keep the split: the UI copy evolved with the user (`Set → Goal`,
+`check/outcome → Test`, `row → Sample`) while the plan's data model, routes, and
+existing mock/component identifiers were written earlier against `set` / `row` /
+`check`. Renaming the identifiers (tables, route segments, props, types) is a
+larger mechanical refactor with no functional payoff yet, so it's **deferred**.
+When the real `wf_eval_*` schema is built (Phase 2), we decide once whether to
+adopt `goal` / `sample` / `test` in the identifiers too; until then, **UI speaks
+Goal/Sample/Test, code speaks set/row/check.** This doc still uses the code
+vocabulary (`eval set`, `row`, `check`) so it matches the schema.
 
 ---
 
@@ -116,20 +143,21 @@ The user's original framing:
               │  createWfSdkHandlers injects it, like retryRun/runToolPreview │
               │                                                              │
               │   WORKFLOWS.startGraphRun({                                  │
-              │       tenantId:  EVAL_TENANT      ◀── isolated tenant        │
+              │       tenantId:  EVAL_TENANT      ◀── host-owned scope       │
               │       simulate:  true            ◀── the key signal         │
+              │       fixtures:  row.fixtures    ◀── canned tool outputs     │
               │       workflowVersionId, triggerInput, promptVariables })    │
               └──────────────────────────┬───────────────────────────────────┘
                                          ▼
    ┌──────────────────── GraphWorkflow (Cloudflare, durable) ───────────────┐
-   │  RunContext.simulate = true                                            │
+   │  RunContext.simulate = true · RunContext.fixtures = {…}                │
    │        │                                                               │
-   │        ▼  buildRunDeps(ctx)  ── copies ctx.simulate → HostDeps         │
+   │        ▼  buildRunDeps(ctx)  ── copies simulate + fixtures → HostDeps   │
    │   ┌── node walk ──┐                                                    │
    │   │ trigger       │   tool.build(deps) reads deps.simulate:            │
-   │   │ agent  ───────┼──▶  send_email   → no-op / canned                  │
-   │   │ tool          │     update_doc   → skip write                      │
-   │   │ …             │     search_kb    → may run read-only for real      │
+   │   │ agent  ───────┼──▶  send_email  → no-op        (write)             │
+   │   │ tool          │     update_doc  → skip write   (write)             │
+   │   │ …             │     search_kb   → fixture ?? empty   (read)        │
    │   │ output        │   (each tool decides — NOT a model-visible arg)    │
    │   └───────────────┘                                                    │
    └───────────────────────────────┬────────────────────────────────────────┘
@@ -220,11 +248,27 @@ conventions as the existing nine tables.
 | Table            | Purpose               | Key columns                                                                                                   |
 | ---------------- | --------------------- | ------------------------------------------------------------------------------------------------------------ |
 | `wf_eval_set`    | a suite               | `id`, `tenantId`, `name`, `description`, `targetKind` (`agent`\|`workflow`), `targetId`, `triggerKind`, times |
-| `wf_eval_row`    | one case              | `id`, `setId`, `name`, `initialCondition` (JSON: triggerInput + promptVariables), `checks` (JSON tree), `sortOrder` |
+| `wf_eval_row`    | one case              | `id`, `setId`, `name`, `initialCondition` (JSON: triggerInput + promptVariables), `fixtures` (JSON: canned tool outputs keyed by toolId), `checks` (JSON tree), `sortOrder` |
 | `wf_eval_run`    | one "test" execution  | `id`, `tenantId`, `status`, `setIds` (JSON), counts (`total`/`passed`/`failed`), `score` (mean 0..1), `startedAt`/`finishedAt` |
 | `wf_eval_result` | per-row outcome       | `id`, `evalRunId`, `rowId`, `wfRunId` (→ the real `wf_run`), `status` (`pass`\|`fail`\|`error`), `score` (weighted mean 0..1), `checkResults` (JSON: per-check `{pass, score?, reason?}`) |
 
-### Check-tree shape
+All rows are owned by the single `EVAL_TENANT` (see Tenancy). `tenantId` on
+`wf_eval_set` / `wf_eval_run` is that constant, not a firm.
+
+### Row fixtures (canned tool outputs)
+
+Because eval runs execute under the empty `EVAL_TENANT` with `simulate=true`, a
+row supplies **fixtures** — the canned data read tools return so the run is
+reproducible:
+
+```
+fixtures = { [toolId]: cannedOutput }          // v1: one canned value per tool
+```
+
+- **v1:** keyed by `toolId` — every call to that tool in the run returns the same
+  canned value. Absent tool → the tool's own safe default (usually an empty read).
+- **Later:** richer matching (ordered list, or match by args) for tools called
+  multiple times with different inputs. Parked.
 
 Stored JSON, one shared zod schema (new `src/eval/checks.ts`). Checks split into
 two families by how they produce a verdict:
@@ -371,15 +415,17 @@ Input on the left, expectations on the right.
   Prompt variables                     │     input.reason contains "missing id"
    userId       [ u_test           ]   │  ─────────────────────────────────────────
                                        │  ★ llm_judge                      [scored]
-                                       │     rubric: "asks for the order id
-                                       │     politely, no refund promised"
-                                       │     threshold 0.7 · weight 1
-                                       │  ─────────────────────────────────────────
+  Tool fixtures (canned reads)         │     rubric: "asks for the order id
+   search_kb    [ {docs:[…]}      ]    │     politely, no refund promised"
+   lookup_order [ {found:false}   ]    │     threshold 0.7 · weight 1
+              [ + Add fixture ▾ ]      │  ─────────────────────────────────────────
                                        │                        [ + Add check ▾ ]
 ```
 
 - **Left** is a form reflected from the target's trigger schema (same reflection
-  as the New-workflow dialog) + `promptVariables`.
+  as the New-workflow dialog) + `promptVariables`, plus **Tool fixtures** — the
+  canned outputs read tools return under `simulate` (see Row fixtures). Add one
+  per tool the target may call; omit and the tool falls back to a safe empty read.
 - **Right** is the check builder. Top toggle = the AND/OR reducer ("All of…" /
   "Any of…"). `+ Add check ▾` opens the type menu:
 
@@ -475,18 +521,23 @@ row detail → trace**.
 
 ## Phases
 
-### Phase 1 — SDK plumbing: the `simulate` flag (tiny, standalone, shippable first)
+### Phase 1 — SDK plumbing: the `simulate` signal + fixtures (small, standalone, shippable first)
 
-1. `src/engine/config.ts` — add `simulate?: boolean` to `RunContext` (doc:
-   "eval/dry-run signal; tools decide to no-op side effects").
-2. `src/cloudflare/start-run.ts` — add `simulate?: boolean` to
-   `StartGraphRunInput`; pass into the `runContext` object at ~line 61.
-3. `src/cloudflare/graph-workflow.ts` — thread `simulate` through
-   `GraphWorkflowParams.runContext` so it survives the durable boundary.
+1. `src/engine/config.ts` — add to `RunContext`: `simulate?: boolean` and
+   `fixtures?: Record<string, unknown>` (canned tool outputs keyed by toolId; doc:
+   "eval signal — write tools no-op, read tools return their fixture").
+2. `src/cloudflare/start-run.ts` — add `simulate?` + `fixtures?` to
+   `StartGraphRunInput`; pass both into the `runContext` object at ~line 61.
+3. `src/cloudflare/graph-workflow.ts` — thread `simulate` + `fixtures` through
+   `GraphWorkflowParams.runContext` so they survive the durable boundary.
 4. **Host** (`packages/wf-host/src/config.ts`) — `buildRunDeps` copies
-   `ctx.simulate` into `HostDeps`; side-effecting tools (`send_email`,
-   `update_document`, `embed_and_upsert`, …) branch on `deps.simulate`.
-5. Test asserting a tool sees `simulate`.
+   `ctx.simulate` and `ctx.fixtures` into `HostDeps` (e.g. a `getFixture(toolId)`
+   helper). Tool branches:
+   - write/side-effect tools (`send_email`, `update_document`,
+     `embed_and_upsert`, …) → `if (deps.simulate) return <no-op result>`.
+   - read tools (`search_knowledge_base`, …) → `if (deps.simulate) return
+     deps.getFixture(id) ?? <safe empty default>`.
+5. Test: a write tool no-ops and a read tool returns its fixture under `simulate`.
 
 _Independently useful and low-risk — land it on its own._
 
@@ -522,8 +573,11 @@ _Independently useful and low-risk — land it on its own._
 - `src/server/handlers.ts` — implement. **`startEvalRun` is an optional
   host-wired hook** (mirrors `retryRun`/`runToolPreview`): the host injects a
   callback that calls its `WORKFLOWS.startGraphRun({ tenantId: EVAL_TENANT,
-  simulate: true, workflowVersionId, triggerInput, … })`. Without it, the method
-  rejects "not configured."
+  simulate: true, fixtures: row.fixtures, workflowVersionId, triggerInput,
+  promptVariables })`. The host owns `EVAL_TENANT` (the platform/builder scope) —
+  the SDK never mints it. Without the hook wired, the method rejects "not
+  configured." The eval-data handlers (`listEvalSets`, etc.) also scope reads to
+  the host-provided `EVAL_TENANT` via `resolveContext`.
 - `src/server/http-client.ts` — generic over method name; likely no change.
 
 ### Phase 5 — execution orchestration
@@ -533,9 +587,9 @@ _Independently useful and low-risk — land it on its own._
   (created once per agent target, cached by `targetId`). Workflow targets run
   their assigned/latest version directly.
 - **Orchestration (v1 = client-driven):** the Evals UI starts each row via
-  `startEvalRun`, watches completion via existing `getRun` polling / `RunViewer`
-  socket, then calls `gradeEvalResult(evalRunId, rowId, wfRunId)`.
-  Concurrency-capped in the client.
+  `startEvalRun` (passing the row's `fixtures`), watches completion via existing
+  `getRun` polling / `RunViewer` socket, then calls
+  `gradeEvalResult(evalRunId, rowId, wfRunId)`. Concurrency-capped in the client.
   - _Later alternative:_ a durable `EvalRunRoom`/orchestrator DO so a test run
     survives a closed tab. Deferred.
 
@@ -582,43 +636,23 @@ data + grading layer.
   workflow eval and grades through one path. No bespoke non-graph path.
 - **Scoring** — ✅ pass/fail over all checks; **score from judge checks only**
   (binary checks excluded) so the number is a clean model-performance metric.
+- **Tenancy** — ✅ **one host-provided `EVAL_TENANT`** (platform/builder scope)
+  owns the `wf_eval_*` suites, owns the eval `wf_run` rows, and is the tenant
+  targets resolve under. Tenant isolation keeps eval runs out of firms' Runs
+  views, so an `is_eval` flag on `wf_run` is optional.
+- **Read tools under simulate** — ✅ return the row's **canned fixtures** (or a
+  safe empty default), so evals are reproducible and self-contained; no dependence
+  on live firm data. Write tools no-op.
+- **UI vocabulary ≠ code identifiers (deferred rename)** — ✅ the UI says
+  **Goal / Sample / Test**; the code + schema keep **set / row / check**
+  (`wf_eval_set`, `setId`, `EvalSet`, `MockCheck`, route `evals/<setId>`, …). The
+  identifier rename is a mechanical refactor with no functional payoff yet, so it
+  is **not** being done now — revisit when the real `wf_eval_*` schema is built
+  (Phase 2). See [Terminology → UI vocabulary vs. code identifiers](#ui-vocabulary-vs-code-identifiers-deliberate-split).
 
 ## Open questions
 
-### 1. Tenancy — TWO tenant roles to separate
-
-"Run under a dedicated eval tenant" (chosen for isolation) actually collides with
-how `tenantId` works in this SDK, because a run's `tenantId` does **two** jobs at
-once. We need to decide each independently:
-
-- **(A) Ownership tenant of the eval _artifacts_** — who owns `wf_eval_set` /
-  `wf_eval_row` / `wf_eval_run` (i.e. who can see & edit the suites). This is pure
-  scoping, no execution impact.
-- **(B) Execution tenant of the _run_** — the `tenantId` the graph run executes
-  under. This is load-bearing: it becomes `RunContext.tenantId`, which
-  **tenant-scoped tools read data by** (e.g. `search_knowledge_base` filters by
-  it) and which owns the resulting `wf_run` row.
-
-The trap: if (B) is a throwaway `"__eval__"` tenant, its data store is **empty**,
-so any read-oriented tool returns nothing and the eval is unrealistic — even in
-`simulate` mode, unless every read tool also fabricates canned data. If (B) is the
-target's **real** owning firm, read tools see realistic data, but the `wf_run`
-rows land in that firm's history unless we mark them.
-
-Sub-decisions:
-
-- **(B) execution tenant:** throwaway eval tenant (clean, but needs seeded fixture
-  data or fully-canned tools) **vs.** the target's real owning tenant (realistic
-  reads; requires an `is_eval` flag — see below).
-- **`is_eval` marker on `wf_run`:** add a boolean/scope column so eval runs are
-  filtered out of the normal Runs explorer **regardless** of which tenant they run
-  under. Almost certainly yes.
-- **(A) artifact ownership:** per-firm (each firm authors evals for its own
-  agents/workflows) **vs.** a single builder/platform scope (evals are a
-  dev-time tool, authored centrally). Depends on _who_ writes evals in 1121law —
-  the platform team or each firm.
-
-> Awaiting decision — see chat elaboration.
+_(none currently — all resolved above)_
 
 ## Ideas parking lot (to expand)
 

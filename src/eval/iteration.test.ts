@@ -14,7 +14,7 @@ import { runWorkflowUnderConditions } from './index'
 // executeSubgraph, records the iteration as a single step, and preserves order.
 
 describe('eval harness — iteration graph', () => {
-  type ToolDeps = { tenant: string }
+  type ToolDeps = { subject: string }
 
   const toolRegistry: ToolRegistry<ToolDeps> = new Map([
     [
@@ -44,7 +44,7 @@ describe('eval harness — iteration graph', () => {
         inputSchema: z.object({ words: z.array(z.string()) }),
       },
     },
-    buildRunDeps: (ctx) => ({ tenant: ctx.tenantId }),
+    buildRunDeps: (ctx) => ({ subject: ctx.subjectId ?? '' }),
   }
 
   // Subgraph: iteration_item trigger → shout(text = the item) → item result.

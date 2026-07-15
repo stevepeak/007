@@ -8,11 +8,12 @@ import {
 } from 'drizzle-orm/sqlite-core'
 
 // The SDK owns these tables. Everything is prefixed `wf_` so the schema can
-// coexist with any host schema in the same D1 database, and identity is
-// OPAQUE: `tenantId` scopes ownership, `subjectId` ties a run to a host entity
-// (a chat, a document, …), `correlationId` is a free-form host reference. No
-// foreign keys point at host tables — the host maps its own ids into these
-// text columns.
+// coexist with any host schema in the same D1 database. Workflows and agents
+// are a single GLOBAL set — every caller shares the same definitions, so there
+// is no tenant partition; edit access is gatekept by the host. Run identity is
+// still OPAQUE: `subjectId` ties a run to a host entity (a chat, a document, …)
+// and `correlationId` is a free-form host reference. No foreign keys point at
+// host tables — the host maps its own ids into these text columns.
 
 export const WF_RUN_STATUSES = [
   'queued',
@@ -35,23 +36,18 @@ function createdAt() {
     .default(sql`(unixepoch())`)
 }
 
-// A workflow — the editable unit a tenant owns. Versions are immutable
+// A workflow — a globally shared, editable unit. Versions are immutable
 // snapshots; the draft is the in-progress sidecar.
-export const wfWorkflow = sqliteTable(
-  'wf_workflow',
-  {
-    id: text('id')
-      .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()),
-    tenantId: text('tenant_id').notNull(),
-    name: text('name').notNull(),
-    description: text('description'),
-    createdBy: text('created_by'),
-    createdAt: createdAt(),
-    updatedAt: integer('updated_at', { mode: 'timestamp' }),
-  },
-  (t) => [index('wf_workflow_tenant_idx').on(t.tenantId)],
-)
+export const wfWorkflow = sqliteTable('wf_workflow', {
+  id: text('id')
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  name: text('name').notNull(),
+  description: text('description'),
+  createdBy: text('created_by'),
+  createdAt: createdAt(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }),
+})
 
 // Immutable published graph snapshots.
 export const wfWorkflowVersion = sqliteTable(
@@ -94,30 +90,25 @@ export const wfWorkflowDraft = sqliteTable('wf_workflow_draft', {
   updatedAt: integer('updated_at', { mode: 'timestamp' }),
 })
 
-// A reusable agent — same lifecycle as workflows: the editable unit a
-// tenant owns, with immutable published versions and a 1:1 draft sidecar. Name,
-// icon, and color are display metadata edited in place; the versioned behavior
+// A reusable agent — same lifecycle as workflows: a globally shared, editable
+// unit with immutable published versions and a 1:1 draft sidecar. Name, icon,
+// and color are display metadata edited in place; the versioned behavior
 // (model, prompt, tools, output contract) lives in `config` on each version.
 // Workflow agent nodes reference an agent by `wf_agent.id` and float to its
 // latest published version; a run freezes the resolved config in its manifest.
-export const wfAgent = sqliteTable(
-  'wf_agent',
-  {
-    id: text('id')
-      .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()),
-    tenantId: text('tenant_id').notNull(),
-    name: text('name').notNull(),
-    description: text('description'),
-    // Lucide icon name + a color token — purely for the agent cards.
-    icon: text('icon'),
-    color: text('color'),
-    createdBy: text('created_by'),
-    createdAt: createdAt(),
-    updatedAt: integer('updated_at', { mode: 'timestamp' }),
-  },
-  (t) => [index('wf_agent_tenant_idx').on(t.tenantId)],
-)
+export const wfAgent = sqliteTable('wf_agent', {
+  id: text('id')
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  name: text('name').notNull(),
+  description: text('description'),
+  // Lucide icon name + a color token — purely for the agent cards.
+  icon: text('icon'),
+  color: text('color'),
+  createdBy: text('created_by'),
+  createdAt: createdAt(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }),
+})
 
 // Immutable published agent snapshots. `config` is the full AgentConfig JSON
 // (model, prompt, toolIds, maxTurns, exposeThinking, output contract).
@@ -154,25 +145,20 @@ export const wfAgentDraft = sqliteTable('wf_agent_draft', {
   updatedAt: integer('updated_at', { mode: 'timestamp' }),
 })
 
-// Binds a trigger kind to the workflow that should run for it, per tenant.
+// Binds a trigger kind to the workflow that should run for it. One global
+// mapping — a trigger kind resolves to a single workflow for everyone.
 export const wfWorkflowAssignment = sqliteTable(
   'wf_workflow_assignment',
   {
     id: text('id')
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    tenantId: text('tenant_id').notNull(),
     triggerKind: text('trigger_kind').notNull(),
     workflowId: text('workflow_id').notNull(),
     assignedBy: text('assigned_by'),
     createdAt: createdAt(),
   },
-  (t) => [
-    uniqueIndex('wf_assignment_tenant_trigger_idx').on(
-      t.tenantId,
-      t.triggerKind,
-    ),
-  ],
+  (t) => [uniqueIndex('wf_assignment_trigger_idx').on(t.triggerKind)],
 )
 
 // One execution.
@@ -183,7 +169,6 @@ export const wfRun = sqliteTable(
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
     workflowVersionId: text('workflow_version_id').notNull(),
-    tenantId: text('tenant_id').notNull(),
     // Opaque host references (no FK).
     subjectId: text('subject_id'),
     correlationId: text('correlation_id'),
@@ -209,7 +194,7 @@ export const wfRun = sqliteTable(
     createdAt: createdAt(),
   },
   (t) => [
-    index('wf_run_tenant_created_idx').on(t.tenantId, t.createdAt),
+    index('wf_run_created_idx').on(t.createdAt),
     index('wf_run_version_created_idx').on(t.workflowVersionId, t.createdAt),
     index('wf_run_subject_idx').on(t.subjectId),
   ],

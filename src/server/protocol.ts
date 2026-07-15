@@ -43,9 +43,9 @@ export type ToolOption = {
   outputSchema?: JsonSchema
 }
 
-// One recorded invocation of a tool, pulled from the run steps across the
-// tenant's runs (a `wf_run_step` with `nodeKind: 'tool'` whose `meta.toolId`
-// matches). Surfaces on the tool detail page's "recent calls" list.
+// One recorded invocation of a tool, pulled from the run steps across all runs
+// (a `wf_run_step` with `nodeKind: 'tool'` whose `meta.toolId` matches).
+// Surfaces on the tool detail page's "recent calls" list.
 export type WfToolInvocation = {
   /** The run this call happened in — links to the run page. */
   runId: string
@@ -258,7 +258,7 @@ export type AgentPreviewResult = {
 export interface WfDataClient {
   listModels(): Promise<ModelOption[]>
   listTools(): Promise<ToolOption[]>
-  /** Recent times a tool was called across the tenant's runs (tool detail page). */
+  /** Recent times a tool was called across all runs (tool detail page). */
   listToolInvocations(input: {
     toolId: string
     limit?: number
@@ -317,7 +317,7 @@ export interface WfDataClient {
     versionId: string,
   ): Promise<{ graph: WorkflowGraph; versionNumber: number } | null>
   listRuns(input: WfRunListInput): Promise<WfRunListResult>
-  /** Distinct trigger kinds seen across the tenant's runs (filter dropdown). */
+  /** Distinct trigger kinds seen across all runs (filter dropdown). */
   listRunTriggerKinds(): Promise<string[]>
   getRun(runId: string): Promise<WfRunDetail | null>
   /**

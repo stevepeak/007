@@ -50,12 +50,10 @@ export async function summarizeWorkflowChanges(input: {
   modelId: string
   /** The host's live bindings, passed through to `getModel`. Opaque to the SDK. */
   env: unknown
-  tenantId: string
   previousGraph: WorkflowGraph | null
   nextGraph: WorkflowGraph
 }): Promise<WfChangeSummary> {
   const model = input.getModel(input.modelId, {
-    tenantId: input.tenantId,
     triggerKind: '__summarize__',
     env: input.env,
     promptVariables: {},

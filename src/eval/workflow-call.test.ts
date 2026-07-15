@@ -48,7 +48,7 @@ const parentGraph = {
 }
 
 describe('eval harness — workflow-calls-workflow (tool callee)', () => {
-  type Deps = { tenant: string }
+  type Deps = { subject: string }
 
   const toolRegistry: ToolRegistry<Deps> = new Map([
     [
@@ -62,7 +62,7 @@ describe('eval harness — workflow-calls-workflow (tool callee)', () => {
           const { text } = args as { text: string }
           return Promise.resolve({
             shouted: text.toUpperCase(),
-            tenant: deps.tenant,
+            subject: deps.subject,
           })
         },
       },
@@ -76,7 +76,7 @@ describe('eval harness — workflow-calls-workflow (tool callee)', () => {
     listModels: () => [],
     toolRegistry,
     triggers: {},
-    buildRunDeps: (ctx) => ({ tenant: ctx.tenantId }),
+    buildRunDeps: (ctx) => ({ subject: ctx.subjectId ?? '' }),
   }
 
   // The callee: manual trigger → shout tool (binds the whole trigger input) →
@@ -133,10 +133,10 @@ describe('eval harness — workflow-calls-workflow (tool callee)', () => {
       triggerInput: 'hello',
       config,
       manifest,
-      runContext: { tenantId: 'acme' },
+      runContext: { subjectId: 'acme' },
     })
 
-    expect(run.output).toEqual({ shouted: 'HELLO', tenant: 'acme' })
+    expect(run.output).toEqual({ shouted: 'HELLO', subject: 'acme' })
     // The parent trace has exactly trigger → workflow → output — the callee's
     // inner trigger/tool/output steps run inline and are NOT separately recorded.
     expect(run.steps.map((s) => s.nodeKind)).toEqual([
