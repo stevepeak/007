@@ -12,6 +12,7 @@ import { RunsExplorer } from './runs-explorer'
 import { WfShell } from './shell'
 import { ToolDetail } from './tool-detail'
 import { ToolsList } from './tools-list'
+import { sectionCrumb } from './wf-crumbs'
 import { DEFAULT_WF_SECTIONS, WfHub, type WfHubSection } from './wf-hub'
 import { WorkflowsList } from './workflows-list'
 
@@ -100,11 +101,7 @@ function WfAppRoutes({
   if (parts.length === 2 && parts[0] === 'tools') {
     return (
       <WfShell
-        crumbs={[
-          { home: true },
-          { label: 'Tools', to: 'tools' },
-          { label: 'Tool' },
-        ]}
+        crumbs={[{ home: true }, sectionCrumb('tools'), { label: 'Tool' }]}
         scroll
       >
         <ToolDetail toolId={parts[1]} />
@@ -168,7 +165,7 @@ function WfAppRoutes({
         <WfShell
           crumbs={[
             { home: true },
-            { label: 'Workflows', to: 'workflows' },
+            sectionCrumb('workflows'),
             { label: 'Runs' },
           ]}
         >
@@ -183,35 +180,47 @@ function WfAppRoutes({
     const [key] = parts
     if (key === 'workflows') {
       return (
-        <WfShell crumbs={[{ home: true }, { label: 'Workflows' }]} scroll>
+        <WfShell
+          crumbs={[{ home: true }, sectionCrumb('workflows', { current: true })]}
+          scroll
+        >
           <WorkflowsList />
         </WfShell>
       )
     }
     if (key === 'runs') {
       return (
-        <WfShell crumbs={[{ home: true }, { label: 'Runs' }]}>
+        <WfShell crumbs={[{ home: true }, sectionCrumb('runs', { current: true })]}>
           <RunsExplorer className="h-full" />
         </WfShell>
       )
     }
     if (key === 'agents') {
       return (
-        <WfShell crumbs={[{ home: true }, { label: 'Agents' }]} scroll>
+        <WfShell
+          crumbs={[{ home: true }, sectionCrumb('agents', { current: true })]}
+          scroll
+        >
           <AgentsList templates={agentTemplates} />
         </WfShell>
       )
     }
     if (key === 'tools') {
       return (
-        <WfShell crumbs={[{ home: true }, { label: 'Tools' }]} scroll>
+        <WfShell
+          crumbs={[{ home: true }, sectionCrumb('tools', { current: true })]}
+          scroll
+        >
           <ToolsList />
         </WfShell>
       )
     }
     if (key === 'evals') {
       return (
-        <WfShell crumbs={[{ home: true }, { label: 'Evals' }]} scroll>
+        <WfShell
+          crumbs={[{ home: true }, sectionCrumb('evals', { current: true })]}
+          scroll
+        >
           <EvalsList />
         </WfShell>
       )

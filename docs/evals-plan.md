@@ -1,7 +1,10 @@
 # Evals — build plan for `@stevepeak/007`
 
-> **Status:** design draft. This is a living document — we are still capturing
-> ideas before implementation begins. Sections marked _(open)_ are unresolved.
+> **Status:** design + **navigable prototype**. A full mock-backed authoring UI is
+> built (see [Implementation status](#implementation-status--prototype-ui-mock-backed));
+> the backend (schema, grading, execution — Phases 1–5) is not started. This is a
+> living document. The plan below is the target architecture; the prototype is what
+> exists today, and the two have some intentional deltas (called out inline).
 
 ## What this is
 
@@ -90,6 +93,92 @@ When the real `wf_eval_*` schema is built (Phase 2), we decide once whether to
 adopt `goal` / `sample` / `test` in the identifiers too; until then, **UI speaks
 Goal/Sample/Test, code speaks set/row/check.** This doc still uses the code
 vocabulary (`eval set`, `row`, `check`) so it matches the schema.
+
+---
+
+## Implementation status — prototype UI (mock-backed)
+
+A **navigable, mock-backed prototype of the whole authoring surface is built** and
+lives under `src/ui/evals/`. It mounts inside `WfApp` (hub "Evals" card → `evals`
+routes), renders through the injected UI primitives, and is driven entirely by an
+**in-memory versioned store** — no schema, no server, no execution. It's designed
+as a clean cut: delete `mock-data.ts` + `mock-store.ts` and swap the getters for
+real hooks. Nothing outside `src/ui/evals` imports from them.
+
+### File map
+
+| File                                     | Role                                                                          |
+| ---------------------------------------- | ----------------------------------------------------------------------------- |
+| `evals-list.tsx`                         | Catalog — Goals + Test runs tabs; New goal, Run tests (stub), help            |
+| `eval-set.tsx`                           | **Goal** page (folder): editable name/description, Samples + Test runs tabs   |
+| `eval-sample.tsx`                        | **Sample** page: StepFlow (Target → Given → Mocks → Tests), versioned Save    |
+| `eval-test.tsx`                          | **Test** page: binary/scored picker + config, versioned Save                  |
+| `run-config-dialog.tsx`                  | **Run** dialog: model matrix (toggle · brand · cost · speed · best-of-N)      |
+| `mock-store.ts`                          | In-memory versioned store (`useSyncExternalStore`); Goal/Sample/Test CRUD     |
+| `mock-data.ts`                           | Seed goals/samples/checks · model catalog (`MOCK_MODELS`) · run-history maker |
+| `shared.tsx`                             | Atoms: badges, `Tabs`, `VersionsList`, `TestRunsTable`, `BrandMark`           |
+| `step-flow.tsx`                          | Layout: `StepFlow` (stacked cards) + `PickerCards` (big tile chooser)         |
+| `todo-spark.tsx`                         | ⚡ inline "planned" markers → dialog describing intent                         |
+| `evals-help-dialog.tsx`, `new-goal-dialog.tsx` | Help + create-goal dialogs                                              |
+
+### What each screen does (built)
+
+- **Catalog** (`evals`) — Goals table (name · sample count · last-run pass/score)
+  and a Test runs table. Create a goal; drill into one. Catalog-level "Run tests"
+  is still a stub.
+- **Goal** (`evals/<setId>`) — a **folder** (unversioned): rename + edit
+  description in place, archive, add sample, Run. Tabs: Samples · Test runs.
+- **Sample** (`evals/<setId>/samples/<sampleId>`) — inline name/summary header;
+  Configuration is a **StepFlow**: **Target** (PickerCards agent/workflow —
+  workflow is _Coming soon_/disabled), **Given** (⚡), **Mocks** (⚡ Planned),
+  **Tests** (list + add). **Save** mints an immutable version. Archive, Run. Tabs:
+  Configuration · Test runs · Versions.
+- **Test** (`…/tests/<testId>`) — inline label/description; **binary vs scored**
+  chosen via PickerCards, then its config (binary type select, or judge
+  rubric/threshold/weight/model). **Save** mints a version. Archive, Run. Tabs:
+  Configuration · Test runs · Versions.
+- **Run dialog** (every Run button) — the **model-comparison matrix**: toggle any
+  of N catalog models on, set **best-of-N** attempts per model; each row shows cost
+  ($/M tok) and speed (tok/s). "Next" is intentionally inert (needs the backend).
+- **Test runs table** (shared, on every entity) — When · **Model** · **Cost** ·
+  **Tokens** · Result · Score, with badges. Model/cost/tokens are the
+  model-performance lens.
+
+### Versioning model (as implemented in the mock store)
+
+- **Goal = folder, not versioned** — create / rename / edit description / archive.
+- **Sample & Test = independent version lineages** — **Save** mints version `N+1`
+  (no draft, no publish button; dirty-tracked by JSON compare). Test membership is
+  **live** (tests are parented by `sampleId`), so editing a test never bumps the
+  sample. Archive is a soft `archived` flag (no restore UI yet).
+
+### How the prototype differs from this plan (deltas to reconcile at build time)
+
+1. **Run launcher is a model matrix, not a set picker.** The plan's §4 modal
+   selected _which eval sets_ to run. The built dialog instead selects _which
+   models_ to test one entity on (+ best-of-N). This sharpens the core goal —
+   **evals exist to compare model performance** — and Run now lives on each
+   Goal/Sample/Test. The set-multiselect launcher is **superseded**; see the
+   updated §4 and the new resolved decision.
+2. **Layout is StepFlow + PickerCards** (stacked "choose → configure" cards),
+   not the left/right author-vs-assert split sketched in §3/§5. The two-signal
+   principle (pass vs score) still holds.
+3. **Workflow targets are stubbed** ("Coming soon", disabled) in the Sample Target
+   picker — the prototype wires **agent** targets only, though the data model and
+   plan support both.
+4. **No report screen yet** — Test runs tabs render **fabricated** history only;
+   there is no `evals/runs/<evalRunId>` route. §5/§6 report UI is unbuilt.
+5. **No backend at all** — Phases 1–5 (simulate signal, `wf_eval_*` schema,
+   grading, handlers, execution) are untouched; everything is mock/in-memory.
+
+### Open UX TODOs marked inline (⚡ `TodoSpark`)
+
+- **Target picker** → dropdown of real agents/workflows (icon + name), not free
+  text; selecting one drives the dynamic Given and available Mocks.
+- **Dynamic Given** → fields generated from the target's trigger `inputSchema` +
+  prompt variables (instead of arbitrary key/value rows).
+- **Mocks** → the row-level `fixtures` editor (canned tool/node outputs under
+  `simulate`) — the "Tool fixtures" from §3 / the Data model.
 
 ---
 
@@ -446,25 +535,39 @@ Each check expands inline to edit its params. Binary checks are tagged `[binary]
 and render ✓/✗ at grade time; the judge is tagged `[scored]` and carries rubric +
 threshold + weight.
 
-### 4. Run launcher (modal from `▶ Run tests`)
+### 4. Run configuration — the model matrix (modal from any `▶ Run`)
+
+**Built (as `run-config-dialog.tsx`).** Launched from the Run button on a Goal,
+Sample, or Test. A run targets **that one entity** and fans it out across a
+**user-chosen set of models**, each with an optional **best-of-N** attempts — the
+concrete expression of the judge-only score (line the same suite up against several
+models, read the scores side by side).
 
 ```
-  ┌──────────── Run tests ────────────────────────────────┐
-  │  Select eval sets to run:                             │
-  │   ☑ Intake triage           12 rows                   │
-  │   ☑ Refund handling          7 rows                   │
-  │   ☐ Doc ingest pipeline      5 rows                   │
-  │   ☐ Escalation routing       9 rows                   │
-  │  ─────────────────────────────────────────────────    │
-  │  Will run 19 rows · eval tenant · simulate = ON       │
-  │  Default judge model: [ gpt-… ▾ ]                     │
-  │                                     [ Cancel ] [ Run ] │
-  └───────────────────────────────────────────────────────┘
+  ┌──────────── Run configuration ─────────────── Refund handling ─┐
+  │  Choose the models to test this sample on                      │
+  │  ────────────────────────────────────────────────────────────  │
+  │  TEST   MODEL                     COST      SPEED    BEST OF N  │
+  │   ☑    🟢 OpenAI 5.1             $5.00/M    82 tok/s   − 1 +    │
+  │   ☐    🟢 OpenAI 5.1 mini        $1.20/M   145 tok/s   − 1 +    │
+  │   ☑    🟠 Claude Opus 4.8        $9.00/M    64 tok/s   − 3 +    │
+  │   ☐    🔵 Gemini 3 Pro           $3.50/M   110 tok/s   − 1 +    │
+  │   …                                                            │
+  │  ────────────────────────────────────────────────────────────  │
+  │  2 models selected                        [ Cancel ]  [ Next ] │
+  └────────────────────────────────────────────────────────────────┘
 ```
 
-Reassures the user of the safety rails (eval tenant, simulate on) right where
-they pull the trigger. `Run` creates the `wf_eval_run` and navigates straight to
-the report, which streams live.
+- Each row: an on/off **toggle**, a **brand mark + model name**, **cost** ($/M
+  tokens), **speed** (tok/s), and a **best-of-N** stepper (enabled once selected).
+- **Next** is intentionally **disabled** until the backend exists — this screen is
+  step 1 of the launch flow; the follow-on (safety-rail confirm: eval tenant +
+  simulate ON, then create `wf_eval_run` and open the live report) is not built.
+- Models come from `MOCK_MODELS` (mock catalog); at build time this becomes the
+  host's real model registry (`config.listModels`).
+
+_Supersedes the earlier set-multiselect launcher: a run is now entity-scoped and
+model-fanned, not a pick-N-suites modal._
 
 ### 5. Test run report · `evals/runs/<evalRunId>`
 
@@ -520,6 +623,15 @@ row detail → trace**.
 ---
 
 ## Phases
+
+### Phase 0 — prototype UI (DONE, mock-backed)
+
+The whole authoring surface — catalog, Goal, Sample, Test, versioning, and the Run
+model-matrix dialog — is built against an in-memory store (see
+[Implementation status](#implementation-status--prototype-ui-mock-backed)). This
+front-ran Phase 6 to pin down the UX. What it leaves for the real build: the report
+screen, the three ⚡ TODOs (Target dropdown, dynamic Given, Mocks/fixtures), workflow
+targets, and wiring every Run/Save/Test-runs surface to real data + execution.
 
 ### Phase 1 — SDK plumbing: the `simulate` signal + fixtures (small, standalone, shippable first)
 
@@ -595,20 +707,28 @@ _Independently useful and low-risk — land it on its own._
 
 ### Phase 6 — UI (the new tab)
 
-- `src/ui/wf-app.tsx` — routes: `evals` (catalog), `evals/<setId>` (set editor),
-  `evals/runs/<evalRunId>` (report). Hub section in `wf-hub.tsx`.
-- New components under `src/ui/evals/`:
-  - `evals-list.tsx` — Catalog: sets (target, row count, last pass-rate) + recent
-    test runs; "New eval set" + "Run" launcher.
-  - `eval-set-editor.tsx` — pick target (reuse agent/workflow pickers), rows
-    table.
-  - `eval-row-editor.tsx` — initial-condition form (rendered from the target
-    trigger's `inputSchema`, reusing `new-workflow-dialog`'s field reflection) +
-    the check builder.
-  - `eval-run-report.tsx` — per-row pass/fail **and score**, per-check verdicts
-    (✓/✗ for binary, score + judge reason for scored), embedded `RunViewer` link
-    to the real `wf_run`; set/run pass rates **and mean scores**.
-- `src/ui/hooks.ts` — React Query hooks for the new methods.
+**Mostly built as the Phase 0 prototype** — the remaining work is (a) the report
+screen, (b) the three ⚡ TODOs, (c) workflow targets, and (d) replacing the mock
+store with real hooks.
+
+- **Built** (`src/ui/wf-app.tsx` routes + hub card, components under
+  `src/ui/evals/`): catalog (`evals-list.tsx`), Goal (`eval-set.tsx`), Sample
+  (`eval-sample.tsx`), Test (`eval-test.tsx`), Run model-matrix
+  (`run-config-dialog.tsx`), versioned mock store, shared atoms. Routes today:
+  `evals`, `evals/<setId>`, `evals/<setId>/samples/<sampleId>`,
+  `…/tests/<testId>`.
+- **Still to build:**
+  - `eval-run-report.tsx` + route `evals/runs/<evalRunId>` — per-row pass/fail
+    **and score**, per-check verdicts (✓/✗ binary, score + judge reason for
+    scored), embedded `RunViewer` link to the real `wf_run`; set/run pass rates +
+    mean scores. (The per-entity "Test runs" tabs then link into it.)
+  - ⚡ **Target picker** (dropdown of real agents/workflows), ⚡ **dynamic Given**
+    (reflected from the target trigger's `inputSchema`, reusing
+    `new-workflow-dialog`'s field reflection), ⚡ **Mocks/fixtures** editor.
+  - **Workflow targets** — un-stub the Sample Target picker's Workflow tile.
+  - Wire **Run "Next"**, **Save**, and **Test runs** tabs to real data + execution.
+- `src/ui/hooks.ts` — React Query hooks for the new methods; **delete**
+  `mock-store.ts` + `mock-data.ts` when they land.
 - `src/index.ts` / `src/eval/index.ts` — export the pure grading utils.
 
 ---
@@ -622,9 +742,10 @@ _Independently useful and low-risk — land it on its own._
 
 ## Suggested landing order
 
-**Phase 1 alone first** (clean, useful SDK change), then 2 → 3 → 4 → 5 → 6.
-Phases 2–3 are pure/testable with no UI; the UI (6) comes last against a working
-data + grading layer.
+Phase 0 (prototype UI) is **done**. Next: **Phase 1 alone** (clean, useful SDK
+change), then 2 → 3 → 4 → 5, and finally the **remaining** Phase 6 work (report
+screen + ⚡ TODOs + wiring the prototype off the mock store). Phases 2–3 are
+pure/testable with no UI and can proceed in parallel with UI polish.
 
 ---
 
@@ -649,6 +770,17 @@ data + grading layer.
   identifier rename is a mechanical refactor with no functional payoff yet, so it
   is **not** being done now — revisit when the real `wf_eval_*` schema is built
   (Phase 2). See [Terminology → UI vocabulary vs. code identifiers](#ui-vocabulary-vs-code-identifiers-deliberate-split).
+- **Run = entity-scoped model matrix** — ✅ a run is launched from **one** entity
+  (Goal / Sample / Test) and fanned across a **user-chosen set of models**, each
+  with an optional **best-of-N** attempts. This is the operational form of the
+  judge-only score (compare models on the same suite). **Supersedes** the earlier
+  §4 "pick which sets to run" launcher. Built as `run-config-dialog.tsx`; "Next" is
+  inert pending the backend.
+- **Versioning shape** — ✅ **Goal = folder** (unversioned); **Sample & Test = two
+  independent version lineages**, **Save** mints version `N+1` with **no
+  draft/publish** step; editing a test never bumps its sample (test membership is
+  live by `sampleId`). Archive is a soft flag. Implemented in the mock store; the
+  real `wf_eval_*` schema must carry the same shape.
 
 ## Open questions
 
@@ -656,4 +788,13 @@ _(none currently — all resolved above)_
 
 ## Ideas parking lot (to expand)
 
-_Capture additional ideas here before implementation._
+- **Best-of-N aggregation (opened by the Run matrix).** The Run dialog lets a user
+  request _N attempts per model_. This needs a defined roll-up: is a model's score
+  the **best**, **mean**, or **median** of its N attempts? Is pass/fail "passed if
+  any attempt passed" or "if all did"? Likely surface **best score + pass@k**.
+  Also implies the report is a **model × sample grid** (compare models per row),
+  not a single-run list — the model-comparison payoff the whole feature is for.
+- **Model registry wiring.** Replace `MOCK_MODELS` with the host's real
+  `config.listModels`, carrying cost + speed metadata (or fetch/estimate it).
+- **Show-archived / restore.** Archive is a soft flag today with no restore UI.
+- _Capture additional ideas here before implementation._

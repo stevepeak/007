@@ -479,38 +479,174 @@ export const MOCK_EVAL_RUNS: MockEvalRun[] = [
   },
 ]
 
+// ── Model catalog (mock) ─────────────────────────────────────────────────────
+// The selectable AI models shown in the "Run" configuration dialog. Replace with
+// the real model registry (config.listModels) when Evals runs go live.
+
+export type MockModelBrand = 'openai' | 'anthropic' | 'google' | 'meta'
+
+export type MockModel = {
+  id: string
+  /** Display name, e.g. "OpenAI 5.1". */
+  name: string
+  brand: MockModelBrand
+  /** Blended cost per 1M tokens, USD. */
+  costPerMTok: number
+  /** Throughput in tokens/second. */
+  tokensPerSec: number
+}
+
+export const MOCK_MODELS: MockModel[] = [
+  { id: 'openai-5.1', name: 'OpenAI 5.1', brand: 'openai', costPerMTok: 5.0, tokensPerSec: 82 },
+  { id: 'openai-5.1-mini', name: 'OpenAI 5.1 mini', brand: 'openai', costPerMTok: 1.2, tokensPerSec: 145 },
+  { id: 'claude-opus-4.8', name: 'Claude Opus 4.8', brand: 'anthropic', costPerMTok: 9.0, tokensPerSec: 64 },
+  { id: 'claude-sonnet-5', name: 'Claude Sonnet 5', brand: 'anthropic', costPerMTok: 3.0, tokensPerSec: 98 },
+  { id: 'claude-haiku-4.5', name: 'Claude Haiku 4.5', brand: 'anthropic', costPerMTok: 0.8, tokensPerSec: 180 },
+  { id: 'gemini-3-pro', name: 'Gemini 3 Pro', brand: 'google', costPerMTok: 3.5, tokensPerSec: 110 },
+  { id: 'gemini-3-flash', name: 'Gemini 3 Flash', brand: 'google', costPerMTok: 0.4, tokensPerSec: 220 },
+  { id: 'llama-4-405b', name: 'Llama 4 405B', brand: 'meta', costPerMTok: 0.9, tokensPerSec: 130 },
+]
+
 // One row in an entity's "Test runs" history (a set, a sample, or a single test).
 export type MockRunHistoryRow = {
   id: string
   /** Human-friendly timestamp label. */
   at: string
+  /** Overall verdict (the winning model's). */
   status: 'pass' | 'fail'
+  /** Attempts each model was given (best-of-N). */
+  bestOfN: number
+  /** How many models competed in this run. */
+  modelsCount: number
+  /** Total cost across every model × attempt, USD. */
+  totalCost: number
+  /** Headline pass count — the winning model's tests passed… */
+  passed: number
+  /** …out of this many tests in the suite. */
+  total: number
+  /** The winning model + its best-attempt metadata. */
+  best: MockRunModelResult
+  /** Full per-model matrix (winner flagged). */
+  models: MockRunModelResult[]
+}
+
+// One model's line in a run — its best-of-N result plus metadata. This is a row
+// of the run-report matrix (model × metadata × test results).
+export type MockRunModelResult = {
+  modelId: string
+  model: string
+  brand: MockModelBrand
+  /** Attempts this model was given (= run's bestOfN). */
+  attempts: number
+  /** Average cost per attempt, USD (the reported cost is the best attempt's avg). */
+  avgCost: number
+  /** Tokens used on the best attempt. */
+  tokens: number
+  /** Throughput, tokens/second. */
+  tokensPerSec: number
+  passed: number
+  total: number
   /** Judge-only score, 0..1. Null when the entity has no scored checks. */
   score: number | null
+  /** True for the run's winning model. */
+  winner: boolean
 }
 
 // NOTE: entity reads/writes now live in mock-store.ts (the versioned in-memory
 // store, seeded from MOCK_EVAL_SETS / MOCK_SAMPLES above). This file only holds
 // the seed + the fabricated run-history helper below.
 
-// A fabricated run history for any entity. `scored` controls whether scores show
-// (a binary-only test/sample has null scores). Deterministic per seed so different
-// entities look a little different without needing per-entity fixtures.
+const RUN_TIMES = [
+  'Jul 14, 3:20pm',
+  'Jul 13, 9:41am',
+  'Jul 11, 2:02pm',
+  'Jul 9, 10:15am',
+]
+
+// FNV-1a hash → deterministic pseudo-randomness keyed by a string, so the same
+// entity always fabricates the same history (no Math.random, stable across renders).
+function hash(s: string): number {
+  let h = 2166136261
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return h >>> 0
+}
+function rand01(s: string): number {
+  return (hash(s) % 100000) / 100000
+}
+
+// A fabricated run history for any entity. Each row is a best-of-N competition
+// across several models. `scored` controls whether judge scores show (a binary-only
+// test/sample has null scores → the winner is decided by pass count). Deterministic
+// per seed so different entities look different without per-entity fixtures.
 export function getMockRunHistory(
   seed: string,
   scored: boolean,
 ): MockRunHistoryRow[] {
-  const rows: Omit<MockRunHistoryRow, 'id'>[] = [
-    { at: 'Jul 14, 3:20pm', status: 'pass', score: 0.9 },
-    { at: 'Jul 13, 9:41am', status: 'pass', score: 0.86 },
-    { at: 'Jul 11, 2:02pm', status: 'fail', score: 0.58 },
-    { at: 'Jul 9, 10:15am', status: 'pass', score: 0.81 },
-  ]
-  // Vary length slightly by seed so entities differ; drop scores when not scored.
-  const take = 3 + (seed.length % 2)
-  return rows.slice(0, take).map((r, i) => ({
-    ...r,
-    id: `${seed}_h${i}`,
-    score: scored ? r.score : null,
-  }))
+  const runCount = 3 + (seed.length % 2) // 3 or 4
+  const rows: MockRunHistoryRow[] = []
+
+  for (let r = 0; r < runCount; r++) {
+    const rk = `${seed}_${r}`
+    const bestOfN = 2 + (hash(`${rk}n`) % 2) // 2 or 3
+    const modelsCount = 4 + (hash(`${rk}m`) % 2) // 4 or 5
+    const total = 3 + (hash(`${rk}t`) % 3) // 3..5 tests
+    const start = hash(`${rk}x`) % (MOCK_MODELS.length - modelsCount + 1)
+    const chosen = MOCK_MODELS.slice(start, start + modelsCount)
+
+    const models: MockRunModelResult[] = chosen.map((m) => {
+      const mk = `${rk}_${m.id}`
+      const score = 0.55 + rand01(`${mk}s`) * 0.42 // 0.55..0.97
+      const passed = Math.min(total, Math.round(score * total))
+      const tokens = 7000 + Math.floor(rand01(`${mk}k`) * 11000) // 7k..18k
+      const avgCost = Math.max(
+        0.01,
+        Number(((tokens / 1_000_000) * m.costPerMTok).toFixed(2)),
+      )
+      const tokensPerSec = m.tokensPerSec + (hash(`${mk}v`) % 12) - 6
+      return {
+        modelId: m.id,
+        model: m.name,
+        brand: m.brand,
+        attempts: bestOfN,
+        avgCost,
+        tokens,
+        tokensPerSec,
+        passed,
+        total,
+        score: scored ? Number(score.toFixed(2)) : null,
+        winner: false,
+      }
+    })
+
+    // Winner: highest score when scored, else most tests passed; tie-break cheaper.
+    const winner = [...models].sort((a, b) => {
+      const ap = scored ? (a.score ?? 0) : a.passed
+      const bp = scored ? (b.score ?? 0) : b.passed
+      if (bp !== ap) return bp - ap
+      return a.avgCost - b.avgCost
+    })[0]
+    winner.winner = true
+
+    const totalCost = Number(
+      models.reduce((sum, m) => sum + m.avgCost * m.attempts, 0).toFixed(2),
+    )
+
+    rows.push({
+      id: `${seed}_h${r}`,
+      at: RUN_TIMES[r % RUN_TIMES.length],
+      status: winner.passed / total >= 0.8 ? 'pass' : 'fail',
+      bestOfN,
+      modelsCount,
+      totalCost,
+      passed: winner.passed,
+      total,
+      best: winner,
+      models,
+    })
+  }
+
+  return rows
 }

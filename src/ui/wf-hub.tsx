@@ -80,13 +80,12 @@ export const DEFAULT_WF_SECTIONS: WfHubSection[] = [
     key: 'evals',
     title: 'Evals',
     description:
-      'Test workflows and agents against expected outputs (a test runner).',
+      'Test workflows and agents using different AI models to get more predictable outcomes.',
     icon: FlaskConical,
     accent: {
       card: 'hover:border-rose-300 hover:shadow-lg hover:shadow-rose-100',
       icon: 'group-hover:bg-rose-100 group-hover:text-rose-600 group-hover:shadow-md group-hover:shadow-rose-200',
     },
-    badge: 'Preview',
   },
 ]
 

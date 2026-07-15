@@ -1,5 +1,4 @@
 import { cn } from './cn'
-import { useWfComponents } from './context'
 import { useTools } from './hooks'
 import { WfLink } from './nav'
 import { ToolIcon } from './tool-icon'
@@ -14,7 +13,6 @@ export type ToolsListProps = {
 
 export function ToolsList({ className }: ToolsListProps) {
   const { data, isLoading, error } = useTools()
-  const { Badge } = useWfComponents()
 
   return (
     <div className={cn('mx-auto max-w-3xl space-y-4 p-6', className)}>
@@ -51,11 +49,6 @@ export function ToolsList({ className }: ToolsListProps) {
               <span className="min-w-0 flex-1 truncate text-base font-medium text-neutral-900">
                 {t.name}
               </span>
-              {t.kind === 'ai-tool' ? (
-                <Badge className="shrink-0 border border-emerald-200 bg-emerald-50 text-emerald-700">
-                  Agent-enabled
-                </Badge>
-              ) : null}
             </div>
             <p className="line-clamp-2 min-h-[2.5rem] text-sm text-neutral-500">
               {t.description || 'No description yet.'}

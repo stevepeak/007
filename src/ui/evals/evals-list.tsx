@@ -37,7 +37,7 @@ export function EvalsList({ className }: EvalsListProps) {
   const runs = MOCK_EVAL_RUNS
 
   return (
-    <div className={cn('mx-auto max-w-3xl space-y-5 p-6', className)}>
+    <div className={cn('mx-auto max-w-5xl space-y-5 p-6', className)}>
       <div className="flex items-start justify-between gap-4">
         <p className="max-w-md text-sm text-neutral-500">
           Test agents and workflows against expected outcomes. Runs execute in

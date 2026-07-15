@@ -1,4 +1,4 @@
-import { Home } from 'lucide-react'
+import { Home, type LucideIcon } from 'lucide-react'
 import { Fragment, type ReactNode } from 'react'
 
 import { cn } from './cn'
@@ -29,6 +29,10 @@ export type WfCrumb = {
   home?: boolean
   /** Render this crumb as an inline-editable field. Takes over rendering. */
   editable?: WfCrumbEditable
+  /** Optional leading icon (e.g. a section marker). */
+  icon?: LucideIcon
+  /** Tailwind color class for `icon`, e.g. "text-rose-500". */
+  iconClassName?: string
 }
 
 export type WfShellProps = {
@@ -103,7 +107,7 @@ function Crumb({ crumb, isLast }: { crumb: WfCrumb; isLast: boolean }) {
         to={crumb.to}
         className="text-sm text-neutral-500 hover:underline"
       >
-        {crumb.label}
+        <CrumbLabel crumb={crumb} />
       </WfLink>
     )
   }
@@ -115,6 +119,18 @@ function Crumb({ crumb, isLast }: { crumb: WfCrumb; isLast: boolean }) {
         isLast ? 'font-semibold text-neutral-900' : 'text-neutral-500',
       )}
     >
+      <CrumbLabel crumb={crumb} />
+    </span>
+  )
+}
+
+/** A crumb's label, optionally prefixed with its (colored) section icon. */
+function CrumbLabel({ crumb }: { crumb: WfCrumb }) {
+  const Icon = crumb.icon
+  if (!Icon) return <>{crumb.label}</>
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <Icon className={cn('size-4', crumb.iconClassName)} />
       {crumb.label}
     </span>
   )

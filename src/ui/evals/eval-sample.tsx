@@ -1,10 +1,20 @@
-import { Archive, ChevronRight, Play, Plus, Save, X } from 'lucide-react'
+import {
+  Bot,
+  ChevronRight,
+  FlaskConical,
+  Play,
+  Plus,
+  Save,
+  Workflow as WorkflowIcon,
+  X,
+} from 'lucide-react'
 import { useMemo, useState } from 'react'
 
-import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { useWfNav } from '../nav'
+import { ArchiveButton } from '../archive-button'
 import { WfShell } from '../shell'
+import { sectionCrumb } from '../wf-crumbs'
 import { getMockRunHistory } from './mock-data'
 import {
   archiveSample,
@@ -19,24 +29,26 @@ import {
   type Given,
   type Sample,
   type SampleConfig,
-  type TargetKind,
   type Test,
 } from './mock-store'
+import { RunConfigDialog } from './run-config-dialog'
 import {
   EmptyState,
   FamilyTag,
   Score,
   Tabs,
   TestRunsTable,
-  VersionBadge,
   VersionsList,
 } from './shared'
+import { PickerCards, StepFlow, type Step } from './step-flow'
 import { TodoSpark } from './todo-spark'
 
-// The Sample view (route: evals/<setId>/samples/<sampleId>). The Configuration
-// tab is an editable form — Save mints a new immutable sample VERSION (no
-// publish step). Tests are separate versioned entities parented here (editing a
-// test never bumps the sample). Tabs: Configuration | Test runs | Versions.
+// The Sample view (route: evals/<setId>/samples/<sampleId>). Name + description
+// are edited inline in the header; the Configuration tab is a left-to-right flow
+// of step cards (Target → Given → Mocks → Test). Save mints a new immutable
+// sample VERSION (no publish step). Tests are separate versioned entities parented
+// here (editing a test never bumps the sample). Tabs: Configuration | Test runs |
+// Versions.
 
 type SampleTab = 'config' | 'runs' | 'versions'
 
@@ -50,6 +62,7 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
   const { Button } = useWfComponents()
   const { navigate } = useWfNav()
   const [tab, setTab] = useState<SampleTab>('config')
+  const [runOpen, setRunOpen] = useState(false)
 
   useEvalsRevision()
   const goal = getGoal(setId)
@@ -73,22 +86,34 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
       scroll
       crumbs={[
         { home: true },
-        { label: 'Goals', to: 'evals' },
+        sectionCrumb('evals'),
         { label: goal?.name ?? 'Goal', to: `evals/${setId}` },
         { label: form?.name || 'Sample' },
       ]}
     >
-      <div className="mx-auto max-w-4xl space-y-5 p-6">
+      <div className="mx-auto max-w-5xl space-y-5 p-6">
         {!sample || !form ? (
           <EmptyState message="This sample doesn't exist, or was archived / removed." />
         ) : (
           <>
             <div className="flex items-start justify-between gap-4">
-              <div className="flex min-w-0 items-center gap-2">
-                <h1 className="truncate text-lg font-semibold text-neutral-900">
-                  {form.name || 'Untitled sample'}
-                </h1>
-                <VersionBadge version={currentSampleVersion(sample).version} />
+              <div className="min-w-0 flex-1">
+                <input
+                  value={form.name}
+                  maxLength={40}
+                  placeholder="Untitled sample"
+                  aria-label="Sample name"
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  className="w-full truncate rounded bg-transparent text-lg font-semibold text-neutral-900 outline-none placeholder:text-neutral-300 focus:bg-neutral-50"
+                />
+                <textarea
+                  value={form.summary}
+                  rows={1}
+                  placeholder="Add a description…"
+                  aria-label="Sample description"
+                  onChange={(e) => setForm({ ...form, summary: e.target.value })}
+                  className="w-full resize-none rounded bg-transparent text-sm text-neutral-600 outline-none placeholder:text-neutral-300 focus:bg-neutral-50"
+                />
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <Button
@@ -99,23 +124,35 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
                   <Save className="size-4" />
                   Save
                 </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
+                <ArchiveButton
+                  description={
+                    <>
+                      Archive <strong>{form.name || 'this sample'}</strong>? It’ll
+                      be removed from the goal, along with its tests.
+                    </>
+                  }
+                  onConfirm={() => {
                     archiveSample(sampleId)
                     navigate(`evals/${setId}`)
                   }}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setRunOpen(true)}
                 >
-                  <Archive className="size-4" />
-                  Archive
-                </Button>
-                <Button size="sm" variant="outline">
                   <Play className="size-4" />
                   Run sample
                 </Button>
               </div>
             </div>
+
+            <RunConfigDialog
+              open={runOpen}
+              onClose={() => setRunOpen(false)}
+              scope="sample"
+              targetName={form.name || 'Untitled sample'}
+            />
 
             <Tabs
               active={tab}
@@ -164,77 +201,15 @@ function ConfigTab({
   form: SampleConfig
   setForm: (next: SampleConfig) => void
 }) {
-  const { Input, Label, Textarea } = useWfComponents()
   const patch = (p: Partial<SampleConfig>) => setForm({ ...form, ...p })
+  const tests = listTests(sample.id)
 
-  return (
-    <div className="space-y-4">
-      <section className="space-y-3 rounded-lg border border-neutral-200 p-4">
-        <div className="space-y-1">
-          <Label>Name</Label>
-          <Input
-            value={form.name}
-            placeholder="Sample name"
-            onChange={(e) => patch({ name: e.target.value })}
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <Label>What runs</Label>
-            <KindToggle kind={form.kind} onChange={(kind) => patch({ kind })} />
-          </div>
-          <div className="space-y-1">
-            <div className="flex items-center gap-1">
-              <Label>Target</Label>
-              <TodoSpark title="Target picker — choose an agent or workflow">
-                <p>
-                  Instead of a free-text field, <strong>Target</strong> should be
-                  a dropdown listing your agents and workflows — each shown with
-                  its icon and name.
-                </p>
-                <p>
-                  Selecting one wires the sample to that agent/workflow
-                  (float-to-latest), and drives both the dynamic Given fields and
-                  the available Mocks.
-                </p>
-              </TodoSpark>
-            </div>
-            <Input
-              value={form.targetName}
-              placeholder="Agent / workflow name"
-              onChange={(e) => patch({ targetName: e.target.value })}
-            />
-          </div>
-        </div>
-        <div className="space-y-1">
-          <Label>Summary</Label>
-          <Textarea
-            rows={2}
-            value={form.summary}
-            placeholder="One or two sentences capturing this sample."
-            onChange={(e) => patch({ summary: e.target.value })}
-          />
-        </div>
-      </section>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <GivenEditor
-          given={form.given}
-          onChange={(given) => patch({ given })}
-        />
-        <TestsList setId={setId} sampleId={sampleId} tests={listTests(sample.id)} />
-        <MocksPanel />
-      </div>
-    </div>
-  )
-}
-
-function MocksPanel() {
-  return (
-    <section className="rounded-lg border border-neutral-200">
-      <div className="flex items-center justify-between border-b border-neutral-100 bg-neutral-50 px-4 py-2">
-        <div className="flex items-center gap-1">
-          <span className="text-sm font-medium text-neutral-700">Mocks</span>
+  const steps: Step[] = [
+    {
+      key: 'mocks',
+      title: 'Mocks',
+      aside: (
+        <>
           <TodoSpark title="Mock node & tool outputs">
             <p>
               A <strong>Mocks</strong> section to stub the canned outputs of
@@ -248,43 +223,117 @@ function MocksPanel() {
               &ldquo;fixtures&rdquo; from the plan.
             </p>
           </TodoSpark>
-        </div>
-        <span className="text-[11px] uppercase tracking-wide text-neutral-400">
-          Planned
-        </span>
-      </div>
-      <p className="px-4 py-3 text-xs text-neutral-400">
-        Mock tool / node outputs so runs are deterministic and safe.
-      </p>
-    </section>
+          <span className="text-[11px] uppercase tracking-wide text-neutral-400">
+            Planned
+          </span>
+        </>
+      ),
+      content: <MocksPanel />,
+    },
+    {
+      key: 'given',
+      title: 'Given',
+      aside: (
+        <>
+          <TodoSpark title="Dynamic Given from the target's parameters">
+            <p>
+              The <strong>Given</strong> fields should be generated from the
+              selected target&apos;s input parameters — its trigger{' '}
+              <code>inputSchema</code> and prompt variables — so you fill in real
+              expected inputs instead of typing arbitrary keys.
+            </p>
+          </TodoSpark>
+          <span className="text-[11px] uppercase tracking-wide text-neutral-400">
+            Initial state
+          </span>
+        </>
+      ),
+      content: (
+        <GivenEditor given={form.given} onChange={(given) => patch({ given })} />
+      ),
+    },
+    {
+      key: 'test',
+      title: 'Tests',
+      content: <TestsList setId={setId} sampleId={sampleId} tests={tests} />,
+    },
+  ]
+
+  return (
+    <div className="space-y-3">
+      <TargetStep form={form} patch={patch} />
+      <StepFlow steps={steps} />
+    </div>
   )
 }
 
-function KindToggle({
-  kind,
-  onChange,
+function TargetStep({
+  form,
+  patch,
 }: {
-  kind: TargetKind
-  onChange: (kind: TargetKind) => void
+  form: SampleConfig
+  patch: (p: Partial<SampleConfig>) => void
 }) {
+  const { Input, Label } = useWfComponents()
   return (
-    <div className="inline-flex rounded-md border border-neutral-300 p-0.5">
-      {(['agent', 'workflow'] as const).map((k) => (
-        <button
-          key={k}
-          type="button"
-          onClick={() => onChange(k)}
-          className={cn(
-            'rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors',
-            kind === k
-              ? 'bg-neutral-900 text-white'
-              : 'text-neutral-500 hover:text-neutral-800',
-          )}
-        >
-          {k}
-        </button>
-      ))}
-    </div>
+    <PickerCards
+      value={form.kind}
+      collapsedByDefault={!!form.targetName}
+      onSelect={(kind) => patch({ kind })}
+      options={[
+        {
+          value: 'agent',
+          icon: Bot,
+          label: 'Agent',
+          desc: 'A single agent with a prompt and tools.',
+          accent: 'violet',
+          detail: form.targetName || 'Unnamed agent',
+          setting: (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1">
+                <Label>Which agent</Label>
+                <TodoSpark title="Target picker — choose an agent or workflow">
+                  <p>
+                    Instead of a free-text field, <strong>Target</strong> should
+                    be a dropdown listing your agents and workflows — each shown
+                    with its icon and name.
+                  </p>
+                  <p>
+                    Selecting one wires the sample to that agent/workflow
+                    (float-to-latest), and drives both the dynamic Given fields
+                    and the available Mocks.
+                  </p>
+                </TodoSpark>
+              </div>
+              <Input
+                value={form.targetName}
+                placeholder="Agent name"
+                onChange={(e) =>
+                  patch({ targetName: e.target.value, kind: 'agent' })
+                }
+              />
+            </div>
+          ),
+        },
+        {
+          value: 'workflow',
+          icon: WorkflowIcon,
+          label: 'Workflow',
+          desc: 'A multi-step graph of agents and nodes.',
+          accent: 'indigo',
+          disabled: true,
+          badge: 'Coming soon',
+        },
+      ]}
+    />
+  )
+}
+
+function MocksPanel() {
+  return (
+    <p className="text-xs text-neutral-400">
+      Mock tool / node outputs so runs are deterministic and safe.
+    </p>
   )
 }
 
@@ -306,60 +355,42 @@ function GivenEditor({
     ])
 
   return (
-    <section className="rounded-lg border border-neutral-200">
-      <div className="flex items-baseline justify-between border-b border-neutral-100 bg-neutral-50 px-4 py-2">
-        <div className="flex items-center gap-1">
-          <span className="text-sm font-medium text-neutral-700">Given</span>
-          <TodoSpark title="Dynamic Given from the target's parameters">
-            <p>
-              The <strong>Given</strong> fields should be generated from the
-              selected target&apos;s input parameters — its trigger{' '}
-              <code>inputSchema</code> and prompt variables — so you fill in real
-              expected inputs instead of typing arbitrary keys.
-            </p>
-          </TodoSpark>
-        </div>
-        <span className="text-[11px] uppercase tracking-wide text-neutral-400">
-          Initial state
-        </span>
-      </div>
-      <div className="space-y-2 p-3">
-        {given.length === 0 ? (
-          <p className="px-1 py-2 text-xs text-neutral-400">
-            No initial state yet.
-          </p>
-        ) : (
-          given.map((g) => (
-            <div key={g.id} className="flex items-center gap-2">
-              <Input
-                value={g.label}
-                placeholder="field"
-                onChange={(e) => update(g.id, { label: e.target.value })}
-                className="h-8 w-32 font-mono text-xs"
-              />
-              <Input
-                value={g.value}
-                placeholder="value"
-                onChange={(e) => update(g.id, { value: e.target.value })}
-                className="h-8 flex-1 font-mono text-xs"
-              />
-              <button
-                type="button"
-                aria-label="Remove"
-                onClick={() => remove(g.id)}
-                className="text-neutral-300 transition hover:text-neutral-600"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-          ))
-        )}
-        <Button size="sm" variant="ghost" onClick={add}>
-          <Plus className="size-4" />
-          Add field
-        </Button>
-      </div>
-    </section>
+    <div className="space-y-2">
+      {given.length === 0 ? (
+        <p className="px-1 py-1 text-xs text-neutral-400">
+          No initial state yet.
+        </p>
+      ) : (
+        given.map((g) => (
+          <div key={g.id} className="flex items-center gap-2">
+            <Input
+              value={g.label}
+              placeholder="field"
+              onChange={(e) => update(g.id, { label: e.target.value })}
+              className="h-8 w-32 font-mono text-xs"
+            />
+            <Input
+              value={g.value}
+              placeholder="value"
+              onChange={(e) => update(g.id, { value: e.target.value })}
+              className="h-8 flex-1 font-mono text-xs"
+            />
+            <button
+              type="button"
+              aria-label="Remove"
+              onClick={() => remove(g.id)}
+              className="text-neutral-300 transition hover:text-neutral-600"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        ))
+      )}
+      <Button size="sm" variant="ghost" onClick={add}>
+        <Plus className="size-4" />
+        Add field
+      </Button>
+    </div>
   )
 }
 
@@ -375,26 +406,13 @@ function TestsList({
   const { navigate } = useWfNav()
   const { Button } = useWfComponents()
   return (
-    <section className="rounded-lg border border-neutral-200">
-      <div className="flex items-center justify-between border-b border-neutral-100 bg-neutral-50 px-4 py-2">
-        <span className="text-sm font-medium text-neutral-700">Tests</span>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() =>
-            navigate(`evals/${setId}/samples/${sampleId}/tests/${createTest(sampleId)}`)
-          }
-        >
-          <Plus className="size-4" />
-          Add test
-        </Button>
-      </div>
+    <div className="space-y-2">
       {tests.length === 0 ? (
-        <p className="px-4 py-3 text-xs text-neutral-400">
+        <p className="px-1 py-1 text-xs text-neutral-400">
           No tests yet. Add one to assert an outcome.
         </p>
       ) : (
-        <div className="divide-y divide-neutral-100">
+        <div className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-neutral-200">
           {tests.map((t) => {
             const cfg = currentTestVersion(t).config
             return (
@@ -406,7 +424,7 @@ function TestsList({
                 }
                 className="flex w-full items-start gap-2 px-4 py-3 text-left hover:bg-neutral-50"
               >
-                <VerdictMark pass={t.lastVerdict?.pass} />
+                <FlaskConical className="mt-0.5 size-4 shrink-0 text-neutral-400" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm text-neutral-800">
                     {cfg.label}
@@ -429,22 +447,18 @@ function TestsList({
           })}
         </div>
       )}
-    </section>
-  )
-}
-
-function VerdictMark({ pass }: { pass?: boolean }) {
-  if (pass == null) {
-    return <span className="mt-0.5 text-neutral-300">◦</span>
-  }
-  return (
-    <span
-      className={cn(
-        'mt-0.5 text-sm font-semibold',
-        pass ? 'text-emerald-600' : 'text-red-600',
-      )}
-    >
-      {pass ? '✓' : '✗'}
-    </span>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() =>
+          navigate(
+            `evals/${setId}/samples/${sampleId}/tests/${createTest(sampleId)}`,
+          )
+        }
+      >
+        <Plus className="size-4" />
+        Add test
+      </Button>
+    </div>
   )
 }

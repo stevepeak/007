@@ -1,9 +1,11 @@
-import { Archive, Play, Plus } from 'lucide-react'
+import { Play, Plus } from 'lucide-react'
 import { useState } from 'react'
 
 import { useWfComponents } from '../context'
 import { useWfNav } from '../nav'
+import { ArchiveButton } from '../archive-button'
 import { WfShell } from '../shell'
+import { sectionCrumb } from '../wf-crumbs'
 import { getMockRunHistory } from './mock-data'
 import {
   archiveGoal,
@@ -16,6 +18,7 @@ import {
   useEvalsRevision,
   type Sample,
 } from './mock-store'
+import { RunConfigDialog } from './run-config-dialog'
 import {
   EmptyState,
   KindBadge,
@@ -38,9 +41,10 @@ export type EvalSetProps = {
 }
 
 export function EvalSet({ setId, className }: EvalSetProps) {
-  const { Button, Textarea } = useWfComponents()
+  const { Button } = useWfComponents()
   const { navigate } = useWfNav()
   const [tab, setTab] = useState<SetTab>('samples')
+  const [runOpen, setRunOpen] = useState(false)
 
   useEvalsRevision()
   const goal = getGoal(setId)
@@ -57,46 +61,53 @@ export function EvalSet({ setId, className }: EvalSetProps) {
       scroll
       crumbs={[
         { home: true },
-        { label: 'Goals', to: 'evals' },
-        goal
-          ? {
-              editable: {
-                value: name,
-                onChange: setName,
-                onCommit: () =>
-                  updateGoal(setId, { name: name.trim() || 'Untitled goal' }),
-                ariaLabel: 'Goal name',
-              },
-            }
-          : { label: 'Goal' },
+        sectionCrumb('evals'),
+        { label: goal ? name || 'Untitled goal' : 'Goal' },
       ]}
     >
-      <div className="mx-auto max-w-3xl space-y-5 p-6">
+      <div className="mx-auto max-w-5xl space-y-5 p-6">
         {!goal ? (
           <EmptyState message="This goal doesn't exist, or was archived / removed." />
         ) : (
           <>
             <div className="flex items-start justify-between gap-4">
-              <Textarea
-                rows={2}
-                value={description}
-                placeholder="Describe the outcome this goal guarantees…"
-                onChange={(e) => setDescription(e.target.value)}
-                onBlur={() => updateGoal(setId, { description })}
-                className="max-w-md text-sm"
-              />
+              <div className="min-w-0 flex-1">
+                <input
+                  value={name}
+                  maxLength={40}
+                  placeholder="Untitled goal"
+                  aria-label="Goal name"
+                  onChange={(e) => setName(e.target.value)}
+                  onBlur={() =>
+                    updateGoal(setId, {
+                      name: name.trim() || 'Untitled goal',
+                    })
+                  }
+                  className="w-full truncate rounded bg-transparent text-lg font-semibold text-neutral-900 outline-none placeholder:text-neutral-300 focus:bg-neutral-50"
+                />
+                <textarea
+                  value={description}
+                  rows={1}
+                  placeholder="Add a description…"
+                  aria-label="Goal description"
+                  onChange={(e) => setDescription(e.target.value)}
+                  onBlur={() => updateGoal(setId, { description })}
+                  className="w-full resize-none rounded bg-transparent text-sm text-neutral-600 outline-none placeholder:text-neutral-300 focus:bg-neutral-50"
+                />
+              </div>
               <div className="flex shrink-0 items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
+                <ArchiveButton
+                  description={
+                    <>
+                      Archive <strong>{name || 'this goal'}</strong>? It’ll be
+                      removed from your goals list.
+                    </>
+                  }
+                  onConfirm={() => {
                     archiveGoal(setId)
                     navigate('evals')
                   }}
-                >
-                  <Archive className="size-4" />
-                  Archive
-                </Button>
+                />
                 <Button
                   size="sm"
                   variant="outline"
@@ -105,12 +116,19 @@ export function EvalSet({ setId, className }: EvalSetProps) {
                   <Plus className="size-4" />
                   Add sample
                 </Button>
-                <Button size="sm">
+                <Button size="sm" onClick={() => setRunOpen(true)}>
                   <Play className="size-4" />
                   Run this goal
                 </Button>
               </div>
             </div>
+
+            <RunConfigDialog
+              open={runOpen}
+              onClose={() => setRunOpen(false)}
+              scope="goal"
+              targetName={goal.name}
+            />
 
             <Tabs
               active={tab}

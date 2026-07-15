@@ -1,7 +1,13 @@
-import { Bot, Workflow as WorkflowIcon } from 'lucide-react'
+import { Bot, Trophy, Workflow as WorkflowIcon, X } from 'lucide-react'
+import { useEffect, useState, type ReactNode } from 'react'
 
 import { cn } from '../cn'
-import type { MockRunHistoryRow, MockTargetKind } from './mock-data'
+import type {
+  MockModelBrand,
+  MockRunHistoryRow,
+  MockRunModelResult,
+  MockTargetKind,
+} from './mock-data'
 
 // Small presentational bits shared across the Evals catalog, set, sample, and
 // test pages.
@@ -84,6 +90,31 @@ export function FamilyTag({ scored }: { scored: boolean }) {
   )
 }
 
+/** A small colored brand mark (stand-in for a real logo) for a model's vendor. */
+const BRAND_MARK: Record<
+  MockModelBrand,
+  { label: string; className: string }
+> = {
+  openai: { label: 'AI', className: 'bg-emerald-100 text-emerald-700' },
+  anthropic: { label: 'An', className: 'bg-amber-100 text-amber-700' },
+  google: { label: 'G', className: 'bg-blue-100 text-blue-700' },
+  meta: { label: 'M', className: 'bg-indigo-100 text-indigo-700' },
+}
+
+export function BrandMark({ brand }: { brand: MockModelBrand }) {
+  const b = BRAND_MARK[brand]
+  return (
+    <span
+      className={cn(
+        'inline-flex size-5 shrink-0 items-center justify-center rounded text-[10px] font-bold',
+        b.className,
+      )}
+    >
+      {b.label}
+    </span>
+  )
+}
+
 export function EmptyState({ message }: { message: string }) {
   return (
     <div className="rounded-lg border border-dashed border-neutral-200 p-8 text-center text-sm text-neutral-500">
@@ -152,15 +183,6 @@ export function formatTimestamp(ts: number): string {
   })
 }
 
-/** Small "v3" badge for the current version, shown next to a title. */
-export function VersionBadge({ version }: { version: number }) {
-  return (
-    <span className="rounded-md bg-neutral-100 px-1.5 py-0.5 text-xs font-medium tabular-nums text-neutral-500">
-      v{version}
-    </span>
-  )
-}
-
 /** Immutable version history (newest first). Read-only. */
 export function VersionsList({
   versions,
@@ -195,32 +217,261 @@ export function VersionsList({
 // ── Test runs (history) ──────────────────────────────────────────────────────
 
 // A per-entity history of test runs — the "Test runs" tab shown on a set,
-// sample, or single test. Rows are the runs that touched that entity.
+// sample, or single test. Each row is a best-of-N competition across several
+// models; the columns read like a sentence (ran best-of-N · N models · total $ ·
+// x/y passed · best model · score). Click a row to open the full run report.
 export function TestRunsTable({ rows }: { rows: MockRunHistoryRow[] }) {
+  const [open, setOpen] = useState<MockRunHistoryRow | null>(null)
   if (rows.length === 0) {
     return <EmptyState message="No test runs yet." />
   }
+  // Fixed/fr column widths (no `auto`) so the header grid and every row grid
+  // resolve identical columns and stay aligned.
+  const cols =
+    'grid grid-cols-[minmax(7rem,1fr)_5.5rem_4rem_5.5rem_5rem_minmax(9rem,1.4fr)_3.5rem] items-center gap-4'
   return (
-    <div className="overflow-hidden rounded-lg border border-neutral-200">
-      <div className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-neutral-100 bg-neutral-50 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-neutral-400">
-        <span>When</span>
-        <span className="text-right">Result</span>
-        <span className="w-16 text-right">Score</span>
-      </div>
-      {rows.map((r) => (
-        <div
-          key={r.id}
-          className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-neutral-100 px-4 py-2.5 last:border-b-0 hover:bg-neutral-50"
-        >
-          <span className="text-sm text-neutral-700">{r.at}</span>
-          <div className="text-right">
-            <StatusPill status={r.status} />
+    <>
+      <div className="overflow-x-auto rounded-lg border border-neutral-200">
+        <div className="min-w-[720px]">
+          <div
+            className={cn(
+              cols,
+              'border-b border-neutral-100 bg-neutral-50 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-neutral-400',
+            )}
+          >
+            <span>When</span>
+            <span>Best of N</span>
+            <span className="text-right">Models</span>
+            <span className="text-right">Total cost</span>
+            <span className="text-right">Result</span>
+            <span>Best model</span>
+            <span className="w-14 text-right">Score</span>
           </div>
-          <div className="w-16 text-right">
-            <Score value={r.score} />
-          </div>
+          {rows.map((r) => (
+            <button
+              key={r.id}
+              type="button"
+              onClick={() => setOpen(r)}
+              className={cn(
+                cols,
+                'w-full border-b border-neutral-100 px-4 py-2.5 text-left last:border-b-0 hover:bg-neutral-50',
+              )}
+            >
+              <span className="text-sm text-neutral-700">{r.at}</span>
+              <div>
+                <CountBadge>{r.bestOfN}</CountBadge>
+              </div>
+              <div className="text-right">
+                <CountBadge>{r.modelsCount}</CountBadge>
+              </div>
+              <div className="text-right">
+                <CostBadge cost={r.totalCost} />
+              </div>
+              <div className="flex justify-end">
+                <PassRate passed={r.passed} total={r.total} />
+              </div>
+              <div className="flex min-w-0 items-center gap-1.5">
+                <BrandMark brand={r.best.brand} />
+                <span className="truncate text-sm text-neutral-700">
+                  {r.best.model}
+                </span>
+              </div>
+              <div className="w-14 text-right">
+                <Score value={r.best.score} />
+              </div>
+            </button>
+          ))}
         </div>
-      ))}
+      </div>
+      <RunReportDialog run={open} onClose={() => setOpen(null)} />
+    </>
+  )
+}
+
+/** Compact "12k" / "980" token label. */
+export function formatTokens(tokens: number): string {
+  if (tokens < 1000) return String(tokens)
+  return `${(tokens / 1000).toFixed(tokens < 10_000 ? 1 : 0)}k`
+}
+
+/** Neutral count/config chip (e.g. "best of 3", "5"). */
+function CountBadge({ children }: { children: ReactNode }) {
+  return (
+    <span className="inline-flex items-center rounded-md bg-neutral-100 px-1.5 py-0.5 text-xs font-medium tabular-nums text-neutral-600">
+      {children}
+    </span>
+  )
+}
+
+/** Badge for a USD cost. */
+export function CostBadge({ cost }: { cost: number }) {
+  return (
+    <span className="inline-flex items-center rounded-md bg-neutral-100 px-1.5 py-0.5 text-xs font-medium tabular-nums text-neutral-600">
+      ${cost.toFixed(2)}
+    </span>
+  )
+}
+
+/** Badge for a token count, formatted compactly (e.g. "12k"). */
+export function TokensBadge({ tokens }: { tokens: number }) {
+  return (
+    <span className="inline-flex items-center rounded-md bg-neutral-100 px-1.5 py-0.5 text-xs font-medium tabular-nums text-neutral-600">
+      {formatTokens(tokens)}
+    </span>
+  )
+}
+
+// ── Run report (a single competition: prose summary + model matrix) ──────────
+
+function RunReportDialog({
+  run,
+  onClose,
+}: {
+  run: MockRunHistoryRow | null
+  onClose: () => void
+}) {
+  useEffect(() => {
+    if (!run) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [run, onClose])
+
+  if (!run) return null
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-lg border border-neutral-200 bg-white shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-3">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-neutral-900">
+            Test run
+            <span className="font-normal text-neutral-400">{run.at}</span>
+          </h2>
+          <button
+            aria-label="Close"
+            onClick={onClose}
+            className="text-neutral-400 transition hover:text-neutral-700"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+          <RunSummaryProse run={run} />
+          <RunModelMatrix models={run.models} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** The run as two lines — the broad run summary, then the winner. */
+function RunSummaryProse({ run }: { run: MockRunHistoryRow }) {
+  const b = run.best
+  return (
+    <div className="space-y-2 rounded-lg bg-neutral-50 px-4 py-3 text-sm leading-relaxed text-neutral-600">
+      <p>
+        Ran <B>best of {run.bestOfN}</B> across <B>{run.modelsCount} models</B> —
+        total cost <B>${run.totalCost.toFixed(2)}</B>.{' '}
+        <B>
+          {run.passed} / {run.total}
+        </B>{' '}
+        tests passed.
+      </p>
+      <p className="border-t border-neutral-200 pt-2">
+        <span className="mr-1">👑</span>The top performer was <B>{b.model}</B>,
+        averaging <B>${b.avgCost.toFixed(2)}</B> over{' '}
+        <B>{formatTokens(b.tokens)}</B> tokens per attempt at{' '}
+        <B>{b.tokensPerSec} tok/s</B>
+        {b.score != null ? (
+          <>
+            , scoring <B>{b.score.toFixed(2)}</B>
+          </>
+        ) : null}
+        .
+      </p>
+    </div>
+  )
+}
+
+function B({ children }: { children: ReactNode }) {
+  return <span className="font-semibold text-neutral-900">{children}</span>
+}
+
+/** Model × metadata × test-results matrix — one row per competing model. */
+function RunModelMatrix({ models }: { models: MockRunModelResult[] }) {
+  // Fixed/fr widths (no `auto`) so header + rows share identical columns.
+  const cols =
+    'grid grid-cols-[minmax(8rem,1.4fr)_5rem_5rem_4.5rem_5rem_4.5rem_3.5rem] items-center gap-3'
+  const ranked = [...models].sort((a, b) => Number(b.winner) - Number(a.winner))
+  return (
+    <div className="overflow-x-auto rounded-lg border border-neutral-200">
+      <div className="min-w-[640px]">
+        <div
+          className={cn(
+            cols,
+            'border-b border-neutral-100 bg-neutral-50 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-neutral-400',
+          )}
+        >
+          <span>Model</span>
+          <span className="text-right">Attempts</span>
+          <span className="text-right">Avg cost</span>
+          <span className="text-right">Tokens</span>
+          <span className="text-right">Speed</span>
+          <span className="text-right">Passed</span>
+          <span className="w-12 text-right">Score</span>
+        </div>
+        {ranked.map((m) => (
+          <div
+            key={m.modelId}
+            className={cn(
+              cols,
+              'border-b border-neutral-100 px-4 py-2.5 last:border-b-0',
+              m.winner && 'bg-emerald-50/50',
+            )}
+          >
+            <div className="flex min-w-0 items-center gap-1.5">
+              <BrandMark brand={m.brand} />
+              <span className="truncate text-sm font-medium text-neutral-800">
+                {m.model}
+              </span>
+              {m.winner ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+                  <Trophy className="size-2.5" />
+                  Best
+                </span>
+              ) : null}
+            </div>
+            <span className="text-right text-xs tabular-nums text-neutral-500">
+              {m.attempts}
+            </span>
+            <span className="text-right text-xs tabular-nums text-neutral-500">
+              ${m.avgCost.toFixed(2)}
+            </span>
+            <span className="text-right text-xs tabular-nums text-neutral-500">
+              {formatTokens(m.tokens)}
+            </span>
+            <span className="text-right text-xs tabular-nums text-neutral-500">
+              {m.tokensPerSec}
+              <span className="text-neutral-400"> t/s</span>
+            </span>
+            <div className="flex justify-end">
+              <PassRate passed={m.passed} total={m.total} />
+            </div>
+            <div className="w-12 text-right">
+              <Score value={m.score} />
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

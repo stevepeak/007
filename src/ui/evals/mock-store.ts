@@ -54,8 +54,10 @@ export type TestConfig = {
   family: TestFamily
   /** e.g. tool_called, node_visited, output_match, llm_judge. */
   type: string
-  /** Human phrasing of the assertion. */
+  /** Human phrasing of the assertion — doubles as the test's name/title. */
   label: string
+  /** Optional longer description of what this test checks. */
+  description?: string
   // Scored (llm_judge) config — absent on binary tests.
   rubric?: string
   threshold?: number

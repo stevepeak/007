@@ -10,6 +10,7 @@ import { useRetryRun, useRun } from './hooks'
 import { useWfNav } from './nav'
 import { RunNodeDock } from './run-node-dock'
 import { WfShell } from './shell'
+import { sectionCrumb } from './wf-crumbs'
 
 // Full-page run viewer. Clicking a row in the runs explorer lands here. The
 // centerpiece is the workflow rendered read-only at the exact version that ran,
@@ -168,7 +169,7 @@ export function RunPage({ runId, backTo = 'runs', className }: RunPageProps) {
       className={className}
       crumbs={[
         { home: true },
-        { label: 'Runs', to: backTo },
+        sectionCrumb('runs', { to: backTo }),
         {
           label: (
             <>

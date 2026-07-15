@@ -23,6 +23,7 @@ import {
 } from '../hooks'
 import { WfShell } from '../shell'
 import { Tooltip } from '../tooltip'
+import { sectionCrumb } from '../wf-crumbs'
 import { AgentOutputEditor } from './agent-output-editor'
 import { PromptBodyEditor } from './prompt-body-editor'
 import { ToolPicker } from './tool-picker'
@@ -177,7 +178,7 @@ function AgentEditorInner({
         scroll
         crumbs={[
           { home: true },
-          { label: 'Agents', to: 'agents' },
+          sectionCrumb('agents'),
           {
             editable: {
               value: name,

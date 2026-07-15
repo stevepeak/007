@@ -16,6 +16,7 @@ import {
   useWorkflow,
 } from '../hooks'
 import { WfShell } from '../shell'
+import { sectionCrumb } from '../wf-crumbs'
 import { BottomDock } from './bottom-dock'
 import { NodeInspector } from './node-inspector'
 import { NodePalette } from './node-palette'
@@ -425,7 +426,7 @@ function EditorInner({
         className={className}
         crumbs={[
           { home: true },
-          { label: 'Workflows', to: 'workflows' },
+          sectionCrumb('workflows'),
           {
             editable: {
               value: name,
