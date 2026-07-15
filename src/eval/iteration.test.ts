@@ -37,6 +37,7 @@ describe('eval harness — iteration graph', () => {
       throw new Error('no model needed')
     },
     listModels: () => [],
+    listProviders: () => [],
     toolRegistry,
     triggers: {
       words: {

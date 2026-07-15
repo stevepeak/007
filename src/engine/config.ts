@@ -10,8 +10,49 @@ import type { TriggerRegistry } from './trigger-registry'
 // `TDeps`; everything provider/domain-specific (the model provider, the tools)
 // lives behind this interface, never inside the SDK.
 
-/** A model the editor can offer and `getModel` can resolve. */
-export type ModelOption = { id: string; label: string }
+/**
+ * How a provider enumerates its models — drives the (host-owned) fetch. E.g.
+ * `openrouter` and `venice`/`openai-compatible` expose a `/models` endpoint;
+ * `custom` is a host-supplied static list.
+ */
+export type ModelProviderKind =
+  | 'openrouter'
+  | 'openai'
+  | 'openai-compatible'
+  | 'custom'
+
+/**
+ * A model source the host (the "client" of the SDK) has wired up. The host may
+ * declare several — OpenRouter, a direct OpenAI key, Venice, a self-hosted
+ * endpoint — and every {@link ModelOption} references one by `providerId`. The
+ * editor groups its model pickers by these, showing ONLY the providers the host
+ * returns from {@link WfSdkConfig.listProviders}.
+ */
+export type ModelProvider = {
+  id: string
+  /** Display name, e.g. "OpenRouter", "Venice AI". */
+  label: string
+  kind: ModelProviderKind
+  /** Optional one-line note shown under the provider header. */
+  note?: string
+}
+
+/**
+ * A model the editor can offer and `getModel` can resolve. `providerId` ties it
+ * to a {@link ModelProvider} (omit when the host declares no providers — the UI
+ * then treats every model as belonging to one implicit group). `costPerMTok` /
+ * `tokensPerSec` are shown when the provider reports them (e.g. OpenRouter) and
+ * omitted otherwise.
+ */
+export type ModelOption = {
+  id: string
+  label: string
+  providerId?: string
+  /** Blended cost per 1M tokens, USD. Omit when the provider doesn't report it. */
+  costPerMTok?: number
+  /** Throughput, tokens/second. Omit when the provider doesn't report it. */
+  tokensPerSec?: number
+}
 
 /** Payload handed to {@link WfSdkConfig.onRunComplete} when a run finalizes. */
 export type RunCompletion = { output: unknown; outputNodeId: string }
@@ -76,6 +117,20 @@ export type RunContext = {
    * `promptId` read their template from here. Persisted to `wf_run.manifest`.
    */
   manifest?: WfRunManifestEntry[]
+  /**
+   * Eval signal. When true the run executes for real (real graph, real trace)
+   * but side-effecting tools are neutralized: tools tagged `sideEffect: 'write'`
+   * no-op, tools tagged `sideEffect: 'read'` return their `fixtures` entry (or an
+   * empty object). Untagged tools run normally. Invisible to the model — it is a
+   * property of the run, not a tool argument — so a prompt can't route around it.
+   */
+  simulate?: boolean
+  /**
+   * Canned tool outputs keyed by tool id, consumed only under `simulate`: a read
+   * tool returns `fixtures[toolId]` instead of hitting live data, making an eval
+   * run reproducible. Absent id → the tool's safe empty default (`{}`).
+   */
+  fixtures?: Record<string, unknown>
   /** Host Env (live bindings). Opaque to the SDK; passed back to the host. */
   env?: unknown
 }
@@ -88,6 +143,13 @@ export interface WfSdkConfig<TDeps = unknown> {
   getModel: (modelId: string, ctx: RunContext) => LanguageModel
   /** Models offered in the editor's model dropdowns. */
   listModels: () => ModelOption[]
+  /**
+   * The model providers the host has wired up (OpenRouter, a direct OpenAI key,
+   * Venice, a custom endpoint). The editor groups models by provider and shows
+   * ONLY these — each {@link ModelOption} is bucketed by its `providerId`. Return
+   * a single entry for a one-provider host (`[]` only if you offer no models).
+   */
+  listProviders: () => ModelProvider[]
   /** Host tool registry, generic over the host's per-run deps. */
   toolRegistry: ToolRegistry<TDeps>
   /** Build the opaque per-run deps from a run context (live bindings inside). */
@@ -149,6 +211,7 @@ export function defineWfConfig<TDeps = unknown>(
   const problems: string[] = []
   if (!fn('getModel')) problems.push('`getModel` must be a function')
   if (!fn('listModels')) problems.push('`listModels` must be a function')
+  if (!fn('listProviders')) problems.push('`listProviders` must be a function')
   if (!fn('buildRunDeps')) problems.push('`buildRunDeps` must be a function')
   if (!(config.toolRegistry instanceof Map)) {
     problems.push('`toolRegistry` must be a Map (see ToolRegistry)')

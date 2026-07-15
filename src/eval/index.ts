@@ -55,6 +55,8 @@ export async function runWorkflowUnderConditions<TDeps>(
     triggerKind: triggerKindOf(tc.graph),
     promptVariables: tc.runContext?.promptVariables,
     manifest: tc.manifest ?? tc.runContext?.manifest,
+    simulate: tc.runContext?.simulate,
+    fixtures: tc.runContext?.fixtures,
     env: tc.runContext?.env,
   }
 

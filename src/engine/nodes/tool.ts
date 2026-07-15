@@ -1,6 +1,10 @@
 import { resolveBinding } from '../binding'
 import type { ToolNode } from '../graph'
-import type { ToolRegistry, ToolRegistryEntry } from '../tool-registry'
+import {
+  simulatedToolOutput,
+  type ToolRegistry,
+  type ToolRegistryEntry,
+} from '../tool-registry'
 
 export type ToolNodeResult = {
   output: unknown
@@ -22,6 +26,10 @@ export type ExecuteToolNodeDeps<TDeps> = {
    * unchanged.
    */
   rehydrate?: (value: unknown) => Promise<unknown>
+  /** Eval signal — under simulate, side-effecting tools are neutralized. */
+  simulate?: boolean
+  /** Canned tool outputs consumed under `simulate`. */
+  fixtures?: Record<string, unknown>
 }
 
 export async function executeToolNode<TDeps>(
@@ -53,6 +61,17 @@ export async function executeToolNode<TDeps>(
   const args = (
     entry.inputSchema ? entry.inputSchema.parse(rawArgs) : rawArgs
   ) as Record<string, unknown>
+
+  // Under simulate, a side-effecting tool is neutralized before it is built or
+  // run — write tools no-op, read tools return their fixture — but the call is
+  // still recorded (meta.toolId/args) so a grader can assert it happened.
+  const sim = simulatedToolOutput(entry, {
+    simulate: deps.simulate,
+    fixtures: deps.fixtures,
+  })
+  if (sim) {
+    return { output: sim.output, meta: { toolId: entry.id, args } }
+  }
 
   // Function tools are plain `(args) => Promise<result>`. AI tools are AI SDK
   // `Tool`s whose `execute` the agent loop normally calls; a Tool node invokes

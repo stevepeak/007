@@ -61,6 +61,10 @@ export type RunNodeContext<TDeps> = {
    * throw (a text-only run wires none).
    */
   resolveImageRef?: ImageRefResolver<TDeps>
+  /** Eval signal — under simulate, side-effecting tools are neutralized. */
+  simulate?: boolean
+  /** Canned tool outputs consumed under `simulate`, keyed by tool id. */
+  fixtures?: Record<string, unknown>
 }
 
 export async function runNode<TDeps>(
@@ -100,6 +104,8 @@ export async function runNode<TDeps>(
         manifest: ctx.manifest ?? [],
         rehydrate,
         resolveImage,
+        simulate: ctx.simulate,
+        fixtures: ctx.fixtures,
       })
       return {
         schedulerOutput: r.output,
@@ -114,6 +120,8 @@ export async function runNode<TDeps>(
         toolRegistry: ctx.toolRegistry,
         toolDeps: ctx.toolDeps,
         rehydrate,
+        simulate: ctx.simulate,
+        fixtures: ctx.fixtures,
       })
       return {
         schedulerOutput: r.output,

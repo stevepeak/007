@@ -51,6 +51,10 @@ export type GraphRunContextInput = {
   correlationId?: string
   triggerKind: string
   promptVariables?: Record<string, string | undefined>
+  /** Eval signal — under simulate, side-effecting tools are neutralized. */
+  simulate?: boolean
+  /** Canned tool outputs consumed under `simulate`, keyed by tool id. */
+  fixtures?: Record<string, unknown>
 }
 
 export type GraphWorkflowParams = {
@@ -354,6 +358,8 @@ export function makeGraphWorkflow<
                       sink,
                       resolveBlobRef: config.resolveBlobRef,
                       resolveImageRef: config.resolveImageRef,
+                      simulate: p.runContext.simulate,
+                      fixtures: p.runContext.fixtures,
                     })
                   },
                 ),
@@ -383,6 +389,8 @@ export function makeGraphWorkflow<
                     sink,
                     resolveBlobRef: config.resolveBlobRef,
                     resolveImageRef: config.resolveImageRef,
+                    simulate: p.runContext.simulate,
+                    fixtures: p.runContext.fixtures,
                   },
                 )
               },

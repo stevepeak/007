@@ -51,6 +51,7 @@ function makeConfig(
       throw new Error('no model needed')
     },
     listModels: () => [],
+    listProviders: () => [],
     toolRegistry,
     triggers: {
       go: { description: 'Go', inputSchema: z.object({ n: z.number() }) },
@@ -290,6 +291,7 @@ function switchConfig(): WfSdkConfig<Deps> {
       throw new Error('no model needed')
     },
     listModels: () => [],
+    listProviders: () => [],
     toolRegistry: switchTools,
     triggers: {
       go: { description: 'Go', inputSchema: z.object({ kind: z.string() }) },

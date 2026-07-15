@@ -18,6 +18,7 @@ import { useWfClient } from './context'
 
 const keys = {
   models: ['wf', 'models'] as const,
+  providers: ['wf', 'providers'] as const,
   tools: ['wf', 'tools'] as const,
   toolContextFields: ['wf', 'tool-context-fields'] as const,
   toolInvocations: (toolId: string, limit?: number) =>
@@ -37,6 +38,14 @@ const keys = {
 export function useModels() {
   const client = useWfClient()
   return useQuery({ queryKey: keys.models, queryFn: () => client.listModels() })
+}
+
+export function useProviders() {
+  const client = useWfClient()
+  return useQuery({
+    queryKey: keys.providers,
+    queryFn: () => client.listProviders(),
+  })
 }
 
 export function useTools() {

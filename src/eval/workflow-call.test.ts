@@ -74,6 +74,7 @@ describe('eval harness — workflow-calls-workflow (tool callee)', () => {
       throw new Error('no model needed')
     },
     listModels: () => [],
+    listProviders: () => [],
     toolRegistry,
     triggers: {},
     buildRunDeps: (ctx) => ({ subject: ctx.subjectId ?? '' }),
@@ -161,7 +162,8 @@ describe('eval harness — workflow-calls-workflow (agent callee, nested manifes
           warnings: [],
         }),
       }),
-    listModels: () => [{ id: 'mock', label: 'Mock' }],
+    listModels: () => [{ id: 'mock', label: 'Mock', providerId: 'mock' }],
+    listProviders: () => [{ id: 'mock', label: 'Mock', kind: 'custom' }],
     toolRegistry: new Map(),
     triggers: {},
     buildRunDeps: () => ({}),

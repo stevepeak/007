@@ -88,6 +88,8 @@ export async function executeWorkflow<TDeps>(
           sink,
           resolveBlobRef: config.resolveBlobRef,
           resolveImageRef: config.resolveImageRef,
+          simulate: runContext.simulate,
+          fixtures: runContext.fixtures,
         },
       )
       await recorder.record({

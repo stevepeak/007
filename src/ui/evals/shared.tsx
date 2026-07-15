@@ -99,20 +99,49 @@ const BRAND_MARK: Record<
   anthropic: { label: 'An', className: 'bg-amber-100 text-amber-700' },
   google: { label: 'G', className: 'bg-blue-100 text-blue-700' },
   meta: { label: 'M', className: 'bg-indigo-100 text-indigo-700' },
+  mistral: { label: 'Mi', className: 'bg-rose-100 text-rose-700' },
+  qwen: { label: 'Qw', className: 'bg-purple-100 text-purple-700' },
+  deepseek: { label: 'Ds', className: 'bg-cyan-100 text-cyan-700' },
 }
 
-export function BrandMark({ brand }: { brand: MockModelBrand }) {
-  const b = BRAND_MARK[brand]
+export function BrandMark({
+  brand,
+  fallback,
+}: {
+  brand?: MockModelBrand | null
+  /** Text (e.g. the model name) to derive a neutral mark from when brand is unknown. */
+  fallback?: string
+}) {
+  const b = brand ? BRAND_MARK[brand] : undefined
+  const label = b?.label ?? (fallback?.trim()?.slice(0, 2) || '··')
   return (
     <span
       className={cn(
         'inline-flex size-5 shrink-0 items-center justify-center rounded text-[10px] font-bold',
-        b.className,
+        b?.className ?? 'bg-neutral-100 text-neutral-500',
       )}
     >
-      {b.label}
+      {label}
     </span>
   )
+}
+
+/**
+ * Best-effort vendor guess from a model id/name, so a bare `ModelOption`
+ * (which carries no brand) still gets a colored mark. Returns undefined when
+ * nothing matches — the caller then renders a neutral fallback.
+ */
+export function inferModelBrand(idOrLabel: string): MockModelBrand | undefined {
+  const t = idOrLabel.toLowerCase()
+  if (t.includes('claude') || t.includes('anthropic')) return 'anthropic'
+  if (t.includes('gpt') || t.includes('openai') || /\bo[134]\b/.test(t)) return 'openai'
+  if (t.includes('gemini') || t.includes('google')) return 'google'
+  if (t.includes('llama') || t.includes('meta')) return 'meta'
+  if (t.includes('qwen')) return 'qwen'
+  if (t.includes('deepseek')) return 'deepseek'
+  if (t.includes('mistral') || t.includes('mixtral') || t.includes('venice'))
+    return 'mistral'
+  return undefined
 }
 
 export function EmptyState({ message }: { message: string }) {

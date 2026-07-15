@@ -43,6 +43,7 @@ export function createHttpWfDataClient(
 
   return {
     listModels: () => call('listModels', {}),
+    listProviders: () => call('listProviders', {}),
     listTools: () => call('listTools', {}),
     listToolInvocations: (input) => call('listToolInvocations', input),
     listToolContextFields: () => call('listToolContextFields', {}),

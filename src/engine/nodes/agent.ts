@@ -221,6 +221,10 @@ export type ExecuteAgentNodeDeps<TDeps> = {
    * input throws (a text-only run wires no image resolver).
    */
   resolveImage?: (ref: WfBlobRef) => Promise<ResolvedImage>
+  /** Eval signal — under simulate, side-effecting tools are neutralized. */
+  simulate?: boolean
+  /** Canned tool outputs consumed under `simulate`. */
+  fixtures?: Record<string, unknown>
 }
 
 // Resolve the agent an agent node points at from the frozen run manifest. The
@@ -254,10 +258,15 @@ export async function executeAgentNode<TDeps>(
     input,
     rehydrate,
     resolveImage,
+    simulate,
+    fixtures,
   } = deps
   const config = resolveAgentConfig(node, manifest)
   const model = getModel(config.modelId)
-  const tools = buildAgentToolSet(toolRegistry, config.toolIds, toolDeps)
+  const tools = buildAgentToolSet(toolRegistry, config.toolIds, toolDeps, {
+    simulate,
+    fixtures,
+  })
   // Node-level bound inputs override the run-level promptVariables.
   const vars = {
     ...promptVariables,

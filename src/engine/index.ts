@@ -100,9 +100,12 @@ export {
 } from './run-recorder'
 export {
   buildAgentToolSet,
+  simulatedToolOutput,
+  type SimulateContext,
   type ToolMeta,
   type ToolRegistry,
   type ToolRegistryEntry,
+  type ToolSideEffect,
 } from './tool-registry'
 export {
   describeTriggerEvents,
@@ -126,6 +129,8 @@ export {
   type ImageRefResolver,
   type ModelFactory,
   type ModelOption,
+  type ModelProvider,
+  type ModelProviderKind,
   type ResolvedImage,
   type RunCompletion,
   type RunContext,

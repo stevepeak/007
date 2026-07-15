@@ -1,10 +1,25 @@
 # Evals — build plan for `@stevepeak/007`
 
-> **Status:** design + **navigable prototype**. A full mock-backed authoring UI is
-> built (see [Implementation status](#implementation-status--prototype-ui-mock-backed));
-> the backend (schema, grading, execution — Phases 1–5) is not started. This is a
-> living document. The plan below is the target architecture; the prototype is what
-> exists today, and the two have some intentional deltas (called out inline).
+> **Status:** design + **navigable prototype** + **Phase 1 backend landed**. A full
+> mock-backed authoring UI is built (see
+> [Implementation status](#implementation-status--prototype-ui-mock-backed)), and
+> the SDK's `simulate` signal + fixtures (Phase 1) is now implemented and tested
+> (see [Phase 1 ✅](#phase-1--sdk-plumbing-the-simulate-signal--fixtures--done)).
+> The remaining backend (schema, grading, execution — Phases 2–5) is not started.
+> This is a living document. The plan below is the target architecture; the
+> prototype is what exists today, and the two have some intentional deltas (called
+> out inline).
+>
+> **⚠️ Platform change since this plan was first written — tenancy is gone.** The
+> SDK no longer has any tenant partition. Migration `0005` **drops `tenant_id`**
+> from `wf_run`, `wf_agent`, `wf_workflow`, and `wf_workflow_assignment`;
+> `RunContext` and `StartGraphRunInput` no longer carry a `tenantId`; workflows and
+> agents are a **single global set** and edit/run access is **gatekept by the host**
+> (`resolveContext` now returns `{ userId }` for attribution only). This obsoletes
+> the entire `EVAL_TENANT` mechanism the earlier draft leaned on — there is no
+> longer a tenant to run evals "under" or to isolate them with. The tenancy-related
+> passages below have been rewritten to match; the load-bearing seams (the
+> `simulate` signal + fixtures, and the real `wf_run` trace) are unaffected.
 
 ## What this is
 
@@ -49,12 +64,14 @@ The user's original framing:
   **reproducible**. This is distinct from `buildSimulatedRegistry`
   (`src/server/simulated-tools.ts`), which LLM-fabricates every result for the
   agent playground (non-deterministic — not what evals want).
-- **Isolation & tenancy:** there is **one host-provided `EVAL_TENANT`** (a
-  platform/builder scope). It owns the `wf_eval_*` suites, owns the `wf_run` rows
-  eval runs produce, **and** is the tenant targets resolve under (agents/workflows
-  are authored centrally, eval'd, then shipped to firms). Tenant isolation alone
-  keeps eval runs out of any firm's Runs view, so an `is_eval` flag on `wf_run` is
-  **optional** (nice-to-have for filtering within the eval tenant itself).
+- **Isolation:** ~~one host-provided `EVAL_TENANT`~~ **superseded by the tenancy
+  removal.** There is no tenant partition anymore: workflows/agents are a single
+  global set, and eval runs write into the **same global `wf_run` table** as every
+  other run. So isolation can no longer ride on a tenant boundary — an **`is_eval`
+  marker on `wf_run` is now the primary (not optional) mechanism** to keep eval
+  runs out of the general Runs explorer. Access to author/launch evals is
+  **host-gatekept** (the same gate that protects all workflow/agent editing), not
+  tenant-scoped. See the **Tenancy** entry under [Resolved decisions](#resolved-decisions).
 - **Expectations:** **hand-authored** outcome checks (AND/OR). Each check is
   either **binary/deterministic** (e.g. a tool was called, a node received a
   given input argument) or **subjective/LLM-judged**. Binary checks are pure
@@ -71,7 +88,7 @@ The user's original framing:
   float-to-latest) + N **rows**.
 - **Row** — one case: `initial condition` + `expected` (≥1 outcome checks).
 - **Test run** (the user's "initialize a new test") — pick ≥1 eval sets, execute
-  every row under the eval tenant with `simulate=true`, grade, store a **report**.
+  every row with `simulate=true` (marked `is_eval`), grade, store a **report**.
 
 ### UI vocabulary vs. code identifiers (deliberate split)
 
@@ -232,9 +249,9 @@ real hooks. Nothing outside `src/ui/evals` imports from them.
               │  createWfSdkHandlers injects it, like retryRun/runToolPreview │
               │                                                              │
               │   WORKFLOWS.startGraphRun({                                  │
-              │       tenantId:  EVAL_TENANT      ◀── host-owned scope       │
               │       simulate:  true            ◀── the key signal         │
               │       fixtures:  row.fixtures    ◀── canned tool outputs     │
+              │       isEval:    true            ◀── marks the wf_run        │
               │       workflowVersionId, triggerInput, promptVariables })    │
               └──────────────────────────┬───────────────────────────────────┘
                                          ▼
@@ -299,7 +316,7 @@ real hooks. Nothing outside `src/ui/evals` imports from them.
 ```
 
 **The spine in one line:** `eval set + rows → test run → (agent? wrap in
-workflow) → startEvalRun(EVAL_TENANT, simulate=true) → GraphWorkflow writes
+workflow) → startEvalRun(simulate=true, isEval=true) → GraphWorkflow writes
 wf_run trace → gradeRow(checks vs trace) → wf_eval_result → report`. The two
 load-bearing seams are the **`simulate` signal** (tools self-neuter side effects,
 invisible to the model) and the **real `wf_run` trace** (single source of truth
@@ -311,9 +328,11 @@ that both the RunViewer and the grader read).
 
 - **The `simulate` flag has a clean 3-hop path**: `StartGraphRunInput`
   (`src/cloudflare/start-run.ts`) → the `runContext` object built at
-  `start-run.ts:61` → `RunContext` (`src/engine/config.ts:67`) →
+  `start-run.ts:59` → `RunContext` (`src/engine/config.ts:67`) →
   `buildRunDeps(ctx)` → the host's `TDeps` → each tool. The SDK change is tiny and
   additive; the host's `buildRunDeps` reads `ctx.simulate` and each tool decides.
+  (This path used to also thread `tenantId`; that field is now gone — see the
+  status callout — so `simulate` + `fixtures` are the only new additions.)
 - **Agent targets should run through the real engine, not the `runAgentPreview`
   playground path.** `runAgentPreview` (`src/server/run-agent-preview.ts`) runs
   in-process and produces NO `wf_run` / `wf_run_step` trace — so there'd be
@@ -331,24 +350,26 @@ that both the RunViewer and the grader read).
 ## Data model — new `wf_eval_*` tables
 
 `src/storage/schema.ts` (+ generated migration via `bun run db:generate`). All
-opaque-text identity, `wf_`-prefixed, indexed by `tenantId` + parent id — same
-conventions as the existing nine tables.
+opaque-text identity, `wf_`-prefixed, indexed by parent id — same conventions as
+the existing tables. **No `tenantId` column** (tenancy was removed SDK-wide, per
+the status callout); these tables are part of the same global set as everything
+else and are host-gatekept.
 
 | Table            | Purpose               | Key columns                                                                                                   |
 | ---------------- | --------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `wf_eval_set`    | a suite               | `id`, `tenantId`, `name`, `description`, `targetKind` (`agent`\|`workflow`), `targetId`, `triggerKind`, times |
+| `wf_eval_set`    | a suite               | `id`, `name`, `description`, `targetKind` (`agent`\|`workflow`), `targetId`, `triggerKind`, times |
 | `wf_eval_row`    | one case              | `id`, `setId`, `name`, `initialCondition` (JSON: triggerInput + promptVariables), `fixtures` (JSON: canned tool outputs keyed by toolId), `checks` (JSON tree), `sortOrder` |
-| `wf_eval_run`    | one "test" execution  | `id`, `tenantId`, `status`, `setIds` (JSON), counts (`total`/`passed`/`failed`), `score` (mean 0..1), `startedAt`/`finishedAt` |
+| `wf_eval_run`    | one "test" execution  | `id`, `status`, `setIds` (JSON), counts (`total`/`passed`/`failed`), `score` (mean 0..1), `startedAt`/`finishedAt` |
 | `wf_eval_result` | per-row outcome       | `id`, `evalRunId`, `rowId`, `wfRunId` (→ the real `wf_run`), `status` (`pass`\|`fail`\|`error`), `score` (weighted mean 0..1), `checkResults` (JSON: per-check `{pass, score?, reason?}`) |
 
-All rows are owned by the single `EVAL_TENANT` (see Tenancy). `tenantId` on
-`wf_eval_set` / `wf_eval_run` is that constant, not a firm.
+The `wf_run` rows an eval produces set an **`is_eval` marker** (see Isolation) so
+the general Runs explorer can exclude them — the job the eval tenant used to do.
 
 ### Row fixtures (canned tool outputs)
 
-Because eval runs execute under the empty `EVAL_TENANT` with `simulate=true`, a
-row supplies **fixtures** — the canned data read tools return so the run is
-reproducible:
+Because eval runs execute with `simulate=true` and must not depend on any live
+firm's data, a row supplies **fixtures** — the canned data read tools return so
+the run is reproducible:
 
 ```
 fixtures = { [toolId]: cannedOutput }          // v1: one canned value per tool
@@ -561,8 +582,8 @@ models, read the scores side by side).
 - Each row: an on/off **toggle**, a **brand mark + model name**, **cost** ($/M
   tokens), **speed** (tok/s), and a **best-of-N** stepper (enabled once selected).
 - **Next** is intentionally **disabled** until the backend exists — this screen is
-  step 1 of the launch flow; the follow-on (safety-rail confirm: eval tenant +
-  simulate ON, then create `wf_eval_run` and open the live report) is not built.
+  step 1 of the launch flow; the follow-on (safety-rail confirm: **simulate ON**,
+  then create `wf_eval_run` and open the live report) is not built.
 - Models come from `MOCK_MODELS` (mock catalog); at build time this becomes the
   host's real model registry (`config.listModels`).
 
@@ -576,7 +597,7 @@ The payoff screen. Live while running, permanent history after.
 ```
  Evals ▸ Runs ▸ Jul 14, 3:20pm                                    ● running 14/19
  ────────────────────────────────────────────────────────────────────────────────
-  OVERALL      pass 11/14    score 0.79    started 2m ago    simulate · eval tenant
+  OVERALL      pass 11/14    score 0.79    started 2m ago    simulate · is_eval
   ══════════════════════════════════════════════════════════════════════════════
 
   ▾ Refund handling            4/7  ✗     score 0.62
@@ -633,32 +654,60 @@ front-ran Phase 6 to pin down the UX. What it leaves for the real build: the rep
 screen, the three ⚡ TODOs (Target dropdown, dynamic Given, Mocks/fixtures), workflow
 targets, and wiring every Run/Save/Test-runs surface to real data + execution.
 
-### Phase 1 — SDK plumbing: the `simulate` signal + fixtures (small, standalone, shippable first)
+### Phase 1 — SDK plumbing: the `simulate` signal + fixtures ✅ DONE
 
-1. `src/engine/config.ts` — add to `RunContext`: `simulate?: boolean` and
-   `fixtures?: Record<string, unknown>` (canned tool outputs keyed by toolId; doc:
-   "eval signal — write tools no-op, read tools return their fixture").
-2. `src/cloudflare/start-run.ts` — add `simulate?` + `fixtures?` to
-   `StartGraphRunInput`; pass both into the `runContext` object at ~line 61.
-3. `src/cloudflare/graph-workflow.ts` — thread `simulate` + `fixtures` through
-   `GraphWorkflowParams.runContext` so they survive the durable boundary.
-4. **Host** (`packages/wf-host/src/config.ts`) — `buildRunDeps` copies
-   `ctx.simulate` and `ctx.fixtures` into `HostDeps` (e.g. a `getFixture(toolId)`
-   helper). Tool branches:
-   - write/side-effect tools (`send_email`, `update_document`,
-     `embed_and_upsert`, …) → `if (deps.simulate) return <no-op result>`.
-   - read tools (`search_knowledge_base`, …) → `if (deps.simulate) return
-     deps.getFixture(id) ?? <safe empty default>`.
-5. Test: a write tool no-ops and a read tool returns its fixture under `simulate`.
+**Shipped.** The neutering is **SDK-metadata-driven**, which refined the original
+draft (below): instead of each host tool checking `deps.simulate` itself, tools
+declare a `sideEffect` and the SDK enforces one policy in one place — so a new
+tool can never silently forget to neuter.
 
-_Independently useful and low-risk — land it on its own._
+- `src/engine/config.ts` — `RunContext` gained `simulate?: boolean` +
+  `fixtures?: Record<string, unknown>`.
+- `src/cloudflare/start-run.ts` — `StartGraphRunInput` gained `simulate?` +
+  `fixtures?`; both flow into the `runContext` object.
+- `src/cloudflare/graph-workflow.ts` — `GraphRunContextInput` carries both across
+  the durable boundary; both `RunNodeContext` build sites (single-node + iteration
+  subgraph) forward them.
+- `src/engine/tool-registry.ts` — **the policy.** `ToolMeta` gained
+  `sideEffect?: 'read' | 'write'`; a pure `simulatedToolOutput(meta, ctx)` returns
+  the canned outcome (write → `{ simulated: true }`; read → `fixtures[id] ?? {}`)
+  or `undefined` to run for real. Applied in `buildAgentToolSet` (swaps the AI
+  tool's `execute`, leaving its schema so the model still "sees" and can call it)
+  and in `nodes/tool.ts` (short-circuits both function- and ai-tool Tool nodes).
+  **Untagged tools run for real even under simulate** — reserved for pure/compute
+  tools (e.g. `chunk_text`). The call is still recorded (`meta.toolId`/`args`) so
+  a grader can assert it happened.
+- `src/engine/run-node.ts` / `nodes/agent.ts` / `executor.ts` — thread
+  `simulate`/`fixtures` down to the two node executors (in-process + durable).
+- `src/eval/index.ts` — the `runWorkflowUnderConditions` harness passes both from
+  `tc.runContext`, so grading and tests exercise the same path.
+- **Host** (`packages/wf-host/src/config.ts`) — the only host change is **tagging
+  each tool**: reads (`get_document`, `search_knowledge_base`,
+  `read_client_memory`) → `sideEffect: 'read'`; writes (`update_document`,
+  `manage_client_memory`, `embed_and_upsert`, `prune_document_chunks`) →
+  `'write'`; `chunk_text` left untagged. No `buildRunDeps`/`getFixture` change was
+  needed — the SDK reads the signal off `RunContext`, not off the opaque deps.
+- **Tests** — `src/eval/simulate.test.ts` (5 cases): write no-ops, read returns
+  its fixture, read with no fixture → `{}`, untagged tool runs for real, and no
+  `simulate` → the write really runs. Full engine+eval suite, typecheck, and lint
+  green in both `007` and `wf-host`.
+
+<details><summary>Original draft (superseded by the metadata approach above)</summary>
+
+> 4. Host `buildRunDeps` copies `ctx.simulate`/`ctx.fixtures` into `HostDeps` (a
+>    `getFixture(toolId)` helper) and each tool branches on `deps.simulate`.
+
+This per-tool approach was rejected: it touches every `create*Tool` and is easy
+to forget on a new tool. The registry `sideEffect` tag is enforced centrally.
+</details>
 
 ### Phase 2 — storage & data access
 
 - `src/storage/schema.ts` — the four tables above; export in `wfSchema`.
-- `bun run db:generate` → new `migrations/0005_*.sql`.
-- `src/storage/data.ts` — CRUD: eval-set, row, eval-run, result — all
-  `tenantId`-scoped.
+- `bun run db:generate` → new `migrations/000X_*.sql` (next free number — `0005`
+  is already taken by the tenancy-removal migration).
+- `src/storage/data.ts` — CRUD: eval-set, row, eval-run, result. No tenant scoping
+  (tenancy removed); rows are keyed by parent id like the rest of the global set.
 - `src/storage/assert-schema.ts` — add the new tables to the dev schema check.
 
 ### Phase 3 — grading engine (pure, testable, no Cloudflare)
@@ -684,12 +733,12 @@ _Independently useful and low-risk — land it on its own._
   `gradeEvalResult`.
 - `src/server/handlers.ts` — implement. **`startEvalRun` is an optional
   host-wired hook** (mirrors `retryRun`/`runToolPreview`): the host injects a
-  callback that calls its `WORKFLOWS.startGraphRun({ tenantId: EVAL_TENANT,
-  simulate: true, fixtures: row.fixtures, workflowVersionId, triggerInput,
-  promptVariables })`. The host owns `EVAL_TENANT` (the platform/builder scope) —
-  the SDK never mints it. Without the hook wired, the method rejects "not
-  configured." The eval-data handlers (`listEvalSets`, etc.) also scope reads to
-  the host-provided `EVAL_TENANT` via `resolveContext`.
+  callback that calls its `WORKFLOWS.startGraphRun({ simulate: true, isEval: true,
+  fixtures: row.fixtures, workflowVersionId, triggerInput, promptVariables })`.
+  Without the hook wired, the method rejects "not configured." The eval-data
+  handlers (`listEvalSets`, etc.) need no tenant scoping — like every other data
+  handler they operate on the global set, and access is gatekept by the host at
+  the route (`resolveContext` returns `{ userId }` for attribution only).
 - `src/server/http-client.ts` — generic over method name; likely no change.
 
 ### Phase 5 — execution orchestration
@@ -742,10 +791,11 @@ store with real hooks.
 
 ## Suggested landing order
 
-Phase 0 (prototype UI) is **done**. Next: **Phase 1 alone** (clean, useful SDK
-change), then 2 → 3 → 4 → 5, and finally the **remaining** Phase 6 work (report
-screen + ⚡ TODOs + wiring the prototype off the mock store). Phases 2–3 are
-pure/testable with no UI and can proceed in parallel with UI polish.
+Phase 0 (prototype UI) and **Phase 1 (the `simulate` signal + fixtures)** are
+**done**. Next: **Phase 2** (the `wf_eval_*` schema + data access), then 3 → 4 →
+5, and finally the **remaining** Phase 6 work (report screen + ⚡ TODOs + wiring
+the prototype off the mock store). Phases 2–3 are pure/testable with no UI and can
+proceed in parallel with UI polish.
 
 ---
 
@@ -757,10 +807,13 @@ pure/testable with no UI and can proceed in parallel with UI polish.
   workflow eval and grades through one path. No bespoke non-graph path.
 - **Scoring** — ✅ pass/fail over all checks; **score from judge checks only**
   (binary checks excluded) so the number is a clean model-performance metric.
-- **Tenancy** — ✅ **one host-provided `EVAL_TENANT`** (platform/builder scope)
-  owns the `wf_eval_*` suites, owns the eval `wf_run` rows, and is the tenant
-  targets resolve under. Tenant isolation keeps eval runs out of firms' Runs
-  views, so an `is_eval` flag on `wf_run` is optional.
+- **Tenancy** — ⛔️ **superseded — there is no tenant anymore.** The earlier
+  decision (one host-provided `EVAL_TENANT` owning suites, eval runs, and target
+  resolution) is void: tenancy was removed SDK-wide (migration `0005` drops every
+  `tenant_id`; workflows/agents are a single global set, host-gatekept). Evals now
+  live in that same global set. Isolation from the general Runs explorer rides on
+  an **`is_eval` marker on `wf_run`** (promoted from optional to the primary
+  mechanism), not a tenant boundary. See the status callout at the top.
 - **Read tools under simulate** — ✅ return the row's **canned fixtures** (or a
   safe empty default), so evals are reproducible and self-contained; no dependence
   on live firm data. Write tools no-op.

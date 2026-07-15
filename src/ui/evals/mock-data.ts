@@ -480,14 +480,23 @@ export const MOCK_EVAL_RUNS: MockEvalRun[] = [
 ]
 
 // ── Model catalog (mock) ─────────────────────────────────────────────────────
-// The selectable AI models shown in the "Run" configuration dialog. Replace with
-// the real model registry (config.listModels) when Evals runs go live.
+// Fabricated models used ONLY by the run-history helper below (getMockRunHistory)
+// to populate the mock "Test runs" tables. The live run-config dialog reads real
+// models/providers from the host config (config.listModels / config.listProviders)
+// via the data client — it does NOT use this list.
 
-export type MockModelBrand = 'openai' | 'anthropic' | 'google' | 'meta'
+export type MockModelBrand =
+  | 'openai'
+  | 'anthropic'
+  | 'google'
+  | 'meta'
+  | 'mistral'
+  | 'qwen'
+  | 'deepseek'
 
 export type MockModel = {
   id: string
-  /** Display name, e.g. "OpenAI 5.1". */
+  /** Display name, e.g. "GPT-5.1". */
   name: string
   brand: MockModelBrand
   /** Blended cost per 1M tokens, USD. */
@@ -497,14 +506,16 @@ export type MockModel = {
 }
 
 export const MOCK_MODELS: MockModel[] = [
-  { id: 'openai-5.1', name: 'OpenAI 5.1', brand: 'openai', costPerMTok: 5.0, tokensPerSec: 82 },
-  { id: 'openai-5.1-mini', name: 'OpenAI 5.1 mini', brand: 'openai', costPerMTok: 1.2, tokensPerSec: 145 },
-  { id: 'claude-opus-4.8', name: 'Claude Opus 4.8', brand: 'anthropic', costPerMTok: 9.0, tokensPerSec: 64 },
-  { id: 'claude-sonnet-5', name: 'Claude Sonnet 5', brand: 'anthropic', costPerMTok: 3.0, tokensPerSec: 98 },
-  { id: 'claude-haiku-4.5', name: 'Claude Haiku 4.5', brand: 'anthropic', costPerMTok: 0.8, tokensPerSec: 180 },
-  { id: 'gemini-3-pro', name: 'Gemini 3 Pro', brand: 'google', costPerMTok: 3.5, tokensPerSec: 110 },
-  { id: 'gemini-3-flash', name: 'Gemini 3 Flash', brand: 'google', costPerMTok: 0.4, tokensPerSec: 220 },
-  { id: 'llama-4-405b', name: 'Llama 4 405B', brand: 'meta', costPerMTok: 0.9, tokensPerSec: 130 },
+  { id: 'openai/gpt-5.1', name: 'GPT-5.1', brand: 'openai', costPerMTok: 5.0, tokensPerSec: 82 },
+  { id: 'openai/gpt-5.1-mini', name: 'GPT-5.1 mini', brand: 'openai', costPerMTok: 1.2, tokensPerSec: 145 },
+  { id: 'anthropic/claude-opus-4.8', name: 'Claude Opus 4.8', brand: 'anthropic', costPerMTok: 9.0, tokensPerSec: 64 },
+  { id: 'anthropic/claude-sonnet-5', name: 'Claude Sonnet 5', brand: 'anthropic', costPerMTok: 3.0, tokensPerSec: 98 },
+  { id: 'google/gemini-3-pro', name: 'Gemini 3 Pro', brand: 'google', costPerMTok: 3.5, tokensPerSec: 110 },
+  { id: 'meta-llama/llama-4-405b', name: 'Llama 4 405B', brand: 'meta', costPerMTok: 0.9, tokensPerSec: 130 },
+  { id: 'venice-uncensored', name: 'Venice Uncensored', brand: 'mistral', costPerMTok: 0.5, tokensPerSec: 120 },
+  { id: 'qwen3-vl-235b-a22b', name: 'Qwen3 VL 235B', brand: 'qwen', costPerMTok: 1.5, tokensPerSec: 90 },
+  { id: 'qwen3-5-9b', name: 'Qwen3 9B', brand: 'qwen', costPerMTok: 0.2, tokensPerSec: 200 },
+  { id: 'deepseek-r1-671b', name: 'DeepSeek R1', brand: 'deepseek', costPerMTok: 0.8, tokensPerSec: 75 },
 ]
 
 // One row in an entity's "Test runs" history (a set, a sample, or a single test).

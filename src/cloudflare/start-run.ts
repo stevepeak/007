@@ -21,6 +21,14 @@ export type StartGraphRunInput = {
   subjectId?: string
   correlationId?: string
   promptVariables?: Record<string, string | undefined>
+  /**
+   * Eval signal — execute the real graph and write a real trace, but neutralize
+   * side-effecting tools (write tools no-op, read tools return their `fixtures`
+   * entry). Off for normal runs.
+   */
+  simulate?: boolean
+  /** Canned tool outputs consumed under `simulate`, keyed by tool id. */
+  fixtures?: Record<string, unknown>
   /** Optional human label for the RunRoom snapshot. */
   label?: string
   /** Resume mode: replay a prior failed run's completed steps into this run and
@@ -61,6 +69,8 @@ export async function startGraphRun(
         correlationId: input.correlationId,
         triggerKind: input.triggerKind,
         promptVariables: input.promptVariables,
+        simulate: input.simulate,
+        fixtures: input.fixtures,
       },
       resumeFromRunId: input.resumeFromRunId,
     },

@@ -1,4 +1,5 @@
 import type { JsonSchema } from '../engine/agent-output'
+import type { ModelOption, ModelProvider } from '../engine/config'
 import type { AgentConfig, AgentOutput, WorkflowGraph } from '../engine/graph'
 import type { AgentNodeMeta } from '../engine/nodes/agent'
 import type { TriggerEventOption } from '../engine/trigger-registry'
@@ -19,7 +20,13 @@ export type {
 // via `createHttpWfDataClient`. Tenant identity is resolved server-side (never
 // trusted from the client), so it never appears in this interface.
 
-export type ModelOption = { id: string; label: string }
+// Canonical model/provider shapes live in the host-injection contract; re-export
+// them so the wire client and the UI import from one place.
+export type {
+  ModelOption,
+  ModelProvider,
+  ModelProviderKind,
+} from '../engine/config'
 
 export type ToolOption = {
   id: string
@@ -257,6 +264,11 @@ export type AgentPreviewResult = {
 // `createWfSdkHandlers` and over HTTP by `createHttpWfDataClient`.
 export interface WfDataClient {
   listModels(): Promise<ModelOption[]>
+  /**
+   * The model providers the host wired up (empty when it declares none). The
+   * editor shows only these and groups models under them by `providerId`.
+   */
+  listProviders(): Promise<ModelProvider[]>
   listTools(): Promise<ToolOption[]>
   /** Recent times a tool was called across all runs (tool detail page). */
   listToolInvocations(input: {

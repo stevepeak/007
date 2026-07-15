@@ -42,6 +42,7 @@ describe('eval harness — tool graph', () => {
       throw new Error('no model needed for a tool-only graph')
     },
     listModels: () => [],
+    listProviders: () => [],
     toolRegistry,
     triggers: {
       echo: {
@@ -132,7 +133,8 @@ describe('eval harness — agent graph', () => {
           warnings: [],
         }),
       }),
-    listModels: () => [{ id: 'mock', label: 'Mock' }],
+    listModels: () => [{ id: 'mock', label: 'Mock', providerId: 'mock' }],
+    listProviders: () => [{ id: 'mock', label: 'Mock', kind: 'custom' }],
     toolRegistry: new Map(),
     triggers: {
       chat: {
@@ -279,7 +281,8 @@ describe('eval harness — blob-ref rehydration', () => {
           warnings: [],
         }),
       }),
-    listModels: () => [{ id: 'mock', label: 'Mock' }],
+    listModels: () => [{ id: 'mock', label: 'Mock', providerId: 'mock' }],
+    listProviders: () => [{ id: 'mock', label: 'Mock', kind: 'custom' }],
     toolRegistry,
     triggers: {
       go: { description: 'Go', inputSchema: z.object({ key: z.string() }) },

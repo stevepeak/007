@@ -80,7 +80,7 @@ export type WfServerContext = { userId?: string }
 export type CreateWfSdkHandlersOptions<TDeps> = {
   config: Pick<
     WfSdkConfig<TDeps>,
-    'getModel' | 'listModels' | 'toolRegistry' | 'triggers'
+    'getModel' | 'listModels' | 'listProviders' | 'toolRegistry' | 'triggers'
   >
   resolveDb: (req: Request) => WfDb | Promise<WfDb>
   resolveContext: (req: Request) => WfServerContext | Promise<WfServerContext>
@@ -408,6 +408,9 @@ export function createWfSdkHandlers<TDeps>(
       switch (method) {
         case 'listModels':
           return json(opts.config.listModels())
+
+        case 'listProviders':
+          return json(opts.config.listProviders())
 
         case 'listTools':
           return json(
