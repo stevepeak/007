@@ -6,6 +6,7 @@ import { useWfNav } from '../nav'
 import { ArchiveButton } from '../archive-button'
 import { WfShell } from '../shell'
 import { sectionCrumb } from '../wf-crumbs'
+import { ModelSelect } from '../editor/model-select'
 import { getMockRunHistory } from './mock-data'
 import {
   archiveTest,
@@ -22,7 +23,6 @@ import {
 import { RunConfigDialog } from './run-config-dialog'
 import { EmptyState, Tabs, TestRunsTable, VersionsList } from './shared'
 import { PickerCards, StepFlow, type Step } from './step-flow'
-import { TodoSpark } from './todo-spark'
 
 // The single-test view (route: evals/<setId>/samples/<sampleId>/tests/<testId>).
 // A "Test" is one check. Name (the assertion) + description are edited inline in
@@ -241,7 +241,7 @@ function TypeStep({
   setForm: (next: TestConfig) => void
   setFamily: (family: TestFamily) => void
 }) {
-  const { Input, Label } = useWfComponents()
+  const { Label } = useWfComponents()
   return (
     <PickerCards
       value={form.family}
@@ -279,31 +279,6 @@ function TypeStep({
           desc: 'An LLM judge grades the output come alignment with expectations.',
           accent: 'amber',
           detail: `${form.model || 'default'} judge`,
-          setting: (
-            <div className="space-y-1">
-              <div className="flex items-center gap-1">
-                <Label>Judge model</Label>
-                <TodoSpark title="Judge model — real model picker">
-                  <p>
-                    The judge is just a plain <em>generate-text</em> call: it
-                    takes the sample&apos;s output and grades it against the{' '}
-                    <strong>rubric</strong>, returning a 0–1 score.
-                  </p>
-                  <p>
-                    So <strong>Judge model</strong> should be the same model
-                    picker the test runner uses — the host&apos;s wired-up
-                    providers &amp; models from <code>config.listModels</code> /{' '}
-                    <code>config.listProviders</code> (see{' '}
-                    <code>RunConfigDialog</code>) — not this free-text field.
-                  </p>
-                </TodoSpark>
-              </div>
-              <Input
-                value={form.model ?? 'default'}
-                onChange={(e) => setForm({ ...form, model: e.target.value })}
-              />
-            </div>
-          ),
         },
       ]}
     />
@@ -330,6 +305,13 @@ function TestConfigStep({
 
   return (
     <div className="space-y-3">
+      <div className="space-y-1">
+        <Label>Judge model</Label>
+        <ModelSelect
+          value={form.model ?? ''}
+          onChange={(model) => setForm({ ...form, model })}
+        />
+      </div>
       <div className="space-y-1">
         <Label>Rubric</Label>
         <Textarea
