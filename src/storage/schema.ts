@@ -50,6 +50,11 @@ export const wfWorkflow = sqliteTable('wf_workflow', {
     .$defaultFn(() => crypto.randomUUID()),
   name: text('name').notNull(),
   description: text('description'),
+  // Hidden workflows are machinery, not authored content — kept out of the
+  // Workflows list. Used by the auto-generated agent-eval wrapper (a
+  // `trigger → agent → output` graph created once per agent target so an agent
+  // eval runs through the same GraphWorkflow path as a workflow eval).
+  hidden: integer('hidden', { mode: 'boolean' }).notNull().default(false),
   createdBy: text('created_by'),
   createdAt: createdAt(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }),

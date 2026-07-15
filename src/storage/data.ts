@@ -60,7 +60,29 @@ import {
 // ---------------------------------------------------------------------------
 
 export async function listWorkflows(db: WfDb) {
-  return await db.select().from(wfWorkflow).orderBy(desc(wfWorkflow.createdAt))
+  return await db
+    .select()
+    .from(wfWorkflow)
+    // Hidden workflows (eval wrappers) are machinery, not authored content.
+    .where(eq(wfWorkflow.hidden, false))
+    .orderBy(desc(wfWorkflow.createdAt))
+}
+
+/**
+ * Find a hidden workflow by exact name — the lookup behind the agent-eval
+ * wrapper cache. Returns the id, or null. Unlike {@link listWorkflows} this does
+ * not filter out hidden rows (the wrapper it looks for IS hidden).
+ */
+export async function findWorkflowByName(
+  db: WfDb,
+  name: string,
+): Promise<{ id: string } | null> {
+  const [row] = await db
+    .select({ id: wfWorkflow.id })
+    .from(wfWorkflow)
+    .where(eq(wfWorkflow.name, name))
+    .limit(1)
+  return row ?? null
 }
 
 export async function createWorkflow(
@@ -70,6 +92,8 @@ export async function createWorkflow(
     description?: string
     createdBy?: string
     graph: WorkflowGraph
+    /** Keep this workflow out of the Workflows list (eval-wrapper machinery). */
+    hidden?: boolean
   },
 ) {
   const workflowId = crypto.randomUUID()
@@ -77,6 +101,7 @@ export async function createWorkflow(
     id: workflowId,
     name: input.name,
     description: input.description ?? null,
+    hidden: input.hidden ?? false,
     createdBy: input.createdBy ?? null,
   })
   // Seed version 1 + a matching draft so the editor opens on a valid graph.

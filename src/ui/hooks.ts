@@ -8,7 +8,12 @@ import {
 import type { AgentConfig, WorkflowGraph } from '../engine/graph'
 import type {
   AgentPreviewInput,
+  CheckTree,
+  EvalFixtures,
+  EvalInitialCondition,
   RetryRunMode,
+  WfDataClient,
+  WfEvalTargetKind,
   WfRunListInput,
 } from '../server/protocol'
 import { useWfClient } from './context'
@@ -33,6 +38,11 @@ const keys = {
   agents: ['wf', 'agents'] as const,
   agent: (id: string) => ['wf', 'agent', id] as const,
   agentVersions: (id: string) => ['wf', 'agent-versions', id] as const,
+  evalSets: (includeArchived?: boolean) =>
+    ['wf', 'eval-sets', includeArchived ?? false] as const,
+  evalSet: (id: string) => ['wf', 'eval-set', id] as const,
+  evalRuns: (limit?: number) => ['wf', 'eval-runs', limit ?? null] as const,
+  evalRun: (id: string) => ['wf', 'eval-run', id] as const,
 }
 
 export function useModels() {
@@ -334,5 +344,222 @@ export function useRunAgentPreview() {
   const client = useWfClient()
   return useMutation({
     mutationFn: (input: AgentPreviewInput) => client.runAgentPreview(input),
+  })
+}
+
+// --- Evals -----------------------------------------------------------------
+
+export function useEvalSets(includeArchived?: boolean) {
+  const client = useWfClient()
+  return useQuery({
+    queryKey: keys.evalSets(includeArchived),
+    queryFn: () => client.listEvalSets({ includeArchived }),
+  })
+}
+
+export function useEvalSet(setId: string | null) {
+  const client = useWfClient()
+  return useQuery({
+    queryKey: keys.evalSet(setId ?? ''),
+    queryFn: () => client.getEvalSet(setId as string),
+    enabled: !!setId,
+  })
+}
+
+export function useEvalRuns(limit?: number) {
+  const client = useWfClient()
+  return useQuery({
+    queryKey: keys.evalRuns(limit),
+    queryFn: () => client.listEvalRuns({ limit }),
+  })
+}
+
+// Poll while the run is still executing so the report fills in live, then stop.
+export function useEvalRun(evalRunId: string | null) {
+  const client = useWfClient()
+  return useQuery({
+    queryKey: keys.evalRun(evalRunId ?? ''),
+    queryFn: () => client.getEvalRun(evalRunId as string),
+    enabled: !!evalRunId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.run.status
+      return status === 'queued' || status === 'running' ? 2000 : false
+    },
+  })
+}
+
+export function useCreateEvalSet() {
+  const client = useWfClient()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: {
+      name: string
+      description?: string
+      targetKind: WfEvalTargetKind
+      targetId: string
+      triggerKind: string
+    }) => client.createEvalSet(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['wf', 'eval-sets'] }),
+  })
+}
+
+export function useUpdateEvalSet() {
+  const client = useWfClient()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: {
+      setId: string
+      name?: string
+      description?: string | null
+      targetKind?: WfEvalTargetKind
+      targetId?: string
+      triggerKind?: string
+      archived?: boolean
+    }) => client.updateEvalSet(input),
+    onSuccess: (_r, input) => {
+      void qc.invalidateQueries({ queryKey: ['wf', 'eval-sets'] })
+      void qc.invalidateQueries({ queryKey: keys.evalSet(input.setId) })
+    },
+  })
+}
+
+export function useDeleteEvalSet() {
+  const client = useWfClient()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (setId: string) => client.deleteEvalSet(setId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['wf', 'eval-sets'] }),
+  })
+}
+
+export function useUpsertEvalRow() {
+  const client = useWfClient()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: {
+      id?: string
+      setId: string
+      name: string
+      initialCondition?: EvalInitialCondition
+      fixtures?: EvalFixtures
+      checks?: CheckTree
+      sortOrder?: number
+    }) => client.upsertEvalRow(input),
+    onSuccess: (_r, input) =>
+      qc.invalidateQueries({ queryKey: keys.evalSet(input.setId) }),
+  })
+}
+
+export function useDeleteEvalRow(setId: string) {
+  const client = useWfClient()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (rowId: string) => client.deleteEvalRow(rowId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.evalSet(setId) }),
+  })
+}
+
+// Client-driven eval orchestration (Phase 5 v1): create the run, then for each
+// sample start a real (simulated) run, wait for it to finish, and grade it —
+// concurrency-capped. A later durable orchestrator can replace this without
+// touching the protocol. Errors on one sample don't abort the batch; the run is
+// finalized over whatever results landed.
+const RUN_TERMINAL = new Set(['completed', 'failed', 'cancelled'])
+
+async function waitForRun(
+  client: WfDataClient,
+  wfRunId: string,
+  opts: { pollIntervalMs: number; timeoutMs: number },
+): Promise<void> {
+  const deadline = Date.now() + opts.timeoutMs
+  for (;;) {
+    const detail = await client.getRun(wfRunId)
+    if (detail && RUN_TERMINAL.has(detail.run.status)) return
+    if (Date.now() > deadline) {
+      throw new Error(`Eval run ${wfRunId} did not finish within the timeout.`)
+    }
+    await new Promise((r) => setTimeout(r, opts.pollIntervalMs))
+  }
+}
+
+async function pool<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  let cursor = 0
+  const runners = Array.from(
+    { length: Math.max(1, Math.min(concurrency, items.length || 1)) },
+    async () => {
+      for (;;) {
+        const i = cursor++
+        if (i >= items.length) return
+        await worker(items[i] as T)
+      }
+    },
+  )
+  await Promise.all(runners)
+}
+
+export type RunEvalInput = {
+  setIds: string[]
+  concurrency?: number
+  pollIntervalMs?: number
+  timeoutMs?: number
+  onProgress?: (p: { done: number; total: number }) => void
+}
+
+export async function runEval(
+  client: WfDataClient,
+  input: RunEvalInput,
+): Promise<{ evalRunId: string }> {
+  const sets = await Promise.all(
+    input.setIds.map((id) => client.getEvalSet(id)),
+  )
+  const jobs = sets
+    .filter((s): s is NonNullable<typeof s> => !!s)
+    .flatMap((s) => s.rows.map((row) => ({ rowId: row.id })))
+
+  const { evalRunId } = await client.createEvalRun({
+    setIds: input.setIds,
+    total: jobs.length,
+  })
+
+  const wait = {
+    pollIntervalMs: input.pollIntervalMs ?? 1500,
+    timeoutMs: input.timeoutMs ?? 120000,
+  }
+  let done = 0
+  await pool(jobs, input.concurrency ?? 4, async (job) => {
+    try {
+      const { wfRunId } = await client.startEvalRun({
+        evalRunId,
+        rowId: job.rowId,
+      })
+      await waitForRun(client, wfRunId, wait)
+      await client.gradeEvalResult({ evalRunId, rowId: job.rowId, wfRunId })
+    } catch (err) {
+      // Keep the batch going — a single sample's failure is captured by the
+      // absence of its result and the run still finalizes.
+      console.error(`[wf] eval sample ${job.rowId} failed:`, err)
+    } finally {
+      done += 1
+      input.onProgress?.({ done, total: jobs.length })
+    }
+  })
+
+  await client.finalizeEvalRun({ evalRunId })
+  return { evalRunId }
+}
+
+// Kicks off a full client-driven eval run. On success the eval-runs list is
+// invalidated and the new `evalRunId` is returned so the caller can navigate to
+// the report.
+export function useRunEval() {
+  const client = useWfClient()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: RunEvalInput) => runEval(client, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['wf', 'eval-runs'] }),
   })
 }

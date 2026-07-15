@@ -41,6 +41,7 @@ export {
   discardDraft,
   failRun,
   finalizeRun,
+  findWorkflowByName,
   getAgent,
   getEvalRow,
   getEvalRun,

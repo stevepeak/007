@@ -1,0 +1,1 @@
+ALTER TABLE `wf_workflow` ADD `hidden` integer DEFAULT false NOT NULL;

@@ -1,13 +1,15 @@
 # Evals — build plan for `@stevepeak/007`
 
-> **Status:** design + **navigable prototype** + **Phases 1–4 backend landed**. A
+> **Status:** design + **navigable prototype** + **Phases 1–5 backend landed**. A
 > full mock-backed authoring UI is built (see
 > [Implementation status](#implementation-status--prototype-ui-mock-backed)); the
 > SDK's `simulate` signal + fixtures (Phase 1), the `wf_eval_*` schema + data
 > access + shared `checks` zod (Phase 2, migration `0006`), the pure grading
-> engine `grade.ts` (Phase 3), and the server protocol + handlers + HTTP client
-> (Phase 4) are implemented and tested. The remaining backend (host-wired
-> execution orchestration — Phase 5) is not started. This is a
+> engine `grade.ts` (Phase 3), the server protocol + handlers + HTTP client
+> (Phase 4), and execution orchestration — agent wrapper, host `startEvalRun`
+> hook, client-driven run/grade loop (Phase 5, migration `0007`) — are implemented
+> and tested. What remains is UI: real-data wiring + the run report (Phase 6) and
+> the ⚡ authoring affordances (Phase 7). This is a
 > living document. The plan below is the target architecture; the prototype is
 > what exists today, and the two have some intentional deltas (called out inline).
 >
@@ -301,7 +303,7 @@ real hooks. Nothing outside `src/ui/evals` imports from them.
    │  status: pass | fail | error   score: 0..1     │
    │  checkResults[]  { pass, score?, reason? }      │
    └────────────────────────────────────────────────┘
-                           │  rollupSet / rollupRun
+                           │  rollup()
                            ▼   (pass rate + mean score per set and per run)
 
 
@@ -758,8 +760,8 @@ Cloudflare; deterministic checks read a hand-built trace, judge checks use a
   JSONPath matching parked in the ideas list). Failure `reason`s carry the actual
   value for the report's "why it failed" line.
 - Aggregation: `rollup(results)` → `{ total, passed, failed, errored, passRate,
-  meanScore }` (mean over judge-scored rows only); `rollupSet`/`rollupRun` are
-  named aliases.
+  meanScore }` (mean over judge-scored rows only), reused for both set- and
+  run-level summaries.
 - `src/eval/checks.ts` (the zod schema + types) was already built in Phase 2 and
   is shared with the `bun:test` harness; Phase 3 added the evaluators here.
 
@@ -804,24 +806,47 @@ migration `0006`, `grade.ts` via unit tests) are already covered.
   row without a separate set fetch.
 - `src/server/index.ts` re-exports the new DTOs + eval types for hosts/UI.
 
-### Phase 5 — execution orchestration
+### Phase 5 — execution orchestration ✅ DONE
 
-- **Agent target → generated wrapper workflow.** New `src/eval/wrapper.ts`:
-  ensure a `trigger(manual) → agent(agentId) → output` workflow+version exists
-  (created once per agent target, cached by `targetId`). Workflow targets run
-  their assigned/latest version directly.
-- **Orchestration (v1 = client-driven):** the Evals UI starts each row via
-  `startEvalRun` (passing the row's `fixtures`), watches completion via existing
-  `getRun` polling / `RunViewer` socket, then calls
-  `gradeEvalResult(evalRunId, rowId, wfRunId)`. Concurrency-capped in the client.
+Landed: agent targets resolve to a hidden wrapper workflow, the host wires the
+`startEvalRun` hook, and a client-driven loop runs + grades each sample.
+Typecheck/lint/tests green across the SDK **and** the host packages.
+
+- **Agent target → generated wrapper workflow** (`src/eval/wrapper.ts`):
+  - `buildAgentWrapperGraph(agentId)` — a pure `trigger(manual) → agent → output`
+    graph (validates against the strict `workflowGraphSchema`).
+  - `ensureAgentEvalWrapper(db, {agentId})` — creates the wrapper **once**, cached
+    by the stable name `eval-wrapper:<agentId>`, reused thereafter; the agent node
+    floats to latest so it never needs re-publishing.
+  - `resolveEvalTarget(db, target, setTriggerKind)` — agent → wrapper version +
+    `manual`; workflow → its latest version + the set's trigger kind. Called by
+    the `startEvalRun` handler so the host receives a ready `workflowVersionId`.
+  - Wrappers are **hidden**: a new `wf_workflow.hidden` column (migration `0007`)
+    keeps them out of `listWorkflows` / the Workflows list.
+- **Host RPC threading:** `GraphRunInput` (`@app/workflows-client`) gained
+  `simulate` / `isEval` / `fixtures` / `label` — the RPC boundary previously
+  stripped them. The SDK's `startGraphRun` + `GraphWorkflow` already forwarded
+  them into the RunContext, so no worker-logic change was needed.
+- **Host wiring** (`apps/web/app/api/wf/route.ts`): `resolveEnv` (so
+  `gradeEvalResult` can reach the model seam) + the `startEvalRun` hook, which
+  calls `startGraphRun({ workflowVersionId, triggerKind, triggerInput,
+  promptVariables, simulate:true, isEval:true, fixtures })` and returns the
+  persisted `wf_run.id` (`workflowRunId`) the SDK grades against.
+- **Orchestration (v1 = client-driven):** `runEval(client, { setIds })` +
+  `useRunEval()` in `src/ui/hooks.ts` — create the umbrella run, then for each
+  sample `startEvalRun` → poll `getRun` to completion → `gradeEvalResult`,
+  concurrency-capped (default 4), and `finalizeEvalRun` at the end. A single
+  sample's failure doesn't abort the batch.
   - _Later alternative:_ a durable `EvalRunRoom`/orchestrator DO so a test run
     survives a closed tab. Deferred.
 
-### Phase 6 — UI (the new tab)
+### Phase 6 — UI: real data + the report screen
 
-**Mostly built as the Phase 0 prototype** — the remaining work is (a) the report
-screen, (b) the three ⚡ TODOs, (c) workflow targets, and (d) replacing the mock
-store with real hooks.
+**The authoring UI is built as the Phase 0 prototype over a mock store.** Phase 6
+replaces the mock with real React Query hooks over the Phase-4 client and adds the
+one genuinely-missing screen (the run report). The ⚡ affordances that make
+authoring pleasant (target picker, dynamic Given, fixtures editor, judge-model
+picker) are their own follow-on — see **Phase 7**.
 
 - **Built** (`src/ui/wf-app.tsx` routes + hub card, components under
   `src/ui/evals/`): catalog (`evals-list.tsx`), Goal (`eval-set.tsx`), Sample
@@ -829,19 +854,45 @@ store with real hooks.
   (`run-config-dialog.tsx`), versioned mock store, shared atoms. Routes today:
   `evals`, `evals/<setId>`, `evals/<setId>/samples/<sampleId>`,
   `…/tests/<testId>`.
-- **Still to build:**
+- **This phase:**
+  - `src/ui/hooks.ts` — React Query hooks for the Phase-4 methods (`useEvalSets`,
+    `useEvalSet`, `useEvalRuns`, `useEvalRun`, the set/row mutations, and the
+    `useRunEval` client-driven orchestrator from Phase 5).
   - `eval-run-report.tsx` + route `evals/runs/<evalRunId>` — per-row pass/fail
     **and score**, per-check verdicts (✓/✗ binary, score + judge reason for
-    scored), embedded `RunViewer` link to the real `wf_run`; set/run pass rates +
-    mean scores. (The per-entity "Test runs" tabs then link into it.)
-  - ⚡ **Target picker** (dropdown of real agents/workflows), ⚡ **dynamic Given**
-    (reflected from the target trigger's `inputSchema`, reusing
-    `new-workflow-dialog`'s field reflection), ⚡ **Mocks/fixtures** editor.
-  - **Workflow targets** — un-stub the Sample Target picker's Workflow tile.
+    scored), a link to the real `wf_run`; set/run pass rates + mean scores. (The
+    per-entity "Test runs" tabs then link into it.)
+  - **Model reconciliation** — the prototype models Goal→Sample→Test as three
+    independently-versioned entities; the backend is Set→Row where a row embeds
+    its whole `checks` **CheckTree** (a "Test" is one `EvalCheck` in that tree, not
+    a standalone versioned row). Wiring drops the per-sample/per-test version
+    lineage (rows are mutable in v1 — see _Deliberately NOT_) and maps a Sample's
+    Tests to `row.checks.checks[]`. **Delete `mock-store.ts` + `mock-data.ts`**
+    once the reads/writes point at the hooks.
   - Wire **Run "Next"**, **Save**, and **Test runs** tabs to real data + execution.
-- `src/ui/hooks.ts` — React Query hooks for the new methods; **delete**
-  `mock-store.ts` + `mock-data.ts` when they land.
-- `src/index.ts` / `src/eval/index.ts` — export the pure grading utils.
+- `src/index.ts` / `src/eval/index.ts` — export the pure grading utils (done).
+
+### Phase 7 — ⚡ UI affordances (authoring polish)
+
+The four inline ⚡ `TodoSpark` markers in the prototype, promoted to a first-class
+phase. Each is independent and lands after the Phase-6 wiring gives it real data
+to bind to. (Grep `TodoSpark` for the exact in-UI copy.)
+
+- ⚡ **Target picker** (`eval-sample.tsx`) — replace the free-text target field
+  with a dropdown of the host's real agents **and** workflows (icon + name),
+  wiring the sample to that `targetId` (float-to-latest). Selecting a target is
+  what drives the next two items.
+- ⚡ **Dynamic Given** (`eval-sample.tsx`) — reflect the Given fields from the
+  selected target's parameters: the trigger's `inputSchema` + the agent/prompt
+  `${variables}`, reusing `new-workflow-dialog`'s field reflection, instead of
+  free-form key/value rows. Maps to the row's `initialCondition`.
+- ⚡ **Mocks / fixtures editor** (`eval-sample.tsx`) — a Mocks section to stub the
+  canned outputs of the target's read tools for this sample (write tools stay
+  no-op under `simulate`). Maps to the row's `fixtures`.
+- ⚡ **Judge-model picker** (`eval-test.tsx`) — replace the placeholder judge model
+  with a real `useModels()` dropdown for `llm_judge` checks (per-check `modelId`).
+- **Workflow targets** — un-stub the Sample Target picker's Workflow tile so a set
+  can target a workflow directly (Phase-5 wrapper is agent-only).
 
 ---
 
@@ -856,11 +907,15 @@ store with real hooks.
 
 Phases 0–4 are **done** (prototype UI; the `simulate` signal + fixtures; the
 `wf_eval_*` schema + data access + `checks` zod; the pure `grade.ts` engine; and
-the server protocol + handlers + HTTP client). Next: **Phase 5** (execution
-orchestration — the agent→wrapper-workflow, wiring the host's `startEvalRun` hook
-in the 1121law app, and the client-driven run/grade loop), and finally the
-**remaining** Phase 6 work (report screen + ⚡ TODOs + wiring the prototype off
-the mock store).
+the server protocol + handlers + HTTP client). Then, in order:
+
+- **Phase 5** — execution orchestration: the agent→wrapper-workflow, wiring the
+  host's `startEvalRun` hook in the 1121law app, and the client-driven run/grade
+  loop (`useRunEval`).
+- **Phase 6** — UI real-data wiring + the run report screen (replace the mock
+  store with hooks; reconcile the Sample/Test model onto Set/Row+CheckTree).
+- **Phase 7** — the ⚡ authoring affordances (target picker, dynamic Given,
+  fixtures editor, judge-model picker) + workflow targets.
 
 ---
 

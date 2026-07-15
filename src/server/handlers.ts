@@ -12,6 +12,7 @@ import { errorMessage } from '../engine/run-node'
 import { describeTriggerEvents } from '../engine/trigger-registry'
 import {
   gradeRow,
+  resolveEvalTarget,
   rollup,
   type GradeModelFactory,
   type GradeStep,
@@ -213,18 +214,23 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
     req: Request
   }) => Promise<{ runId: string }>
   /**
-   * Optional eval-run launcher. The SDK resolves the row + its set's target and
-   * hands the host a descriptor; the host resolves the target to a runnable
-   * version (for an agent target, the Phase-5 wrapper workflow) and starts a
-   * graph run with `simulate: true, isEval: true` and the row's `fixtures`, then
-   * returns the new `wf_run` id. The host owns the start because it holds the
-   * runtime bindings (`WORKFLOWS.startGraphRun`). If omitted, `startEvalRun`
+   * Optional eval-run launcher. The SDK resolves the row, its set's target, and
+   * the concrete `workflowVersionId` to run (for an agent target it creates/reuses
+   * the hidden Phase-5 wrapper workflow), then hands the host a ready descriptor.
+   * The host only starts the graph run — `WORKFLOWS.startGraphRun({
+   * workflowVersionId, triggerKind, triggerInput, promptVariables, simulate: true,
+   * isEval: true, fixtures })` — and returns the new `wf_run` id (its
+   * `workflowRunId`, the id `getRun`/`gradeEvalResult` read). The host owns the
+   * start because it holds the runtime bindings. If omitted, `startEvalRun`
    * rejects with "not configured".
    */
   startEvalRun?: (input: {
     evalRunId: string
     rowId: string
     target: { kind: WfEvalTargetKind; id: string }
+    /** The concrete version to run — the workflow's latest, or the agent wrapper's. */
+    workflowVersionId: string
+    /** The trigger kind to start under (agent wrappers are always `manual`). */
     triggerKind: string
     /** The row's initial-condition trigger input (`{}` when unset). */
     triggerInput: unknown
@@ -1180,11 +1186,20 @@ export function createWfSdkHandlers<TDeps>(
             throw new Error('Eval sample not found.')
           }
           const { row, set } = found
+          // Resolve the target to a concrete version (agent → hidden wrapper) and
+          // the trigger kind to start under, before handing the host the run.
+          const resolved = await resolveEvalTarget(
+            db,
+            { kind: set.targetKind, id: set.targetId },
+            set.triggerKind,
+            { createdBy: ctx.userId },
+          )
           const started = await opts.startEvalRun({
             evalRunId,
             rowId,
             target: { kind: set.targetKind, id: set.targetId },
-            triggerKind: set.triggerKind,
+            workflowVersionId: resolved.workflowVersionId,
+            triggerKind: resolved.triggerKind,
             triggerInput: row.initialCondition.triggerInput ?? {},
             promptVariables: row.initialCondition.promptVariables ?? {},
             fixtures: row.fixtures,

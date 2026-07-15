@@ -331,8 +331,3 @@ export function rollup(results: RowOutcome[]): Rollup {
     meanScore,
   }
 }
-
-/** Roll up the results of one set (alias of {@link rollup}). */
-export const rollupSet = rollup
-/** Roll up all results in an eval run (alias of {@link rollup}). */
-export const rollupRun = rollup

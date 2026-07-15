@@ -16,8 +16,6 @@ export {
 export {
   gradeRow,
   rollup,
-  rollupRun,
-  rollupSet,
   type GradeModelFactory,
   type GradeRowInput,
   type GradeRowResult,
@@ -25,6 +23,13 @@ export {
   type Rollup,
   type RowOutcome,
 } from './grade'
+export {
+  buildAgentWrapperGraph,
+  ensureAgentEvalWrapper,
+  evalWrapperName,
+  resolveEvalTarget,
+  EVAL_WRAPPER_NAME_PREFIX,
+} from './wrapper'
 
 import type { RunContext, WfSdkConfig } from '../engine/config'
 import { executeWorkflow } from '../engine/executor'
