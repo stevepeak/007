@@ -128,6 +128,7 @@ export {
   type BlobRefResolver,
   type ImageRefResolver,
   type ModelFactory,
+  type ModelListContext,
   type ModelOption,
   type ModelProvider,
   type ModelProviderKind,

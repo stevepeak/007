@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm'
 import {
   index,
   integer,
+  real,
   sqliteTable,
   text,
   uniqueIndex,
@@ -29,6 +30,11 @@ export const WF_RUN_STEP_STATUSES = [
   'failed',
   'skipped',
 ] as const
+
+// An eval run shares the run lifecycle vocabulary; each per-row result is a
+// three-way pass/fail/error.
+export const WF_EVAL_TARGET_KINDS = ['agent', 'workflow'] as const
+export const WF_EVAL_RESULT_STATUSES = ['pass', 'fail', 'error'] as const
 
 function createdAt() {
   return integer('created_at', { mode: 'timestamp' })
@@ -191,12 +197,17 @@ export const wfRun = sqliteTable(
     manifest: text('manifest', { mode: 'json' })
       .notNull()
       .default(sql`'[]'`),
+    // Marks a run produced by an eval (simulate=true). Since there is no tenant
+    // partition, this flag is how the general Runs explorer keeps eval runs out
+    // of a firm's view (default listings exclude it). See wf_eval_result.wfRunId.
+    isEval: integer('is_eval', { mode: 'boolean' }).notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [
     index('wf_run_created_idx').on(t.createdAt),
     index('wf_run_version_created_idx').on(t.workflowVersionId, t.createdAt),
     index('wf_run_subject_idx').on(t.subjectId),
+    index('wf_run_eval_created_idx').on(t.isEval, t.createdAt),
   ],
 )
 
@@ -235,6 +246,116 @@ export const wfRunStep = sqliteTable(
   ],
 )
 
+// ── Evals ────────────────────────────────────────────────────────────────
+// An eval suite ("Goal" in the UI): one target (agent OR workflow, float-to-
+// latest) plus N rows. Part of the same global set — no tenant column; access
+// is host-gatekept like everything else.
+export const wfEvalSet = sqliteTable(
+  'wf_eval_set',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    name: text('name').notNull(),
+    description: text('description'),
+    targetKind: text('target_kind', { enum: WF_EVAL_TARGET_KINDS }).notNull(),
+    // Opaque pointer to a wf_agent.id or wf_workflow.id (resolved float-to-
+    // latest at run start). No FK — mirrors the run-identity convention.
+    targetId: text('target_id').notNull(),
+    // The trigger kind the target is invoked under (drives row initialCondition).
+    triggerKind: text('trigger_kind').notNull(),
+    archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
+    createdBy: text('created_by'),
+    createdAt: createdAt(),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }),
+  },
+  (t) => [index('wf_eval_set_created_idx').on(t.createdAt)],
+)
+
+// One case ("Sample"): an initial condition, the canned fixtures reads return
+// under simulate, and the AND/OR check tree. Shapes are validated by
+// `src/eval/checks.ts` at the data-access boundary.
+export const wfEvalRow = sqliteTable(
+  'wf_eval_row',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    setId: text('set_id').notNull(),
+    name: text('name').notNull(),
+    // { triggerInput, promptVariables } — see EvalInitialCondition.
+    initialCondition: text('initial_condition', { mode: 'json' })
+      .notNull()
+      .default(sql`'{}'`),
+    // Canned tool outputs keyed by toolId — see EvalFixtures.
+    fixtures: text('fixtures', { mode: 'json' })
+      .notNull()
+      .default(sql`'{}'`),
+    // { op, checks[] } — see CheckTree.
+    checks: text('checks', { mode: 'json' })
+      .notNull()
+      .default(sql`'{"op":"and","checks":[]}'`),
+    sortOrder: integer('sort_order').notNull().default(0),
+    archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }),
+  },
+  (t) => [index('wf_eval_row_set_order_idx').on(t.setId, t.sortOrder)],
+)
+
+// One "test run" execution across ≥1 sets. Counts + mean score roll up from the
+// per-row results as they finish.
+export const wfEvalRun = sqliteTable(
+  'wf_eval_run',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    status: text('status', { enum: WF_RUN_STATUSES }).notNull().default('queued'),
+    // JSON array of the set ids included in this run.
+    setIds: text('set_ids', { mode: 'json' })
+      .notNull()
+      .default(sql`'[]'`),
+    total: integer('total').notNull().default(0),
+    passed: integer('passed').notNull().default(0),
+    failed: integer('failed').notNull().default(0),
+    // Overall mean score across scored (judge-bearing) rows; null when none.
+    score: real('score'),
+    startedAt: integer('started_at', { mode: 'timestamp' }),
+    finishedAt: integer('finished_at', { mode: 'timestamp' }),
+    createdBy: text('created_by'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('wf_eval_run_created_idx').on(t.createdAt)],
+)
+
+// One row's outcome inside an eval run. `wfRunId` links to the REAL wf_run the
+// eval produced — the single trace both the RunViewer and the grader read.
+export const wfEvalResult = sqliteTable(
+  'wf_eval_result',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    evalRunId: text('eval_run_id').notNull(),
+    rowId: text('row_id').notNull(),
+    // The wf_run produced for this row (null until the run is started).
+    wfRunId: text('wf_run_id'),
+    status: text('status', { enum: WF_EVAL_RESULT_STATUSES }).notNull(),
+    // Weighted mean of the row's judge scores; null when the row has none.
+    score: real('score'),
+    // Per-check verdicts: [{ pass, score?, reason? }] — see CheckResult.
+    checkResults: text('check_results', { mode: 'json' })
+      .notNull()
+      .default(sql`'[]'`),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('wf_eval_result_run_idx').on(t.evalRunId),
+    index('wf_eval_result_row_idx').on(t.rowId),
+  ],
+)
+
 export const wfSchema = {
   wfWorkflow,
   wfWorkflowVersion,
@@ -245,4 +366,8 @@ export const wfSchema = {
   wfWorkflowAssignment,
   wfRun,
   wfRunStep,
+  wfEvalSet,
+  wfEvalRow,
+  wfEvalRun,
+  wfEvalResult,
 }

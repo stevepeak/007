@@ -18,18 +18,36 @@ import {
   type WfRunManifestEntry,
   type WorkflowGraph,
 } from '../engine/graph'
+import {
+  checkTreeSchema,
+  evalFixturesSchema,
+  evalInitialConditionSchema,
+  type CheckResult,
+  type CheckTree,
+  type EvalFixtures,
+  type EvalInitialCondition,
+} from '../eval/checks'
 
 import type { WfDb } from './client'
+import type {
+  WF_EVAL_RESULT_STATUSES,
+  WF_EVAL_TARGET_KINDS,
+  WF_RUN_STATUSES,
+} from './schema'
 import {
   wfAgent,
   wfAgentDraft,
   wfAgentVersion,
+  wfEvalResult,
+  wfEvalRow,
+  wfEvalRun,
+  wfEvalSet,
   wfRun,
   wfRunStep,
   wfWorkflow,
   wfWorkflowAssignment,
   wfWorkflowDraft,
-  wfWorkflowVersion,
+  wfWorkflowVersion
 } from './schema'
 
 // Pure data-access functions over a `WfDb` handle. No auth and no tenancy —
@@ -732,6 +750,8 @@ export async function createRun(
     triggerKind: string
     subjectId?: string
     correlationId?: string
+    /** Marks this as an eval-produced run so the Runs explorer excludes it. */
+    isEval?: boolean
   },
 ): Promise<string> {
   const id = crypto.randomUUID()
@@ -741,6 +761,7 @@ export async function createRun(
     triggerKind: input.triggerKind,
     subjectId: input.subjectId ?? null,
     correlationId: input.correlationId ?? null,
+    isEval: input.isEval ?? false,
     status: 'queued',
   })
   return id
@@ -805,6 +826,8 @@ export type ListRunsFilter = {
   until?: Date
   limit?: number
   offset?: number
+  /** Include eval-produced runs. Default false — they're hidden from the explorer. */
+  includeEval?: boolean
 }
 
 const RUN_PAGE_MAX = 200
@@ -814,6 +837,9 @@ const RUN_PAGE_MAX = 200
 // page plus the unpaginated total so the UI can render "N of M".
 export async function listRuns(db: WfDb, input: ListRunsFilter) {
   const conds: SQL[] = []
+  if (!input.includeEval) {
+    conds.push(eq(wfRun.isEval, false))
+  }
   if (input.workflowVersionId) {
     conds.push(eq(wfRun.workflowVersionId, input.workflowVersionId))
   }
@@ -1025,4 +1051,292 @@ export async function loadResumeSteps(db: WfDb, runId: string) {
     .where(and(eq(wfRunStep.runId, runId), eq(wfRunStep.status, 'completed')))
     .orderBy(asc(wfRunStep.sequence))
   return rows.filter((r) => r.nodeKind !== 'trigger' && r.nodeKind !== 'output')
+}
+
+// ---------------------------------------------------------------------------
+// Evals — suites (sets), cases (rows), test runs, per-row results
+// ---------------------------------------------------------------------------
+//
+// Persistence only; grading (evaluate checks → verdicts) is Phase 3 (`grade.ts`)
+// and starting the real run is a host-wired hook (Phase 4). JSON columns are
+// validated against `src/eval/checks.ts` on write and cast on read.
+
+export type EvalTargetKind = (typeof WF_EVAL_TARGET_KINDS)[number]
+export type EvalResultStatus = (typeof WF_EVAL_RESULT_STATUSES)[number]
+
+export type EvalRowRecord = {
+  id: string
+  setId: string
+  name: string
+  initialCondition: EvalInitialCondition
+  fixtures: EvalFixtures
+  checks: CheckTree
+  sortOrder: number
+  archived: boolean
+}
+
+function toEvalRow(r: typeof wfEvalRow.$inferSelect): EvalRowRecord {
+  return {
+    id: r.id,
+    setId: r.setId,
+    name: r.name,
+    initialCondition: r.initialCondition as EvalInitialCondition,
+    fixtures: r.fixtures as EvalFixtures,
+    checks: r.checks as CheckTree,
+    sortOrder: r.sortOrder,
+    archived: r.archived,
+  }
+}
+
+/** Eval sets, newest first, each with its (non-archived) row count. */
+export async function listEvalSets(db: WfDb, opts?: { includeArchived?: boolean }) {
+  const rows = await db
+    .select({
+      id: wfEvalSet.id,
+      name: wfEvalSet.name,
+      description: wfEvalSet.description,
+      targetKind: wfEvalSet.targetKind,
+      targetId: wfEvalSet.targetId,
+      triggerKind: wfEvalSet.triggerKind,
+      archived: wfEvalSet.archived,
+      createdAt: wfEvalSet.createdAt,
+      updatedAt: wfEvalSet.updatedAt,
+      rowCount: sql<number>`(select count(*) from ${wfEvalRow} where ${wfEvalRow.setId} = ${wfEvalSet.id} and ${wfEvalRow.archived} = 0)`,
+    })
+    .from(wfEvalSet)
+    .where(opts?.includeArchived ? undefined : eq(wfEvalSet.archived, false))
+    .orderBy(desc(wfEvalSet.createdAt))
+  return rows
+}
+
+/** A set with its rows (ordered), or null if missing. */
+export async function getEvalSet(db: WfDb, setId: string) {
+  const [set] = await db
+    .select()
+    .from(wfEvalSet)
+    .where(eq(wfEvalSet.id, setId))
+    .limit(1)
+  if (!set) return null
+  const rows = await db
+    .select()
+    .from(wfEvalRow)
+    .where(and(eq(wfEvalRow.setId, setId), eq(wfEvalRow.archived, false)))
+    .orderBy(asc(wfEvalRow.sortOrder))
+  return { set, rows: rows.map(toEvalRow) }
+}
+
+export async function createEvalSet(
+  db: WfDb,
+  input: {
+    name: string
+    description?: string
+    targetKind: EvalTargetKind
+    targetId: string
+    triggerKind: string
+    createdBy?: string
+  },
+): Promise<string> {
+  const id = crypto.randomUUID()
+  await db.insert(wfEvalSet).values({
+    id,
+    name: input.name,
+    description: input.description ?? null,
+    targetKind: input.targetKind,
+    targetId: input.targetId,
+    triggerKind: input.triggerKind,
+    createdBy: input.createdBy ?? null,
+  })
+  return id
+}
+
+export async function updateEvalSet(
+  db: WfDb,
+  input: {
+    setId: string
+    name?: string
+    description?: string | null
+    targetKind?: EvalTargetKind
+    targetId?: string
+    triggerKind?: string
+    archived?: boolean
+  },
+) {
+  const set: Partial<typeof wfEvalSet.$inferInsert> = { updatedAt: new Date() }
+  if (input.name !== undefined) set.name = input.name
+  if (input.description !== undefined) set.description = input.description
+  if (input.targetKind !== undefined) set.targetKind = input.targetKind
+  if (input.targetId !== undefined) set.targetId = input.targetId
+  if (input.triggerKind !== undefined) set.triggerKind = input.triggerKind
+  if (input.archived !== undefined) set.archived = input.archived
+  await db.update(wfEvalSet).set(set).where(eq(wfEvalSet.id, input.setId))
+}
+
+/** Hard-delete a set and its rows (results/runs are kept for history). */
+export async function deleteEvalSet(db: WfDb, setId: string) {
+  await db.delete(wfEvalRow).where(eq(wfEvalRow.setId, setId))
+  await db.delete(wfEvalSet).where(eq(wfEvalSet.id, setId))
+}
+
+/** Create (no id) or update (id given) a row. Validates the JSON payloads. */
+export async function upsertEvalRow(
+  db: WfDb,
+  input: {
+    id?: string
+    setId: string
+    name: string
+    initialCondition?: EvalInitialCondition
+    fixtures?: EvalFixtures
+    checks?: CheckTree
+    sortOrder?: number
+  },
+): Promise<string> {
+  const initialCondition = evalInitialConditionSchema.parse(
+    input.initialCondition ?? {},
+  )
+  const fixtures = evalFixturesSchema.parse(input.fixtures ?? {})
+  const checks = checkTreeSchema.parse(
+    input.checks ?? { op: 'and', checks: [] },
+  )
+  if (input.id) {
+    const set: Partial<typeof wfEvalRow.$inferInsert> = {
+      name: input.name,
+      initialCondition,
+      fixtures,
+      checks,
+      updatedAt: new Date(),
+    }
+    if (input.sortOrder !== undefined) set.sortOrder = input.sortOrder
+    await db.update(wfEvalRow).set(set).where(eq(wfEvalRow.id, input.id))
+    return input.id
+  }
+  const id = crypto.randomUUID()
+  await db.insert(wfEvalRow).values({
+    id,
+    setId: input.setId,
+    name: input.name,
+    initialCondition,
+    fixtures,
+    checks,
+    sortOrder: input.sortOrder ?? 0,
+  })
+  return id
+}
+
+/** Soft-delete a row (archived rows drop out of the set + its row count). */
+export async function deleteEvalRow(db: WfDb, rowId: string) {
+  await db
+    .update(wfEvalRow)
+    .set({ archived: true, updatedAt: new Date() })
+    .where(eq(wfEvalRow.id, rowId))
+}
+
+export async function createEvalRun(
+  db: WfDb,
+  input: { setIds: string[]; total?: number; createdBy?: string },
+): Promise<string> {
+  const id = crypto.randomUUID()
+  await db.insert(wfEvalRun).values({
+    id,
+    setIds: input.setIds,
+    total: input.total ?? 0,
+    status: 'queued',
+    createdBy: input.createdBy ?? null,
+  })
+  return id
+}
+
+/** Patch an eval run's lifecycle + rolled-up counts/score. */
+export async function updateEvalRun(
+  db: WfDb,
+  input: {
+    evalRunId: string
+    status?: (typeof WF_RUN_STATUSES)[number]
+    total?: number
+    passed?: number
+    failed?: number
+    score?: number | null
+    startedAt?: Date
+    finishedAt?: Date
+  },
+) {
+  const set: Partial<typeof wfEvalRun.$inferInsert> = {}
+  if (input.status !== undefined) set.status = input.status
+  if (input.total !== undefined) set.total = input.total
+  if (input.passed !== undefined) set.passed = input.passed
+  if (input.failed !== undefined) set.failed = input.failed
+  if (input.score !== undefined) set.score = input.score
+  if (input.startedAt !== undefined) set.startedAt = input.startedAt
+  if (input.finishedAt !== undefined) set.finishedAt = input.finishedAt
+  await db.update(wfEvalRun).set(set).where(eq(wfEvalRun.id, input.evalRunId))
+}
+
+export async function listEvalRuns(db: WfDb, opts?: { limit?: number }) {
+  return await db
+    .select()
+    .from(wfEvalRun)
+    .orderBy(desc(wfEvalRun.createdAt))
+    .limit(Math.min(Math.max(opts?.limit ?? 50, 1), 200))
+}
+
+/** An eval run with its per-row results, or null if missing. */
+export async function getEvalRun(db: WfDb, evalRunId: string) {
+  const [run] = await db
+    .select()
+    .from(wfEvalRun)
+    .where(eq(wfEvalRun.id, evalRunId))
+    .limit(1)
+  if (!run) return null
+  const results = await db
+    .select()
+    .from(wfEvalResult)
+    .where(eq(wfEvalResult.evalRunId, evalRunId))
+    .orderBy(asc(wfEvalResult.createdAt))
+  return { run, results }
+}
+
+/** Insert a per-row result placeholder (before or after the row's run grades). */
+export async function insertEvalResult(
+  db: WfDb,
+  input: {
+    evalRunId: string
+    rowId: string
+    wfRunId?: string
+    status: EvalResultStatus
+    score?: number | null
+    checkResults?: CheckResult[]
+  },
+): Promise<string> {
+  const id = crypto.randomUUID()
+  await db.insert(wfEvalResult).values({
+    id,
+    evalRunId: input.evalRunId,
+    rowId: input.rowId,
+    wfRunId: input.wfRunId ?? null,
+    status: input.status,
+    score: input.score ?? null,
+    checkResults: input.checkResults ?? [],
+  })
+  return id
+}
+
+/** Write a graded verdict onto an existing result. */
+export async function updateEvalResult(
+  db: WfDb,
+  input: {
+    resultId: string
+    wfRunId?: string
+    status?: EvalResultStatus
+    score?: number | null
+    checkResults?: CheckResult[]
+  },
+) {
+  const set: Partial<typeof wfEvalResult.$inferInsert> = {}
+  if (input.wfRunId !== undefined) set.wfRunId = input.wfRunId
+  if (input.status !== undefined) set.status = input.status
+  if (input.score !== undefined) set.score = input.score
+  if (input.checkResults !== undefined) set.checkResults = input.checkResults
+  await db
+    .update(wfEvalResult)
+    .set(set)
+    .where(eq(wfEvalResult.id, input.resultId))
 }

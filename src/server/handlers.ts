@@ -254,7 +254,9 @@ async function computeChangeSummary<TDeps>(
       req: input.req,
     })
   }
-  const modelId = opts.summaryModelId ?? opts.config.listModels()[0]?.id
+  const modelId =
+    opts.summaryModelId ??
+    (await opts.config.listModels({ env: input.env }))[0]?.id
   if (modelId) {
     return await summarizeWorkflowChanges({
       getModel: opts.config.getModel,
@@ -406,11 +408,15 @@ export function createWfSdkHandlers<TDeps>(
       const db = await opts.resolveDb(req)
 
       switch (method) {
-        case 'listModels':
-          return json(opts.config.listModels())
+        case 'listModels': {
+          const env = opts.resolveEnv ? await opts.resolveEnv(req) : undefined
+          return json(await opts.config.listModels({ env }))
+        }
 
-        case 'listProviders':
-          return json(opts.config.listProviders())
+        case 'listProviders': {
+          const env = opts.resolveEnv ? await opts.resolveEnv(req) : undefined
+          return json(await opts.config.listProviders({ env }))
+        }
 
         case 'listTools':
           return json(

@@ -1,3 +1,19 @@
+export {
+  checkResultSchema,
+  checkTreeSchema,
+  evalCheckSchema,
+  evalFixturesSchema,
+  evalInitialConditionSchema,
+  evalMatchSchema,
+  isJudgeCheck,
+  type CheckResult,
+  type CheckTree,
+  type EvalCheck,
+  type EvalFixtures,
+  type EvalInitialCondition,
+  type EvalMatch,
+} from './checks'
+
 import type { RunContext, WfSdkConfig } from '../engine/config'
 import { executeWorkflow } from '../engine/executor'
 import type { WfRunManifestEntry } from '../engine/graph'

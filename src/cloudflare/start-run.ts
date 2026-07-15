@@ -29,6 +29,8 @@ export type StartGraphRunInput = {
   simulate?: boolean
   /** Canned tool outputs consumed under `simulate`, keyed by tool id. */
   fixtures?: Record<string, unknown>
+  /** Marks the produced `wf_run` as eval-owned (hidden from the Runs explorer). */
+  isEval?: boolean
   /** Optional human label for the RunRoom snapshot. */
   label?: string
   /** Resume mode: replay a prior failed run's completed steps into this run and
@@ -52,6 +54,7 @@ export async function startGraphRun(
     triggerKind: input.triggerKind,
     subjectId: input.subjectId,
     correlationId: input.correlationId,
+    isEval: input.isEval,
   })
 
   const runId = crypto.randomUUID()

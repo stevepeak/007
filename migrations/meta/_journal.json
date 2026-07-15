@@ -43,6 +43,13 @@
       "when": 1784121474879,
       "tag": "0005_romantic_payback",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1784154384125,
+      "tag": "0006_safe_wallflower",
+      "breakpoints": true
     }
   ]
 }

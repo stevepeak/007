@@ -1,14 +1,14 @@
 # Evals — build plan for `@stevepeak/007`
 
-> **Status:** design + **navigable prototype** + **Phase 1 backend landed**. A full
-> mock-backed authoring UI is built (see
-> [Implementation status](#implementation-status--prototype-ui-mock-backed)), and
-> the SDK's `simulate` signal + fixtures (Phase 1) is now implemented and tested
-> (see [Phase 1 ✅](#phase-1--sdk-plumbing-the-simulate-signal--fixtures--done)).
-> The remaining backend (schema, grading, execution — Phases 2–5) is not started.
-> This is a living document. The plan below is the target architecture; the
-> prototype is what exists today, and the two have some intentional deltas (called
-> out inline).
+> **Status:** design + **navigable prototype** + **Phases 1–2 backend landed**. A
+> full mock-backed authoring UI is built (see
+> [Implementation status](#implementation-status--prototype-ui-mock-backed)); the
+> SDK's `simulate` signal + fixtures (Phase 1) and the `wf_eval_*` schema + data
+> access + shared `checks` zod (Phase 2, migration `0006`) are implemented and
+> tested. The remaining backend (grading, protocol, execution — Phases 3–5) is not
+> started. This is a living document. The plan below is the target architecture;
+> the prototype is what exists today, and the two have some intentional deltas
+> (called out inline).
 >
 > **⚠️ Platform change since this plan was first written — tenancy is gone.** The
 > SDK no longer has any tenant partition. Migration `0005` **drops `tenant_id`**
@@ -347,7 +347,7 @@ that both the RunViewer and the grader read).
 
 ---
 
-## Data model — new `wf_eval_*` tables
+## Data model — `wf_eval_*` tables ✅ built (Phase 2, migration `0006`)
 
 `src/storage/schema.ts` (+ generated migration via `bun run db:generate`). All
 opaque-text identity, `wf_`-prefixed, indexed by parent id — same conventions as
@@ -701,14 +701,37 @@ This per-tool approach was rejected: it touches every `create*Tool` and is easy
 to forget on a new tool. The registry `sideEffect` tag is enforced centrally.
 </details>
 
-### Phase 2 — storage & data access
+### Phase 2 — storage & data access ✅ DONE
 
-- `src/storage/schema.ts` — the four tables above; export in `wfSchema`.
-- `bun run db:generate` → new `migrations/000X_*.sql` (next free number — `0005`
-  is already taken by the tenancy-removal migration).
-- `src/storage/data.ts` — CRUD: eval-set, row, eval-run, result. No tenant scoping
-  (tenancy removed); rows are keyed by parent id like the rest of the global set.
-- `src/storage/assert-schema.ts` — add the new tables to the dev schema check.
+**Shipped** in migration `0006_safe_wallflower.sql` (all seven migrations replay
+cleanly against a fresh SQLite; the four tables + the `is_eval` column exist).
+
+- `src/storage/schema.ts` — the four `wf_eval_*` tables (`wf_eval_set`,
+  `wf_eval_row`, `wf_eval_run`, `wf_eval_result`), exported in `wfSchema`. No
+  tenant column (tenancy removed). Enums: `WF_EVAL_TARGET_KINDS`,
+  `WF_EVAL_RESULT_STATUSES` (eval-run status reuses `WF_RUN_STATUSES`). Score
+  columns are `real` (nullable → judge-only, N/A when a row has no judge check).
+  **Also added `is_eval` to `wf_run`** (+ a `(is_eval, created_at)` index) — the
+  isolation marker that replaces the old eval tenant.
+- `src/eval/checks.ts` (**new**) — the shared zod schemas + inferred types for the
+  `checks` tree, `initialCondition`, `fixtures`, and `CheckResult`. Validated at
+  the data-access boundary on every row upsert; reused by the Phase 3 grader.
+  (This front-runs the doc's original Phase 3 placement of `checks.ts` — only the
+  *shapes* live here; the evaluators still land in Phase 3's `grade.ts`.)
+- `src/storage/data.ts` — full CRUD, no tenant scoping: `listEvalSets`
+  (with live row counts) / `getEvalSet` (set + ordered rows) / `createEvalSet` /
+  `updateEvalSet` / `deleteEvalSet`; `upsertEvalRow` (validates JSON) /
+  `deleteEvalRow` (soft-archive); `createEvalRun` / `updateEvalRun` (roll-up
+  counts + score) / `listEvalRuns` / `getEvalRun` (run + results);
+  `insertEvalResult` / `updateEvalResult` (attach `wfRunId` + graded verdict).
+  Plus `createRun` now takes `isEval?`, `StartGraphRunInput` carries it, and
+  `listRuns` **excludes eval runs by default** (`includeEval?` opts in).
+- `src/storage/assert-schema.ts` — the dev probe now also selects from
+  `wf_eval_set`, so a DB migrated before `0006` gets the same actionable error.
+- **Tests** — `src/eval/checks.test.ts` (7 cases): every binary + judge check
+  parses, unknown types and out-of-range thresholds reject, the AND/OR tree and
+  initial-condition/result shapes validate. Typecheck + lint green; migration
+  replay verified.
 
 ### Phase 3 — grading engine (pure, testable, no Cloudflare)
 
@@ -721,8 +744,9 @@ to forget on a new tool. The registry `sideEffect` tag is enforced centrally.
   with fixtures, no DB.
 - Aggregation helpers (`rollupSet`, `rollupRun`) compute set/run pass rates + mean
   scores from the row results.
-- New `src/eval/checks.ts` — the zod schema + evaluators. Shared with the
-  `bun:test` harness.
+- `src/eval/checks.ts` — **already built in Phase 2** (the zod schema + types).
+  Phase 3 adds the *evaluators* (in `grade.ts`) that consume those types; the
+  schema is shared with the `bun:test` harness.
 
 ### Phase 4 — server protocol & handlers
 
@@ -791,11 +815,12 @@ store with real hooks.
 
 ## Suggested landing order
 
-Phase 0 (prototype UI) and **Phase 1 (the `simulate` signal + fixtures)** are
-**done**. Next: **Phase 2** (the `wf_eval_*` schema + data access), then 3 → 4 →
-5, and finally the **remaining** Phase 6 work (report screen + ⚡ TODOs + wiring
-the prototype off the mock store). Phases 2–3 are pure/testable with no UI and can
-proceed in parallel with UI polish.
+Phase 0 (prototype UI), **Phase 1 (the `simulate` signal + fixtures)**, and
+**Phase 2 (the `wf_eval_*` schema + data access + shared `checks` zod)** are
+**done**. Next: **Phase 3** (the pure `grade.ts` engine — evaluate the `checks`
+tree against a run trace), then 4 → 5, and finally the **remaining** Phase 6 work
+(report screen + ⚡ TODOs + wiring the prototype off the mock store). Phase 3 is
+pure/testable with no UI and can proceed in parallel with UI polish.
 
 ---
 

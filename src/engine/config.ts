@@ -54,6 +54,16 @@ export type ModelOption = {
   tokensPerSec?: number
 }
 
+/**
+ * Context handed to {@link WfSdkConfig.listModels} / {@link WfSdkConfig.listProviders}
+ * so they can read live host bindings — e.g. a provider API key out of `env` — to
+ * fetch a provider's `/models` endpoint. `env` is the same opaque host Env the
+ * data-route handler resolves per request (see `resolveEnv`); it's undefined when
+ * the host wires no `resolveEnv`, in which case the listers must degrade (e.g. to
+ * a static fallback list).
+ */
+export type ModelListContext = { env?: unknown }
+
 /** Payload handed to {@link WfSdkConfig.onRunComplete} when a run finalizes. */
 export type RunCompletion = { output: unknown; outputNodeId: string }
 /** Payload handed to {@link WfSdkConfig.onRunFailed} when a run aborts. */
@@ -141,15 +151,22 @@ export interface WfSdkConfig<TDeps = unknown> {
    * run context so it can read live bindings (e.g. `(ctx.env as Env).API_KEY`).
    */
   getModel: (modelId: string, ctx: RunContext) => LanguageModel
-  /** Models offered in the editor's model dropdowns. */
-  listModels: () => ModelOption[]
+  /**
+   * Models offered in the editor's model dropdowns. May be async and read
+   * `ctx.env` to fetch a provider's live `/models` (see {@link ModelListContext}).
+   */
+  listModels: (ctx: ModelListContext) => ModelOption[] | Promise<ModelOption[]>
   /**
    * The model providers the host has wired up (OpenRouter, a direct OpenAI key,
    * Venice, a custom endpoint). The editor groups models by provider and shows
    * ONLY these — each {@link ModelOption} is bucketed by its `providerId`. Return
    * a single entry for a one-provider host (`[]` only if you offer no models).
+   * May be async and read `ctx.env` (e.g. to include a provider only when its
+   * key is configured).
    */
-  listProviders: () => ModelProvider[]
+  listProviders: (
+    ctx: ModelListContext,
+  ) => ModelProvider[] | Promise<ModelProvider[]>
   /** Host tool registry, generic over the host's per-run deps. */
   toolRegistry: ToolRegistry<TDeps>
   /** Build the opaque per-run deps from a run context (live bindings inside). */
