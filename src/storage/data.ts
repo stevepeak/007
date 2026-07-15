@@ -1125,6 +1125,32 @@ export async function getEvalSet(db: WfDb, setId: string) {
   return { set, rows: rows.map(toEvalRow) }
 }
 
+/**
+ * One row plus its parent set's target/trigger identity — everything
+ * `startEvalRun`/`gradeEvalResult` need to launch and grade the row without a
+ * separate set fetch. Null if the row is missing or archived.
+ */
+export async function getEvalRow(db: WfDb, rowId: string) {
+  const [row] = await db
+    .select()
+    .from(wfEvalRow)
+    .where(and(eq(wfEvalRow.id, rowId), eq(wfEvalRow.archived, false)))
+    .limit(1)
+  if (!row) return null
+  const [set] = await db
+    .select({
+      id: wfEvalSet.id,
+      targetKind: wfEvalSet.targetKind,
+      targetId: wfEvalSet.targetId,
+      triggerKind: wfEvalSet.triggerKind,
+    })
+    .from(wfEvalSet)
+    .where(eq(wfEvalSet.id, row.setId))
+    .limit(1)
+  if (!set) return null
+  return { row: toEvalRow(row), set }
+}
+
 export async function createEvalSet(
   db: WfDb,
   input: {

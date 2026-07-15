@@ -488,6 +488,8 @@ export const MOCK_EVAL_RUNS: MockEvalRun[] = [
 export type MockModelBrand =
   | 'openai'
   | 'anthropic'
+  | 'venice'
+  | 'openrouter'
   | 'google'
   | 'meta'
   | 'mistral'
@@ -514,7 +516,8 @@ const MOCK_MODELS: MockModel[] = [
   { id: 'anthropic/claude-sonnet-5', name: 'Claude Sonnet 5', brand: 'anthropic', costPerMTok: 3.0, tokensPerSec: 98 },
   { id: 'google/gemini-3-pro', name: 'Gemini 3 Pro', brand: 'google', costPerMTok: 3.5, tokensPerSec: 110 },
   { id: 'meta-llama/llama-4-405b', name: 'Llama 4 405B', brand: 'meta', costPerMTok: 0.9, tokensPerSec: 130 },
-  { id: 'venice-uncensored', name: 'Venice Uncensored', brand: 'mistral', costPerMTok: 0.5, tokensPerSec: 120 },
+  { id: 'venice-uncensored', name: 'Venice Uncensored', brand: 'venice', costPerMTok: 0.5, tokensPerSec: 120 },
+  { id: 'openrouter/auto', name: 'OpenRouter Auto', brand: 'openrouter', costPerMTok: 2.0, tokensPerSec: 100 },
   { id: 'qwen3-vl-235b-a22b', name: 'Qwen3 VL 235B', brand: 'qwen', costPerMTok: 1.5, tokensPerSec: 90 },
   { id: 'qwen3-5-9b', name: 'Qwen3 9B', brand: 'qwen', costPerMTok: 0.2, tokensPerSec: 200 },
   { id: 'deepseek-r1-671b', name: 'DeepSeek R1', brand: 'deepseek', costPerMTok: 0.8, tokensPerSec: 75 },

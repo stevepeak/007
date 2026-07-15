@@ -78,5 +78,22 @@ export function createHttpWfDataClient(
     // A tool-calling agent can run well past the default 20s UI backstop, so
     // give the playground its own longer budget.
     runAgentPreview: (input) => call('runAgentPreview', input, 120000),
+
+    // Evals.
+    listEvalSets: (input) => call('listEvalSets', input ?? {}),
+    getEvalSet: (setId) => call('getEvalSet', { setId }),
+    createEvalSet: (input) => call('createEvalSet', input),
+    updateEvalSet: (input) => call('updateEvalSet', input),
+    deleteEvalSet: (setId) => call('deleteEvalSet', { setId }),
+    upsertEvalRow: (input) => call('upsertEvalRow', input),
+    deleteEvalRow: (rowId) => call('deleteEvalRow', { rowId }),
+    createEvalRun: (input) => call('createEvalRun', input),
+    // Launching a real (simulated) run can outrun the default 20s backstop.
+    startEvalRun: (input) => call('startEvalRun', input, 120000),
+    // Judge checks call a model — give grading its own longer budget.
+    gradeEvalResult: (input) => call('gradeEvalResult', input, 120000),
+    finalizeEvalRun: (input) => call('finalizeEvalRun', input),
+    listEvalRuns: (input) => call('listEvalRuns', input ?? {}),
+    getEvalRun: (evalRunId) => call('getEvalRun', { evalRunId }),
   }
 }

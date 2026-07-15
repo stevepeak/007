@@ -1,14 +1,15 @@
 # Evals — build plan for `@stevepeak/007`
 
-> **Status:** design + **navigable prototype** + **Phases 1–2 backend landed**. A
+> **Status:** design + **navigable prototype** + **Phases 1–4 backend landed**. A
 > full mock-backed authoring UI is built (see
 > [Implementation status](#implementation-status--prototype-ui-mock-backed)); the
-> SDK's `simulate` signal + fixtures (Phase 1) and the `wf_eval_*` schema + data
-> access + shared `checks` zod (Phase 2, migration `0006`) are implemented and
-> tested. The remaining backend (grading, protocol, execution — Phases 3–5) is not
-> started. This is a living document. The plan below is the target architecture;
-> the prototype is what exists today, and the two have some intentional deltas
-> (called out inline).
+> SDK's `simulate` signal + fixtures (Phase 1), the `wf_eval_*` schema + data
+> access + shared `checks` zod (Phase 2, migration `0006`), the pure grading
+> engine `grade.ts` (Phase 3), and the server protocol + handlers + HTTP client
+> (Phase 4) are implemented and tested. The remaining backend (host-wired
+> execution orchestration — Phase 5) is not started. This is a
+> living document. The plan below is the target architecture; the prototype is
+> what exists today, and the two have some intentional deltas (called out inline).
 >
 > **⚠️ Platform change since this plan was first written — tenancy is gone.** The
 > SDK no longer has any tenant partition. Migration `0005` **drops `tenant_id`**
@@ -281,7 +282,7 @@ real hooks. Nothing outside `src/ui/evals` imports from them.
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
    wf_run + wf_run_step[] ─┐
-   row.checks ─────────────┼──▶ gradeRow({ checks, run, steps, output, getModel })
+   row.checks ─────────────┼──▶ gradeRow({ checks, steps, output, getModel })
                            │
         binary checks read the trace:                       scored check:
           tool_called / tool_args_match  ◀─ step.meta          llm_judge
@@ -733,37 +734,75 @@ cleanly against a fresh SQLite; the four tables + the `is_eval` column exist).
   initial-condition/result shapes validate. Typecheck + lint green; migration
   replay verified.
 
-### Phase 3 — grading engine (pure, testable, no Cloudflare)
+### Phase 3 — grading engine (pure, testable, no Cloudflare) ✅ DONE
 
-- New `src/eval/grade.ts` — `gradeRow({ checks, run, steps, output, getModel }) →
-  { status, score, checkResults[] }`. Deterministic checks read `wf_run_step`
-  (`meta.toolId`, `meta.args`, `step.input`, node presence) + run output;
-  `llm_judge` calls `getModel` and returns a scored verdict. Reduces per-check
-  `pass` flags via AND/OR for `status`, and the weighted mean of `score` for the
-  row `score`. Pure function over a `WfRunDetail`-shaped input → unit-testable
-  with fixtures, no DB.
-- Aggregation helpers (`rollupSet`, `rollupRun`) compute set/run pass rates + mean
-  scores from the row results.
-- `src/eval/checks.ts` — **already built in Phase 2** (the zod schema + types).
-  Phase 3 adds the *evaluators* (in `grade.ts`) that consume those types; the
-  schema is shared with the `bun:test` harness.
+**Shipped** in `src/eval/grade.ts` + `grade.test.ts` (17 cases). Pure — no DB, no
+Cloudflare; deterministic checks read a hand-built trace, judge checks use a
+`MockLanguageModelV3`.
 
-### Phase 4 — server protocol & handlers
+- `gradeRow({ checks, steps, output, getModel?, defaultJudgeModelId? }) →
+  { status, score, checkResults[] }`. Deterministic checks read the trace
+  synchronously; `llm_judge` awaits `generateObject` via `getModel`. Judge checks
+  resolve concurrently (`Promise.all`).
+- **Tool-call extraction handles BOTH shapes** — a workflow Tool node (top-level
+  `tool` step, `meta.{toolId,args}`) *and* calls made inside an Agent node
+  (`meta.steps[].toolCalls[]`, `toolName`/`input`). So an agent-eval and a
+  workflow-eval grade `tool_called`/`tool_args_match` through one path — the
+  payoff of the Phase 1 agent-wrapper design.
+- **Two signals kept apart**: `status` is the AND/OR reduction of *every* check's
+  pass flag (empty tree → pass); `score` is the **weighted mean of judge scores
+  only** (binary checks excluded), `null` when a row has no judge check. A judge
+  failure (model error / missing model) marks the whole row `status: 'error'`.
+- Binary matchers: `equals` (deep), `contains` (substring/array membership),
+  `regex`; `jsonpath` is a v1 alias for `equals` after `path` selection (richer
+  JSONPath matching parked in the ideas list). Failure `reason`s carry the actual
+  value for the report's "why it failed" line.
+- Aggregation: `rollup(results)` → `{ total, passed, failed, errored, passRate,
+  meanScore }` (mean over judge-scored rows only); `rollupSet`/`rollupRun` are
+  named aliases.
+- `src/eval/checks.ts` (the zod schema + types) was already built in Phase 2 and
+  is shared with the `bun:test` harness; Phase 3 added the evaluators here.
 
-- `src/server/protocol.ts` — DTOs (`WfEvalSetSummary`, `WfEvalSetDetail`,
-  `WfEvalRowDTO`, `WfEvalRunSummary`, `WfEvalResultDTO`) + `WfDataClient` methods:
-  `listEvalSets/getEvalSet/createEvalSet/updateEvalSet/deleteEvalSet`,
-  `upsertEvalRow/deleteEvalRow`, `startEvalRun`, `listEvalRuns/getEvalRun`,
-  `gradeEvalResult`.
-- `src/server/handlers.ts` — implement. **`startEvalRun` is an optional
-  host-wired hook** (mirrors `retryRun`/`runToolPreview`): the host injects a
-  callback that calls its `WORKFLOWS.startGraphRun({ simulate: true, isEval: true,
-  fixtures: row.fixtures, workflowVersionId, triggerInput, promptVariables })`.
-  Without the hook wired, the method rejects "not configured." The eval-data
-  handlers (`listEvalSets`, etc.) need no tenant scoping — like every other data
-  handler they operate on the global set, and access is gatekept by the host at
-  the route (`resolveContext` returns `{ userId }` for attribution only).
-- `src/server/http-client.ts` — generic over method name; likely no change.
+### Phase 4 — server protocol & handlers ✅ DONE
+
+Landed: the wire protocol, server dispatch, and browser client for the whole
+eval surface. All typecheck/lint clean; the pieces they wrap (data CRUD via
+migration `0006`, `grade.ts` via unit tests) are already covered.
+
+- `src/server/protocol.ts` — DTOs `WfEvalSetSummary` / `WfEvalSetDetail` /
+  `WfEvalRowDTO` / `WfEvalRunSummary` / `WfEvalResultDTO` / `WfEvalRunDetail`
+  (plus `WfEvalTargetKind`, `WfEvalResultStatus`), and re-exports the pure eval
+  types (`CheckTree`, `CheckResult`, `EvalCheck`, `EvalMatch`, `EvalFixtures`,
+  `EvalInitialCondition`) from `../eval/checks` so the UI imports them from one
+  place. `WfDataClient` gained: `listEvalSets/getEvalSet/createEvalSet/
+  updateEvalSet/deleteEvalSet`, `upsertEvalRow/deleteEvalRow`, `createEvalRun`,
+  `startEvalRun`, `gradeEvalResult`, `finalizeEvalRun`, `listEvalRuns/getEvalRun`.
+  (`createEvalRun`/`finalizeEvalRun` weren't in the original list but are what the
+  client-driven loop needs to open and close the umbrella run.)
+- `src/server/handlers.ts` — all methods implemented. Two are **not** plain data:
+  - **`startEvalRun` is an optional host-wired hook** (mirrors `retryRun`): the
+    SDK resolves the row + its set's target (`getEvalRow`) and hands the host a
+    descriptor `{ evalRunId, rowId, target:{kind,id}, triggerKind, triggerInput,
+    promptVariables, fixtures }`; the host resolves the target to a runnable
+    version (for an agent target, the Phase-5 wrapper) and starts a run with
+    `simulate:true, isEval:true` and the row's fixtures, returning the `wf_run`
+    id. Without the hook wired, the method rejects "not configured." The first
+    started row flips the umbrella run `queued → running`.
+  - **`gradeEvalResult` is pure SDK** (no hook): loads the finished `wf_run`
+    trace (`getRun`), maps steps → `GradeStep[]`, runs `gradeRow` (judge checks
+    resolve their model through the host's `config.getModel` seam; the default
+    judge model is `evalJudgeModelId ?? listModels()[0]`), and persists the
+    verdict via `insertEvalResult`. `finalizeEvalRun` rolls the results up
+    (`rollup`) into the run's counts/score + `status:'completed'`.
+  - The eval-data handlers need no tenant scoping — like every other data handler
+    they operate on the global set, gatekept by the host at the route
+    (`resolveContext` returns `{ userId }` for attribution only).
+- `src/server/http-client.ts` — thin `call(method, params)` wrappers; the
+  launch/grade methods get the longer 120 s budget (real runs + model calls).
+- `getEvalRow(db, rowId)` added to `storage/data.ts` — one row + its set's
+  target/trigger identity, so `startEvalRun`/`gradeEvalResult` launch and grade a
+  row without a separate set fetch.
+- `src/server/index.ts` re-exports the new DTOs + eval types for hosts/UI.
 
 ### Phase 5 — execution orchestration
 
@@ -815,12 +854,13 @@ store with real hooks.
 
 ## Suggested landing order
 
-Phase 0 (prototype UI), **Phase 1 (the `simulate` signal + fixtures)**, and
-**Phase 2 (the `wf_eval_*` schema + data access + shared `checks` zod)** are
-**done**. Next: **Phase 3** (the pure `grade.ts` engine — evaluate the `checks`
-tree against a run trace), then 4 → 5, and finally the **remaining** Phase 6 work
-(report screen + ⚡ TODOs + wiring the prototype off the mock store). Phase 3 is
-pure/testable with no UI and can proceed in parallel with UI polish.
+Phases 0–4 are **done** (prototype UI; the `simulate` signal + fixtures; the
+`wf_eval_*` schema + data access + `checks` zod; the pure `grade.ts` engine; and
+the server protocol + handlers + HTTP client). Next: **Phase 5** (execution
+orchestration — the agent→wrapper-workflow, wiring the host's `startEvalRun` hook
+in the 1121law app, and the client-driven run/grade loop), and finally the
+**remaining** Phase 6 work (report screen + ⚡ TODOs + wiring the prototype off
+the mock store).
 
 ---
 

@@ -8,6 +8,7 @@ import type {
   MockRunModelResult,
   MockTargetKind,
 } from './mock-data'
+import { getProvider, ProviderLogo } from './provider-logos'
 
 // Small presentational bits shared across the Evals catalog, set, sample, and
 // test pages.
@@ -90,13 +91,14 @@ export function FamilyTag({ scored }: { scored: boolean }) {
   )
 }
 
-/** A small colored brand mark (stand-in for a real logo) for a model's vendor. */
-const BRAND_MARK: Record<
-  MockModelBrand,
-  { label: string; className: string }
+/**
+ * Colored monogram fallback for vendors we don't ship a real logo for. Brands
+ * with a logomark (openai, anthropic, venice, openrouter) are handled by
+ * ProviderLogo in BrandMark below and never hit this table.
+ */
+const BRAND_MARK: Partial<
+  Record<MockModelBrand, { label: string; className: string }>
 > = {
-  openai: { label: 'AI', className: 'bg-emerald-100 text-emerald-700' },
-  anthropic: { label: 'An', className: 'bg-amber-100 text-amber-700' },
   google: { label: 'G', className: 'bg-blue-100 text-blue-700' },
   meta: { label: 'M', className: 'bg-indigo-100 text-indigo-700' },
   mistral: { label: 'Mi', className: 'bg-rose-100 text-rose-700' },
@@ -112,6 +114,10 @@ export function BrandMark({
   /** Text (e.g. the model name) to derive a neutral mark from when brand is unknown. */
   fallback?: string
 }) {
+  // Prefer the real vendor logomark when we have one.
+  const provider = getProvider(brand)
+  if (provider) return <ProviderLogo id={provider.id} />
+
   const b = brand ? BRAND_MARK[brand] : undefined
   const label = b?.label ?? (fallback?.trim()?.slice(0, 2) || '··')
   return (
@@ -135,12 +141,13 @@ export function inferModelBrand(idOrLabel: string): MockModelBrand | undefined {
   const t = idOrLabel.toLowerCase()
   if (t.includes('claude') || t.includes('anthropic')) return 'anthropic'
   if (t.includes('gpt') || t.includes('openai') || /\bo[134]\b/.test(t)) return 'openai'
+  if (t.includes('venice')) return 'venice'
+  if (t.includes('openrouter')) return 'openrouter'
   if (t.includes('gemini') || t.includes('google')) return 'google'
   if (t.includes('llama') || t.includes('meta')) return 'meta'
   if (t.includes('qwen')) return 'qwen'
   if (t.includes('deepseek')) return 'deepseek'
-  if (t.includes('mistral') || t.includes('mixtral') || t.includes('venice'))
-    return 'mistral'
+  if (t.includes('mistral') || t.includes('mixtral')) return 'mistral'
   return undefined
 }
 

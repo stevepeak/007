@@ -22,6 +22,7 @@ import {
 import { RunConfigDialog } from './run-config-dialog'
 import { EmptyState, Tabs, TestRunsTable, VersionsList } from './shared'
 import { PickerCards, StepFlow, type Step } from './step-flow'
+import { TodoSpark } from './todo-spark'
 
 // The single-test view (route: evals/<setId>/samples/<sampleId>/tests/<testId>).
 // A "Test" is one check. Name (the assertion) + description are edited inline in
@@ -251,7 +252,7 @@ function TypeStep({
           value: 'binary',
           icon: Binary,
           label: 'Binary',
-          desc: 'A pass/fail check — never enters the score.',
+          desc: 'A pass/fail check.',
           accent: 'sky',
           detail: form.type,
           setting: (
@@ -275,12 +276,28 @@ function TypeStep({
           value: 'scored',
           icon: Gauge,
           label: 'Scored',
-          desc: 'An LLM judge grades it 0–1 and it feeds the score.',
+          desc: 'An LLM judge grades the output come alignment with expectations.',
           accent: 'amber',
           detail: `${form.model || 'default'} judge`,
           setting: (
             <div className="space-y-1">
-              <Label>Judge model</Label>
+              <div className="flex items-center gap-1">
+                <Label>Judge model</Label>
+                <TodoSpark title="Judge model — real model picker">
+                  <p>
+                    The judge is just a plain <em>generate-text</em> call: it
+                    takes the sample&apos;s output and grades it against the{' '}
+                    <strong>rubric</strong>, returning a 0–1 score.
+                  </p>
+                  <p>
+                    So <strong>Judge model</strong> should be the same model
+                    picker the test runner uses — the host&apos;s wired-up
+                    providers &amp; models from <code>config.listModels</code> /{' '}
+                    <code>config.listProviders</code> (see{' '}
+                    <code>RunConfigDialog</code>) — not this free-text field.
+                  </p>
+                </TodoSpark>
+              </div>
               <Input
                 value={form.model ?? 'default'}
                 onChange={(e) => setForm({ ...form, model: e.target.value })}

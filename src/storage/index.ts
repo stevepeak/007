@@ -42,6 +42,7 @@ export {
   failRun,
   finalizeRun,
   getAgent,
+  getEvalRow,
   getEvalRun,
   getEvalSet,
   getRun,

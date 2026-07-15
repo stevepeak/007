@@ -3,6 +3,12 @@ import type { ModelOption, ModelProvider } from '../engine/config'
 import type { AgentConfig, AgentOutput, WorkflowGraph } from '../engine/graph'
 import type { AgentNodeMeta } from '../engine/nodes/agent'
 import type { TriggerEventOption } from '../engine/trigger-registry'
+import type {
+  CheckResult,
+  CheckTree,
+  EvalFixtures,
+  EvalInitialCondition,
+} from '../eval/checks'
 
 export type { AgentNodeMeta } from '../engine/nodes/agent'
 
@@ -260,6 +266,95 @@ export type AgentPreviewResult = {
   progress: { channel: string; text: string }[]
 }
 
+// ── Evals ─────────────────────────────────────────────────────────────────
+// The UI vocabulary is Goal / Sample / Test; the wire keeps the code identifiers
+// set / row / check. The check tree, fixtures, and initial-condition shapes are
+// the pure zod-inferred types shared with the grader and the `bun:test` harness.
+export type {
+  CheckResult,
+  CheckTree,
+  EvalCheck,
+  EvalFixtures,
+  EvalInitialCondition,
+  EvalMatch,
+} from '../eval/checks'
+
+/** What an eval set targets — an agent or a workflow, resolved float-to-latest. */
+export type WfEvalTargetKind = 'agent' | 'workflow'
+/** A row's verdict after grading its run's trace. */
+export type WfEvalResultStatus = 'pass' | 'fail' | 'error'
+
+// A "Goal" — a named set of samples run against one target (agent/workflow).
+export type WfEvalSetSummary = {
+  id: string
+  name: string
+  description: string | null
+  targetKind: WfEvalTargetKind
+  /** Opaque pointer to a wf_agent.id / wf_workflow.id (no FK). */
+  targetId: string
+  /** The trigger kind the target is invoked under. */
+  triggerKind: string
+  archived: boolean
+  /** Non-archived rows in the set. */
+  rowCount: number
+  createdAt: number
+  updatedAt: number | null
+}
+
+// A "Sample" — one test case: the initial condition (trigger input + prompt
+// variables), the fixtures that stub read tools, and the check tree that grades
+// the resulting run.
+export type WfEvalRowDTO = {
+  id: string
+  setId: string
+  name: string
+  initialCondition: EvalInitialCondition
+  fixtures: EvalFixtures
+  checks: CheckTree
+  sortOrder: number
+  archived: boolean
+}
+
+export type WfEvalSetDetail = {
+  set: WfEvalSetSummary
+  rows: WfEvalRowDTO[]
+}
+
+// One execution of one or more sets — the umbrella over the per-row results.
+export type WfEvalRunSummary = {
+  id: string
+  status: string
+  /** The sets included in this run. */
+  setIds: string[]
+  total: number
+  passed: number
+  failed: number
+  /** Mean score across scored (judge-bearing) rows; null when none. */
+  score: number | null
+  createdAt: number
+  startedAt: number | null
+  finishedAt: number | null
+}
+
+// One row's outcome within an eval run: the verdict, the judge score, the
+// per-check breakdown, and a link to the real `wf_run` it graded.
+export type WfEvalResultDTO = {
+  id: string
+  evalRunId: string
+  rowId: string
+  /** The `wf_run` produced for this row (null until it starts). */
+  wfRunId: string | null
+  status: WfEvalResultStatus
+  score: number | null
+  checkResults: CheckResult[]
+  createdAt: number
+}
+
+export type WfEvalRunDetail = {
+  run: WfEvalRunSummary
+  results: WfEvalResultDTO[]
+}
+
 // The data surface the editor + run-viewer consume. Implemented server-side by
 // `createWfSdkHandlers` and over HTTP by `createHttpWfDataClient`.
 export interface WfDataClient {
@@ -384,6 +479,77 @@ export interface WfDataClient {
   countAgentReferences(agentId: string): Promise<{ workflows: number }>
   /** Playground — run an agent draft in isolation against a scratch input. */
   runAgentPreview(input: AgentPreviewInput): Promise<AgentPreviewResult>
+
+  // Evals — sets (Goals) of rows (Samples) run against a target and graded by a
+  // check tree. Data methods operate on the global set (host-gatekept at the
+  // route); `startEvalRun` is a host-wired hook, `gradeEvalResult` grades a
+  // finished run's trace inside the SDK.
+  listEvalSets(input?: {
+    includeArchived?: boolean
+  }): Promise<WfEvalSetSummary[]>
+  getEvalSet(setId: string): Promise<WfEvalSetDetail | null>
+  createEvalSet(input: {
+    name: string
+    description?: string
+    targetKind: WfEvalTargetKind
+    targetId: string
+    triggerKind: string
+  }): Promise<{ setId: string }>
+  updateEvalSet(input: {
+    setId: string
+    name?: string
+    description?: string | null
+    targetKind?: WfEvalTargetKind
+    targetId?: string
+    triggerKind?: string
+    archived?: boolean
+  }): Promise<{ ok: true }>
+  /** Hard-delete a set and its rows (runs/results are kept as history). */
+  deleteEvalSet(setId: string): Promise<{ ok: true }>
+  /** Create (no `id`) or update (with `id`) a row; validates the JSON payloads. */
+  upsertEvalRow(input: {
+    id?: string
+    setId: string
+    name: string
+    initialCondition?: EvalInitialCondition
+    fixtures?: EvalFixtures
+    checks?: CheckTree
+    sortOrder?: number
+  }): Promise<{ rowId: string }>
+  /** Soft-delete a row (drops out of the set + its row count). */
+  deleteEvalRow(rowId: string): Promise<{ ok: true }>
+
+  /** Create the umbrella eval run over one or more sets (status `queued`). */
+  createEvalRun(input: {
+    setIds: string[]
+    total?: number
+  }): Promise<{ evalRunId: string }>
+  /**
+   * Start ONE row's run for real — a `simulate: true, isEval: true` graph run
+   * against the set's target, stubbing read tools with the row's fixtures. This
+   * is a host-wired hook (mirrors `retryRun`): the SDK resolves the row + target
+   * and hands the host a descriptor; the host owns the workflow-instance start
+   * (it has the runtime bindings) and returns the new `wf_run` id. Without the
+   * hook wired the method rejects with a "not configured" error.
+   */
+  startEvalRun(input: {
+    evalRunId: string
+    rowId: string
+  }): Promise<{ wfRunId: string }>
+  /**
+   * Grade a finished row run: load the `wf_run` trace, evaluate the row's check
+   * tree (judge checks use the host's model seam), and persist the verdict as a
+   * result. Pure SDK — no host hook.
+   */
+  gradeEvalResult(input: {
+    evalRunId: string
+    rowId: string
+    wfRunId: string
+  }): Promise<WfEvalResultDTO>
+  /** Roll up an eval run's results into its final counts/score + status. */
+  finalizeEvalRun(input: { evalRunId: string }): Promise<WfEvalRunSummary>
+  listEvalRuns(input?: { limit?: number }): Promise<WfEvalRunSummary[]>
+  getEvalRun(evalRunId: string): Promise<WfEvalRunDetail | null>
 }
 
 // The RPC envelope. One POST route, dispatched on `method`.

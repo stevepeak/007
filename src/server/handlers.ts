@@ -10,20 +10,36 @@ import {
 } from '../engine/graph'
 import { errorMessage } from '../engine/run-node'
 import { describeTriggerEvents } from '../engine/trigger-registry'
+import {
+  gradeRow,
+  rollup,
+  type GradeModelFactory,
+  type GradeStep,
+} from '../eval'
 import type { WfDb } from '../storage/client'
 import {
   countWorkflowsReferencingAgent,
   createAgent,
+  createEvalRun,
+  createEvalSet,
   createWorkflow,
+  deleteEvalRow,
+  deleteEvalSet,
   discardAgentDraft,
   discardDraft,
   getAgent,
+  getEvalRow,
+  getEvalRun,
+  getEvalSet,
   getLatestVersionId,
   getRun,
   getVersionGraph,
   getWorkflow,
+  insertEvalResult,
   listAgents,
   listAgentVersions,
+  listEvalRuns,
+  listEvalSets,
   listRuns,
   listRunTriggerKinds,
   listToolInvocations,
@@ -36,6 +52,9 @@ import {
   updateAgentDraft,
   updateAgentMeta,
   updateDraft,
+  updateEvalRun,
+  updateEvalSet,
+  upsertEvalRow,
 } from '../storage/data'
 
 import type {
@@ -45,6 +64,11 @@ import type {
   WfAgentDetail,
   WfAgentSummary,
   WfChangeSummary,
+  WfEvalResultDTO,
+  WfEvalRowDTO,
+  WfEvalRunSummary,
+  WfEvalSetSummary,
+  WfEvalTargetKind,
   WfRunDetail,
   ToolContextField,
   WfRunStepDTO,
@@ -188,6 +212,35 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
     ctx: WfServerContext
     req: Request
   }) => Promise<{ runId: string }>
+  /**
+   * Optional eval-run launcher. The SDK resolves the row + its set's target and
+   * hands the host a descriptor; the host resolves the target to a runnable
+   * version (for an agent target, the Phase-5 wrapper workflow) and starts a
+   * graph run with `simulate: true, isEval: true` and the row's `fixtures`, then
+   * returns the new `wf_run` id. The host owns the start because it holds the
+   * runtime bindings (`WORKFLOWS.startGraphRun`). If omitted, `startEvalRun`
+   * rejects with "not configured".
+   */
+  startEvalRun?: (input: {
+    evalRunId: string
+    rowId: string
+    target: { kind: WfEvalTargetKind; id: string }
+    triggerKind: string
+    /** The row's initial-condition trigger input (`{}` when unset). */
+    triggerInput: unknown
+    /** The row's initial-condition prompt variables (`{}` when unset). */
+    promptVariables: Record<string, string>
+    /** Canned read-tool outputs, keyed by tool id (consumed under `simulate`). */
+    fixtures: Record<string, unknown>
+    ctx: WfServerContext
+    req: Request
+  }) => Promise<{ wfRunId: string }>
+  /**
+   * Optional: which model `gradeEvalResult` uses for `llm_judge` checks that
+   * don't pin their own `modelId`. Defaults to the host's first offered model
+   * (`listModels()[0]`).
+   */
+  evalJudgeModelId?: string
 }
 
 // Fallback change summary when no host summarizer is provided: a plain count of
@@ -381,6 +434,84 @@ function runSummary(r: {
     startedAt: toEpoch(r.startedAt),
     finishedAt: toEpoch(r.finishedAt),
     error: r.error,
+  }
+}
+
+function evalSetSummary(
+  s: {
+    id: string
+    name: string
+    description: string | null
+    targetKind: WfEvalTargetKind
+    targetId: string
+    triggerKind: string
+    archived: boolean
+    createdAt: Date
+    updatedAt: Date | null
+  },
+  rowCount: number,
+): WfEvalSetSummary {
+  return {
+    id: s.id,
+    name: s.name,
+    description: s.description,
+    targetKind: s.targetKind,
+    targetId: s.targetId,
+    triggerKind: s.triggerKind,
+    archived: s.archived,
+    rowCount,
+    createdAt: s.createdAt.getTime(),
+    updatedAt: toEpoch(s.updatedAt),
+  }
+}
+
+function evalRunSummary(r: {
+  id: string
+  status: string
+  setIds: unknown
+  total: number
+  passed: number
+  failed: number
+  score: number | null
+  createdAt: Date
+  startedAt: Date | null
+  finishedAt: Date | null
+}): WfEvalRunSummary {
+  return {
+    id: r.id,
+    status: r.status,
+    setIds: Array.isArray(r.setIds) ? (r.setIds as string[]) : [],
+    total: r.total,
+    passed: r.passed,
+    failed: r.failed,
+    score: r.score,
+    createdAt: r.createdAt.getTime(),
+    startedAt: toEpoch(r.startedAt),
+    finishedAt: toEpoch(r.finishedAt),
+  }
+}
+
+function evalResultDTO(r: {
+  id: string
+  evalRunId: string
+  rowId: string
+  wfRunId: string | null
+  status: WfEvalResultDTO['status']
+  score: number | null
+  checkResults: unknown
+  createdAt: Date
+}): WfEvalResultDTO {
+  return {
+    id: r.id,
+    evalRunId: r.evalRunId,
+    rowId: r.rowId,
+    wfRunId: r.wfRunId,
+    status: r.status,
+    score: r.score,
+    checkResults: Array.isArray(r.checkResults)
+      ? (r.checkResults as WfEvalResultDTO['checkResults'])
+      : [],
+    createdAt: r.createdAt.getTime(),
   }
 }
 
@@ -918,6 +1049,251 @@ export function createWfSdkHandlers<TDeps>(
             req,
           })
           return json(result)
+        }
+
+        case 'listEvalSets': {
+          const includeArchived = (params as { includeArchived?: boolean })
+            .includeArchived
+          const rows = await listEvalSets(db, { includeArchived })
+          return json(rows.map((r) => evalSetSummary(r, Number(r.rowCount))))
+        }
+
+        case 'getEvalSet': {
+          const setId = str(params, 'setId')
+          const result = await getEvalSet(db, setId)
+          if (!result) {
+            return json(null)
+          }
+          const rows: WfEvalRowDTO[] = result.rows
+          return json({
+            set: evalSetSummary(result.set, rows.length),
+            rows,
+          })
+        }
+
+        case 'createEvalSet': {
+          const name = str(params, 'name')
+          const targetId = str(params, 'targetId')
+          const triggerKind = str(params, 'triggerKind')
+          const p = params as {
+            description?: string
+            targetKind?: WfEvalTargetKind
+          }
+          const targetKind: WfEvalTargetKind =
+            p.targetKind === 'workflow' ? 'workflow' : 'agent'
+          const setId = await createEvalSet(db, {
+            name,
+            description: p.description,
+            targetKind,
+            targetId,
+            triggerKind,
+            createdBy: ctx.userId,
+          })
+          return json({ setId })
+        }
+
+        case 'updateEvalSet': {
+          const setId = str(params, 'setId')
+          const p = params as {
+            name?: string
+            description?: string | null
+            targetKind?: WfEvalTargetKind
+            targetId?: string
+            triggerKind?: string
+            archived?: boolean
+          }
+          await updateEvalSet(db, {
+            setId,
+            name: p.name,
+            description: p.description,
+            targetKind: p.targetKind,
+            targetId: p.targetId,
+            triggerKind: p.triggerKind,
+            archived: p.archived,
+          })
+          return json({ ok: true })
+        }
+
+        case 'deleteEvalSet': {
+          const setId = str(params, 'setId')
+          await deleteEvalSet(db, setId)
+          return json({ ok: true })
+        }
+
+        case 'upsertEvalRow': {
+          const setId = str(params, 'setId')
+          const name = str(params, 'name')
+          const p = params as {
+            id?: string
+            initialCondition?: WfEvalRowDTO['initialCondition']
+            fixtures?: WfEvalRowDTO['fixtures']
+            checks?: WfEvalRowDTO['checks']
+            sortOrder?: number
+          }
+          // The JSON payloads are validated inside `upsertEvalRow` (zod).
+          const rowId = await upsertEvalRow(db, {
+            id: p.id,
+            setId,
+            name,
+            initialCondition: p.initialCondition,
+            fixtures: p.fixtures,
+            checks: p.checks,
+            sortOrder: p.sortOrder,
+          })
+          return json({ rowId })
+        }
+
+        case 'deleteEvalRow': {
+          const rowId = str(params, 'rowId')
+          await deleteEvalRow(db, rowId)
+          return json({ ok: true })
+        }
+
+        case 'createEvalRun': {
+          const p = params as { setIds?: unknown; total?: number }
+          const setIds = Array.isArray(p.setIds)
+            ? p.setIds.filter((s): s is string => typeof s === 'string')
+            : []
+          if (setIds.length === 0) {
+            throw new Error('createEvalRun requires at least one set id.')
+          }
+          const evalRunId = await createEvalRun(db, {
+            setIds,
+            total: p.total,
+            createdBy: ctx.userId,
+          })
+          return json({ evalRunId })
+        }
+
+        case 'startEvalRun': {
+          if (!opts.startEvalRun) {
+            throw new Error('Eval runs are not configured for this host.')
+          }
+          const evalRunId = str(params, 'evalRunId')
+          const rowId = str(params, 'rowId')
+          const run = await getEvalRun(db, evalRunId)
+          if (!run) {
+            throw new Error('Eval run not found.')
+          }
+          const found = await getEvalRow(db, rowId)
+          if (!found) {
+            throw new Error('Eval sample not found.')
+          }
+          const { row, set } = found
+          const started = await opts.startEvalRun({
+            evalRunId,
+            rowId,
+            target: { kind: set.targetKind, id: set.targetId },
+            triggerKind: set.triggerKind,
+            triggerInput: row.initialCondition.triggerInput ?? {},
+            promptVariables: row.initialCondition.promptVariables ?? {},
+            fixtures: row.fixtures,
+            ctx,
+            req,
+          })
+          // Flip the umbrella run to running on its first started row.
+          if (run.run.status === 'queued') {
+            await updateEvalRun(db, {
+              evalRunId,
+              status: 'running',
+              startedAt: new Date(),
+            })
+          }
+          return json(started)
+        }
+
+        case 'gradeEvalResult': {
+          const evalRunId = str(params, 'evalRunId')
+          const rowId = str(params, 'rowId')
+          const wfRunId = str(params, 'wfRunId')
+          const found = await getEvalRow(db, rowId)
+          if (!found) {
+            throw new Error('Eval sample not found.')
+          }
+          const runResult = await getRun(db, wfRunId)
+          if (!runResult) {
+            throw new Error('Run not found.')
+          }
+          const steps: GradeStep[] = runResult.steps.map((s) => ({
+            nodeId: s.nodeId,
+            nodeKind: s.nodeKind,
+            input: s.input,
+            output: s.output,
+            meta: s.meta,
+          }))
+          const env = opts.resolveEnv ? await opts.resolveEnv(req) : undefined
+          // Judge checks resolve their model through the host's live seam.
+          const getModel: GradeModelFactory = (modelId) =>
+            opts.config.getModel(modelId, { triggerKind: 'eval', env })
+          const defaultJudgeModelId =
+            opts.evalJudgeModelId ??
+            (await opts.config.listModels({ env }))[0]?.id
+          const graded = await gradeRow({
+            checks: found.row.checks,
+            steps,
+            output: runResult.run.output,
+            getModel,
+            defaultJudgeModelId,
+          })
+          const resultId = await insertEvalResult(db, {
+            evalRunId,
+            rowId,
+            wfRunId,
+            status: graded.status,
+            score: graded.score,
+            checkResults: graded.checkResults,
+          })
+          const dto: WfEvalResultDTO = {
+            id: resultId,
+            evalRunId,
+            rowId,
+            wfRunId,
+            status: graded.status,
+            score: graded.score,
+            checkResults: graded.checkResults,
+            createdAt: Date.now(),
+          }
+          return json(dto)
+        }
+
+        case 'finalizeEvalRun': {
+          const evalRunId = str(params, 'evalRunId')
+          const found = await getEvalRun(db, evalRunId)
+          if (!found) {
+            throw new Error('Eval run not found.')
+          }
+          const summary = rollup(
+            found.results.map((r) => ({ status: r.status, score: r.score })),
+          )
+          await updateEvalRun(db, {
+            evalRunId,
+            status: 'completed',
+            total: summary.total,
+            passed: summary.passed,
+            failed: summary.failed,
+            score: summary.meanScore,
+            finishedAt: new Date(),
+          })
+          const updated = await getEvalRun(db, evalRunId)
+          return json(evalRunSummary(updated?.run ?? found.run))
+        }
+
+        case 'listEvalRuns': {
+          const limit = (params as { limit?: number }).limit
+          const rows = await listEvalRuns(db, { limit })
+          return json(rows.map(evalRunSummary))
+        }
+
+        case 'getEvalRun': {
+          const evalRunId = str(params, 'evalRunId')
+          const result = await getEvalRun(db, evalRunId)
+          if (!result) {
+            return json(null)
+          }
+          return json({
+            run: evalRunSummary(result.run),
+            results: result.results.map(evalResultDTO),
+          })
         }
 
         default:

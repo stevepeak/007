@@ -13,6 +13,18 @@ export {
   type EvalInitialCondition,
   type EvalMatch,
 } from './checks'
+export {
+  gradeRow,
+  rollup,
+  rollupRun,
+  rollupSet,
+  type GradeModelFactory,
+  type GradeRowInput,
+  type GradeRowResult,
+  type GradeStep,
+  type Rollup,
+  type RowOutcome,
+} from './grade'
 
 import type { RunContext, WfSdkConfig } from '../engine/config'
 import { executeWorkflow } from '../engine/executor'
