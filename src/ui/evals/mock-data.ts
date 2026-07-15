@@ -10,7 +10,7 @@
 export type MockTargetKind = 'agent' | 'workflow'
 
 /** A summary of the most recent test run for a set (or null if never run). */
-export type MockLastRun = {
+type MockLastRun = {
   /** Human-friendly relative time, e.g. "2h ago". Mock strings, not real dates. */
   at: string
   passed: number
@@ -32,14 +32,14 @@ export type MockEvalSet = {
   lastRun: MockLastRun | null
 }
 
-export type MockSampleResult = {
+type MockSampleResult = {
   status: 'pass' | 'fail'
   /** Judge-only score for this sample, 0..1. Null when no scored checks. */
   score: number | null
 }
 
 /** One outcome check on a sample. `family` drives how a verdict is shown. */
-export type MockCheck = {
+type MockCheck = {
   id: string
   family: 'binary' | 'scored'
   /** The check type, e.g. 'tool_called', 'node_visited', 'output_match', 'llm_judge'. */
@@ -71,7 +71,7 @@ export type MockSample = {
   lastResult: MockSampleResult | null
 }
 
-export type MockEvalRunStatus = 'running' | 'completed' | 'failed'
+type MockEvalRunStatus = 'running' | 'completed' | 'failed'
 
 export type MockEvalRun = {
   id: string

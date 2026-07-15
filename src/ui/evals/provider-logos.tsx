@@ -77,7 +77,7 @@ export type ProviderMeta = {
 
 // The AI providers 007 ships logos for. Order is the display order anywhere the
 // full list is rendered.
-export const AI_PROVIDERS: ProviderMeta[] = [
+const AI_PROVIDERS: ProviderMeta[] = [
   {
     id: 'openai',
     name: 'OpenAI',

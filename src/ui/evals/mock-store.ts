@@ -24,7 +24,7 @@ import {
 //   • Test  — its own version lineage. Save mints version N+1.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type TargetKind = MockTargetKind
+type TargetKind = MockTargetKind
 
 export type Given = { id: string; label: string; value: string }
 

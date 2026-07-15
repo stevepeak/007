@@ -2,6 +2,7 @@ import { AgentsList, type AgentTemplate } from './agents-list'
 import { ComingSoon } from './coming-soon'
 import { AgentEditor } from './editor/agent-editor'
 import { WorkflowEditor } from './editor/workflow-editor'
+import { EvalRunReport } from './evals/eval-run-report'
 import { EvalSample } from './evals/eval-sample'
 import { EvalSet } from './evals/eval-set'
 import { EvalTest } from './evals/eval-test'
@@ -124,6 +125,14 @@ function WfAppRoutes({
         testId={parts[5]}
         className="h-full"
       />
+    )
+  }
+
+  // Eval run report: `evals/runs/<evalRunId>` (own shell). Placed before the
+  // `evals/<setId>` route — `runs` is a reserved segment, never a set id.
+  if (parts.length === 3 && parts[0] === 'evals' && parts[1] === 'runs') {
+    return (
+      <EvalRunReport key={parts[2]} evalRunId={parts[2]} className="h-full" />
     )
   }
 

@@ -325,7 +325,7 @@ export function TestRunsTable({ rows }: { rows: MockRunHistoryRow[] }) {
 }
 
 /** Compact "12k" / "980" token label. */
-export function formatTokens(tokens: number): string {
+function formatTokens(tokens: number): string {
   if (tokens < 1000) return String(tokens)
   return `${(tokens / 1000).toFixed(tokens < 10_000 ? 1 : 0)}k`
 }
@@ -340,19 +340,10 @@ function CountBadge({ children }: { children: ReactNode }) {
 }
 
 /** Badge for a USD cost. */
-export function CostBadge({ cost }: { cost: number }) {
+function CostBadge({ cost }: { cost: number }) {
   return (
     <span className="inline-flex items-center rounded-md bg-neutral-100 px-1.5 py-0.5 text-xs font-medium tabular-nums text-neutral-600">
       ${cost.toFixed(2)}
-    </span>
-  )
-}
-
-/** Badge for a token count, formatted compactly (e.g. "12k"). */
-export function TokensBadge({ tokens }: { tokens: number }) {
-  return (
-    <span className="inline-flex items-center rounded-md bg-neutral-100 px-1.5 py-0.5 text-xs font-medium tabular-nums text-neutral-600">
-      {formatTokens(tokens)}
     </span>
   )
 }

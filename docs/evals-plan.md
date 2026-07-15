@@ -840,7 +840,7 @@ Typecheck/lint/tests green across the SDK **and** the host packages.
   - _Later alternative:_ a durable `EvalRunRoom`/orchestrator DO so a test run
     survives a closed tab. Deferred.
 
-### Phase 6 — UI: real data + the report screen
+### Phase 6 — UI: real data + the report screen  🚧 PARTIAL
 
 **The authoring UI is built as the Phase 0 prototype over a mock store.** Phase 6
 replaces the mock with real React Query hooks over the Phase-4 client and adds the
@@ -851,25 +851,34 @@ picker) are their own follow-on — see **Phase 7**.
 - **Built** (`src/ui/wf-app.tsx` routes + hub card, components under
   `src/ui/evals/`): catalog (`evals-list.tsx`), Goal (`eval-set.tsx`), Sample
   (`eval-sample.tsx`), Test (`eval-test.tsx`), Run model-matrix
-  (`run-config-dialog.tsx`), versioned mock store, shared atoms. Routes today:
-  `evals`, `evals/<setId>`, `evals/<setId>/samples/<sampleId>`,
-  `…/tests/<testId>`.
-- **This phase:**
-  - `src/ui/hooks.ts` — React Query hooks for the Phase-4 methods (`useEvalSets`,
-    `useEvalSet`, `useEvalRuns`, `useEvalRun`, the set/row mutations, and the
-    `useRunEval` client-driven orchestrator from Phase 5).
-  - `eval-run-report.tsx` + route `evals/runs/<evalRunId>` — per-row pass/fail
-    **and score**, per-check verdicts (✓/✗ binary, score + judge reason for
-    scored), a link to the real `wf_run`; set/run pass rates + mean scores. (The
-    per-entity "Test runs" tabs then link into it.)
+  (`run-config-dialog.tsx`), versioned mock store, shared atoms.
+
+- ✅ **Landed:**
+  - `src/ui/hooks.ts` — React Query hooks for every Phase-4 method (`useEvalSets`,
+    `useEvalSet`, `useEvalRuns`, `useEvalRun` [polls while running], the set/row
+    mutations) + the `useRunEval` client-driven orchestrator (Phase 5). Exported
+    from `src/ui/index.ts`.
+  - `eval-run-report.tsx` + route `evals/runs/<evalRunId>` — real-data screen over
+    `useEvalRun`: run pass rate + mean score, then each sample's verdict grouped by
+    its Goal (loaded via `useEvalSet` to resolve sample names + zip `checkResults`
+    back to the `CheckTree` that produced them), per-check ✓/✗ + judge score/reason,
+    and a link out to the real `wf_run`.
+
+- ⏳ **Remaining (the mock→real reconciliation):**
   - **Model reconciliation** — the prototype models Goal→Sample→Test as three
     independently-versioned entities; the backend is Set→Row where a row embeds
     its whole `checks` **CheckTree** (a "Test" is one `EvalCheck` in that tree, not
     a standalone versioned row). Wiring drops the per-sample/per-test version
     lineage (rows are mutable in v1 — see _Deliberately NOT_) and maps a Sample's
-    Tests to `row.checks.checks[]`. **Delete `mock-store.ts` + `mock-data.ts`**
-    once the reads/writes point at the hooks.
-  - Wire **Run "Next"**, **Save**, and **Test runs** tabs to real data + execution.
+    Tests to `row.checks.checks[]`. This is a deliberate, wide rewrite of
+    `evals-list` / `eval-set` / `eval-sample` / `eval-test` and is best done as one
+    focused change (not rushed alongside the backend). **Delete `mock-store.ts` +
+    `mock-data.ts`** once the reads/writes point at the hooks — `shared.tsx` still
+    imports mock types (`MockTargetKind`, `MockRunHistoryRow`, …), so those get
+    reworked in the same pass.
+  - Wire **Run "Next"** → `useRunEval({ setIds })` → navigate to the new
+    `evals/runs/<evalRunId>` report; wire **Save** and the **Test runs** tabs to
+    real data.
 - `src/index.ts` / `src/eval/index.ts` — export the pure grading utils (done).
 
 ### Phase 7 — ⚡ UI affordances (authoring polish)
