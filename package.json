@@ -36,18 +36,22 @@
     "db:migrate": "wrangler d1 migrations apply law-db --remote"
   },
   "dependencies": {
+    "@autoform/core": "^4.0.0",
+    "@autoform/react": "^5.0.0",
     "@cloudflare/puppeteer": "1.1.0",
     "@dagrejs/dagre": "^3.0.0",
+    "@hookform/resolvers": "^5.4.0",
     "@tanstack/react-query": "^5.101.2",
     "@tiptap/extension-placeholder": "^3.27.4",
-    "@tiptap/pm": "^3.27.4",
+    "@tiptap/pm": "^3.26.1",
     "@tiptap/react": "^3.27.4",
     "@tiptap/starter-kit": "^3.27.4",
     "@xyflow/react": "^12.11.2",
-    "ai": "^7.0.26",
+    "ai": "^7.0.28",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.24.0",
+    "react-hook-form": "^7.81.0",
     "zod": "^4.4.3"
   },
   "peerDependencies": {
@@ -55,7 +59,7 @@
     "react-dom": "^19"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260714.1",
+    "@cloudflare/workers-types": "^5.20260715.1",
     "@dexaai/config": "^0.0.10",
     "@ocavue/eslint-config": "^4.11.0",
     "@types/node": "^26.1.1",
@@ -66,6 +70,6 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "typescript": "^5.9.3",
-    "wrangler": "^4.110.0"
+    "wrangler": "^4.111.0"
   }
 }
