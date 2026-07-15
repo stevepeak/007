@@ -494,7 +494,9 @@ export type MockModelBrand =
   | 'qwen'
   | 'deepseek'
 
-export type MockModel = {
+// Internal to this file — only getMockRunHistory below consumes these. (The live
+// run-config dialog reads real models from config.listModels, not this list.)
+type MockModel = {
   id: string
   /** Display name, e.g. "GPT-5.1". */
   name: string
@@ -505,7 +507,7 @@ export type MockModel = {
   tokensPerSec: number
 }
 
-export const MOCK_MODELS: MockModel[] = [
+const MOCK_MODELS: MockModel[] = [
   { id: 'openai/gpt-5.1', name: 'GPT-5.1', brand: 'openai', costPerMTok: 5.0, tokensPerSec: 82 },
   { id: 'openai/gpt-5.1-mini', name: 'GPT-5.1 mini', brand: 'openai', costPerMTok: 1.2, tokensPerSec: 145 },
   { id: 'anthropic/claude-opus-4.8', name: 'Claude Opus 4.8', brand: 'anthropic', costPerMTok: 9.0, tokensPerSec: 64 },
