@@ -14,7 +14,6 @@ import { cn } from '../cn'
 import { useWfClient, useWfComponents } from '../context'
 import {
   useAgent,
-  useModels,
   usePublishAgent,
   useRunAgentPreview,
   useSaveAgentDraft,
@@ -25,6 +24,7 @@ import { WfShell } from '../shell'
 import { Tooltip } from '../tooltip'
 import { sectionCrumb } from '../wf-crumbs'
 import { AgentOutputEditor } from './agent-output-editor'
+import { ModelSelect } from './model-select'
 import { PromptBodyEditor } from './prompt-body-editor'
 import { ToolPicker } from './tool-picker'
 
@@ -100,7 +100,6 @@ function AgentEditorInner({
   onPublished?: (result: { versionId: string; versionNumber: number }) => void
 }) {
   const { Button, Label, Input } = useWfComponents()
-  const models = useModels()
   const tools = useTools()
   const aiTools = (tools.data ?? []).filter((t) => t.kind === 'ai-tool')
 
@@ -166,10 +165,6 @@ function AgentEditorInner({
       },
     )
   }
-
-  const selectCls =
-    'h-9 w-full rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none focus:border-neutral-500'
-  const modelOptions = models.data ?? []
 
   return (
     <>
@@ -282,20 +277,10 @@ function AgentEditorInner({
             {/* Model */}
             <section className="space-y-1">
               <Label>Model</Label>
-              <select
-                className={selectCls}
+              <ModelSelect
                 value={config.modelId}
-                onChange={(e) => patch({ modelId: e.target.value })}
-              >
-                {modelOptions.length === 0 ? (
-                  <option value={config.modelId}>{config.modelId}</option>
-                ) : null}
-                {modelOptions.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
+                onChange={(modelId) => patch({ modelId })}
+              />
             </section>
 
             {/* Prompt */}
