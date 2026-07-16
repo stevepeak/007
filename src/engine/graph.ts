@@ -8,10 +8,10 @@ import {
 
 // Discriminated union for nodes. Each kind carries `id` + `position` (editor
 // state) + `label` (display) and a kind-specific `config` blob. The Trigger
-// and Output nodes are engine-managed bookends; Agent/Tool/Judge/Branch carry
-// the real work (Judge routes via a small LLM call, Branch via a deterministic
-// predicate). This schema is provider-agnostic — `modelId` is resolved by the
-// host-supplied model factory and `toolIds`/`triggerKind` by host registries.
+// and Output nodes are engine-managed bookends; Agent/Tool/Branch carry the
+// real work (Branch routes via a deterministic predicate). This schema is
+// provider-agnostic — `modelId` is resolved by the host-supplied model factory
+// and `toolIds`/`triggerKind` by host registries.
 
 const positionSchema = z.object({
   x: z.number(),
@@ -26,7 +26,7 @@ export const nodeExecutionSchema = z.object({
   // Best-effort node. If it still fails after any retries, the backend records
   // the failure but continues the run with a `null` output instead of aborting
   // — downstream `ref`s to this node resolve to null. Ignored for decision
-  // nodes (branch/judge): a routing decision has no safe default.
+  // nodes (branch/switch): a routing decision has no safe default.
   continueOnError: z.boolean().optional(),
   // Wall-clock budget for ONE attempt, in milliseconds.
   timeoutMs: z.number().int().positive().optional(),
@@ -176,17 +176,6 @@ const toolNodeSchema = baseNode.extend({
   config: z.object({
     toolId: z.string().min(1),
     args: z.record(z.string(), argBindingSchema).default({}),
-  }),
-})
-
-const judgeNodeSchema = baseNode.extend({
-  kind: z.literal('judge'),
-  config: z.object({
-    // Judges use a cheap structured-output model. The host model factory
-    // resolves this id; switching to a stronger model is per-judge.
-    modelId: z.string().min(1),
-    // Plain-English yes/no question evaluated against the prior node's output.
-    testQuestion: z.string().min(1),
   }),
 })
 
@@ -352,7 +341,6 @@ export const workflowNodeSchema = z.discriminatedUnion('kind', [
   triggerNodeSchema,
   agentNodeSchema,
   toolNodeSchema,
-  judgeNodeSchema,
   branchNodeSchema,
   switchNodeSchema,
   workflowCallNodeSchema,
@@ -372,7 +360,6 @@ export const workflowNodeSchema = z.discriminatedUnion('kind', [
 export type TriggerNode = z.infer<typeof triggerNodeSchema>
 export type AgentNode = z.infer<typeof agentNodeSchema>
 export type ToolNode = z.infer<typeof toolNodeSchema>
-export type JudgeNode = z.infer<typeof judgeNodeSchema>
 export type BranchNode = z.infer<typeof branchNodeSchema>
 export type SwitchNode = z.infer<typeof switchNodeSchema>
 export type WorkflowCallNode = z.infer<typeof workflowCallNodeSchema>
@@ -400,7 +387,6 @@ export type WorkflowNode =
   | TriggerNode
   | AgentNode
   | ToolNode
-  | JudgeNode
   | BranchNode
   | SwitchNode
   | WorkflowCallNode
@@ -414,7 +400,6 @@ export const WF_NODE_KINDS = [
   'trigger',
   'agent',
   'tool',
-  'judge',
   'branch',
   'switch',
   'workflow',
@@ -426,23 +411,23 @@ export const WF_NODE_KINDS = [
 export type WfNodeKind = (typeof WF_NODE_KINDS)[number]
 
 // Node kinds that route via a conditional outgoing edge (`edge.condition`
-// selects the live arm). The binary `judge` (LLM) and `branch` (predicate) emit
-// 'yes'/'no'; the multi-way `switch` emits a case key or 'default'. The
-// scheduler and cone/join validation treat all three uniformly for routing.
-export const DECISION_NODE_KINDS = ['judge', 'branch', 'switch'] as const
+// selects the live arm). The binary `branch` (predicate) emits 'yes'/'no'; the
+// multi-way `switch` emits a case key or 'default'. The scheduler and cone/join
+// validation treat both uniformly for routing.
+export const DECISION_NODE_KINDS = ['branch', 'switch'] as const
 export function isDecisionKind(kind: string): boolean {
-  return kind === 'judge' || kind === 'branch' || kind === 'switch'
+  return kind === 'branch' || kind === 'switch'
 }
 
 // The binary decision kinds specifically — those whose only valid outgoing
 // conditions are exactly 'yes' and 'no' (Switch is multi-way, so it is
 // excluded and validated separately).
 export function isBinaryDecisionKind(kind: string): boolean {
-  return kind === 'judge' || kind === 'branch'
+  return kind === 'branch'
 }
 
 // Edges connect node outputs to node inputs. `condition` is only meaningful
-// when `source` is a decision node (branch/judge → 'yes'|'no'; switch → a case
+// when `source` is a decision node (branch → 'yes'|'no'; switch → a case
 // key or 'default'); `null` on every non-decision edge. Kept a free string so
 // switch case keys fit; validation constrains the allowed values per source
 // kind.
@@ -548,7 +533,7 @@ export const workflowGraphSchema = workflowGraphShapeSchema.superRefine(
         })
       }
     }
-    // A binary decision node (judge/branch) may leave one arm unconnected: an
+    // A binary decision node (branch) may leave one arm unconnected: an
     // author often wires only the arm that does work and lets the other "fizzle
     // out" (that path just ends). At run time an unmatched decision routes to no
     // node and terminates that path — so we deliberately do NOT require both the
@@ -638,7 +623,7 @@ export const workflowGraphSchema = workflowGraphShapeSchema.superRefine(
     // alive for the matching outcome. Two shapes break that contract silently,
     // so we reject them at author time instead of stalling / dropping nodes at
     // run time. `conditional` = a node whose execution depends on a decision
-    // outcome (a judge/branch, or anything downstream of one).
+    // outcome (a branch/switch, or anything downstream of one).
     const decisionIds = new Set(
       g.nodes.filter((n) => isDecisionKind(n.kind)).map((n) => n.id),
     )

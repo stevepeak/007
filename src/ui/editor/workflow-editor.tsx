@@ -12,7 +12,6 @@ import { cn } from '../cn'
 import { useWfClient, useWfComponents } from '../context'
 import { Tooltip } from '../tooltip'
 import {
-  useModels,
   useSaveDraft,
   useSaveVersion,
   useSummarizeChanges,
@@ -228,7 +227,6 @@ function EditorInner({
   const [, forceRender] = useState(0)
   const bump = () => forceRender((n) => n + 1)
 
-  const models = useModels()
   const tools = useTools()
   const versions = useVersions(workflowId)
   const saveDraft = useSaveDraft()
@@ -236,7 +234,6 @@ function EditorInner({
   const update = useUpdateWorkflow()
 
   const defaults: NodeDefaults = {
-    modelId: models.data?.[0]?.id ?? '',
     toolId:
       tools.data?.find((t) => t.kind === 'ai-tool')?.id ??
       tools.data?.[0]?.id ??

@@ -66,7 +66,7 @@ export type SchedulerInstruction =
 export type ReportResult = {
   /** Whatever the node produced — becomes its `nodeOutputs` entry. */
   output: unknown
-  /** Only for decision nodes (judge/branch/switch): the decision that routes
+  /** Only for decision nodes (branch/switch): the decision that routes
    * outgoing edges — 'yes'|'no' for binary nodes, a case key or 'default' for a
    * switch. Matched against `edge.condition`. */
   branchResult?: string
@@ -144,7 +144,7 @@ export class Scheduler {
   }
 
   /**
-   * Whether any decision node (judge/branch/switch) has recorded a routing
+   * Whether any decision node (branch/switch) has recorded a routing
    * result. Lets a backend tell an intentional dead-end apart from a broken
    * graph on `stall`: a stall *after* a decision fired means its taken arm has
    * no outgoing edge — the path "fizzles out" and the run ends with no output.
@@ -300,7 +300,7 @@ export class Scheduler {
   }
 
   /**
-   * Record the result of an executed node. Decision nodes (judge/branch)
+   * Record the result of an executed node. Decision nodes (branch/switch)
    * additionally pass a `branchResult` so outgoing-edge routing resolves; a
    * decision node's own output is its input passed straight through, decided by
    * the backend.

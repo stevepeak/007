@@ -96,12 +96,12 @@ const DEFAULT_STEP_OPTS = {
 // so the const defaults keep their guaranteed `retries`, which `stepOptsFor`
 // reads when layering a partial override.
 function kindDefaultOpts(kind: string) {
-  // `judge` is the LLM decision node; the deterministic `branch` needs no
-  // retries/long timeout and falls through to the default policy. A `workflow`
-  // node runs a whole callee subgraph inline (often several LLM nodes) in one
-  // step, so it gets the longer, retried AI policy — authors can raise the
-  // timeout further per-node via `execution` for long callees.
-  return kind === 'agent' || kind === 'judge' || kind === 'workflow'
+  // The deterministic `branch` needs no retries/long timeout and falls through
+  // to the default policy. A `workflow` node runs a whole callee subgraph
+  // inline (often several LLM nodes) in one step, so it gets the longer,
+  // retried AI policy — authors can raise the timeout further per-node via
+  // `execution` for long callees.
+  return kind === 'agent' || kind === 'workflow'
     ? AI_STEP_OPTS
     : DEFAULT_STEP_OPTS
 }
@@ -291,7 +291,7 @@ export function makeGraphWorkflow<
             result: string
             reasoning: string
           } | null
-          // A decision node (branch/judge/switch) RECORDS its {result, reasoning}
+          // A decision node (branch/switch) RECORDS its {result, reasoning}
           // but passes its INPUT through to downstream nodes. Re-record the
           // decision for the trace, but seed the scheduler with the passthrough
           // input so downstream `ref`s resolve exactly as they did originally.

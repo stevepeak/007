@@ -12,7 +12,6 @@ import {
   LogIn,
   LogOut,
   Repeat,
-  Scale,
   Sparkles,
   Split,
   StickyNote,
@@ -121,7 +120,6 @@ const KIND_STYLE: Record<
   trigger: { icon: LogIn, accent: 'border-l-emerald-400', label: 'Trigger' },
   agent: { icon: Sparkles, accent: 'border-l-violet-400', label: 'Agent' },
   tool: { icon: Wrench, accent: 'border-l-sky-400', label: 'Tool' },
-  judge: { icon: Scale, accent: 'border-l-amber-400', label: 'Judge' },
   branch: { icon: GitBranch, accent: 'border-l-orange-400', label: 'Branch' },
   switch: { icon: Split, accent: 'border-l-orange-500', label: 'Switch' },
   iteration: {
@@ -387,8 +385,8 @@ function ToolNodeRenderer(props: NodeProps) {
 }
 
 // Two source handles, one per condition. xyflow matches `id` to
-// edge.sourceHandle so the connection lands on the right side. Shared by the
-// Judge and Branch renderers — both route yes/no.
+// edge.sourceHandle so the connection lands on the right side. Used by the
+// Branch renderer — it routes yes/no.
 function DecisionHandles() {
   return (
     <>
@@ -404,27 +402,6 @@ function DecisionHandles() {
         id="no"
         style={{ top: '65%', background: 'rgb(239, 68, 68)' }}
       />
-    </>
-  )
-}
-
-function JudgeNodeRenderer(props: NodeProps) {
-  const data = props.data as unknown as EditorNodeData
-  const invalid = useIsNodeInvalid(props.id)
-  const status = useNodeRunStatus(props.id)
-  if (data.kind !== 'judge') return null
-  return (
-    <>
-      <Handle type="target" position={Position.Left} />
-      <NodeCard
-        kind="judge"
-        label={data.label}
-        selected={props.selected}
-        invalid={invalid}
-        status={status}
-        subtitle={data.config.testQuestion}
-      />
-      <DecisionHandles />
     </>
   )
 }
@@ -744,7 +721,6 @@ export const NODE_TYPES = {
   [editorTypeForKind('trigger')]: TriggerNodeRenderer,
   [editorTypeForKind('agent')]: AgentNodeRenderer,
   [editorTypeForKind('tool')]: ToolNodeRenderer,
-  [editorTypeForKind('judge')]: JudgeNodeRenderer,
   [editorTypeForKind('branch')]: BranchNodeRenderer,
   [editorTypeForKind('switch')]: SwitchNodeRenderer,
   [editorTypeForKind('iteration')]: IterationNodeRenderer,

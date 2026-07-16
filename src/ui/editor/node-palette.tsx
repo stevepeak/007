@@ -2,7 +2,6 @@ import {
   GitBranch,
   Lightbulb,
   Repeat,
-  Scale,
   Sparkles,
   Split,
   StickyNote,
@@ -19,7 +18,6 @@ type PaletteItem = {
   kind:
     | 'agent'
     | 'tool'
-    | 'judge'
     | 'branch'
     | 'switch'
     | 'iteration'
@@ -43,12 +41,6 @@ const PALETTE: PaletteItem[] = [
     label: 'Tool',
     description: 'Direct call to a registered tool — no LLM in the loop.',
     icon: Wrench,
-  },
-  {
-    kind: 'judge',
-    label: 'Judge',
-    description: 'Yes / no routing decided by a small LLM call.',
-    icon: Scale,
   },
   {
     kind: 'branch',

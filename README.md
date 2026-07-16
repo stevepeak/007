@@ -38,7 +38,7 @@ packages/wf-sdk/
     │   ├── tool-registry.ts   ToolRegistry<TDeps> + buildAgentToolSet
     │   ├── trigger-registry.ts TriggerRegistry type + getTriggerEntry
     │   ├── stream-sink.ts     StreamSink interface (progress fan-out)
-    │   └── nodes/             agent · judge · branch · tool · feature-request
+    │   └── nodes/             agent · branch · tool · feature-request
     ├── storage/            persistence — Drizzle over Cloudflare D1
     │   ├── schema.ts          wf_* tables — workflow/agent + runs (opaque tenancy)
     │   ├── client.ts          createWfDb(d1) → WfDb  (imports D1Database explicitly)
@@ -123,27 +123,25 @@ A workflow is a directed graph. Two engine-managed bookends (**trigger**,
 **output**) wrap the real work nodes. Validated by `workflowGraphSchema` (zod).
 
 ```
-WF_NODE_KINDS = trigger · agent · tool · judge · branch · feature-request · output
+WF_NODE_KINDS = trigger · agent · tool · branch · switch · feature-request · output
 
    ┌─────────┐      ┌─────────┐      ┌──────────┐ yes ┌─────────┐      ┌────────┐
-   │ trigger │ ───▶ │  agent  │ ───▶ │  judge/  │────▶│  agent  │ ───▶ │ output │
-   └─────────┘      └─────────┘      │  branch  │     └─────────┘      └────────┘
-   (seeded with         (LLM loop)   └────┬─────┘          ▲
-    triggerInput)                         │ no             │
-                                          └────────────────┘
+   │ trigger │ ───▶ │  agent  │ ───▶ │  branch  │────▶│  agent  │ ───▶ │ output │
+   └─────────┘      └─────────┘      └────┬─────┘     └─────────┘      └────────┘
+   (seeded with         (LLM loop)        │ no             ▲
+    triggerInput)                         └────────────────┘
                                           (both arms converge on one Output;
                                            the live edge wins)
 ```
 
-Two node kinds emit a yes/no routing decision and own conditional outgoing edges
-(`DECISION_NODE_KINDS = judge · branch`); the scheduler routes them identically.
+Decision nodes emit a routing decision and own conditional outgoing edges
+(`DECISION_NODE_KINDS = branch · switch`): **branch** routes yes/no, **switch**
+routes to a matched case; the scheduler routes them identically.
 
 - **agent** — tool-calling LLM loop (`generateText`) or structured output
   (`generateObject` when `output` is an object/boolean schema). Output: `{ text }`
-  or the parsed object.
-- **judge** — an LLM decision node: a cheap structured-output model answers a
-  plain-English yes/no `testQuestion` against the prior node's output; routes the
-  live edge and records `{result, reasoning}`. Passes its _input_ through as output.
+  or the parsed object. Use an agent (with a boolean output) for any decision
+  that needs an LLM.
 - **branch** — a **deterministic** predicate (no LLM): compares a resolved value
   with a `BRANCH_OPERATORS` operator (`equals`, `contains`, `greater_than`,
   `is_empty`, …); routes the live edge. Passes its _input_ through as output.
@@ -705,7 +703,7 @@ server · ui · eval · tools.
   end-to-end (real `wf_run` + `wf_run_step` rows, host-model answer). `/workflows`
   is replaced by `/wf` (hub + editor + runs + run-viewer). **`packages/workflow-engine`
   is deleted.**
-- **Landed since cutover:** the LLM **`judge`** decision node;
+- **Landed since cutover:**
   **Agents** as reusable float-to-latest entities (editor + storage + run manifest);
   a **document-ingestion** workflow + the `extract_text` (R2/Vision OCR) tool; and
   the **blob-ref** mechanism (`WfBlobRef` + `resolveBlobRef` + `createR2BlobResolver`)

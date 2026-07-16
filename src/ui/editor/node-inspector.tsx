@@ -12,13 +12,7 @@ import {
 import type { ToolOption, WfWorkflowSummary } from '../../server/protocol'
 import { AgentSelect } from '../agent-select'
 import { useWfComponents } from '../context'
-import {
-  useAgents,
-  useModels,
-  useTools,
-  useTriggerEvents,
-  useWorkflows,
-} from '../hooks'
+import { useAgents, useTools, useTriggerEvents, useWorkflows } from '../hooks'
 import { cn } from '../cn'
 import { DataRefField, NodeInputsPanel, useIoMaps } from './node-data-panel'
 import { accessibleLists } from './node-io'
@@ -55,13 +49,11 @@ export function NodeInspector({
   currentWorkflowId,
 }: NodeInspectorProps) {
   const { Input, Label, Textarea } = useWfComponents()
-  const models = useModels()
   const tools = useTools()
   const agents = useAgents()
   const workflows = useWorkflows()
   const triggerEvents = useTriggerEvents()
 
-  const modelOptions = models.data ?? []
   const agentOptions = agents.data ?? []
   // A workflow can call any OTHER workflow. Exclude itself — a direct self-call
   // is always a reference cycle (deeper cycles are caught at run start).
@@ -162,48 +154,6 @@ export function NodeInspector({
             }
           />
         </div>
-      ) : null}
-
-      {node.kind === 'judge' ? (
-        <>
-          <div className={field}>
-            <Label>Model</Label>
-            <select
-              className={selectCls}
-              value={node.config.modelId}
-              onChange={(e) =>
-                onChange({
-                  ...node,
-                  config: { ...node.config, modelId: e.target.value },
-                })
-              }
-            >
-              {modelOptions.length === 0 ? (
-                <option value={node.config.modelId}>
-                  {node.config.modelId}
-                </option>
-              ) : null}
-              {modelOptions.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className={field}>
-            <Label>Test question (yes / no)</Label>
-            <Textarea
-              rows={3}
-              value={node.config.testQuestion}
-              onChange={(e) =>
-                onChange({
-                  ...node,
-                  config: { ...node.config, testQuestion: e.target.value },
-                })
-              }
-            />
-          </div>
-        </>
       ) : null}
 
       {node.kind === 'branch' ? (

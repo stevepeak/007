@@ -1,10 +1,10 @@
 import { resolveBinding } from '../binding'
 import type { BranchNode, BranchOperator } from '../graph'
 
-// Deterministic yes/no routing. Unlike the Judge node (which asks a model), the
-// Branch node evaluates a predicate over its input in plain code — no LLM, no
-// I/O, fully reproducible. `result` drives which outgoing edge the scheduler
-// follows; `reasoning` is a human-readable trace persisted for the inspector.
+// Deterministic yes/no routing. The Branch node evaluates a predicate over its
+// input in plain code — no LLM, no I/O, fully reproducible. `result` drives
+// which outgoing edge the scheduler follows; `reasoning` is a human-readable
+// trace persisted for the inspector.
 
 export type BranchNodeResult = {
   result: 'yes' | 'no'

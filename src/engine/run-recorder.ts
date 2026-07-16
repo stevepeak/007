@@ -20,7 +20,7 @@ export type RecordStepArgs = {
   status: WfRunStepStatus
   output?: unknown
   meta?: unknown
-  // Decision nodes (branch/judge/switch): the routing outcome + its reasoning.
+  // Decision nodes (branch/switch): the routing outcome + its reasoning.
   // `result` is 'yes'|'no' for binary nodes, a case key or 'default' for switch.
   branchResult?: { result: string; reasoning: string } | null
   error?: string

@@ -187,7 +187,7 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
       })
     }
 
-    // A binary decision node (branch/judge) may connect just one arm — the other
+    // A binary decision node (branch) may connect just one arm — the other
     // is allowed to "fizzle out" (that path simply ends). So a missing yes/no
     // edge is not flagged; the generic "nothing downstream" warning above still
     // covers a decision node with no outgoing edges at all.

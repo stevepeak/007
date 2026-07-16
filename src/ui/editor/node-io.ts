@@ -157,7 +157,7 @@ function repath(fields: DataField[], prefix: string): DataField[] {
 }
 
 // The output shape a node produces (for the accessible-data tree). Pass-through
-// nodes (judge/branch/switch/feature-request) forward their input, so their
+// nodes (branch/switch/feature-request) forward their input, so their
 // shape is resolved recursively from their predecessor(s); `seen` guards against
 // a malformed cycle.
 function nodeOutput(
@@ -207,7 +207,7 @@ function nodeOutput(
     return { fields: [], type: 'array' }
   }
 
-  // Pass-through: judge/branch/switch/feature-request emit exactly what they
+  // Pass-through: branch/switch/feature-request emit exactly what they
   // received.
   const preds = predecessorIds(graph, node.id)
     .map((id) => byId.get(id))

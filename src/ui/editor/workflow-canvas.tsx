@@ -63,7 +63,7 @@ const DEFAULT_NOTE_W = 240
 const DEFAULT_NOTE_H = 160
 
 /** Defaults for freshly-dragged nodes — sourced from the host's models/tools. */
-export type NodeDefaults = { modelId: string; toolId: string }
+export type NodeDefaults = { toolId: string }
 
 // Stable empty set so the provider value doesn't change identity each render
 // when no invalid ids are passed.
@@ -724,7 +724,6 @@ function defaultDataForKind(
   kind: string,
   defaults?: NodeDefaults,
 ): EditorNodeData | null {
-  const modelId = defaults?.modelId || 'default'
   const toolId = defaults?.toolId || 'tool'
   if (kind === 'agent') {
     // A pointer node — the inspector picks which pre-developed agent to run.
@@ -736,13 +735,6 @@ function defaultDataForKind(
   }
   if (kind === 'tool') {
     return { kind: 'tool', label: 'New tool', config: { toolId, args: {} } }
-  }
-  if (kind === 'judge') {
-    return {
-      kind: 'judge',
-      label: 'New judge',
-      config: { modelId, testQuestion: 'Does the input meet the condition?' },
-    }
   }
   if (kind === 'branch') {
     return {

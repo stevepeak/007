@@ -27,7 +27,6 @@ export {
   isBinaryDecisionKind,
   SWITCH_DEFAULT_CASE,
   type SwitchNode,
-  type JudgeNode,
   type FeatureRequestNode,
   type IterationNode,
   nodeExecutionSchema,
@@ -150,7 +149,6 @@ export {
   looseEquals,
   type BranchNodeResult,
 } from './nodes/branch'
-export { executeJudgeNode, type JudgeNodeResult } from './nodes/judge'
 export { executeSwitchNode, type SwitchNodeResult } from './nodes/switch'
 export { executeToolNode, type ToolNodeResult } from './nodes/tool'
 export {

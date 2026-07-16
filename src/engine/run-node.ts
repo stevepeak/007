@@ -9,7 +9,6 @@ import { executeAgentNode } from './nodes/agent'
 import { executeBranchNode } from './nodes/branch'
 import { executeFeatureRequestNode } from './nodes/feature-request'
 import { executeSubgraph, runIteration } from './nodes/iteration'
-import { executeJudgeNode } from './nodes/judge'
 import { executeSwitchNode } from './nodes/switch'
 import { executeToolNode } from './nodes/tool'
 import { executeWorkflowNode } from './nodes/workflow'
@@ -30,9 +29,9 @@ export type NodeRunResult = {
   recordedOutput: unknown
   meta?: unknown
   /**
-   * Decision nodes only (judge/branch/switch) — the routing decision that
-   * selects the live outgoing edge. Binary nodes emit 'yes'|'no'; a switch
-   * emits a case key or 'default'. Matched against `edge.condition`.
+   * Decision nodes only (branch/switch) — the routing decision that selects
+   * the live outgoing edge. A branch emits 'yes'|'no'; a switch emits a case
+   * key or 'default'. Matched against `edge.condition`.
    */
   branchResult?: string
   branchReasoning?: string
@@ -129,22 +128,10 @@ export async function runNode<TDeps>(
         meta: r.meta,
       }
     }
-    case 'judge': {
-      const r = await executeJudgeNode({ node, input, getModel: ctx.getModel })
+    case 'branch': {
       // A decision node passes its input straight through as its output so
       // nodes after it see what it saw; the recorded output is the decision +
-      // reasoning for the inspector.
-      return {
-        schedulerOutput: input,
-        recordedOutput: { result: r.result, reasoning: r.reasoning },
-        meta: r.meta,
-        branchResult: r.result,
-        branchReasoning: r.reasoning,
-      }
-    }
-    case 'branch': {
-      // Deterministic sibling of `judge`: same pass-through + decision contract,
-      // but the yes/no comes from a code predicate rather than a model.
+      // reasoning for the inspector. The yes/no comes from a code predicate.
       const r = executeBranchNode({ node, input, nodeOutputs: ctx.nodeOutputs })
       return {
         schedulerOutput: input,
