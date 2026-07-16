@@ -1,5 +1,5 @@
-import { AlertTriangle, ChevronDown, Info } from 'lucide-react'
-import { useCallback, useRef, useState } from 'react'
+import { AlertTriangle, ChevronDown, Info, Sparkles } from 'lucide-react'
+import { useCallback, useRef, useState, type ReactNode } from 'react'
 
 import type {
   GraphIssue,
@@ -10,40 +10,47 @@ import type {
 import { cn } from '../cn'
 import { AccessibleDataView } from './node-data-panel'
 
-// A DevTools-style dock pinned to the bottom of the editor. A tab strip is
-// always visible; clicking the active tab (or the chevron) collapses the body.
-// The Data tab reflects the selected node; the Issues tab is graph-wide.
+// A DevTools-style dock pinned to the bottom of an editor/detail surface. A tab
+// strip is always visible; clicking the active tab (or the chevron) collapses
+// the body. The chrome (resize handle + collapse + tab strip) lives in the
+// generic `BottomTray`; the workflow editor's `BottomDock` and the standalone
+// `ChatDock` (used by the agent/tool/eval surfaces) are thin compositions of it.
 
-type DockTab = 'data' | 'issues'
+// A lucide icon component, e.g. `Sparkles`.
+type TrayIcon = typeof Sparkles
 
-export type BottomDockProps = {
-  /** The selected node, or null when nothing is selected. */
-  node: WorkflowNode | null
-  graph: WorkflowGraph
-  /** All author-time issues for the graph (errors + warnings). */
-  issues: GraphIssue[]
-  /** Element schema of the enclosing loop's list, when the selected node is
-   * inside an iteration — so the Data tab shows the `Item`'s fields. */
-  itemSchema?: JsonSchema
-  /** Focus a node on the canvas (clicking an issue that names one). */
-  onSelectNode?: (nodeId: string) => void
+export type TrayTab = {
+  id: string
+  label: string
+  icon?: TrayIcon
+  /** Count badge after the label (e.g. issue count). */
+  badge?: number
+  /** Render the badge in the error (rose) palette instead of warning (amber). */
+  danger?: boolean
+  /** Right-aligned strip accessory, shown only while this tab is active + open. */
+  accessory?: ReactNode
+  /** Body content, rendered only while this tab is active + open. */
+  body: ReactNode
 }
 
 // Body height bounds (px). At/below MIN a downward drag collapses the dock so
-// only the tab strip shows; MAX keeps it from swallowing the whole canvas.
+// only the tab strip shows; MAX keeps it from swallowing the whole surface.
 const MIN_BODY_H = 120
 const MAX_BODY_H = 640
 const DEFAULT_BODY_H = 224
 
-export function BottomDock({
-  node,
-  graph,
-  issues,
-  itemSchema,
-  onSelectNode,
-}: BottomDockProps) {
-  const [open, setOpen] = useState(true)
-  const [tab, setTab] = useState<DockTab>('data')
+// The reusable tray chrome: a resizable, collapsible bottom panel with a tab
+// strip. Owns open/active-tab/height state; the caller supplies the tabs.
+export function BottomTray({
+  tabs,
+  initialOpen = true,
+}: {
+  tabs: TrayTab[]
+  /** Whether the body starts expanded. The tab strip always shows. */
+  initialOpen?: boolean
+}) {
+  const [open, setOpen] = useState(initialOpen)
+  const [activeId, setActiveId] = useState<string>(tabs[0]?.id ?? '')
   // Persisted body height; restored when the dock is re-opened via a tab/chevron.
   const [bodyHeight, setBodyHeight] = useState(DEFAULT_BODY_H)
   const dragRef = useRef<{
@@ -97,23 +104,7 @@ export function BottomDock({
     [],
   )
 
-  const errorCount = issues.filter((i) => i.severity === 'error').length
-  const warningCount = issues.length - errorCount
-
-  const tabs: {
-    id: DockTab
-    label: string
-    badge?: number
-    danger?: boolean
-  }[] = [
-    { id: 'data', label: 'Data' },
-    {
-      id: 'issues',
-      label: 'Issues',
-      badge: issues.length || undefined,
-      danger: errorCount > 0,
-    },
-  ]
+  const active = tabs.find((t) => t.id === activeId) ?? tabs[0]
 
   return (
     <div className="relative flex shrink-0 flex-col border-t border-neutral-200 bg-white">
@@ -129,26 +120,27 @@ export function BottomDock({
       />
       <div className="flex items-center gap-1 px-2">
         {tabs.map((t) => {
-          const active = t.id === tab
+          const isActive = t.id === active?.id
           return (
             <button
               key={t.id}
               type="button"
               onClick={() => {
                 // Clicking the active tab toggles the body, like DevTools.
-                if (active) setOpen((o) => !o)
+                if (isActive) setOpen((o) => !o)
                 else {
-                  setTab(t.id)
+                  setActiveId(t.id)
                   setOpen(true)
                 }
               }}
               className={cn(
                 'flex items-center gap-1.5 border-b-2 px-2 py-1.5 text-xs font-medium transition-colors',
-                active && open
+                isActive && open
                   ? 'border-neutral-800 text-neutral-800'
                   : 'border-transparent text-neutral-500 hover:text-neutral-700',
               )}
             >
+              {t.icon ? <t.icon className="size-3.5 text-violet-500" /> : null}
               {t.label}
               {t.badge ? (
                 <span
@@ -166,11 +158,7 @@ export function BottomDock({
           )
         })}
         <div className="flex-1" />
-        {tab === 'data' && node ? (
-          <span className="truncate text-[11px] text-neutral-400">
-            {node.label}
-          </span>
-        ) : null}
+        {open && active?.accessory ? active.accessory : null}
         <button
           type="button"
           aria-label={open ? 'Collapse panel' : 'Expand panel'}
@@ -188,26 +176,128 @@ export function BottomDock({
           style={{ height: bodyHeight }}
           className="overflow-y-auto border-t border-neutral-100 p-3"
         >
-          {tab === 'issues' ? (
-            <IssuesView
-              issues={issues}
-              errorCount={errorCount}
-              warningCount={warningCount}
-              onSelectNode={onSelectNode}
-            />
-          ) : !node ? (
-            <p className="text-muted-foreground text-xs">
-              Select a node to see the data available to it.
-            </p>
-          ) : (
-            <AccessibleDataView
-              node={node}
-              graph={graph}
-              itemSchema={itemSchema}
-            />
-          )}
+          {active?.body}
         </div>
       ) : null}
+    </div>
+  )
+}
+
+export type BottomDockProps = {
+  /** The selected node, or null when nothing is selected. */
+  node: WorkflowNode | null
+  graph: WorkflowGraph
+  /** All author-time issues for the graph (errors + warnings). */
+  issues: GraphIssue[]
+  /** Element schema of the enclosing loop's list, when the selected node is
+   * inside an iteration — so the Data tab shows the `Item`'s fields. */
+  itemSchema?: JsonSchema
+  /** Focus a node on the canvas (clicking an issue that names one). */
+  onSelectNode?: (nodeId: string) => void
+}
+
+// The workflow editor's dock: Data (selected node), Issues (graph-wide), and the
+// Chat assistant.
+export function BottomDock({
+  node,
+  graph,
+  issues,
+  itemSchema,
+  onSelectNode,
+}: BottomDockProps) {
+  const errorCount = issues.filter((i) => i.severity === 'error').length
+  const warningCount = issues.length - errorCount
+
+  const tabs: TrayTab[] = [
+    {
+      id: 'data',
+      label: 'Data',
+      accessory: node ? (
+        <span className="truncate text-[11px] text-neutral-400">
+          {node.label}
+        </span>
+      ) : undefined,
+      body: !node ? (
+        <p className="text-muted-foreground text-xs">
+          Select a node to see the data available to it.
+        </p>
+      ) : (
+        <AccessibleDataView node={node} graph={graph} itemSchema={itemSchema} />
+      ),
+    },
+    {
+      id: 'issues',
+      label: 'Issues',
+      badge: issues.length || undefined,
+      danger: errorCount > 0,
+      body: (
+        <IssuesView
+          issues={issues}
+          errorCount={errorCount}
+          warningCount={warningCount}
+          onSelectNode={onSelectNode}
+        />
+      ),
+    },
+    {
+      id: 'chat',
+      label: 'Chat',
+      icon: Sparkles,
+      body: <ChatView subject="workflow" />,
+    },
+  ]
+
+  return <BottomTray tabs={tabs} />
+}
+
+// A standalone bottom tray with only the Chat assistant — for surfaces without a
+// graph (agent editor, tool detail, evals). Starts collapsed to a tabs-only
+// strip so it doesn't crowd the page; click "✨ Chat" to expand.
+export function ChatDock({ subject }: { subject: ChatSubject }) {
+  return (
+    <BottomTray
+      initialOpen={false}
+      tabs={[
+        {
+          id: 'chat',
+          label: 'Chat',
+          icon: Sparkles,
+          body: <ChatView subject={subject} />,
+        },
+      ]}
+    />
+  )
+}
+
+type ChatSubject = 'workflow' | 'agent' | 'tool' | 'eval'
+
+// Placeholder for the AI assistant. Once built, this will be a chat that helps
+// authors understand and optimize the asset, with tools to make changes to it
+// under the user's direction.
+function ChatView({ subject }: { subject: ChatSubject }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+      <div className="flex size-10 items-center justify-center rounded-full bg-violet-100">
+        <Sparkles className="size-5 text-violet-500" />
+      </div>
+      <div className="space-y-1">
+        <p className="flex items-center justify-center gap-1.5 text-sm font-medium text-neutral-700">
+          Chat
+          <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-600">
+            Coming soon
+          </span>
+        </p>
+        <p className="mx-auto max-w-sm text-xs text-neutral-500">
+          Ask the AI to help you understand and optimize this {subject}. It will
+          be able to make changes for you, under your direction.
+        </p>
+      </div>
+      <div className="w-full max-w-md">
+        <div className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-400">
+          <Sparkles className="size-3.5 shrink-0 text-neutral-300" />
+          <span className="flex-1 text-left">Ask about this {subject}…</span>
+        </div>
+      </div>
     </div>
   )
 }

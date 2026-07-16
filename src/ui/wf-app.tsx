@@ -4,6 +4,7 @@ import { AgentsList, type AgentTemplate } from './agents-list'
 import { cn } from './cn'
 import { ComingSoon } from './coming-soon'
 import { AgentEditor } from './editor/agent-editor'
+import { ChatDock } from './editor/bottom-dock'
 import { WorkflowEditor } from './editor/workflow-editor'
 import { EvalRunReport } from './evals/eval-run-report'
 import { EvalSample } from './evals/eval-sample'
@@ -224,44 +225,61 @@ function AssetRoute({ path }: { path: string }) {
       return <RunPage runId={asset.runId} className="h-full" />
     case 'agent':
       return (
-        <AgentEditor
-          agentId={asset.agentId}
-          className="h-full"
-          onPublished={() => navigate('agents')}
-        />
+        <WithChatDock subject="agent">
+          <AgentEditor
+            agentId={asset.agentId}
+            className="h-full"
+            onPublished={() => navigate('agents')}
+          />
+        </WithChatDock>
       )
     case 'tool':
-      return <ToolDetailPage toolId={asset.toolId} />
+      return (
+        <WithChatDock subject="tool">
+          <ToolDetailPage toolId={asset.toolId} />
+        </WithChatDock>
+      )
     case 'evalTest':
       return (
-        <EvalTest
-          key={asset.testId}
-          setId={asset.setId}
-          sampleId={asset.sampleId}
-          testId={asset.testId}
-          className="h-full"
-        />
+        <WithChatDock subject="eval">
+          <EvalTest
+            key={asset.testId}
+            setId={asset.setId}
+            sampleId={asset.sampleId}
+            testId={asset.testId}
+            className="h-full"
+          />
+        </WithChatDock>
       )
     case 'evalRun':
       return (
-        <EvalRunReport
-          key={asset.evalRunId}
-          evalRunId={asset.evalRunId}
-          className="h-full"
-        />
+        <WithChatDock subject="eval">
+          <EvalRunReport
+            key={asset.evalRunId}
+            evalRunId={asset.evalRunId}
+            className="h-full"
+          />
+        </WithChatDock>
       )
     case 'evalSample':
       return (
-        <EvalSample
-          key={asset.sampleId}
-          setId={asset.setId}
-          sampleId={asset.sampleId}
-          className="h-full"
-        />
+        <WithChatDock subject="eval">
+          <EvalSample
+            key={asset.sampleId}
+            setId={asset.setId}
+            sampleId={asset.sampleId}
+            className="h-full"
+          />
+        </WithChatDock>
       )
     case 'evalSet':
-      return <EvalSet key={asset.setId} setId={asset.setId} className="h-full" />
+      return (
+        <WithChatDock subject="eval">
+          <EvalSet key={asset.setId} setId={asset.setId} className="h-full" />
+        </WithChatDock>
+      )
     case 'workflow':
+      // The workflow editor has its own richer dock (Data/Issues/Chat).
       return (
         <WorkflowEditor
           workflowId={asset.workflowId}
@@ -272,6 +290,25 @@ function AssetRoute({ path }: { path: string }) {
         />
       )
   }
+}
+
+// Wraps an asset surface so its content fills the space above a collapsible Chat
+// tray pinned to the bottom. The asset keeps its own `h-full` layout inside the
+// flexing region; the tray sits below it. Surfaces with their own dock (the
+// workflow editor) don't use this.
+function WithChatDock({
+  subject,
+  children,
+}: {
+  subject: 'agent' | 'tool' | 'eval'
+  children: ReactNode
+}) {
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1">{children}</div>
+      <ChatDock subject={subject} />
+    </div>
+  )
 }
 
 // Tool detail wrapped in its own breadcrumb shell, with the real tool name as
