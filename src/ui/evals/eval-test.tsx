@@ -13,7 +13,8 @@ import {
   Waypoints,
   Wrench,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import type { EvalCheck, EvalMatch } from '../../server/protocol'
 import { cn } from '../cn'
@@ -390,8 +391,9 @@ function BinaryConfig({
 }
 
 // The binary assertion selector — a dropdown of human-readable check types
-// (icon + label + blurb). Expands inline (in normal flow) so it can't be clipped
-// by the StepFlow card's `overflow-hidden`.
+// (icon + label + blurb). The open menu is portaled to <body> and fixed-positioned
+// under the trigger so it overlays the content below instead of pushing it down
+// (and so the StepFlow card's `overflow-hidden` can't clip it).
 function BinaryTypePicker({
   value,
   onChange,
@@ -400,12 +402,32 @@ function BinaryTypePicker({
   onChange: (type: BinaryType) => void
 }) {
   const [open, setOpen] = useState(false)
-  const rootRef = useRef<HTMLDivElement>(null)
+  const [rect, setRect] = useState<DOMRect | null>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  const reposition = () => {
+    if (triggerRef.current) setRect(triggerRef.current.getBoundingClientRect())
+  }
+
+  useLayoutEffect(() => {
+    if (!open) return
+    reposition()
+    const onScroll = () => reposition()
+    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onScroll)
+    return () => {
+      window.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', onScroll)
+    }
+  }, [open])
 
   useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+      const t = e.target as Node
+      if (triggerRef.current?.contains(t) || menuRef.current?.contains(t)) return
+      setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false)
@@ -422,8 +444,9 @@ function BinaryTypePicker({
   const CurrentIcon = current?.icon
 
   return (
-    <div ref={rootRef} className="space-y-2">
+    <>
       <button
+        ref={triggerRef}
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -444,42 +467,54 @@ function BinaryTypePicker({
         />
       </button>
 
-      {open ? (
-        <div className="max-w-md overflow-hidden rounded-md border border-neutral-200 py-1">
-          {BINARY_TYPES.map((t) => {
-            const m = BINARY_TYPE_META[t]
-            const Icon = m.icon
-            const isSel = t === value
-            return (
-              <button
-                key={t}
-                type="button"
-                role="option"
-                aria-selected={isSel}
-                onClick={() => {
-                  onChange(t)
-                  setOpen(false)
-                }}
-                className={cn(
-                  'flex w-full items-center gap-2 px-2 py-1.5 text-left transition',
-                  isSel ? 'bg-neutral-100' : 'hover:bg-neutral-50',
-                )}
-              >
-                <Icon className="size-4 shrink-0 text-neutral-500" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-neutral-800">
-                    {m.label}
-                  </span>
-                  <span className="block truncate text-xs text-neutral-400">
-                    {m.desc}
-                  </span>
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      ) : null}
-    </div>
+      {open && rect
+        ? createPortal(
+            <div
+              ref={menuRef}
+              role="listbox"
+              className="fixed z-50 overflow-hidden rounded-md border border-neutral-200 bg-white py-1 shadow-lg"
+              style={{
+                top: rect.bottom + 4,
+                left: rect.left,
+                width: rect.width,
+              }}
+            >
+              {BINARY_TYPES.map((t) => {
+                const m = BINARY_TYPE_META[t]
+                const Icon = m.icon
+                const isSel = t === value
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    role="option"
+                    aria-selected={isSel}
+                    onClick={() => {
+                      onChange(t)
+                      setOpen(false)
+                    }}
+                    className={cn(
+                      'flex w-full items-center gap-2 px-2 py-1.5 text-left transition',
+                      isSel ? 'bg-neutral-100' : 'hover:bg-neutral-50',
+                    )}
+                  >
+                    <Icon className="size-4 shrink-0 text-neutral-500" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-neutral-800">
+                        {m.label}
+                      </span>
+                      <span className="block truncate text-xs text-neutral-400">
+                        {m.desc}
+                      </span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
   )
 }
 
