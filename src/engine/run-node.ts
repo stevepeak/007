@@ -145,7 +145,7 @@ export async function runNode<TDeps>(
     case 'branch': {
       // Deterministic sibling of `judge`: same pass-through + decision contract,
       // but the yes/no comes from a code predicate rather than a model.
-      const r = executeBranchNode({ node, input })
+      const r = executeBranchNode({ node, input, nodeOutputs: ctx.nodeOutputs })
       return {
         schedulerOutput: input,
         recordedOutput: { result: r.result, reasoning: r.reasoning },

@@ -1,3 +1,4 @@
+import { resolveBinding } from '../binding'
 import type { BranchNode, BranchOperator } from '../graph'
 
 // Deterministic yes/no routing. Unlike the Judge node (which asks a model), the
@@ -12,8 +13,11 @@ export type BranchNodeResult = {
 
 export type ExecuteBranchNodeDeps = {
   node: BranchNode
-  /** The prior node's output — the value the predicate is evaluated against. */
+  /** The prior node's output — tested when the node has no `source` ref. */
   input: unknown
+  /** Live node-output cache, so a `source` ref resolves against an upstream
+   * node's output exactly like agent/tool input bindings do. */
+  nodeOutputs: Map<string, unknown>
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -134,12 +138,20 @@ function evaluate(
 export function executeBranchNode(
   deps: ExecuteBranchNodeDeps,
 ): BranchNodeResult {
-  const { node, input } = deps
-  const { path, operator, value } = node.config
-  const target = resolvePath(input, path)
+  const { node, input, nodeOutputs } = deps
+  const { source, operator, value } = node.config
+  // A `source` ref selects any upstream node's output (resolved like agent/tool
+  // inputs); with none, fall back to the whole incoming input.
+  const target = source
+    ? resolveBinding(source, nodeOutputs, { nodeId: node.id, name: 'source' })
+    : input
   const pass = evaluate(operator, target, value)
 
-  const subject = path || 'input'
+  const subject = source
+    ? source.path
+      ? `${source.nodeId}.${source.path}`
+      : source.nodeId
+    : 'input'
   const operand =
     operator === 'is_empty' || operator === 'is_not_empty'
       ? ''

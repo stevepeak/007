@@ -748,7 +748,7 @@ function defaultDataForKind(
     return {
       kind: 'branch',
       label: 'New branch',
-      config: { path: '', operator: 'is_not_empty' },
+      config: { operator: 'is_not_empty' },
     }
   }
   if (kind === 'switch') {

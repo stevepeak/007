@@ -430,11 +430,13 @@ function JudgeNodeRenderer(props: NodeProps) {
 }
 
 function branchConditionLabel(config: {
-  path: string
+  source?: { nodeId: string; path: string }
   operator: string
   value?: unknown
 }): string {
-  const subject = config.path || 'input'
+  // Show the picked field path when the author drilled in, else a generic
+  // 'upstream' for a whole-output ref, else 'input' for the passthrough.
+  const subject = config.source?.path || (config.source ? 'upstream' : 'input')
   if (config.operator === 'is_empty' || config.operator === 'is_not_empty') {
     return `${subject} ${config.operator}`
   }

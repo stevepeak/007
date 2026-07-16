@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import type {
   ArgBinding,
   JsonSchema,
+  RefBinding,
   WorkflowGraph,
   WorkflowNode,
 } from '../../engine'
@@ -124,6 +125,106 @@ export function NodeInputsPanel({
         </div>
       )}
     </section>
+  )
+}
+
+export type DataRefFieldProps = {
+  node: WorkflowNode
+  graph: WorkflowGraph
+  /** The current upstream ref, or undefined for "the whole incoming input". */
+  value: RefBinding | undefined
+  onChange: (ref: RefBinding | undefined) => void
+  /** Element schema of the enclosing loop's list, if any (see NodeInputsPanel). */
+  itemSchema?: JsonSchema
+}
+
+// A single "connect to upstream data" selector — the same accessible-data picker
+// agent/tool inputs use (BindingSourceNode/PickableField), but producing a bare
+// `ref` (no literal). Deterministic decision nodes (branch) use it to choose the
+// upstream value they test instead of typing a dotted path.
+export function DataRefField({
+  node,
+  graph,
+  value,
+  onChange,
+  itemSchema,
+}: DataRefFieldProps) {
+  const baseMaps = useIoMaps()
+  const maps = useMemo(
+    () => withIterationItemSchema(baseMaps, itemSchema),
+    [baseMaps, itemSchema],
+  )
+  const accessible = useMemo(
+    () => accessibleData(graph, node.id, maps),
+    [graph, node.id, maps],
+  )
+  const [open, setOpen] = useState(false)
+  const src = value
+    ? accessible.find((n) => n.nodeId === value.nodeId)
+    : undefined
+  const label = value
+    ? `${src?.label ?? value.nodeId} · ${value.path || 'whole output'}`
+    : 'Whole input'
+
+  return (
+    <div className="rounded-md border border-neutral-200">
+      <div className="flex items-center gap-2 px-2 py-1.5">
+        <span
+          className={cn(
+            'min-w-0 flex-1 truncate text-xs',
+            value ? 'text-neutral-600' : 'text-neutral-400',
+          )}
+        >
+          {label}
+        </span>
+        {value ? (
+          <button
+            type="button"
+            aria-label="Clear source"
+            onClick={() => onChange(undefined)}
+            className="shrink-0 rounded p-0.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"
+          >
+            <X className="size-3.5" />
+          </button>
+        ) : null}
+        <button
+          type="button"
+          aria-label="Connect to upstream data"
+          onClick={() => setOpen((o) => !o)}
+          className={cn(
+            'shrink-0 rounded p-0.5 hover:bg-neutral-100',
+            open
+              ? 'text-neutral-700'
+              : 'text-neutral-400 hover:text-neutral-600',
+          )}
+        >
+          <Link2 className="size-3.5" />
+        </button>
+      </div>
+
+      {open ? (
+        <div className="space-y-2 border-t border-neutral-100 p-2">
+          {accessible.length === 0 ? (
+            <p className="text-muted-foreground text-xs">
+              No upstream data to test yet. Connect this node to a source.
+            </p>
+          ) : (
+            <div className="space-y-1.5">
+              {accessible.map((n) => (
+                <BindingSourceNode
+                  key={n.nodeId}
+                  node={n}
+                  onPick={(path) => {
+                    onChange({ kind: 'ref', nodeId: n.nodeId, path })
+                    setOpen(false)
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      ) : null}
+    </div>
   )
 }
 

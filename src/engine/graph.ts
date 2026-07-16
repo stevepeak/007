@@ -74,11 +74,12 @@ const triggerNodeSchema = baseNode.extend({
 // Ref binding: a tool/agent input value sourced from a prior node's output.
 // `path` is a dotted JSON path inside that node's output (e.g. "documents.0.id").
 // Empty string means "the whole output".
-const refBindingSchema = z.object({
+export const refBindingSchema = z.object({
   kind: z.literal('ref'),
   nodeId: z.string().min(1),
   path: z.string().default(''),
 })
+export type RefBinding = z.infer<typeof refBindingSchema>
 
 const literalBindingSchema = z.object({
   kind: z.literal('literal'),
@@ -206,12 +207,13 @@ export type BranchOperator = (typeof BRANCH_OPERATORS)[number]
 
 const branchNodeSchema = baseNode.extend({
   kind: z.literal('branch'),
-  // Deterministic yes/no routing: a predicate over the branch's input, run in
-  // code with no model. `path` selects a value out of the input (dotted, ''
-  // = the whole input); `operator` + `value` form the test. The `yes` edge is
+  // Deterministic yes/no routing: a predicate over an upstream value, run in
+  // code with no model. `source` is a `ref` binding into an upstream node's
+  // output (the same data-picker agent/tool inputs use); undefined tests the
+  // whole incoming input. `operator` + `value` form the test. The `yes` edge is
   // taken when the predicate holds, `no` otherwise.
   config: z.object({
-    path: z.string().default(''),
+    source: refBindingSchema.optional(),
     operator: z.enum(BRANCH_OPERATORS).default('is_not_empty'),
     // Operand for equals/not_equals/contains/greater_than/less_than; ignored by
     // is_empty/is_not_empty.
@@ -530,6 +532,20 @@ export const workflowGraphSchema = workflowGraphShapeSchema.superRefine(
             message: `${n.kind === 'tool' ? 'Tool' : 'Workflow'} node ${n.id} ${label} '${argName}' references missing node ${binding.nodeId}.`,
           })
         }
+      }
+    }
+    // A Branch reads the value it tests via a single `source` ref binding — the
+    // same shape, so it needs the same "points at a real node" guard.
+    for (const n of g.nodes) {
+      if (n.kind !== 'branch') {
+        continue
+      }
+      const src = n.config.source
+      if (src && !ids.has(src.nodeId)) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `Branch node ${n.id} source references missing node ${src.nodeId}.`,
+        })
       }
     }
     // Validate every binary decision node (judge/branch) has both yes and no

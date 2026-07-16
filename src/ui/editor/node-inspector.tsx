@@ -20,7 +20,7 @@ import {
   useWorkflows,
 } from '../hooks'
 import { cn } from '../cn'
-import { NodeInputsPanel, useIoMaps } from './node-data-panel'
+import { DataRefField, NodeInputsPanel, useIoMaps } from './node-data-panel'
 import { accessibleLists } from './node-io'
 import { ToolIcon } from '../tool-icon'
 
@@ -209,20 +209,22 @@ export function NodeInspector({
       {node.kind === 'branch' ? (
         <>
           <div className={field}>
-            <Label>Input path</Label>
-            <Input
-              value={node.config.path}
-              placeholder="e.g. chunks  ·  empty = whole input"
-              onChange={(e) =>
+            <Label>Input</Label>
+            <DataRefField
+              node={node}
+              graph={graph}
+              value={node.config.source}
+              itemSchema={itemSchema}
+              onChange={(source) =>
                 onChange({
                   ...node,
-                  config: { ...node.config, path: e.target.value },
+                  config: { ...node.config, source },
                 })
               }
             />
             <p className="text-muted-foreground text-xs">
-              Dotted path into the incoming value. Leave blank to test the whole
-              input.
+              Connect the upstream value to test. Leave unset to test the whole
+              incoming input.
             </p>
           </div>
           <div className={field}>

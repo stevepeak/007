@@ -13,6 +13,7 @@ export {
   workflowGraphShapeSchema,
   workflowNodeSchema,
   type ArgBinding,
+  type RefBinding,
   type AgentConfig,
   type AgentNode,
   type AgentOutput,

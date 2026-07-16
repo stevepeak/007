@@ -30,7 +30,7 @@ const branch = (id: string) => ({
   kind: 'branch' as const,
   position: pos,
   label: id,
-  config: { path: '', operator: 'is_not_empty' as const },
+  config: { operator: 'is_not_empty' as const },
 })
 const edge = (
   source: string,

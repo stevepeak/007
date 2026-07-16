@@ -46,7 +46,11 @@ export function BottomDock({
   const [tab, setTab] = useState<DockTab>('data')
   // Persisted body height; restored when the dock is re-opened via a tab/chevron.
   const [bodyHeight, setBodyHeight] = useState(DEFAULT_BODY_H)
-  const dragRef = useRef<{ startY: number; startH: number } | null>(null)
+  const dragRef = useRef<{
+    startY: number
+    startH: number
+    moved: boolean
+  } | null>(null)
 
   // Drag the top edge to resize: up grows the body, down shrinks it. Dragging
   // below MIN_BODY_H collapses to a tabs-only strip (open=false) while keeping
@@ -58,6 +62,7 @@ export function BottomDock({
       dragRef.current = {
         startY: e.clientY,
         startH: open ? bodyHeight : 0,
+        moved: false,
       }
     },
     [open, bodyHeight],
@@ -67,6 +72,9 @@ export function BottomDock({
     (e: React.PointerEvent<HTMLDivElement>) => {
       const drag = dragRef.current
       if (!drag) return
+      // Ignore sub-pixel jitter so a plain click isn't treated as a drag.
+      if (Math.abs(e.clientY - drag.startY) > 3) drag.moved = true
+      if (!drag.moved) return
       const next = drag.startH + (drag.startY - e.clientY)
       if (next < MIN_BODY_H) {
         setOpen(false)
@@ -80,8 +88,11 @@ export function BottomDock({
 
   const onHandlePointerUp = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
+      const drag = dragRef.current
       dragRef.current = null
       e.currentTarget.releasePointerCapture(e.pointerId)
+      // A click on the border (no drag) toggles the dock collapsed/expanded.
+      if (drag && !drag.moved) setOpen((o) => !o)
     },
     [],
   )
