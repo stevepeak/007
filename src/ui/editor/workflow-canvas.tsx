@@ -611,6 +611,10 @@ function CanvasInner({
               markerEnd: { type: MarkerType.ArrowClosed },
             }}
             fitView
+            // Frame the whole workflow on open instead of zooming right in:
+            // React Flow's default maxZoom is 2, which blows small graphs up to
+            // fill the viewport. Cap at 1 so the entire graph stays visible.
+            fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
             proOptions={{ hideAttribution: true }}
           >
             <Background gap={20} />

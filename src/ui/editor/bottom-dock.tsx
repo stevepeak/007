@@ -1,5 +1,5 @@
 import { AlertTriangle, ChevronDown, Info } from 'lucide-react'
-import { useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 
 import type {
   GraphIssue,
@@ -29,6 +29,12 @@ export type BottomDockProps = {
   onSelectNode?: (nodeId: string) => void
 }
 
+// Body height bounds (px). At/below MIN a downward drag collapses the dock so
+// only the tab strip shows; MAX keeps it from swallowing the whole canvas.
+const MIN_BODY_H = 120
+const MAX_BODY_H = 640
+const DEFAULT_BODY_H = 224
+
 export function BottomDock({
   node,
   graph,
@@ -38,6 +44,47 @@ export function BottomDock({
 }: BottomDockProps) {
   const [open, setOpen] = useState(true)
   const [tab, setTab] = useState<DockTab>('data')
+  // Persisted body height; restored when the dock is re-opened via a tab/chevron.
+  const [bodyHeight, setBodyHeight] = useState(DEFAULT_BODY_H)
+  const dragRef = useRef<{ startY: number; startH: number } | null>(null)
+
+  // Drag the top edge to resize: up grows the body, down shrinks it. Dragging
+  // below MIN_BODY_H collapses to a tabs-only strip (open=false) while keeping
+  // the last real height for when it's expanded again.
+  const onHandlePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      e.currentTarget.setPointerCapture(e.pointerId)
+      dragRef.current = {
+        startY: e.clientY,
+        startH: open ? bodyHeight : 0,
+      }
+    },
+    [open, bodyHeight],
+  )
+
+  const onHandlePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      const drag = dragRef.current
+      if (!drag) return
+      const next = drag.startH + (drag.startY - e.clientY)
+      if (next < MIN_BODY_H) {
+        setOpen(false)
+      } else {
+        setOpen(true)
+        setBodyHeight(Math.min(next, MAX_BODY_H))
+      }
+    },
+    [],
+  )
+
+  const onHandlePointerUp = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      dragRef.current = null
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    },
+    [],
+  )
 
   const errorCount = issues.filter((i) => i.severity === 'error').length
   const warningCount = issues.length - errorCount
@@ -58,7 +105,17 @@ export function BottomDock({
   ]
 
   return (
-    <div className="flex shrink-0 flex-col border-t border-neutral-200 bg-white">
+    <div className="relative flex shrink-0 flex-col border-t border-neutral-200 bg-white">
+      {/* Grab bar straddling the top edge — drag to resize (^v cursor). */}
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize panel"
+        onPointerDown={onHandlePointerDown}
+        onPointerMove={onHandlePointerMove}
+        onPointerUp={onHandlePointerUp}
+        className="absolute inset-x-0 -top-1 z-10 h-2 cursor-ns-resize"
+      />
       <div className="flex items-center gap-1 px-2">
         {tabs.map((t) => {
           const active = t.id === tab
@@ -116,7 +173,10 @@ export function BottomDock({
       </div>
 
       {open ? (
-        <div className="h-56 overflow-y-auto border-t border-neutral-100 p-3">
+        <div
+          style={{ height: bodyHeight }}
+          className="overflow-y-auto border-t border-neutral-100 p-3"
+        >
           {tab === 'issues' ? (
             <IssuesView
               issues={issues}
