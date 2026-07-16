@@ -31,6 +31,16 @@ export type WfCrumbEditable = {
   placeholder?: string
 }
 
+type WfShellDescriptionEditable = {
+  value: string
+  onChange: (next: string) => void
+  /** Commit the edit (blur / Enter). */
+  onCommit: () => void
+  ariaLabel?: string
+  /** Shown when the value is empty. */
+  placeholder?: string
+}
+
 export type WfCrumb = {
   /** Crumb text. Omitted for `home` (icon) and `editable` (field) crumbs. */
   label?: ReactNode
