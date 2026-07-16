@@ -1,7 +1,7 @@
 import {
   Activity,
   Bot,
-  FlaskConical,
+  Target,
   Wrench,
   Workflow as WorkflowIcon,
   type LucideIcon,
@@ -81,7 +81,7 @@ export const DEFAULT_WF_SECTIONS: WfHubSection[] = [
     title: 'Evals',
     description:
       'Test workflows and agents using different AI models to get more predictable outcomes.',
-    icon: FlaskConical,
+    icon: Target,
     accent: {
       card: 'hover:border-rose-300 hover:shadow-lg hover:shadow-rose-100',
       icon: 'group-hover:bg-rose-100 group-hover:text-rose-600 group-hover:shadow-md group-hover:shadow-rose-200',
@@ -101,14 +101,21 @@ export type WfHubProps = {
 export function WfHub({
   sections = DEFAULT_WF_SECTIONS,
   onOpen,
-  title = 'Workflows',
   subtitle = 'Build, run, and evaluate AI workflows.',
   className,
 }: WfHubProps) {
   return (
     <div className={cn('mx-auto max-w-4xl p-6', className)}>
-      <h1 className="text-xl font-semibold text-neutral-900">{title}</h1>
-      <p className="mt-1 mb-6 text-sm text-neutral-500">{subtitle}</p>
+      <div className="mb-8 flex flex-col items-center">
+        {/* Placeholder brand image — swap in real artwork later. */}
+        <div
+          aria-hidden
+          className="h-[120px] w-[200px] rounded-lg border border-dashed border-neutral-300 bg-neutral-50"
+        />
+        <p className="mt-3 max-w-md text-center text-sm text-neutral-500">
+          {subtitle}
+        </p>
+      </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {sections.map((section) => {
           const Icon = section.icon

@@ -26,7 +26,6 @@ export {
   useModels,
   useProviders,
   usePublishAgent,
-  useRenameWorkflow,
   useRetryRun,
   useRun,
   useRunEval,
@@ -43,6 +42,7 @@ export {
   useTriggerEvents,
   useUpdateAgentMeta,
   useUpdateEvalSet,
+  useUpdateWorkflow,
   useUpsertEvalRow,
   useVersions,
   useWorkflow,
@@ -55,6 +55,22 @@ export { RunPage, type RunPageProps } from './run-page'
 export { RunsExplorer, type RunsExplorerProps } from './runs-explorer'
 export { WfApp, type WfAppProps } from './wf-app'
 export {
+  WfTabsProvider,
+  useWfTabs,
+  useWfTabsOptional,
+  HOME_TAB_ID,
+  type WfTab,
+  type WfTabsState,
+  type WfTabsProviderProps,
+} from './wf-tabs'
+export { WfTabStrip } from './wf-tab-strip'
+export {
+  classifyAssetPath,
+  isAssetPath,
+  assetTabId,
+  type WfAsset,
+} from './wf-tab-routes'
+export {
   WfNavProvider,
   WfLink,
   useWfNav,
@@ -64,6 +80,7 @@ export {
 } from './nav'
 export {
   WfShell,
+  WfShellAssetProvider,
   type WfShellProps,
   type WfCrumb,
   type WfCrumbEditable,

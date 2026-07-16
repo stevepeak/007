@@ -47,7 +47,6 @@ import {
   listVersions,
   listWorkflows,
   publishAgent,
-  renameWorkflow,
   saveVersion,
   setVersionAiSummary,
   updateAgentDraft,
@@ -55,6 +54,7 @@ import {
   updateDraft,
   updateEvalRun,
   updateEvalSet,
+  updateWorkflow,
   upsertEvalRow,
 } from '../storage/data'
 
@@ -729,11 +729,15 @@ export function createWfSdkHandlers<TDeps>(
           return json(summary)
         }
 
-        case 'renameWorkflow': {
+        case 'updateWorkflow': {
           const workflowId = str(params, 'workflowId')
-          const name = str(params, 'name')
+          const p = params as { name?: string; description?: string | null }
           await requireExists(db, workflowId)
-          await renameWorkflow(db, { workflowId, name })
+          await updateWorkflow(db, {
+            workflowId,
+            name: p.name,
+            description: p.description,
+          })
           return json({ ok: true })
         }
 

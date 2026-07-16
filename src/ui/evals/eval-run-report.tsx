@@ -1,4 +1,4 @@
-import { ExternalLink } from 'lucide-react'
+import { ExternalLink, Target } from 'lucide-react'
 
 import type {
   CheckResult,
@@ -9,7 +9,6 @@ import { cn } from '../cn'
 import { useEvalRun, useEvalSet } from '../hooks'
 import { WfLink } from '../nav'
 import { WfShell } from '../shell'
-import { sectionCrumb } from '../wf-crumbs'
 
 import { describeCheck, EmptyState, formatTimestamp, PassRate, Score } from './shared'
 
@@ -31,8 +30,7 @@ export function EvalRunReport({ evalRunId, className }: EvalRunReportProps) {
     <WfShell
       crumbs={[
         { home: true },
-        sectionCrumb('evals'),
-        { label: 'Run report' },
+        { label: 'Run report', icon: Target, iconClassName: 'text-rose-500' },
       ]}
       scroll
       className={className}

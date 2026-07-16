@@ -418,7 +418,11 @@ export interface WfDataClient {
     workflowId: string
     graph: WorkflowGraph
   }): Promise<WfChangeSummary>
-  renameWorkflow(input: { workflowId: string; name: string }): Promise<void>
+  updateWorkflow(input: {
+    workflowId: string
+    name?: string
+    description?: string | null
+  }): Promise<void>
   discardDraft(input: { workflowId: string }): Promise<void>
   listVersions(workflowId: string): Promise<WfVersionSummary[]>
   getVersion(

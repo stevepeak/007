@@ -1,4 +1,10 @@
-import { GitBranch, History, Loader2, Sparkles } from 'lucide-react'
+import {
+  GitBranch,
+  History,
+  Loader2,
+  Sparkles,
+  Workflow as WorkflowIcon,
+} from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { WorkflowGraph } from '../../engine'
@@ -7,16 +13,15 @@ import { useWfClient, useWfComponents } from '../context'
 import { Tooltip } from '../tooltip'
 import {
   useModels,
-  useRenameWorkflow,
   useSaveDraft,
   useSaveVersion,
   useSummarizeChanges,
   useTools,
+  useUpdateWorkflow,
   useVersions,
   useWorkflow,
 } from '../hooks'
 import { WfShell } from '../shell'
-import { sectionCrumb } from '../wf-crumbs'
 import { BottomDock } from './bottom-dock'
 import { NodeInspector } from './node-inspector'
 import { NodePalette } from './node-palette'
@@ -70,6 +75,7 @@ export function WorkflowEditor({
       workflowId={workflowId}
       initialGraph={initialGraph}
       initialName={data.workflow.name}
+      initialDescription={data.workflow.description ?? ''}
       className={className}
       onPublished={onPublished}
     />
@@ -180,12 +186,14 @@ function EditorInner({
   workflowId,
   initialGraph,
   initialName,
+  initialDescription,
   className,
   onPublished,
 }: {
   workflowId: string
   initialGraph: WorkflowGraph
   initialName: string
+  initialDescription: string
   className?: string
   onPublished?: (result: { versionId: string; versionNumber: number }) => void
 }) {
@@ -194,6 +202,10 @@ function EditorInner({
   const [graph, setGraph] = useState<WorkflowGraph>(initialGraph)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [name, setName] = useState(initialName)
+  // The workflow's description — a plain field, committed to the server on blur
+  // (not part of the graph/undo history or the unsaved-draft dirty state).
+  const [description, setDescription] = useState(initialDescription)
+  const committedDesc = useRef(initialDescription)
   const [showVersions, setShowVersions] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [showPublish, setShowPublish] = useState(false)
@@ -221,7 +233,7 @@ function EditorInner({
   const versions = useVersions(workflowId)
   const saveDraft = useSaveDraft()
   const saveVersion = useSaveVersion()
-  const rename = useRenameWorkflow()
+  const update = useUpdateWorkflow()
 
   const defaults: NodeDefaults = {
     modelId: models.data?.[0]?.id ?? '',
@@ -327,7 +339,16 @@ function EditorInner({
     }
     setName(trimmed)
     pushSnapshot({ graph, name: trimmed, label: `Renamed to "${trimmed}"` })
-    rename.mutate({ workflowId, name: trimmed })
+    update.mutate({ workflowId, name: trimmed })
+  }
+
+  // Blurring the description commits it to the server (no undo history entry).
+  function commitDescription() {
+    const next = description.trim()
+    if (next === committedDesc.current) return
+    committedDesc.current = next
+    setDescription(next)
+    update.mutate({ workflowId, description: next || null })
   }
 
   function undo() {
@@ -424,9 +445,8 @@ function EditorInner({
     <>
       <WfShell
         className={className}
+        titleIcon={<WorkflowIcon className="size-5 shrink-0 text-indigo-500" />}
         crumbs={[
-          { home: true },
-          sectionCrumb('workflows'),
           {
             editable: {
               value: name,
@@ -436,6 +456,12 @@ function EditorInner({
             },
           },
         ]}
+        descriptionEditable={{
+          value: description,
+          onChange: setDescription,
+          onCommit: commitDescription,
+          ariaLabel: 'Workflow description',
+        }}
         actions={
           <>
             <Tooltip

@@ -314,13 +314,17 @@ export async function listVersions(db: WfDb, workflowId: string) {
     .orderBy(desc(wfWorkflowVersion.versionNumber))
 }
 
-export async function renameWorkflow(
+export async function updateWorkflow(
   db: WfDb,
-  input: { workflowId: string; name: string },
+  input: { workflowId: string; name?: string; description?: string | null },
 ) {
+  const patch: { name?: string; description?: string | null; updatedAt: Date } =
+    { updatedAt: new Date() }
+  if (input.name !== undefined) patch.name = input.name
+  if (input.description !== undefined) patch.description = input.description
   await db
     .update(wfWorkflow)
-    .set({ name: input.name, updatedAt: new Date() })
+    .set(patch)
     .where(eq(wfWorkflow.id, input.workflowId))
 }
 

@@ -1,4 +1,4 @@
-import { ArrowUpRight, Play, Plus } from 'lucide-react'
+import { ArrowUpRight, Goal, Play, Plus } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { WfEvalRowDTO } from '../../server/protocol'
@@ -6,10 +6,9 @@ import { agentColor, agentIcon } from '../agent-appearance'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { useAgents, useEvalRuns, useEvalSet, useUpdateEvalSet, useUpsertEvalRow } from '../hooks'
-import { useWfNav, WfLink } from '../nav'
+import { useOpenAsset, useWfNav, WfLink } from '../nav'
 import { ArchiveButton } from '../archive-button'
 import { WfShell } from '../shell'
-import { sectionCrumb } from '../wf-crumbs'
 import { RunConfigDialog } from './run-config-dialog'
 import { EmptyState, formatTimestamp, PassRate, Score, Tabs } from './shared'
 
@@ -66,11 +65,71 @@ export function EvalSet({ setId, className }: EvalSetProps) {
     <WfShell
       className={className}
       scroll
+      titleIcon={<Goal className="size-5 shrink-0 text-rose-500" />}
       crumbs={[
         { home: true },
-        sectionCrumb('evals'),
-        { label: set ? name || 'Untitled goal' : 'Goal' },
+        set
+          ? {
+              editable: {
+                value: name,
+                onChange: setName,
+                onCommit: () => {
+                  const next = name.trim() || 'Untitled goal'
+                  if (next !== set.name) updateSet.mutate({ setId, name: next })
+                },
+                ariaLabel: 'Goal name',
+              },
+            }
+          : { label: 'Goal' },
       ]}
+      descriptionEditable={
+        set
+          ? {
+              value: description,
+              onChange: setDescription,
+              onCommit: () => {
+                if (description !== (set.description ?? ''))
+                  updateSet.mutate({ setId, description: description || null })
+              },
+              ariaLabel: 'Goal description',
+            }
+          : undefined
+      }
+      actions={
+        set ? (
+          <>
+            <ArchiveButton
+              description={
+                <>
+                  Archive <strong>{name || 'this goal'}</strong>? It’ll be
+                  removed from your goals list.
+                </>
+              }
+              onConfirm={() => {
+                updateSet.mutate({ setId, archived: true })
+                navigate('evals')
+              }}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={upsertRow.isPending}
+              onClick={() => void addSample()}
+            >
+              <Plus className="size-4" />
+              Add sample
+            </Button>
+            <Button
+              size="sm"
+              disabled={rows.length === 0}
+              onClick={() => setRunOpen(true)}
+            >
+              <Play className="size-4" />
+              Run Tests
+            </Button>
+          </>
+        ) : undefined
+      }
     >
       <div className="mx-auto max-w-5xl space-y-5 p-6">
         {isLoading && !set ? (
@@ -79,67 +138,6 @@ export function EvalSet({ setId, className }: EvalSetProps) {
           <EmptyState message="This goal doesn't exist, or was archived / removed." />
         ) : (
           <>
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0 flex-1">
-                <input
-                  value={name}
-                  maxLength={60}
-                  placeholder="Untitled goal"
-                  aria-label="Goal name"
-                  onChange={(e) => setName(e.target.value)}
-                  onBlur={() => {
-                    const next = name.trim() || 'Untitled goal'
-                    if (next !== set.name)
-                      updateSet.mutate({ setId, name: next })
-                  }}
-                  className="w-full truncate rounded bg-transparent text-lg font-semibold text-neutral-900 outline-none placeholder:text-neutral-300 focus:bg-neutral-50"
-                />
-                <textarea
-                  value={description}
-                  rows={1}
-                  placeholder="Add a description…"
-                  aria-label="Goal description"
-                  onChange={(e) => setDescription(e.target.value)}
-                  onBlur={() => {
-                    if (description !== (set.description ?? ''))
-                      updateSet.mutate({ setId, description: description || null })
-                  }}
-                  className="w-full resize-none rounded bg-transparent text-sm text-neutral-600 outline-none placeholder:text-neutral-300 focus:bg-neutral-50"
-                />
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <ArchiveButton
-                  description={
-                    <>
-                      Archive <strong>{name || 'this goal'}</strong>? It’ll be
-                      removed from your goals list.
-                    </>
-                  }
-                  onConfirm={() => {
-                    updateSet.mutate({ setId, archived: true })
-                    navigate('evals')
-                  }}
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={upsertRow.isPending}
-                  onClick={() => void addSample()}
-                >
-                  <Plus className="size-4" />
-                  Add sample
-                </Button>
-                <Button
-                  size="sm"
-                  disabled={rows.length === 0}
-                  onClick={() => setRunOpen(true)}
-                >
-                  <Play className="size-4" />
-                  Run this goal
-                </Button>
-              </div>
-            </div>
-
             <TargetRow targetId={set.targetId} />
 
             <RunConfigDialog
@@ -211,7 +209,7 @@ function SamplesTable({
   setId: string
   rows: WfEvalRowDTO[]
 }) {
-  const { navigate } = useWfNav()
+  const open = useOpenAsset()
   if (rows.length === 0) {
     return (
       <EmptyState message="No samples yet. Add one to define a Given (initial state) and its Tests." />
@@ -227,7 +225,11 @@ function SamplesTable({
         <button
           key={r.id}
           type="button"
-          onClick={() => navigate(`evals/${setId}/samples/${r.id}`)}
+          onClick={(e) =>
+            open(`evals/${setId}/samples/${r.id}`, {
+              newTab: e.metaKey || e.ctrlKey,
+            })
+          }
           className="grid w-full grid-cols-[1fr_auto] items-center gap-4 border-b border-neutral-100 px-4 py-3 text-left last:border-b-0 hover:bg-neutral-50"
         >
           <div className="min-w-0">
@@ -252,7 +254,7 @@ function SamplesTable({
 // Test runs that included this set. Filtered from the global run history (there
 // is no per-set run table — a run spans one or more sets by `setIds`).
 function RunsForSet({ setId }: { setId: string }) {
-  const { navigate } = useWfNav()
+  const open = useOpenAsset()
   const runsQuery = useEvalRuns()
   const runs = (runsQuery.data ?? []).filter((r) => r.setIds.includes(setId))
   if (runsQuery.isLoading) return <EmptyState message="Loading test runs…" />
@@ -270,7 +272,9 @@ function RunsForSet({ setId }: { setId: string }) {
         <button
           key={r.id}
           type="button"
-          onClick={() => navigate(`evals/runs/${r.id}`)}
+          onClick={(e) =>
+            open(`evals/runs/${r.id}`, { newTab: e.metaKey || e.ctrlKey })
+          }
           className="grid w-full grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-neutral-100 px-4 py-3 text-left last:border-b-0 hover:bg-neutral-50"
         >
           <div className="flex items-center gap-2">

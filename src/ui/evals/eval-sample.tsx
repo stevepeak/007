@@ -1,4 +1,13 @@
-import { Check, ChevronRight, FlaskConical, Play, Plus, X } from 'lucide-react'
+import {
+  Check,
+  ChevronRight,
+  FlaskConical,
+  Goal,
+  Microscope,
+  Play,
+  Plus,
+  X,
+} from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type {
@@ -20,16 +29,14 @@ import {
   useTools,
   useUpsertEvalRow,
 } from '../hooks'
-import { useWfNav } from '../nav'
+import { useOpenAsset, useWfNav } from '../nav'
 import { ArchiveButton } from '../archive-button'
 import { WfShell } from '../shell'
 import { ToolIcon } from '../tool-icon'
-import { sectionCrumb } from '../wf-crumbs'
 import { RunConfigDialog } from './run-config-dialog'
 import {
   describeCheck,
   EmptyState,
-  FamilyTag,
   formatTimestamp,
   PassRate,
   Score,
@@ -119,12 +126,62 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
     <WfShell
       className={className}
       scroll
+      titleIcon={<Microscope className="size-5 shrink-0 text-rose-500" />}
       crumbs={[
         { home: true },
-        sectionCrumb('evals'),
-        { label: set?.name ?? 'Goal', to: `evals/${setId}` },
-        { label: draft?.name || 'Sample' },
+        {
+          label: set?.name ?? 'Goal',
+          to: `evals/${setId}`,
+          icon: Goal,
+          iconClassName: 'text-rose-500',
+        },
+        row && draft
+          ? {
+              editable: {
+                value: draft.name,
+                onChange: (name) => setDraft({ ...draft, name }),
+                onCommit: () => {
+                  if (draft.name !== row.name) persist(draft)
+                },
+                ariaLabel: 'Sample name',
+              },
+            }
+          : { label: 'Sample' },
       ]}
+      descriptionEditable={
+        row && draft
+          ? {
+              value: draft.description,
+              onChange: (description) => setDraft({ ...draft, description }),
+              onCommit: () => {
+                if (draft.description !== (row.description ?? '')) persist(draft)
+              },
+              ariaLabel: 'Sample description',
+            }
+          : undefined
+      }
+      actions={
+        row && draft ? (
+          <>
+            <ArchiveButton
+              description={
+                <>
+                  Archive <strong>{draft.name || 'this sample'}</strong>? It’ll
+                  be removed from the goal, along with its tests.
+                </>
+              }
+              onConfirm={() => {
+                deleteRow.mutate(row.id)
+                navigate(`evals/${setId}`)
+              }}
+            />
+            <Button size="sm" variant="outline" onClick={() => setRunOpen(true)}>
+              <Play className="size-4" />
+              Run Tests
+            </Button>
+          </>
+        ) : undefined
+      }
     >
       <div className="mx-auto max-w-5xl space-y-5 p-6">
         {isLoading && !row ? (
@@ -133,58 +190,6 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
           <EmptyState message="This sample doesn't exist, or was archived / removed." />
         ) : (
           <>
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0 flex-1">
-                <input
-                  value={draft.name}
-                  maxLength={80}
-                  placeholder="Untitled sample"
-                  aria-label="Sample name"
-                  onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                  onBlur={() => {
-                    if (draft.name !== row.name) persist(draft)
-                  }}
-                  className="w-full truncate rounded bg-transparent text-lg font-semibold text-neutral-900 outline-none placeholder:text-neutral-300 focus:bg-neutral-50"
-                />
-                <textarea
-                  value={draft.description}
-                  rows={1}
-                  placeholder="Add a description…"
-                  aria-label="Sample description"
-                  onChange={(e) =>
-                    setDraft({ ...draft, description: e.target.value })
-                  }
-                  onBlur={() => {
-                    if (draft.description !== (row.description ?? ''))
-                      persist(draft)
-                  }}
-                  className="w-full resize-none rounded bg-transparent text-sm text-neutral-600 outline-none placeholder:text-neutral-300 focus:bg-neutral-50"
-                />
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <ArchiveButton
-                  description={
-                    <>
-                      Archive <strong>{draft.name || 'this sample'}</strong>?
-                      It’ll be removed from the goal, along with its tests.
-                    </>
-                  }
-                  onConfirm={() => {
-                    deleteRow.mutate(row.id)
-                    navigate(`evals/${setId}`)
-                  }}
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setRunOpen(true)}
-                >
-                  <Play className="size-4" />
-                  Run goal
-                </Button>
-              </div>
-            </div>
-
             <RunConfigDialog
               open={runOpen}
               onClose={() => setRunOpen(false)}
@@ -689,6 +694,7 @@ function TestsList({
   onChange: (next: CheckTree) => void
 }) {
   const { navigate } = useWfNav()
+  const open = useOpenAsset()
   const { Button } = useWfComponents()
 
   const addTest = () => {
@@ -728,23 +734,27 @@ function TestsList({
             <button
               key={i}
               type="button"
-              onClick={() =>
-                navigate(`evals/${setId}/samples/${sampleId}/tests/${i}`)
+              onClick={(e) =>
+                open(`evals/${setId}/samples/${sampleId}/tests/${i}`, {
+                  newTab: e.metaKey || e.ctrlKey,
+                })
               }
-              className="flex w-full items-start gap-2 px-4 py-3 text-left hover:bg-neutral-50"
+              className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-neutral-50"
             >
               <FlaskConical className="mt-0.5 size-4 shrink-0 text-neutral-400" />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm text-neutral-800">
                   {describeCheck(c)}
                 </div>
-                <div className="mt-1 flex items-center gap-2">
-                  <FamilyTag scored={c.type === 'llm_judge'} />
-                  <code className="font-mono text-[11px] text-neutral-400">
-                    {c.type}
-                  </code>
-                </div>
+                {c.description ? (
+                  <div className="mt-0.5 truncate text-xs text-neutral-500">
+                    {c.description}
+                  </div>
+                ) : null}
               </div>
+              <code className="mt-0.5 shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-[11px] text-neutral-500">
+                {c.type}
+              </code>
               <ChevronRight className="mt-0.5 size-4 shrink-0 text-neutral-300" />
             </button>
           ))}
@@ -762,7 +772,7 @@ function TestsList({
 // `setIds` — there is no per-sample run table — so these are the goal's runs,
 // filtered from the global history. Clicking one opens the full run report.
 function RunsForSample({ setId }: { setId: string }) {
-  const { navigate } = useWfNav()
+  const open = useOpenAsset()
   const runsQuery = useEvalRuns()
   const runs = (runsQuery.data ?? []).filter((r) => r.setIds.includes(setId))
 
@@ -783,7 +793,9 @@ function RunsForSample({ setId }: { setId: string }) {
         <button
           key={r.id}
           type="button"
-          onClick={() => navigate(`evals/runs/${r.id}`)}
+          onClick={(e) =>
+            open(`evals/runs/${r.id}`, { newTab: e.metaKey || e.ctrlKey })
+          }
           className="grid w-full grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-neutral-100 px-4 py-3 text-left last:border-b-0 hover:bg-neutral-50"
         >
           <div className="flex items-center gap-2">

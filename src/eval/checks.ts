@@ -16,18 +16,30 @@ export const evalMatchSchema = z.enum([
 ])
 export type EvalMatch = z.infer<typeof evalMatchSchema>
 
+// Common, presentation-only metadata carried by every check. Authored in the
+// Test editor; ignored by the grader. Kept optional so pre-existing checks (and
+// the bun:test harness) validate without them.
+const checkMeta = {
+  /** User-facing title; when absent the UI derives one from the assertion. */
+  label: z.string().optional(),
+  /** Longer free-text explanation of what this check asserts. */
+  description: z.string().optional(),
+}
+
 // A single assertion. Two families, split by how they produce a verdict:
 //   • binary/deterministic — pass|fail read straight off the run trace.
 //   • subjective/scored    — an LLM judge returns pass|fail AND a 0..1 score.
 export const evalCheckSchema = z.discriminatedUnion('type', [
   // ── binary / deterministic ────────────────────────────────────────────────
   z.object({
+    ...checkMeta,
     type: z.literal('tool_called'),
     toolId: z.string(),
     /** Assert the tool WAS (true) or was NOT (false) called during the run. */
     called: z.boolean(),
   }),
   z.object({
+    ...checkMeta,
     type: z.literal('tool_args_match'),
     toolId: z.string(),
     /** Optional JSON path into the recorded `meta.args`; omit = whole object. */
@@ -36,11 +48,13 @@ export const evalCheckSchema = z.discriminatedUnion('type', [
     value: z.unknown(),
   }),
   z.object({
+    ...checkMeta,
     type: z.literal('node_visited'),
     nodeId: z.string(),
     visited: z.boolean(),
   }),
   z.object({
+    ...checkMeta,
     type: z.literal('node_input_match'),
     nodeId: z.string(),
     /** Optional JSON path into the node's recorded `input`; omit = whole. */
@@ -49,6 +63,7 @@ export const evalCheckSchema = z.discriminatedUnion('type', [
     value: z.unknown(),
   }),
   z.object({
+    ...checkMeta,
     type: z.literal('output_match'),
     /** Optional JSON path into the run `output`; omit = whole object. */
     path: z.string().optional(),
@@ -57,6 +72,7 @@ export const evalCheckSchema = z.discriminatedUnion('type', [
   }),
   // ── subjective / scored ───────────────────────────────────────────────────
   z.object({
+    ...checkMeta,
     type: z.literal('llm_judge'),
     rubric: z.string(),
     /** Judge model; falls back to a suite/run default when omitted. */

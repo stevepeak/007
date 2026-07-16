@@ -57,7 +57,7 @@ export function createHttpWfDataClient(
     updateDraft: (input) => call('updateDraft', input),
     saveVersion: (input) => call('saveVersion', input),
     summarizeChanges: (input) => call('summarizeChanges', input),
-    renameWorkflow: (input) => call('renameWorkflow', input),
+    updateWorkflow: (input) => call('updateWorkflow', input),
     discardDraft: (input) => call('discardDraft', input),
     listVersions: (workflowId) => call('listVersions', { workflowId }),
     getVersion: (versionId) => call('getVersion', { versionId }),

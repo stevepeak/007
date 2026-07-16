@@ -3,8 +3,11 @@ import {
   Binary,
   Braces,
   ChevronDown,
+  FlaskConical,
   Gauge,
+  Goal,
   type LucideIcon,
+  Microscope,
   Play,
   Text,
   Waypoints,
@@ -24,7 +27,6 @@ import { useWfNav } from '../nav'
 import { ArchiveButton } from '../archive-button'
 import { WfShell } from '../shell'
 import { ToolIcon } from '../tool-icon'
-import { sectionCrumb } from '../wf-crumbs'
 import { ModelSelect } from '../editor/model-select'
 import { RunConfigDialog } from './run-config-dialog'
 import { describeCheck, EmptyState } from './shared'
@@ -103,6 +105,11 @@ function defaultCheck(type: EvalCheck['type']): EvalCheck {
   }
 }
 
+/** Carry the user-authored title/description across a type/family switch. */
+function withMeta(check: EvalCheck, from: EvalCheck | null): EvalCheck {
+  return { ...check, label: from?.label, description: from?.description }
+}
+
 /** Render a stored check value back into an editable string. */
 function valueToStr(v: unknown): string {
   if (typeof v === 'string') return v
@@ -149,13 +156,19 @@ export function EvalTest({
     row && Number.isInteger(index) ? row.checks.checks[index] : undefined
   const upsertRow = useUpsertEvalRow()
 
-  // Local draft of this one check, synced per (row, index).
+  // Local draft of this one check, synced per (row, index). Title/description
+  // mirror the draft's label/description as their own inputs so typing stays
+  // smooth; they commit on blur.
   const [draft, setDraft] = useState<EvalCheck | null>(null)
+  const [title, setTitle] = useState('')
+  const [desc, setDesc] = useState('')
   const syncKey = useRef<string | null>(null)
   useEffect(() => {
     const key = row ? `${row.id}:${index}` : null
     if (stored && key && syncKey.current !== key) {
       setDraft(stored)
+      setTitle(stored.label ?? '')
+      setDesc(stored.description ?? '')
       syncKey.current = key
     }
   }, [stored, row, index])
@@ -175,6 +188,12 @@ export function EvalTest({
     })
   }
 
+  // Commit the user-authored title/description onto the check.
+  const commitMeta = (patch: { label?: string; description?: string }) => {
+    if (!draft) return
+    persist({ ...draft, ...patch } as EvalCheck)
+  }
+
   const removeTest = () => {
     if (!row) return
     const checks = row.checks.checks.filter((_, i) => i !== index)
@@ -191,20 +210,82 @@ export function EvalTest({
 
   const setFamily = (family: TestFamily) => {
     if (family === familyOf(draft ?? defaultCheck('tool_called'))) return
-    persist(defaultCheck(family === 'scored' ? 'llm_judge' : 'tool_called'))
+    persist(
+      withMeta(
+        defaultCheck(family === 'scored' ? 'llm_judge' : 'tool_called'),
+        draft,
+      ),
+    )
   }
 
   return (
     <WfShell
       className={className}
       scroll
+      titleIcon={<FlaskConical className="size-5 shrink-0 text-rose-500" />}
       crumbs={[
         { home: true },
-        sectionCrumb('evals'),
-        { label: set?.name ?? 'Goal', to: `evals/${setId}` },
-        { label: row?.name ?? 'Sample', to: `evals/${setId}/samples/${sampleId}` },
-        { label: draft ? describeCheck(draft) : 'Test' },
+        {
+          label: set?.name ?? 'Goal',
+          to: `evals/${setId}`,
+          icon: Goal,
+          iconClassName: 'text-rose-500',
+        },
+        {
+          label: row?.name ?? 'Sample',
+          to: `evals/${setId}/samples/${sampleId}`,
+          icon: Microscope,
+          iconClassName: 'text-rose-500',
+        },
+        row && draft
+          ? {
+              editable: {
+                value: title,
+                onChange: setTitle,
+                onCommit: () => {
+                  if ((title.trim() || undefined) !== draft.label)
+                    commitMeta({ label: title.trim() || undefined })
+                },
+                ariaLabel: 'Test title',
+                placeholder: describeCheck({ ...draft, label: undefined }),
+              },
+            }
+          : { label: 'Test' },
       ]}
+      descriptionEditable={
+        row && draft
+          ? {
+              value: desc,
+              onChange: setDesc,
+              onCommit: () => {
+                if ((desc.trim() || undefined) !== draft.description)
+                  commitMeta({ description: desc.trim() || undefined })
+              },
+              ariaLabel: 'Test description',
+            }
+          : undefined
+      }
+      actions={
+        row && draft ? (
+          <>
+            <ArchiveButton
+              title="Delete test"
+              confirmLabel="Hold to delete"
+              description={
+                <>
+                  Delete <strong>{describeCheck(draft)}</strong>? It’ll be
+                  removed from this sample&apos;s tests.
+                </>
+              }
+              onConfirm={removeTest}
+            />
+            <Button size="sm" variant="outline" onClick={() => setRunOpen(true)}>
+              <Play className="size-4" />
+              Run Test
+            </Button>
+          </>
+        ) : undefined
+      }
     >
       <div className="mx-auto max-w-5xl space-y-5 p-6">
         {isLoading && !row ? (
@@ -213,40 +294,6 @@ export function EvalTest({
           <EmptyState message="This test doesn't exist, or was removed." />
         ) : (
           <>
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0 flex-1">
-                <h1 className="truncate text-lg font-semibold text-neutral-900">
-                  {describeCheck(draft)}
-                </h1>
-                <p className="mt-0.5 text-sm text-neutral-500">
-                  {draft.type === 'llm_judge'
-                    ? 'An LLM judge scores the run against a rubric.'
-                    : 'A deterministic pass/fail check read from the run trace.'}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <ArchiveButton
-                  title="Delete test"
-                  confirmLabel="Hold to delete"
-                  description={
-                    <>
-                      Delete <strong>{describeCheck(draft)}</strong>? It’ll be
-                      removed from this sample&apos;s tests.
-                    </>
-                  }
-                  onConfirm={removeTest}
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setRunOpen(true)}
-                >
-                  <Play className="size-4" />
-                  Run goal
-                </Button>
-              </div>
-            </div>
-
             <RunConfigDialog
               open={runOpen}
               onClose={() => setRunOpen(false)}
@@ -330,7 +377,7 @@ function BinaryConfig({
         <Label>What to check</Label>
         <BinaryTypePicker
           value={check.type as BinaryType}
-          onChange={(t) => persist(defaultCheck(t))}
+          onChange={(t) => persist(withMeta(defaultCheck(t), check))}
         />
       </div>
       <BinaryFields check={check} persist={persist} />

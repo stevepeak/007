@@ -1,7 +1,7 @@
 import {
   Activity,
   Bot,
-  FlaskConical,
+  Target,
   Wrench,
   Workflow as WorkflowIcon,
   type LucideIcon,
@@ -23,7 +23,7 @@ const SECTIONS: Record<
   agents: { title: 'Agents', icon: Bot, iconClassName: 'text-violet-500', to: 'agents' },
   tools: { title: 'Tools', icon: Wrench, iconClassName: 'text-emerald-500', to: 'tools' },
   runs: { title: 'Runs', icon: Activity, iconClassName: 'text-sky-500', to: 'runs' },
-  evals: { title: 'Evals', icon: FlaskConical, iconClassName: 'text-rose-500', to: 'evals' },
+  evals: { title: 'Evals', icon: Target, iconClassName: 'text-rose-500', to: 'evals' },
 }
 
 /**

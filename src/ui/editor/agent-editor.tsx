@@ -8,6 +8,7 @@ import {
   AGENT_COLORS,
   AGENT_ICONS,
   agentColor,
+  agentIcon,
   DEFAULT_AGENT_COLOR,
 } from '../agent-appearance'
 import { cn } from '../cn'
@@ -22,7 +23,6 @@ import {
 } from '../hooks'
 import { WfShell } from '../shell'
 import { Tooltip } from '../tooltip'
-import { sectionCrumb } from '../wf-crumbs'
 import { AgentOutputEditor } from './agent-output-editor'
 import { ModelSelect } from './model-select'
 import { PromptBodyEditor } from './prompt-body-editor'
@@ -171,9 +171,20 @@ function AgentEditorInner({
       <WfShell
         className={className}
         scroll
+        titleIcon={(() => {
+          const Icon = agentIcon(icon)
+          return (
+            <span
+              className={cn(
+                'flex size-7 items-center justify-center rounded-md',
+                agentColor(color).chip,
+              )}
+            >
+              <Icon className="size-4" />
+            </span>
+          )
+        })()}
         crumbs={[
-          { home: true },
-          sectionCrumb('agents'),
           {
             editable: {
               value: name,

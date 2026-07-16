@@ -238,12 +238,15 @@ export function useVersions(workflowId: string) {
   })
 }
 
-export function useRenameWorkflow() {
+export function useUpdateWorkflow() {
   const client = useWfClient()
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (input: { workflowId: string; name: string }) =>
-      client.renameWorkflow(input),
+    mutationFn: (input: {
+      workflowId: string
+      name?: string
+      description?: string | null
+    }) => client.updateWorkflow(input),
     onSuccess: (_r, input) => {
       void qc.invalidateQueries({ queryKey: keys.workflow(input.workflowId) })
       void qc.invalidateQueries({ queryKey: keys.workflows })

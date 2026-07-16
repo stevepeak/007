@@ -1,4 +1,4 @@
-import { ChevronDown, RotateCcw } from 'lucide-react'
+import { Activity, ChevronDown, RotateCcw } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import type { WorkflowGraph, WorkflowNode } from '../engine'
@@ -10,7 +10,6 @@ import { useRetryRun, useRun } from './hooks'
 import { useWfNav } from './nav'
 import { RunNodeDock } from './run-node-dock'
 import { WfShell } from './shell'
-import { sectionCrumb } from './wf-crumbs'
 
 // Full-page run viewer. Clicking a row in the runs explorer lands here. The
 // centerpiece is the workflow rendered read-only at the exact version that ran,
@@ -98,12 +97,10 @@ function findNode(graph: WorkflowGraph, id: string): WorkflowNode | null {
 
 export type RunPageProps = {
   runId: string
-  /** Path (relative to basePath) the back link returns to. Defaults to `runs`. */
-  backTo?: string
   className?: string
 }
 
-export function RunPage({ runId, backTo = 'runs', className }: RunPageProps) {
+export function RunPage({ runId, className }: RunPageProps) {
   const { Badge } = useWfComponents()
   const { navigate } = useWfNav()
   const { data, isLoading, error } = useRun(runId)
@@ -167,9 +164,8 @@ export function RunPage({ runId, backTo = 'runs', className }: RunPageProps) {
   return (
     <WfShell
       className={className}
+      titleIcon={<Activity className="size-5 shrink-0 text-sky-500" />}
       crumbs={[
-        { home: true },
-        sectionCrumb('runs', { to: backTo }),
         {
           label: (
             <>

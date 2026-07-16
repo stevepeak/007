@@ -35,22 +35,6 @@ export function Score({ value }: { value: number | null }) {
   )
 }
 
-/** Tag for a test's family — binary (pass/fail) or scored (judged). */
-export function FamilyTag({ scored }: { scored: boolean }) {
-  return (
-    <span
-      className={cn(
-        'rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide',
-        scored
-          ? 'bg-amber-50 text-amber-700'
-          : 'bg-neutral-100 text-neutral-500',
-      )}
-    >
-      {scored ? 'scored' : 'binary'}
-    </span>
-  )
-}
-
 // ── Model brand marks ────────────────────────────────────────────────────────
 // A best-effort vendor tag for a model, used to render a colored logomark next
 // to a model name (in the model picker and anywhere models are listed).
@@ -196,6 +180,7 @@ export function formatTimestamp(ts: number): string {
 // the sample's test list and in the run report. Kept here so both surfaces agree.
 export function describeCheck(check: EvalCheck | undefined): string {
   if (!check) return 'check'
+  if (check.label?.trim()) return check.label.trim()
   switch (check.type) {
     case 'tool_called':
       return `${check.toolId || 'tool'} ${check.called ? 'called' : 'not called'}`
