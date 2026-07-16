@@ -193,6 +193,7 @@ function TargetRow({ targetId }: { targetId: string }) {
       </div>
       <WfLink
         to={`agents/${targetId}/edit`}
+        newTab
         className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-neutral-500 transition hover:text-neutral-800"
       >
         Open agent

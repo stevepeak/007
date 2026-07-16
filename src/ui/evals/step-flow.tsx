@@ -1,5 +1,5 @@
 import { type LucideIcon } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 
 import { cn } from '../cn'
 
@@ -41,9 +41,9 @@ export function StepFlow({ steps }: { steps: Step[] }) {
 }
 
 // ── Picker cards ─────────────────────────────────────────────────────────────
-// A choice between a few big tiles (icon + label + blurb + its own setting). Once
-// you pick one and hit Done, the picker collapses to a compact chip showing just
-// the chosen option; "Change" re-opens the tiles.
+// A choice between a few big tiles (icon + label + blurb + its own setting). The
+// tiles stay up — picking one just moves the selection (and swaps in that tile's
+// inline setting); there's no collapse step.
 
 type Accent = 'violet' | 'indigo' | 'sky' | 'amber'
 
@@ -65,61 +65,19 @@ type PickerOption<T extends string> = {
   badge?: string
   /** Setting editor shown inside the tile while it is the selected option. */
   setting?: ReactNode
-  /** Compact detail shown beside the label when collapsed. */
-  detail?: ReactNode
 }
 
 export function PickerCards<T extends string>({
   value,
   options,
   onSelect,
-  collapsedByDefault,
 }: {
   value: T
   options: PickerOption<T>[]
   onSelect: (value: T) => void
-  collapsedByDefault?: boolean
 }) {
-  const [editing, setEditing] = useState(!collapsedByDefault)
-  const selected = options.find((o) => o.value === value)
-
-  if (!editing && selected) {
-    const a = ACCENTS[selected.accent]
-    const Icon = selected.icon
-    return (
-      <div className="flex items-center gap-3 rounded-xl border border-neutral-200 p-3">
-        <span
-          className={cn(
-            'flex size-10 items-center justify-center rounded-lg',
-            a.icon,
-          )}
-        >
-          <Icon className="size-5" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold text-neutral-900">
-            {selected.label}
-          </div>
-          {selected.detail ? (
-            <div className="truncate text-xs text-neutral-500">
-              {selected.detail}
-            </div>
-          ) : null}
-        </div>
-        <button
-          type="button"
-          onClick={() => setEditing(true)}
-          className="text-xs font-medium text-neutral-500 hover:text-neutral-800"
-        >
-          Change
-        </button>
-      </div>
-    )
-  }
-
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-2 gap-3">
         {options.map((o) => {
           const Icon = o.icon
           const on = o.value === value
@@ -184,16 +142,6 @@ export function PickerCards<T extends string>({
             </div>
           )
         })}
-      </div>
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={() => setEditing(false)}
-          className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700"
-        >
-          Done
-        </button>
-      </div>
     </div>
   )
 }

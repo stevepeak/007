@@ -84,6 +84,10 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
   const { navigate } = useWfNav()
   const [tab, setTab] = useState<SampleTab>('config')
   const [runOpen, setRunOpen] = useState(false)
+  // Whether the "add mock" tool picker is open — lifted here so its trigger can
+  // live in the Mocks step's header (far right) while the picker renders in the
+  // step body.
+  const [addMockOpen, setAddMockOpen] = useState(false)
 
   const { data, isLoading } = useEvalSet(setId)
   const set = data?.set
@@ -120,6 +124,20 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
       fixtures: next.fixtures,
       checks: next.checks,
     })
+  }
+
+  // Append a test and open it. Lifted here so its trigger can live in the Tests
+  // step's header (far right).
+  const addTest = () => {
+    if (!draft) return
+    const checks = {
+      ...draft.checks,
+      checks: [...draft.checks.checks, DEFAULT_CHECK],
+    }
+    persist({ ...draft, checks })
+    navigate(
+      `evals/${setId}/samples/${sampleId}/tests/${checks.checks.length - 1}`,
+    )
   }
 
   return (
@@ -235,16 +253,24 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
                         set?.targetKind === 'workflow'
                           ? 'Mocked Nodes'
                           : 'Mocked Tools',
-                      aside: (
-                        <span className="text-[11px] uppercase tracking-wide text-neutral-400">
-                          Canned outputs
-                        </span>
-                      ),
+                      aside:
+                        (set?.targetKind ?? 'agent') === 'agent' ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setAddMockOpen((o) => !o)}
+                          >
+                            <Plus className="size-4" />
+                            Add mock
+                          </Button>
+                        ) : undefined,
                       content: (
                         <MockToolsPanel
                           targetId={set?.targetId ?? ''}
                           targetKind={set?.targetKind ?? 'agent'}
                           fixtures={draft.fixtures}
+                          addOpen={addMockOpen}
+                          onAddOpenChange={setAddMockOpen}
                           onChange={(fixtures) =>
                             persist({ ...draft, fixtures })
                           }
@@ -255,11 +281,10 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
                       key: 'tests',
                       title: 'Tests',
                       aside: (
-                        <span className="text-[11px] uppercase tracking-wide text-neutral-400">
-                          {draft.checks.checks.length === 1
-                            ? '1 test'
-                            : `${draft.checks.checks.length} tests`}
-                        </span>
+                        <Button size="sm" variant="ghost" onClick={addTest}>
+                          <Plus className="size-4" />
+                          Add test
+                        </Button>
                       ),
                       content: (
                         <TestsList
@@ -421,11 +446,16 @@ function MockToolsPanel({
   targetId,
   targetKind,
   fixtures,
+  addOpen,
+  onAddOpenChange,
   onChange,
 }: {
   targetId: string
   targetKind: WfEvalTargetKind
   fixtures: EvalFixtures
+  /** Whether the add-mock tool picker is open (its trigger is in the header). */
+  addOpen: boolean
+  onAddOpenChange: (open: boolean) => void
   onChange: (next: EvalFixtures) => void
 }) {
   if (targetKind !== 'agent') {
@@ -439,6 +469,8 @@ function MockToolsPanel({
     <AgentToolMocks
       targetId={targetId}
       fixtures={fixtures}
+      addOpen={addOpen}
+      onAddOpenChange={onAddOpenChange}
       onChange={onChange}
     />
   )
@@ -461,10 +493,14 @@ function previewOutput(v: unknown): string {
 function AgentToolMocks({
   targetId,
   fixtures,
+  addOpen,
+  onAddOpenChange,
   onChange,
 }: {
   targetId: string
   fixtures: EvalFixtures
+  addOpen: boolean
+  onAddOpenChange: (open: boolean) => void
   onChange: (next: EvalFixtures) => void
 }) {
   const detail = useAgent(targetId)
@@ -599,43 +635,43 @@ function AgentToolMocks({
           />
         </div>
       ) : (
-        <ToolAddPicker tools={available} onPick={(toolId) => setEditing(toolId)} />
+        <MockToolPicker
+          tools={available}
+          open={addOpen}
+          onPick={(toolId) => {
+            setEditing(toolId)
+            onAddOpenChange(false)
+          }}
+          onClose={() => onAddOpenChange(false)}
+        />
       )}
     </div>
   )
 }
 
-// The agent's tools not yet mocked. Picking one opens its output editor (dedupe
-// by toolId enforces one mock per tool). Expands inline (in normal flow) rather
-// than as an absolute popover, so it can't be clipped by the StepFlow card's
+// The agent's tools not yet mocked, shown when the header's "Add mock" trigger
+// is toggled on (`open`). Picking one opens its output editor (dedupe by toolId
+// enforces one mock per tool). Renders inline (in normal flow) rather than as an
+// absolute popover, so it can't be clipped by the StepFlow card's
 // `overflow-hidden`.
-function ToolAddPicker({
+function MockToolPicker({
   tools,
+  open,
   onPick,
+  onClose,
 }: {
   tools: ToolOption[]
+  open: boolean
   onPick: (toolId: string) => void
+  onClose: () => void
 }) {
-  const [open, setOpen] = useState(false)
+  if (!open) return null
 
   if (tools.length === 0) {
     return (
       <p className="px-1 py-1 text-xs text-neutral-400">
         Every tool the agent uses is already mocked.
       </p>
-    )
-  }
-
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-50"
-      >
-        <Plus className="size-4" />
-        Add mock
-      </button>
     )
   }
 
@@ -647,7 +683,7 @@ function ToolAddPicker({
         </span>
         <button
           type="button"
-          onClick={() => setOpen(false)}
+          onClick={onClose}
           className="text-xs font-medium text-neutral-500 hover:text-neutral-800"
         >
           Cancel
@@ -658,10 +694,7 @@ function ToolAddPicker({
           <button
             key={t.id}
             type="button"
-            onClick={() => {
-              onPick(t.id)
-              setOpen(false)
-            }}
+            onClick={() => onPick(t.id)}
             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-neutral-50"
           >
             <ToolIcon icon={t.icon} className="size-5" />
@@ -693,17 +726,7 @@ function TestsList({
   checks: CheckTree
   onChange: (next: CheckTree) => void
 }) {
-  const { navigate } = useWfNav()
   const open = useOpenAsset()
-  const { Button } = useWfComponents()
-
-  const addTest = () => {
-    const next = { ...checks, checks: [...checks.checks, DEFAULT_CHECK] }
-    onChange(next)
-    navigate(
-      `evals/${setId}/samples/${sampleId}/tests/${next.checks.length - 1}`,
-    )
-  }
 
   return (
     <div className="space-y-3">
@@ -760,10 +783,6 @@ function TestsList({
           ))}
         </div>
       )}
-      <Button size="sm" variant="ghost" onClick={addTest}>
-        <Plus className="size-4" />
-        Add test
-      </Button>
     </div>
   )
 }

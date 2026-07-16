@@ -336,7 +336,6 @@ function ConfigForm({
     <div className="space-y-3">
       <PickerCards
         value={family}
-        collapsedByDefault
         onSelect={(f) => setFamily(f)}
         options={[
           {
@@ -345,7 +344,6 @@ function ConfigForm({
             label: 'Binary',
             desc: 'A deterministic pass/fail check.',
             accent: 'sky',
-            detail: BINARY_TYPE_META[draft.type as BinaryType]?.label,
           },
           {
             value: 'scored',

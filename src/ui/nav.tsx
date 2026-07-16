@@ -90,13 +90,16 @@ export type WfLinkProps = Omit<
 > & {
   /** Destination relative to `basePath` (`''` = hub). */
   to: string
+  /** Always open in a NEW tab, even on a plain left-click. */
+  newTab?: boolean
 }
 
 // A link that renders a real anchor (so middle-click / SEO work) but hands
 // clicks to the tab-aware navigation. A plain left-click opens the destination
 // following the tab policy (replace the current asset tab, or a new tab from
-// Home); cmd/ctrl-click always opens it in a NEW tab.
-export function WfLink({ to, onClick, ...rest }: WfLinkProps) {
+// Home); cmd/ctrl-click always opens it in a NEW tab. Pass `newTab` to always
+// force a new tab (e.g. a link out of a page you want to keep open).
+export function WfLink({ to, onClick, newTab: forceNewTab, ...rest }: WfLinkProps) {
   const { navigate, hrefFor } = useWfNav()
   const tabs = useWfTabsOptional()
   return (
@@ -110,7 +113,7 @@ export function WfLink({ to, onClick, ...rest }: WfLinkProps) {
         // Shift/alt/middle/non-primary → let the browser handle it.
         if (e.button !== 0 || e.shiftKey || e.altKey) return
         e.preventDefault()
-        const newTab = e.metaKey || e.ctrlKey
+        const newTab = forceNewTab || e.metaKey || e.ctrlKey
         if (tabs) tabs.openAsset(to, { newTab })
         else navigate(to)
       }}
