@@ -223,15 +223,18 @@ export function EvalTest({
       className={className}
       scroll
       titleIcon={<FlaskConical className="size-5 shrink-0 text-rose-500" />}
+      assetLabel="Test"
       crumbs={[
         { home: true },
         {
+          assetLabel: 'Goal',
           label: set?.name ?? 'Goal',
           to: `evals/${setId}`,
           icon: Goal,
           iconClassName: 'text-rose-500',
         },
         {
+          assetLabel: 'Sample',
           label: row?.name ?? 'Sample',
           to: `evals/${setId}/samples/${sampleId}`,
           icon: Microscope,

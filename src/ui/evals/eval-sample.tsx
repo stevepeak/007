@@ -145,9 +145,11 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
       className={className}
       scroll
       titleIcon={<Microscope className="size-5 shrink-0 text-rose-500" />}
+      assetLabel="Sample"
       crumbs={[
         { home: true },
         {
+          assetLabel: 'Goal',
           label: set?.name ?? 'Goal',
           to: `evals/${setId}`,
           icon: Goal,

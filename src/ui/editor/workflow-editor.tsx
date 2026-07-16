@@ -446,6 +446,7 @@ function EditorInner({
       <WfShell
         className={className}
         titleIcon={<WorkflowIcon className="size-5 shrink-0 text-indigo-500" />}
+        assetLabel="Workflow"
         crumbs={[
           {
             editable: {

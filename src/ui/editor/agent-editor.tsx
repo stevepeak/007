@@ -184,6 +184,7 @@ function AgentEditorInner({
             </span>
           )
         })()}
+        assetLabel="Agent"
         crumbs={[
           {
             editable: {

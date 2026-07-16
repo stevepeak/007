@@ -66,6 +66,7 @@ export function EvalSet({ setId, className }: EvalSetProps) {
       className={className}
       scroll
       titleIcon={<Goal className="size-5 shrink-0 text-rose-500" />}
+      assetLabel="Goal"
       crumbs={[
         { home: true },
         set

@@ -52,6 +52,8 @@ export type WfCrumb = {
   home?: boolean
   /** Render this crumb as the asset's inline-editable title. */
   editable?: WfCrumbEditable
+  /** Asset-type label shown in gray before the icon, e.g. "Goal". */
+  assetLabel?: ReactNode
   /** Optional leading icon (e.g. a section marker). */
   icon?: LucideIcon
   /** Tailwind color class for `icon`, e.g. "text-rose-500". */
@@ -78,6 +80,8 @@ export type WfShellProps = {
   actions?: ReactNode
   /** Icon shown before the asset title. Overrides the leaf crumb's icon. */
   titleIcon?: ReactNode
+  /** Asset-type label shown in gray between the icon and the title, e.g. "Agent". */
+  assetLabel?: ReactNode
   /** One-line asset description shown under the title (static). */
   description?: ReactNode
   /** Editable description under the title; takes precedence over `description`. */
@@ -92,6 +96,7 @@ export function WfShell({
   className,
   actions,
   titleIcon,
+  assetLabel,
   description,
   descriptionEditable,
   scroll,
@@ -138,6 +143,11 @@ export function WfShell({
           </div>
         ) : null}
         <div className="flex items-center gap-2">
+          {assetLabel ? (
+            <span className="shrink-0 text-lg font-normal text-neutral-400">
+              {assetLabel}
+            </span>
+          ) : null}
           {icon}
           {editable ? (
             <EditableTitle editable={editable} />
@@ -170,6 +180,9 @@ function TrailCrumb({ crumb, isLast }: { crumb: WfCrumb; isLast: boolean }) {
   const text = crumb.editable ? crumb.editable.value || 'Untitled' : undefined
   const inner = (
     <span className="inline-flex items-center gap-1.5">
+      {crumb.assetLabel ? (
+        <span className="text-neutral-400">{crumb.assetLabel}</span>
+      ) : null}
       {crumb.icon ? (
         <crumb.icon className={cn('size-3.5', crumb.iconClassName)} />
       ) : null}

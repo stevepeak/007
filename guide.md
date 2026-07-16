@@ -586,14 +586,13 @@ navigate from your router:
 // app/(app)/wf/[[...slug]]/page.tsx
 'use client'
 import { WfApp } from '@stevepeak/007/ui'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { WfProvider } from '@/components/wf/provider'
 
 const BASE_PATH = '/wf'
 
 export default function WfPage() {
   const pathname = usePathname()
-  const router = useRouter()
   const path = pathname.replace(BASE_PATH, '').replace(/^\//, '')
   return (
     <WfProvider>
@@ -601,7 +600,11 @@ export default function WfPage() {
         <WfApp
           basePath={BASE_PATH}
           path={path}
-          navigate={(to) => router.push(to ? `${BASE_PATH}/${to}` : BASE_PATH)}
+          // pushState, NOT router.push — see the ⚠️ note below.
+          navigate={(to) => {
+            const url = to ? `${BASE_PATH}/${to}` : BASE_PATH
+            window.history.pushState(null, '', url)
+          }}
         />
       </div>
     </WfProvider>
@@ -612,6 +615,19 @@ export default function WfPage() {
 The nav seam (`src/ui/nav.tsx`) is router-agnostic: the SDK never imports a
 router. All internal links are relative to `basePath`; `navigate` receives a
 path relative to `basePath`.
+
+> ⚠️ **Navigate with `window.history.pushState`, not `router.push`.** `WfApp`
+> owns its own browser-style tab strip and internal sections; it drives the URL
+> **only** to keep deep links, refresh, and back/forward working — it does **not**
+> want an App Router route change. With `router.push` every asset click triggers a
+> full Next navigation: an RSC round-trip that re-executes the `(app)` layout and
+> **visibly remounts the whole tree under the tab strip** (the page appears to
+> refresh/flicker on each tab switch). `pushState` updates the URL client-side
+> only; Next keeps `usePathname()` in sync with it (and with back/forward via
+> `popstate`), so the injected `path` still updates with **no refetch and no
+> remount**. You therefore don't need `useRouter` at all — `usePathname` alone
+> reads the manually-pushed URL reactively. Symptom when this is wrong: switching
+> tabs inside `WfApp` reloads/flashes the surrounding app shell.
 
 ### Embedding just the run viewer
 
