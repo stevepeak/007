@@ -65,7 +65,8 @@ export type WorkflowTestCase<TDeps> = {
 
 export type WorkflowTestRun = {
   output: unknown
-  outputNodeId: string
+  /** `null` when the run ended on a decision arm that fizzled out (no Output). */
+  outputNodeId: string | null
   steps: RecordStepArgs[]
   progress: { channel: string; text: string }[]
 }

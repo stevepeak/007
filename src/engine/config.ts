@@ -65,7 +65,7 @@ export type ModelOption = {
 export type ModelListContext = { env?: unknown }
 
 /** Payload handed to {@link WfSdkConfig.onRunComplete} when a run finalizes. */
-export type RunCompletion = { output: unknown; outputNodeId: string }
+export type RunCompletion = { output: unknown; outputNodeId: string | null }
 /** Payload handed to {@link WfSdkConfig.onRunFailed} when a run aborts. */
 export type RunFailure = { error: string }
 

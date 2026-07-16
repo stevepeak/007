@@ -143,6 +143,17 @@ export class Scheduler {
     return this.nodeOutputs
   }
 
+  /**
+   * Whether any decision node (judge/branch/switch) has recorded a routing
+   * result. Lets a backend tell an intentional dead-end apart from a broken
+   * graph on `stall`: a stall *after* a decision fired means its taken arm has
+   * no outgoing edge — the path "fizzles out" and the run ends with no output.
+   * A stall with no decision ever fired is a genuinely unreachable Output.
+   */
+  hasRoutedDecision(): boolean {
+    return this.branchResults.size > 0
+  }
+
   private isEdgeAlive = (e: WorkflowEdge): boolean => {
     if (!this.completed.has(e.source)) {
       return false

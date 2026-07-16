@@ -28,7 +28,9 @@ export type ExecuteWorkflowDeps<TDeps> = {
 
 export type ExecuteWorkflowResult = {
   output: unknown
-  outputNodeId: string
+  /** The Output node that produced `output`, or `null` when the run ended on a
+   * decision arm that fizzled out (no Output was reached). */
+  outputNodeId: string | null
 }
 
 /**
@@ -149,7 +151,18 @@ export async function executeWorkflow<TDeps>(
       const instruction = scheduler.nextBatch()
 
       if (instruction.type === 'stall') {
-        throw new WorkflowStalledError()
+        // A decision node whose taken arm has no outgoing edge ends that path
+        // quietly — an intentional "fizzle out", not a malformed graph. Finish
+        // with no output. A stall with no decision ever fired is a genuinely
+        // unreachable Output, which stays an error.
+        if (!scheduler.hasRoutedDecision()) {
+          throw new WorkflowStalledError()
+        }
+        const result = { output: undefined, outputNodeId: null }
+        if (config.onRunComplete) {
+          await notifyHost(() => config.onRunComplete!(runContext, result))
+        }
+        return result
       }
 
       if (instruction.type === 'output') {

@@ -76,7 +76,9 @@ export type GraphWorkflowParams = {
 
 export type GraphWorkflowResult = {
   output: unknown
-  outputNodeId: string
+  /** The Output node that produced `output`, or `null` when the run ended on a
+   * decision arm that fizzled out (no Output was reached). */
+  outputNodeId: string | null
 }
 
 // Per-kind step.do retry/timeout policy defaults. LLM nodes get longer, retried
@@ -450,7 +452,29 @@ export function makeGraphWorkflow<
           const instruction = scheduler.nextBatch()
 
           if (instruction.type === 'stall') {
-            throw new WorkflowStalledError()
+            // A decision node whose taken arm has no outgoing edge ends that
+            // path quietly — an intentional "fizzle out", not a malformed graph.
+            // Finalize the run with no output. A stall with no decision ever
+            // fired is a genuinely unreachable Output, which stays an error.
+            if (!scheduler.hasRoutedDecision()) {
+              throw new WorkflowStalledError()
+            }
+            await stepDo(step, 'finalize', () =>
+              finalizeRun(createWfDb(env.DB), {
+                runId: p.workflowRunId,
+                output: undefined,
+              }),
+            )
+            await stepDo(step, 'room-output', () => room.setOutput(undefined))
+            if (config.onRunComplete) {
+              await notifyHost(step, 'on-complete', () =>
+                config.onRunComplete!(
+                  { ...p.runContext, env },
+                  { output: undefined, outputNodeId: null },
+                ),
+              )
+            }
+            return { output: undefined, outputNodeId: null }
           }
 
           if (instruction.type === 'output') {

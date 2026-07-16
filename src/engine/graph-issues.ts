@@ -1,5 +1,4 @@
 import {
-  isBinaryDecisionKind,
   isDecisionKind,
   SWITCH_DEFAULT_CASE,
   type WorkflowGraph,
@@ -188,21 +187,10 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
       })
     }
 
-    // Binary decision nodes (branch/judge) need both a yes and a no path.
-    if (isBinaryDecisionKind(node.kind)) {
-      const hasYes = out.some((e) => e.condition === 'yes')
-      const hasNo = out.some((e) => e.condition === 'no')
-      if (!hasYes || !hasNo) {
-        const missing = [!hasYes && 'yes', !hasNo && 'no']
-          .filter(Boolean)
-          .join(' and ')
-        issues.push({
-          ...base,
-          severity: 'error',
-          message: `Missing the "${missing}" branch path — a ${node.kind} needs both.`,
-        })
-      }
-    }
+    // A binary decision node (branch/judge) may connect just one arm — the other
+    // is allowed to "fizzle out" (that path simply ends). So a missing yes/no
+    // edge is not flagged; the generic "nothing downstream" warning above still
+    // covers a decision node with no outgoing edges at all.
 
     // A switch needs an outgoing edge per case plus a 'default' fallback.
     if (node.kind === 'switch') {

@@ -548,22 +548,11 @@ export const workflowGraphSchema = workflowGraphShapeSchema.superRefine(
         })
       }
     }
-    // Validate every binary decision node (judge/branch) has both yes and no
-    // edges. Switch is multi-way and validated separately just below.
-    for (const n of g.nodes) {
-      if (!isBinaryDecisionKind(n.kind)) {
-        continue
-      }
-      const outs = g.edges.filter((e) => e.source === n.id)
-      const hasYes = outs.some((e) => e.condition === 'yes')
-      const hasNo = outs.some((e) => e.condition === 'no')
-      if (!hasYes || !hasNo) {
-        ctx.addIssue({
-          code: 'custom',
-          message: `${n.kind === 'judge' ? 'Judge' : 'Branch'} node ${n.id} must have both yes and no outgoing edges.`,
-        })
-      }
-    }
+    // A binary decision node (judge/branch) may leave one arm unconnected: an
+    // author often wires only the arm that does work and lets the other "fizzle
+    // out" (that path just ends). At run time an unmatched decision routes to no
+    // node and terminates that path — so we deliberately do NOT require both the
+    // yes and no edges here. (Switch still needs a 'default' fallback, below.)
 
     // Validate every switch node: unique, non-reserved case keys; an outgoing
     // edge for each case key; a single 'default' fallback edge; and no outgoing
