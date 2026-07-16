@@ -16,6 +16,7 @@ import {
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
+import { agentOutputJsonSchema, type JsonSchema } from '../../engine'
 import type {
   EvalCheck,
   EvalMatch,
@@ -23,11 +24,7 @@ import type {
 } from '../../server/protocol'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
-import {
-  useEvalSet,
-  useTools,
-  useUpsertEvalRow,
-} from '../hooks'
+import { useAgents, useEvalSet, useTools, useUpsertEvalRow } from '../hooks'
 import { useWfNav } from '../nav'
 import { ArchiveButton } from '../archive-button'
 import { WfShell } from '../shell'
@@ -161,6 +158,17 @@ export function EvalTest({
     row && Number.isInteger(index) ? row.checks.checks[index] : undefined
   const upsertRow = useUpsertEvalRow()
 
+  // When the goal targets an agent, the agent's declared output contract lets us
+  // offer its fields (with descriptions) as the "output path" instead of a raw
+  // free-form path. Only agents have a single known output schema; workflows keep
+  // the free-form path.
+  const agentsQuery = useAgents()
+  const outputSchema = useMemo<JsonSchema | null>(() => {
+    if (set?.targetKind !== 'agent') return null
+    const output = agentsQuery.data?.find((a) => a.id === set.targetId)?.output
+    return output ? agentOutputJsonSchema(output) : null
+  }, [set?.targetKind, set?.targetId, agentsQuery.data])
+
   // Local draft of this one check, synced per (row, index). Title/description
   // mirror the draft's label/description as their own inputs so typing stays
   // smooth; they commit on blur.
@@ -287,7 +295,11 @@ export function EvalTest({
               }
               onConfirm={removeTest}
             />
-            <Button size="sm" variant="outline" onClick={() => setRunOpen(true)}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setRunOpen(true)}
+            >
               <Play className="size-4" />
               Run Test
             </Button>
@@ -315,6 +327,7 @@ export function EvalTest({
               persist={persist}
               setFamily={setFamily}
               targetKind={set?.targetKind}
+              outputSchema={outputSchema}
             />
           </>
         )}
@@ -328,11 +341,13 @@ function ConfigForm({
   persist,
   setFamily,
   targetKind,
+  outputSchema,
 }: {
   draft: EvalCheck
   persist: (next: EvalCheck) => void
   setFamily: (family: TestFamily) => void
   targetKind?: WfEvalTargetKind
+  outputSchema?: JsonSchema | null
 }) {
   const family = familyOf(draft)
   const steps: Step[] = [
@@ -347,6 +362,7 @@ function ConfigForm({
             check={draft}
             persist={persist}
             targetKind={targetKind}
+            outputSchema={outputSchema}
           />
         ),
     },
@@ -384,10 +400,12 @@ function BinaryConfig({
   check,
   persist,
   targetKind,
+  outputSchema,
 }: {
   check: EvalCheck
   persist: (next: EvalCheck) => void
   targetKind?: WfEvalTargetKind
+  outputSchema?: JsonSchema | null
 }) {
   const { Label } = useWfComponents()
   return (
@@ -400,7 +418,11 @@ function BinaryConfig({
           onChange={(t) => persist(withMeta(defaultCheck(t), check))}
         />
       </div>
-      <BinaryFields check={check} persist={persist} />
+      <BinaryFields
+        check={check}
+        persist={persist}
+        outputSchema={outputSchema}
+      />
       <p className="text-xs text-neutral-400">
         Binary checks are pure pass/fail — they never enter the score.
       </p>
@@ -454,7 +476,8 @@ function BinaryTypePicker({
     if (!open) return
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node
-      if (triggerRef.current?.contains(t) || menuRef.current?.contains(t)) return
+      if (triggerRef.current?.contains(t) || menuRef.current?.contains(t))
+        return
       setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
@@ -549,9 +572,11 @@ function BinaryTypePicker({
 function BinaryFields({
   check,
   persist,
+  outputSchema,
 }: {
   check: EvalCheck
   persist: (next: EvalCheck) => void
+  outputSchema?: JsonSchema | null
 }) {
   switch (check.type) {
     case 'tool_called':
@@ -624,17 +649,20 @@ function BinaryFields({
           />
         </div>
       )
-    case 'output_match':
+    case 'output_match': {
+      const pathOptions = outputPathOptions(outputSchema)
       return (
         <MatchRow
           path={check.path}
           match={check.match}
           value={check.value}
-          pathLabel="Output path (optional)"
+          pathLabel={pathOptions ? 'Output field' : 'Output path (optional)'}
           pathPlaceholder="e.g. status"
+          pathOptions={pathOptions}
           onChange={(p) => persist({ ...check, ...p })}
         />
       )
+    }
     case 'llm_judge':
       return null
   }
@@ -665,7 +693,9 @@ function JudgeConfig({
         <Label>Judge model</Label>
         <ModelSelect
           value={check.modelId ?? ''}
-          onChange={(modelId) => persist({ ...check, modelId: modelId || undefined })}
+          onChange={(modelId) =>
+            persist({ ...check, modelId: modelId || undefined })
+          }
         />
         <p className="text-xs text-neutral-400">
           Optional — falls back to the host&apos;s default judge model.
@@ -907,13 +937,42 @@ function TextField({
   )
 }
 
-// The match/path/value trio shared by the *_match check types.
+/** A selectable field from a target's output schema — drives the path dropdown. */
+type PathOption = {
+  value: string
+  label: string
+  type?: string
+  description?: string
+}
+
+// Top-level fields of an output JSON Schema, as path options (with descriptions).
+// Null when there's no usable object schema — callers fall back to a free-form path.
+function outputPathOptions(
+  schema: JsonSchema | null | undefined,
+): PathOption[] | null {
+  if (!schema || schema.type !== 'object') return null
+  const props = (schema.properties ?? {}) as Record<string, JsonSchema>
+  const entries = Object.entries(props)
+  if (entries.length === 0) return null
+  return entries.map(([key, s]) => ({
+    value: key,
+    label: key,
+    type: typeof s.type === 'string' ? s.type : undefined,
+    description: typeof s.description === 'string' ? s.description : undefined,
+  }))
+}
+
+// The match/path/value trio shared by the *_match check types. When `pathOptions`
+// is supplied (an agent target with a known output schema), the path is chosen
+// from a dropdown of the schema's fields — with each field's description shown —
+// instead of a free-form text box.
 function MatchRow({
   path,
   match,
   value,
   pathLabel,
   pathPlaceholder,
+  pathOptions,
   onChange,
 }: {
   path: string | undefined
@@ -921,7 +980,12 @@ function MatchRow({
   value: unknown
   pathLabel: string
   pathPlaceholder?: string
-  onChange: (patch: { path?: string; match?: EvalMatch; value?: unknown }) => void
+  pathOptions?: PathOption[] | null
+  onChange: (patch: {
+    path?: string
+    match?: EvalMatch
+    value?: unknown
+  }) => void
 }) {
   const { Input, Label } = useWfComponents()
   const [pathLocal, setPathLocal] = useState(path ?? '')
@@ -943,52 +1007,83 @@ function MatchRow({
     }
   }, [value])
 
+  const selectedField = pathOptions?.find((o) => o.value === (path ?? ''))
+  // Preserve a stored path that isn't in the schema (nested/custom) as its own
+  // option so switching targets or hand-authored paths never silently vanish.
+  const showsCustom = Boolean(
+    pathOptions && path && !pathOptions.some((o) => o.value === path),
+  )
+
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-      <div className="space-y-1">
-        <Label>{pathLabel}</Label>
-        <Input
-          value={pathLocal}
-          placeholder={pathPlaceholder}
-          onChange={(e) => setPathLocal(e.target.value)}
-          onBlur={() => {
-            if (pathLocal !== pathRef.current) {
-              pathRef.current = pathLocal
-              onChange({ path: pathLocal || undefined })
-            }
-          }}
-          className="font-mono text-xs"
-        />
+    <div className="space-y-1">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="space-y-1">
+          <Label>{pathLabel}</Label>
+          {pathOptions ? (
+            <select
+              value={path ?? ''}
+              onChange={(e) => onChange({ path: e.target.value || undefined })}
+              className="h-9 w-full rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none focus:border-neutral-500"
+            >
+              <option value="">Entire output</option>
+              {pathOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                  {o.type ? ` · ${o.type}` : ''}
+                </option>
+              ))}
+              {showsCustom ? (
+                <option value={path}>{path} (custom)</option>
+              ) : null}
+            </select>
+          ) : (
+            <Input
+              value={pathLocal}
+              placeholder={pathPlaceholder}
+              onChange={(e) => setPathLocal(e.target.value)}
+              onBlur={() => {
+                if (pathLocal !== pathRef.current) {
+                  pathRef.current = pathLocal
+                  onChange({ path: pathLocal || undefined })
+                }
+              }}
+              className="font-mono text-xs"
+            />
+          )}
+        </div>
+        <div className="space-y-1">
+          <Label>Match</Label>
+          <select
+            value={match}
+            onChange={(e) => onChange({ match: e.target.value as EvalMatch })}
+            className="h-9 w-full rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none focus:border-neutral-500"
+          >
+            {MATCH_OPTIONS.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1">
+          <Label>Value</Label>
+          <Input
+            value={valueLocal}
+            placeholder="expected"
+            onChange={(e) => setValueLocal(e.target.value)}
+            onBlur={() => {
+              if (valueLocal !== valueRef.current) {
+                valueRef.current = valueLocal
+                onChange({ value: parseValue(valueLocal) })
+              }
+            }}
+            className="font-mono text-xs"
+          />
+        </div>
       </div>
-      <div className="space-y-1">
-        <Label>Match</Label>
-        <select
-          value={match}
-          onChange={(e) => onChange({ match: e.target.value as EvalMatch })}
-          className="h-9 w-full rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none focus:border-neutral-500"
-        >
-          {MATCH_OPTIONS.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="space-y-1">
-        <Label>Value</Label>
-        <Input
-          value={valueLocal}
-          placeholder="expected"
-          onChange={(e) => setValueLocal(e.target.value)}
-          onBlur={() => {
-            if (valueLocal !== valueRef.current) {
-              valueRef.current = valueLocal
-              onChange({ value: parseValue(valueLocal) })
-            }
-          }}
-          className="font-mono text-xs"
-        />
-      </div>
+      {selectedField?.description ? (
+        <p className="text-xs text-neutral-400">{selectedField.description}</p>
+      ) : null}
     </div>
   )
 }
