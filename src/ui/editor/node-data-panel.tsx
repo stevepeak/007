@@ -13,6 +13,7 @@ import { cn } from '../cn'
 import {
   accessibleData,
   buildIoMaps,
+  nodeProvides,
   nodeRequires,
   withIterationItemSchema,
   type AccessibleNode,
@@ -133,9 +134,10 @@ export type AccessibleDataViewProps = {
   itemSchema?: JsonSchema
 }
 
-// The tree of everything upstream of the selected node — rendered inside the
-// bottom dock's "Data" tab. Read-only; the actual mapping happens in the
-// inspector's Inputs section.
+// The Data tab of the bottom dock. Two read-only sections: "Available" — the
+// tree of everything upstream that the node can map from (produced by earlier
+// nodes) — and "Provides" — the shape this node itself emits to nodes
+// downstream. The actual mapping happens in the inspector's Inputs section.
 export function AccessibleDataView({
   node,
   graph,
@@ -150,21 +152,51 @@ export function AccessibleDataView({
     () => accessibleData(graph, node.id, maps),
     [graph, node.id, maps],
   )
+  const provides = useMemo(
+    () => nodeProvides(graph, node.id, maps),
+    [graph, node.id, maps],
+  )
+  // `accessibleData` folds the iteration `Item` trigger's own output into the
+  // accessible list (it's the data source inside a loop). Don't repeat it as its
+  // own "Provides" row in that case.
+  const showProvides =
+    provides != null && !accessible.some((n) => n.nodeId === provides.nodeId)
 
-  if (accessible.length === 0) {
-    return (
-      <p className="text-muted-foreground text-xs">
-        No upstream nodes. Connect{' '}
-        <span className="font-medium">{node.label}</span> to a source to receive
-        data.
-      </p>
-    )
-  }
   return (
-    <div className="space-y-2">
-      {accessible.map((n) => (
-        <AccessibleNodeView key={n.nodeId} node={n} />
-      ))}
+    <div className="space-y-4">
+      <section className="space-y-1.5">
+        <div className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
+          Available
+        </div>
+        {accessible.length === 0 ? (
+          <p className="text-muted-foreground text-xs">
+            No upstream nodes. Connect{' '}
+            <span className="font-medium">{node.label}</span> to a source to
+            receive data.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {accessible.map((n) => (
+              <AccessibleNodeView key={n.nodeId} node={n} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {showProvides ? (
+        <section className="space-y-1.5">
+          <div className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
+            Provides
+          </div>
+          {provides.wholeType === 'none' ? (
+            <p className="text-muted-foreground text-xs">
+              This node produces no data.
+            </p>
+          ) : (
+            <AccessibleNodeView node={provides} />
+          )}
+        </section>
+      ) : null}
     </div>
   )
 }

@@ -357,6 +357,27 @@ export function withIterationItemSchema(
   return { ...maps, triggersByKind }
 }
 
+// The output shape the node itself produces — what it makes available to nodes
+// downstream of it. Mirrors one entry of `accessibleData`, but for the node in
+// hand (e.g. a Trigger, which has no upstream but still *provides* its payload).
+export function nodeProvides(
+  graph: WorkflowGraph,
+  nodeId: string,
+  maps: IoMaps,
+): AccessibleNode | null {
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]))
+  const node = byId.get(nodeId)
+  if (!node) return null
+  const out = nodeOutput(node, maps, graph, byId, new Set())
+  return {
+    nodeId: node.id,
+    label: node.label,
+    kind: node.kind,
+    fields: out.fields,
+    wholeType: out.type,
+  }
+}
+
 // Every node structurally upstream of `nodeId`, nearest-first, with its output
 // shape resolved — the tree of data the node can map from.
 export function accessibleData(
