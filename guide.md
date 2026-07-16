@@ -378,6 +378,24 @@ You can also **skip CI** and apply manually via this package's `db:migrate`
 script — fill the `wrangler.jsonc` placeholders with real IDs first, or pass
 `--config` to your host config as in step 3.
 
+> 💡 **Auto-apply on `git pull` (local convenience).** So teammates don't run
+> stale schemas after pulling, wire a `post-merge` git hook that applies new
+> local migrations only when the merge touched a `migrations/` dir:
+>
+> - **This package (a submodule):** hooks live in the submodule's git dir, so
+>   drop `.githooks/post-merge` and activate it once per clone with
+>   `git config core.hooksPath .githooks` (run inside the submodule). The hook
+>   runs `bun run db:migrate:local` when `migrations/` changed.
+> - **The host repo (1121law):** it uses Husky, so add `.husky/post-merge` — no
+>   per-clone config needed (Husky wires `core.hooksPath` on `bun install`). Gate
+>   it on `packages/db/migrations/` and run that package's `db:migrate:local`.
+>
+> Both guard on `git diff-tree ORIG_HEAD HEAD` so ordinary pulls stay fast, and
+> `wrangler d1 migrations apply --local` is idempotent (only the missing
+> migrations run). Note a parent-repo pull that only bumps the submodule pointer
+> won't fire the submodule's hook — apply `wf_*` migrations after
+> `git submodule update` in that case.
+
 Get a `WfDb` handle from a D1 binding inside the request/step path:
 
 ```ts

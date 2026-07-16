@@ -400,6 +400,7 @@ export function useCreateEvalSet() {
       description?: string
       targetKind: WfEvalTargetKind
       targetId: string
+      targetVersion?: number | null
       triggerKind: string
     }) => client.createEvalSet(input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['wf', 'eval-sets'] }),
@@ -416,6 +417,7 @@ export function useUpdateEvalSet() {
       description?: string | null
       targetKind?: WfEvalTargetKind
       targetId?: string
+      targetVersion?: number | null
       triggerKind?: string
       archived?: boolean
     }) => client.updateEvalSet(input),

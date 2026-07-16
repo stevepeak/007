@@ -153,6 +153,11 @@ const agentNodeSchema = baseNode.extend({
   // manifest at run start. Empty while an author hasn't picked one in a draft.
   config: z.object({
     agentId: z.string().default(''),
+    // Which published version this node runs against. `null` (the default)
+    // floats to the agent's latest published version — the historical
+    // behavior; a number pins the node to that exact version number, frozen
+    // into the run manifest at run start regardless of later publishes.
+    version: z.number().int().positive().nullable().default(null),
     // Maps the referenced agent's prompt `${variables}` to bindings (a literal
     // or a `ref` into an upstream node's output). Resolved at run time into the
     // node's promptVariables; a bound var overrides the run-level value.
@@ -850,6 +855,13 @@ export type WfAgentManifestEntry = {
   kind: 'agent'
   /** The stable `wf_agent.id` an agent node references. */
   id: string
+  /**
+   * The pin this entry was resolved for: `null` for nodes that float to
+   * latest, or the exact version number a node pinned. A single run can hold
+   * several entries for the same `id` when different nodes pin the same agent
+   * differently — the pin is part of the lookup key.
+   */
+  pinnedVersion: number | null
   versionId: string
   versionNumber: number
   name: string
@@ -873,13 +885,23 @@ export type WfWorkflowManifestEntry = {
 
 export type WfRunManifestEntry = WfAgentManifestEntry | WfWorkflowManifestEntry
 
-/** Look up the resolved agent entry for an `agentId` in a run manifest. */
+/**
+ * Look up the resolved agent entry for an `agentId` + version pin in a run
+ * manifest. `version` is the node's pin: `null`/undefined matches the
+ * float-to-latest entry, a number matches the entry frozen for that pin.
+ */
 export function agentFromManifest(
   manifest: readonly WfRunManifestEntry[],
   agentId: string,
+  version: number | null = null,
 ): WfAgentManifestEntry | undefined {
   return manifest.find(
-    (e): e is WfAgentManifestEntry => e.kind === 'agent' && e.id === agentId,
+    (e): e is WfAgentManifestEntry =>
+      e.kind === 'agent' &&
+      e.id === agentId &&
+      // Manifests frozen before pinning existed have no `pinnedVersion`; treat
+      // a missing value as `null` (float-to-latest) so old runs still resolve.
+      (e.pinnedVersion ?? null) === (version ?? null),
   )
 }
 

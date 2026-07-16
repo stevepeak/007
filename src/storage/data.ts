@@ -359,6 +359,23 @@ function agentIdsInGraph(graph: WorkflowGraph): string[] {
   return [...ids]
 }
 
+// Distinct (agentId, version-pin) pairs referenced by agent nodes. Two nodes
+// pinning the same agent to different versions yield two pairs, so each gets its
+// own manifest entry. `version` is `null` for float-to-latest nodes.
+function agentPinsInGraph(
+  graph: WorkflowGraph,
+): { agentId: string; version: number | null }[] {
+  const seen = new Map<string, { agentId: string; version: number | null }>()
+  for (const node of graph.nodes) {
+    if (node.kind === 'agent' && node.config.agentId) {
+      const version = node.config.version ?? null
+      const key = `${node.config.agentId}@${version ?? 'latest'}`
+      if (!seen.has(key)) seen.set(key, { agentId: node.config.agentId, version })
+    }
+  }
+  return [...seen.values()]
+}
+
 // Distinct workflow ids called by workflow nodes in a graph.
 function workflowIdsInGraph(graph: WorkflowGraph): string[] {
   const ids = new Set<string>()
@@ -389,7 +406,9 @@ export async function resolveRunManifest(
   graph: WorkflowGraph,
 ): Promise<WfRunManifestEntry[]> {
   const entries: WfRunManifestEntry[] = []
-  const seenAgents = new Set<string>()
+  // Dedup key is `agentId@pin` so the same agent pinned to different versions
+  // by different nodes lands as several distinct entries.
+  const seenAgentPins = new Set<string>()
   const seenWorkflows = new Set<string>()
 
   const resolveInto = async (
@@ -402,12 +421,19 @@ export async function resolveRunManifest(
         `Workflow nesting too deep (> ${MAX_WORKFLOW_DEPTH}): ${stack.join(' → ')}.`,
       )
     }
-    for (const agentId of agentIdsInGraph(g)) {
-      if (seenAgents.has(agentId)) {
+    for (const { agentId, version: pin } of agentPinsInGraph(g)) {
+      const key = `${agentId}@${pin ?? 'latest'}`
+      if (seenAgentPins.has(key)) {
         continue
       }
-      seenAgents.add(agentId)
-      const version = await latestAgentVersion(db, agentId)
+      seenAgentPins.add(key)
+      // `null` pin floats to latest; a number resolves that exact version. A
+      // pin pointing at a version that no longer exists resolves to nothing —
+      // the node then fails at run time with a clear "not in manifest" error.
+      const version =
+        pin == null
+          ? await latestAgentVersion(db, agentId)
+          : await agentVersionByNumber(db, agentId, pin)
       if (!version) {
         continue
       }
@@ -421,6 +447,7 @@ export async function resolveRunManifest(
       entries.push({
         kind: 'agent',
         id: agentId,
+        pinnedVersion: pin,
         versionId: version.id,
         versionNumber: version.versionNumber,
         name: agent?.name ?? '',
@@ -585,6 +612,25 @@ export async function latestAgentVersion(db: WfDb, agentId: string) {
     .from(wfAgentVersion)
     .where(eq(wfAgentVersion.agentId, agentId))
     .orderBy(desc(wfAgentVersion.versionNumber))
+    .limit(1)
+  return rows[0]
+}
+
+/** A specific published version by its number (for pinned agent references). */
+export async function agentVersionByNumber(
+  db: WfDb,
+  agentId: string,
+  versionNumber: number,
+) {
+  const rows = await db
+    .select()
+    .from(wfAgentVersion)
+    .where(
+      and(
+        eq(wfAgentVersion.agentId, agentId),
+        eq(wfAgentVersion.versionNumber, versionNumber),
+      ),
+    )
     .limit(1)
   return rows[0]
 }
@@ -1128,6 +1174,7 @@ export async function listEvalSets(db: WfDb, opts?: { includeArchived?: boolean 
       description: wfEvalSet.description,
       targetKind: wfEvalSet.targetKind,
       targetId: wfEvalSet.targetId,
+      targetVersion: wfEvalSet.targetVersion,
       triggerKind: wfEvalSet.triggerKind,
       archived: wfEvalSet.archived,
       createdAt: wfEvalSet.createdAt,
@@ -1173,6 +1220,7 @@ export async function getEvalRow(db: WfDb, rowId: string) {
       id: wfEvalSet.id,
       targetKind: wfEvalSet.targetKind,
       targetId: wfEvalSet.targetId,
+      targetVersion: wfEvalSet.targetVersion,
       triggerKind: wfEvalSet.triggerKind,
     })
     .from(wfEvalSet)
@@ -1189,6 +1237,7 @@ export async function createEvalSet(
     description?: string
     targetKind: EvalTargetKind
     targetId: string
+    targetVersion?: number | null
     triggerKind: string
     createdBy?: string
   },
@@ -1200,6 +1249,7 @@ export async function createEvalSet(
     description: input.description ?? null,
     targetKind: input.targetKind,
     targetId: input.targetId,
+    targetVersion: input.targetVersion ?? null,
     triggerKind: input.triggerKind,
     createdBy: input.createdBy ?? null,
   })
@@ -1214,6 +1264,7 @@ export async function updateEvalSet(
     description?: string | null
     targetKind?: EvalTargetKind
     targetId?: string
+    targetVersion?: number | null
     triggerKind?: string
     archived?: boolean
   },
@@ -1223,6 +1274,7 @@ export async function updateEvalSet(
   if (input.description !== undefined) set.description = input.description
   if (input.targetKind !== undefined) set.targetKind = input.targetKind
   if (input.targetId !== undefined) set.targetId = input.targetId
+  if (input.targetVersion !== undefined) set.targetVersion = input.targetVersion
   if (input.triggerKind !== undefined) set.triggerKind = input.triggerKind
   if (input.archived !== undefined) set.archived = input.archived
   await db.update(wfEvalSet).set(set).where(eq(wfEvalSet.id, input.setId))

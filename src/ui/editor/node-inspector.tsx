@@ -9,12 +9,8 @@ import {
   type WorkflowGraph,
   type WorkflowNode,
 } from '../../engine'
-import type {
-  ToolOption,
-  WfAgentSummary,
-  WfWorkflowSummary,
-} from '../../server/protocol'
-import { agentColor, agentIcon } from '../agent-appearance'
+import type { ToolOption, WfWorkflowSummary } from '../../server/protocol'
+import { AgentSelect } from '../agent-select'
 import { useWfComponents } from '../context'
 import {
   useAgents,
@@ -138,11 +134,14 @@ export function NodeInspector({
           <Label>Agent</Label>
           <AgentSelect
             agents={agentOptions}
-            value={node.config.agentId}
-            onChange={(agentId) =>
+            value={{
+              agentId: node.config.agentId,
+              version: node.config.version ?? null,
+            }}
+            onChange={({ agentId, version }) =>
               onChange({
                 ...node,
-                config: { ...node.config, agentId },
+                config: { ...node.config, agentId, version },
               })
             }
           />
@@ -595,114 +594,6 @@ function ListSelect({
               </span>
             </button>
           ))}
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-// Rich agent picker: a native <select> can only render text, so we roll our own
-// popover to show each agent's icon, color, name, and description.
-function AgentSelect({
-  agents,
-  value,
-  onChange,
-}: {
-  agents: WfAgentSummary[]
-  value: string
-  onChange: (agentId: string) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    function onDocMouseDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('mousedown', onDocMouseDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDocMouseDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
-
-  const selected = agents.find((a) => a.id === value)
-  const SelectedIcon = selected ? agentIcon(selected.icon) : null
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        className="flex h-9 w-full items-center gap-2 rounded-md border border-neutral-300 bg-transparent px-2 text-left text-sm outline-none focus:border-neutral-500"
-      >
-        {selected && SelectedIcon ? (
-          <>
-            <span
-              className={cn(
-                'flex size-5 shrink-0 items-center justify-center rounded',
-                agentColor(selected.color).chip,
-              )}
-            >
-              <SelectedIcon className="size-3" />
-            </span>
-            <span className="min-w-0 flex-1 truncate">{selected.name}</span>
-          </>
-        ) : (
-          <span className="text-muted-foreground flex-1">Select an agent…</span>
-        )}
-        <ChevronDown className="size-4 shrink-0 text-neutral-400" />
-      </button>
-
-      {open ? (
-        <div
-          role="listbox"
-          className="absolute z-50 mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-neutral-200 bg-white p-1 shadow-lg"
-        >
-          {agents.map((a) => {
-            const Icon = agentIcon(a.icon)
-            const isSelected = a.id === value
-            return (
-              <button
-                key={a.id}
-                type="button"
-                role="option"
-                aria-selected={isSelected}
-                onClick={() => {
-                  onChange(a.id)
-                  setOpen(false)
-                }}
-                className={cn(
-                  'flex w-full items-start gap-2 rounded-md p-2 text-left transition hover:bg-neutral-50',
-                  isSelected && 'bg-neutral-50',
-                )}
-              >
-                <span
-                  className={cn(
-                    'flex size-8 shrink-0 items-center justify-center rounded-md',
-                    agentColor(a.color).chip,
-                  )}
-                >
-                  <Icon className="size-4" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-neutral-900">
-                    {a.name}
-                  </span>
-                  <span className="mt-0.5 line-clamp-2 block text-xs text-neutral-500">
-                    {a.description || 'No description yet.'}
-                  </span>
-                </span>
-              </button>
-            )
-          })}
         </div>
       ) : null}
     </div>

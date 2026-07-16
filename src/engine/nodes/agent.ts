@@ -228,16 +228,19 @@ export type ExecuteAgentNodeDeps<TDeps> = {
 }
 
 // Resolve the agent an agent node points at from the frozen run manifest. The
-// manifest is populated at run start from the agent's latest published version,
-// so a run is reproducible even as the agent drifts.
+// manifest is populated at run start from the version the node pinned (or its
+// latest published version when unpinned), so a run is reproducible even as the
+// agent drifts.
 function resolveAgentConfig(
   node: AgentNode,
   manifest: WfRunManifestEntry[],
 ): AgentConfig {
-  const entry = agentFromManifest(manifest, node.config.agentId)
+  const pin = node.config.version ?? null
+  const entry = agentFromManifest(manifest, node.config.agentId, pin)
   if (!entry) {
+    const at = pin == null ? 'latest' : `v${pin}`
     throw new Error(
-      `Agent node ${node.id} references agent ${node.config.agentId || '(none)'}, which is not in the run manifest.`,
+      `Agent node ${node.id} references agent ${node.config.agentId || '(none)'} (${at}), which is not in the run manifest.`,
     )
   }
   return entry.config

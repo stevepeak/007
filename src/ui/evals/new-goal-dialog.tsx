@@ -1,6 +1,7 @@
 import { X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import { AgentSelect, type AgentSelectValue } from '../agent-select'
 import { useWfComponents } from '../context'
 import { useAgents, useCreateEvalSet } from '../hooks'
 
@@ -20,7 +21,10 @@ export function NewGoalDialog({ open, onClose, onCreated }: NewGoalDialogProps) 
   const { Button, Input, Label, Textarea } = useWfComponents()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [agentId, setAgentId] = useState('')
+  const [target, setTarget] = useState<AgentSelectValue>({
+    agentId: '',
+    version: null,
+  })
 
   const agentsQuery = useAgents()
   const agents = agentsQuery.data ?? []
@@ -30,7 +34,7 @@ export function NewGoalDialog({ open, onClose, onCreated }: NewGoalDialogProps) 
     if (!open) return
     setName('')
     setDescription('')
-    setAgentId('')
+    setTarget({ agentId: '', version: null })
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }
@@ -40,7 +44,7 @@ export function NewGoalDialog({ open, onClose, onCreated }: NewGoalDialogProps) 
 
   if (!open) return null
 
-  const canSubmit = !!name.trim() && !!agentId && !createSet.isPending
+  const canSubmit = !!name.trim() && !!target.agentId && !createSet.isPending
 
   const submit = async () => {
     if (!canSubmit) return
@@ -48,7 +52,8 @@ export function NewGoalDialog({ open, onClose, onCreated }: NewGoalDialogProps) 
       name: name.trim(),
       description: description.trim() || undefined,
       targetKind: 'agent',
-      targetId: agentId,
+      targetId: target.agentId,
+      targetVersion: target.version,
       triggerKind: 'manual',
     })
     onCreated(res.setId)
@@ -89,27 +94,24 @@ export function NewGoalDialog({ open, onClose, onCreated }: NewGoalDialogProps) 
           </div>
           <div className="space-y-1">
             <Label>Target agent</Label>
-            <select
-              value={agentId}
-              onChange={(e) => setAgentId(e.target.value)}
-              className="h-9 w-full rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none focus:border-neutral-500"
-            >
-              <option value="">
-                {agentsQuery.isLoading ? 'Loading agents…' : 'Select an agent…'}
-              </option>
-              {agents.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
+            <AgentSelect
+              agents={agents}
+              value={target}
+              onChange={setTarget}
+              placeholder={
+                agentsQuery.isLoading ? 'Loading agents…' : 'Select an agent…'
+              }
+            />
             {!agentsQuery.isLoading && agents.length === 0 ? (
               <p className="text-xs text-amber-600">
                 No agents yet — create one first.
               </p>
             ) : (
               <p className="text-xs text-neutral-400">
-                The agent this goal&apos;s samples run against (floats to latest).
+                The agent this goal&apos;s samples run against —{' '}
+                {target.version == null
+                  ? 'floats to the latest published version.'
+                  : `pinned to v${target.version}.`}
               </p>
             )}
           </div>

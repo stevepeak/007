@@ -450,6 +450,7 @@ function evalSetSummary(
     description: string | null
     targetKind: WfEvalTargetKind
     targetId: string
+    targetVersion: number | null
     triggerKind: string
     archived: boolean
     createdAt: Date
@@ -463,6 +464,7 @@ function evalSetSummary(
     description: s.description,
     targetKind: s.targetKind,
     targetId: s.targetId,
+    targetVersion: s.targetVersion,
     triggerKind: s.triggerKind,
     archived: s.archived,
     rowCount,
@@ -1088,6 +1090,7 @@ export function createWfSdkHandlers<TDeps>(
           const p = params as {
             description?: string
             targetKind?: WfEvalTargetKind
+            targetVersion?: number | null
           }
           const targetKind: WfEvalTargetKind =
             p.targetKind === 'workflow' ? 'workflow' : 'agent'
@@ -1096,6 +1099,7 @@ export function createWfSdkHandlers<TDeps>(
             description: p.description,
             targetKind,
             targetId,
+            targetVersion: p.targetVersion ?? null,
             triggerKind,
             createdBy: ctx.userId,
           })
@@ -1109,6 +1113,7 @@ export function createWfSdkHandlers<TDeps>(
             description?: string | null
             targetKind?: WfEvalTargetKind
             targetId?: string
+            targetVersion?: number | null
             triggerKind?: string
             archived?: boolean
           }
@@ -1118,6 +1123,7 @@ export function createWfSdkHandlers<TDeps>(
             description: p.description,
             targetKind: p.targetKind,
             targetId: p.targetId,
+            targetVersion: p.targetVersion,
             triggerKind: p.triggerKind,
             archived: p.archived,
           })

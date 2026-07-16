@@ -1,0 +1,1 @@
+ALTER TABLE `wf_eval_set` ADD `target_version` integer;

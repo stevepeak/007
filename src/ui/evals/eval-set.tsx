@@ -139,7 +139,7 @@ export function EvalSet({ setId, className }: EvalSetProps) {
           <EmptyState message="This goal doesn't exist, or was archived / removed." />
         ) : (
           <>
-            <TargetRow targetId={set.targetId} />
+            <TargetRow targetId={set.targetId} targetVersion={set.targetVersion} />
 
             <RunConfigDialog
               open={runOpen}
@@ -174,7 +174,13 @@ export function EvalSet({ setId, className }: EvalSetProps) {
 // the goal is created — every sample's Given fields and mock fixtures reflect
 // from this agent, so swapping it would orphan them. Read-only here; to target a
 // different agent, create a new goal.
-function TargetRow({ targetId }: { targetId: string }) {
+function TargetRow({
+  targetId,
+  targetVersion,
+}: {
+  targetId: string
+  targetVersion: number | null
+}) {
   const agentsQuery = useAgents()
   const agent = agentsQuery.data?.find((a) => a.id === targetId)
   const Icon = agentIcon(agent?.icon)
@@ -192,6 +198,9 @@ function TargetRow({ targetId }: { targetId: string }) {
       <div className="min-w-0 flex-1 text-sm font-medium text-neutral-800">
         {agent?.name ?? (agentsQuery.isLoading ? 'Loading…' : 'Unknown agent')}
       </div>
+      <span className="shrink-0 rounded-full border border-neutral-200 bg-white px-2 py-0.5 text-[11px] font-medium tabular-nums text-neutral-500">
+        {targetVersion == null ? 'Latest' : `v${targetVersion}`}
+      </span>
       <WfLink
         to={`agents/${targetId}/edit`}
         newTab

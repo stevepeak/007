@@ -1,0 +1,14 @@
+#!/bin/sh
+#
+# Runs after every `git pull` / `git merge` in this repo.
+# Applies any new D1 migrations to the LOCAL database — but only when the
+# merge actually touched migrations/, so normal pulls stay fast.
+#
+# Activate once per clone:  git config core.hooksPath .githooks
+
+changed=$(git diff-tree -r --name-only --no-commit-id ORIG_HEAD HEAD 2>/dev/null | grep '^migrations/')
+
+if [ -n "$changed" ]; then
+  echo "[007] New migrations detected — applying to local D1..."
+  bun run db:migrate:local
+fi

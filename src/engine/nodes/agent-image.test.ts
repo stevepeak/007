@@ -15,6 +15,7 @@ const MANIFEST: WfRunManifestEntry[] = [
   {
     kind: 'agent',
     id: 'vision',
+    pinnedVersion: null,
     versionId: 'v1',
     versionNumber: 1,
     name: 'Vision',
@@ -57,7 +58,7 @@ function visionNode(imageInputs: AgentNode['config']['imageInputs']): AgentNode 
     kind: 'agent',
     label: 'Vision',
     position: { x: 0, y: 0 },
-    config: { agentId: 'vision', inputs: {}, imageInputs },
+    config: { agentId: 'vision', version: null, inputs: {}, imageInputs },
   }
 }
 

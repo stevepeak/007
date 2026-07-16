@@ -292,6 +292,8 @@ export type WfEvalSetSummary = {
   targetKind: WfEvalTargetKind
   /** Opaque pointer to a wf_agent.id / wf_workflow.id (no FK). */
   targetId: string
+  /** Version pin for the target: null floats to the latest published version. */
+  targetVersion: number | null
   /** The trigger kind the target is invoked under. */
   triggerKind: string
   archived: boolean
@@ -498,6 +500,8 @@ export interface WfDataClient {
     description?: string
     targetKind: WfEvalTargetKind
     targetId: string
+    /** Version pin for the target: null/omitted floats to latest. */
+    targetVersion?: number | null
     triggerKind: string
   }): Promise<{ setId: string }>
   updateEvalSet(input: {
@@ -506,6 +510,7 @@ export interface WfDataClient {
     description?: string | null
     targetKind?: WfEvalTargetKind
     targetId?: string
+    targetVersion?: number | null
     triggerKind?: string
     archived?: boolean
   }): Promise<{ ok: true }>

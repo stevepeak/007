@@ -727,7 +727,7 @@ function defaultDataForKind(
     return {
       kind: 'agent',
       label: 'New agent',
-      config: { agentId: '', inputs: {}, imageInputs: {} },
+      config: { agentId: '', version: null, inputs: {}, imageInputs: {} },
     }
   }
   if (kind === 'tool') {

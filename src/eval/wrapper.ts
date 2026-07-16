@@ -18,17 +18,32 @@ import {
 /** Stable name of an agent's wrapper workflow — also its cache key. */
 export const EVAL_WRAPPER_NAME_PREFIX = 'eval-wrapper:'
 
-export function evalWrapperName(agentId: string): string {
-  return `${EVAL_WRAPPER_NAME_PREFIX}${agentId}`
+/**
+ * A wrapper's name doubles as its cache key. It must fold in the version pin so
+ * a goal pinned to a specific version gets its own wrapper rather than reusing
+ * the float-to-latest one. An unpinned (latest) target keeps the historic
+ * `eval-wrapper:{agentId}` name for backward compatibility.
+ */
+export function evalWrapperName(
+  agentId: string,
+  version: number | null = null,
+): string {
+  return version == null
+    ? `${EVAL_WRAPPER_NAME_PREFIX}${agentId}`
+    : `${EVAL_WRAPPER_NAME_PREFIX}${agentId}@v${version}`
 }
 
 /**
  * The minimal runnable graph for an agent eval: a manual trigger wired through
- * an agent node (pointing at `agentId`, floating to latest) into an Output. Pure
- * — no db, no side effects; ids are fresh per call (they're internal to the
- * frozen version, never referenced elsewhere).
+ * an agent node (pointing at `agentId`) into an Output. `version` is the goal's
+ * target pin — `null` floats to the agent's latest published version, a number
+ * pins to that exact version. Pure — no db, no side effects; ids are fresh per
+ * call (they're internal to the frozen version, never referenced elsewhere).
  */
-export function buildAgentWrapperGraph(agentId: string): WorkflowGraph {
+export function buildAgentWrapperGraph(
+  agentId: string,
+  version: number | null = null,
+): WorkflowGraph {
   const triggerId = crypto.randomUUID()
   const agentNodeId = crypto.randomUUID()
   const outputId = crypto.randomUUID()
@@ -47,7 +62,7 @@ export function buildAgentWrapperGraph(agentId: string): WorkflowGraph {
         kind: 'agent',
         label: 'Agent',
         position: { x: 280, y: 0 },
-        config: { agentId, inputs: {}, imageInputs: {} },
+        config: { agentId, version, inputs: {}, imageInputs: {} },
       },
       {
         id: outputId,

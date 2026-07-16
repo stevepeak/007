@@ -267,6 +267,10 @@ export const wfEvalSet = sqliteTable(
     // Opaque pointer to a wf_agent.id or wf_workflow.id (resolved float-to-
     // latest at run start). No FK — mirrors the run-identity convention.
     targetId: text('target_id').notNull(),
+    // Which published version of the target the goal pins to. NULL floats to the
+    // latest published version (the default); a number pins to that exact
+    // version so the goal keeps grading against a frozen target.
+    targetVersion: integer('target_version'),
     // The trigger kind the target is invoked under (drives row initialCondition).
     triggerKind: text('trigger_kind').notNull(),
     archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
