@@ -16,7 +16,11 @@ import {
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-import type { EvalCheck, EvalMatch } from '../../server/protocol'
+import type {
+  EvalCheck,
+  EvalMatch,
+  WfEvalTargetKind,
+} from '../../server/protocol'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import {
@@ -306,7 +310,12 @@ export function EvalTest({
               setIds={[setId]}
             />
 
-            <ConfigForm draft={draft} persist={persist} setFamily={setFamily} />
+            <ConfigForm
+              draft={draft}
+              persist={persist}
+              setFamily={setFamily}
+              targetKind={set?.targetKind}
+            />
           </>
         )}
       </div>
@@ -318,10 +327,12 @@ function ConfigForm({
   draft,
   persist,
   setFamily,
+  targetKind,
 }: {
   draft: EvalCheck
   persist: (next: EvalCheck) => void
   setFamily: (family: TestFamily) => void
+  targetKind?: WfEvalTargetKind
 }) {
   const family = familyOf(draft)
   const steps: Step[] = [
@@ -332,7 +343,11 @@ function ConfigForm({
         draft.type === 'llm_judge' ? (
           <JudgeConfig check={draft} persist={persist} />
         ) : (
-          <BinaryConfig check={draft} persist={persist} />
+          <BinaryConfig
+            check={draft}
+            persist={persist}
+            targetKind={targetKind}
+          />
         ),
     },
   ]
@@ -368,9 +383,11 @@ function ConfigForm({
 function BinaryConfig({
   check,
   persist,
+  targetKind,
 }: {
   check: EvalCheck
   persist: (next: EvalCheck) => void
+  targetKind?: WfEvalTargetKind
 }) {
   const { Label } = useWfComponents()
   return (
@@ -379,6 +396,7 @@ function BinaryConfig({
         <Label>What to check</Label>
         <BinaryTypePicker
           value={check.type as BinaryType}
+          targetKind={targetKind}
           onChange={(t) => persist(withMeta(defaultCheck(t), check))}
         />
       </div>
@@ -394,14 +412,24 @@ function BinaryConfig({
 // (icon + label + blurb). The open menu is portaled to <body> and fixed-positioned
 // under the trigger so it overlays the content below instead of pushing it down
 // (and so the StepFlow card's `overflow-hidden` can't clip it).
+// `node_*` checks read the workflow step trace, which agents don't produce, so
+// they're only offered when the goal targets a workflow.
+const NODE_TYPES: readonly BinaryType[] = ['node_visited', 'node_input_match']
+
 function BinaryTypePicker({
   value,
   onChange,
+  targetKind,
 }: {
   value: BinaryType
   onChange: (type: BinaryType) => void
+  targetKind?: WfEvalTargetKind
 }) {
   const [open, setOpen] = useState(false)
+  const types =
+    targetKind === 'agent'
+      ? BINARY_TYPES.filter((t) => !NODE_TYPES.includes(t))
+      : BINARY_TYPES
   const [rect, setRect] = useState<DOMRect | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -479,7 +507,7 @@ function BinaryTypePicker({
                 width: rect.width,
               }}
             >
-              {BINARY_TYPES.map((t) => {
+              {types.map((t) => {
                 const m = BINARY_TYPE_META[t]
                 const Icon = m.icon
                 const isSel = t === value
