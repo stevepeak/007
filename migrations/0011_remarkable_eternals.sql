@@ -1,0 +1,1 @@
+ALTER TABLE `wf_workflow` ADD `archived` integer DEFAULT false NOT NULL;

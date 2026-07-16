@@ -376,12 +376,14 @@ function workflowSummary(w: {
   name: string
   description: string | null
   createdAt: Date
+  archived: boolean
 }): WfWorkflowSummary {
   return {
     id: w.id,
     name: w.name,
     description: w.description,
     createdAt: w.createdAt.getTime(),
+    archived: w.archived,
   }
 }
 
@@ -740,12 +742,17 @@ export function createWfSdkHandlers<TDeps>(
 
         case 'updateWorkflow': {
           const workflowId = str(params, 'workflowId')
-          const p = params as { name?: string; description?: string | null }
+          const p = params as {
+            name?: string
+            description?: string | null
+            archived?: boolean
+          }
           await requireExists(db, workflowId)
           await updateWorkflow(db, {
             workflowId,
             name: p.name,
             description: p.description,
+            archived: p.archived,
           })
           return json({ ok: true })
         }

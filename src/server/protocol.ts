@@ -115,6 +115,8 @@ export type WfWorkflowSummary = {
   name: string
   description: string | null
   createdAt: number
+  /** Retired workflows: hidden from the list and never triggered by their event. */
+  archived: boolean
 }
 
 export type WfWorkflowDetail = {
@@ -435,6 +437,7 @@ export interface WfDataClient {
     workflowId: string
     name?: string
     description?: string | null
+    archived?: boolean
   }): Promise<void>
   discardDraft(input: { workflowId: string }): Promise<void>
   listVersions(workflowId: string): Promise<WfVersionSummary[]>

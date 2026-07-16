@@ -1,4 +1,5 @@
 import {
+  Archive,
   GitBranch,
   History,
   Loader2,
@@ -8,6 +9,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { WorkflowGraph } from '../../engine'
+import { ArchiveButton } from '../archive-button'
 import { cn } from '../cn'
 import { useWfClient, useWfComponents } from '../context'
 import { Tooltip } from '../tooltip'
@@ -37,12 +39,15 @@ export type WorkflowEditorProps = {
   className?: string
   /** Called after a successful Publish, so the host can redirect to the version. */
   onPublished?: (result: { versionId: string; versionNumber: number }) => void
+  /** Called after the workflow is archived, so the host can leave the editor. */
+  onArchived?: () => void
 }
 
 export function WorkflowEditor({
   workflowId,
   className,
   onPublished,
+  onArchived,
 }: WorkflowEditorProps) {
   const { data, isLoading, error } = useWorkflow(workflowId)
 
@@ -75,8 +80,10 @@ export function WorkflowEditor({
       initialGraph={initialGraph}
       initialName={data.workflow.name}
       initialDescription={data.workflow.description ?? ''}
+      initialArchived={data.workflow.archived}
       className={className}
       onPublished={onPublished}
+      onArchived={onArchived}
     />
   )
 }
@@ -186,15 +193,19 @@ function EditorInner({
   initialGraph,
   initialName,
   initialDescription,
+  initialArchived,
   className,
   onPublished,
+  onArchived,
 }: {
   workflowId: string
   initialGraph: WorkflowGraph
   initialName: string
   initialDescription: string
+  initialArchived: boolean
   className?: string
   onPublished?: (result: { versionId: string; versionNumber: number }) => void
+  onArchived?: () => void
 }) {
   const { Button } = useWfComponents()
   const client = useWfClient()
@@ -462,6 +473,47 @@ function EditorInner({
         }}
         actions={
           <>
+            {initialArchived ? (
+              <>
+                <Tooltip
+                  side="bottom"
+                  content="This workflow is archived — it won't run when its event fires."
+                >
+                  <span className="flex items-center gap-1.5 rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500">
+                    <Archive className="size-3" />
+                    Archived
+                  </span>
+                </Tooltip>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    update.mutate({ workflowId, archived: false })
+                  }
+                  disabled={update.isPending}
+                >
+                  Unarchive
+                </Button>
+              </>
+            ) : (
+              <ArchiveButton
+                title="Archive workflow"
+                confirmLabel="Hold to archive"
+                description={
+                  <>
+                    Archive <strong>{name || 'this workflow'}</strong>? It will
+                    be removed from the Workflows list and will no longer run
+                    when its assigned event fires. Its versions and run history
+                    are kept, and you can unarchive it later.
+                  </>
+                }
+                onConfirm={() => {
+                  update.mutate({ workflowId, archived: true })
+                  onArchived?.()
+                }}
+              />
+            )}
+
             <Tooltip
               side="bottom"
               content={

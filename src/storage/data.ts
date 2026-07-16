@@ -60,12 +60,20 @@ import {
 // Workflows + versions + drafts
 // ---------------------------------------------------------------------------
 
-export async function listWorkflows(db: WfDb) {
+export async function listWorkflows(
+  db: WfDb,
+  opts?: { includeArchived?: boolean },
+) {
   return await db
     .select()
     .from(wfWorkflow)
-    // Hidden workflows (eval wrappers) are machinery, not authored content.
-    .where(eq(wfWorkflow.hidden, false))
+    .where(
+      // Hidden workflows (eval wrappers) are machinery, not authored content.
+      // Archived workflows are retired and drop off the list unless asked for.
+      opts?.includeArchived
+        ? eq(wfWorkflow.hidden, false)
+        : and(eq(wfWorkflow.hidden, false), eq(wfWorkflow.archived, false)),
+    )
     .orderBy(desc(wfWorkflow.createdAt))
 }
 
@@ -317,12 +325,22 @@ export async function listVersions(db: WfDb, workflowId: string) {
 
 export async function updateWorkflow(
   db: WfDb,
-  input: { workflowId: string; name?: string; description?: string | null },
+  input: {
+    workflowId: string
+    name?: string
+    description?: string | null
+    archived?: boolean
+  },
 ) {
-  const patch: { name?: string; description?: string | null; updatedAt: Date } =
-    { updatedAt: new Date() }
+  const patch: {
+    name?: string
+    description?: string | null
+    archived?: boolean
+    updatedAt: Date
+  } = { updatedAt: new Date() }
   if (input.name !== undefined) patch.name = input.name
   if (input.description !== undefined) patch.description = input.description
+  if (input.archived !== undefined) patch.archived = input.archived
   await db
     .update(wfWorkflow)
     .set(patch)
@@ -349,10 +367,25 @@ export async function discardDraft(db: WfDb, input: { workflowId: string }) {
 // Run manifest resolution
 // ---------------------------------------------------------------------------
 
-// Distinct agent ids referenced by agent nodes in a graph.
+// Every node in a graph, INCLUDING those nested inside iteration subgraphs. An
+// iteration node's subgraph runs as an inline graph once per item, and those
+// per-item nodes resolve against the SAME flat run manifest — so an agent or a
+// sub-workflow call living inside a subgraph must contribute to the manifest
+// just as a top-level one does. (Iteration can't nest, but a subgraph may hold a
+// `workflow` node, whose callee is resolved transitively by `resolveInto`.)
+function* allNodes(graph: WorkflowGraph): Generator<WorkflowGraph['nodes'][number]> {
+  for (const node of graph.nodes) {
+    yield node
+    if (node.kind === 'iteration') {
+      yield* allNodes(node.config.subgraph)
+    }
+  }
+}
+
+// Distinct agent ids referenced by agent nodes in a graph (incl. subgraphs).
 function agentIdsInGraph(graph: WorkflowGraph): string[] {
   const ids = new Set<string>()
-  for (const node of graph.nodes) {
+  for (const node of allNodes(graph)) {
     if (node.kind === 'agent' && node.config.agentId) {
       ids.add(node.config.agentId)
     }
@@ -360,14 +393,15 @@ function agentIdsInGraph(graph: WorkflowGraph): string[] {
   return [...ids]
 }
 
-// Distinct (agentId, version-pin) pairs referenced by agent nodes. Two nodes
-// pinning the same agent to different versions yield two pairs, so each gets its
-// own manifest entry. `version` is `null` for float-to-latest nodes.
+// Distinct (agentId, version-pin) pairs referenced by agent nodes (incl. those
+// inside iteration subgraphs). Two nodes pinning the same agent to different
+// versions yield two pairs, so each gets its own manifest entry. `version` is
+// `null` for float-to-latest nodes.
 function agentPinsInGraph(
   graph: WorkflowGraph,
 ): { agentId: string; version: number | null }[] {
   const seen = new Map<string, { agentId: string; version: number | null }>()
-  for (const node of graph.nodes) {
+  for (const node of allNodes(graph)) {
     if (node.kind === 'agent' && node.config.agentId) {
       const version = node.config.version ?? null
       const key = `${node.config.agentId}@${version ?? 'latest'}`
@@ -377,10 +411,10 @@ function agentPinsInGraph(
   return [...seen.values()]
 }
 
-// Distinct workflow ids called by workflow nodes in a graph.
+// Distinct workflow ids called by workflow nodes in a graph (incl. subgraphs).
 function workflowIdsInGraph(graph: WorkflowGraph): string[] {
   const ids = new Set<string>()
-  for (const node of graph.nodes) {
+  for (const node of allNodes(graph)) {
     if (node.kind === 'workflow' && node.config.workflowId) {
       ids.add(node.config.workflowId)
     }
@@ -806,6 +840,18 @@ export async function resolveAssignedVersion(
       .limit(1)
   )[0]
   if (!assignment) {
+    return null
+  }
+  // An archived workflow is retired: it never runs on its event, even if an
+  // assignment still points at it. Treat it as if unassigned.
+  const workflow = (
+    await db
+      .select({ archived: wfWorkflow.archived })
+      .from(wfWorkflow)
+      .where(eq(wfWorkflow.id, assignment.workflowId))
+      .limit(1)
+  )[0]
+  if (!workflow || workflow.archived) {
     return null
   }
   const version = await latestVersion(db, assignment.workflowId)

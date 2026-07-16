@@ -55,6 +55,11 @@ export const wfWorkflow = sqliteTable('wf_workflow', {
   // `trigger → agent → output` graph created once per agent target so an agent
   // eval runs through the same GraphWorkflow path as a workflow eval).
   hidden: integer('hidden', { mode: 'boolean' }).notNull().default(false),
+  // Archived workflows are retired: kept out of the Workflows list and, most
+  // importantly, never resolved for a trigger — an archived workflow does not
+  // run when its assigned event fires (see `resolveAssignedVersion`). Soft
+  // retirement, reversible by unarchiving; distinct from a hard `deleteWorkflow`.
+  archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
   createdBy: text('created_by'),
   createdAt: createdAt(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }),

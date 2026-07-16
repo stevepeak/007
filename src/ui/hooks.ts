@@ -246,6 +246,7 @@ export function useUpdateWorkflow() {
       workflowId: string
       name?: string
       description?: string | null
+      archived?: boolean
     }) => client.updateWorkflow(input),
     onSuccess: (_r, input) => {
       void qc.invalidateQueries({ queryKey: keys.workflow(input.workflowId) })
