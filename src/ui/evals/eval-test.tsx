@@ -1,37 +1,29 @@
-import { Binary, Gauge, Play, Save } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { Binary, Gauge, Play } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
+import type { EvalCheck, EvalMatch } from '../../server/protocol'
 import { useWfComponents } from '../context'
+import {
+  useEvalSet,
+  useTools,
+  useUpsertEvalRow,
+} from '../hooks'
 import { useWfNav } from '../nav'
 import { ArchiveButton } from '../archive-button'
 import { WfShell } from '../shell'
 import { sectionCrumb } from '../wf-crumbs'
 import { ModelSelect } from '../editor/model-select'
-import { getMockRunHistory } from './mock-data'
-import {
-  archiveTest,
-  currentSampleVersion,
-  currentTestVersion,
-  getGoal,
-  getSample,
-  getTest,
-  saveTest,
-  useEvalsRevision,
-  type TestConfig,
-  type TestFamily,
-} from './mock-store'
 import { RunConfigDialog } from './run-config-dialog'
-import { EmptyState, Tabs, TestRunsTable, VersionsList } from './shared'
+import { describeCheck, EmptyState } from './shared'
 import { PickerCards, StepFlow, type Step } from './step-flow'
 
-// The single-test view (route: evals/<setId>/samples/<sampleId>/tests/<testId>).
-// A "Test" is one check. Name (the assertion) + description are edited inline in
-// the header; the Configuration tab is a left-to-right flow: pick the test Type
-// (binary vs scored, plus the type/judge), then configure it. Save mints a new
-// immutable test VERSION (no publish step). Tabs: Configuration | Test runs |
-// Versions.
+// The single-test view
+// (route: evals/<setId>/samples/<sampleId>/tests/<testIndex>). A "Test" is one
+// EvalCheck inside the sample row's `checks` tree, addressed by its index. The
+// Configuration flow picks the family (binary vs scored) and its type, then the
+// type-specific fields. Every edit persists the whole row (rows are mutable).
 
-type TestTab = 'config' | 'runs' | 'versions'
+type TestFamily = 'binary' | 'scored'
 
 const BINARY_TYPES = [
   'tool_called',
@@ -40,10 +32,52 @@ const BINARY_TYPES = [
   'node_input_match',
   'output_match',
 ] as const
+type BinaryType = (typeof BINARY_TYPES)[number]
+
+const MATCH_OPTIONS: EvalMatch[] = ['equals', 'contains', 'jsonpath', 'regex']
+
+function familyOf(check: EvalCheck): TestFamily {
+  return check.type === 'llm_judge' ? 'scored' : 'binary'
+}
+
+function defaultCheck(type: EvalCheck['type']): EvalCheck {
+  switch (type) {
+    case 'tool_called':
+      return { type, toolId: '', called: true }
+    case 'tool_args_match':
+      return { type, toolId: '', match: 'contains', value: '' }
+    case 'node_visited':
+      return { type, nodeId: '', visited: true }
+    case 'node_input_match':
+      return { type, nodeId: '', match: 'contains', value: '' }
+    case 'output_match':
+      return { type, match: 'contains', value: '' }
+    case 'llm_judge':
+      return { type, rubric: '', threshold: 0.7, weight: 1 }
+  }
+}
+
+/** Render a stored check value back into an editable string. */
+function valueToStr(v: unknown): string {
+  if (typeof v === 'string') return v
+  if (v === undefined) return ''
+  return JSON.stringify(v)
+}
+/** Parse an entered value: JSON when it parses (numbers/booleans/objects), else raw string. */
+function parseValue(s: string): unknown {
+  const t = s.trim()
+  if (t === '') return ''
+  try {
+    return JSON.parse(t)
+  } catch {
+    return s
+  }
+}
 
 export type EvalTestProps = {
   setId: string
   sampleId: string
+  /** The check's index within the sample row's checks tree (as a string). */
   testId: string
   className?: string
 }
@@ -56,26 +90,63 @@ export function EvalTest({
 }: EvalTestProps) {
   const { Button } = useWfComponents()
   const { navigate } = useWfNav()
-  const [tab, setTab] = useState<TestTab>('config')
   const [runOpen, setRunOpen] = useState(false)
 
-  useEvalsRevision()
-  const goal = getGoal(setId)
-  const sample = getSample(sampleId)
-  const test = getTest(testId)
-  const baseline = test ? currentTestVersion(test).config : null
-
-  const [form, setForm] = useState<TestConfig | null>(baseline)
-  const scored = form?.family === 'scored'
-  const runs = getMockRunHistory(testId, scored)
-
-  const dirty = useMemo(
-    () =>
-      form != null &&
-      baseline != null &&
-      JSON.stringify(form) !== JSON.stringify(baseline),
-    [form, baseline],
+  const index = Number(testId)
+  const { data, isLoading } = useEvalSet(setId)
+  const set = data?.set
+  const row = useMemo(
+    () => data?.rows.find((r) => r.id === sampleId),
+    [data?.rows, sampleId],
   )
+  const stored =
+    row && Number.isInteger(index) ? row.checks.checks[index] : undefined
+  const upsertRow = useUpsertEvalRow()
+
+  // Local draft of this one check, synced per (row, index).
+  const [draft, setDraft] = useState<EvalCheck | null>(null)
+  const syncKey = useRef<string | null>(null)
+  useEffect(() => {
+    const key = row ? `${row.id}:${index}` : null
+    if (stored && key && syncKey.current !== key) {
+      setDraft(stored)
+      syncKey.current = key
+    }
+  }, [stored, row, index])
+
+  const persist = (next: EvalCheck) => {
+    if (!row) return
+    setDraft(next)
+    const checks = [...row.checks.checks]
+    checks[index] = next
+    upsertRow.mutate({
+      id: row.id,
+      setId,
+      name: row.name,
+      initialCondition: row.initialCondition,
+      fixtures: row.fixtures,
+      checks: { ...row.checks, checks },
+    })
+  }
+
+  const removeTest = () => {
+    if (!row) return
+    const checks = row.checks.checks.filter((_, i) => i !== index)
+    upsertRow.mutate({
+      id: row.id,
+      setId,
+      name: row.name,
+      initialCondition: row.initialCondition,
+      fixtures: row.fixtures,
+      checks: { ...row.checks, checks },
+    })
+    navigate(`evals/${setId}/samples/${sampleId}`)
+  }
+
+  const setFamily = (family: TestFamily) => {
+    if (family === familyOf(draft ?? defaultCheck('tool_called'))) return
+    persist(defaultCheck(family === 'scored' ? 'llm_judge' : 'tool_called'))
+  }
 
   return (
     <WfShell
@@ -84,60 +155,40 @@ export function EvalTest({
       crumbs={[
         { home: true },
         sectionCrumb('evals'),
-        { label: goal?.name ?? 'Goal', to: `evals/${setId}` },
-        {
-          label: sample ? currentSampleVersion(sample).config.name : 'Sample',
-          to: `evals/${setId}/samples/${sampleId}`,
-        },
-        { label: form?.label || 'Test' },
+        { label: set?.name ?? 'Goal', to: `evals/${setId}` },
+        { label: row?.name ?? 'Sample', to: `evals/${setId}/samples/${sampleId}` },
+        { label: draft ? describeCheck(draft) : 'Test' },
       ]}
     >
       <div className="mx-auto max-w-5xl space-y-5 p-6">
-        {!test || !form ? (
-          <EmptyState message="This test doesn't exist, or was archived / removed." />
+        {isLoading && !row ? (
+          <EmptyState message="Loading test…" />
+        ) : !row || !draft ? (
+          <EmptyState message="This test doesn't exist, or was removed." />
         ) : (
           <>
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
-                <input
-                  value={form.label}
-                  maxLength={40}
-                  placeholder="Untitled test"
-                  aria-label="Test name"
-                  onChange={(e) => setForm({ ...form, label: e.target.value })}
-                  className="w-full truncate rounded bg-transparent text-lg font-semibold text-neutral-900 outline-none placeholder:text-neutral-300 focus:bg-neutral-50"
-                />
-                <textarea
-                  value={form.description ?? ''}
-                  rows={1}
-                  placeholder="Add a description…"
-                  aria-label="Test description"
-                  onChange={(e) =>
-                    setForm({ ...form, description: e.target.value })
-                  }
-                  className="w-full resize-none rounded bg-transparent text-sm text-neutral-600 outline-none placeholder:text-neutral-300 focus:bg-neutral-50"
-                />
+                <h1 className="truncate text-lg font-semibold text-neutral-900">
+                  {describeCheck(draft)}
+                </h1>
+                <p className="mt-0.5 text-sm text-neutral-500">
+                  {draft.type === 'llm_judge'
+                    ? 'An LLM judge scores the run against a rubric.'
+                    : 'A deterministic pass/fail check read from the run trace.'}
+                </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <Button
-                  size="sm"
-                  disabled={!dirty}
-                  onClick={() => saveTest(testId, form)}
-                >
-                  <Save className="size-4" />
-                  Save
-                </Button>
                 <ArchiveButton
+                  title="Delete test"
+                  confirmLabel="Hold to delete"
                   description={
                     <>
-                      Archive <strong>{form.label || 'this test'}</strong>? It’ll
-                      be removed from the sample.
+                      Delete <strong>{describeCheck(draft)}</strong>? It’ll be
+                      removed from this sample&apos;s tests.
                     </>
                   }
-                  onConfirm={() => {
-                    archiveTest(testId)
-                    navigate(`evals/${setId}/samples/${sampleId}`)
-                  }}
+                  onConfirm={removeTest}
                 />
                 <Button
                   size="sm"
@@ -145,7 +196,7 @@ export function EvalTest({
                   onClick={() => setRunOpen(true)}
                 >
                   <Play className="size-4" />
-                  Run test
+                  Run goal
                 </Button>
               </div>
             </div>
@@ -154,30 +205,11 @@ export function EvalTest({
               open={runOpen}
               onClose={() => setRunOpen(false)}
               scope="test"
-              targetName={form.label || 'Untitled test'}
+              targetName={set?.name || 'goal'}
+              setIds={[setId]}
             />
 
-            <Tabs
-              active={tab}
-              onChange={(k) => setTab(k as TestTab)}
-              tabs={[
-                { key: 'config', label: 'Configuration' },
-                { key: 'runs', label: 'Test runs', count: runs.length },
-                {
-                  key: 'versions',
-                  label: 'Versions',
-                  count: test.versions.length,
-                },
-              ]}
-            />
-
-            {tab === 'config' ? (
-              <ConfigForm form={form} setForm={setForm} />
-            ) : tab === 'runs' ? (
-              <TestRunsTable rows={runs} />
-            ) : (
-              <VersionsList versions={test.versions} />
-            )}
+            <ConfigForm draft={draft} persist={persist} setFamily={setFamily} />
           </>
         )}
       </div>
@@ -186,139 +218,229 @@ export function EvalTest({
 }
 
 function ConfigForm({
-  form,
-  setForm,
+  draft,
+  persist,
+  setFamily,
 }: {
-  form: TestConfig
-  setForm: (next: TestConfig) => void
+  draft: EvalCheck
+  persist: (next: EvalCheck) => void
+  setFamily: (family: TestFamily) => void
 }) {
-  const setFamily = (family: TestFamily) => {
-    if (family === 'scored') {
-      setForm({
-        family: 'scored',
-        type: 'llm_judge',
-        label: form.label,
-        description: form.description,
-        rubric: form.rubric ?? form.label,
-        threshold: form.threshold ?? 0.7,
-        weight: form.weight ?? 1,
-        model: form.model ?? 'default',
-      })
-    } else {
-      setForm({
-        family: 'binary',
-        type: BINARY_TYPES.includes(form.type as (typeof BINARY_TYPES)[number])
-          ? form.type
-          : 'tool_called',
-        label: form.label,
-        description: form.description,
-      })
-    }
-  }
-
+  const family = familyOf(draft)
   const steps: Step[] = [
     {
       key: 'config',
       title: 'Configuration',
-      content: <TestConfigStep form={form} setForm={setForm} />,
+      content:
+        draft.type === 'llm_judge' ? (
+          <JudgeConfig check={draft} persist={persist} />
+        ) : (
+          <BinaryConfig check={draft} persist={persist} />
+        ),
     },
   ]
-
   return (
     <div className="space-y-3">
-      <TypeStep form={form} setForm={setForm} setFamily={setFamily} />
+      <PickerCards
+        value={family}
+        collapsedByDefault
+        onSelect={(f) => setFamily(f)}
+        options={[
+          {
+            value: 'binary',
+            icon: Binary,
+            label: 'Binary',
+            desc: 'A deterministic pass/fail check.',
+            accent: 'sky',
+            detail: draft.type,
+          },
+          {
+            value: 'scored',
+            icon: Gauge,
+            label: 'Scored',
+            desc: 'An LLM judge grades the output against a rubric.',
+            accent: 'amber',
+            detail: 'llm_judge',
+          },
+        ]}
+      />
       <StepFlow steps={steps} />
     </div>
   )
 }
 
-function TypeStep({
-  form,
-  setForm,
-  setFamily,
+// ── Binary check config ──────────────────────────────────────────────────────
+
+function BinaryConfig({
+  check,
+  persist,
 }: {
-  form: TestConfig
-  setForm: (next: TestConfig) => void
-  setFamily: (family: TestFamily) => void
+  check: EvalCheck
+  persist: (next: EvalCheck) => void
 }) {
   const { Label } = useWfComponents()
   return (
-    <PickerCards
-      value={form.family}
-      collapsedByDefault
-      onSelect={(f) => setFamily(f)}
-      options={[
-        {
-          value: 'binary',
-          icon: Binary,
-          label: 'Binary',
-          desc: 'A pass/fail check.',
-          accent: 'sky',
-          detail: form.type,
-          setting: (
-            <div className="space-y-1">
-              <Label>Check type</Label>
-              <select
-                value={form.type}
-                onChange={(e) => setForm({ ...form, type: e.target.value })}
-                className="h-9 w-full rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none focus:border-neutral-500"
-              >
-                {BINARY_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ),
-        },
-        {
-          value: 'scored',
-          icon: Gauge,
-          label: 'Scored',
-          desc: 'An LLM judge grades the output come alignment with expectations.',
-          accent: 'amber',
-          detail: `${form.model || 'default'} judge`,
-        },
-      ]}
-    />
+    <div className="space-y-4">
+      <div className="space-y-1">
+        <Label>Check type</Label>
+        <select
+          value={check.type}
+          onChange={(e) => persist(defaultCheck(e.target.value as BinaryType))}
+          className="h-9 w-full max-w-xs rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none focus:border-neutral-500"
+        >
+          {BINARY_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+      </div>
+      <BinaryFields check={check} persist={persist} />
+      <p className="text-xs text-neutral-400">
+        Binary checks are pure pass/fail — they never enter the score.
+      </p>
+    </div>
   )
 }
 
-function TestConfigStep({
-  form,
-  setForm,
+function BinaryFields({
+  check,
+  persist,
 }: {
-  form: TestConfig
-  setForm: (next: TestConfig) => void
+  check: EvalCheck
+  persist: (next: EvalCheck) => void
+}) {
+  switch (check.type) {
+    case 'tool_called':
+      return (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <ToolPicker
+            value={check.toolId}
+            onChange={(toolId) => persist({ ...check, toolId })}
+          />
+          <BoolPicker
+            label="Expectation"
+            value={check.called}
+            trueLabel="was called"
+            falseLabel="was not called"
+            onChange={(called) => persist({ ...check, called })}
+          />
+        </div>
+      )
+    case 'tool_args_match':
+      return (
+        <div className="space-y-3">
+          <ToolPicker
+            value={check.toolId}
+            onChange={(toolId) => persist({ ...check, toolId })}
+          />
+          <MatchRow
+            path={check.path}
+            match={check.match}
+            value={check.value}
+            pathLabel="Args path (optional)"
+            pathPlaceholder="e.g. amount"
+            onChange={(p) => persist({ ...check, ...p })}
+          />
+        </div>
+      )
+    case 'node_visited':
+      return (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <TextField
+            label="Node id"
+            value={check.nodeId}
+            placeholder="node id from the graph"
+            onCommit={(nodeId) => persist({ ...check, nodeId })}
+          />
+          <BoolPicker
+            label="Expectation"
+            value={check.visited}
+            trueLabel="was visited"
+            falseLabel="was not visited"
+            onChange={(visited) => persist({ ...check, visited })}
+          />
+        </div>
+      )
+    case 'node_input_match':
+      return (
+        <div className="space-y-3">
+          <TextField
+            label="Node id"
+            value={check.nodeId}
+            placeholder="node id from the graph"
+            onCommit={(nodeId) => persist({ ...check, nodeId })}
+          />
+          <MatchRow
+            path={check.path}
+            match={check.match}
+            value={check.value}
+            pathLabel="Input path (optional)"
+            pathPlaceholder="e.g. reason"
+            onChange={(p) => persist({ ...check, ...p })}
+          />
+        </div>
+      )
+    case 'output_match':
+      return (
+        <MatchRow
+          path={check.path}
+          match={check.match}
+          value={check.value}
+          pathLabel="Output path (optional)"
+          pathPlaceholder="e.g. status"
+          onChange={(p) => persist({ ...check, ...p })}
+        />
+      )
+    case 'llm_judge':
+      return null
+  }
+}
+
+// ── Scored (judge) config ────────────────────────────────────────────────────
+
+function JudgeConfig({
+  check,
+  persist,
+}: {
+  check: Extract<EvalCheck, { type: 'llm_judge' }>
+  persist: (next: EvalCheck) => void
 }) {
   const { Input, Label, Textarea } = useWfComponents()
-
-  if (form.family !== 'scored') {
-    return (
-      <div className="py-6 text-center text-sm text-neutral-400">
-        No extra configuration for binary tests yet — coming soon. Binary tests
-        are pure pass/fail; they never enter the score.
-      </div>
-    )
-  }
+  const [rubric, setRubric] = useState(check.rubric)
+  const rubricRef = useRef(check.rubric)
+  useEffect(() => {
+    if (check.rubric !== rubricRef.current) {
+      setRubric(check.rubric)
+      rubricRef.current = check.rubric
+    }
+  }, [check.rubric])
 
   return (
     <div className="space-y-3">
       <div className="space-y-1">
         <Label>Judge model</Label>
         <ModelSelect
-          value={form.model ?? ''}
-          onChange={(model) => setForm({ ...form, model })}
+          value={check.modelId ?? ''}
+          onChange={(modelId) => persist({ ...check, modelId: modelId || undefined })}
         />
+        <p className="text-xs text-neutral-400">
+          Optional — falls back to the host&apos;s default judge model.
+        </p>
       </div>
       <div className="space-y-1">
         <Label>Rubric</Label>
         <Textarea
           rows={3}
-          value={form.rubric ?? ''}
+          value={rubric}
           placeholder="What should the judge reward or penalize?"
-          onChange={(e) => setForm({ ...form, rubric: e.target.value })}
+          onChange={(e) => setRubric(e.target.value)}
+          onBlur={() => {
+            if (rubric !== check.rubric) {
+              rubricRef.current = rubric
+              persist({ ...check, rubric })
+            }
+          }}
         />
       </div>
       <div className="grid grid-cols-2 gap-3">
@@ -329,9 +451,9 @@ function TestConfigStep({
             step="0.05"
             min="0"
             max="1"
-            value={String(form.threshold ?? 0.7)}
+            value={String(check.threshold ?? 0.7)}
             onChange={(e) =>
-              setForm({ ...form, threshold: Number(e.target.value) })
+              persist({ ...check, threshold: Number(e.target.value) })
             }
           />
         </div>
@@ -341,17 +463,205 @@ function TestConfigStep({
             type="number"
             step="0.5"
             min="0"
-            value={String(form.weight ?? 1)}
+            value={String(check.weight ?? 1)}
             onChange={(e) =>
-              setForm({ ...form, weight: Number(e.target.value) })
+              persist({ ...check, weight: Number(e.target.value) })
             }
           />
         </div>
       </div>
       <p className="text-xs text-neutral-400">
-        Scored tests contribute to the goal/sample score; binary tests only
-        affect pass/fail.
+        Scored tests contribute to the goal/sample score; the threshold maps the
+        0–1 judge score to pass/fail, weight scales its share of the mean.
       </p>
+    </div>
+  )
+}
+
+// ── Field primitives ─────────────────────────────────────────────────────────
+
+function ToolPicker({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (toolId: string) => void
+}) {
+  const { Label } = useWfComponents()
+  const toolsQuery = useTools()
+  const tools = toolsQuery.data ?? []
+  const known = tools.some((t) => t.id === value)
+  return (
+    <div className="space-y-1">
+      <Label>Tool</Label>
+      <select
+        value={known ? value : ''}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-9 w-full rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none focus:border-neutral-500"
+      >
+        <option value="">
+          {toolsQuery.isLoading ? 'Loading tools…' : 'Select a tool…'}
+        </option>
+        {tools.map((t) => (
+          <option key={t.id} value={t.id}>
+            {t.name}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
+function BoolPicker({
+  label,
+  value,
+  trueLabel,
+  falseLabel,
+  onChange,
+}: {
+  label: string
+  value: boolean
+  trueLabel: string
+  falseLabel: string
+  onChange: (v: boolean) => void
+}) {
+  const { Label } = useWfComponents()
+  return (
+    <div className="space-y-1">
+      <Label>{label}</Label>
+      <select
+        value={value ? 'true' : 'false'}
+        onChange={(e) => onChange(e.target.value === 'true')}
+        className="h-9 w-full rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none focus:border-neutral-500"
+      >
+        <option value="true">{trueLabel}</option>
+        <option value="false">{falseLabel}</option>
+      </select>
+    </div>
+  )
+}
+
+function TextField({
+  label,
+  value,
+  placeholder,
+  onCommit,
+}: {
+  label: string
+  value: string
+  placeholder?: string
+  onCommit: (v: string) => void
+}) {
+  const { Input, Label } = useWfComponents()
+  const [local, setLocal] = useState(value)
+  const ref = useRef(value)
+  useEffect(() => {
+    if (value !== ref.current) {
+      setLocal(value)
+      ref.current = value
+    }
+  }, [value])
+  return (
+    <div className="space-y-1">
+      <Label>{label}</Label>
+      <Input
+        value={local}
+        placeholder={placeholder}
+        onChange={(e) => setLocal(e.target.value)}
+        onBlur={() => {
+          if (local !== ref.current) {
+            ref.current = local
+            onCommit(local)
+          }
+        }}
+        className="font-mono text-xs"
+      />
+    </div>
+  )
+}
+
+// The match/path/value trio shared by the *_match check types.
+function MatchRow({
+  path,
+  match,
+  value,
+  pathLabel,
+  pathPlaceholder,
+  onChange,
+}: {
+  path: string | undefined
+  match: EvalMatch
+  value: unknown
+  pathLabel: string
+  pathPlaceholder?: string
+  onChange: (patch: { path?: string; match?: EvalMatch; value?: unknown }) => void
+}) {
+  const { Input, Label } = useWfComponents()
+  const [pathLocal, setPathLocal] = useState(path ?? '')
+  const [valueLocal, setValueLocal] = useState(valueToStr(value))
+  const pathRef = useRef(path ?? '')
+  const valueRef = useRef(valueToStr(value))
+  useEffect(() => {
+    const p = path ?? ''
+    if (p !== pathRef.current) {
+      setPathLocal(p)
+      pathRef.current = p
+    }
+  }, [path])
+  useEffect(() => {
+    const v = valueToStr(value)
+    if (v !== valueRef.current) {
+      setValueLocal(v)
+      valueRef.current = v
+    }
+  }, [value])
+
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="space-y-1">
+        <Label>{pathLabel}</Label>
+        <Input
+          value={pathLocal}
+          placeholder={pathPlaceholder}
+          onChange={(e) => setPathLocal(e.target.value)}
+          onBlur={() => {
+            if (pathLocal !== pathRef.current) {
+              pathRef.current = pathLocal
+              onChange({ path: pathLocal || undefined })
+            }
+          }}
+          className="font-mono text-xs"
+        />
+      </div>
+      <div className="space-y-1">
+        <Label>Match</Label>
+        <select
+          value={match}
+          onChange={(e) => onChange({ match: e.target.value as EvalMatch })}
+          className="h-9 w-full rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none focus:border-neutral-500"
+        >
+          {MATCH_OPTIONS.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="space-y-1">
+        <Label>Value</Label>
+        <Input
+          value={valueLocal}
+          placeholder="expected"
+          onChange={(e) => setValueLocal(e.target.value)}
+          onBlur={() => {
+            if (valueLocal !== valueRef.current) {
+              valueRef.current = valueLocal
+              onChange({ value: parseValue(valueLocal) })
+            }
+          }}
+          className="font-mono text-xs"
+        />
+      </div>
     </div>
   )
 }

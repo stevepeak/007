@@ -11,7 +11,7 @@ import { WfLink } from '../nav'
 import { WfShell } from '../shell'
 import { sectionCrumb } from '../wf-crumbs'
 
-import { EmptyState, formatTimestamp, PassRate, Score } from './shared'
+import { describeCheck, EmptyState, formatTimestamp, PassRate, Score } from './shared'
 
 // The eval run report (route: evals/runs/<evalRunId>). Real-data screen over
 // `useEvalRun`: the run's rolled-up pass rate + mean score, then each sample's
@@ -252,23 +252,4 @@ function RunStatusBadge({ status }: { status: string }) {
       {status}
     </span>
   )
-}
-
-// A short human phrasing of what a check asserted — the report's per-check label.
-function describeCheck(check: EvalCheck | undefined): string {
-  if (!check) return 'check'
-  switch (check.type) {
-    case 'tool_called':
-      return `${check.toolId} ${check.called ? 'called' : 'not called'}`
-    case 'tool_args_match':
-      return `${check.toolId} args${check.path ? `.${check.path}` : ''} ${check.match}`
-    case 'node_visited':
-      return `node ${check.nodeId} ${check.visited ? 'visited' : 'not visited'}`
-    case 'node_input_match':
-      return `node ${check.nodeId} input${check.path ? `.${check.path}` : ''} ${check.match}`
-    case 'output_match':
-      return `output${check.path ? `.${check.path}` : ''} ${check.match}`
-    case 'llm_judge':
-      return `judge: ${check.rubric.slice(0, 60)}${check.rubric.length > 60 ? '…' : ''}`
-  }
 }

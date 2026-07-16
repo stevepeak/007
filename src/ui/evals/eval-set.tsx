@@ -1,37 +1,21 @@
 import { Play, Plus } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
+import type { WfEvalRowDTO } from '../../server/protocol'
 import { useWfComponents } from '../context'
+import { useAgents, useEvalRuns, useEvalSet, useUpdateEvalSet, useUpsertEvalRow } from '../hooks'
 import { useWfNav } from '../nav'
 import { ArchiveButton } from '../archive-button'
 import { WfShell } from '../shell'
 import { sectionCrumb } from '../wf-crumbs'
-import { getMockRunHistory } from './mock-data'
-import {
-  archiveGoal,
-  createSample,
-  currentSampleVersion,
-  getGoal,
-  listSamples,
-  listTests,
-  updateGoal,
-  useEvalsRevision,
-  type Sample,
-} from './mock-store'
 import { RunConfigDialog } from './run-config-dialog'
-import {
-  EmptyState,
-  KindBadge,
-  Score,
-  StatusPill,
-  Tabs,
-  TestRunsTable,
-} from './shared'
+import { EmptyState, formatTimestamp, KindBadge, PassRate, Score, Tabs } from './shared'
 
-// The Goal detail page (route: evals/<setId>). A goal is a FOLDER (not
-// versioned): its name + description are editable in place, and it can be
-// archived. Two tabs: its SAMPLES (from the mock store) and the TEST RUNS that
-// touched it. (Internal identifiers still use `set`/`setId`.)
+// The Goal detail page (route: evals/<setId>). A goal is a wf_eval_set: its
+// name + description are editable in place, its TARGET (the agent its samples
+// run against) is chosen here, and it can be archived. Two tabs: its SAMPLES
+// (wf_eval_row) and the TEST RUNS that included it. (Internal identifiers still
+// use `set`/`setId`.)
 
 type SetTab = 'samples' | 'runs'
 
@@ -46,14 +30,35 @@ export function EvalSet({ setId, className }: EvalSetProps) {
   const [tab, setTab] = useState<SetTab>('samples')
   const [runOpen, setRunOpen] = useState(false)
 
-  useEvalsRevision()
-  const goal = getGoal(setId)
+  const { data, isLoading } = useEvalSet(setId)
+  const set = data?.set
+  const rows = useMemo(() => data?.rows ?? [], [data?.rows])
 
-  const [name, setName] = useState(goal?.name ?? '')
-  const [description, setDescription] = useState(goal?.description ?? '')
+  const updateSet = useUpdateEvalSet()
+  const upsertRow = useUpsertEvalRow()
 
-  const samples = listSamples(setId)
-  const runs = getMockRunHistory(setId, goal?.lastRun?.score != null)
+  // Local name/description, synced once per set id so background refetches don't
+  // clobber an in-progress edit (persisted on blur).
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const syncedId = useRef<string | null>(null)
+  useEffect(() => {
+    if (set && syncedId.current !== set.id) {
+      setName(set.name)
+      setDescription(set.description ?? '')
+      syncedId.current = set.id
+    }
+  }, [set])
+
+  const addSample = async () => {
+    const { rowId } = await upsertRow.mutateAsync({
+      setId,
+      name: 'Untitled sample',
+      checks: { op: 'and', checks: [] },
+      sortOrder: rows.length,
+    })
+    navigate(`evals/${setId}/samples/${rowId}`)
+  }
 
   return (
     <WfShell
@@ -62,11 +67,13 @@ export function EvalSet({ setId, className }: EvalSetProps) {
       crumbs={[
         { home: true },
         sectionCrumb('evals'),
-        { label: goal ? name || 'Untitled goal' : 'Goal' },
+        { label: set ? name || 'Untitled goal' : 'Goal' },
       ]}
     >
       <div className="mx-auto max-w-5xl space-y-5 p-6">
-        {!goal ? (
+        {isLoading && !set ? (
+          <EmptyState message="Loading goal…" />
+        ) : !set ? (
           <EmptyState message="This goal doesn't exist, or was archived / removed." />
         ) : (
           <>
@@ -74,15 +81,15 @@ export function EvalSet({ setId, className }: EvalSetProps) {
               <div className="min-w-0 flex-1">
                 <input
                   value={name}
-                  maxLength={40}
+                  maxLength={60}
                   placeholder="Untitled goal"
                   aria-label="Goal name"
                   onChange={(e) => setName(e.target.value)}
-                  onBlur={() =>
-                    updateGoal(setId, {
-                      name: name.trim() || 'Untitled goal',
-                    })
-                  }
+                  onBlur={() => {
+                    const next = name.trim() || 'Untitled goal'
+                    if (next !== set.name)
+                      updateSet.mutate({ setId, name: next })
+                  }}
                   className="w-full truncate rounded bg-transparent text-lg font-semibold text-neutral-900 outline-none placeholder:text-neutral-300 focus:bg-neutral-50"
                 />
                 <textarea
@@ -91,7 +98,10 @@ export function EvalSet({ setId, className }: EvalSetProps) {
                   placeholder="Add a description…"
                   aria-label="Goal description"
                   onChange={(e) => setDescription(e.target.value)}
-                  onBlur={() => updateGoal(setId, { description })}
+                  onBlur={() => {
+                    if (description !== (set.description ?? ''))
+                      updateSet.mutate({ setId, description: description || null })
+                  }}
                   className="w-full resize-none rounded bg-transparent text-sm text-neutral-600 outline-none placeholder:text-neutral-300 focus:bg-neutral-50"
                 />
               </div>
@@ -104,45 +114,64 @@ export function EvalSet({ setId, className }: EvalSetProps) {
                     </>
                   }
                   onConfirm={() => {
-                    archiveGoal(setId)
+                    updateSet.mutate({ setId, archived: true })
                     navigate('evals')
                   }}
                 />
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => navigate(`evals/${setId}/samples/${createSample(setId)}`)}
+                  disabled={upsertRow.isPending}
+                  onClick={() => void addSample()}
                 >
                   <Plus className="size-4" />
                   Add sample
                 </Button>
-                <Button size="sm" onClick={() => setRunOpen(true)}>
+                <Button
+                  size="sm"
+                  disabled={rows.length === 0}
+                  onClick={() => setRunOpen(true)}
+                >
                   <Play className="size-4" />
                   Run this goal
                 </Button>
               </div>
             </div>
 
+            <TargetRow
+              setId={setId}
+              targetId={set.targetId}
+              onChange={(targetId) =>
+                updateSet.mutate({
+                  setId,
+                  targetKind: 'agent',
+                  targetId,
+                  triggerKind: 'manual',
+                })
+              }
+            />
+
             <RunConfigDialog
               open={runOpen}
               onClose={() => setRunOpen(false)}
               scope="goal"
-              targetName={goal.name}
+              targetName={set.name}
+              setIds={[setId]}
             />
 
             <Tabs
               active={tab}
               onChange={(k) => setTab(k as SetTab)}
               tabs={[
-                { key: 'samples', label: 'Samples', count: samples.length },
-                { key: 'runs', label: 'Test runs', count: runs.length },
+                { key: 'samples', label: 'Samples', count: rows.length },
+                { key: 'runs', label: 'Test runs' },
               ]}
             />
 
             {tab === 'samples' ? (
-              <SamplesTable setId={setId} samples={samples} />
+              <SamplesTable setId={setId} rows={rows} />
             ) : (
-              <TestRunsTable rows={runs} />
+              <RunsForSet setId={setId} />
             )}
           </>
         )}
@@ -151,64 +180,132 @@ export function EvalSet({ setId, className }: EvalSetProps) {
   )
 }
 
-function SamplesTable({
-  setId,
-  samples,
+// The set-level target: which agent the goal's samples run against. Changing it
+// re-points every sample (Given fields re-reflect from the new agent).
+function TargetRow({
+  targetId,
+  onChange,
 }: {
   setId: string
-  samples: Sample[]
+  targetId: string
+  onChange: (targetId: string) => void
+}) {
+  const { Label } = useWfComponents()
+  const agentsQuery = useAgents()
+  const agents = agentsQuery.data ?? []
+  const known = agents.some((a) => a.id === targetId)
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50/60 px-4 py-3">
+      <KindBadge kind="agent" />
+      <div className="min-w-0 flex-1 space-y-1">
+        <Label>Target agent</Label>
+        <select
+          value={known ? targetId : ''}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-9 w-full max-w-sm rounded-md border border-neutral-300 bg-white px-2 text-sm outline-none focus:border-neutral-500"
+        >
+          {!known ? (
+            <option value="">
+              {agentsQuery.isLoading ? 'Loading agents…' : 'Unknown agent — pick one'}
+            </option>
+          ) : null}
+          {agents.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  )
+}
+
+function SamplesTable({
+  setId,
+  rows,
+}: {
+  setId: string
+  rows: WfEvalRowDTO[]
 }) {
   const { navigate } = useWfNav()
-  if (samples.length === 0) {
+  if (rows.length === 0) {
     return (
-      <EmptyState message="No samples yet. Add one to define a Given, what's tested, and its Tests." />
+      <EmptyState message="No samples yet. Add one to define a Given (initial state) and its Tests." />
     )
   }
   return (
     <div className="overflow-hidden rounded-lg border border-neutral-200">
-      <div className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-neutral-100 bg-neutral-50 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+      <div className="grid grid-cols-[1fr_auto] items-center gap-4 border-b border-neutral-100 bg-neutral-50 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-neutral-400">
         <span>Sample</span>
-        <span className="text-right">Tests</span>
-        <span className="w-28 text-right">Last result</span>
+        <span className="w-16 text-right">Tests</span>
       </div>
-      {samples.map((s) => {
-        const cfg = currentSampleVersion(s).config
-        return (
-          <button
-            key={s.id}
-            type="button"
-            onClick={() => navigate(`evals/${setId}/samples/${s.id}`)}
-            className="grid w-full grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-neutral-100 px-4 py-3 text-left last:border-b-0 hover:bg-neutral-50"
-          >
-            <div className="min-w-0">
-              <div className="truncate text-sm font-medium text-neutral-900">
-                {cfg.name}
+      {rows.map((r) => (
+        <button
+          key={r.id}
+          type="button"
+          onClick={() => navigate(`evals/${setId}/samples/${r.id}`)}
+          className="grid w-full grid-cols-[1fr_auto] items-center gap-4 border-b border-neutral-100 px-4 py-3 text-left last:border-b-0 hover:bg-neutral-50"
+        >
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium text-neutral-900">
+              {r.name}
+            </div>
+            {r.initialCondition.promptVariables &&
+            Object.keys(r.initialCondition.promptVariables).length > 0 ? (
+              <div className="mt-0.5 truncate font-mono text-xs text-neutral-400">
+                {Object.entries(r.initialCondition.promptVariables)
+                  .map(([k, v]) => `${k}=${v}`)
+                  .join(' · ')}
               </div>
-              <div className="mt-1 flex items-start gap-2">
-                <KindBadge kind={cfg.kind} />
-                {cfg.summary ? (
-                  <span className="min-w-0 text-xs leading-relaxed text-neutral-500">
-                    {cfg.summary}
-                  </span>
-                ) : null}
-              </div>
-            </div>
-            <div className="text-right text-sm tabular-nums text-neutral-500">
-              {listTests(s.id).length}
-            </div>
-            <div className="w-28 text-right">
-              {s.lastResult ? (
-                <div className="flex items-center justify-end gap-2">
-                  <StatusPill status={s.lastResult.status} />
-                  <Score value={s.lastResult.score} />
-                </div>
-              ) : (
-                <span className="text-xs text-neutral-400">—</span>
-              )}
-            </div>
-          </button>
-        )
-      })}
+            ) : null}
+          </div>
+          <div className="w-16 text-right text-sm tabular-nums text-neutral-500">
+            {r.checks.checks.length}
+          </div>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// Test runs that included this set. Filtered from the global run history (there
+// is no per-set run table — a run spans one or more sets by `setIds`).
+function RunsForSet({ setId }: { setId: string }) {
+  const { navigate } = useWfNav()
+  const runsQuery = useEvalRuns()
+  const runs = (runsQuery.data ?? []).filter((r) => r.setIds.includes(setId))
+  if (runsQuery.isLoading) return <EmptyState message="Loading test runs…" />
+  if (runs.length === 0) {
+    return <EmptyState message="No test runs yet. Run this goal to see results here." />
+  }
+  return (
+    <div className="overflow-hidden rounded-lg border border-neutral-200">
+      <div className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-neutral-100 bg-neutral-50 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+        <span>When</span>
+        <span className="text-right">Pass</span>
+        <span className="w-24 text-right">Score</span>
+      </div>
+      {runs.map((r) => (
+        <button
+          key={r.id}
+          type="button"
+          onClick={() => navigate(`evals/runs/${r.id}`)}
+          className="grid w-full grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-neutral-100 px-4 py-3 text-left last:border-b-0 hover:bg-neutral-50"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-neutral-700">
+              {formatTimestamp(r.createdAt)}
+            </span>
+            <span className="text-xs text-neutral-400">{r.status}</span>
+          </div>
+          <div className="text-right">
+            <PassRate passed={r.passed} total={r.total} />
+          </div>
+          <div className="w-24 text-right">
+            <Score value={r.score} />
+          </div>
+        </button>
+      ))}
     </div>
   )
 }
