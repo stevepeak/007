@@ -7,7 +7,9 @@ import {
 } from '@xyflow/react'
 import {
   AlertTriangle,
+  Flag,
   GitBranch,
+  Layers,
   Lightbulb,
   LogIn,
   LogOut,
@@ -136,6 +138,12 @@ const KIND_STYLE: Record<
     icon: Lightbulb,
     accent: 'border-l-yellow-400',
     label: 'Feature Request',
+  },
+  race: { icon: Flag, accent: 'border-l-teal-400', label: 'Race' },
+  aggregate: {
+    icon: Layers,
+    accent: 'border-l-cyan-400',
+    label: 'Aggregate',
   },
   note: { icon: StickyNote, accent: 'border-l-amber-300', label: 'Note' },
   output: { icon: LogOut, accent: 'border-l-zinc-400', label: 'Output' },
@@ -618,6 +626,53 @@ function FeatureRequestNodeRenderer(props: NodeProps) {
   )
 }
 
+// A Race node: a first-to-finish join. Many upstreams wire into its single
+// target handle; whichever finishes first wins and flows out the source handle.
+function RaceNodeRenderer(props: NodeProps) {
+  const data = props.data as unknown as EditorNodeData
+  const invalid = useIsNodeInvalid(props.id)
+  const status = useNodeRunStatus(props.id)
+  if (data.kind !== 'race') return null
+  return (
+    <>
+      <Handle type="target" position={Position.Left} />
+      <NodeCard
+        kind="race"
+        label={data.label}
+        selected={props.selected}
+        invalid={invalid}
+        status={status}
+        subtitle="First upstream to finish wins"
+      />
+      <Handle type="source" position={Position.Right} />
+    </>
+  )
+}
+
+// An Aggregate node: a wait-for-all fan-in join. Many upstreams wire into its
+// single target handle; once all complete it emits an ordered list (one element
+// per producer) out the source handle for a sibling to iterate.
+function AggregateNodeRenderer(props: NodeProps) {
+  const data = props.data as unknown as EditorNodeData
+  const invalid = useIsNodeInvalid(props.id)
+  const status = useNodeRunStatus(props.id)
+  if (data.kind !== 'aggregate') return null
+  return (
+    <>
+      <Handle type="target" position={Position.Left} />
+      <NodeCard
+        kind="aggregate"
+        label={data.label}
+        selected={props.selected}
+        invalid={invalid}
+        status={status}
+        subtitle="Collects all upstreams into a list"
+      />
+      <Handle type="source" position={Position.Right} />
+    </>
+  )
+}
+
 // A sticky note: a resizable, portless canvas annotation that renders its
 // Markdown body. It has no Handles, so it can never be wired into the graph, and
 // the engine never executes it. Purely a place to jot notes on the canvas.
@@ -734,6 +789,8 @@ export const NODE_TYPES = {
   [editorTypeForKind('iteration')]: IterationNodeRenderer,
   [editorTypeForKind('workflow')]: WorkflowNodeRenderer,
   [editorTypeForKind('feature-request')]: FeatureRequestNodeRenderer,
+  [editorTypeForKind('race')]: RaceNodeRenderer,
+  [editorTypeForKind('aggregate')]: AggregateNodeRenderer,
   [editorTypeForKind('note')]: NoteNodeRenderer,
   [editorTypeForKind('output')]: OutputNodeRenderer,
 }

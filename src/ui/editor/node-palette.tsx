@@ -1,5 +1,7 @@
 import {
+  Flag,
   GitBranch,
+  Layers,
   Lightbulb,
   Repeat,
   Sparkles,
@@ -23,6 +25,8 @@ type PaletteItem = {
     | 'iteration'
     | 'workflow'
     | 'feature-request'
+    | 'race'
+    | 'aggregate'
     | 'note'
   label: string
   description: string
@@ -71,6 +75,19 @@ const PALETTE: PaletteItem[] = [
     label: 'Feature Request',
     description: 'Placeholder for a future idea — passes through unchanged.',
     icon: Lightbulb,
+  },
+  {
+    kind: 'race',
+    label: 'Race',
+    description: 'First-to-finish join — fires as soon as any upstream completes.',
+    icon: Flag,
+  },
+  {
+    kind: 'aggregate',
+    label: 'Aggregate',
+    description:
+      'Wait-for-all join — collects every upstream result into one list.',
+    icon: Layers,
   },
   {
     kind: 'note',

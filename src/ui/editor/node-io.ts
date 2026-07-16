@@ -206,6 +206,24 @@ function nodeOutput(
     // time, so surface the whole array as one bindable leaf rather than guessing.
     return { fields: [], type: 'array' }
   }
+  if (node.kind === 'race') {
+    // A race passes the winning upstream's output through untouched. Its inputs
+    // all share one shape, so downstream sees that single shape — resolve from
+    // the first predecessor rather than the multi-keyed object a fan-in yields.
+    const preds = predecessorIds(graph, node.id)
+      .map((id) => byId.get(id))
+      .filter((n): n is WorkflowNode => Boolean(n))
+    return preds.length >= 1
+      ? nodeOutput(preds[0], maps, graph, byId, seen)
+      : { fields: [], type: 'passthrough' }
+  }
+  if (node.kind === 'aggregate') {
+    // A wait-for-all join: collects each producer's output into an ordered list.
+    // The element shapes vary by producer, so surface the whole array as one
+    // bindable leaf (like iteration) rather than inventing a uniform element
+    // shape — a downstream iteration can still pick it as its list.
+    return { fields: [], type: 'array' }
+  }
 
   // Pass-through: branch/switch/feature-request emit exactly what they
   // received.
@@ -267,6 +285,18 @@ function nodeOutputSchema(
   const preds = predecessorIds(graph, node.id)
     .map((id) => byId.get(id))
     .filter((n): n is WorkflowNode => Boolean(n))
+  // A race forwards the winning upstream's output; its inputs share one shape,
+  // so resolve from the first predecessor even when several feed in.
+  if (node.kind === 'race') {
+    return preds.length >= 1
+      ? nodeOutputSchema(preds[0], maps, graph, byId, seen)
+      : undefined
+  }
+  if (node.kind === 'aggregate') {
+    // A list of per-producer outputs; element shapes differ, so surface an
+    // untyped array (still pickable as a list by a downstream iteration).
+    return { type: 'array' }
+  }
   return preds.length === 1
     ? nodeOutputSchema(preds[0], maps, graph, byId, seen)
     : undefined
@@ -355,6 +385,42 @@ export function withIterationItemSchema(
     inputSchema: itemSchema,
   })
   return { ...maps, triggersByKind }
+}
+
+// A stable signature of a node's output shape (its `wholeType` + normalized
+// field tree), for comparing whether two nodes emit the same shape. Returns null
+// when the shape can't be inferred (unknown / passthrough / opaque), so callers
+// skip un-comparable inputs rather than flagging a false mismatch.
+function shapeSignature(out: { fields: DataField[]; type: string }): string | null {
+  const OPAQUE = new Set(['unknown', 'passthrough', 'workflow'])
+  if (OPAQUE.has(out.type) && out.fields.length === 0) return null
+  const norm = (fields: DataField[]): string =>
+    fields
+      .map((f) => `${f.key}:${f.type}${f.children ? `{${norm(f.children)}}` : ''}`)
+      .sort()
+      .join(',')
+  return `${out.type}|${norm(out.fields)}`
+}
+
+// A Race passes its winning upstream's output through untouched, so the consumer
+// sees ONE shape only if every input produces the same shape. This returns the
+// distinct, inferable input shapes feeding a race node — >1 means the author has
+// wired mismatched producers together. Un-inferable inputs are skipped (we can't
+// prove them mismatched). Empty/one entry → no problem to report.
+export function raceInputShapeCount(
+  graph: WorkflowGraph,
+  nodeId: string,
+  maps: IoMaps,
+): number {
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]))
+  const signatures = new Set<string>()
+  for (const predId of predecessorIds(graph, nodeId)) {
+    const pred = byId.get(predId)
+    if (!pred) continue
+    const sig = shapeSignature(nodeOutput(pred, maps, graph, byId, new Set()))
+    if (sig != null) signatures.add(sig)
+  }
+  return signatures.size
 }
 
 // The output shape the node itself produces — what it makes available to nodes

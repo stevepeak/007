@@ -36,10 +36,14 @@ export type ExecuteInstruction = {
 export type BatchItem = { node: ExecutableNode; input: unknown }
 
 /**
- * Every currently-ready node, to run concurrently. The ready-set is always an
- * antichain — a node is ready only once all its predecessors are `completed`,
- * so no two nodes in `nodes` have an edge between them and they are safe to
- * execute in parallel.
+ * Every currently-ready node, to run concurrently. For ordinary work nodes the
+ * ready-set is an antichain — a node is ready only once ALL its predecessors are
+ * `completed`, so no two have an edge between them and they run safely in
+ * parallel. A `race` node is the one exception: it's ready on its FIRST completed
+ * predecessor, so it can share a batch with a still-running predecessor. That's
+ * harmless — its input is resolved from already-completed edges only and it fires
+ * exactly once (a completed node is never re-selected), so the concurrency is
+ * still safe; the not-yet-done predecessor's result is simply ignored.
  */
 export type BatchExecuteInstruction = {
   type: 'execute'
@@ -100,6 +104,10 @@ export class Scheduler {
   // default all-predecessors (`every`) rule to any-predecessor (`some`), so we
   // only need the id set, not the full node map.
   private readonly raceIds = new Set<string>()
+  // Ids of `aggregate` nodes — the wait-for-all fan-in join. They keep the
+  // default `every` readiness (unlike race) but shape their resolved input into
+  // an ordered list rather than the default single-value / keyed-object form.
+  private readonly aggregateIds = new Set<string>()
 
   private readonly completed = new Set<string>()
   private readonly branchResults = new Map<string, string>()
@@ -117,6 +125,9 @@ export class Scheduler {
     for (const n of this.graph.nodes) {
       if (n.kind === 'race') {
         this.raceIds.add(n.id)
+      }
+      if (n.kind === 'aggregate') {
+        this.aggregateIds.add(n.id)
       }
     }
     for (const e of this.graph.edges) {
@@ -230,6 +241,16 @@ export class Scheduler {
     if (this.raceIds.has(nodeId)) {
       const winner = aliveIncoming[0]
       return winner ? this.nodeOutputs.get(winner.source) : undefined
+    }
+    // An `aggregate` collects EVERY live predecessor's output into an ordered
+    // list — one element per producer, in edge-declaration order (`incoming` is
+    // built in that order, and `filter` preserves it). Unlike the default join it
+    // never keys by source id, so a downstream sibling can iterate the results
+    // directly; unlike race it always waits for all producers (`every` readiness).
+    // A single producer yields a one-element list, keeping the output a list in
+    // every case.
+    if (this.aggregateIds.has(nodeId)) {
+      return aliveIncoming.map((e) => this.nodeOutputs.get(e.source))
     }
     return aliveIncoming.length === 1
       ? this.nodeOutputs.get(aliveIncoming[0].source)

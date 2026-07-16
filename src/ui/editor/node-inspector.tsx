@@ -411,6 +411,24 @@ export function NodeInspector({
         </div>
       ) : null}
 
+      {node.kind === 'race' ? (
+        <p className="text-muted-foreground text-xs">
+          A first-to-finish join. Wire several upstream nodes into it — whichever
+          completes first wins, and its output flows through unchanged. The other
+          upstreams keep running, but their results are ignored. Connect inputs
+          that produce the same shape of result.
+        </p>
+      ) : null}
+
+      {node.kind === 'aggregate' ? (
+        <p className="text-muted-foreground text-xs">
+          A wait-for-all join. Wire several upstream nodes into it — once they all
+          complete, their outputs are collected into a single ordered list (one
+          element per upstream, in connection order). Feed that list to a sibling,
+          such as an Iteration node, to process the results together.
+        </p>
+      ) : null}
+
       {node.kind === 'note' ? (
         <div className={field}>
           <Label>Markdown</Label>

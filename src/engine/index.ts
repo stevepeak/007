@@ -28,11 +28,13 @@ export {
   SWITCH_DEFAULT_CASE,
   type SwitchNode,
   type FeatureRequestNode,
+  type AggregateNode,
   type IterationNode,
   nodeExecutionSchema,
   type NodeExecution,
   type NoteNode,
   type OutputNode,
+  type RaceNode,
   type ToolNode,
   type TriggerNode,
   type WfAgentManifestEntry,
@@ -155,6 +157,11 @@ export {
   executeFeatureRequestNode,
   type FeatureRequestNodeResult,
 } from './nodes/feature-request'
+export { executeRaceNode, type RaceNodeResult } from './nodes/race'
+export {
+  executeAggregateNode,
+  type AggregateNodeResult,
+} from './nodes/aggregate'
 export {
   executeSubgraph,
   runIteration,

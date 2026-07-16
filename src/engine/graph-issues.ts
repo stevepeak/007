@@ -193,6 +193,28 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
       })
     }
 
+    // A Race joins many upstreams and fires on the first to finish. With only
+    // one input it can't race anything — it degenerates to a plain pass-through.
+    if (node.kind === 'race' && inc.length === 1) {
+      issues.push({
+        ...base,
+        severity: 'warning',
+        message:
+          'A race needs 2+ inputs to have anything to race — with one it just passes through.',
+      })
+    }
+
+    // An Aggregate collects many upstreams into a list. With a single input it
+    // just wraps that one value in a one-element list — usually not intended.
+    if (node.kind === 'aggregate' && inc.length === 1) {
+      issues.push({
+        ...base,
+        severity: 'warning',
+        message:
+          'An aggregate needs 2+ inputs to collect — with one it just wraps it in a single-item list.',
+      })
+    }
+
     // A binary decision node (branch) may connect just one arm — the other
     // is allowed to "fizzle out" (that path simply ends). So a missing yes/no
     // edge is not flagged; the generic "nothing downstream" warning above still
@@ -225,7 +247,11 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
 
     // Join legality (mirrors the strict schema).
     if (inc.length >= 2) {
-      if (node.kind === 'output') {
+      if (node.kind === 'race') {
+        // A Race fires on the first live incoming edge (`some` readiness), so
+        // every fan-in shape is valid — parallel paths and both branch arms
+        // alike. Exempt it from the Output/work-node join rules below.
+      } else if (node.kind === 'output') {
         // Two always-live (unconditional) paths into one Output silently drop
         // one. Only mutually-exclusive branch arms may converge here.
         const unconditional = inc.filter((e) => !isConditional(e.source)).length

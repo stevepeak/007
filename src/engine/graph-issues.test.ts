@@ -32,6 +32,13 @@ const branch = (id: string) => ({
   label: id,
   config: { operator: 'is_not_empty' as const },
 })
+const race = (id: string) => ({
+  id,
+  kind: 'race' as const,
+  position: pos,
+  label: id,
+  config: {},
+})
 const edge = (
   source: string,
   target: string,
@@ -120,6 +127,57 @@ describe('collectGraphIssues', () => {
     expect(
       collectGraphIssues(bothArms).some(
         (i) => i.nodeId === 'j' && /both arms/.test(i.message),
+      ),
+    ).toBe(true)
+  })
+
+  test('a race is exempt from both the parallel-merge and both-arms join rules', () => {
+    // Two always-live parallel producers into one race — the point of the node,
+    // not the "parallel merge" error a work node/Output would raise.
+    const parallel = graph(
+      [trigger, agent('a'), agent('b'), race('r'), output('o')],
+      [
+        edge('t', 'a'),
+        edge('t', 'b'),
+        edge('a', 'r'),
+        edge('b', 'r'),
+        edge('r', 'o'),
+      ],
+    )
+    expect(
+      collectGraphIssues(parallel).some((i) =>
+        /parallel|both arms/.test(i.message),
+      ),
+    ).toBe(false)
+
+    // Both arms of a branch converging on a race is legal too — first arm to run
+    // wins, so it can never stall the way a normal both-arms join would.
+    const bothArms = graph(
+      [trigger, branch('b'), agent('u'), agent('v'), race('r'), output('o')],
+      [
+        edge('t', 'b'),
+        edge('b', 'u', 'yes'),
+        edge('b', 'v', 'no'),
+        edge('u', 'r'),
+        edge('v', 'r'),
+        edge('r', 'o'),
+      ],
+    )
+    expect(
+      collectGraphIssues(bothArms).some(
+        (i) => i.nodeId === 'r' && /both arms/.test(i.message),
+      ),
+    ).toBe(false)
+  })
+
+  test('warns when a race has only one input', () => {
+    const g = graph(
+      [trigger, agent('a'), race('r'), output('o')],
+      [edge('t', 'a'), edge('a', 'r'), edge('r', 'o')],
+    )
+    expect(
+      collectGraphIssues(g).some(
+        (i) => i.nodeId === 'r' && i.severity === 'warning' && /2\+/.test(i.message),
       ),
     ).toBe(true)
   })

@@ -7,7 +7,7 @@ import {
   type WorkflowNode,
 } from '../../engine'
 import { useIoMaps } from './node-data-panel'
-import { missingRequiredInputs } from './node-io'
+import { missingRequiredInputs, raceInputShapeCount } from './node-io'
 
 // The editor's full issue list: the engine's metadata-free structural + config
 // checks (`collectGraphIssues`), plus binding-completeness — which needs the
@@ -36,6 +36,19 @@ export function useGraphIssues(graph: WorkflowGraph): GraphIssue[] {
       // a looped tool (e.g. `embed_and_upsert`) never surfaces until a run fails.
       if (node.kind === 'iteration') {
         for (const child of node.config.subgraph.nodes) checkBindings(child)
+      }
+      // A Race passes its winning input straight through, so its consumer only
+      // sees one shape if every input has the same shape. Inferring shapes needs
+      // the tool/agent catalogs, so this check lives here rather than in the
+      // engine's metadata-free `collectGraphIssues`.
+      if (node.kind === 'race' && raceInputShapeCount(graph, node.id, maps) > 1) {
+        bindingIssues.push({
+          nodeId: node.id,
+          nodeLabel: node.label,
+          severity: 'warning',
+          message:
+            'Inputs have different shapes — a race must join producers of the same shape so its consumer sees one consistent result.',
+        })
       }
     }
 

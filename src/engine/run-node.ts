@@ -6,6 +6,7 @@ import type {
 } from './config'
 import type { WfRunManifestEntry } from './graph'
 import { executeAgentNode } from './nodes/agent'
+import { executeAggregateNode } from './nodes/aggregate'
 import { executeBranchNode } from './nodes/branch'
 import { executeFeatureRequestNode } from './nodes/feature-request'
 import { executeSubgraph, runIteration } from './nodes/iteration'
@@ -185,6 +186,17 @@ export async function runNode<TDeps>(
       return {
         schedulerOutput: r.output,
         recordedOutput: r.output,
+      }
+    }
+    case 'aggregate': {
+      // Wait-for-all fan-in join. The Scheduler already resolved `input` to the
+      // ordered list of every producer's output (one element each); the node
+      // just passes that list through so a downstream sibling can iterate it.
+      const r = await executeAggregateNode({ node, input })
+      return {
+        schedulerOutput: r.output,
+        recordedOutput: r.output,
+        meta: r.meta,
       }
     }
     case 'iteration': {

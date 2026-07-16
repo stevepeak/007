@@ -783,6 +783,19 @@ function defaultDataForKind(
       config: { description: '' },
     }
   }
+  if (kind === 'race') {
+    // A config-less first-to-finish join. The author wires several upstreams into
+    // it; the first to complete wins. It reads as a (non-blocking) "needs 2+
+    // inputs" warning until at least two feed in.
+    return { kind: 'race', label: 'Race', config: {} }
+  }
+  if (kind === 'aggregate') {
+    // A config-less wait-for-all join. The author wires several upstreams into it;
+    // once all complete it emits an ordered list (one element per producer) for a
+    // downstream sibling to iterate. Reads as a (non-blocking) "needs 2+ inputs"
+    // warning until at least two feed in.
+    return { kind: 'aggregate', label: 'Aggregate', config: {} }
+  }
   if (kind === 'note') {
     return { kind: 'note', label: 'Note', config: { text: '' } }
   }

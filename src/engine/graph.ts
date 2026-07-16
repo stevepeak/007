@@ -284,6 +284,23 @@ const raceNodeSchema = baseNode.extend({
   config: z.object({}).default({}),
 })
 
+// An Aggregate is a wait-for-all fan-in join — the collect-into-a-list sibling
+// of the first-to-finish Race. It fires under the ordinary work-node rule (once
+// EVERY predecessor completes), then emits an ordered array with ONE element per
+// incoming producer, in edge-declaration order (the same deterministic,
+// replay-safe order the scheduler uses everywhere). Where a normal multi-parent
+// join hands downstream the `{ [sourceId]: output }` object (keyed, unordered to
+// the author), an Aggregate hands them a plain list a sibling can iterate over —
+// wire several parallel producers of similar results into one Aggregate and the
+// next node loops the collected results. Producer outputs are collected whole
+// (never flattened), so each element is exactly one producer's output; the shapes
+// need not match. It carries no config: the value is fully determined by which
+// producers feed in.
+const aggregateNodeSchema = baseNode.extend({
+  kind: z.literal('aggregate'),
+  config: z.object({}).default({}),
+})
+
 // A Note is a pure canvas annotation — a sticky note holding Markdown. It has no
 // ports and is never connected by an edge, so the scheduler (which only ever
 // schedules nodes whose incoming edges are all live) never sees it: it has zero
@@ -363,6 +380,7 @@ export const workflowNodeSchema = z.discriminatedUnion('kind', [
   workflowCallNodeSchema,
   featureRequestNodeSchema,
   raceNodeSchema,
+  aggregateNodeSchema,
   iterationNodeSchema,
   noteNodeSchema,
   outputNodeSchema,
@@ -383,6 +401,7 @@ export type SwitchNode = z.infer<typeof switchNodeSchema>
 export type WorkflowCallNode = z.infer<typeof workflowCallNodeSchema>
 export type FeatureRequestNode = z.infer<typeof featureRequestNodeSchema>
 export type RaceNode = z.infer<typeof raceNodeSchema>
+export type AggregateNode = z.infer<typeof aggregateNodeSchema>
 export type NoteNode = z.infer<typeof noteNodeSchema>
 export type OutputNode = z.infer<typeof outputNodeSchema>
 export interface IterationNode {
@@ -411,6 +430,7 @@ export type WorkflowNode =
   | WorkflowCallNode
   | FeatureRequestNode
   | RaceNode
+  | AggregateNode
   | IterationNode
   | NoteNode
   | OutputNode
@@ -425,6 +445,7 @@ export const WF_NODE_KINDS = [
   'workflow',
   'feature-request',
   'race',
+  'aggregate',
   'iteration',
   'note',
   'output',
