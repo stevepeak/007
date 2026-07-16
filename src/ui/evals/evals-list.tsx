@@ -1,18 +1,29 @@
-import { CircleDashed, HelpCircle, Play, Plus } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import {
+  Check,
+  ChevronDown,
+  CircleDashed,
+  HelpCircle,
+  Play,
+  Plus,
+  Workflow as WorkflowIcon,
+} from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type {
+  WfAgentSummary,
   WfEvalRunSummary,
   WfEvalSetSummary,
+  WfWorkflowSummary,
 } from '../../server/protocol'
+import { agentColor, agentIcon } from '../agent-appearance'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
-import { useAgents, useEvalRuns, useEvalSets } from '../hooks'
+import { useAgents, useEvalRuns, useEvalSets, useWorkflows } from '../hooks'
 import { useWfNav } from '../nav'
 import { EvalsHelpDialog } from './evals-help-dialog'
 import { NewGoalDialog } from './new-goal-dialog'
 import { RunConfigDialog } from './run-config-dialog'
-import { EmptyState, formatTimestamp, KindBadge, PassRate, Score, Tabs } from './shared'
+import { EmptyState, formatTimestamp, PassRate, Score, Tabs } from './shared'
 
 // The Evals catalog — the landing page reached from the hub's "Evals" card. Two
 // tabs: the authored GOALS (real wf_eval_set rows) and the history of TEST RUNS
@@ -92,8 +103,8 @@ export function EvalsList({ className }: EvalsListProps) {
         active={tab}
         onChange={(k) => setTab(k as EvalsTab)}
         tabs={[
-          { key: 'sets', label: 'Goals', count: goals.length },
-          { key: 'runs', label: 'Test runs', count: runs.length },
+          { key: 'sets', label: 'Goals' },
+          { key: 'runs', label: 'Test runs' },
         ]}
       />
 
@@ -117,56 +128,262 @@ export function EvalsList({ className }: EvalsListProps) {
 function GoalsTable({ goals }: { goals: WfEvalSetSummary[] }) {
   const { navigate } = useWfNav()
   const agentsQuery = useAgents()
+  const workflowsQuery = useWorkflows()
   const agentById = useMemo(
     () => new Map((agentsQuery.data ?? []).map((a) => [a.id, a])),
     [agentsQuery.data],
   )
+  const [targetFilter, setTargetFilter] = useState('')
 
   if (goals.length === 0) {
     return <EmptyState message="No goals yet. Create one to get started." />
   }
+
+  const shown = targetFilter
+    ? goals.filter((g) => g.targetId === targetFilter)
+    : goals
+
   return (
-    <div className="overflow-hidden rounded-lg border border-neutral-200">
-      <div className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-neutral-100 bg-neutral-50 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-neutral-400">
-        <span>Goals</span>
-        <span>Target</span>
-        <span className="w-20 text-right">Samples</span>
-      </div>
-      {goals.map((g) => {
-        const targetName =
-          g.targetKind === 'agent'
-            ? (agentById.get(g.targetId)?.name ?? 'Unknown agent')
-            : 'Workflow'
-        return (
-          <button
-            key={g.id}
-            type="button"
-            onClick={() => navigate(`evals/${g.id}`)}
-            className="grid w-full grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-neutral-100 px-4 py-3 text-left last:border-b-0 hover:bg-neutral-50"
-          >
-            <div className="min-w-0">
-              <div className="truncate text-sm font-medium text-neutral-900">
-                {g.name}
-              </div>
-              {g.description ? (
-                <div className="mt-0.5 truncate text-xs text-neutral-500">
-                  {g.description}
+    <div className="space-y-3">
+      <TargetFilter
+        value={targetFilter}
+        onChange={setTargetFilter}
+        agents={agentsQuery.data ?? []}
+        workflows={workflowsQuery.data ?? []}
+      />
+      <div className="overflow-hidden rounded-lg border border-neutral-200">
+        <div className="grid grid-cols-[1fr_auto_5rem] items-center gap-4 border-b border-neutral-100 bg-neutral-50 px-4 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+          <span>Goals</span>
+          <span>Target</span>
+          <span>Samples</span>
+        </div>
+        {shown.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-neutral-400">
+            No goals target this selection.
+          </div>
+        ) : (
+          shown.map((g) => (
+            <button
+              key={g.id}
+              type="button"
+              onClick={() => navigate(`evals/${g.id}`)}
+              className="grid w-full grid-cols-[1fr_auto_5rem] items-center gap-4 border-b border-neutral-100 px-4 py-3 text-left last:border-b-0 hover:bg-neutral-50"
+            >
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium text-neutral-900">
+                  {g.name}
                 </div>
-              ) : null}
-            </div>
-            <div className="flex items-center gap-2">
-              <KindBadge kind={g.targetKind} />
-              <span className="max-w-[10rem] truncate text-sm text-neutral-600">
-                {targetName}
-              </span>
-            </div>
-            <div className="w-20 text-right text-sm tabular-nums text-neutral-500">
-              {g.rowCount}
-            </div>
-          </button>
-        )
-      })}
+                {g.description ? (
+                  <div className="mt-0.5 truncate text-xs text-neutral-500">
+                    {g.description}
+                  </div>
+                ) : null}
+              </div>
+              <AgentPill agent={agentById.get(g.targetId)} />
+              <div className="text-sm tabular-nums text-neutral-500">
+                {g.rowCount}
+              </div>
+            </button>
+          ))
+        )}
+      </div>
     </div>
+  )
+}
+
+// A neutral chip holding a workflow's generic glyph — the workflow analog of the
+// agent icon (workflows carry no per-item icon).
+function WorkflowChip() {
+  return (
+    <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
+      <WorkflowIcon className="size-3" />
+    </span>
+  )
+}
+
+// Filter the goals list by target. A custom dropdown (native <select> can't
+// render logos) listing every agent (its icon on its color tint) and every
+// workflow (generic glyph), plus an "All targets" reset.
+function TargetFilter({
+  value,
+  onChange,
+  agents,
+  workflows,
+}: {
+  value: string
+  onChange: (targetId: string) => void
+  agents: WfAgentSummary[]
+  workflows: WfWorkflowSummary[]
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const selectedAgent = agents.find((a) => a.id === value)
+  const selectedWorkflow = workflows.find((w) => w.id === value)
+
+  const select = (id: string) => {
+    onChange(id)
+    setOpen(false)
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs text-neutral-400">Filter by target</span>
+      <div ref={rootRef} className="relative">
+        <button
+          type="button"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+          className="flex h-8 min-w-52 items-center gap-2 rounded-md border border-neutral-300 bg-white px-2 text-sm outline-none transition hover:border-neutral-400"
+        >
+          {selectedAgent ? (
+            <AgentGlyph agent={selectedAgent} />
+          ) : selectedWorkflow ? (
+            <WorkflowChip />
+          ) : null}
+          <span
+            className={cn(
+              'min-w-0 flex-1 truncate text-left',
+              value ? 'text-neutral-800' : 'text-neutral-500',
+            )}
+          >
+            {selectedAgent?.name ?? selectedWorkflow?.name ?? 'All targets'}
+          </span>
+          <ChevronDown className="size-4 shrink-0 text-neutral-400" />
+        </button>
+
+        {open ? (
+          <div className="absolute z-50 mt-1 max-h-80 w-64 overflow-y-auto rounded-md border border-neutral-200 bg-white py-1 shadow-lg">
+            <FilterOption
+              label="All targets"
+              selected={!value}
+              onClick={() => select('')}
+            />
+            {agents.length > 0 ? (
+              <div className="mt-1 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
+                Agents
+              </div>
+            ) : null}
+            {agents.map((a) => (
+              <FilterOption
+                key={a.id}
+                label={a.name}
+                icon={<AgentGlyph agent={a} />}
+                selected={a.id === value}
+                onClick={() => select(a.id)}
+              />
+            ))}
+            {workflows.length > 0 ? (
+              <div className="mt-1 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
+                Workflows
+              </div>
+            ) : null}
+            {workflows.map((w) => (
+              <FilterOption
+                key={w.id}
+                label={w.name}
+                icon={<WorkflowChip />}
+                selected={w.id === value}
+                onClick={() => select(w.id)}
+              />
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function FilterOption({
+  label,
+  icon,
+  selected,
+  onClick,
+}: {
+  label: string
+  icon?: React.ReactNode
+  selected: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      role="option"
+      aria-selected={selected}
+      onClick={onClick}
+      className={cn(
+        'flex w-full items-center gap-2 px-3 py-1.5 text-left transition',
+        selected ? 'bg-neutral-100' : 'hover:bg-neutral-50',
+      )}
+    >
+      {icon ?? <span className="size-5 shrink-0" />}
+      <span className="min-w-0 flex-1 truncate text-sm text-neutral-800">
+        {label}
+      </span>
+      <Check
+        className={cn(
+          'size-4 shrink-0 text-neutral-900',
+          selected ? 'opacity-100' : 'opacity-0',
+        )}
+      />
+    </button>
+  )
+}
+
+// An agent's icon on its color tint — the glyph half of AgentPill, reused in the
+// filter dropdown.
+function AgentGlyph({ agent }: { agent: WfAgentSummary }) {
+  const Icon = agentIcon(agent.icon)
+  const color = agentColor(agent.color)
+  return (
+    <span
+      className={cn(
+        'inline-flex size-5 shrink-0 items-center justify-center rounded-full',
+        color.chip,
+      )}
+    >
+      <Icon className="size-3" />
+    </span>
+  )
+}
+
+// The goal's target agent as a compact pill — its own icon (on its color tint)
+// plus its name. Falls back to a neutral "Unknown agent" pill while agents load
+// or if the target no longer resolves.
+function AgentPill({ agent }: { agent?: WfAgentSummary }) {
+  const Icon = agentIcon(agent?.icon)
+  const color = agentColor(agent?.color)
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white py-0.5 pl-0.5 pr-2.5">
+      <span
+        className={cn(
+          'inline-flex size-5 shrink-0 items-center justify-center rounded-full',
+          color.chip,
+        )}
+      >
+        <Icon className="size-3" />
+      </span>
+      <span className="max-w-[10rem] truncate text-xs font-medium text-neutral-700">
+        {agent?.name ?? 'Unknown agent'}
+      </span>
+    </span>
   )
 }
 

@@ -308,6 +308,7 @@ export type WfEvalRowDTO = {
   id: string
   setId: string
   name: string
+  description: string | null
   initialCondition: EvalInitialCondition
   fixtures: EvalFixtures
   checks: CheckTree
@@ -511,6 +512,7 @@ export interface WfDataClient {
     id?: string
     setId: string
     name: string
+    description?: string | null
     initialCondition?: EvalInitialCondition
     fixtures?: EvalFixtures
     checks?: CheckTree

@@ -440,6 +440,7 @@ export function useUpsertEvalRow() {
       id?: string
       setId: string
       name: string
+      description?: string | null
       initialCondition?: EvalInitialCondition
       fixtures?: EvalFixtures
       checks?: CheckTree

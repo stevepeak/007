@@ -1093,6 +1093,7 @@ export type EvalRowRecord = {
   id: string
   setId: string
   name: string
+  description: string | null
   initialCondition: EvalInitialCondition
   fixtures: EvalFixtures
   checks: CheckTree
@@ -1105,6 +1106,7 @@ function toEvalRow(r: typeof wfEvalRow.$inferSelect): EvalRowRecord {
     id: r.id,
     setId: r.setId,
     name: r.name,
+    description: r.description,
     initialCondition: r.initialCondition as EvalInitialCondition,
     fixtures: r.fixtures as EvalFixtures,
     checks: r.checks as CheckTree,
@@ -1235,6 +1237,7 @@ export async function upsertEvalRow(
     id?: string
     setId: string
     name: string
+    description?: string | null
     initialCondition?: EvalInitialCondition
     fixtures?: EvalFixtures
     checks?: CheckTree
@@ -1256,6 +1259,7 @@ export async function upsertEvalRow(
       checks,
       updatedAt: new Date(),
     }
+    if (input.description !== undefined) set.description = input.description
     if (input.sortOrder !== undefined) set.sortOrder = input.sortOrder
     await db.update(wfEvalRow).set(set).where(eq(wfEvalRow.id, input.id))
     return input.id
@@ -1265,6 +1269,7 @@ export async function upsertEvalRow(
     id,
     setId: input.setId,
     name: input.name,
+    description: input.description ?? null,
     initialCondition,
     fixtures,
     checks,

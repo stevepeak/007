@@ -1,3 +1,4 @@
+import type { ParsedField } from '@autoform/core'
 import { AutoForm } from '@autoform/react/react-hook-form'
 import type { KeyboardEvent, ReactNode } from 'react'
 import { useMemo, useState } from 'react'
@@ -11,6 +12,31 @@ import {
   JsonSchemaProvider,
 } from './json-schema-provider'
 
+// Reshape a typed object (e.g. a saved fixture) into the control values AutoForm
+// expects: a `json` field's control holds a *string*, so any object/array landing
+// on such a field is stringified. `object`/`array` fields keep their structured
+// value (react-hook-form seeds nested controls from it), and scalars pass through.
+function toControlValues(
+  values: Record<string, unknown>,
+  fields: ParsedField[],
+): Record<string, unknown> {
+  const byKey = new Map(fields.map((f) => [f.key, f]))
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(values)) {
+    const field = byKey.get(k)
+    if (field?.type === 'json' && v !== null && typeof v === 'object') {
+      try {
+        out[k] = JSON.stringify(v, null, 2)
+      } catch {
+        out[k] = v
+      }
+    } else {
+      out[k] = v
+    }
+  }
+  return out
+}
+
 // The playground form. Give it a JSON Schema and an `onSubmit`; it renders the
 // fields with AutoForm (themed via the SDK's injected primitives), coerces the
 // raw control values into typed args, and owns the submit button so both the
@@ -21,6 +47,13 @@ import {
 export type WfAutoFormProps = {
   /** JSON Schema (converted from Zod on the server). Undefined → raw JSON. */
   schema: JsonSchema | undefined
+  /**
+   * Initial field values to pre-fill (e.g. when editing a saved fixture). Pass
+   * the natural (typed) object — the form converts it to the control shape
+   * internally (a `json` field's control holds a string, so nested objects are
+   * stringified). Omit to start from the schema's own defaults.
+   */
+  defaultValues?: Record<string, unknown>
   /** Receives the coerced args once the form validates. */
   onSubmit: (values: Record<string, unknown>) => void
   /** Disable every field + the button (e.g. while a run is in flight). */
@@ -47,6 +80,7 @@ function schemaSignature(schema: JsonSchema | undefined): string {
 
 export function WfAutoForm({
   schema,
+  defaultValues,
   onSubmit,
   disabled,
   pending,
@@ -58,17 +92,32 @@ export function WfAutoForm({
   emptyLabel = 'Arguments (JSON)',
 }: WfAutoFormProps) {
   const { Button, Label, Textarea } = useWfComponents()
-  const signature = schemaSignature(schema)
-  // Rebuild (and remount AutoForm) whenever the schema changes so the form
-  // resets to the new fields/defaults.
+  // Remount AutoForm whenever the schema OR the seed values change, so the form
+  // resets to the new fields/defaults (e.g. switching which fixture is edited).
+  const signature =
+    schemaSignature(schema) + '|' + schemaSignature(defaultValues)
   const provider = useMemo(
     () => new JsonSchemaProvider(schema),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [signature],
   )
+  const controlDefaults = useMemo(
+    () =>
+      defaultValues ? toControlValues(defaultValues, provider.getFields()) : undefined,
+    [provider, defaultValues],
+  )
 
   const [error, setError] = useState<string | null>(null)
-  const [rawJson, setRawJson] = useState('{}')
+  // Seed the raw-JSON fallback from defaultValues when the schema has no fields
+  // (initialized once — the mocks editor remounts this component per fixture).
+  const [rawJson, setRawJson] = useState(() => {
+    if (!defaultValues || Object.keys(defaultValues).length === 0) return '{}'
+    try {
+      return JSON.stringify(defaultValues, null, 2)
+    } catch {
+      return '{}'
+    }
+  })
 
   function onKeyDown(e: KeyboardEvent<HTMLFormElement>) {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -133,6 +182,7 @@ export function WfAutoForm({
         <AutoForm
           key={signature}
           schema={provider}
+          defaultValues={controlDefaults}
           uiComponents={wfUiComponents}
           formComponents={wfFormComponents}
           formProps={{ onKeyDown }}

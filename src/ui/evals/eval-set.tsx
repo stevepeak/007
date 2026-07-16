@@ -1,15 +1,17 @@
-import { Play, Plus } from 'lucide-react'
+import { ArrowUpRight, Play, Plus } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { WfEvalRowDTO } from '../../server/protocol'
+import { agentColor, agentIcon } from '../agent-appearance'
+import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { useAgents, useEvalRuns, useEvalSet, useUpdateEvalSet, useUpsertEvalRow } from '../hooks'
-import { useWfNav } from '../nav'
+import { useWfNav, WfLink } from '../nav'
 import { ArchiveButton } from '../archive-button'
 import { WfShell } from '../shell'
 import { sectionCrumb } from '../wf-crumbs'
 import { RunConfigDialog } from './run-config-dialog'
-import { EmptyState, formatTimestamp, KindBadge, PassRate, Score, Tabs } from './shared'
+import { EmptyState, formatTimestamp, PassRate, Score, Tabs } from './shared'
 
 // The Goal detail page (route: evals/<setId>). A goal is a wf_eval_set: its
 // name + description are editable in place, its TARGET (the agent its samples
@@ -138,18 +140,7 @@ export function EvalSet({ setId, className }: EvalSetProps) {
               </div>
             </div>
 
-            <TargetRow
-              setId={setId}
-              targetId={set.targetId}
-              onChange={(targetId) =>
-                updateSet.mutate({
-                  setId,
-                  targetKind: 'agent',
-                  targetId,
-                  triggerKind: 'manual',
-                })
-              }
-            />
+            <TargetRow targetId={set.targetId} />
 
             <RunConfigDialog
               open={runOpen}
@@ -163,7 +154,7 @@ export function EvalSet({ setId, className }: EvalSetProps) {
               active={tab}
               onChange={(k) => setTab(k as SetTab)}
               tabs={[
-                { key: 'samples', label: 'Samples', count: rows.length },
+                { key: 'samples', label: 'Samples' },
                 { key: 'runs', label: 'Test runs' },
               ]}
             />
@@ -180,42 +171,35 @@ export function EvalSet({ setId, className }: EvalSetProps) {
   )
 }
 
-// The set-level target: which agent the goal's samples run against. Changing it
-// re-points every sample (Given fields re-reflect from the new agent).
-function TargetRow({
-  targetId,
-  onChange,
-}: {
-  setId: string
-  targetId: string
-  onChange: (targetId: string) => void
-}) {
-  const { Label } = useWfComponents()
+// The set-level target: which agent the goal's samples run against. Fixed once
+// the goal is created — every sample's Given fields and mock fixtures reflect
+// from this agent, so swapping it would orphan them. Read-only here; to target a
+// different agent, create a new goal.
+function TargetRow({ targetId }: { targetId: string }) {
   const agentsQuery = useAgents()
-  const agents = agentsQuery.data ?? []
-  const known = agents.some((a) => a.id === targetId)
+  const agent = agentsQuery.data?.find((a) => a.id === targetId)
+  const Icon = agentIcon(agent?.icon)
+  const color = agentColor(agent?.color)
   return (
     <div className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50/60 px-4 py-3">
-      <KindBadge kind="agent" />
-      <div className="min-w-0 flex-1 space-y-1">
-        <Label>Target agent</Label>
-        <select
-          value={known ? targetId : ''}
-          onChange={(e) => onChange(e.target.value)}
-          className="h-9 w-full max-w-sm rounded-md border border-neutral-300 bg-white px-2 text-sm outline-none focus:border-neutral-500"
-        >
-          {!known ? (
-            <option value="">
-              {agentsQuery.isLoading ? 'Loading agents…' : 'Unknown agent — pick one'}
-            </option>
-          ) : null}
-          {agents.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
+      <span
+        className={cn(
+          'inline-flex size-8 shrink-0 items-center justify-center rounded-lg',
+          color.chip,
+        )}
+      >
+        <Icon className="size-4" />
+      </span>
+      <div className="min-w-0 flex-1 text-sm font-medium text-neutral-800">
+        {agent?.name ?? (agentsQuery.isLoading ? 'Loading…' : 'Unknown agent')}
       </div>
+      <WfLink
+        to={`agents/${targetId}/edit`}
+        className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-neutral-500 transition hover:text-neutral-800"
+      >
+        Open agent
+        <ArrowUpRight className="size-3.5" />
+      </WfLink>
     </div>
   )
 }
@@ -250,12 +234,9 @@ function SamplesTable({
             <div className="truncate text-sm font-medium text-neutral-900">
               {r.name}
             </div>
-            {r.initialCondition.promptVariables &&
-            Object.keys(r.initialCondition.promptVariables).length > 0 ? (
-              <div className="mt-0.5 truncate font-mono text-xs text-neutral-400">
-                {Object.entries(r.initialCondition.promptVariables)
-                  .map(([k, v]) => `${k}=${v}`)
-                  .join(' · ')}
+            {r.description ? (
+              <div className="mt-0.5 truncate text-xs text-neutral-500">
+                {r.description}
               </div>
             ) : null}
           </div>

@@ -1,7 +1,19 @@
-import { Binary, Gauge, Play } from 'lucide-react'
+import {
+  ArrowRightToLine,
+  Binary,
+  Braces,
+  ChevronDown,
+  Gauge,
+  type LucideIcon,
+  Play,
+  Text,
+  Waypoints,
+  Wrench,
+} from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { EvalCheck, EvalMatch } from '../../server/protocol'
+import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import {
   useEvalSet,
@@ -11,6 +23,7 @@ import {
 import { useWfNav } from '../nav'
 import { ArchiveButton } from '../archive-button'
 import { WfShell } from '../shell'
+import { ToolIcon } from '../tool-icon'
 import { sectionCrumb } from '../wf-crumbs'
 import { ModelSelect } from '../editor/model-select'
 import { RunConfigDialog } from './run-config-dialog'
@@ -33,6 +46,39 @@ const BINARY_TYPES = [
   'output_match',
 ] as const
 type BinaryType = (typeof BINARY_TYPES)[number]
+
+// Human-readable label, blurb, and icon for each binary assertion — drives the
+// picker so authors never see the raw `snake_case` type ids.
+const BINARY_TYPE_META: Record<
+  BinaryType,
+  { label: string; desc: string; icon: LucideIcon }
+> = {
+  tool_called: {
+    label: 'Tool called',
+    desc: 'A specific tool was (or wasn’t) called',
+    icon: Wrench,
+  },
+  tool_args_match: {
+    label: 'Tool arguments',
+    desc: 'A called tool’s arguments match a value',
+    icon: Braces,
+  },
+  node_visited: {
+    label: 'Node visited',
+    desc: 'A workflow node was (or wasn’t) reached',
+    icon: Waypoints,
+  },
+  node_input_match: {
+    label: 'Node input',
+    desc: 'A node’s input matches a value',
+    icon: ArrowRightToLine,
+  },
+  output_match: {
+    label: 'Output matches',
+    desc: 'The final output matches a value',
+    icon: Text,
+  },
+}
 
 const MATCH_OPTIONS: EvalMatch[] = ['equals', 'contains', 'jsonpath', 'regex']
 
@@ -252,7 +298,7 @@ function ConfigForm({
             label: 'Binary',
             desc: 'A deterministic pass/fail check.',
             accent: 'sky',
-            detail: draft.type,
+            detail: BINARY_TYPE_META[draft.type as BinaryType]?.label,
           },
           {
             value: 'scored',
@@ -260,7 +306,6 @@ function ConfigForm({
             label: 'Scored',
             desc: 'An LLM judge grades the output against a rubric.',
             accent: 'amber',
-            detail: 'llm_judge',
           },
         ]}
       />
@@ -282,23 +327,110 @@ function BinaryConfig({
   return (
     <div className="space-y-4">
       <div className="space-y-1">
-        <Label>Check type</Label>
-        <select
-          value={check.type}
-          onChange={(e) => persist(defaultCheck(e.target.value as BinaryType))}
-          className="h-9 w-full max-w-xs rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none focus:border-neutral-500"
-        >
-          {BINARY_TYPES.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
+        <Label>What to check</Label>
+        <BinaryTypePicker
+          value={check.type as BinaryType}
+          onChange={(t) => persist(defaultCheck(t))}
+        />
       </div>
       <BinaryFields check={check} persist={persist} />
       <p className="text-xs text-neutral-400">
         Binary checks are pure pass/fail — they never enter the score.
       </p>
+    </div>
+  )
+}
+
+// The binary assertion selector — a dropdown of human-readable check types
+// (icon + label + blurb). Expands inline (in normal flow) so it can't be clipped
+// by the StepFlow card's `overflow-hidden`.
+function BinaryTypePicker({
+  value,
+  onChange,
+}: {
+  value: BinaryType
+  onChange: (type: BinaryType) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const current = BINARY_TYPE_META[value]
+  const CurrentIcon = current?.icon
+
+  return (
+    <div ref={rootRef} className="space-y-2">
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="flex h-9 w-full max-w-md items-center gap-2 rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none transition focus:border-neutral-500"
+      >
+        {CurrentIcon ? (
+          <CurrentIcon className="size-4 shrink-0 text-neutral-500" />
+        ) : null}
+        <span className="min-w-0 flex-1 truncate text-left text-neutral-800">
+          {current?.label ?? 'Select a check…'}
+        </span>
+        <ChevronDown
+          className={cn(
+            'size-4 shrink-0 text-neutral-400 transition',
+            open && 'rotate-180',
+          )}
+        />
+      </button>
+
+      {open ? (
+        <div className="max-w-md overflow-hidden rounded-md border border-neutral-200 py-1">
+          {BINARY_TYPES.map((t) => {
+            const m = BINARY_TYPE_META[t]
+            const Icon = m.icon
+            const isSel = t === value
+            return (
+              <button
+                key={t}
+                type="button"
+                role="option"
+                aria-selected={isSel}
+                onClick={() => {
+                  onChange(t)
+                  setOpen(false)
+                }}
+                className={cn(
+                  'flex w-full items-center gap-2 px-2 py-1.5 text-left transition',
+                  isSel ? 'bg-neutral-100' : 'hover:bg-neutral-50',
+                )}
+              >
+                <Icon className="size-4 shrink-0 text-neutral-500" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-neutral-800">
+                    {m.label}
+                  </span>
+                  <span className="block truncate text-xs text-neutral-400">
+                    {m.desc}
+                  </span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -480,6 +612,9 @@ function JudgeConfig({
 
 // ── Field primitives ─────────────────────────────────────────────────────────
 
+// Tool selector — a dropdown of the host's tools (icon + name + short blurb),
+// replacing the bare name-only <select>. Expands inline (in normal flow) so it
+// can't be clipped by the StepFlow card's `overflow-hidden`.
 function ToolPicker({
   value,
   onChange,
@@ -490,24 +625,105 @@ function ToolPicker({
   const { Label } = useWfComponents()
   const toolsQuery = useTools()
   const tools = toolsQuery.data ?? []
-  const known = tools.some((t) => t.id === value)
+  const selected = tools.find((t) => t.id === value)
+
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
   return (
     <div className="space-y-1">
       <Label>Tool</Label>
-      <select
-        value={known ? value : ''}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-9 w-full rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none focus:border-neutral-500"
-      >
-        <option value="">
-          {toolsQuery.isLoading ? 'Loading tools…' : 'Select a tool…'}
-        </option>
-        {tools.map((t) => (
-          <option key={t.id} value={t.id}>
-            {t.name}
-          </option>
-        ))}
-      </select>
+      <div ref={rootRef} className="space-y-2">
+        <button
+          type="button"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+          className="flex h-9 w-full items-center gap-2 rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none transition focus:border-neutral-500"
+        >
+          <ToolIcon icon={selected?.icon} className="size-5" />
+          <span
+            className={cn(
+              'min-w-0 flex-1 truncate text-left',
+              selected ? 'text-neutral-800' : 'text-neutral-400',
+            )}
+          >
+            {selected?.name ??
+              (toolsQuery.isLoading ? 'Loading tools…' : 'Select a tool…')}
+            {value && !selected && !toolsQuery.isLoading ? (
+              <span className="ml-1 text-xs text-amber-600">(not found)</span>
+            ) : null}
+          </span>
+          <ChevronDown
+            className={cn(
+              'size-4 shrink-0 text-neutral-400 transition',
+              open && 'rotate-180',
+            )}
+          />
+        </button>
+
+        {open ? (
+          <div className="max-h-72 overflow-y-auto rounded-md border border-neutral-200 py-1">
+            {toolsQuery.isLoading ? (
+              <div className="px-3 py-6 text-center text-sm text-neutral-400">
+                Loading tools…
+              </div>
+            ) : tools.length === 0 ? (
+              <div className="px-3 py-6 text-center text-sm text-neutral-500">
+                No tools available.
+              </div>
+            ) : (
+              tools.map((t) => {
+                const isSel = t.id === value
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="option"
+                    aria-selected={isSel}
+                    onClick={() => {
+                      onChange(t.id)
+                      setOpen(false)
+                    }}
+                    className={cn(
+                      'flex w-full items-center gap-2 px-2 py-1.5 text-left transition',
+                      isSel ? 'bg-neutral-100' : 'hover:bg-neutral-50',
+                    )}
+                  >
+                    <ToolIcon icon={t.icon} className="size-5" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-neutral-800">
+                        {t.name}
+                      </span>
+                      {t.description ? (
+                        <span className="block truncate text-xs text-neutral-400">
+                          {t.description}
+                        </span>
+                      ) : null}
+                    </span>
+                  </button>
+                )
+              })
+            )}
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }

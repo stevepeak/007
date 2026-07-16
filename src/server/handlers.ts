@@ -1131,6 +1131,7 @@ export function createWfSdkHandlers<TDeps>(
           const name = str(params, 'name')
           const p = params as {
             id?: string
+            description?: string | null
             initialCondition?: WfEvalRowDTO['initialCondition']
             fixtures?: WfEvalRowDTO['fixtures']
             checks?: WfEvalRowDTO['checks']
@@ -1141,6 +1142,7 @@ export function createWfSdkHandlers<TDeps>(
             id: p.id,
             setId,
             name,
+            description: p.description,
             initialCondition: p.initialCondition,
             fixtures: p.fixtures,
             checks: p.checks,

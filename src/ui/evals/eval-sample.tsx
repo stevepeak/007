@@ -1,24 +1,40 @@
-import { ChevronRight, FlaskConical, Play, Plus, X } from 'lucide-react'
+import { Check, ChevronRight, FlaskConical, Play, Plus, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type {
   CheckTree,
   EvalCheck,
+  EvalFixtures,
+  ToolOption,
   WfEvalRowDTO,
+  WfEvalTargetKind,
 } from '../../server/protocol'
+import { WfAutoForm } from '../autoform/wf-auto-form'
 import { useWfComponents } from '../context'
 import {
+  useAgent,
   useAgents,
   useDeleteEvalRow,
+  useEvalRuns,
   useEvalSet,
+  useTools,
   useUpsertEvalRow,
 } from '../hooks'
 import { useWfNav } from '../nav'
 import { ArchiveButton } from '../archive-button'
 import { WfShell } from '../shell'
+import { ToolIcon } from '../tool-icon'
 import { sectionCrumb } from '../wf-crumbs'
 import { RunConfigDialog } from './run-config-dialog'
-import { describeCheck, EmptyState, FamilyTag, Tabs } from './shared'
+import {
+  describeCheck,
+  EmptyState,
+  FamilyTag,
+  formatTimestamp,
+  PassRate,
+  Score,
+  Tabs,
+} from './shared'
 import { StepFlow, type Step } from './step-flow'
 
 // The Sample view (route: evals/<setId>/samples/<sampleId>). A Sample IS a
@@ -30,7 +46,7 @@ import { StepFlow, type Step } from './step-flow'
 
 const DEFAULT_CHECK: EvalCheck = { type: 'tool_called', toolId: '', called: true }
 
-type SampleTab = 'config' | 'tests'
+type SampleTab = 'config' | 'runs'
 
 export type EvalSampleProps = {
   setId: string
@@ -40,14 +56,18 @@ export type EvalSampleProps = {
 
 type Draft = {
   name: string
+  description: string
   promptVariables: Record<string, string>
+  fixtures: EvalFixtures
   checks: CheckTree
 }
 
 function draftFromRow(row: WfEvalRowDTO): Draft {
   return {
     name: row.name,
+    description: row.description ?? '',
     promptVariables: { ...(row.initialCondition.promptVariables ?? {}) },
+    fixtures: { ...row.fixtures },
     checks: row.checks,
   }
 }
@@ -85,11 +105,12 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
       id: row.id,
       setId,
       name: next.name.trim() || 'Untitled sample',
+      description: next.description.trim() || null,
       initialCondition: {
         triggerInput: row.initialCondition.triggerInput,
         promptVariables: next.promptVariables,
       },
-      fixtures: row.fixtures,
+      fixtures: next.fixtures,
       checks: next.checks,
     })
   }
@@ -124,6 +145,20 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
                     if (draft.name !== row.name) persist(draft)
                   }}
                   className="w-full truncate rounded bg-transparent text-lg font-semibold text-neutral-900 outline-none placeholder:text-neutral-300 focus:bg-neutral-50"
+                />
+                <textarea
+                  value={draft.description}
+                  rows={1}
+                  placeholder="Add a description…"
+                  aria-label="Sample description"
+                  onChange={(e) =>
+                    setDraft({ ...draft, description: e.target.value })
+                  }
+                  onBlur={() => {
+                    if (draft.description !== (row.description ?? ''))
+                      persist(draft)
+                  }}
+                  className="w-full resize-none rounded bg-transparent text-sm text-neutral-600 outline-none placeholder:text-neutral-300 focus:bg-neutral-50"
                 />
               </div>
               <div className="flex shrink-0 items-center gap-2">
@@ -162,12 +197,8 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
               active={tab}
               onChange={(k) => setTab(k as SampleTab)}
               tabs={[
-                { key: 'config', label: 'Given' },
-                {
-                  key: 'tests',
-                  label: 'Tests',
-                  count: draft.checks.checks.length,
-                },
+                { key: 'config', label: 'Configuration' },
+                { key: 'runs', label: 'Test runs' },
               ]}
             />
 
@@ -193,16 +224,52 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
                         />
                       ),
                     },
+                    {
+                      key: 'mocks',
+                      title:
+                        set?.targetKind === 'workflow'
+                          ? 'Mocked Nodes'
+                          : 'Mocked Tools',
+                      aside: (
+                        <span className="text-[11px] uppercase tracking-wide text-neutral-400">
+                          Canned outputs
+                        </span>
+                      ),
+                      content: (
+                        <MockToolsPanel
+                          targetId={set?.targetId ?? ''}
+                          targetKind={set?.targetKind ?? 'agent'}
+                          fixtures={draft.fixtures}
+                          onChange={(fixtures) =>
+                            persist({ ...draft, fixtures })
+                          }
+                        />
+                      ),
+                    },
+                    {
+                      key: 'tests',
+                      title: 'Tests',
+                      aside: (
+                        <span className="text-[11px] uppercase tracking-wide text-neutral-400">
+                          {draft.checks.checks.length === 1
+                            ? '1 test'
+                            : `${draft.checks.checks.length} tests`}
+                        </span>
+                      ),
+                      content: (
+                        <TestsList
+                          setId={setId}
+                          sampleId={sampleId}
+                          checks={draft.checks}
+                          onChange={(checks) => persist({ ...draft, checks })}
+                        />
+                      ),
+                    },
                   ] satisfies Step[]
                 }
               />
             ) : (
-              <TestsList
-                setId={setId}
-                sampleId={sampleId}
-                checks={draft.checks}
-                onChange={(checks) => persist({ ...draft, checks })}
-              />
+              <RunsForSample setId={setId} />
             )}
           </>
         )}
@@ -340,6 +407,276 @@ function GivenEditor({
   )
 }
 
+// Per-sample tool fixtures: a pinned output a tool returns under `simulate`, so a
+// run is deterministic and side-effect-free (e.g. a memory/search tool returns a
+// fixed value instead of executing). Stored in row.fixtures keyed by toolId — one
+// canned output per tool. The target agent is the goal's; only agent targets
+// today, so workflow "Mock Nodes" is a placeholder until workflow targets ship.
+function MockToolsPanel({
+  targetId,
+  targetKind,
+  fixtures,
+  onChange,
+}: {
+  targetId: string
+  targetKind: WfEvalTargetKind
+  fixtures: EvalFixtures
+  onChange: (next: EvalFixtures) => void
+}) {
+  if (targetKind !== 'agent') {
+    return (
+      <p className="px-1 py-1 text-xs text-neutral-400">
+        Node mocks arrive with workflow targets.
+      </p>
+    )
+  }
+  return (
+    <AgentToolMocks
+      targetId={targetId}
+      fixtures={fixtures}
+      onChange={onChange}
+    />
+  )
+}
+
+function asRecord(v: unknown): Record<string, unknown> | undefined {
+  return v && typeof v === 'object' && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : undefined
+}
+
+function previewOutput(v: unknown): string {
+  try {
+    return JSON.stringify(v)
+  } catch {
+    return String(v)
+  }
+}
+
+function AgentToolMocks({
+  targetId,
+  fixtures,
+  onChange,
+}: {
+  targetId: string
+  fixtures: EvalFixtures
+  onChange: (next: EvalFixtures) => void
+}) {
+  const detail = useAgent(targetId)
+  const toolsQuery = useTools()
+
+  // Which tool's output editor is open (a toolId; null = none).
+  const [editing, setEditing] = useState<string | null>(null)
+
+  const toolIds =
+    detail.data?.currentVersion?.config.toolIds ??
+    detail.data?.draft?.config.toolIds ??
+    []
+  const byId = useMemo(
+    () => new Map((toolsQuery.data ?? []).map((t) => [t.id, t])),
+    [toolsQuery.data],
+  )
+  const agentTools = useMemo(
+    () =>
+      toolIds
+        .map((id) => byId.get(id))
+        .filter((t): t is ToolOption => !!t && t.kind === 'ai-tool'),
+    [toolIds, byId],
+  )
+
+  const mockedIds = Object.keys(fixtures)
+  const available = agentTools.filter((t) => !mockedIds.includes(t.id))
+
+  const save = (toolId: string, output: Record<string, unknown>) => {
+    onChange({ ...fixtures, [toolId]: output })
+    setEditing(null)
+  }
+  const remove = (toolId: string) => {
+    const next = { ...fixtures }
+    delete next[toolId]
+    onChange(next)
+    if (editing === toolId) setEditing(null)
+  }
+
+  if (!targetId) {
+    return (
+      <p className="px-1 py-1 text-xs text-neutral-400">
+        This goal has no target agent yet — set one on the goal to mock its tools.
+      </p>
+    )
+  }
+  if (detail.isLoading || toolsQuery.isLoading) {
+    return <p className="px-1 py-1 text-xs text-neutral-400">Loading tools…</p>
+  }
+  if (agentTools.length === 0) {
+    return (
+      <p className="px-1 py-1 text-xs text-neutral-400">
+        The target agent has no tools to mock.
+      </p>
+    )
+  }
+
+  const editingTool = editing ? byId.get(editing) : undefined
+
+  return (
+    <div className="space-y-3">
+      <p className="px-1 text-xs text-neutral-400">
+        Pin a tool&apos;s output so this sample runs deterministically — under
+        simulate the tool returns your canned value instead of executing.
+      </p>
+
+      {mockedIds.length > 0 ? (
+        <div className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-neutral-200">
+          {mockedIds.map((toolId) => {
+            const tool = byId.get(toolId)
+            return (
+              <div key={toolId} className="flex items-start gap-2 px-4 py-3">
+                <ToolIcon icon={tool?.icon} className="mt-0.5 size-5" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-sm text-neutral-800">
+                      {tool?.name ?? toolId}
+                    </span>
+                    {!tool ? (
+                      <span className="shrink-0 text-xs text-amber-600">
+                        (not in agent)
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="mt-0.5 truncate font-mono text-[11px] text-neutral-400">
+                    {previewOutput(fixtures[toolId])}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditing(toolId)}
+                  className="text-xs font-medium text-neutral-500 hover:text-neutral-800"
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  aria-label="Remove mock"
+                  onClick={() => remove(toolId)}
+                  className="text-neutral-300 transition hover:text-neutral-600"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      ) : null}
+
+      {editingTool ? (
+        <div className="space-y-3 rounded-lg border border-neutral-200 p-4">
+          <div className="flex items-center gap-2">
+            <ToolIcon icon={editingTool.icon} className="size-5" />
+            <span className="text-sm font-medium text-neutral-800">
+              {editingTool.name}
+            </span>
+            <button
+              type="button"
+              onClick={() => setEditing(null)}
+              className="ml-auto text-xs font-medium text-neutral-500 hover:text-neutral-800"
+            >
+              Cancel
+            </button>
+          </div>
+          <WfAutoForm
+            key={editingTool.id}
+            schema={editingTool.outputSchema}
+            defaultValues={asRecord(fixtures[editingTool.id])}
+            submitLabel="Save mock"
+            submitIcon={<Check className="size-4" />}
+            emptyLabel="Output (JSON)"
+            onSubmit={(output) => save(editingTool.id, output)}
+          />
+        </div>
+      ) : (
+        <ToolAddPicker tools={available} onPick={(toolId) => setEditing(toolId)} />
+      )}
+    </div>
+  )
+}
+
+// The agent's tools not yet mocked. Picking one opens its output editor (dedupe
+// by toolId enforces one mock per tool). Expands inline (in normal flow) rather
+// than as an absolute popover, so it can't be clipped by the StepFlow card's
+// `overflow-hidden`.
+function ToolAddPicker({
+  tools,
+  onPick,
+}: {
+  tools: ToolOption[]
+  onPick: (toolId: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+
+  if (tools.length === 0) {
+    return (
+      <p className="px-1 py-1 text-xs text-neutral-400">
+        Every tool the agent uses is already mocked.
+      </p>
+    )
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-50"
+      >
+        <Plus className="size-4" />
+        Add mock
+      </button>
+    )
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg border border-neutral-200 p-2">
+      <div className="flex items-center justify-between px-1">
+        <span className="text-xs font-medium text-neutral-500">
+          Pick a tool to mock
+        </span>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="text-xs font-medium text-neutral-500 hover:text-neutral-800"
+        >
+          Cancel
+        </button>
+      </div>
+      <div className="max-h-72 overflow-y-auto">
+        {tools.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => {
+              onPick(t.id)
+              setOpen(false)
+            }}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-neutral-50"
+          >
+            <ToolIcon icon={t.icon} className="size-5" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium text-neutral-800">
+                {t.name}
+              </span>
+              {t.description ? (
+                <span className="block truncate text-xs text-neutral-400">
+                  {t.description}
+                </span>
+              ) : null}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function TestsList({
   setId,
   sampleId,
@@ -417,6 +754,52 @@ function TestsList({
         <Plus className="size-4" />
         Add test
       </Button>
+    </div>
+  )
+}
+
+// Test runs that included this sample. A run spans a whole set (goal) by
+// `setIds` — there is no per-sample run table — so these are the goal's runs,
+// filtered from the global history. Clicking one opens the full run report.
+function RunsForSample({ setId }: { setId: string }) {
+  const { navigate } = useWfNav()
+  const runsQuery = useEvalRuns()
+  const runs = (runsQuery.data ?? []).filter((r) => r.setIds.includes(setId))
+
+  if (runsQuery.isLoading) return <EmptyState message="Loading test runs…" />
+  if (runs.length === 0) {
+    return (
+      <EmptyState message="No test runs yet. Run the goal to see results here." />
+    )
+  }
+  return (
+    <div className="overflow-hidden rounded-lg border border-neutral-200">
+      <div className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-neutral-100 bg-neutral-50 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+        <span>When</span>
+        <span className="text-right">Pass</span>
+        <span className="w-24 text-right">Score</span>
+      </div>
+      {runs.map((r) => (
+        <button
+          key={r.id}
+          type="button"
+          onClick={() => navigate(`evals/runs/${r.id}`)}
+          className="grid w-full grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-neutral-100 px-4 py-3 text-left last:border-b-0 hover:bg-neutral-50"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-neutral-700">
+              {formatTimestamp(r.createdAt)}
+            </span>
+            <span className="text-xs text-neutral-400">{r.status}</span>
+          </div>
+          <div className="text-right">
+            <PassRate passed={r.passed} total={r.total} />
+          </div>
+          <div className="w-24 text-right">
+            <Score value={r.score} />
+          </div>
+        </button>
+      ))}
     </div>
   )
 }

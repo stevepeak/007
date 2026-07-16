@@ -1,29 +1,9 @@
-import { Bot, Workflow as WorkflowIcon } from 'lucide-react'
-
-import type { EvalCheck, WfEvalTargetKind } from '../../server/protocol'
+import type { EvalCheck } from '../../server/protocol'
 import { cn } from '../cn'
 import { getProvider, ProviderLogo } from './provider-logos'
 
 // Small presentational bits shared across the Evals catalog, set, sample, and
 // test pages. All real-data — nothing here depends on the (deleted) mock store.
-
-/** Badge for what a goal exercises — an agent or a workflow. */
-export function KindBadge({ kind }: { kind: WfEvalTargetKind }) {
-  const Icon = kind === 'agent' ? Bot : WorkflowIcon
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
-        kind === 'agent'
-          ? 'bg-violet-50 text-violet-700'
-          : 'bg-indigo-50 text-indigo-700',
-      )}
-    >
-      <Icon className="size-3" />
-      {kind === 'agent' ? 'Agent' : 'Workflow'}
-    </span>
-  )
-}
 
 export function PassRate({
   passed,

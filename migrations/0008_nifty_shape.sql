@@ -1,0 +1,1 @@
+ALTER TABLE `wf_eval_row` ADD `description` text;

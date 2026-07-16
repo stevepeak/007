@@ -288,6 +288,8 @@ export const wfEvalRow = sqliteTable(
       .$defaultFn(() => crypto.randomUUID()),
     setId: text('set_id').notNull(),
     name: text('name').notNull(),
+    // Optional free-text description of the sample, authored by the user.
+    description: text('description'),
     // { triggerInput, promptVariables } — see EvalInitialCondition.
     initialCondition: text('initial_condition', { mode: 'json' })
       .notNull()
