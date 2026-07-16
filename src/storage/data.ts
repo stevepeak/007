@@ -617,7 +617,7 @@ export async function latestAgentVersion(db: WfDb, agentId: string) {
 }
 
 /** A specific published version by its number (for pinned agent references). */
-export async function agentVersionByNumber(
+async function agentVersionByNumber(
   db: WfDb,
   agentId: string,
   versionNumber: number,
