@@ -336,6 +336,10 @@ function AgentNodeRenderer(props: NodeProps) {
   const agent = data.config.agentId
     ? (agents.data ?? []).find((a) => a.id === data.config.agentId)
     : undefined
+  // A YES/NO (boolean) output agent doubles as a branch: it exposes yes/no
+  // source handles and routes its outgoing edges by the answer, so the author
+  // wires the two arms directly instead of dropping a separate Branch node.
+  const isDecision = agent?.output?.kind === 'boolean'
   return (
     <>
       <Handle type="target" position={Position.Left} />
@@ -349,7 +353,11 @@ function AgentNodeRenderer(props: NodeProps) {
         icon={agent ? agentIcon(agent.icon) : undefined}
         iconChip={agent ? agentColor(agent.color).chip : undefined}
       />
-      <Handle type="source" position={Position.Right} />
+      {isDecision ? (
+        <DecisionHandles />
+      ) : (
+        <Handle type="source" position={Position.Right} />
+      )}
     </>
   )
 }

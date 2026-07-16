@@ -1,5 +1,4 @@
 import {
-  isDecisionKind,
   workflowGraphSchema,
   type WorkflowEdge,
   type WorkflowGraph,
@@ -96,8 +95,11 @@ export class Scheduler {
   readonly graph: WorkflowGraph
   readonly trigger: Extract<WorkflowNode, { kind: 'trigger' }>
 
-  private readonly nodeMap = new Map<string, WorkflowNode>()
   private readonly incoming = new Map<string, WorkflowEdge[]>()
+  // Ids of `race` nodes — the first-to-finish join. They flip readiness from the
+  // default all-predecessors (`every`) rule to any-predecessor (`some`), so we
+  // only need the id set, not the full node map.
+  private readonly raceIds = new Set<string>()
 
   private readonly completed = new Set<string>()
   private readonly branchResults = new Map<string, string>()
@@ -113,7 +115,9 @@ export class Scheduler {
     }
     this.trigger = trigger
     for (const n of this.graph.nodes) {
-      this.nodeMap.set(n.id, n)
+      if (n.kind === 'race') {
+        this.raceIds.add(n.id)
+      }
     }
     for (const e of this.graph.edges) {
       const list = this.incoming.get(e.target)
@@ -158,8 +162,13 @@ export class Scheduler {
     if (!this.completed.has(e.source)) {
       return false
     }
-    const source = this.nodeMap.get(e.source)
-    if (source && isDecisionKind(source.kind)) {
+    // A conditioned edge routes: it's alive only when its source reported a
+    // matching decision. Branch/switch condition every outgoing edge; a YES/NO
+    // (boolean) agent conditions its yes/no edges but can also feed plain
+    // (unconditioned) edges as a pure data producer — those always flow. A
+    // non-decision source never reports a result, so a stray condition stays
+    // dead (validation rejects that shape at author time).
+    if (e.condition != null) {
       return e.condition === this.branchResults.get(e.source)
     }
     return true
@@ -173,6 +182,13 @@ export class Scheduler {
     if (inc.length === 0) {
       // only the trigger has 0 incoming, already done
       return false
+    }
+    // A `race` node fires as soon as the FIRST predecessor completes (any live
+    // incoming edge), rather than waiting for every predecessor. This is the
+    // same `some` readiness the Output bookend uses — a race is essentially an
+    // internal, non-terminal Output that the run continues past.
+    if (this.raceIds.has(nodeId)) {
+      return inc.some(this.isEdgeAlive)
     }
     return inc.every(this.isEdgeAlive)
   }
@@ -206,6 +222,15 @@ export class Scheduler {
   private resolveInput(nodeId: string): unknown {
     const inc = this.incoming.get(nodeId) ?? []
     const aliveIncoming = inc.filter(this.isEdgeAlive)
+    // A `race` passes the WINNING upstream's output straight through as a single
+    // value — its inputs all share one shape, so downstream sees that value, not
+    // the multi-keyed object a normal multi-parent join produces. The winner is
+    // the first alive incoming edge in declaration order (same deterministic,
+    // replay-safe tie-break the Output node uses when branch arms converge).
+    if (this.raceIds.has(nodeId)) {
+      const winner = aliveIncoming[0]
+      return winner ? this.nodeOutputs.get(winner.source) : undefined
+    }
     return aliveIncoming.length === 1
       ? this.nodeOutputs.get(aliveIncoming[0].source)
       : Object.fromEntries(

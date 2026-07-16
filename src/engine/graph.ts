@@ -267,6 +267,23 @@ const featureRequestNodeSchema = baseNode.extend({
   }),
 })
 
+// A Race is a first-to-finish join. Where every other work node fires only once
+// ALL its predecessors complete (the scheduler's `every` rule), a Race fires as
+// soon as the FIRST of its upstream nodes completes (an `any`/`some` rule — the
+// same readiness the Output bookend uses). Connect several parallel producers of
+// the same-shaped result into one Race; whichever finishes first wins and its
+// output flows through untouched. The remaining upstreams keep running — a
+// durable step can't be cancelled mid-flight — but their results are ignored by
+// the Race (it has already fired). It carries no config: the value it emits is
+// the winning upstream's output, so downstream nodes see one value, not the
+// multi-keyed object a normal multi-parent join produces. Among upstreams that
+// happen to complete in the same scheduler batch, the first in graph declaration
+// order wins, matching the Output node's deterministic, replay-safe tie-break.
+const raceNodeSchema = baseNode.extend({
+  kind: z.literal('race'),
+  config: z.object({}).default({}),
+})
+
 // A Note is a pure canvas annotation — a sticky note holding Markdown. It has no
 // ports and is never connected by an edge, so the scheduler (which only ever
 // schedules nodes whose incoming edges are all live) never sees it: it has zero
@@ -345,6 +362,7 @@ export const workflowNodeSchema = z.discriminatedUnion('kind', [
   switchNodeSchema,
   workflowCallNodeSchema,
   featureRequestNodeSchema,
+  raceNodeSchema,
   iterationNodeSchema,
   noteNodeSchema,
   outputNodeSchema,
@@ -364,6 +382,7 @@ export type BranchNode = z.infer<typeof branchNodeSchema>
 export type SwitchNode = z.infer<typeof switchNodeSchema>
 export type WorkflowCallNode = z.infer<typeof workflowCallNodeSchema>
 export type FeatureRequestNode = z.infer<typeof featureRequestNodeSchema>
+export type RaceNode = z.infer<typeof raceNodeSchema>
 export type NoteNode = z.infer<typeof noteNodeSchema>
 export type OutputNode = z.infer<typeof outputNodeSchema>
 export interface IterationNode {
@@ -391,6 +410,7 @@ export type WorkflowNode =
   | SwitchNode
   | WorkflowCallNode
   | FeatureRequestNode
+  | RaceNode
   | IterationNode
   | NoteNode
   | OutputNode
@@ -404,6 +424,7 @@ export const WF_NODE_KINDS = [
   'switch',
   'workflow',
   'feature-request',
+  'race',
   'iteration',
   'note',
   'output',
@@ -627,6 +648,16 @@ export const workflowGraphSchema = workflowGraphShapeSchema.superRefine(
     const decisionIds = new Set(
       g.nodes.filter((n) => isDecisionKind(n.kind)).map((n) => n.id),
     )
+    // A YES/NO (boolean) agent routes like a branch but its "decision-ness"
+    // isn't visible from the node kind — the agent's output contract lives in
+    // the referenced `wf_agent`, not the graph. The graph-local signal is the
+    // conditioned outgoing edge: any node with one routes, so treat it as a
+    // decision for the cone/join analysis below.
+    for (const e of g.edges) {
+      if (e.condition != null) {
+        decisionIds.add(e.source)
+      }
+    }
     const outAdj = new Map<string, string[]>()
     for (const e of g.edges) {
       const list = outAdj.get(e.source)
@@ -670,6 +701,15 @@ export const workflowGraphSchema = workflowGraphShapeSchema.superRefine(
     for (const n of g.nodes) {
       const incoming = g.edges.filter((e) => e.target === n.id)
       if (incoming.length < 2) continue
+
+      if (n.kind === 'race') {
+        // A Race is a first-to-finish join: it fires on the FIRST live incoming
+        // edge (`some` readiness) and passes that winner through. Every fan-in
+        // shape is legal here — multiple always-live parallel paths (the whole
+        // point) and both arms of a branch alike — so it's exempt from the
+        // Output "no parallel merge" and work-node "no both-arms join" rules.
+        continue
+      }
 
       if (n.kind === 'output') {
         // Only mutually-exclusive branch arms may converge on one Output; the

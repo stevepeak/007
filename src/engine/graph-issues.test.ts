@@ -124,6 +124,42 @@ describe('collectGraphIssues', () => {
     ).toBe(true)
   })
 
+  test('treats a YES/NO agent (conditioned edges) as a decision source', () => {
+    // A boolean-output agent carries its own yes/no edges — no branch node. Its
+    // two arms converging on one Output is legal (mutually exclusive), and its
+    // arms joining one work node is the both-arms stall, exactly like a branch.
+    const converge = graph(
+      [trigger, agent('ask'), agent('u'), agent('v'), output('o')],
+      [
+        edge('t', 'ask'),
+        edge('ask', 'u', 'yes'),
+        edge('ask', 'v', 'no'),
+        edge('u', 'o'),
+        edge('v', 'o'),
+      ],
+    )
+    expect(
+      collectGraphIssues(converge).some((i) => /parallel|both arms/.test(i.message)),
+    ).toBe(false)
+
+    const join = graph(
+      [trigger, agent('ask'), agent('u'), agent('v'), agent('j'), output('o')],
+      [
+        edge('t', 'ask'),
+        edge('ask', 'u', 'yes'),
+        edge('ask', 'v', 'no'),
+        edge('u', 'j'),
+        edge('v', 'j'),
+        edge('j', 'o'),
+      ],
+    )
+    expect(
+      collectGraphIssues(join).some(
+        (i) => i.nodeId === 'j' && /both arms/.test(i.message),
+      ),
+    ).toBe(true)
+  })
+
   test('shape schema persists a graph that has integrity issues', () => {
     // A both-arms join is rejected by the strict schema but must still SAVE.
     const bad = graph(

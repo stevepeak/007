@@ -46,6 +46,13 @@ export type AgentNodeMeta = {
 export type AgentNodeResult = {
   output: { text: string } | Record<string, unknown>
   meta: AgentNodeMeta
+  /**
+   * Set only for a YES/NO (boolean) output agent — 'yes' when `answer` is true,
+   * 'no' otherwise. Lets the agent node route its outgoing yes/no edges like a
+   * Branch; `decisionReasoning` carries the model's `reason` for the trace.
+   */
+  decision?: 'yes' | 'no'
+  decisionReasoning?: string
 }
 
 // Extracts UIMessage[] from the incoming node input:
@@ -315,7 +322,20 @@ export async function executeAgentNode<TDeps>(
         outputTokens: result.usage?.outputTokens ?? 0,
       },
     }
-    return { output: result.object as Record<string, unknown>, meta }
+    const output = result.object as Record<string, unknown>
+    // A YES/NO agent doubles as a decision: its `answer` routes the node's
+    // yes/no edges (the `object` kind produces data only, never routes). The
+    // full `{ answer, reason }` still flows downstream as the node's output.
+    if (config.output.kind === 'boolean') {
+      return {
+        output,
+        meta,
+        decision: output.answer ? 'yes' : 'no',
+        decisionReasoning:
+          typeof output.reason === 'string' ? output.reason : '',
+      }
+    }
+    return { output, meta }
   }
 
   // Tool-calling agent loop. Background execution is non-streaming

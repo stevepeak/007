@@ -9,6 +9,7 @@ import { executeAgentNode } from './nodes/agent'
 import { executeBranchNode } from './nodes/branch'
 import { executeFeatureRequestNode } from './nodes/feature-request'
 import { executeSubgraph, runIteration } from './nodes/iteration'
+import { executeRaceNode } from './nodes/race'
 import { executeSwitchNode } from './nodes/switch'
 import { executeToolNode } from './nodes/tool'
 import { executeWorkflowNode } from './nodes/workflow'
@@ -110,6 +111,11 @@ export async function runNode<TDeps>(
         schedulerOutput: r.output,
         recordedOutput: r.output,
         meta: r.meta,
+        // A YES/NO agent routes its outgoing yes/no edges like a Branch. Its
+        // output still flows downstream unchanged (unlike branch/switch, which
+        // pass their input through) — the `{ answer, reason }` is the value.
+        branchResult: r.decision,
+        branchReasoning: r.decisionReasoning,
       }
     }
     case 'tool': {
@@ -169,6 +175,16 @@ export async function runNode<TDeps>(
         schedulerOutput: r.output,
         recordedOutput: r.output,
         meta: r.meta,
+      }
+    }
+    case 'race': {
+      // First-to-finish join. The Scheduler already resolved `input` to the
+      // winning upstream's output (single value); the node just passes it
+      // through so downstream nodes consume the winner unchanged.
+      const r = await executeRaceNode({ node, input })
+      return {
+        schedulerOutput: r.output,
+        recordedOutput: r.output,
       }
     }
     case 'iteration': {

@@ -185,6 +185,67 @@ describe('Scheduler', () => {
     expect(agentInput).toEqual({ seed: 1 })
   })
 
+  test('a YES/NO agent routes its own yes/no edges like a branch', () => {
+    // No branch node: the agent node itself carries conditioned yes/no edges
+    // (as a boolean-output agent does) and reports 'no', so only the NO arm is
+    // alive. Its own output still flows to that arm (unlike a branch, which
+    // passes its input through).
+    const s = new Scheduler({
+      version: 1,
+      nodes: [
+        trigger('t'),
+        agent('ask'),
+        agent('yes'),
+        agent('no'),
+        output('o'),
+      ],
+      edges: [
+        edge('t', 'ask'),
+        edge('ask', 'yes', 'yes'),
+        edge('ask', 'no', 'no'),
+        edge('yes', 'o'),
+        edge('no', 'o'),
+      ],
+    })
+    s.seedTrigger({})
+    const r = drive(s, (id) => {
+      if (id === 'ask') {
+        return { output: { answer: false, reason: 'nope' }, branchResult: 'no' }
+      }
+      return { output: { ran: id } }
+    })
+    expect(r.fired).toEqual(['ask', 'no'])
+    expect(r.output).toEqual({ ran: 'no' })
+  })
+
+  test('a YES/NO agent forwards its {answer,reason} to the taken arm', () => {
+    const s = new Scheduler({
+      version: 1,
+      nodes: [trigger('t'), agent('ask'), agent('yes'), output('o')],
+      edges: [
+        edge('t', 'ask'),
+        edge('ask', 'yes', 'yes'),
+        edge('yes', 'o'),
+      ],
+    })
+    s.seedTrigger({})
+    let armInput: unknown
+    while (true) {
+      const inst = s.next()
+      if (inst.type !== 'execute') break
+      if (inst.node.id === 'ask') {
+        s.report(inst.node.id, {
+          output: { answer: true, reason: 'yep' },
+          branchResult: 'yes',
+        })
+      } else {
+        armInput = inst.input
+        s.report(inst.node.id, { output: {} })
+      }
+    }
+    expect(armInput).toEqual({ answer: true, reason: 'yep' })
+  })
+
   test('multiple arms converge on a single Output (first live edge wins)', () => {
     // Two branch arms both feed one Output node — the classic convergence the
     // engine supports today. Exactly one incoming edge is live.

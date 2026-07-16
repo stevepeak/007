@@ -150,10 +150,16 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
     }
   }
 
-  // Decision cone membership, for the mutually-exclusive-join check below.
+  // Decision cone membership, for the mutually-exclusive-join check below. A
+  // YES/NO (boolean) agent routes like a branch but isn't a decision *kind* —
+  // its routing shows up graph-locally as a conditioned outgoing edge, so any
+  // node with one counts as a decision source here too.
   const decisionIds = new Set(
     graph.nodes.filter((n) => isDecisionKind(n.kind)).map((n) => n.id),
   )
+  for (const e of graph.edges) {
+    if (e.condition != null) decisionIds.add(e.source)
+  }
   // A node is "conditional" when it — or any ancestor — is a decision node, so
   // its execution depends on a branch outcome.
   const isConditional = (nodeId: string): boolean =>
