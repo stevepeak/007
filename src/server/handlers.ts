@@ -19,6 +19,7 @@ import {
 } from '../eval'
 import type { WfDb } from '../storage/client'
 import {
+  buildEvalSnapshot,
   countWorkflowsReferencingAgent,
   createAgent,
   createEvalRun,
@@ -36,6 +37,7 @@ import {
   getRun,
   getVersionGraph,
   getWorkflow,
+  hashEvalSnapshot,
   insertEvalResult,
   listAgents,
   listAgentVersions,
@@ -60,6 +62,7 @@ import {
 
 import type {
   AgentPreviewResult,
+  EvalRowSnapshot,
   JsonSchema,
   RetryRunMode,
   WfAgentDetail,
@@ -507,6 +510,8 @@ function evalResultDTO(r: {
   status: WfEvalResultDTO['status']
   score: number | null
   checkResults: unknown
+  snapshot?: unknown
+  snapshotHash?: string | null
   createdAt: Date
 }): WfEvalResultDTO {
   return {
@@ -519,6 +524,8 @@ function evalResultDTO(r: {
     checkResults: Array.isArray(r.checkResults)
       ? (r.checkResults as WfEvalResultDTO['checkResults'])
       : [],
+    snapshot: (r.snapshot as EvalRowSnapshot | null) ?? null,
+    snapshotHash: r.snapshotHash ?? null,
     createdAt: r.createdAt.getTime(),
   }
 }
@@ -1262,6 +1269,12 @@ export function createWfSdkHandlers<TDeps>(
             getModel,
             defaultJudgeModelId,
           })
+          // Freeze the Sample + Goal target this result was graded against, so
+          // the report reproduces it exactly even after the definitions change.
+          // The concrete agent version that ran stays reachable via wfRunId →
+          // wf_run.manifest, so it isn't duplicated in the snapshot.
+          const snapshot = buildEvalSnapshot(found.row, found.set)
+          const snapshotHash = await hashEvalSnapshot(snapshot)
           const resultId = await insertEvalResult(db, {
             evalRunId,
             rowId,
@@ -1269,6 +1282,8 @@ export function createWfSdkHandlers<TDeps>(
             status: graded.status,
             score: graded.score,
             checkResults: graded.checkResults,
+            snapshot,
+            snapshotHash,
           })
           const dto: WfEvalResultDTO = {
             id: resultId,
@@ -1278,6 +1293,8 @@ export function createWfSdkHandlers<TDeps>(
             status: graded.status,
             score: graded.score,
             checkResults: graded.checkResults,
+            snapshot,
+            snapshotHash,
             createdAt: Date.now(),
           }
           return json(dto)

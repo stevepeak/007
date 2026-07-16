@@ -8,6 +8,7 @@ import type {
   CheckTree,
   EvalFixtures,
   EvalInitialCondition,
+  EvalRowSnapshot,
 } from '../eval/checks'
 
 export type { AgentNodeMeta } from '../engine/nodes/agent'
@@ -277,6 +278,7 @@ export type {
   EvalFixtures,
   EvalInitialCondition,
   EvalMatch,
+  EvalRowSnapshot,
 } from '../eval/checks'
 
 /** What an eval set targets — an agent or a workflow, resolved float-to-latest. */
@@ -350,6 +352,15 @@ export type WfEvalResultDTO = {
   status: WfEvalResultStatus
   score: number | null
   checkResults: CheckResult[]
+  /**
+   * Frozen Sample + Goal target this result ran + was graded against. The report
+   * reads this (not the live Sample) so editing a Sample later doesn't rewrite
+   * how a past run displays. Null only for results graded before snapshots
+   * existed — consumers fall back to the live row.
+   */
+  snapshot: EvalRowSnapshot | null
+  /** sha256 of `snapshot`'s reproducibility-relevant fields; null when no snapshot. */
+  snapshotHash: string | null
   createdAt: number
 }
 

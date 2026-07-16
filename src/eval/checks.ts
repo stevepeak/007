@@ -115,3 +115,33 @@ export type CheckResult = z.infer<typeof checkResultSchema>
 export function isJudgeCheck(check: EvalCheck): boolean {
   return check.type === 'llm_judge'
 }
+
+/**
+ * A frozen copy of everything a graded eval result was produced against, stored
+ * on `wf_eval_result` at grade time. This is why Samples/Tests/Goals no longer
+ * carry their own version counters: a run doesn't need the definitions' history,
+ * only an immutable record of the exact state IT ran against — so it stays
+ * reproducible as those definitions are edited afterward. The concrete agent
+ * version that executed is not duplicated here; it lives in the produced
+ * `wf_run`'s frozen `manifest` (reached via `wf_eval_result.wfRunId`).
+ */
+export type EvalRowSnapshot = {
+  /** The Sample ("row") exactly as it ran + was graded. */
+  row: {
+    name: string
+    description: string | null
+    initialCondition: EvalInitialCondition
+    fixtures: EvalFixtures
+    checks: CheckTree
+  }
+  /** The Goal ("set") target identity + trigger the row ran under. */
+  target: {
+    setId: string
+    setName: string
+    targetKind: string
+    targetId: string
+    /** The Goal's version pin: null when it floats to the target's latest. */
+    targetVersion: number | null
+    triggerKind: string
+  }
+}

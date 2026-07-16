@@ -359,6 +359,18 @@ export const wfEvalResult = sqliteTable(
     checkResults: text('check_results', { mode: 'json' })
       .notNull()
       .default(sql`'[]'`),
+    // Frozen copy of the Sample + Goal target this result was produced and graded
+    // against — see EvalRowSnapshot. Makes a historical result reproducible even
+    // after its Sample/checks are edited (the report reads this, not the live
+    // row). NULL only for results written before this column existed. The
+    // concrete agent version that ran stays reachable via `wfRunId` → the real
+    // wf_run's frozen `manifest`, so it isn't duplicated here.
+    snapshot: text('snapshot', { mode: 'json' }),
+    // sha256 over the snapshot's reproducibility-relevant fields (sample inputs +
+    // checks + goal target identity). Lets two runs of the same Sample be
+    // compared ("did the definition change?") and identical snapshots deduped,
+    // without reintroducing a version counter on Samples/Tests.
+    snapshotHash: text('snapshot_hash'),
     createdAt: createdAt(),
   },
   (t) => [

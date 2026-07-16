@@ -71,6 +71,13 @@
       "when": 1784211399157,
       "tag": "0009_spicy_wind_dancer",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1784217903592,
+      "tag": "0010_bizarre_adam_warlock",
+      "breakpoints": true
     }
   ]
 }

@@ -112,8 +112,10 @@ function Metric({
   )
 }
 
-// One Goal's worth of results. Loads the set to resolve sample names + the check
-// tree (so each result's checkResults[] can be zipped back to what it asserted).
+// One Goal's worth of results. Each result carries a frozen snapshot of the
+// Sample + checks it was graded against, so its checkResults[] zip back to what
+// it actually asserted even after the Sample is edited. The live set is loaded
+// only for the Goal's current name and to resolve results predating snapshots.
 function SetSection({
   setId,
   results,
@@ -125,15 +127,20 @@ function SetSection({
   const rows = set?.rows ?? []
   const rowById = new Map(rows.map((r) => [r.id, r]))
   // Results for samples that belong to this set (a run may span several sets).
-  const own = results.filter((r) => rowById.has(r.rowId))
+  // Prefer the snapshot's setId — it survives Sample/Goal deletion; fall back to
+  // a live-row match for results graded before snapshots existed.
+  const own = results.filter(
+    (r) => r.snapshot?.target.setId === setId || rowById.has(r.rowId),
+  )
   if (rows.length === 0 && own.length === 0) return null
+
+  const setName =
+    set?.set.name ?? own[0]?.snapshot?.target.setName ?? 'Goal'
 
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <h2 className="text-sm font-semibold text-neutral-900">
-          {set?.set.name ?? 'Goal'}
-        </h2>
+        <h2 className="text-sm font-semibold text-neutral-900">{setName}</h2>
         <PassRate
           passed={own.filter((r) => r.status === 'pass').length}
           total={own.length}
@@ -144,13 +151,14 @@ function SetSection({
       ) : (
         <div className="space-y-2">
           {own.map((result) => {
-            const row = rowById.get(result.rowId)
+            const snapRow = result.snapshot?.row
+            const liveRow = rowById.get(result.rowId)
             return (
               <ResultCard
                 key={result.id}
                 result={result}
-                name={row?.name ?? result.rowId}
-                checks={row?.checks.checks ?? []}
+                name={snapRow?.name ?? liveRow?.name ?? result.rowId}
+                checks={snapRow?.checks.checks ?? liveRow?.checks.checks ?? []}
               />
             )
           })}
