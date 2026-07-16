@@ -8,6 +8,7 @@ import { useWfComponents } from '../context'
 import { useAgents, useEvalRuns, useEvalSet, useUpdateEvalSet, useUpsertEvalRow } from '../hooks'
 import { useOpenAsset, useWfNav, WfLink } from '../nav'
 import { ArchiveButton } from '../archive-button'
+import { IdeaSpark } from '../idea-spark'
 import { WfShell } from '../shell'
 import { RunConfigDialog } from './run-config-dialog'
 import { EmptyState, formatTimestamp, PassRate, Score, Tabs } from './shared'
@@ -128,6 +129,24 @@ export function EvalSet({ setId, className }: EvalSetProps) {
               <Play className="size-4" />
               Run Tests
             </Button>
+            <IdeaSpark
+              title="Recommend the models most likely to pass"
+              hint="Idea: AI suggests which models to run before you pick"
+            >
+              <p>
+                Choosing which models to run is a guess today. When you open the
+                run dialog, AI could first read this goal&apos;s{' '}
+                <strong>requirements</strong> — its samples, tests, and the
+                behavior they demand — and predict which models are{' '}
+                <strong>most likely to perform best</strong>.
+              </p>
+              <p>
+                You&apos;d see a short, reasoned shortlist — “these three fit the
+                tool-use and latency this goal needs” — so the model picker is an
+                informed choice instead of a shot in the dark. It could even flag
+                models that are likely to fail outright and save you a run.
+              </p>
+            </IdeaSpark>
           </>
         ) : undefined
       }

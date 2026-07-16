@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { AgentSelect, type AgentSelectValue } from '../agent-select'
 import { useWfComponents } from '../context'
 import { useAgents, useCreateEvalSet } from '../hooks'
+import { IdeaSpark } from '../idea-spark'
 
 // Create-goal dialog. A goal (wf_eval_set) carries the target — the agent it
 // runs its samples against — so creation collects a name, an optional
@@ -116,7 +117,33 @@ export function NewGoalDialog({ open, onClose, onCreated }: NewGoalDialogProps) 
             )}
           </div>
           <div className="space-y-1">
-            <Label>Description</Label>
+            <div className="flex items-center gap-1.5">
+              <Label>Description</Label>
+              <IdeaSpark
+                title="Let AI seed samples & tests from the description"
+                hint="Idea: generate sample data + tests from this description"
+              >
+                <p>
+                  What if this description did more than document intent? On
+                  create, AI could read it and propose a starter kit for the
+                  goal:
+                </p>
+                <ul className="list-disc space-y-1 pl-5">
+                  <li>
+                    a handful of realistic <strong>sample scenarios</strong>{' '}
+                    (the “Given” inputs) that match the outcome described
+                  </li>
+                  <li>
+                    candidate <strong>tests</strong> — the binary assertions and
+                    scored judges that would prove the goal holds
+                  </li>
+                </ul>
+                <p>
+                  Suggestions only — you accept, edit, or discard each one — so a
+                  blank goal starts warm instead of empty.
+                </p>
+              </IdeaSpark>
+            </div>
             <Textarea
               rows={2}
               value={description}
