@@ -31,18 +31,6 @@ export type WfCrumbEditable = {
   placeholder?: string
 }
 
-// The asset's editable one-line description, rendered under the title. Same
-// commit-on-blur contract as an editable title, plus a placeholder for the
-// empty state.
-export type WfShellDescriptionEditable = {
-  value: string
-  onChange: (next: string) => void
-  /** Commit the edit (blur). */
-  onCommit: () => void
-  placeholder?: string
-  ariaLabel?: string
-}
-
 export type WfCrumb = {
   /** Crumb text. Omitted for `home` (icon) and `editable` (field) crumbs. */
   label?: ReactNode
