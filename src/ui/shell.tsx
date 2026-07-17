@@ -208,12 +208,21 @@ function TrailCrumb({ crumb, isLast }: { crumb: WfCrumb; isLast: boolean }) {
   )
 }
 
-// The asset's editable name, rendered as the page title.
+// The asset's editable name, rendered as the page title. The field widens to fit
+// its content — via the `size` attribute (chars) — up to a 50-char ceiling, past
+// which it stops growing and scrolls internally.
+const TITLE_MAX_CHARS = 50
+
 function EditableTitle({ editable }: { editable: WfCrumbEditable }) {
   const { value, onChange, onCommit, ariaLabel, placeholder } = editable
+  const size = Math.min(
+    TITLE_MAX_CHARS,
+    Math.max((value || placeholder || '').length + 1, 8),
+  )
   return (
     <input
       value={value}
+      size={size}
       aria-label={ariaLabel}
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
@@ -221,7 +230,7 @@ function EditableTitle({ editable }: { editable: WfCrumbEditable }) {
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === 'Escape') e.currentTarget.blur()
       }}
-      className="min-w-0 max-w-md rounded border border-transparent bg-transparent px-1 py-0.5 text-base font-semibold text-neutral-900 outline-none placeholder:font-normal placeholder:text-neutral-400 hover:border-neutral-200 focus:border-neutral-300 focus:bg-neutral-50"
+      className="min-w-0 rounded border border-transparent bg-transparent px-1 py-0.5 text-base font-semibold text-neutral-900 outline-none placeholder:font-normal placeholder:text-neutral-400 hover:border-neutral-200 focus:border-neutral-300 focus:bg-neutral-50"
     />
   )
 }

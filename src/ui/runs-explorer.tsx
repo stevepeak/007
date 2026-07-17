@@ -1,3 +1,4 @@
+import { CircleDashed } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import type { WfRunListInput, WfRunSummary } from '../server/protocol'
@@ -100,6 +101,14 @@ function Select({
 
 function StatusBadge({ status }: { status: string }) {
   const { Badge } = useWfComponents()
+  if (status === 'running' || status === 'queued') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700">
+        <CircleDashed className="size-3 animate-spin" />
+        {status}
+      </span>
+    )
+  }
   return <Badge className={cn('border', statusClass[status])}>{status}</Badge>
 }
 
