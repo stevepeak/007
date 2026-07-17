@@ -86,12 +86,21 @@ import type {
 import { summarizeWorkflowChanges } from './summarize-changes'
 
 // Converts a tool's Zod schema to JSON Schema for the wire. Zod v4 ships a
-// native converter; anything it can't represent falls back to "no schema"
+// native converter. `io` picks which side of any transform/pipe to project — an
+// input schema is described as what the tool *accepts* (`'input'`), an output
+// schema as what it *emits* (`'output'`). `unrepresentable: 'any'` is essential:
+// without it a single `.transform()` anywhere in the tree (e.g. a coercing field
+// like `partySchema` deep inside `docMeta`) makes the whole conversion THROW, so
+// the tool would surface no input/output schema at all — the field just degrades
+// to `{}` (any) instead. Anything still unconvertible falls back to "no schema"
 // rather than failing the whole listing.
-function toJsonSchema(schema: z.ZodType | undefined): JsonSchema | undefined {
+function toJsonSchema(
+  schema: z.ZodType | undefined,
+  io: 'input' | 'output',
+): JsonSchema | undefined {
   if (!schema) return undefined
   try {
-    return z.toJSONSchema(schema)
+    return z.toJSONSchema(schema, { io, unrepresentable: 'any' })
   } catch {
     return undefined
   }
@@ -590,8 +599,8 @@ export function createWfSdkHandlers<TDeps>(
               description: entry.description,
               icon: entry.icon,
               kind: entry.kind,
-              inputSchema: toJsonSchema(entry.inputSchema),
-              outputSchema: toJsonSchema(entry.outputSchema),
+              inputSchema: toJsonSchema(entry.inputSchema, 'input'),
+              outputSchema: toJsonSchema(entry.outputSchema, 'output'),
             })),
           )
 

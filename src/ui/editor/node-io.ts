@@ -3,6 +3,7 @@ import {
   ancestorIds,
   ITERATION_ITEM_TRIGGER_KIND,
   predecessorIds,
+  SWITCH_DEFAULT_CASE,
   type JsonSchema,
   type WorkflowGraph,
   type WorkflowNode,
@@ -27,7 +28,18 @@ export type DataField = {
   /** JSON Schema `type` (string/number/object/array/…) or "unknown". */
   type: string
   description?: string
+  /** Nested fields when `type` is `object`. */
   children?: DataField[]
+  /** Element fields when `type` is `array` — the shape of each item. Shown in
+   * the read-only data tree so an array's contents are visible; NOT offered in
+   * the binding picker (a whole array binds as one leaf, since element indices
+   * aren't known at author time). */
+  items?: DataField[]
+  /** Raw JSON Schema of one array element when `type` is `array`. Powers the
+   * iteration list picker: selecting this field as the loop's list persists this
+   * as the inferred `itemSchema` so the inner `Item` node can expose the
+   * element's fields. */
+  itemSchema?: JsonSchema
 }
 
 /** A single value a node needs supplied — an agent variable or tool argument. */
@@ -75,9 +87,36 @@ function schemaType(schema: JsonSchema | undefined): string {
   return typeof schema?.type === 'string' ? schema.type : 'unknown'
 }
 
-// Walks a JSON Schema `object` into a field tree. Nested objects recurse;
-// arrays surface as a single leaf (bind the whole array, or type a manual index
-// path) rather than inventing indices we can't know at author time.
+// The element shape of an array schema, as display-only `items` fields. Objects
+// expand to their properties; a scalar/opaque element becomes a single `[ ]`
+// leaf so the reader still sees the element's type. Paths carry a `[]` segment
+// to signal "each element" — they are for display only (the binding picker never
+// offers them, since a real index isn't known at author time).
+function itemFieldsOf(
+  itemSchema: JsonSchema | undefined,
+  arrayPath: string,
+): DataField[] | undefined {
+  if (!itemSchema) return undefined
+  const elemPath = `${arrayPath}[]`
+  if (itemSchema.type === 'object') return fieldsOf(itemSchema, elemPath)
+  return [
+    {
+      key: '[]',
+      label: '[ ]',
+      path: elemPath,
+      type: schemaType(itemSchema),
+      description:
+        typeof itemSchema.description === 'string'
+          ? itemSchema.description
+          : undefined,
+    },
+  ]
+}
+
+// Walks a JSON Schema `object` into a field tree. Nested objects recurse; arrays
+// surface as a single bindable leaf (bind the whole array, or type a manual index
+// path) but carry their element shape in `items` so the read-only tree can show
+// what each element contains.
 function fieldsOf(
   schema: JsonSchema | undefined,
   parentPath: string,
@@ -94,6 +133,12 @@ function fieldsOf(
       description:
         typeof s.description === 'string' ? s.description : undefined,
       children: s.type === 'object' ? fieldsOf(s, path) : undefined,
+      items:
+        s.type === 'array'
+          ? itemFieldsOf(s.items as JsonSchema | undefined, path)
+          : undefined,
+      itemSchema:
+        s.type === 'array' ? (s.items as JsonSchema | undefined) : undefined,
     }
   })
 }
@@ -153,6 +198,7 @@ function repath(fields: DataField[], prefix: string): DataField[] {
     ...f,
     path: `${prefix}.${f.path}`,
     children: f.children ? repath(f.children, prefix) : undefined,
+    items: f.items ? repath(f.items, prefix) : undefined,
   }))
 }
 
@@ -180,7 +226,10 @@ function nodeOutput(
   }
   if (node.kind === 'tool') {
     const schema = maps.toolsById.get(node.config.toolId)?.outputSchema
-    return { fields: fieldsOf(schema, ''), type: schema ? 'object' : 'unknown' }
+    // Reflect the schema's real container type (object/array/…) instead of
+    // always claiming "object" — a tool that returns an array or scalar was
+    // being mislabeled.
+    return { fields: fieldsOf(schema, ''), type: schema ? schemaType(schema) : 'unknown' }
   }
   if (node.kind === 'trigger') {
     const schema = maps.triggersByKind.get(node.config.triggerKind)?.inputSchema
@@ -370,6 +419,61 @@ export function accessibleLists(
   return out
 }
 
+/** One direct predecessor of an iteration node, with the FULL field tree of its
+ * output (array fields carry `itemSchema`). Unlike `accessibleLists` — which
+ * pre-flattens to just the array leaves for a dropdown — this preserves the
+ * object structure so the list picker can render a drill-down tree identical to
+ * the agent/tool/branch data picker, with arrays as the pickable leaves.
+ * `wholeIsList` marks a predecessor whose whole output is itself the array. */
+export type IterationListSource = {
+  nodeId: string
+  nodeLabel: string
+  /** Several predecessors feed the node, so a list path is prefixed with the
+   * source node id (matching the scheduler's `{ [sourceId]: output }` merge). */
+  multi: boolean
+  wholeIsList: boolean
+  wholeItemSchema?: JsonSchema
+  fields: DataField[]
+}
+
+export function iterationListSources(
+  graph: WorkflowGraph,
+  nodeId: string,
+  maps: IoMaps,
+): IterationListSource[] {
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]))
+  const preds = predecessorIds(graph, nodeId)
+    .map((id) => byId.get(id))
+    .filter((n): n is WorkflowNode => Boolean(n))
+  const multi = preds.length > 1
+  return preds.map((pred) => {
+    const schema = nodeOutputSchema(pred, maps, graph, byId, new Set())
+    const wholeIsList = schema?.type === 'array'
+    return {
+      nodeId: pred.id,
+      nodeLabel: pred.label,
+      multi,
+      wholeIsList,
+      wholeItemSchema: wholeIsList
+        ? (schema?.items as JsonSchema | undefined)
+        : undefined,
+      fields: fieldsOf(schema, ''),
+    }
+  })
+}
+
+/** The `itemsPath` (a dotted path into the iteration node's resolved input) for
+ * a list picked out of a predecessor's output. Mirrors `accessibleLists`' path
+ * rule so the tree picker and the engine agree: a multi-predecessor input is
+ * keyed by source node id, a single-predecessor input IS the output. */
+export function iterationItemsPath(
+  source: { multi: boolean; nodeId: string },
+  fieldPath: string,
+): string {
+  if (!source.multi) return fieldPath
+  return fieldPath ? `${source.nodeId}.${fieldPath}` : source.nodeId
+}
+
 // Return a maps copy whose iteration `Item` trigger resolves to `itemSchema`, so
 // nodes inside a loop see the element's fields. No-op without a schema.
 export function withIterationItemSchema(
@@ -442,6 +546,64 @@ export function nodeProvides(
     fields: out.fields,
     wholeType: out.type,
   }
+}
+
+// The decision a routing node records as its OWN output — distinct from the
+// input it forwards downstream (which `nodeProvides` describes). A Branch records
+// a yes/no result; a Switch records the winning case key. Returned so the Data
+// tab can show the boolean/enum a decision node produces (visible in the run
+// viewer as `recordedOutput`) rather than only its forwarded input. Non-decision
+// nodes return null.
+export function nodeDecisionOutput(node: WorkflowNode): AccessibleNode | null {
+  const reasoning: DataField = {
+    key: 'reasoning',
+    label: 'reasoning',
+    path: 'reasoning',
+    type: 'string',
+    description: 'Human-readable explanation of why this arm was chosen.',
+  }
+  if (node.kind === 'branch') {
+    return {
+      nodeId: node.id,
+      label: node.label,
+      kind: node.kind,
+      wholeType: 'object',
+      fields: [
+        {
+          key: 'result',
+          label: 'result',
+          path: 'result',
+          type: '"yes" | "no"',
+          description: 'Whether the predicate held — drives the yes/no edge.',
+        },
+        reasoning,
+      ],
+    }
+  }
+  if (node.kind === 'switch') {
+    const keys = node.config.cases.map((c) => c.key)
+    const type =
+      keys.length > 0
+        ? [...keys, SWITCH_DEFAULT_CASE].map((k) => JSON.stringify(k)).join(' | ')
+        : 'string'
+    return {
+      nodeId: node.id,
+      label: node.label,
+      kind: node.kind,
+      wholeType: 'object',
+      fields: [
+        {
+          key: 'result',
+          label: 'result',
+          path: 'result',
+          type,
+          description: 'The matching case key — drives which edge is taken.',
+        },
+        reasoning,
+      ],
+    }
+  }
+  return null
 }
 
 // Every node structurally upstream of `nodeId`, nearest-first, with its output

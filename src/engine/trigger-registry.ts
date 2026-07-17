@@ -160,10 +160,12 @@ function reflectFields(schema: z.ZodType): TriggerEventField[] {
 }
 
 // Convert an event's Zod input schema to JSON Schema for the data-mapping tree.
-// Best-effort: an unrepresentable schema simply omits the shape.
+// `unrepresentable: 'any'` keeps a lone transform/pipe anywhere in the payload
+// from throwing (which would omit the whole shape); it degrades to `{}` instead.
+// Best-effort: a still-unrepresentable schema simply omits the shape.
 function eventInputSchema(schema: z.ZodType): JsonSchema | undefined {
   try {
-    return z.toJSONSchema(schema)
+    return z.toJSONSchema(schema, { unrepresentable: 'any' })
   } catch {
     return undefined
   }

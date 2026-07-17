@@ -51,7 +51,13 @@ async function simulateToolResult(
 
   try {
     if (entry.outputSchema) {
-      const schema = z.toJSONSchema(entry.outputSchema) as JsonSchema
+      // `unrepresentable: 'any'` so a transform/pipe anywhere in the output
+      // schema degrades to `{}` instead of throwing (which would drop us to the
+      // `stub` fallback for every call).
+      const schema = z.toJSONSchema(entry.outputSchema, {
+        io: 'output',
+        unrepresentable: 'any',
+      }) as JsonSchema
       const { object } = await generateObject({
         model,
         schema: jsonSchema(schema),

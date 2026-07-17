@@ -1,5 +1,5 @@
-import { ChevronDown, ListOrdered, Workflow } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronDown, Workflow } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 
 import {
   BRANCH_OPERATORS,
@@ -14,8 +14,11 @@ import { AgentSelect } from '../agent-select'
 import { useWfComponents } from '../context'
 import { useAgents, useTools, useTriggerEvents, useWorkflows } from '../hooks'
 import { cn } from '../cn'
-import { DataRefField, NodeInputsPanel, useIoMaps } from './node-data-panel'
-import { accessibleLists } from './node-io'
+import {
+  DataRefField,
+  IterationListField,
+  NodeInputsPanel,
+} from './node-data-panel'
 import { ToolIcon } from '../tool-icon'
 
 // Per-kind config editor for the selected node. Uses injected primitives so it
@@ -307,7 +310,7 @@ export function NodeInspector({
         <>
           <div className={field}>
             <Label>List</Label>
-            <ListSelect
+            <IterationListField
               graph={graph}
               nodeId={node.id}
               value={node.config.itemsPath}
@@ -319,8 +322,9 @@ export function NodeInspector({
               }
             />
             <p className="text-muted-foreground text-xs">
-              Pick the list to loop over — each element becomes the{' '}
-              <strong>Item</strong>. Only arrays reaching this block are shown.
+              Drill into an upstream node's data and pick the{' '}
+              <strong>list</strong> to loop over — each element becomes the{' '}
+              <strong>Item</strong>. Only arrays can be selected.
             </p>
           </div>
           <div className={field}>
@@ -461,110 +465,6 @@ export function NodeInspector({
             itemSchema={itemSchema}
           />
         </>
-      ) : null}
-    </div>
-  )
-}
-
-// List picker for an iteration's source: shows only the arrays reaching the
-// block (each with its origin node), so authors select rather than type a path.
-// Choosing one also records the element's shape (for inferring `Item`).
-function ListSelect({
-  graph,
-  nodeId,
-  value,
-  onSelect,
-}: {
-  graph: WorkflowGraph
-  nodeId: string
-  value: string | undefined
-  onSelect: (path: string, itemSchema?: JsonSchema) => void
-}) {
-  const maps = useIoMaps()
-  const lists = useMemo(
-    () => accessibleLists(graph, nodeId, maps),
-    [graph, nodeId, maps],
-  )
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    function onDocMouseDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('mousedown', onDocMouseDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDocMouseDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
-
-  const current =
-    value === undefined ? undefined : lists.find((l) => l.path === value)
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        className="flex h-9 w-full items-center gap-2 rounded-md border border-neutral-300 bg-transparent px-2 text-left text-sm outline-none focus:border-neutral-500"
-      >
-        <ListOrdered className="size-4 shrink-0 text-neutral-400" />
-        {current ? (
-          <span className="min-w-0 flex-1 truncate">
-            {current.nodeLabel} · {current.label}
-          </span>
-        ) : value ? (
-          <code className="min-w-0 flex-1 truncate text-xs">{value}</code>
-        ) : (
-          <span className="text-muted-foreground flex-1">Select a list…</span>
-        )}
-        <ChevronDown className="size-4 shrink-0 text-neutral-400" />
-      </button>
-
-      {open ? (
-        <div
-          role="listbox"
-          className="absolute z-50 mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-neutral-200 bg-white p-1 shadow-lg"
-        >
-          {lists.length === 0 ? (
-            <div className="p-2 text-xs text-neutral-400">
-              No lists reach this block yet. Connect a node that outputs an
-              array.
-            </div>
-          ) : null}
-          {lists.map((l) => (
-            <button
-              key={`${l.nodeId}:${l.path}`}
-              type="button"
-              role="option"
-              aria-selected={l.path === value}
-              onClick={() => {
-                onSelect(l.path, l.itemSchema)
-                setOpen(false)
-              }}
-              className={cn(
-                'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition hover:bg-neutral-50',
-                l.path === value && 'bg-neutral-50',
-              )}
-            >
-              <span className="min-w-0 flex-1 truncate text-sm text-neutral-800">
-                {l.nodeLabel}
-                <span className="text-neutral-400"> · {l.label}</span>
-              </span>
-              <span className="shrink-0 text-[10px] text-neutral-400">
-                list
-              </span>
-            </button>
-          ))}
-        </div>
       ) : null}
     </div>
   )
