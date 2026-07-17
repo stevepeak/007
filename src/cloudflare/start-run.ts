@@ -44,17 +44,29 @@ export type StartGraphRunResult = {
   instanceId: string
 }
 
+// A stable 32-hex trace id (Sentry-compatible) minted per run. Kept local to
+// this import-safe module (no `@sentry/cloudflare`) so `startGraphRun` stays
+// loadable from any server runtime; only `crypto` is required, which both
+// workerd and the host runtime provide.
+function newTraceId(): string {
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
 export async function startGraphRun(
   env: GraphRunBindings,
   input: StartGraphRunInput,
 ): Promise<StartGraphRunResult> {
   const db = createWfDb(env.DB)
+  const traceId = newTraceId()
   const workflowRunId = await createRun(db, {
     workflowVersionId: input.workflowVersionId,
     triggerKind: input.triggerKind,
     subjectId: input.subjectId,
     correlationId: input.correlationId,
     isEval: input.isEval,
+    sentryTraceId: traceId,
   })
 
   const runId = crypto.randomUUID()
@@ -74,6 +86,7 @@ export async function startGraphRun(
         promptVariables: input.promptVariables,
         simulate: input.simulate,
         fixtures: input.fixtures,
+        traceId,
       },
       resumeFromRunId: input.resumeFromRunId,
     },

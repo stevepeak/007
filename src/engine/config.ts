@@ -141,6 +141,13 @@ export type RunContext = {
    * run reproducible. Absent id → the tool's safe empty default (`{}`).
    */
   fixtures?: Record<string, unknown>
+  /**
+   * Stable 32-hex trace id for the whole run. Minted at run start, persisted to
+   * `wf_run`, and used to (a) seed every per-node Sentry span so the run groups
+   * into one distributed trace and (b) build the "View trace in Sentry"
+   * deep-link. Undefined for runs started before tracing was wired.
+   */
+  traceId?: string
   /** Host Env (live bindings). Opaque to the SDK; passed back to the host. */
   env?: unknown
 }

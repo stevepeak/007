@@ -1,4 +1,4 @@
-import { Activity, ChevronDown, RotateCcw } from 'lucide-react'
+import { Activity, ChevronDown, ExternalLink, RotateCcw } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import type { WorkflowGraph, WorkflowNode } from '../engine'
@@ -140,6 +140,7 @@ export function RunPage({ runId, className }: RunPageProps) {
   const { run } = data
   const start = run.startedAt ?? run.createdAt
   const end = run.finishedAt ?? (run.status === 'running' ? Date.now() : null)
+  const live = run.status === 'running' || run.status === 'queued'
   const canRetry = run.status === 'failed' || run.status === 'cancelled'
   // Resume only makes sense when a specific node failed and we still have the
   // graph (node ids must line up with the recorded steps).
@@ -188,6 +189,19 @@ export function RunPage({ runId, className }: RunPageProps) {
           <Badge className={cn('border', statusClass[run.status])}>
             {run.status}
           </Badge>
+          {run.sentryTraceUrl ? (
+            <a
+              href={run.sentryTraceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-violet-600 hover:text-violet-700 hover:underline"
+              title="Open this run's distributed trace in Sentry"
+            >
+              <Activity className="size-3.5" />
+              Trace
+              <ExternalLink className="size-3" />
+            </a>
+          ) : null}
           <span className="text-xs text-neutral-500">
             {fmtTime(run.createdAt)}
           </span>
@@ -231,7 +245,14 @@ export function RunPage({ runId, className }: RunPageProps) {
             </div>
           )}
         </div>
-        <RunNodeDock node={selectedNode} step={selectedStep} />
+        <RunNodeDock
+          node={selectedNode}
+          step={selectedStep}
+          logs={data.logs}
+          live={live}
+          selectedNodeId={selectedId}
+          onSelectNode={setSelectedId}
+        />
       </div>
     </WfShell>
   )

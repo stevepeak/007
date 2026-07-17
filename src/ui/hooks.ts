@@ -147,6 +147,13 @@ export function useRun(runId: string | null) {
     queryKey: keys.run(runId ?? ''),
     queryFn: () => client.getRun(runId as string),
     enabled: !!runId,
+    // Poll while the run is live so the graph glow, node statuses, and the Logs
+    // feed fill in as it executes, then stop once it settles. Mirrors
+    // `useEvalRun`. 1.5s keeps it feeling live without hammering D1.
+    refetchInterval: (query) => {
+      const status = query.state.data?.run.status
+      return status === 'queued' || status === 'running' ? 1500 : false
+    },
   })
 }
 

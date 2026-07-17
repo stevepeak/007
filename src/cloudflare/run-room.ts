@@ -1,13 +1,21 @@
 import { DurableObject } from 'cloudflare:workers'
 
+import type { RunLogEntry } from '../engine/stream-sink'
+
 // Per-run coordination room — the SDK's live-progress backend.
 //
-// - Workflow steps call `append` / `setStatus` / `setOutput` / `setError` via
-//   DO RPC.
+// - Workflow steps call `append` / `appendLog` / `setStatus` / `setOutput` /
+//   `setError` via DO RPC.
 // - Browsers connect via WebSocket (hibernation API) for live progress; the
 //   room sends a full snapshot on connect so late subscribers catch up.
 // - State is persisted in the DO's SQLite storage so reconnecting clients can
 //   replay. Generic — carries no domain/workflow-name coupling.
+//
+// Two progress surfaces coexist: the legacy free-text `progress` channel (a
+// flat string[], still fed by agent `exposeThinking`) and the structured `logs`
+// feed (RunLogEntry[]) that powers the run viewer's Logs panel. The durable
+// wf_run_log table is the source of truth for a completed run; this buffer is
+// just the live/reconnect window, so it's bounded.
 
 export type WfRunRoomStatus =
   | 'queued'
@@ -21,11 +29,16 @@ export type WfRunRoomState = {
   label: string | null
   status: WfRunRoomStatus
   progress: string[]
+  logs: RunLogEntry[]
   output: unknown
   error: string | null
 }
 
 type PersistedState = Omit<WfRunRoomState, 'runId'>
+
+// How many recent structured entries the room keeps for the reconnect snapshot.
+// The durable wf_run_log table holds the full feed; this is only the live tail.
+const MAX_BUFFERED_LOGS = 1000
 
 export class RunRoom extends DurableObject {
   private memo: PersistedState | null = null
@@ -37,9 +50,13 @@ export class RunRoom extends DurableObject {
       label: null,
       status: 'queued',
       progress: [],
+      logs: [],
       output: null,
       error: null,
     }
+    // Back-compat: rooms persisted before the structured feed existed have no
+    // `logs` array — normalise so appends don't hit `undefined`.
+    if (!this.memo.logs) this.memo.logs = []
     return this.memo
   }
 
@@ -77,6 +94,19 @@ export class RunRoom extends DurableObject {
       await this.save(state)
     }
     this.broadcast({ type: 'stream', channel, data: text })
+  }
+
+  // Structured progress entry — buffered (bounded) for reconnect + broadcast
+  // live. The durable feed is written separately by the engine to wf_run_log.
+  async appendLog(entry: RunLogEntry): Promise<void> {
+    const state = await this.load()
+    const stamped: RunLogEntry = { ...entry, ts: entry.ts ?? Date.now() }
+    state.logs.push(stamped)
+    if (state.logs.length > MAX_BUFFERED_LOGS) {
+      state.logs = state.logs.slice(-MAX_BUFFERED_LOGS)
+    }
+    await this.save(state)
+    this.broadcast({ type: 'log', data: stamped })
   }
 
   async setStatus(status: WfRunRoomStatus): Promise<void> {
@@ -128,6 +158,7 @@ export class RunRoom extends DurableObject {
         data: {
           status: state.status,
           progress: state.progress,
+          logs: state.logs,
           output: state.output,
           error: state.error,
         },

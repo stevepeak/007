@@ -35,6 +35,7 @@ export type {
   WfRunDetail,
   WfRunListInput,
   WfRunListResult,
+  WfRunLogDTO,
   WfRunStepDTO,
   WfRunSummary,
   WfRpcRequest,

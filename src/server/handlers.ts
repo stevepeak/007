@@ -74,6 +74,7 @@ import type {
   WfEvalSetSummary,
   WfEvalTargetKind,
   WfRunDetail,
+  WfRunLogDTO,
   ToolContextField,
   WfRunStepDTO,
   WfRunSummary,
@@ -126,6 +127,13 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
    * host's first offered model (`listModels()[0]`).
    */
   summaryModelId?: string
+  /**
+   * Optional: build a "View trace in Sentry" deep-link for a run from its stable
+   * trace id. The host owns the URL shape (org slug, region, route) since only it
+   * knows its Sentry config. Returns null to omit the link. Surfaced on
+   * `WfRunDetail.run.sentryTraceUrl`.
+   */
+  sentryTraceUrl?: (traceId: string) => string | null
   /**
    * Optional override for the built-in AI summarizer — supply this only to
    * replace the SDK's summarization entirely (most hosts don't need to). Returns
@@ -418,20 +426,25 @@ function parseAgentConfig(params: unknown): AgentConfig {
   return agentConfigSchema.parse((params as { config?: unknown }).config)
 }
 
-function runSummary(r: {
-  id: string
-  status: string
-  triggerKind: string
-  workflowId: string
-  workflowName: string
-  versionNumber: number
-  subjectId: string | null
-  correlationId: string | null
-  createdAt: Date
-  startedAt: Date | null
-  finishedAt: Date | null
-  error: string | null
-}): WfRunSummary {
+function runSummary(
+  r: {
+    id: string
+    status: string
+    triggerKind: string
+    workflowId: string
+    workflowName: string
+    versionNumber: number
+    subjectId: string | null
+    correlationId: string | null
+    createdAt: Date
+    startedAt: Date | null
+    finishedAt: Date | null
+    error: string | null
+    sentryTraceId?: string | null
+  },
+  traceUrl?: (traceId: string) => string | null,
+): WfRunSummary {
+  const sentryTraceId = r.sentryTraceId ?? null
   return {
     id: r.id,
     status: r.status,
@@ -445,6 +458,9 @@ function runSummary(r: {
     startedAt: toEpoch(r.startedAt),
     finishedAt: toEpoch(r.finishedAt),
     error: r.error,
+    sentryTraceId,
+    sentryTraceUrl:
+      sentryTraceId && traceUrl ? (traceUrl(sentryTraceId) ?? null) : null,
   }
 }
 
@@ -817,7 +833,7 @@ export function createWfSdkHandlers<TDeps>(
             offset: p.offset,
           })
           return json({
-            runs: result.rows.map(runSummary),
+            runs: result.rows.map((r) => runSummary(r, opts.sentryTraceUrl)),
             total: result.total,
             limit: result.limit,
             offset: result.offset,
@@ -846,17 +862,30 @@ export function createWfSdkHandlers<TDeps>(
             meta: s.meta,
             error: s.error,
           }))
+          const logs: WfRunLogDTO[] = result.logs.map((l) => ({
+            nodeId: l.nodeId,
+            nodeKind: l.nodeKind,
+            sequence: l.sequence,
+            level: l.level,
+            message: l.message,
+            meta: l.meta,
+            ts: l.ts,
+          }))
           const detail: WfRunDetail = {
             run: {
-              ...runSummary({
-                ...result.run,
-                workflowId: result.workflowId ?? '',
-                workflowName: result.workflowName ?? '(unknown workflow)',
-                versionNumber: result.versionNumber ?? 0,
-              }),
+              ...runSummary(
+                {
+                  ...result.run,
+                  workflowId: result.workflowId ?? '',
+                  workflowName: result.workflowName ?? '(unknown workflow)',
+                  versionNumber: result.versionNumber ?? 0,
+                },
+                opts.sentryTraceUrl,
+              ),
               output: result.run.output,
             },
             steps,
+            logs,
             graph: (result.graph as WorkflowGraph | null) ?? null,
             versionNumber: result.versionNumber,
           }

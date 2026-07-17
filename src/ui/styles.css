@@ -18,3 +18,24 @@
  */
 @import '@xyflow/react/dist/style.css';
 @source './**/*.{js,ts,jsx,tsx}';
+
+/*
+ * Active-node indicator for the run viewer. A node the engine has entered but
+ * not yet finished (wf_run_step.status = 'running') gets a soft, pulsing blue
+ * glow so it's obvious at a glance which step is live. Hand-written keyframes
+ * (not an arbitrary Tailwind shadow) so the animation survives Tailwind v4's
+ * arbitrary-value handling and reads identically in both themes.
+ */
+@keyframes wfNodeGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(59, 130, 246, 0);
+  }
+}
+.wf-node-glow {
+  animation: wfNodeGlow 1.5s ease-in-out infinite;
+  border-radius: inherit;
+}

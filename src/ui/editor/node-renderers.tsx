@@ -189,7 +189,7 @@ function NodeCard({
         invalid || failed
           ? 'border-rose-300 border-l-rose-500 ring-1 ring-rose-300'
           : running
-            ? 'border-blue-300 border-l-blue-500 ring-1 ring-blue-200'
+            ? 'border-blue-300 border-l-blue-500 ring-1 ring-blue-200 wf-node-glow'
             : style.accent,
         status === 'skipped' && 'opacity-60',
         selected && 'ring-ring ring-2 ring-offset-1',
@@ -265,7 +265,7 @@ function NodePill({
         invalid || failed
           ? 'border-rose-300 border-l-rose-500 ring-1 ring-rose-300'
           : running
-            ? 'border-blue-300 border-l-blue-500 ring-1 ring-blue-200'
+            ? 'border-blue-300 border-l-blue-500 ring-1 ring-blue-200 wf-node-glow'
             : style.accent,
         status === 'skipped' && 'opacity-60',
         selected && 'ring-ring ring-2 ring-offset-1',

@@ -376,8 +376,26 @@ export async function executeAgentNode<TDeps>(
       })
       totalUsage.inputTokens += step.usage?.inputTokens ?? 0
       totalUsage.outputTokens += step.usage?.outputTokens ?? 0
-      if (config.exposeThinking && sink && step.text) {
-        void sink.append('progress', step.text)
+      if (sink) {
+        // Structured feed for the run viewer's Logs panel: the model's internal
+        // reasoning, then a line per tool call. These make "what is it doing
+        // right now" legible without waiting for the node to finish.
+        if (step.reasoningText?.trim()) {
+          void sink.log?.({ level: 'thinking', message: step.reasoningText.trim() })
+        }
+        for (const tc of toolCalls) {
+          void sink.log?.({
+            level: 'tool',
+            message: `Called ${tc.toolName}`,
+            meta: { tool: tc.toolName, input: tc.input },
+          })
+        }
+        // The legacy free-text 'progress' channel (chat toasts) + a mirrored
+        // structured line, gated by the agent's exposeThinking flag.
+        if (config.exposeThinking && step.text?.trim()) {
+          void sink.append('progress', step.text)
+          void sink.log?.({ level: 'info', message: step.text.trim() })
+        }
       }
     },
   })

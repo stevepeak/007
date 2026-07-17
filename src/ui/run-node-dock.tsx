@@ -2,16 +2,20 @@ import { ChevronDown } from 'lucide-react'
 import { useCallback, useRef, useState } from 'react'
 
 import type { WorkflowNode } from '../engine'
-import type { WfRunStepDTO } from '../server/protocol'
+import type { WfRunLogDTO, WfRunStepDTO } from '../server/protocol'
 import { useWfComponents } from './context'
 import { cn } from './cn'
+import { RunActivityLog } from './run-activity-log'
 import { RunLog } from './run-log'
 
 // The run viewer's bottom dock (DevTools-style, like the editor's Data/Issues
-// dock): it focuses on ONE node — whichever is selected on the run graph — and
-// shows that step's logs as an AI-style timeline (Input → thinking → tool call →
-// … → Output). The graph itself is the node list, so there's no list here.
-// Collapsible via the "Logs" label, the chevron, or a click on the top border.
+// dock). Two tabs:
+//   • Activity — the whole run's chronological progress feed (what step it's on,
+//     the AI's internal thinking, tool calls), streaming while the run is live.
+//   • Logs — the ONE selected node's machine trace as an AI-style timeline
+//     (Input → thinking → tool call → … → Output).
+// The graph itself is the node list, so there's no list here. Collapsible via a
+// tab, the chevron, or a click on the top border.
 
 const statusBadge: Record<string, string> = {
   completed: 'bg-green-100 text-green-700 border-green-200',
@@ -26,6 +30,14 @@ export type RunNodeDockProps = {
   node: WorkflowNode | null
   /** The recorded step for that node, or null if it never executed (skipped). */
   step: WfRunStepDTO | null
+  /** The whole run's structured progress feed (drives the Activity tab). */
+  logs: WfRunLogDTO[]
+  /** True while the run is still executing — enables the live/auto-scroll UI. */
+  live?: boolean
+  /** The selected node's id, for highlighting its rows in the Activity feed. */
+  selectedNodeId?: string | null
+  /** Select a node on the graph (from clicking an Activity row). */
+  onSelectNode?: (nodeId: string) => void
 }
 
 // Height bounds for the resizable body: never let it shrink out of sight, and
@@ -38,9 +50,17 @@ function maxDockH(): number {
     : 640
 }
 
-export function RunNodeDock({ node, step }: RunNodeDockProps) {
+export function RunNodeDock({
+  node,
+  step,
+  logs,
+  live,
+  selectedNodeId,
+  onSelectNode,
+}: RunNodeDockProps) {
   const { Badge } = useWfComponents()
   const [open, setOpen] = useState(true)
+  const [tab, setTab] = useState<'activity' | 'logs'>('activity')
 
   // Drag-to-resize the body height. The top border doubles as the handle: a
   // click (no movement) toggles the panel, a drag resizes it (clamped so it
@@ -103,10 +123,31 @@ export function RunNodeDock({ node, step }: RunNodeDockProps) {
       <div className="flex items-center gap-1 px-2">
         <button
           type="button"
-          onClick={() => setOpen((o) => !o)}
+          onClick={() => {
+            setTab('activity')
+            setOpen(true)
+          }}
           className={cn(
             'border-b-2 px-2 py-1.5 text-xs font-medium transition-colors',
-            open
+            open && tab === 'activity'
+              ? 'border-neutral-800 text-neutral-800'
+              : 'border-transparent text-neutral-500 hover:text-neutral-700',
+          )}
+        >
+          Activity
+          {live ? (
+            <span className="ml-1.5 inline-block size-1.5 animate-pulse rounded-full bg-blue-500 align-middle" />
+          ) : null}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setTab('logs')
+            setOpen(true)
+          }}
+          className={cn(
+            'border-b-2 px-2 py-1.5 text-xs font-medium transition-colors',
+            open && tab === 'logs'
               ? 'border-neutral-800 text-neutral-800'
               : 'border-transparent text-neutral-500 hover:text-neutral-700',
           )}
@@ -114,7 +155,7 @@ export function RunNodeDock({ node, step }: RunNodeDockProps) {
           Logs
         </button>
         <div className="flex-1" />
-        {node ? (
+        {tab === 'logs' && node ? (
           <span className="flex min-w-0 items-center gap-2">
             <span className="truncate text-[11px] text-neutral-400">
               {node.label}
@@ -145,7 +186,14 @@ export function RunNodeDock({ node, step }: RunNodeDockProps) {
           style={{ height }}
           className="overflow-y-auto border-t border-neutral-100 p-3"
         >
-          {!node ? (
+          {tab === 'activity' ? (
+            <RunActivityLog
+              logs={logs}
+              live={live}
+              selectedNodeId={selectedNodeId}
+              onSelectNode={onSelectNode}
+            />
+          ) : !node ? (
             <p className="text-xs text-neutral-500">
               Select a node on the graph to inspect its run.
             </p>

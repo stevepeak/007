@@ -22,7 +22,7 @@ import {
   type ExecutableNode,
   type ReportResult,
 } from '../engine/scheduler'
-import type { StreamSink } from '../engine/stream-sink'
+import type { RunLogEntry, StreamSink } from '../engine/stream-sink'
 import { resolveTriggerInput } from '../engine/trigger-registry'
 import { createWfDb } from '../storage/client'
 import {
@@ -31,12 +31,15 @@ import {
   getVersionGraph,
   loadResumeSteps,
   markRunRunning,
+  replaceNodeLogs,
   resolveRunManifest,
   setRunManifest,
+  type WfRunLogRow,
 } from '../storage/data'
 import { createDurableRunRecorder } from '../storage/run-recorder'
 
 import type { RunRoom } from './run-room'
+import { withNodeSpan } from './tracing'
 
 // The minimal binding contract a host Env must satisfy for the durable backend.
 // The host's full Env is a superset; this is what `GraphWorkflow` touches.
@@ -55,6 +58,9 @@ export type GraphRunContextInput = {
   simulate?: boolean
   /** Canned tool outputs consumed under `simulate`, keyed by tool id. */
   fixtures?: Record<string, unknown>
+  /** Stable 32-hex trace id, minted by `startGraphRun`, used to group every
+   * per-node Sentry span into one distributed trace. */
+  traceId?: string
 }
 
 export type GraphWorkflowParams = {
@@ -206,9 +212,11 @@ export function makeGraphWorkflow<
     ): Promise<GraphWorkflowResult> {
       const p = event.payload
       const env = this.env
+      const traceId = p.runContext.traceId
       const room = env.RUN_ROOM.get(env.RUN_ROOM.idFromName(p.runId))
       const sink: StreamSink = {
         append: (channel, text) => room.append(channel, text),
+        log: (entry) => room.appendLog(entry),
       }
 
       // Each recorder is built inside a step.do closure — `createWfDb` wraps a
@@ -323,12 +331,118 @@ export function makeGraphWorkflow<
       // step retries on its own while the node's (already-successful) result
       // replays from the workflow journal. A failed node records its own failed
       // step (so it can't re-run the body) and rethrows.
+      // Human label for a node in the log feed ("Structure the document",
+      // "Embed section"), falling back to the kind when a node has no label.
+      const nodeLabel = (node: ExecutableNode): string =>
+        (node as { label?: string }).label?.trim() || node.kind
+
+      // Build the two bookend entries for a node's feed. `node-start` is
+      // broadcast live from the `enter:` step and persisted (with the body's
+      // entries) in the `record:` step; `node-end` closes it out.
+      const startEntryOf = (
+        node: ExecutableNode,
+        seq: number,
+        ts: number,
+      ): RunLogEntry => ({
+        ts,
+        level: 'node-start',
+        nodeId: node.id,
+        nodeKind: node.kind,
+        sequence: seq,
+        message: `▶ ${nodeLabel(node)}`,
+      })
+      const endEntryOf = (
+        node: ExecutableNode,
+        seq: number,
+        ts: number,
+        failed: boolean,
+        detail?: string,
+      ): RunLogEntry => ({
+        ts,
+        level: failed ? 'error' : 'node-end',
+        nodeId: node.id,
+        nodeKind: node.kind,
+        sequence: seq,
+        message: failed
+          ? `✕ ${nodeLabel(node)} failed${detail ? `: ${detail}` : ''}`
+          : `✓ ${nodeLabel(node)}`,
+      })
+
+      // The run: step returns the engine's NodeRunResult plus the structured
+      // log entries the node emitted during its own step (captured by a per-node
+      // sink), so they survive `step.do` replay via the workflow journal.
+      type RunStepResult = NodeRunResult & { logs?: RunLogEntry[] }
+
       const dispatchNode = async (
         node: ExecutableNode,
         input: unknown,
         seq: number,
       ): Promise<{ nodeId: string; report: ReportResult }> => {
-        let result: NodeRunResult
+        const startTs = Date.now()
+        const startEntry = startEntryOf(node, seq, startTs)
+
+        const startRow: WfRunLogRow = {
+          nodeId: node.id,
+          nodeKind: node.kind,
+          sequence: seq,
+          level: startEntry.level,
+          message: startEntry.message,
+          meta: null,
+          ts: startTs,
+        }
+
+        // Light the node up (status → running), persist the "entered" line, and
+        // stream it live — all in one durable step so a replay doesn't
+        // re-broadcast. Persisting node-start HERE (not just at record time)
+        // means a polling run viewer sees the feed advance the instant a node
+        // starts, in step with the glow, rather than a whole node behind. The
+        // record step below flips this same (run_id, node_id) row to its
+        // terminal status and rewrites the node's full feed.
+        await stepDo(step, `enter:${node.id}`, DEFAULT_STEP_OPTS, async () => {
+          await recordOne({
+            nodeId: node.id,
+            nodeKind: node.kind,
+            sequence: seq,
+            input,
+            status: 'running',
+            startedAt: new Date(startTs),
+          })
+          await replaceNodeLogs(createWfDb(env.DB), {
+            runId: p.workflowRunId,
+            nodeId: node.id,
+            entries: [startRow],
+          })
+          await room.appendLog(startEntry)
+          return null
+        })
+
+        // Persist a node's full feed (bookends + body) in one idempotent write,
+        // and stream its closing line live. Shared by the success + failure
+        // paths so every node — even a failed one — leaves a readable feed.
+        const persistLogs = async (
+          bodyLogs: RunLogEntry[],
+          endEntry: RunLogEntry,
+        ): Promise<void> => {
+          const entries: WfRunLogRow[] = [startEntry, ...bodyLogs, endEntry].map(
+            (e) => ({
+              nodeId: e.nodeId ?? node.id,
+              nodeKind: e.nodeKind ?? node.kind,
+              sequence: e.sequence ?? seq,
+              level: e.level,
+              message: e.message,
+              meta: e.meta ?? null,
+              ts: e.ts ?? Date.now(),
+            }),
+          )
+          await replaceNodeLogs(createWfDb(env.DB), {
+            runId: p.workflowRunId,
+            nodeId: node.id,
+            entries,
+          })
+          await room.appendLog(endEntry)
+        }
+
+        let result: RunStepResult
         try {
           if (node.kind === 'iteration') {
             // Iteration orchestrates its own per-item durable steps, so it is
@@ -379,37 +493,70 @@ export function makeGraphWorkflow<
               async () => {
                 const rc = { ...p.runContext, env }
                 const toolDeps = await config.buildRunDeps(rc)
-                return await runNode(
-                  { type: 'execute', node, input },
-                  {
-                    getModel: (modelId) => config.getModel(modelId, rc),
-                    toolRegistry: config.toolRegistry,
-                    toolDeps,
-                    nodeOutputs: scheduler.getOutputs(),
-                    promptVariables: p.runContext.promptVariables,
-                    manifest,
-                    sink,
-                    resolveBlobRef: config.resolveBlobRef,
-                    resolveImageRef: config.resolveImageRef,
-                    simulate: p.runContext.simulate,
-                    fixtures: p.runContext.fixtures,
+                // Per-node sink: every structured entry a node handler emits
+                // (agent reasoning, tool calls, our own info lines) is captured
+                // for durable persistence AND forwarded to the live sink. Built
+                // inside the step so its pushes are journaled with the return
+                // value and never re-broadcast on a `step.do` replay.
+                const bodyLogs: RunLogEntry[] = []
+                const nodeSink: StreamSink = {
+                  append: (channel, text) => sink.append(channel, text),
+                  log: (entry) => {
+                    const e: RunLogEntry = {
+                      ...entry,
+                      ts: entry.ts ?? Date.now(),
+                      nodeId: entry.nodeId ?? node.id,
+                      nodeKind: entry.nodeKind ?? node.kind,
+                      sequence: entry.sequence ?? seq,
+                    }
+                    bodyLogs.push(e)
+                    return sink.log?.(e)
                   },
+                }
+                const r = await withNodeSpan(
+                  {
+                    traceId,
+                    runId: p.workflowRunId,
+                    nodeId: node.id,
+                    nodeKind: node.kind,
+                    sequence: seq,
+                  },
+                  () =>
+                    runNode(
+                      { type: 'execute', node, input },
+                      {
+                        getModel: (modelId) => config.getModel(modelId, rc),
+                        toolRegistry: config.toolRegistry,
+                        toolDeps,
+                        nodeOutputs: scheduler.getOutputs(),
+                        promptVariables: p.runContext.promptVariables,
+                        manifest,
+                        sink: nodeSink,
+                        resolveBlobRef: config.resolveBlobRef,
+                        resolveImageRef: config.resolveImageRef,
+                        simulate: p.runContext.simulate,
+                        fixtures: p.runContext.fixtures,
+                      },
+                    ),
                 )
+                return { ...r, logs: bodyLogs }
               },
             )
           }
         } catch (err) {
           const message = errorMessage(err)
-          await stepDo(step, `record:${node.id}`, DEFAULT_STEP_OPTS, () =>
-            recordOne({
+          await stepDo(step, `record:${node.id}`, DEFAULT_STEP_OPTS, async () => {
+            await recordOne({
               nodeId: node.id,
               nodeKind: node.kind,
               sequence: seq,
               input,
               status: 'failed',
               error: message,
-            }),
-          )
+            })
+            await persistLogs([], endEntryOf(node, seq, Date.now(), true, message))
+            return null
+          })
           // Best-effort node: swallow the failure and let the run continue with a
           // `null` output (downstream refs resolve to null). Never for decision
           // nodes — a routing decision has no safe default, so it must still
@@ -420,8 +567,8 @@ export function makeGraphWorkflow<
           throw err
         }
 
-        await stepDo(step, `record:${node.id}`, DEFAULT_STEP_OPTS, () =>
-          recordOne({
+        await stepDo(step, `record:${node.id}`, DEFAULT_STEP_OPTS, async () => {
+          await recordOne({
             nodeId: node.id,
             nodeKind: node.kind,
             sequence: seq,
@@ -435,8 +582,13 @@ export function makeGraphWorkflow<
                   reasoning: result.branchReasoning ?? '',
                 }
               : null,
-          }),
-        )
+          })
+          await persistLogs(
+            result.logs ?? [],
+            endEntryOf(node, seq, Date.now(), false),
+          )
+          return null
+        })
 
         return {
           nodeId: node.id,
