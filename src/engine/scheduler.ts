@@ -347,9 +347,9 @@ export class Scheduler {
 
   /**
    * Record the result of an executed node. Decision nodes (branch/switch)
-   * additionally pass a `branchResult` so outgoing-edge routing resolves; a
-   * decision node's own output is its input passed straight through, decided by
-   * the backend.
+   * additionally pass a `branchResult` so outgoing-edge routing resolves; their
+   * recorded `output` is the decision itself (`{ result, reasoning }`) — nodes
+   * don't forward their input, so downstream reaches pre-decision data by ref.
    */
   report(nodeId: string, result: ReportResult): void {
     this.nodeOutputs.set(nodeId, result.output)

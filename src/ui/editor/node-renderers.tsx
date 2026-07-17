@@ -568,11 +568,9 @@ function IterationNodeRenderer(props: NodeProps) {
           ) : null}
         </div>
         <div className="text-muted-foreground px-3 py-1 text-[11px]">
-          {data.config.itemsPath === undefined
+          {data.config.source === undefined
             ? 'No list selected'
-            : data.config.itemsPath
-              ? `for each · ${data.config.itemsPath}`
-              : 'for each item'}
+            : `for each · ${data.config.source.path || 'whole output'}`}
         </div>
       </div>
       <Handle type="source" position={Position.Right} />

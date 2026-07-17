@@ -9,7 +9,11 @@ import {
 import { collectGraphIssues } from '../graph-issues'
 import type { RunNodeContext } from '../run-node'
 import { ITERATION_ITEM_TRIGGER_KIND } from '../trigger-registry'
-import { executeSubgraph, runIteration } from './iteration'
+import {
+  executeSubgraph,
+  resolveIterationList,
+  runIteration,
+} from './iteration'
 
 // ---------------------------------------------------------------------------
 // Builders
@@ -23,7 +27,6 @@ const iterNode = (
   position: { x: 0, y: 0 },
   label: 'Iterate',
   config: {
-    itemsPath: '',
     concurrency: 4,
     stopOnError: false,
     subgraph: buildIterationSubgraph(),
@@ -47,7 +50,7 @@ describe('runIteration', () => {
     const arr = [0, 1, 2, 3, 4]
     const r = await runIteration({
       node: iterNode({ concurrency: 5 }),
-      input: arr,
+      list: arr,
       // Earlier indices finish later, so completion order is reversed.
       runItem: async (item, index) => {
         await delay((arr.length - index) * 4)
@@ -64,7 +67,7 @@ describe('runIteration', () => {
     let peak = 0
     const r = await runIteration({
       node: iterNode({ concurrency: 2 }),
-      input: [1, 2, 3, 4, 5, 6],
+      list: [1, 2, 3, 4, 5, 6],
       runItem: async (item) => {
         active++
         peak = Math.max(peak, active)
@@ -81,7 +84,7 @@ describe('runIteration', () => {
     let calls = 0
     const r = await runIteration({
       node: iterNode(),
-      input: [],
+      list: [],
       runItem: async () => {
         calls++
         return null
@@ -92,29 +95,33 @@ describe('runIteration', () => {
     expect(calls).toBe(0)
   })
 
-  test('non-array input throws a clear error naming the path', async () => {
-    await expect(
-      runIteration({
-        node: iterNode({ itemsPath: 'words' }),
-        input: { words: 'not-an-array' },
-        runItem: async (item) => item,
-      }),
-    ).rejects.toThrow(/expected an array at 'words'/)
+  test('resolveIterationList throws a clear error when the ref is not an array', () => {
+    expect(() =>
+      resolveIterationList(
+        iterNode({ source: { kind: 'ref', nodeId: 'src', path: 'words' } }),
+        new Map([['src', { words: 'not-an-array' }]]),
+      ),
+    ).toThrow(/expected an array at src\.words/)
   })
 
-  test('resolves the array at itemsPath', async () => {
-    const r = await runIteration({
-      node: iterNode({ itemsPath: 'items' }),
-      input: { items: ['a', 'b'] },
-      runItem: async (item) => String(item).toUpperCase(),
-    })
-    expect(r.results).toEqual(['A', 'B'])
+  test('resolveIterationList throws when no list is selected', () => {
+    expect(() => resolveIterationList(iterNode(), new Map())).toThrow(
+      /has no list selected/,
+    )
+  })
+
+  test('resolveIterationList resolves the array at the ref', () => {
+    const list = resolveIterationList(
+      iterNode({ source: { kind: 'ref', nodeId: 'src', path: 'items' } }),
+      new Map([['src', { items: ['a', 'b'] }]]),
+    )
+    expect(list).toEqual(['a', 'b'])
   })
 
   test('stopOnError=false collects a failure placeholder and finishes the rest', async () => {
     const r = await runIteration({
       node: iterNode({ stopOnError: false, concurrency: 4 }),
-      input: [0, 1, 2, 3],
+      list: [0, 1, 2, 3],
       runItem: async (item, index) => {
         if (index === 2) throw new Error('boom')
         return item
@@ -135,7 +142,7 @@ describe('runIteration', () => {
       runIteration({
         // Sequential so the abort deterministically skips later items.
         node: iterNode({ stopOnError: true, concurrency: 1 }),
-        input: [0, 1, 2, 3],
+        list: [0, 1, 2, 3],
         runItem: async (item, index) => {
           calls++
           if (index === 1) throw new Error('halt')
@@ -162,7 +169,7 @@ describe('executeSubgraph', () => {
     expect(out).toEqual({ hello: 'world' })
   })
 
-  test('routes the item through a branch node to the matching output', async () => {
+  test('routes the item through a branch node and emits the decision', async () => {
     const subgraph: WorkflowGraph = {
       version: 1,
       nodes: [
@@ -178,7 +185,8 @@ describe('executeSubgraph', () => {
           kind: 'branch',
           label: 'Truthy?',
           position: { x: 100, y: 0 },
-          config: { path: '', operator: 'is_not_empty' },
+          // No `source` → tests the whole item input.
+          config: { operator: 'is_not_empty' },
         },
         {
           id: 'yes',
@@ -201,8 +209,14 @@ describe('executeSubgraph', () => {
         { id: 'e3', source: 'b', target: 'no', condition: 'no' },
       ],
     }
-    expect(await executeSubgraph(subgraph, 'present', dummyCtx)).toBe('present')
-    expect(await executeSubgraph(subgraph, '', dummyCtx)).toBe('')
+    // A branch no longer forwards its input — its output IS the decision, and
+    // the taken arm's Output emits it. The `result` reflects the routing.
+    expect(await executeSubgraph(subgraph, 'present', dummyCtx)).toMatchObject({
+      result: 'yes',
+    })
+    expect(await executeSubgraph(subgraph, '', dummyCtx)).toMatchObject({
+      result: 'no',
+    })
   })
 })
 
@@ -268,19 +282,20 @@ describe('iteration schema', () => {
   })
 
   test('flags an author-time error when no list is selected', () => {
-    const node = iterNode()
-    delete (node.config as { itemsPath?: string }).itemsPath
-    const issues = collectGraphIssues(wrap(node) as WorkflowGraph)
+    // iterNode() leaves `source` unset.
+    const issues = collectGraphIssues(wrap(iterNode()) as WorkflowGraph)
     const listIssue = issues.find(
       (i) => i.nodeId === 'it' && /No list selected/.test(i.message),
     )
     expect(listIssue?.severity).toBe('error')
   })
 
-  test('a chosen list (including whole-input "") clears the error', () => {
-    for (const itemsPath of ['', 'documents']) {
+  test('a chosen list ref clears the error', () => {
+    for (const path of ['', 'documents']) {
       const issues = collectGraphIssues(
-        wrap(iterNode({ itemsPath })) as WorkflowGraph,
+        wrap(
+          iterNode({ source: { kind: 'ref', nodeId: 't', path } }),
+        ) as WorkflowGraph,
       )
       expect(issues.some((i) => /No list selected/.test(i.message))).toBe(false)
     }

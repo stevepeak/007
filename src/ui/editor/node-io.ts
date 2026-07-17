@@ -202,10 +202,53 @@ function repath(fields: DataField[], prefix: string): DataField[] {
   }))
 }
 
-// The output shape a node produces (for the accessible-data tree). Pass-through
-// nodes (branch/switch/feature-request) forward their input, so their
-// shape is resolved recursively from their predecessor(s); `seen` guards against
-// a malformed cycle.
+// The recorded-decision output of a routing node — what a Branch/Switch
+// produces now that it no longer forwards its input. A Branch reports a yes/no
+// `result`; a Switch reports the winning case key (typed as the union of its
+// declared case keys plus `default`). Both carry a `reasoning` string.
+function decisionOutputFields(node: WorkflowNode): DataField[] {
+  const reasoning: DataField = {
+    key: 'reasoning',
+    label: 'reasoning',
+    path: 'reasoning',
+    type: 'string',
+    description: 'Human-readable explanation of why this arm was chosen.',
+  }
+  if (node.kind === 'switch') {
+    const keys = node.config.cases.map((c) => c.key)
+    const type =
+      keys.length > 0
+        ? [...keys, SWITCH_DEFAULT_CASE].map((k) => JSON.stringify(k)).join(' | ')
+        : 'string'
+    return [
+      {
+        key: 'result',
+        label: 'result',
+        path: 'result',
+        type,
+        description: 'The matching case key — drives which edge is taken.',
+      },
+      reasoning,
+    ]
+  }
+  return [
+    {
+      key: 'result',
+      label: 'result',
+      path: 'result',
+      type: '"yes" | "no"',
+      description: 'Whether the predicate held — drives the yes/no edge.',
+    },
+    reasoning,
+  ]
+}
+
+// The output shape a node produces (for the accessible-data tree). Branch/switch
+// emit their decision (`{ result, reasoning }`), not their input — nodes no
+// longer forward data, so downstream reads a routing node's boolean/enum, and
+// reaches pre-routing data by ref-ing the producer directly. The remaining
+// pass-through kind (feature-request, an unbuilt placeholder) still resolves its
+// shape from its predecessor(s); `seen` guards against a malformed cycle.
 function nodeOutput(
   node: WorkflowNode,
   maps: IoMaps,
@@ -273,8 +316,12 @@ function nodeOutput(
     // shape — a downstream iteration can still pick it as its list.
     return { fields: [], type: 'array' }
   }
+  if (node.kind === 'branch' || node.kind === 'switch') {
+    // Routing nodes emit their decision, not a forwarded input.
+    return { fields: decisionOutputFields(node), type: 'object' }
+  }
 
-  // Pass-through: branch/switch/feature-request emit exactly what they
+  // Pass-through: feature-request (an unbuilt placeholder) emits exactly what it
   // received.
   const preds = predecessorIds(graph, node.id)
     .map((id) => byId.get(id))
@@ -297,181 +344,6 @@ function nodeOutput(
     return { fields, type: 'object' }
   }
   return { fields: [], type: 'passthrough' }
-}
-
-// The RAW output JSON Schema a node produces — like `nodeOutput` but preserving
-// the full schema (incl. array `items`) so callers can reason about element
-// shapes. Pass-through nodes resolve from their single predecessor.
-function nodeOutputSchema(
-  node: WorkflowNode,
-  maps: IoMaps,
-  graph: WorkflowGraph,
-  byId: Map<string, WorkflowNode>,
-  seen: Set<string>,
-): JsonSchema | undefined {
-  if (seen.has(node.id)) return undefined
-  seen.add(node.id)
-  if (node.kind === 'agent') {
-    const output = maps.agentsById.get(node.config.agentId)?.output
-    return output ? agentOutputJsonSchema(output) : undefined
-  }
-  if (node.kind === 'tool')
-    return maps.toolsById.get(node.config.toolId)?.outputSchema
-  if (node.kind === 'trigger') {
-    return maps.triggersByKind.get(node.config.triggerKind)?.inputSchema
-  }
-  if (node.kind === 'workflow') {
-    // The callee's output shape is unknown at author time — don't claim one.
-    return undefined
-  }
-  if (node.kind === 'iteration') {
-    // An iteration produces an array of per-item RESULTS. We don't infer the
-    // result element shape, so surface it as an untyped array (still pickable as
-    // a list by a downstream iteration).
-    return { type: 'array' }
-  }
-  if (node.kind === 'output') return undefined
-  const preds = predecessorIds(graph, node.id)
-    .map((id) => byId.get(id))
-    .filter((n): n is WorkflowNode => Boolean(n))
-  // A race forwards the winning upstream's output; its inputs share one shape,
-  // so resolve from the first predecessor even when several feed in.
-  if (node.kind === 'race') {
-    return preds.length >= 1
-      ? nodeOutputSchema(preds[0], maps, graph, byId, seen)
-      : undefined
-  }
-  if (node.kind === 'aggregate') {
-    // A list of per-producer outputs; element shapes differ, so surface an
-    // untyped array (still pickable as a list by a downstream iteration).
-    return { type: 'array' }
-  }
-  return preds.length === 1
-    ? nodeOutputSchema(preds[0], maps, graph, byId, seen)
-    : undefined
-}
-
-/** An array-typed value reachable by a node — offered as a pickable iteration
- * source. `path` is the dotted path into the node's INPUT ('' = whole input);
- * `itemSchema` is the element shape, used to infer the loop's `Item`. */
-export type ListOption = {
-  nodeId: string
-  nodeLabel: string
-  path: string
-  label: string
-  itemSchema?: JsonSchema
-}
-
-// Walk a schema collecting array-typed fields (depth-bounded), emitting the
-// dotted path and each array's element schema.
-function collectArrays(
-  schema: JsonSchema | undefined,
-  parentPath: string,
-  depth: number,
-  emit: (path: string, itemSchema?: JsonSchema) => void,
-): void {
-  if (!schema || depth > 3) return
-  if (schema.type === 'array') {
-    emit(parentPath, schema.items as JsonSchema | undefined)
-    return
-  }
-  if (schema.type === 'object') {
-    const props = (schema.properties ?? {}) as Record<string, JsonSchema>
-    for (const [key, s] of Object.entries(props)) {
-      const path = parentPath ? `${parentPath}.${key}` : key
-      collectArrays(s, path, depth + 1, emit)
-    }
-  }
-}
-
-// Every array an iteration node could iterate over: arrays inside its direct
-// predecessors' outputs. `path` is expressed relative to the node's resolved
-// input (prefixed with the source node id when there's more than one predecessor,
-// matching the scheduler's multi-predecessor `{ [sourceId]: output }` shape).
-export function accessibleLists(
-  graph: WorkflowGraph,
-  nodeId: string,
-  maps: IoMaps,
-): ListOption[] {
-  const byId = new Map(graph.nodes.map((n) => [n.id, n]))
-  const preds = predecessorIds(graph, nodeId)
-    .map((id) => byId.get(id))
-    .filter((n): n is WorkflowNode => Boolean(n))
-  const multi = preds.length > 1
-  const out: ListOption[] = []
-  for (const pred of preds) {
-    const schema = nodeOutputSchema(pred, maps, graph, byId, new Set())
-    collectArrays(schema, '', 0, (relPath, itemSchema) => {
-      const path = multi
-        ? relPath
-          ? `${pred.id}.${relPath}`
-          : pred.id
-        : relPath
-      out.push({
-        nodeId: pred.id,
-        nodeLabel: pred.label,
-        path,
-        label: relPath || 'whole output',
-        itemSchema,
-      })
-    })
-  }
-  return out
-}
-
-/** One direct predecessor of an iteration node, with the FULL field tree of its
- * output (array fields carry `itemSchema`). Unlike `accessibleLists` — which
- * pre-flattens to just the array leaves for a dropdown — this preserves the
- * object structure so the list picker can render a drill-down tree identical to
- * the agent/tool/branch data picker, with arrays as the pickable leaves.
- * `wholeIsList` marks a predecessor whose whole output is itself the array. */
-export type IterationListSource = {
-  nodeId: string
-  nodeLabel: string
-  /** Several predecessors feed the node, so a list path is prefixed with the
-   * source node id (matching the scheduler's `{ [sourceId]: output }` merge). */
-  multi: boolean
-  wholeIsList: boolean
-  wholeItemSchema?: JsonSchema
-  fields: DataField[]
-}
-
-export function iterationListSources(
-  graph: WorkflowGraph,
-  nodeId: string,
-  maps: IoMaps,
-): IterationListSource[] {
-  const byId = new Map(graph.nodes.map((n) => [n.id, n]))
-  const preds = predecessorIds(graph, nodeId)
-    .map((id) => byId.get(id))
-    .filter((n): n is WorkflowNode => Boolean(n))
-  const multi = preds.length > 1
-  return preds.map((pred) => {
-    const schema = nodeOutputSchema(pred, maps, graph, byId, new Set())
-    const wholeIsList = schema?.type === 'array'
-    return {
-      nodeId: pred.id,
-      nodeLabel: pred.label,
-      multi,
-      wholeIsList,
-      wholeItemSchema: wholeIsList
-        ? (schema?.items as JsonSchema | undefined)
-        : undefined,
-      fields: fieldsOf(schema, ''),
-    }
-  })
-}
-
-/** The `itemsPath` (a dotted path into the iteration node's resolved input) for
- * a list picked out of a predecessor's output. Mirrors `accessibleLists`' path
- * rule so the tree picker and the engine agree: a multi-predecessor input is
- * keyed by source node id, a single-predecessor input IS the output. */
-export function iterationItemsPath(
-  source: { multi: boolean; nodeId: string },
-  fieldPath: string,
-): string {
-  if (!source.multi) return fieldPath
-  return fieldPath ? `${source.nodeId}.${fieldPath}` : source.nodeId
 }
 
 // Return a maps copy whose iteration `Item` trigger resolves to `itemSchema`, so
@@ -546,64 +418,6 @@ export function nodeProvides(
     fields: out.fields,
     wholeType: out.type,
   }
-}
-
-// The decision a routing node records as its OWN output — distinct from the
-// input it forwards downstream (which `nodeProvides` describes). A Branch records
-// a yes/no result; a Switch records the winning case key. Returned so the Data
-// tab can show the boolean/enum a decision node produces (visible in the run
-// viewer as `recordedOutput`) rather than only its forwarded input. Non-decision
-// nodes return null.
-export function nodeDecisionOutput(node: WorkflowNode): AccessibleNode | null {
-  const reasoning: DataField = {
-    key: 'reasoning',
-    label: 'reasoning',
-    path: 'reasoning',
-    type: 'string',
-    description: 'Human-readable explanation of why this arm was chosen.',
-  }
-  if (node.kind === 'branch') {
-    return {
-      nodeId: node.id,
-      label: node.label,
-      kind: node.kind,
-      wholeType: 'object',
-      fields: [
-        {
-          key: 'result',
-          label: 'result',
-          path: 'result',
-          type: '"yes" | "no"',
-          description: 'Whether the predicate held — drives the yes/no edge.',
-        },
-        reasoning,
-      ],
-    }
-  }
-  if (node.kind === 'switch') {
-    const keys = node.config.cases.map((c) => c.key)
-    const type =
-      keys.length > 0
-        ? [...keys, SWITCH_DEFAULT_CASE].map((k) => JSON.stringify(k)).join(' | ')
-        : 'string'
-    return {
-      nodeId: node.id,
-      label: node.label,
-      kind: node.kind,
-      wholeType: 'object',
-      fields: [
-        {
-          key: 'result',
-          label: 'result',
-          path: 'result',
-          type,
-          description: 'The matching case key — drives which edge is taken.',
-        },
-        reasoning,
-      ],
-    }
-  }
-  return null
 }
 
 // Every node structurally upstream of `nodeId`, nearest-first, with its output

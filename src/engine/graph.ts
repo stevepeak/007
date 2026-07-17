@@ -329,8 +329,9 @@ const outputNodeSchema = baseNode.extend({
 })
 
 // An Iteration node fans out over a list: it runs its embedded `subgraph` once
-// per element of the array found at `itemsPath` (a dotted path into the node's
-// resolved input; '' = the whole input is the array). Items run in parallel up
+// per element of the array its `source` ref points at (a `ref` into any upstream
+// node's output, resolved against the run's global outputs — nodes don't forward
+// data, so the list is named at its producer). Items run in parallel up
 // to `concurrency`, and `stopOnError` chooses whether one item's failure aborts
 // the rest (true) or is collected while the others finish (false). The node's
 // output is an ordered array of per-item results — a collection downstream nodes
@@ -351,10 +352,14 @@ const iterationSubgraphSchema: z.ZodType<WorkflowGraph> = z.lazy(
 const iterationNodeSchema = baseNode.extend({
   kind: z.literal('iteration'),
   config: z.object({
-    // Which list to iterate, as a dotted path into the node's input. Optional so
-    // "never picked" (undefined → an author-time error) stays distinct from the
-    // valid "whole input is the list" selection ('').
-    itemsPath: z.string().optional(),
+    // Which list to iterate: a `ref` binding into ANY upstream node's output
+    // (the same data picker agent/tool/branch inputs use), resolved against the
+    // run's global node-output map. Optional so "never picked" (undefined → an
+    // author-time error) is distinct from a real selection. Nodes no longer
+    // forward data, so the list is named at its producer directly rather than
+    // read out of a merged input — e.g. an iteration behind a Branch refs the
+    // upstream tool that made the list, not the (boolean-only) Branch.
+    source: refBindingSchema.optional(),
     concurrency: z.number().int().min(1).max(20).default(4),
     stopOnError: z.boolean().default(false),
     // Editor-only container dimensions for the group box on the canvas — the
@@ -411,7 +416,7 @@ export interface IterationNode {
   execution?: NodeExecution
   kind: 'iteration'
   config: {
-    itemsPath?: string
+    source?: RefBinding
     concurrency: number
     stopOnError: boolean
     width?: number

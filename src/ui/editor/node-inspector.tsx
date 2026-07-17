@@ -311,18 +311,23 @@ export function NodeInspector({
           <div className={field}>
             <Label>List</Label>
             <IterationListField
+              node={node}
               graph={graph}
-              nodeId={node.id}
-              value={node.config.itemsPath}
-              onSelect={(itemsPath, itemSchema) =>
+              value={node.config.source}
+              itemSchema={itemSchema}
+              onSelect={(source, elemSchema) =>
                 onChange({
                   ...node,
-                  config: { ...node.config, itemsPath, itemSchema },
+                  config: {
+                    ...node.config,
+                    source,
+                    itemSchema: elemSchema,
+                  },
                 })
               }
             />
             <p className="text-muted-foreground text-xs">
-              Drill into an upstream node's data and pick the{' '}
+              Drill into any upstream node's data and pick the{' '}
               <strong>list</strong> to loop over — each element becomes the{' '}
               <strong>Item</strong>. Only arrays can be selected.
             </p>

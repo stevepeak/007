@@ -284,9 +284,6 @@ function AssetRoute({ path }: { path: string }) {
         <WorkflowEditor
           workflowId={asset.workflowId}
           className="h-full"
-          onPublished={({ versionId }) =>
-            navigate(`${asset.workflowId}/runs?v=${versionId}`)
-          }
           onArchived={() => navigate('workflows')}
         />
       )

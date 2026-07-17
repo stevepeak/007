@@ -51,11 +51,30 @@ import {
   wfWorkflowDraft,
   wfWorkflowVersion
 } from './schema'
+import { createVersionedEntity } from './versioned-entity'
 
 // Pure data-access functions over a `WfDb` handle. No auth and no tenancy —
 // workflows and agents are one global set. These back both the Cloudflare
 // backend (load graph, create/finalize run) and the UI's route handlers
 // (list/get/save).
+
+/**
+ * Build a Drizzle `set` patch from only the named keys whose value is not
+ * `undefined` — the "partial update" idiom used by every `update*` function
+ * here. `null` is a real value (it clears a column) and is kept; `undefined`
+ * means "leave this column untouched". Naming the keys explicitly keeps
+ * unrelated input fields (ids, discriminators) out of the patch.
+ */
+function pickDefined<T extends object, K extends keyof T>(
+  input: T,
+  keys: readonly K[],
+): Pick<T, K> {
+  const out: Partial<Pick<T, K>> = {}
+  for (const k of keys) {
+    if (input[k] !== undefined) out[k] = input[k]
+  }
+  return out as Pick<T, K>
+}
 
 // ---------------------------------------------------------------------------
 // Workflows + versions + drafts
@@ -95,6 +114,22 @@ export async function findWorkflowByName(
   return row ?? null
 }
 
+// The shared version/draft lifecycle (seed, publish, draft sync). The entity
+// row (name/hidden/archived) is created here; everything versioned goes through
+// the factory so workflows and agents can't drift. See `versioned-entity.ts`.
+const workflowVersions = createVersionedEntity<
+  WorkflowGraph,
+  typeof wfWorkflowVersion.$inferSelect
+>({
+  versionTable: wfWorkflowVersion,
+  draftTable: wfWorkflowDraft,
+  versionOwnerCol: wfWorkflowVersion.workflowId,
+  versionNumberCol: wfWorkflowVersion.versionNumber,
+  draftOwnerCol: wfWorkflowDraft.workflowId,
+  ownerKey: 'workflowId',
+  payloadKey: 'graph',
+})
+
 export async function createWorkflow(
   db: WfDb,
   input: {
@@ -115,22 +150,10 @@ export async function createWorkflow(
     createdBy: input.createdBy ?? null,
   })
   // Seed version 1 + a matching draft so the editor opens on a valid graph.
-  const versionId = crypto.randomUUID()
-  await db.insert(wfWorkflowVersion).values({
-    id: versionId,
-    workflowId,
-    versionNumber: 1,
-    graph: input.graph,
-    createdBy: input.createdBy ?? null,
-    publishedBy: input.createdBy ?? null,
-    publishedAt: new Date(),
-  })
-  await db.insert(wfWorkflowDraft).values({
-    workflowId,
-    graph: input.graph,
-    baseVersionId: versionId,
-    lastEditedBy: input.createdBy ?? null,
-    updatedAt: new Date(),
+  const { versionId } = await workflowVersions.seed(db, {
+    ownerId: workflowId,
+    payload: input.graph,
+    createdBy: input.createdBy,
   })
   return { workflowId, versionId }
 }
@@ -170,14 +193,8 @@ export async function deleteWorkflow(db: WfDb, workflowId: string) {
   await db.delete(wfWorkflow).where(eq(wfWorkflow.id, workflowId))
 }
 
-async function latestVersion(db: WfDb, workflowId: string) {
-  const rows = await db
-    .select()
-    .from(wfWorkflowVersion)
-    .where(eq(wfWorkflowVersion.workflowId, workflowId))
-    .orderBy(desc(wfWorkflowVersion.versionNumber))
-    .limit(1)
-  return rows[0]
+function latestVersion(db: WfDb, workflowId: string) {
+  return workflowVersions.latest(db, workflowId)
 }
 
 /** The editor's load shape: the workflow, its draft (if any), latest version. */
@@ -211,22 +228,11 @@ export async function updateDraft(
   db: WfDb,
   input: { workflowId: string; graph: WorkflowGraph; lastEditedBy?: string },
 ) {
-  await db
-    .insert(wfWorkflowDraft)
-    .values({
-      workflowId: input.workflowId,
-      graph: input.graph,
-      lastEditedBy: input.lastEditedBy ?? null,
-      updatedAt: new Date(),
-    })
-    .onConflictDoUpdate({
-      target: wfWorkflowDraft.workflowId,
-      set: {
-        graph: input.graph,
-        lastEditedBy: input.lastEditedBy ?? null,
-        updatedAt: new Date(),
-      },
-    })
+  await workflowVersions.updateDraft(db, {
+    ownerId: input.workflowId,
+    payload: input.graph,
+    lastEditedBy: input.lastEditedBy,
+  })
 }
 
 /** Snapshot a graph into a new immutable version (the editor's "publish"). */
@@ -242,31 +248,16 @@ export async function saveVersion(
     publishedBy?: string
   },
 ) {
-  const prev = await latestVersion(db, input.workflowId)
-  const versionNumber = (prev?.versionNumber ?? 0) + 1
-  const versionId = crypto.randomUUID()
-  await db.insert(wfWorkflowVersion).values({
-    id: versionId,
-    workflowId: input.workflowId,
-    versionNumber,
-    graph: input.graph,
-    changeNote: input.changeNote ?? null,
-    aiSummaryShort: input.aiSummaryShort ?? null,
-    aiSummaryLong: input.aiSummaryLong ?? null,
-    createdBy: input.publishedBy ?? null,
-    publishedBy: input.publishedBy ?? null,
-    publishedAt: new Date(),
+  return await workflowVersions.publish(db, {
+    ownerId: input.workflowId,
+    payload: input.graph,
+    publishedBy: input.publishedBy,
+    changeNote: input.changeNote,
+    versionExtra: {
+      aiSummaryShort: input.aiSummaryShort ?? null,
+      aiSummaryLong: input.aiSummaryLong ?? null,
+    },
   })
-  // Keep the draft in sync with the freshly published version.
-  await db
-    .update(wfWorkflowDraft)
-    .set({
-      graph: input.graph,
-      baseVersionId: versionId,
-      updatedAt: new Date(),
-    })
-    .where(eq(wfWorkflowDraft.workflowId, input.workflowId))
-  return { versionId, versionNumber }
 }
 
 /**
@@ -333,35 +324,18 @@ export async function updateWorkflow(
     archived?: boolean
   },
 ) {
-  const patch: {
-    name?: string
-    description?: string | null
-    archived?: boolean
-    updatedAt: Date
-  } = { updatedAt: new Date() }
-  if (input.name !== undefined) patch.name = input.name
-  if (input.description !== undefined) patch.description = input.description
-  if (input.archived !== undefined) patch.archived = input.archived
   await db
     .update(wfWorkflow)
-    .set(patch)
+    .set({
+      ...pickDefined(input, ['name', 'description', 'archived']),
+      updatedAt: new Date(),
+    })
     .where(eq(wfWorkflow.id, input.workflowId))
 }
 
 /** Reset the draft back to the latest published version's graph. */
 export async function discardDraft(db: WfDb, input: { workflowId: string }) {
-  const version = await latestVersion(db, input.workflowId)
-  if (!version) {
-    return
-  }
-  await db
-    .update(wfWorkflowDraft)
-    .set({
-      graph: version.graph,
-      baseVersionId: version.id,
-      updatedAt: new Date(),
-    })
-    .where(eq(wfWorkflowDraft.workflowId, input.workflowId))
+  await workflowVersions.discardDraft(db, input.workflowId)
 }
 
 // ---------------------------------------------------------------------------
@@ -601,6 +575,21 @@ export async function listAgents(db: WfDb) {
   }))
 }
 
+// Same version/draft lifecycle as workflows (payload is the AgentConfig). The
+// entity row (name/icon/color) is created here; versions go through the factory.
+const agentVersions = createVersionedEntity<
+  AgentConfig,
+  typeof wfAgentVersion.$inferSelect
+>({
+  versionTable: wfAgentVersion,
+  draftTable: wfAgentDraft,
+  versionOwnerCol: wfAgentVersion.agentId,
+  versionNumberCol: wfAgentVersion.versionNumber,
+  draftOwnerCol: wfAgentDraft.agentId,
+  ownerKey: 'agentId',
+  payloadKey: 'config',
+})
+
 export async function createAgent(
   db: WfDb,
   input: {
@@ -622,34 +611,16 @@ export async function createAgent(
     createdBy: input.createdBy ?? null,
   })
   // Seed version 1 + a matching draft so the editor opens on a valid agent.
-  const versionId = crypto.randomUUID()
-  await db.insert(wfAgentVersion).values({
-    id: versionId,
-    agentId,
-    versionNumber: 1,
-    config: input.config,
-    createdBy: input.createdBy ?? null,
-    publishedBy: input.createdBy ?? null,
-    publishedAt: new Date(),
-  })
-  await db.insert(wfAgentDraft).values({
-    agentId,
-    config: input.config,
-    baseVersionId: versionId,
-    lastEditedBy: input.createdBy ?? null,
-    updatedAt: new Date(),
+  const { versionId } = await agentVersions.seed(db, {
+    ownerId: agentId,
+    payload: input.config,
+    createdBy: input.createdBy,
   })
   return { agentId, versionId }
 }
 
-export async function latestAgentVersion(db: WfDb, agentId: string) {
-  const rows = await db
-    .select()
-    .from(wfAgentVersion)
-    .where(eq(wfAgentVersion.agentId, agentId))
-    .orderBy(desc(wfAgentVersion.versionNumber))
-    .limit(1)
-  return rows[0]
+export function latestAgentVersion(db: WfDb, agentId: string) {
+  return agentVersions.latest(db, agentId)
 }
 
 /** A specific published version by its number (for pinned agent references). */
@@ -698,22 +669,11 @@ export async function updateAgentDraft(
   db: WfDb,
   input: { agentId: string; config: AgentConfig; lastEditedBy?: string },
 ) {
-  await db
-    .insert(wfAgentDraft)
-    .values({
-      agentId: input.agentId,
-      config: input.config,
-      lastEditedBy: input.lastEditedBy ?? null,
-      updatedAt: new Date(),
-    })
-    .onConflictDoUpdate({
-      target: wfAgentDraft.agentId,
-      set: {
-        config: input.config,
-        lastEditedBy: input.lastEditedBy ?? null,
-        updatedAt: new Date(),
-      },
-    })
+  await agentVersions.updateDraft(db, {
+    ownerId: input.agentId,
+    payload: input.config,
+    lastEditedBy: input.lastEditedBy,
+  })
 }
 
 /** Freeze the config into a new immutable version (the editor's "publish"). */
@@ -726,28 +686,12 @@ export async function publishAgent(
     publishedBy?: string
   },
 ) {
-  const prev = await latestAgentVersion(db, input.agentId)
-  const versionNumber = (prev?.versionNumber ?? 0) + 1
-  const versionId = crypto.randomUUID()
-  await db.insert(wfAgentVersion).values({
-    id: versionId,
-    agentId: input.agentId,
-    versionNumber,
-    config: input.config,
-    changeNote: input.changeNote ?? null,
-    createdBy: input.publishedBy ?? null,
-    publishedBy: input.publishedBy ?? null,
-    publishedAt: new Date(),
+  return await agentVersions.publish(db, {
+    ownerId: input.agentId,
+    payload: input.config,
+    publishedBy: input.publishedBy,
+    changeNote: input.changeNote,
   })
-  await db
-    .update(wfAgentDraft)
-    .set({
-      config: input.config,
-      baseVersionId: versionId,
-      updatedAt: new Date(),
-    })
-    .where(eq(wfAgentDraft.agentId, input.agentId))
-  return { versionId, versionNumber }
 }
 
 export async function listAgentVersions(db: WfDb, agentId: string) {
@@ -775,28 +719,18 @@ export async function updateAgentMeta(
     color?: string
   },
 ) {
-  const set: Record<string, unknown> = { updatedAt: new Date() }
-  if (input.name !== undefined) set.name = input.name
-  if (input.description !== undefined) set.description = input.description
-  if (input.icon !== undefined) set.icon = input.icon
-  if (input.color !== undefined) set.color = input.color
-  await db.update(wfAgent).set(set).where(eq(wfAgent.id, input.agentId))
+  await db
+    .update(wfAgent)
+    .set({
+      ...pickDefined(input, ['name', 'description', 'icon', 'color']),
+      updatedAt: new Date(),
+    })
+    .where(eq(wfAgent.id, input.agentId))
 }
 
 /** Reset the draft back to the latest published version's config. */
 export async function discardAgentDraft(db: WfDb, input: { agentId: string }) {
-  const version = await latestAgentVersion(db, input.agentId)
-  if (!version) {
-    return
-  }
-  await db
-    .update(wfAgentDraft)
-    .set({
-      config: version.config,
-      baseVersionId: version.id,
-      updatedAt: new Date(),
-    })
-    .where(eq(wfAgentDraft.agentId, input.agentId))
+  await agentVersions.discardDraft(db, input.agentId)
 }
 
 // ---------------------------------------------------------------------------
@@ -1395,15 +1329,21 @@ export async function updateEvalSet(
     archived?: boolean
   },
 ) {
-  const set: Partial<typeof wfEvalSet.$inferInsert> = { updatedAt: new Date() }
-  if (input.name !== undefined) set.name = input.name
-  if (input.description !== undefined) set.description = input.description
-  if (input.targetKind !== undefined) set.targetKind = input.targetKind
-  if (input.targetId !== undefined) set.targetId = input.targetId
-  if (input.targetVersion !== undefined) set.targetVersion = input.targetVersion
-  if (input.triggerKind !== undefined) set.triggerKind = input.triggerKind
-  if (input.archived !== undefined) set.archived = input.archived
-  await db.update(wfEvalSet).set(set).where(eq(wfEvalSet.id, input.setId))
+  await db
+    .update(wfEvalSet)
+    .set({
+      ...pickDefined(input, [
+        'name',
+        'description',
+        'targetKind',
+        'targetId',
+        'targetVersion',
+        'triggerKind',
+        'archived',
+      ]),
+      updatedAt: new Date(),
+    })
+    .where(eq(wfEvalSet.id, input.setId))
 }
 
 /** Hard-delete a set and its rows (results/runs are kept for history). */
@@ -1434,16 +1374,17 @@ export async function upsertEvalRow(
     input.checks ?? { op: 'and', checks: [] },
   )
   if (input.id) {
-    const set: Partial<typeof wfEvalRow.$inferInsert> = {
-      name: input.name,
-      initialCondition,
-      fixtures,
-      checks,
-      updatedAt: new Date(),
-    }
-    if (input.description !== undefined) set.description = input.description
-    if (input.sortOrder !== undefined) set.sortOrder = input.sortOrder
-    await db.update(wfEvalRow).set(set).where(eq(wfEvalRow.id, input.id))
+    await db
+      .update(wfEvalRow)
+      .set({
+        name: input.name,
+        initialCondition,
+        fixtures,
+        checks,
+        updatedAt: new Date(),
+        ...pickDefined(input, ['description', 'sortOrder']),
+      })
+      .where(eq(wfEvalRow.id, input.id))
     return input.id
   }
   const id = crypto.randomUUID()
@@ -1497,15 +1438,20 @@ export async function updateEvalRun(
     finishedAt?: Date
   },
 ) {
-  const set: Partial<typeof wfEvalRun.$inferInsert> = {}
-  if (input.status !== undefined) set.status = input.status
-  if (input.total !== undefined) set.total = input.total
-  if (input.passed !== undefined) set.passed = input.passed
-  if (input.failed !== undefined) set.failed = input.failed
-  if (input.score !== undefined) set.score = input.score
-  if (input.startedAt !== undefined) set.startedAt = input.startedAt
-  if (input.finishedAt !== undefined) set.finishedAt = input.finishedAt
-  await db.update(wfEvalRun).set(set).where(eq(wfEvalRun.id, input.evalRunId))
+  await db
+    .update(wfEvalRun)
+    .set(
+      pickDefined(input, [
+        'status',
+        'total',
+        'passed',
+        'failed',
+        'score',
+        'startedAt',
+        'finishedAt',
+      ]),
+    )
+    .where(eq(wfEvalRun.id, input.evalRunId))
 }
 
 export async function listEvalRuns(db: WfDb, opts?: { limit?: number }) {
@@ -1651,13 +1597,8 @@ export async function updateEvalResult(
     checkResults?: CheckResult[]
   },
 ) {
-  const set: Partial<typeof wfEvalResult.$inferInsert> = {}
-  if (input.wfRunId !== undefined) set.wfRunId = input.wfRunId
-  if (input.status !== undefined) set.status = input.status
-  if (input.score !== undefined) set.score = input.score
-  if (input.checkResults !== undefined) set.checkResults = input.checkResults
   await db
     .update(wfEvalResult)
-    .set(set)
+    .set(pickDefined(input, ['wfRunId', 'status', 'score', 'checkResults']))
     .where(eq(wfEvalResult.id, input.resultId))
 }

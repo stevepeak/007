@@ -85,7 +85,7 @@ describe('eval harness — iteration graph', () => {
         label: 'Shout each',
         position: { x: 200, y: 0 },
         config: {
-          itemsPath: 'words',
+          source: { kind: 'ref', nodeId: 't', path: 'words' },
           concurrency: 3,
           stopOnError: false,
           subgraph,
@@ -142,5 +142,66 @@ describe('eval harness — iteration graph', () => {
       config,
     })
     expect(run.output).toEqual([])
+  })
+
+  // Regression for the "no forwarding" model: an iteration sitting BEHIND a
+  // Branch (which emits only its decision) still reaches the producer's list by
+  // ref — the Branch is pure control flow, not a data conduit.
+  test('iteration behind a branch refs the producer directly', async () => {
+    const branchGraph = {
+      version: 1,
+      nodes: [
+        {
+          id: 't',
+          kind: 'trigger',
+          label: 'Words',
+          position: { x: 0, y: 0 },
+          config: { triggerKind: 'words' },
+        },
+        {
+          id: 'b',
+          kind: 'branch',
+          label: 'Any words?',
+          position: { x: 160, y: 0 },
+          config: {
+            source: { kind: 'ref', nodeId: 't', path: 'words' },
+            operator: 'is_not_empty',
+          },
+        },
+        {
+          id: 'it',
+          kind: 'iteration',
+          label: 'Shout each',
+          position: { x: 320, y: 0 },
+          config: {
+            // Refs the trigger, NOT its direct predecessor (the branch).
+            source: { kind: 'ref', nodeId: 't', path: 'words' },
+            concurrency: 3,
+            stopOnError: false,
+            subgraph,
+          },
+        },
+        {
+          id: 'o',
+          kind: 'output',
+          label: 'Out',
+          position: { x: 480, y: 0 },
+          config: {},
+        },
+      ],
+      edges: [
+        { id: 'e1', source: 't', target: 'b', condition: null },
+        // Only the "yes" (non-empty) arm reaches the loop.
+        { id: 'e2', source: 'b', target: 'it', condition: 'yes' },
+        { id: 'e3', source: 'it', target: 'o', condition: null },
+      ],
+    }
+    const run = await runWorkflowUnderConditions({
+      name: 'iteration behind branch',
+      graph: branchGraph,
+      triggerInput: { words: ['alpha', 'beta'] },
+      config,
+    })
+    expect(run.output).toEqual([{ shouted: 'ALPHA' }, { shouted: 'BETA' }])
   })
 })

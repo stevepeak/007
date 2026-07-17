@@ -1,4 +1,4 @@
-import { resolvePath } from '../binding'
+import { resolveBinding } from '../binding'
 import type { IterationNode, WorkflowGraph } from '../graph'
 import { runNode, type RunNodeContext } from '../run-node'
 import { Scheduler, WorkflowStalledError } from '../scheduler'
@@ -82,9 +82,41 @@ export async function executeSubgraph<TDeps>(
 }
 
 /**
- * Drive an iteration node: resolve the array at `itemsPath`, run each item
- * through `runItem` under a bounded worker pool honoring `concurrency`, and
- * collect the results in input order.
+ * Resolve the array an iteration loops over. The list is a `ref` into an upstream
+ * node's output (`node.config.source`), resolved against the run's global
+ * node-output map — NOT read out of a forwarded input, so an iteration can name
+ * any producer directly (e.g. the tool upstream of a Branch it sits behind).
+ * Throws a clear error when no list is selected or the ref doesn't point at an
+ * array. Backends call this where they hold the outputs map, then hand the array
+ * to {@link runIteration}.
+ */
+export function resolveIterationList(
+  node: IterationNode,
+  nodeOutputs: Map<string, unknown>,
+): unknown[] {
+  const { source } = node.config
+  if (!source) {
+    throw new Error(
+      `Iteration node ${node.id} has no list selected — pick an upstream list to loop over.`,
+    )
+  }
+  const value = resolveBinding(source, nodeOutputs, {
+    nodeId: node.id,
+    name: 'list',
+  })
+  if (!Array.isArray(value)) {
+    const where = `${source.nodeId}${source.path ? `.${source.path}` : ' (whole output)'}`
+    throw new Error(
+      `Iteration node ${node.id} expected an array at ${where} but received ${value === undefined ? 'undefined' : typeof value}.`,
+    )
+  }
+  return value
+}
+
+/**
+ * Drive an iteration node: run each element of `list` through `runItem` under a
+ * bounded worker pool honoring `concurrency`, and collect the results in order.
+ * The caller resolves `list` via {@link resolveIterationList}.
  *
  *   • `stopOnError: true`  — the first item failure aborts the remaining
  *     not-yet-started items and rethrows, failing the whole node (consistent
@@ -94,21 +126,11 @@ export async function executeSubgraph<TDeps>(
  */
 export async function runIteration(args: {
   node: IterationNode
-  input: unknown
+  list: unknown[]
   runItem: (item: unknown, index: number) => Promise<unknown>
 }): Promise<IterationResult> {
-  const { node, input, runItem } = args
-  const { itemsPath, concurrency, stopOnError } = node.config
-
-  // An unset `itemsPath` (author never picked a list) resolves the whole input,
-  // same as the deliberate '' selection.
-  const arr = resolvePath(input, itemsPath ?? '')
-  if (!Array.isArray(arr)) {
-    const where = itemsPath ? ` at '${itemsPath}'` : ''
-    throw new Error(
-      `Iteration node ${node.id} expected an array${where} but received ${arr === undefined ? 'undefined' : typeof arr}.`,
-    )
-  }
+  const { node, list: arr, runItem } = args
+  const { concurrency, stopOnError } = node.config
 
   const total = arr.length
   const results = new Array<unknown>(total)

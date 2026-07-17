@@ -56,7 +56,8 @@ const branchCallee: WorkflowGraph = {
       kind: 'branch',
       label: 'Truthy?',
       position: { x: 100, y: 0 },
-      config: { path: '', operator: 'is_not_empty' },
+      // No `source` → tests the whole trigger input.
+      config: { operator: 'is_not_empty' },
     },
     {
       id: 'yes',
@@ -125,15 +126,17 @@ describe('executeWorkflowNode', () => {
     })
   })
 
-  test('walks the callee subgraph (branch routes the pass-through input)', async () => {
+  test('walks the callee subgraph (branch routes; its output is the decision)', async () => {
     const ctx = ctxWith([workflowEntry(branchCallee)])
+    // A branch no longer forwards its input — the taken arm's Output emits the
+    // branch decision, so the routing shows up as `result`.
     expect(
       (await executeWorkflowNode({ node: callNode(), input: 'present', ctx }))
         .output,
-    ).toBe('present')
+    ).toMatchObject({ result: 'yes' })
     expect(
       (await executeWorkflowNode({ node: callNode(), input: '', ctx })).output,
-    ).toBe('')
+    ).toMatchObject({ result: 'no' })
   })
 
   test('input bindings build the callee trigger payload (literal + ref)', async () => {

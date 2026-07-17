@@ -9,7 +9,11 @@ import { executeAgentNode } from './nodes/agent'
 import { executeAggregateNode } from './nodes/aggregate'
 import { executeBranchNode } from './nodes/branch'
 import { executeFeatureRequestNode } from './nodes/feature-request'
-import { executeSubgraph, runIteration } from './nodes/iteration'
+import {
+  executeSubgraph,
+  resolveIterationList,
+  runIteration,
+} from './nodes/iteration'
 import { executeRaceNode } from './nodes/race'
 import { executeSwitchNode } from './nodes/switch'
 import { executeToolNode } from './nodes/tool'
@@ -136,24 +140,29 @@ export async function runNode<TDeps>(
       }
     }
     case 'branch': {
-      // A decision node passes its input straight through as its output so
-      // nodes after it see what it saw; the recorded output is the decision +
-      // reasoning for the inspector. The yes/no comes from a code predicate.
+      // A Branch does NOT forward data — its output IS its decision
+      // (`{ result, reasoning }`), so a downstream ref to a Branch yields the
+      // boolean it decided. Nodes that need the pre-Branch data ref the producer
+      // directly (all past outputs stay globally accessible). The yes/no comes
+      // from a code predicate and still routes the outgoing yes/no edges.
       const r = executeBranchNode({ node, input, nodeOutputs: ctx.nodeOutputs })
+      const decision = { result: r.result, reasoning: r.reasoning }
       return {
-        schedulerOutput: input,
-        recordedOutput: { result: r.result, reasoning: r.reasoning },
+        schedulerOutput: decision,
+        recordedOutput: decision,
         branchResult: r.result,
         branchReasoning: r.reasoning,
       }
     }
     case 'switch': {
-      // Multi-way sibling of `branch`: passes its input through, but the routing
-      // decision is a case key (or 'default') rather than yes/no.
+      // Multi-way sibling of `branch`: like Branch it emits its decision
+      // (`{ result, reasoning }`, where result is the winning case key or
+      // 'default') rather than forwarding its input, and routes its case edges.
       const r = executeSwitchNode({ node, input })
+      const decision = { result: r.result, reasoning: r.reasoning }
       return {
-        schedulerOutput: input,
-        recordedOutput: { result: r.result, reasoning: r.reasoning },
+        schedulerOutput: decision,
+        recordedOutput: decision,
         branchResult: r.result,
         branchReasoning: r.reasoning,
       }
@@ -208,7 +217,9 @@ export async function runNode<TDeps>(
       // `step.do` calls cannot nest inside another step.
       const r = await runIteration({
         node,
-        input,
+        // The list is a ref into an upstream node's output, resolved against the
+        // run's global outputs — not read out of the forwarded input.
+        list: resolveIterationList(node, ctx.nodeOutputs),
         runItem: (item) => executeSubgraph(node.config.subgraph, item, ctx),
       })
       return {

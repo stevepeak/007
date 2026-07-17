@@ -755,8 +755,8 @@ function defaultDataForKind(
   }
   if (kind === 'iteration') {
     // Seeded with a minimal Item → Result subgraph; the author drops work nodes
-    // into the block. `itemsPath` is intentionally left unset so the block reads
-    // as "no list selected" (an error) until the author picks one.
+    // into the block. `source` is intentionally left unset so the block reads as
+    // "no list selected" (an error) until the author picks a list to iterate.
     return {
       kind: 'iteration',
       label: 'New iteration',

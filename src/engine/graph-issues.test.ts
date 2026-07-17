@@ -248,7 +248,7 @@ describe('collectGraphIssues', () => {
       position: pos,
       label: 'Loop',
       config: {
-        itemsPath: '',
+        source: { kind: 'ref' as const, nodeId: 't', path: '' },
         concurrency: 1,
         stopOnError: false,
         // Child agent has no agent selected — an error that lives inside the loop.

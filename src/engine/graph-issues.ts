@@ -87,9 +87,8 @@ function configIssue(node: WorkflowNode): GraphIssue | null {
       }
       return null
     case 'iteration':
-      // A list must be chosen (undefined = never picked; '' is the valid
-      // "whole input is the list" selection).
-      if (node.config.itemsPath === undefined) {
+      // A list must be chosen — a `ref` into an upstream node's array output.
+      if (node.config.source === undefined) {
         return {
           ...base,
           severity: 'error',

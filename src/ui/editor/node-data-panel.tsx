@@ -14,15 +14,11 @@ import { cn } from '../cn'
 import {
   accessibleData,
   buildIoMaps,
-  iterationItemsPath,
-  iterationListSources,
-  nodeDecisionOutput,
   nodeProvides,
   nodeRequires,
   withIterationItemSchema,
   type AccessibleNode,
   type DataField,
-  type IterationListSource,
 } from './node-io'
 
 // The data-mapping surface for the inspector: the node's required inputs (each
@@ -233,44 +229,47 @@ export function DataRefField({
 }
 
 export type IterationListFieldProps = {
+  node: WorkflowNode
   graph: WorkflowGraph
-  /** The iteration node's id — its direct predecessors supply the pickable lists. */
-  nodeId: string
-  /** Current `itemsPath` (a path into the node's input; '' = the whole input is
-   * the list); undefined when no list has been picked. */
-  value: string | undefined
-  /** Emits the chosen `itemsPath` plus the inferred element schema (for the inner
-   * `Item` node's fields). */
-  onSelect: (itemsPath: string, itemSchema?: JsonSchema) => void
+  /** The current list ref, or undefined when no list has been picked. */
+  value: RefBinding | undefined
+  /** Element schema of the enclosing loop's list, if this iteration is nested in
+   * another (so upstream `Item` fields are pickable). */
+  itemSchema?: JsonSchema
+  /** Emits the chosen ref plus the inferred element schema (for the inner `Item`
+   * node's fields), or (undefined, undefined) when cleared. */
+  onSelect: (source: RefBinding | undefined, itemSchema?: JsonSchema) => void
 }
 
-// The iteration node's list selector. Same drill-down data picker the agent/tool
-// binding and branch source use (BindingSourceNode/PickableField), but tailored
-// to iteration: it walks each predecessor's full output tree and lets the author
-// click an ARRAY field to loop over. Non-array fields render for context but
-// aren't selectable (only a list can be iterated). Replaces the old flat "list of
-// arrays" dropdown so picking a loop source feels identical to every other node.
+// The iteration node's list selector — the SAME drill-down data picker agent/tool
+// inputs and the branch source use, over every upstream node (not just direct
+// predecessors), producing a `ref`. Nodes don't forward data, so an iteration
+// names its list at the producing node directly (e.g. the tool upstream of a
+// Branch it sits behind). Only ARRAY fields are selectable; other fields render
+// for context. Picking also records the element schema for the inner `Item`.
 export function IterationListField({
+  node,
   graph,
-  nodeId,
   value,
+  itemSchema,
   onSelect,
 }: IterationListFieldProps) {
-  const maps = useIoMaps()
-  const sources = useMemo(
-    () => iterationListSources(graph, nodeId, maps),
-    [graph, nodeId, maps],
+  const baseMaps = useIoMaps()
+  const maps = useMemo(
+    () => withIterationItemSchema(baseMaps, itemSchema),
+    [baseMaps, itemSchema],
+  )
+  const accessible = useMemo(
+    () => accessibleData(graph, node.id, maps),
+    [graph, node.id, maps],
   )
   const [open, setOpen] = useState(false)
-  const selected = useMemo(
-    () => (value === undefined ? undefined : findSelectedList(sources, value)),
-    [sources, value],
-  )
-  const label = selected
-    ? `${selected.source.nodeLabel} · ${selected.label}`
-    : value !== undefined
-      ? value || 'whole input'
-      : 'Select a list…'
+  const src = value
+    ? accessible.find((n) => n.nodeId === value.nodeId)
+    : undefined
+  const label = value
+    ? `${src?.label ?? value.nodeId} · ${value.path || 'whole output'}`
+    : 'Select a list…'
 
   return (
     <div className="rounded-md border border-neutral-200">
@@ -279,11 +278,21 @@ export function IterationListField({
         <span
           className={cn(
             'min-w-0 flex-1 truncate text-xs',
-            value !== undefined ? 'text-neutral-600' : 'text-neutral-400',
+            value ? 'text-neutral-600' : 'text-neutral-400',
           )}
         >
           {label}
         </span>
+        {value ? (
+          <button
+            type="button"
+            aria-label="Clear list"
+            onClick={() => onSelect(undefined, undefined)}
+            className="shrink-0 rounded p-0.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"
+          >
+            <X className="size-3.5" />
+          </button>
+        ) : null}
         <button
           type="button"
           aria-label="Pick a list to iterate"
@@ -301,19 +310,20 @@ export function IterationListField({
 
       {open ? (
         <div className="space-y-2 border-t border-neutral-100 p-2">
-          {sources.length === 0 ? (
+          {accessible.length === 0 ? (
             <p className="text-muted-foreground text-xs">
-              No lists reach this block yet. Connect a node that outputs an array.
+              No upstream data yet. Connect this block to a node that outputs a
+              list.
             </p>
           ) : (
             <div className="space-y-1.5">
-              {sources.map((s) => (
+              {accessible.map((n) => (
                 <IterationSourceNode
-                  key={s.nodeId}
-                  source={s}
+                  key={n.nodeId}
+                  node={n}
                   value={value}
-                  onPick={(itemsPath, itemSchema) => {
-                    onSelect(itemsPath, itemSchema)
+                  onPick={(source, elemSchema) => {
+                    onSelect(source, elemSchema)
                     setOpen(false)
                   }}
                 />
@@ -326,75 +336,46 @@ export function IterationListField({
   )
 }
 
-// Resolve the current `itemsPath` back to the source + field it names, so the
-// closed picker can show a readable "Node · field" label instead of a raw path.
-function findSelectedList(
-  sources: IterationListSource[],
-  itemsPath: string,
-): { source: IterationListSource; label: string } | undefined {
-  for (const source of sources) {
-    if (source.wholeIsList && iterationItemsPath(source, '') === itemsPath)
-      return { source, label: 'whole output' }
-    const find = (fields: DataField[]): DataField | undefined => {
-      for (const f of fields) {
-        if (
-          f.type === 'array' &&
-          iterationItemsPath(source, f.path) === itemsPath
-        )
-          return f
-        if (f.children) {
-          const hit = find(f.children)
-          if (hit) return hit
-        }
-      }
-      return undefined
-    }
-    const match = find(source.fields)
-    if (match) return { source, label: match.path }
-  }
-  return undefined
-}
-
-// One predecessor in the iteration list picker: its whole output is selectable
-// only when it is itself an array; otherwise drill into its fields.
+// One upstream node in the iteration list picker. Its whole output is selectable
+// only when it is itself an array; otherwise drill into its fields for an array.
 function IterationSourceNode({
-  source,
+  node,
   value,
   onPick,
 }: {
-  source: IterationListSource
-  value: string | undefined
-  onPick: (itemsPath: string, itemSchema?: JsonSchema) => void
+  node: AccessibleNode
+  value: RefBinding | undefined
+  onPick: (source: RefBinding, itemSchema?: JsonSchema) => void
 }) {
-  const wholePath = iterationItemsPath(source, '')
+  const wholeIsList = node.wholeType === 'array'
+  const selectedWhole =
+    value?.nodeId === node.nodeId && (value.path ?? '') === ''
   return (
     <div className="rounded border border-neutral-100 bg-neutral-50/50">
       <button
         type="button"
-        disabled={!source.wholeIsList}
-        onClick={() => onPick(wholePath, source.wholeItemSchema)}
+        disabled={!wholeIsList}
+        onClick={() => onPick({ kind: 'ref', nodeId: node.nodeId, path: '' })}
         className={cn(
           'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left',
-          source.wholeIsList
-            ? 'hover:bg-neutral-100'
-            : 'cursor-default',
-          source.wholeIsList && value === wholePath && 'bg-violet-50',
+          wholeIsList ? 'hover:bg-neutral-100' : 'cursor-default',
+          wholeIsList && selectedWhole && 'bg-violet-50',
         )}
       >
         <span className="min-w-0 flex-1 truncate text-xs font-medium text-neutral-700">
-          {source.nodeLabel}
+          {node.label}
         </span>
         <span className="shrink-0 text-[10px] text-neutral-400">
-          {source.wholeIsList ? 'list' : 'output'}
+          {wholeIsList ? 'list' : node.wholeType}
         </span>
       </button>
-      {source.fields.length > 0 ? (
+      {node.fields.length > 0 ? (
         <div className="pb-1">
-          {source.fields.map((f) => (
+          {node.fields.map((f) => (
             <IterationField
               key={f.path}
               field={f}
-              source={source}
+              nodeId={node.nodeId}
               depth={1}
               value={value}
               onPick={onPick}
@@ -408,31 +389,33 @@ function IterationSourceNode({
 
 function IterationField({
   field,
-  source,
+  nodeId,
   depth,
   value,
   onPick,
 }: {
   field: DataField
-  source: IterationListSource
+  nodeId: string
   depth: number
-  value: string | undefined
-  onPick: (itemsPath: string, itemSchema?: JsonSchema) => void
+  value: RefBinding | undefined
+  onPick: (source: RefBinding, itemSchema?: JsonSchema) => void
 }) {
   const isList = field.type === 'array'
-  const itemsPath = iterationItemsPath(source, field.path)
+  const selected = value?.nodeId === nodeId && value.path === field.path
   return (
     <>
       <button
         type="button"
         disabled={!isList}
-        onClick={() => onPick(itemsPath, field.itemSchema)}
+        onClick={() =>
+          onPick({ kind: 'ref', nodeId, path: field.path }, field.itemSchema)
+        }
         title={field.description}
         style={{ paddingLeft: depth * 12 + 6 }}
         className={cn(
           'flex w-full items-center gap-1.5 py-0.5 pr-1.5 text-left',
           isList ? 'hover:bg-neutral-100' : 'cursor-default',
-          isList && value === itemsPath && 'bg-violet-50',
+          isList && selected && 'bg-violet-50',
         )}
       >
         <span
@@ -452,7 +435,7 @@ function IterationField({
         <IterationField
           key={c.path}
           field={c}
-          source={source}
+          nodeId={nodeId}
           depth={depth + 1}
           value={value}
           onPick={onPick}
@@ -491,11 +474,6 @@ export function AccessibleDataView({
     () => nodeProvides(graph, node.id, maps),
     [graph, node.id, maps],
   )
-  // A routing node (branch/switch) records its own decision (`{ result,
-  // reasoning }`) separately from the input it forwards downstream. Surface it so
-  // the boolean/enum the node produces is visible, not just its passed-through
-  // input.
-  const decision = useMemo(() => nodeDecisionOutput(node), [node])
   // `accessibleData` folds the iteration `Item` trigger's own output into the
   // accessible list (it's the data source inside a loop). Don't repeat it as its
   // own "Provides" row in that case.
@@ -523,23 +501,10 @@ export function AccessibleDataView({
         )}
       </section>
 
-      {decision ? (
-        <section className="space-y-1.5">
-          <div className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
-            Decision
-          </div>
-          <p className="text-muted-foreground text-[11px]">
-            The result this node records; its input passes through unchanged to
-            downstream nodes.
-          </p>
-          <AccessibleNodeView node={decision} />
-        </section>
-      ) : null}
-
       {showProvides ? (
         <section className="space-y-1.5">
           <div className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
-            {decision ? 'Forwards' : 'Provides'}
+            Provides
           </div>
           {provides.wholeType === 'none' ? (
             <p className="text-muted-foreground text-xs">

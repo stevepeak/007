@@ -13,7 +13,11 @@ import {
   type WfNodeKind,
   type WfRunManifestEntry,
 } from '../engine/graph'
-import { executeSubgraph, runIteration } from '../engine/nodes/iteration'
+import {
+  executeSubgraph,
+  resolveIterationList,
+  runIteration,
+} from '../engine/nodes/iteration'
 import { errorMessage, runNode, type NodeRunResult } from '../engine/run-node'
 import type { RecordStepArgs } from '../engine/run-recorder'
 import {
@@ -454,7 +458,9 @@ export function makeGraphWorkflow<
             // recorded as ONE run-step below (output = the collection).
             const iter = await runIteration({
               node,
-              input,
+              // List is a ref into an upstream output, resolved against the
+              // scheduler's global outputs — not the forwarded input.
+              list: resolveIterationList(node, scheduler.getOutputs()),
               runItem: (item, index) =>
                 stepDo(
                   step,
