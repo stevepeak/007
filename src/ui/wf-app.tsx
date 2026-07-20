@@ -12,6 +12,7 @@ import { EvalSet } from './evals/eval-set'
 import { EvalTest } from './evals/eval-test'
 import { EvalsList } from './evals/evals-list'
 import { useTools } from './hooks'
+import { ModelsList } from './models-list'
 import { useWfNav, WfNavProvider } from './nav'
 import { RunPage } from './run-page'
 import { RunsExplorer } from './runs-explorer'
@@ -183,6 +184,16 @@ function HomeRoutes({
           scroll
         >
           <EvalsList />
+        </WfShell>
+      )
+    }
+    if (key === 'models') {
+      return (
+        <WfShell
+          crumbs={[{ home: true }, sectionCrumb('models', { current: true })]}
+          scroll
+        >
+          <ModelsList />
         </WfShell>
       )
     }

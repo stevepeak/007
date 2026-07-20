@@ -55,6 +55,49 @@ export type ModelOption = {
 }
 
 /**
+ * A full catalog entry for the Models admin page — a {@link ModelOption} plus the
+ * richer metadata a provider's `/models` endpoint reports and the platform's
+ * `enabled` opt-in. The host's {@link WfSdkConfig.fetchModelCatalog} returns these
+ * without `enabled` (the SDK owns that flag); the admin page reads them with it.
+ * `id` is the COMPOSITE `providerId:modelId` so it routes unambiguously through
+ * {@link WfSdkConfig.getModel}; `modelId` keeps the provider-native id.
+ */
+export type ModelCatalogEntry = ModelOption & {
+  /** Provider-native id (e.g. `anthropic/claude-sonnet-4.6`) — what `getModel` resolves. */
+  modelId: string
+  /** Grouping key: vendor prefix (OpenRouter) or the provider label. */
+  vendor?: string
+  /** Whether the platform has enabled this model for use. */
+  enabled: boolean
+  /** Prompt-side price, USD per 1M tokens. */
+  promptPricePerMTok?: number
+  /** Completion-side price, USD per 1M tokens. */
+  completionPricePerMTok?: number
+  /** Max context window, tokens. */
+  contextLength?: number
+  /** Untouched provider catalog entry, kept for future fields. */
+  raw?: unknown
+}
+
+/**
+ * A provider row as shown on the Models admin page — {@link ModelProvider} plus
+ * the platform's `enabled` flag, when it was last refreshed (epoch ms, null if
+ * never), and how many models are cached / enabled under it.
+ */
+export type ModelProviderStatus = ModelProvider & {
+  enabled: boolean
+  lastRefreshedAt: number | null
+  modelCount: number
+  enabledCount: number
+}
+
+/** Everything the Models admin page needs in one payload. */
+export type ModelCatalog = {
+  providers: ModelProviderStatus[]
+  models: ModelCatalogEntry[]
+}
+
+/**
  * Context handed to {@link WfSdkConfig.listModels} / {@link WfSdkConfig.listProviders}
  * so they can read live host bindings — e.g. a provider API key out of `env` — to
  * fetch a provider's `/models` endpoint. `env` is the same opaque host Env the
@@ -174,6 +217,17 @@ export interface WfSdkConfig<TDeps = unknown> {
   listProviders: (
     ctx: ModelListContext,
   ) => ModelProvider[] | Promise<ModelProvider[]>
+  /**
+   * Optional: fetch a single provider's full catalog from its `/models` endpoint,
+   * for the Models admin page's "Refresh" action. The SDK persists the result to
+   * its own `wf_model` table and owns the `enabled` flag, so the host returns
+   * entries WITHOUT `enabled`. Reads `ctx.env` for the provider's API key. Omit if
+   * the host offers only a static model list (no live catalog to refresh).
+   */
+  fetchModelCatalog?: (
+    ctx: ModelListContext,
+    providerId: string,
+  ) => Promise<Omit<ModelCatalogEntry, 'enabled'>[]>
   /** Host tool registry, generic over the host's per-run deps. */
   toolRegistry: ToolRegistry<TDeps>
   /** Build the opaque per-run deps from a run context (live bindings inside). */
@@ -242,6 +296,9 @@ export function defineWfConfig<TDeps = unknown>(
   }
   if (config.triggers == null || typeof config.triggers !== 'object') {
     problems.push('`triggers` must be an object (`{}` if you have no events)')
+  }
+  if (config.fetchModelCatalog != null && typeof config.fetchModelCatalog !== 'function') {
+    problems.push('`fetchModelCatalog`, if set, must be a function')
   }
   if (config.resolveBlobRef != null && typeof config.resolveBlobRef !== 'function') {
     problems.push('`resolveBlobRef`, if set, must be a function')

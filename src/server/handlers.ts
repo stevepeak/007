@@ -1,6 +1,10 @@
 import { z } from 'zod'
 
-import type { WfSdkConfig } from '../engine/config'
+import type {
+  ModelProvider,
+  ModelProviderStatus,
+  WfSdkConfig,
+} from '../engine/config'
 import {
   agentConfigSchema,
   inferPromptVariables,
@@ -34,6 +38,7 @@ import {
   getEvalRun,
   getEvalSet,
   getLatestVersionId,
+  getModelCatalog,
   getRun,
   getVersionGraph,
   getWorkflow,
@@ -41,8 +46,10 @@ import {
   insertEvalResult,
   listAgents,
   listAgentVersions,
+  listEnabledModels,
   listEvalRuns,
   listEvalSets,
+  listModelProviders,
   listRuns,
   listRunTriggerKinds,
   listToolInvocations,
@@ -50,7 +57,9 @@ import {
   listWorkflows,
   publishAgent,
   saveVersion,
+  setModelEnabled,
   setVersionAiSummary,
+  touchModelProvider,
   updateAgentDraft,
   updateAgentMeta,
   updateDraft,
@@ -58,6 +67,7 @@ import {
   updateEvalSet,
   updateWorkflow,
   upsertEvalRow,
+  upsertModels,
 } from '../storage/data'
 
 import type {
@@ -119,7 +129,12 @@ export type WfServerContext = { userId?: string }
 export type CreateWfSdkHandlersOptions<TDeps> = {
   config: Pick<
     WfSdkConfig<TDeps>,
-    'getModel' | 'listModels' | 'listProviders' | 'toolRegistry' | 'triggers'
+    | 'getModel'
+    | 'listModels'
+    | 'listProviders'
+    | 'fetchModelCatalog'
+    | 'toolRegistry'
+    | 'triggers'
   >
   resolveDb: (req: Request) => WfDb | Promise<WfDb>
   resolveContext: (req: Request) => WfServerContext | Promise<WfServerContext>
@@ -591,10 +606,101 @@ function buildHandlers<TDeps>(
   opts: CreateWfSdkHandlersOptions<TDeps>,
 ): Record<keyof WfDataClient, HandlerFn> {
   return {
-    listModels: async (c) => await opts.config.listModels({ env: await c.env() }),
+    // Enabled models come from the DB catalog. Before the first refresh (no
+    // provider rows yet) or if the tables are missing, fall back to the host's
+    // static list so pickers keep working. Once the catalog is populated we
+    // honor the user's curation — even an empty selection.
+    listModels: async (c) => {
+      try {
+        const enabled = await listEnabledModels(c.db)
+        if (enabled.length > 0) return enabled
+        const providers = await listModelProviders(c.db)
+        if (providers.length === 0) {
+          return await opts.config.listModels({ env: await c.env() })
+        }
+        return enabled
+      } catch {
+        return await opts.config.listModels({ env: await c.env() })
+      }
+    },
 
-    listProviders: async (c) =>
-      await opts.config.listProviders({ env: await c.env() }),
+    listProviders: async (c) => {
+      try {
+        const providers = await listModelProviders(c.db)
+        if (providers.length > 0) return providers
+        return await opts.config.listProviders({ env: await c.env() })
+      } catch {
+        return await opts.config.listProviders({ env: await c.env() })
+      }
+    },
+
+    // The host config is the source of truth for WHICH providers exist; the DB
+    // adds each one's last-refresh time and model counts. Merging means a
+    // freshly-wired provider (OpenRouter) shows up with a Refresh button BEFORE
+    // its first refresh — instead of an empty "no providers" page (its rows only
+    // appear once refreshed).
+    getModelCatalog: async (c) => {
+      const dbCatalog = await getModelCatalog(c.db)
+      let hostProviders: ModelProvider[] = []
+      try {
+        hostProviders = await opts.config.listProviders({ env: await c.env() })
+      } catch {
+        hostProviders = []
+      }
+      const dbById = new Map(dbCatalog.providers.map((p) => [p.id, p]))
+      const seen = new Set<string>()
+      const providers: ModelProviderStatus[] = hostProviders.map((hp) => {
+        seen.add(hp.id)
+        const db = dbById.get(hp.id)
+        const models = dbCatalog.models.filter((m) => m.providerId === hp.id)
+        return {
+          ...hp,
+          enabled: db?.enabled ?? true,
+          lastRefreshedAt: db?.lastRefreshedAt ?? null,
+          modelCount: models.length,
+          enabledCount: models.filter((m) => m.enabled).length,
+        }
+      })
+      // Keep any DB providers the host no longer declares, so cached models stay
+      // visible rather than silently vanishing.
+      for (const p of dbCatalog.providers) {
+        if (!seen.has(p.id)) providers.push(p)
+      }
+      return { providers, models: dbCatalog.models }
+    },
+
+    refreshModels: async (c) => {
+      const providerId = str(c.params, 'providerId')
+      const fetchCatalog = opts.config.fetchModelCatalog
+      if (!fetchCatalog) {
+        throw new Error(
+          'This host does not support refreshing models (no `fetchModelCatalog` configured).',
+        )
+      }
+      const env = await c.env()
+      const entries = await fetchCatalog({ env }, providerId)
+      // Keep the host's default models enabled on first insert so there is always
+      // a working set. Defaults are bare ids; the catalog uses composite ids.
+      const defaults = await opts.config.listModels({ env })
+      const defaultEnabledIds = defaults.map((m) => `${providerId}:${m.id}`)
+      const count = await upsertModels(c.db, providerId, entries, defaultEnabledIds)
+      const refreshedAt = new Date()
+      const providers = await opts.config.listProviders({ env })
+      const provider = providers.find((p) => p.id === providerId) ?? {
+        id: providerId,
+        label: providerId,
+        kind: 'custom' as const,
+      }
+      await touchModelProvider(c.db, provider, refreshedAt)
+      return { count, refreshedAt: refreshedAt.getTime() }
+    },
+
+    setModelEnabled: async (c) => {
+      const modelId = str(c.params, 'modelId')
+      const enabled = (c.params as { enabled?: boolean }).enabled === true
+      await setModelEnabled(c.db, { modelId, enabled })
+      return { ok: true as const }
+    },
 
     listTools: () =>
       [...opts.config.toolRegistry].map(([id, entry]) => ({

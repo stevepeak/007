@@ -1,6 +1,7 @@
 import {
   Activity,
   Bot,
+  Boxes,
   Target,
   Wrench,
   Workflow as WorkflowIcon,
@@ -85,6 +86,17 @@ export const DEFAULT_WF_SECTIONS: WfHubSection[] = [
     accent: {
       card: 'hover:border-rose-300 hover:shadow-lg hover:shadow-rose-100',
       icon: 'group-hover:bg-rose-100 group-hover:text-rose-600 group-hover:shadow-md group-hover:shadow-rose-200',
+    },
+  },
+  {
+    key: 'models',
+    title: 'Models',
+    description:
+      'Curate the AI models available to agents and evals — refresh provider catalogs and enable the ones you want.',
+    icon: Boxes,
+    accent: {
+      card: 'hover:border-amber-300 hover:shadow-lg hover:shadow-amber-100',
+      icon: 'group-hover:bg-amber-100 group-hover:text-amber-600 group-hover:shadow-md group-hover:shadow-amber-200',
     },
   },
 ]

@@ -1,5 +1,5 @@
 import type { JsonSchema } from '../engine/agent-output'
-import type { ModelOption, ModelProvider } from '../engine/config'
+import type { ModelCatalog, ModelOption, ModelProvider } from '../engine/config'
 import type { AgentConfig, AgentOutput, WorkflowGraph } from '../engine/graph'
 import type { AgentNodeMeta } from '../engine/nodes/agent'
 import type { TriggerEventOption } from '../engine/trigger-registry'
@@ -30,9 +30,12 @@ export type {
 // Canonical model/provider shapes live in the host-injection contract; re-export
 // them so the wire client and the UI import from one place.
 export type {
+  ModelCatalog,
+  ModelCatalogEntry,
   ModelOption,
   ModelProvider,
   ModelProviderKind,
+  ModelProviderStatus,
 } from '../engine/config'
 
 export type ToolOption = {
@@ -393,12 +396,31 @@ export type WfEvalRunDetail = {
 // The data surface the editor + run-viewer consume. Implemented server-side by
 // `createWfSdkHandlers` and over HTTP by `createHttpWfDataClient`.
 export interface WfDataClient {
+  /** The ENABLED models offered in the editor's pickers (a curated subset). */
   listModels(): Promise<ModelOption[]>
   /**
    * The model providers the host wired up (empty when it declares none). The
    * editor shows only these and groups models under them by `providerId`.
    */
   listProviders(): Promise<ModelProvider[]>
+  /**
+   * The full model catalog + provider status for the Models admin page (every
+   * model, enabled and disabled, with pricing/metadata).
+   */
+  getModelCatalog(): Promise<ModelCatalog>
+  /**
+   * Pull a provider's catalog from its `/models` endpoint and persist it,
+   * preserving which models are enabled. Returns how many were cached and when.
+   */
+  refreshModels(input: { providerId: string }): Promise<{
+    count: number
+    refreshedAt: number
+  }>
+  /** Enable or disable a single model for the platform's pickers. */
+  setModelEnabled(input: {
+    modelId: string
+    enabled: boolean
+  }): Promise<{ ok: true }>
   listTools(): Promise<ToolOption[]>
   /** Recent times a tool was called across all runs (tool detail page). */
   listToolInvocations(input: {

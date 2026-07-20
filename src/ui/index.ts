@@ -23,9 +23,12 @@ export {
   useEvalRuns,
   useEvalSet,
   useEvalSets,
+  useModelCatalog,
   useModels,
   useProviders,
   usePublishAgent,
+  useRefreshModels,
+  useSetModelEnabled,
   useRetryRun,
   useRun,
   useRunEval,
@@ -105,6 +108,7 @@ export {
   type AgentColor,
 } from './agent-appearance'
 export { ComingSoon, type ComingSoonProps } from './coming-soon'
+export { ModelsList, type ModelsListProps } from './models-list'
 export { ToolsList, type ToolsListProps } from './tools-list'
 export { ToolDetail, type ToolDetailProps } from './tool-detail'
 export { WfAutoForm, type WfAutoFormProps } from './autoform/wf-auto-form'
@@ -154,9 +158,12 @@ export type {
   EvalFixtures,
   EvalInitialCondition,
   EvalMatch,
+  ModelCatalog,
+  ModelCatalogEntry,
   ModelOption,
   ModelProvider,
   ModelProviderKind,
+  ModelProviderStatus,
   TriggerEventField,
   TriggerEventOption,
   WfAgentDetail,

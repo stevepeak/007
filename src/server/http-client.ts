@@ -44,6 +44,11 @@ export function createHttpWfDataClient(
   return {
     listModels: () => call('listModels', {}),
     listProviders: () => call('listProviders', {}),
+    getModelCatalog: () => call('getModelCatalog', {}),
+    // Fetching a provider's full catalog hits an external `/models` endpoint and
+    // upserts 300+ rows — give it a longer budget than the 20s UI backstop.
+    refreshModels: (input) => call('refreshModels', input, 120000),
+    setModelEnabled: (input) => call('setModelEnabled', input),
     listTools: () => call('listTools', {}),
     listToolInvocations: (input) => call('listToolInvocations', input),
     listToolContextFields: () => call('listToolContextFields', {}),

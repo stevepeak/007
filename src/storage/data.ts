@@ -12,6 +12,14 @@ import {
   type SQL,
 } from 'drizzle-orm'
 
+import type {
+  ModelCatalog,
+  ModelCatalogEntry,
+  ModelOption,
+  ModelProvider,
+  ModelProviderKind,
+  ModelProviderStatus,
+} from '../engine/config'
 import {
   agentConfigSchema,
   type AgentConfig,
@@ -43,6 +51,8 @@ import {
   wfEvalRow,
   wfEvalRun,
   wfEvalSet,
+  wfModel,
+  wfModelProvider,
   wfRun,
   wfRunLog,
   wfRunStep,
@@ -1601,4 +1611,170 @@ export async function updateEvalResult(
     .update(wfEvalResult)
     .set(pickDefined(input, ['wfRunId', 'status', 'score', 'checkResults']))
     .where(eq(wfEvalResult.id, input.resultId))
+}
+
+// ---------------------------------------------------------------------------
+// Model catalog + providers
+// ---------------------------------------------------------------------------
+//
+// The platform's model catalog is a single GLOBAL set (no tenancy, like the
+// rest of `wf_*`). A model's `id` is the composite `providerId:modelId`; the
+// pickers see only ENABLED models via `listEnabledModels`, while the admin page
+// reads the whole catalog via `getModelCatalog`. `upsertModels` is the refresh
+// write — it preserves the `enabled` flag so a refresh never re-hides models the
+// user turned on, and never auto-enables the 300+ new ones.
+
+type WfModelRow = typeof wfModel.$inferSelect
+
+/** Map a stored row to the picker-facing {@link ModelOption} (enabled subset). */
+function rowToModelOption(r: WfModelRow): ModelOption {
+  return {
+    id: r.id,
+    label: r.label,
+    providerId: r.providerId,
+    costPerMTok: r.costPerMTok ?? undefined,
+    tokensPerSec: r.tokensPerSec ?? undefined,
+  }
+}
+
+/** Map a stored row to the admin-page {@link ModelCatalogEntry} (full metadata). */
+function rowToCatalogEntry(r: WfModelRow): ModelCatalogEntry {
+  return {
+    id: r.id,
+    modelId: r.modelId,
+    label: r.label,
+    providerId: r.providerId,
+    vendor: r.vendor ?? undefined,
+    enabled: r.enabled,
+    costPerMTok: r.costPerMTok ?? undefined,
+    promptPricePerMTok: r.promptPricePerMTok ?? undefined,
+    completionPricePerMTok: r.completionPricePerMTok ?? undefined,
+    contextLength: r.contextLength ?? undefined,
+    tokensPerSec: r.tokensPerSec ?? undefined,
+    raw: r.raw ?? undefined,
+  }
+}
+
+/**
+ * The enabled models, as the pickers consume them. Empty until the platform
+ * enables some (the caller falls back to the host's static list when empty).
+ */
+export async function listEnabledModels(db: WfDb): Promise<ModelOption[]> {
+  const rows = await db
+    .select()
+    .from(wfModel)
+    .where(eq(wfModel.enabled, true))
+    .orderBy(asc(wfModel.vendor), asc(wfModel.label))
+  return rows.map(rowToModelOption)
+}
+
+/** The wired-up providers, as the pickers' grouping consumes them. */
+export async function listModelProviders(db: WfDb): Promise<ModelProvider[]> {
+  const rows = await db
+    .select()
+    .from(wfModelProvider)
+    .orderBy(asc(wfModelProvider.label))
+  return rows.map((r) => ({
+    id: r.id,
+    label: r.label,
+    kind: r.kind as ModelProviderKind,
+    note: r.note ?? undefined,
+  }))
+}
+
+/**
+ * Everything the Models admin page renders: each provider with its refresh time
+ * and model counts, plus the full catalog (enabled and disabled).
+ */
+export async function getModelCatalog(db: WfDb): Promise<ModelCatalog> {
+  const [providerRows, modelRows] = await Promise.all([
+    db.select().from(wfModelProvider).orderBy(asc(wfModelProvider.label)),
+    db.select().from(wfModel).orderBy(asc(wfModel.vendor), asc(wfModel.label)),
+  ])
+  const models = modelRows.map(rowToCatalogEntry)
+  const providers: ModelProviderStatus[] = providerRows.map((p) => {
+    const of = models.filter((m) => m.providerId === p.id)
+    return {
+      id: p.id,
+      label: p.label,
+      kind: p.kind as ModelProviderKind,
+      note: p.note ?? undefined,
+      enabled: p.enabled,
+      lastRefreshedAt: p.lastRefreshedAt ? p.lastRefreshedAt.getTime() : null,
+      modelCount: of.length,
+      enabledCount: of.filter((m) => m.enabled).length,
+    }
+  })
+  return { providers, models }
+}
+
+/**
+ * Persist a provider's freshly-fetched catalog. New models are inserted DISABLED
+ * (the user opts them in) and existing rows keep their `enabled` flag while their
+ * metadata refreshes. `defaultEnabledIds` are enabled only on FIRST insert (the
+ * host's static model ids), so there is always a working selection after the very
+ * first refresh — without re-enabling a model the user later turned off. Returns
+ * the number of catalog entries written.
+ */
+export async function upsertModels(
+  db: WfDb,
+  providerId: string,
+  entries: Omit<ModelCatalogEntry, 'enabled'>[],
+  defaultEnabledIds: readonly string[] = [],
+): Promise<number> {
+  if (entries.length === 0) return 0
+  const now = new Date()
+  const enableByDefault = new Set(defaultEnabledIds)
+  for (const e of entries) {
+    // `enabled` is intentionally absent from `meta`, so the conflict path never
+    // touches it — a refresh preserves the user's curation.
+    const meta = {
+      providerId,
+      modelId: e.modelId,
+      label: e.label,
+      vendor: e.vendor ?? null,
+      costPerMTok: e.costPerMTok ?? null,
+      promptPricePerMTok: e.promptPricePerMTok ?? null,
+      completionPricePerMTok: e.completionPricePerMTok ?? null,
+      contextLength: e.contextLength ?? null,
+      tokensPerSec: e.tokensPerSec ?? null,
+      raw: e.raw ?? null,
+      updatedAt: now,
+    }
+    await db
+      .insert(wfModel)
+      .values({ id: e.id, enabled: enableByDefault.has(e.id), ...meta })
+      .onConflictDoUpdate({ target: wfModel.id, set: meta })
+  }
+  return entries.length
+}
+
+/** Toggle a single model's availability to the pickers. */
+export async function setModelEnabled(
+  db: WfDb,
+  input: { modelId: string; enabled: boolean },
+): Promise<void> {
+  await db
+    .update(wfModel)
+    .set({ enabled: input.enabled, updatedAt: new Date() })
+    .where(eq(wfModel.id, input.modelId))
+}
+
+/** Upsert a provider row and stamp its last successful refresh. */
+export async function touchModelProvider(
+  db: WfDb,
+  provider: ModelProvider,
+  refreshedAt: Date,
+): Promise<void> {
+  const base = {
+    label: provider.label,
+    kind: provider.kind,
+    note: provider.note ?? null,
+    lastRefreshedAt: refreshedAt,
+    updatedAt: refreshedAt,
+  }
+  await db
+    .insert(wfModelProvider)
+    .values({ id: provider.id, ...base })
+    .onConflictDoUpdate({ target: wfModelProvider.id, set: base })
 }

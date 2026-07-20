@@ -1,6 +1,7 @@
 import {
   Activity,
   Bot,
+  Boxes,
   Target,
   Wrench,
   Workflow as WorkflowIcon,
@@ -13,7 +14,13 @@ import type { WfCrumb } from './shell'
 // signature color, matching the hub cards (see DEFAULT_WF_SECTIONS). Use
 // sectionCrumb() so every section reads consistently: Evals / … , Workflows / … .
 
-type WfSectionKey = 'workflows' | 'agents' | 'tools' | 'runs' | 'evals'
+type WfSectionKey =
+  | 'workflows'
+  | 'agents'
+  | 'tools'
+  | 'runs'
+  | 'evals'
+  | 'models'
 
 const SECTIONS: Record<
   WfSectionKey,
@@ -24,6 +31,7 @@ const SECTIONS: Record<
   tools: { title: 'Tools', icon: Wrench, iconClassName: 'text-emerald-500', to: 'tools' },
   runs: { title: 'Runs', icon: Activity, iconClassName: 'text-sky-500', to: 'runs' },
   evals: { title: 'Evals', icon: Target, iconClassName: 'text-rose-500', to: 'evals' },
+  models: { title: 'Models', icon: Boxes, iconClassName: 'text-amber-500', to: 'models' },
 }
 
 /**
