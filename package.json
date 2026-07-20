@@ -32,8 +32,8 @@
     "lint": "eslint --ignore-pattern='./migrations/' .",
     "fix": "eslint --fix --quiet --ignore-pattern='./migrations/' .",
     "db:generate": "drizzle-kit generate",
-    "db:migrate:local": "wrangler d1 migrations apply law-db --local --persist-to .wrangler/state",
-    "db:migrate": "wrangler d1 migrations apply law-db --remote"
+    "db:migrate:local": "sh -c '[ -f ../../.wf-migrate.env ] && . ../../.wf-migrate.env; wrangler d1 migrations apply ${WF_D1_NAME:-DB} --local --persist-to ${WF_D1_STATE:-../../.wrangler/state} --config ${WF_D1_CONFIG:-./wrangler.jsonc}'",
+    "db:migrate": "sh -c '[ -f ../../.wf-migrate.env ] && . ../../.wf-migrate.env; wrangler d1 migrations apply ${WF_D1_NAME:-DB} --remote --config ${WF_D1_CONFIG:-./wrangler.jsonc}'"
   },
   "dependencies": {
     "@autoform/core": "^4.0.0",

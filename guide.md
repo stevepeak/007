@@ -378,6 +378,41 @@ You can also **skip CI** and apply manually via this package's `db:migrate`
 script — fill the `wrangler.jsonc` placeholders with real IDs first, or pass
 `--config` to your host config as in step 3.
 
+> 🔌 **Injecting the host DB (keep this package generic).** This package is a
+> submodule shared across companies, so its `db:migrate[:local]` scripts must not
+> hardcode any one host's D1. They read three optional env vars (with defaults)
+> and, before doing so, source an optional `../../.wf-migrate.env` at the **host
+> repo root** — so both the shipped `.githooks/post-merge` and a manual
+> `cd packages/007 && bun run db:migrate:local` pick up the same target:
+>
+> | var            | default                 | meaning                                            |
+> | -------------- | ----------------------- | -------------------------------------------------- |
+> | `WF_D1_NAME`   | `DB`                    | D1 name **or binding** to migrate (both hosts bind `DB`) |
+> | `WF_D1_CONFIG` | `./wrangler.jsonc`      | wrangler config providing that binding + `migrations_dir` |
+> | `WF_D1_STATE`  | `../../.wrangler/state` | local persist dir (repo-root state)                |
+>
+> Paths are **relative to `packages/007`** (the CWD the scripts run in). Point
+> `WF_D1_CONFIG` at a host config whose `migrations_dir` resolves back to this
+> package's `./migrations` — `migrations_dir` is resolved relative to that config
+> file, not the CWD. The host keeps `.wf-migrate.env` gitignored in its own repo;
+> nothing host-specific is committed here. Examples:
+>
+> ```sh
+> # newco/.wf-migrate.env   (apps/workflows binds DB → newco-wf, migrations_dir → 007)
+> export WF_D1_NAME=DB
+> export WF_D1_CONFIG=../../apps/workflows/wrangler.jsonc
+> export WF_D1_STATE=../../.wrangler/state
+>
+> # 1121law/.wf-migrate.env (packages/db/wrangler.wf-sdk.jsonc binds DB → law-db, migrations_dir → ../007/migrations)
+> export WF_D1_NAME=DB
+> export WF_D1_CONFIG=../../packages/db/wrangler.wf-sdk.jsonc
+> export WF_D1_STATE=../../.wrangler/state
+> ```
+>
+> With no `.wf-migrate.env` present the scripts fall back to this package's own
+> placeholder `wrangler.jsonc`, which is a template only — fill it in, or (better)
+> inject a host config as above.
+
 > 💡 **Auto-apply on `git pull` (local convenience).** So teammates don't run
 > stale schemas after pulling, wire a `post-merge` git hook that applies new
 > local migrations only when the merge touched a `migrations/` dir:
