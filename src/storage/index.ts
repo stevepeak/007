@@ -50,6 +50,7 @@ export {
   getEvalRun,
   getEvalSet,
   getModelCatalog,
+  getModelUsage,
   getRun,
   getVersionGraph,
   getWorkflow,

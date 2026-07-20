@@ -1,10 +1,37 @@
-import { Check, ChevronDown, ChevronRight } from 'lucide-react'
+import { AlertTriangle, Check, ChevronDown, ChevronRight } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import type { ModelOption, ModelProvider } from '../../engine/config'
+import type {
+  ModelCapabilities,
+  ModelOption,
+  ModelProvider,
+} from '../../engine/config'
 import { cn } from '../cn'
-import { BrandMark, inferModelBrand } from '../evals/shared'
+import { BrandMark, CapabilityBadges, inferModelBrand } from '../evals/shared'
 import { useModels, useProviders } from '../hooks'
+
+// Short "why this model is unavailable" reason per required capability.
+const REQUIREMENT_REASON: Record<keyof ModelCapabilities, string> = {
+  tools: 'no tool calling',
+  structuredOutput: 'no structured output',
+  reasoning: 'no reasoning',
+  vision: 'no vision',
+}
+
+/**
+ * Which required capabilities a model is missing. A model with NO capability
+ * info at all (e.g. the pre-refresh static fallback list) is treated as unknown
+ * and never gated — we only disable a model we KNOW lacks a requirement.
+ */
+function unmetRequirements(
+  model: ModelOption,
+  requirements: ModelCapabilities | undefined,
+): (keyof ModelCapabilities)[] {
+  if (!requirements || !model.capabilities) return []
+  return (Object.keys(requirements) as (keyof ModelCapabilities)[]).filter(
+    (k) => requirements[k] && !model.capabilities?.[k],
+  )
+}
 
 // A single-select model picker that mirrors the Evals "Run configuration"
 // dialog: models come from the host config (config.listModels /
@@ -46,11 +73,18 @@ export function ModelSelect({
   value,
   onChange,
   className,
+  requirements,
 }: {
   /** Currently selected model id. */
   value: string
   onChange: (modelId: string) => void
   className?: string
+  /**
+   * Capabilities the picked model must support (e.g. `{ tools: true }` when the
+   * agent has tools attached). Models known to lack a requirement are shown but
+   * disabled with a reason; models with unknown capabilities are left selectable.
+   */
+  requirements?: ModelCapabilities
 }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -65,6 +99,11 @@ export function ModelSelect({
     [models, providersQuery.data],
   )
   const selected = models.find((m) => m.id === value)
+  // Warn when the CURRENT selection is known-incompatible (e.g. a tool was added
+  // after the model was picked). The list still lets them switch.
+  const selectedUnmet = selected
+    ? unmetRequirements(selected, requirements)
+    : []
 
   // Close on outside-click or Escape.
   useEffect(() => {
@@ -103,6 +142,16 @@ export function ModelSelect({
         <ChevronDown className="size-4 shrink-0 text-neutral-400" />
       </button>
 
+      {selectedUnmet.length > 0 ? (
+        <div className="mt-1 flex items-center gap-1 text-xs text-amber-600">
+          <AlertTriangle className="size-3 shrink-0" />
+          <span>
+            This model has {selectedUnmet.map((k) => REQUIREMENT_REASON[k]).join(', ')}
+            {' '}— pick one that meets the agent's needs.
+          </span>
+        </div>
+      ) : null}
+
       {open ? (
         <div className="absolute z-50 mt-1 max-h-80 w-full overflow-y-auto rounded-md border border-neutral-200 bg-white py-1 shadow-lg">
           {loading ? (
@@ -120,17 +169,25 @@ export function ModelSelect({
                   <ChevronRight className="size-3" />
                   {provider.label}
                 </div>
-                {groupModels.map((m) => (
-                  <ModelOptionRow
-                    key={m.id}
-                    model={m}
-                    selected={m.id === value}
-                    onSelect={() => {
-                      onChange(m.id)
-                      setOpen(false)
-                    }}
-                  />
-                ))}
+                {groupModels.map((m) => {
+                  const unmet = unmetRequirements(m, requirements)
+                  return (
+                    <ModelOptionRow
+                      key={m.id}
+                      model={m}
+                      selected={m.id === value}
+                      disabledReason={
+                        unmet.length > 0
+                          ? unmet.map((k) => REQUIREMENT_REASON[k]).join(', ')
+                          : undefined
+                      }
+                      onSelect={() => {
+                        onChange(m.id)
+                        setOpen(false)
+                      }}
+                    />
+                  )
+                })}
               </div>
             ))
           )}
@@ -144,43 +201,61 @@ function ModelOptionRow({
   model,
   selected,
   onSelect,
+  disabledReason,
 }: {
   model: ModelOption
   selected: boolean
   onSelect: () => void
+  /** When set, the model doesn't meet the agent's needs: shown greyed + reason. */
+  disabledReason?: string
 }) {
   const brand = inferModelBrand(`${model.id} ${model.label}`)
+  const disabled = disabledReason != null
   return (
     <button
       type="button"
       role="option"
       aria-selected={selected}
+      aria-disabled={disabled}
+      disabled={disabled}
       onClick={onSelect}
+      title={disabledReason}
       className={cn(
         'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition',
-        selected ? 'bg-neutral-100' : 'hover:bg-neutral-50',
+        disabled
+          ? 'cursor-not-allowed opacity-50'
+          : selected
+            ? 'bg-neutral-100'
+            : 'hover:bg-neutral-50',
       )}
     >
       <BrandMark brand={brand} fallback={model.label} />
       <span className="min-w-0 flex-1 truncate font-medium text-neutral-800">
         {model.label}
       </span>
-      {model.costPerMTok != null ? (
-        <span className="shrink-0 text-xs tabular-nums text-neutral-400">
-          ${model.costPerMTok.toFixed(2)}
-          <span className="text-neutral-300">/M</span>
-        </span>
-      ) : null}
-      {model.tokensPerSec != null ? (
-        <span className="shrink-0 text-xs tabular-nums text-neutral-400">
-          {model.tokensPerSec}
-          <span className="text-neutral-300"> tok/s</span>
-        </span>
-      ) : null}
+      <CapabilityBadges capabilities={model.capabilities} />
+      {disabled ? (
+        <span className="shrink-0 text-xs text-amber-600">{disabledReason}</span>
+      ) : (
+        <>
+          {model.costPerMTok != null ? (
+            <span className="shrink-0 text-xs tabular-nums text-neutral-400">
+              ${model.costPerMTok.toFixed(2)}
+              <span className="text-neutral-300">/M</span>
+            </span>
+          ) : null}
+          {model.tokensPerSec != null ? (
+            <span className="shrink-0 text-xs tabular-nums text-neutral-400">
+              {model.tokensPerSec}
+              <span className="text-neutral-300"> tok/s</span>
+            </span>
+          ) : null}
+        </>
+      )}
       <Check
         className={cn(
           'size-4 shrink-0 text-neutral-900',
-          selected ? 'opacity-100' : 'opacity-0',
+          selected && !disabled ? 'opacity-100' : 'opacity-0',
         )}
       />
     </button>

@@ -466,6 +466,27 @@ export const wfModel = sqliteTable(
     completionPricePerMTok: real('completion_price_per_m_tok'),
     contextLength: integer('context_length'),
     tokensPerSec: real('tokens_per_sec'),
+    // When the model was released, per the provider catalog (OpenRouter's
+    // `created`). Drives the Models page "age" filter. Null when unreported.
+    releasedAt: integer('released_at', { mode: 'timestamp' }),
+    // Capability flags derived from the provider catalog (OpenRouter's
+    // `supported_parameters` + `architecture.input_modalities`). Drive the Models
+    // page badges and the agent editor's requirement gating. Default false =
+    // "not reported / not supported"; a refresh repopulates them.
+    supportsTools: integer('supports_tools', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    supportsReasoning: integer('supports_reasoning', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    supportsStructuredOutput: integer('supports_structured_output', {
+      mode: 'boolean',
+    })
+      .notNull()
+      .default(false),
+    supportsVision: integer('supports_vision', { mode: 'boolean' })
+      .notNull()
+      .default(false),
     raw: text('raw', { mode: 'json' }),
     createdAt: createdAt(),
     updatedAt: integer('updated_at', { mode: 'timestamp' }),

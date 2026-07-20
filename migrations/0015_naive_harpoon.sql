@@ -1,0 +1,1 @@
+ALTER TABLE `wf_model` ADD `released_at` integer;

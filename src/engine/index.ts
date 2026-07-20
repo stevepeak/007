@@ -127,8 +127,10 @@ export {
 export { createMemorySink, noopSink, type StreamSink } from './stream-sink'
 export {
   defineWfConfig,
+  type AgentUsageRef,
   type BlobRefResolver,
   type ImageRefResolver,
+  type ModelCapabilities,
   type ModelCatalog,
   type ModelCatalogEntry,
   type ModelFactory,

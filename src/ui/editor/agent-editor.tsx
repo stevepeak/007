@@ -292,6 +292,12 @@ function AgentEditorInner({
               <ModelSelect
                 value={config.modelId}
                 onChange={(modelId) => patch({ modelId })}
+                // Gate the picker on what THIS agent needs: a tool-calling model
+                // when tools are attached, and structured output for object output.
+                requirements={{
+                  tools: config.toolIds.length > 0,
+                  structuredOutput: config.output.kind === 'object',
+                }}
               />
             </section>
 

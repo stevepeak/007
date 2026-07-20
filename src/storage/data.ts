@@ -13,6 +13,8 @@ import {
 } from 'drizzle-orm'
 
 import type {
+  AgentUsageRef,
+  ModelCapabilities,
   ModelCatalog,
   ModelCatalogEntry,
   ModelOption,
@@ -1626,6 +1628,24 @@ export async function updateEvalResult(
 
 type WfModelRow = typeof wfModel.$inferSelect
 
+/** Assemble the capabilities object from a row, omitted when nothing is set. */
+function rowCapabilities(r: WfModelRow): ModelCapabilities | undefined {
+  if (
+    !r.supportsTools &&
+    !r.supportsReasoning &&
+    !r.supportsStructuredOutput &&
+    !r.supportsVision
+  ) {
+    return undefined
+  }
+  return {
+    tools: r.supportsTools,
+    reasoning: r.supportsReasoning,
+    structuredOutput: r.supportsStructuredOutput,
+    vision: r.supportsVision,
+  }
+}
+
 /** Map a stored row to the picker-facing {@link ModelOption} (enabled subset). */
 function rowToModelOption(r: WfModelRow): ModelOption {
   return {
@@ -1634,6 +1654,7 @@ function rowToModelOption(r: WfModelRow): ModelOption {
     providerId: r.providerId,
     costPerMTok: r.costPerMTok ?? undefined,
     tokensPerSec: r.tokensPerSec ?? undefined,
+    capabilities: rowCapabilities(r),
   }
 }
 
@@ -1651,6 +1672,8 @@ function rowToCatalogEntry(r: WfModelRow): ModelCatalogEntry {
     completionPricePerMTok: r.completionPricePerMTok ?? undefined,
     contextLength: r.contextLength ?? undefined,
     tokensPerSec: r.tokensPerSec ?? undefined,
+    releasedAt: r.releasedAt ? r.releasedAt.getTime() : undefined,
+    capabilities: rowCapabilities(r),
     raw: r.raw ?? undefined,
   }
 }
@@ -1683,10 +1706,13 @@ export async function listModelProviders(db: WfDb): Promise<ModelProvider[]> {
 }
 
 /**
- * Everything the Models admin page renders: each provider with its refresh time
- * and model counts, plus the full catalog (enabled and disabled).
+ * The provider status + full catalog (enabled and disabled) for the Models admin
+ * page. `usage` (which agents reference each model) is assembled separately by
+ * {@link getModelUsage} and merged by the handler, so this stays a pure DB read.
  */
-export async function getModelCatalog(db: WfDb): Promise<ModelCatalog> {
+export async function getModelCatalog(
+  db: WfDb,
+): Promise<Pick<ModelCatalog, 'providers' | 'models'>> {
   const [providerRows, modelRows] = await Promise.all([
     db.select().from(wfModelProvider).orderBy(asc(wfModelProvider.label)),
     db.select().from(wfModel).orderBy(asc(wfModel.vendor), asc(wfModel.label)),
@@ -1709,6 +1735,76 @@ export async function getModelCatalog(db: WfDb): Promise<ModelCatalog> {
 }
 
 /**
+ * Which agents currently reference each model, keyed by CATALOG model id. An
+ * agent counts if either its latest published version OR its live draft names
+ * the model. Agent `modelId`s may be composite (`provider:model`) or bare
+ * (legacy) — both are resolved to the catalog id by matching `wf_model.id` or
+ * `wf_model.model_id`, so no provider prefix is hardcoded here.
+ */
+export async function getModelUsage(
+  db: WfDb,
+): Promise<Record<string, AgentUsageRef[]>> {
+  const agents = await db.select().from(wfAgent)
+  if (agents.length === 0) return {}
+
+  // Map every known id form → canonical catalog id.
+  const modelRows = await db
+    .select({ id: wfModel.id, modelId: wfModel.modelId })
+    .from(wfModel)
+  const canonical = new Map<string, string>()
+  for (const r of modelRows) {
+    canonical.set(r.id, r.id)
+    if (!canonical.has(r.modelId)) canonical.set(r.modelId, r.id)
+  }
+
+  const agentIds = agents.map((a) => a.id)
+  const versions = await db
+    .select()
+    .from(wfAgentVersion)
+    .where(inArray(wfAgentVersion.agentId, agentIds))
+    .orderBy(desc(wfAgentVersion.versionNumber))
+  const latestConfig = new Map<string, unknown>()
+  for (const v of versions) {
+    if (!latestConfig.has(v.agentId)) latestConfig.set(v.agentId, v.config)
+  }
+  const drafts = await db
+    .select()
+    .from(wfAgentDraft)
+    .where(inArray(wfAgentDraft.agentId, agentIds))
+  const draftConfig = new Map(drafts.map((d) => [d.agentId, d.config]))
+
+  const modelIdOf = (config: unknown): string | undefined => {
+    const mid = (config as { modelId?: unknown } | null | undefined)?.modelId
+    return typeof mid === 'string' && mid ? mid : undefined
+  }
+
+  const usage: Record<string, AgentUsageRef[]> = {}
+  const seen = new Set<string>() // `${catalogId}|${agentId}`
+  for (const a of agents) {
+    const ref: AgentUsageRef = {
+      id: a.id,
+      name: a.name,
+      icon: a.icon,
+      color: a.color,
+    }
+    const ids = new Set<string>()
+    for (const cfg of [latestConfig.get(a.id), draftConfig.get(a.id)]) {
+      const mid = modelIdOf(cfg)
+      if (mid) ids.add(mid)
+    }
+    for (const mid of ids) {
+      const catId = canonical.get(mid)
+      if (!catId) continue
+      const key = `${catId}|${a.id}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      ;(usage[catId] ??= []).push(ref)
+    }
+  }
+  return usage
+}
+
+/**
  * Persist a provider's freshly-fetched catalog. New models are inserted DISABLED
  * (the user opts them in) and existing rows keep their `enabled` flag while their
  * metadata refreshes. `defaultEnabledIds` are enabled only on FIRST insert (the
@@ -1726,6 +1822,7 @@ export async function upsertModels(
   const now = new Date()
   const enableByDefault = new Set(defaultEnabledIds)
   for (const e of entries) {
+    const caps: ModelCapabilities = e.capabilities ?? {}
     // `enabled` is intentionally absent from `meta`, so the conflict path never
     // touches it — a refresh preserves the user's curation.
     const meta = {
@@ -1738,6 +1835,11 @@ export async function upsertModels(
       completionPricePerMTok: e.completionPricePerMTok ?? null,
       contextLength: e.contextLength ?? null,
       tokensPerSec: e.tokensPerSec ?? null,
+      releasedAt: e.releasedAt != null ? new Date(e.releasedAt) : null,
+      supportsTools: caps.tools ?? false,
+      supportsReasoning: caps.reasoning ?? false,
+      supportsStructuredOutput: caps.structuredOutput ?? false,
+      supportsVision: caps.vision ?? false,
       raw: e.raw ?? null,
       updatedAt: now,
     }

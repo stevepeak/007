@@ -1,5 +1,8 @@
-import type { EvalCheck } from '../../server/protocol'
+import { Braces, Eye, Sparkles, Wrench } from 'lucide-react'
+
+import type { EvalCheck, ModelCapabilities } from '../../server/protocol'
 import { cn } from '../cn'
+import { Tooltip } from '../tooltip'
 import { getProvider, ProviderLogo } from './provider-logos'
 
 // Small presentational bits shared across the Evals catalog, set, sample, and
@@ -108,6 +111,46 @@ export function inferModelBrand(idOrLabel: string): ModelBrand | undefined {
   if (t.includes('deepseek')) return 'deepseek'
   if (t.includes('mistral') || t.includes('mixtral')) return 'mistral'
   return undefined
+}
+
+// ── Model capability badges ──────────────────────────────────────────────────
+// Compact icon pills for what a model supports (tool calling, reasoning, vision,
+// structured output). Shown on the Models page and in the model picker. Icons
+// only (with a title tooltip) so a row of them stays narrow.
+
+const CAPABILITY_META = [
+  { key: 'tools', label: 'Tool calling', icon: Wrench },
+  { key: 'reasoning', label: 'Reasoning', icon: Sparkles },
+  { key: 'vision', label: 'Vision', icon: Eye },
+  { key: 'structuredOutput', label: 'Structured output', icon: Braces },
+] as const
+
+export function CapabilityBadges({
+  capabilities,
+  only,
+  className,
+}: {
+  capabilities: ModelCapabilities | undefined
+  /** Restrict to a subset of capabilities (e.g. just the ones a picker gates on). */
+  only?: ReadonlyArray<keyof ModelCapabilities>
+  className?: string
+}) {
+  if (!capabilities) return null
+  const shown = CAPABILITY_META.filter(
+    (c) => capabilities[c.key] && (!only || only.includes(c.key)),
+  )
+  if (shown.length === 0) return null
+  return (
+    <span className={cn('inline-flex items-center gap-1', className)}>
+      {shown.map(({ key, label, icon: Icon }) => (
+        <Tooltip key={key} content={label}>
+          <span className="inline-flex items-center rounded bg-neutral-100 p-0.5 text-neutral-500">
+            <Icon className="size-3" />
+          </span>
+        </Tooltip>
+      ))}
+    </span>
+  )
 }
 
 export function EmptyState({ message }: { message: string }) {

@@ -39,6 +39,7 @@ import {
   getEvalSet,
   getLatestVersionId,
   getModelCatalog,
+  getModelUsage,
   getRun,
   getVersionGraph,
   getWorkflow,
@@ -640,7 +641,10 @@ function buildHandlers<TDeps>(
     // its first refresh — instead of an empty "no providers" page (its rows only
     // appear once refreshed).
     getModelCatalog: async (c) => {
-      const dbCatalog = await getModelCatalog(c.db)
+      const [dbCatalog, usage] = await Promise.all([
+        getModelCatalog(c.db),
+        getModelUsage(c.db),
+      ])
       let hostProviders: ModelProvider[] = []
       try {
         hostProviders = await opts.config.listProviders({ env: await c.env() })
@@ -666,7 +670,7 @@ function buildHandlers<TDeps>(
       for (const p of dbCatalog.providers) {
         if (!seen.has(p.id)) providers.push(p)
       }
-      return { providers, models: dbCatalog.models }
+      return { providers, models: dbCatalog.models, usage }
     },
 
     refreshModels: async (c) => {
@@ -698,6 +702,17 @@ function buildHandlers<TDeps>(
     setModelEnabled: async (c) => {
       const modelId = str(c.params, 'modelId')
       const enabled = (c.params as { enabled?: boolean }).enabled === true
+      // A model in use by an agent cannot be disabled — it would break that
+      // agent's model resolution. The UI locks the toggle; enforce it here too.
+      if (!enabled) {
+        const users = (await getModelUsage(c.db))[modelId] ?? []
+        if (users.length > 0) {
+          const names = users.map((u) => u.name).join(', ')
+          throw new Error(
+            `Can't disable this model — it's in use by ${users.length} agent(s): ${names}. Point those agents at another model first.`,
+          )
+        }
+      }
       await setModelEnabled(c.db, { modelId, enabled })
       return { ok: true as const }
     },

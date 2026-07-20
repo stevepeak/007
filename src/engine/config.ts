@@ -44,6 +44,23 @@ export type ModelProvider = {
  * `tokensPerSec` are shown when the provider reports them (e.g. OpenRouter) and
  * omitted otherwise.
  */
+/**
+ * What a model can do, as reported by the provider catalog. Drives the Models
+ * page badges and lets the agent editor gate a model against the agent's needs
+ * (tools attached → needs `tools`; object output → needs `structuredOutput`).
+ * All optional: absent means the provider didn't report it (treated as "no").
+ */
+export type ModelCapabilities = {
+  /** Function/tool calling (OpenRouter `supported_parameters` includes `tools`). */
+  tools?: boolean
+  /** Reasoning/thinking (`reasoning` / `reasoning_effort`). */
+  reasoning?: boolean
+  /** JSON-schema structured output (`structured_outputs`). */
+  structuredOutput?: boolean
+  /** Image/file/other non-text input (`architecture.input_modalities`). */
+  vision?: boolean
+}
+
 export type ModelOption = {
   id: string
   label: string
@@ -52,6 +69,8 @@ export type ModelOption = {
   costPerMTok?: number
   /** Throughput, tokens/second. Omit when the provider doesn't report it. */
   tokensPerSec?: number
+  /** Capabilities the model supports; omit when the provider reports none. */
+  capabilities?: ModelCapabilities
 }
 
 /**
@@ -75,6 +94,8 @@ export type ModelCatalogEntry = ModelOption & {
   completionPricePerMTok?: number
   /** Max context window, tokens. */
   contextLength?: number
+  /** Model release date, epoch ms (OpenRouter `created`). Omit if unreported. */
+  releasedAt?: number
   /** Untouched provider catalog entry, kept for future fields. */
   raw?: unknown
 }
@@ -91,10 +112,24 @@ export type ModelProviderStatus = ModelProvider & {
   enabledCount: number
 }
 
+/** A minimal agent reference for the "used by" avatars on the Models page. */
+export type AgentUsageRef = {
+  id: string
+  name: string
+  icon: string | null
+  color: string | null
+}
+
 /** Everything the Models admin page needs in one payload. */
 export type ModelCatalog = {
   providers: ModelProviderStatus[]
   models: ModelCatalogEntry[]
+  /**
+   * Which agents currently reference each model, keyed by catalog model id.
+   * Drives the "used by" avatars and locks a model's toggle on while any agent
+   * uses it (so it can't be disabled out from under a live agent).
+   */
+  usage: Record<string, AgentUsageRef[]>
 }
 
 /**
