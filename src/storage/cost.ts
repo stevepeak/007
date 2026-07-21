@@ -46,6 +46,29 @@ export function tokenCostUsd(
 }
 
 /**
+ * A single run step's token count + dollar cost, derived from its recorded agent
+ * usage and the model price map. Null when the step ran no agent (no usage);
+ * `cost` is null when the step's model carries no catalog price. The one place
+ * "usage → tokens + cost" lives, so the runs-list aggregate and the run
+ * inspector's per-step total never drift.
+ */
+export function stepCost(
+  meta: unknown,
+  priceMap: ModelPriceMap,
+): { tokens: number; cost: number | null } | null {
+  const usage = agentUsage(meta)
+  if (!usage) return null
+  return {
+    tokens: usage.inputTokens + usage.outputTokens,
+    cost: tokenCostUsd(
+      usage.inputTokens,
+      usage.outputTokens,
+      priceMap.get(usage.model),
+    ),
+  }
+}
+
+/**
  * Narrow an untyped step `meta` to its agent token usage, or null for non-agent
  * steps (branches, tools, iteration — no LLM tokens). Mirrors the `asAgentMeta`
  * narrowing the run inspector uses on the client.

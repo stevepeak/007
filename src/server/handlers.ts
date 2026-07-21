@@ -600,8 +600,24 @@ type HandlerCtx = {
 }
 
 // A handler may be sync or async — the dispatcher always awaits its result
-// (`await` on a non-promise is a no-op), so `unknown` covers both.
+// (`await` on a non-promise is a no-op), so this covers both.
+type MaybePromise<T> = T | Promise<T>
+
+// The dispatcher reaches handlers by string key, so it needs a shape-agnostic
+// call signature.
 type HandlerFn = (c: HandlerCtx) => unknown
+
+// The typed handler table: every method must return the SAME shape its protocol
+// method declares, so a server/client DTO drift is a compile error rather than a
+// runtime surprise the client only discovers on the wire. Methods the protocol
+// types as `void` discard their return over the wire, so those may hand back
+// anything (several return `{ ok: true }` for readability at the call site).
+type HandlerResult<T> = [T] extends [void] ? unknown : T
+type WfHandlers = {
+  [K in keyof WfDataClient]: (
+    c: HandlerCtx,
+  ) => MaybePromise<HandlerResult<Awaited<ReturnType<WfDataClient[K]>>>>
+}
 
 // Require an optional host hook to be wired, or fail with a clear message —
 // collapses the four near-identical "not configured on this host" guards.
@@ -628,7 +644,7 @@ async function hostProviderIds<TDeps>(
 // returning the value the dispatcher JSON-wraps.
 function buildHandlers<TDeps>(
   opts: CreateWfSdkHandlersOptions<TDeps>,
-): Record<keyof WfDataClient, HandlerFn> {
+): WfHandlers {
   return {
     // Enabled models come from the DB catalog. Before the first refresh (no
     // provider rows yet) or if the tables are missing, fall back to the host's
