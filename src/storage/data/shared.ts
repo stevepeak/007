@@ -15,3 +15,16 @@ export function pickDefined<T extends object, K extends keyof T>(
   }
   return out as Pick<T, K>
 }
+
+/**
+ * Clamp a caller-supplied page size into `[1, max]`, falling back to `fallback`
+ * when it's omitted. The paged `list*` reads all share this so their floor (1)
+ * and per-query ceilings stay consistent and greppable instead of each inlining
+ * its own `Math.min(Math.max(…))`.
+ */
+export function clampLimit(
+  limit: number | undefined,
+  opts: { fallback: number; max: number },
+): number {
+  return Math.min(Math.max(limit ?? opts.fallback, 1), opts.max)
+}

@@ -742,7 +742,10 @@ function buildHandlers<TDeps>(
         return enabled.filter(
           (m) => m.providerId != null && allowed.has(m.providerId),
         )
-      } catch {
+      } catch (err) {
+        // A persistent host-provider misconfig would otherwise be invisible
+        // here — log before falling back to the raw host list.
+        console.error('[wf] listModels: host provider lookup failed', err)
         return await opts.config.listModels({ env: await c.env() })
       }
     },
@@ -758,7 +761,10 @@ function buildHandlers<TDeps>(
         const db = await listModelProviders(c.db)
         const filtered = db.filter((p) => allowed.has(p.id))
         return filtered.length > 0 ? filtered : host
-      } catch {
+      } catch (err) {
+        // Same as listModels: a failing host `listProviders` shouldn't blank
+        // the catalog silently — log, then serve the cached DB rows.
+        console.error('[wf] listProviders: host provider lookup failed', err)
         return await listModelProviders(c.db)
       }
     },

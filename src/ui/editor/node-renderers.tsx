@@ -93,6 +93,33 @@ function useNodeRunStatus(id: string): string | undefined {
   return useContext(RunStatusContext).get(id)
 }
 
+// Shared renderer preamble. Casts the xyflow node data once (the single
+// `props.data` cast in this file), subscribes to the invalid + run-status
+// contexts unconditionally — React forbids conditional hooks, so these always
+// run — then narrows to the requested kind, returning null when this renderer
+// isn't the one for the node's kind. Each renderer becomes:
+//   const r = useNodeRenderer(props, 'agent')
+//   if (!r) return null
+//   const { data, invalid, status } = r
+function useNodeRenderer<K extends EditorNodeData['kind']>(
+  props: NodeProps,
+  kind: K,
+): {
+  data: Extract<EditorNodeData, { kind: K }>
+  invalid: boolean
+  status: string | undefined
+} | null {
+  const data = props.data as unknown as EditorNodeData
+  const invalid = useIsNodeInvalid(props.id)
+  const status = useNodeRunStatus(props.id)
+  if (data.kind !== kind) return null
+  return {
+    data: data as Extract<EditorNodeData, { kind: K }>,
+    invalid,
+    status,
+  }
+}
+
 // A small corner badge marking a node's run status — sits just outside the card
 // so it reads at a glance without crowding the label.
 function RunStatusDot({ status }: { status: string }) {
@@ -278,11 +305,10 @@ function NodePill({
 }
 
 function TriggerNodeRenderer(props: NodeProps) {
-  const data = props.data as unknown as EditorNodeData
-  const invalid = useIsNodeInvalid(props.id)
-  const status = useNodeRunStatus(props.id)
+  const r = useNodeRenderer(props, 'trigger')
   const events = useTriggerEvents()
-  if (data.kind !== 'trigger') return null
+  if (!r) return null
+  const { data, invalid, status } = r
   const { triggerKind, cron } = data.config
   // Events show their human description, never the internal event kind. Until
   // the catalog loads (or for an unknown kind) we fall back to a bare 'Event'.
@@ -329,11 +355,10 @@ function TriggerNodeRenderer(props: NodeProps) {
 }
 
 function AgentNodeRenderer(props: NodeProps) {
-  const data = props.data as unknown as EditorNodeData
+  const r = useNodeRenderer(props, 'agent')
   const agents = useAgents()
-  const invalid = useIsNodeInvalid(props.id)
-  const status = useNodeRunStatus(props.id)
-  if (data.kind !== 'agent') return null
+  if (!r) return null
+  const { data, invalid, status } = r
   const agent = data.config.agentId
     ? (agents.data ?? []).find((a) => a.id === data.config.agentId)
     : undefined
@@ -364,11 +389,10 @@ function AgentNodeRenderer(props: NodeProps) {
 }
 
 function ToolNodeRenderer(props: NodeProps) {
-  const data = props.data as unknown as EditorNodeData
+  const r = useNodeRenderer(props, 'tool')
   const tools = useTools()
-  const invalid = useIsNodeInvalid(props.id)
-  const status = useNodeRunStatus(props.id)
-  if (data.kind !== 'tool') return null
+  if (!r) return null
+  const { data, invalid, status } = r
   const tool = data.config.toolId
     ? (tools.data ?? []).find((t) => t.id === data.config.toolId)
     : undefined
@@ -430,10 +454,9 @@ function branchConditionLabel(config: {
 }
 
 function BranchNodeRenderer(props: NodeProps) {
-  const data = props.data as unknown as EditorNodeData
-  const invalid = useIsNodeInvalid(props.id)
-  const status = useNodeRunStatus(props.id)
-  if (data.kind !== 'branch') return null
+  const r = useNodeRenderer(props, 'branch')
+  if (!r) return null
+  const { data, invalid, status } = r
   return (
     <>
       <Handle type="target" position={Position.Left} />
@@ -455,10 +478,9 @@ function BranchNodeRenderer(props: NodeProps) {
 // xyflow lands an edge's `sourceHandle` on the arm whose `edge.condition`
 // matches — the same id↔condition contract the yes/no DecisionHandles use.
 function SwitchNodeRenderer(props: NodeProps) {
-  const data = props.data as unknown as EditorNodeData
-  const invalid = useIsNodeInvalid(props.id)
-  const status = useNodeRunStatus(props.id)
-  if (data.kind !== 'switch') return null
+  const r = useNodeRenderer(props, 'switch')
+  if (!r) return null
+  const { data, invalid, status } = r
   const arms = [...data.config.cases.map((c) => c.key), SWITCH_DEFAULT_CASE]
   const subject = data.config.path || 'input'
   return (
@@ -496,11 +518,10 @@ function SwitchNodeRenderer(props: NodeProps) {
 // list flows into the left, the collected results leave the right — while the
 // inner `Item`/`Result` bookend child nodes carry data across the boundary.
 function IterationNodeRenderer(props: NodeProps) {
-  const data = props.data as unknown as EditorNodeData
-  const invalid = useIsNodeInvalid(props.id)
-  const status = useNodeRunStatus(props.id)
+  const r = useNodeRenderer(props, 'iteration')
   const { setNodes } = useReactFlow()
-  if (data.kind !== 'iteration') return null
+  if (!r) return null
+  const { data, invalid, status } = r
   const style = KIND_STYLE.iteration
   const Icon = style.icon
   return (
@@ -572,11 +593,10 @@ function IterationNodeRenderer(props: NodeProps) {
 }
 
 function WorkflowNodeRenderer(props: NodeProps) {
-  const data = props.data as unknown as EditorNodeData
+  const r = useNodeRenderer(props, 'workflow')
   const workflows = useWorkflows()
-  const invalid = useIsNodeInvalid(props.id)
-  const status = useNodeRunStatus(props.id)
-  if (data.kind !== 'workflow') return null
+  if (!r) return null
+  const { data, invalid, status } = r
   const called = data.config.workflowId
     ? (workflows.data ?? []).find((w) => w.id === data.config.workflowId)
     : undefined
@@ -597,10 +617,9 @@ function WorkflowNodeRenderer(props: NodeProps) {
 }
 
 function FeatureRequestNodeRenderer(props: NodeProps) {
-  const data = props.data as unknown as EditorNodeData
-  const invalid = useIsNodeInvalid(props.id)
-  const status = useNodeRunStatus(props.id)
-  if (data.kind !== 'feature-request') return null
+  const r = useNodeRenderer(props, 'feature-request')
+  if (!r) return null
+  const { data, invalid, status } = r
   return (
     <>
       <Handle type="target" position={Position.Left} />
@@ -620,10 +639,9 @@ function FeatureRequestNodeRenderer(props: NodeProps) {
 // A Race node: a first-to-finish join. Many upstreams wire into its single
 // target handle; whichever finishes first wins and flows out the source handle.
 function RaceNodeRenderer(props: NodeProps) {
-  const data = props.data as unknown as EditorNodeData
-  const invalid = useIsNodeInvalid(props.id)
-  const status = useNodeRunStatus(props.id)
-  if (data.kind !== 'race') return null
+  const r = useNodeRenderer(props, 'race')
+  if (!r) return null
+  const { data, invalid, status } = r
   return (
     <>
       <Handle type="target" position={Position.Left} />
@@ -644,10 +662,9 @@ function RaceNodeRenderer(props: NodeProps) {
 // single target handle; once all complete it emits an ordered list (one element
 // per producer) out the source handle for a sibling to iterate.
 function AggregateNodeRenderer(props: NodeProps) {
-  const data = props.data as unknown as EditorNodeData
-  const invalid = useIsNodeInvalid(props.id)
-  const status = useNodeRunStatus(props.id)
-  if (data.kind !== 'aggregate') return null
+  const r = useNodeRenderer(props, 'aggregate')
+  if (!r) return null
+  const { data, invalid, status } = r
   return (
     <>
       <Handle type="target" position={Position.Left} />
@@ -668,9 +685,12 @@ function AggregateNodeRenderer(props: NodeProps) {
 // Markdown body. It has no Handles, so it can never be wired into the graph, and
 // the engine never executes it. Purely a place to jot notes on the canvas.
 function NoteNodeRenderer(props: NodeProps) {
-  const data = props.data as unknown as EditorNodeData
+  const r = useNodeRenderer(props, 'note')
   const { setNodes } = useReactFlow()
-  if (data.kind !== 'note') return null
+  if (!r) return null
+  // A note is never executed, so its invalid/status are inert — it only needs
+  // the narrowed data.
+  const { data } = r
   return (
     <>
       <NodeResizer
@@ -726,10 +746,9 @@ function NoteNodeRenderer(props: NodeProps) {
 }
 
 function OutputNodeRenderer(props: NodeProps) {
-  const data = props.data as unknown as EditorNodeData
-  const invalid = useIsNodeInvalid(props.id)
-  const status = useNodeRunStatus(props.id)
-  if (data.kind !== 'output') return null
+  const r = useNodeRenderer(props, 'output')
+  if (!r) return null
+  const { data, invalid, status } = r
   // The `Result` bookend inside an iteration (a nested child has a `parentId`)
   // renders as a tiny pill; a top-level output keeps the full card.
   if (props.parentId != null) {

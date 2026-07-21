@@ -18,7 +18,9 @@ import type {
 } from '../schema'
 import { wfEvalResult, wfEvalRow, wfEvalRun, wfEvalSet } from '../schema'
 
-import { pickDefined } from './shared'
+import { clampLimit, pickDefined } from './shared'
+
+const EVAL_RUN_PAGE_MAX = 200
 
 // Data-access for evals: suites (sets), cases (rows), test runs, and per-row
 // results. Persistence only — grading lives in `../../eval/grade`.
@@ -297,7 +299,7 @@ export async function listEvalRuns(db: WfDb, opts?: { limit?: number }) {
     .select()
     .from(wfEvalRun)
     .orderBy(desc(wfEvalRun.createdAt))
-    .limit(Math.min(Math.max(opts?.limit ?? 50, 1), 200))
+    .limit(clampLimit(opts?.limit, { fallback: 50, max: EVAL_RUN_PAGE_MAX }))
 }
 
 /** An eval run with its per-row results, or null if missing. */

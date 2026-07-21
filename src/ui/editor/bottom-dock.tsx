@@ -41,7 +41,7 @@ const DEFAULT_BODY_H = 224
 
 // The reusable tray chrome: a resizable, collapsible bottom panel with a tab
 // strip. Owns open/active-tab/height state; the caller supplies the tabs.
-export function BottomTray({
+function BottomTray({
   tabs,
   initialOpen = true,
 }: {

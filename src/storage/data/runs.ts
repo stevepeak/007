@@ -25,6 +25,7 @@ import {
 } from '../schema'
 
 import { latestVersion } from './authoring'
+import { clampLimit } from './shared'
 
 // Data-access for runs: run rows + steps, the structured run-log feed, the
 // filtered/paginated runs list, the run inspector load, cost derivation, and
@@ -198,6 +199,7 @@ export type ListRunsFilter = {
 }
 
 const RUN_PAGE_MAX = 200
+const TOOL_INVOCATION_PAGE_MAX = 100
 
 // Data-rich, filtered, paginated run listing. Joins each run to its version and
 // owning workflow so callers can display + search by workflow name. Returns the
@@ -271,7 +273,7 @@ export async function listRuns(db: WfDb, input: ListRunsFilter) {
     if (match) conds.push(match)
   }
   const where = and(...conds)
-  const limit = Math.min(Math.max(input.limit ?? 50, 1), RUN_PAGE_MAX)
+  const limit = clampLimit(input.limit, { fallback: 50, max: RUN_PAGE_MAX })
   const offset = Math.max(input.offset ?? 0, 0)
 
   const rows = await db
@@ -384,7 +386,10 @@ export async function listToolInvocations(
   db: WfDb,
   input: { toolId: string; limit?: number },
 ) {
-  const limit = Math.min(Math.max(input.limit ?? 20, 1), 100)
+  const limit = clampLimit(input.limit, {
+    fallback: 20,
+    max: TOOL_INVOCATION_PAGE_MAX,
+  })
   const rows = await db
     .select({
       runId: wfRunStep.runId,

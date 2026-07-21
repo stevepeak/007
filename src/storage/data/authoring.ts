@@ -463,34 +463,45 @@ export async function resolveRunManifest(
  * nodes float to the agent's latest published version, so publishing updates
  * every referencing workflow immediately.
  */
+// Load every workflow's "live" reference graphs — its draft plus its latest
+// published version — in one place. Drafts are fetched in a single query (one
+// row per workflow) rather than per-workflow, so only the per-workflow
+// `latestVersion` lookup remains. Both `listWorkflowsReferencing*` build on this
+// so the load/filter shape lives in exactly one function.
+async function loadWorkflowReferenceGraphs(
+  db: WfDb,
+): Promise<{ id: string; name: string; graphs: WorkflowGraph[] }[]> {
+  const workflows = await db
+    .select({ id: wfWorkflow.id, name: wfWorkflow.name })
+    .from(wfWorkflow)
+  const drafts = await db
+    .select({
+      workflowId: wfWorkflowDraft.workflowId,
+      graph: wfWorkflowDraft.graph,
+    })
+    .from(wfWorkflowDraft)
+  const draftByWorkflow = new Map(drafts.map((d) => [d.workflowId, d.graph]))
+  const out: { id: string; name: string; graphs: WorkflowGraph[] }[] = []
+  for (const wf of workflows) {
+    const version = await latestVersion(db, wf.id)
+    const graphs = [draftByWorkflow.get(wf.id), version?.graph].filter(
+      Boolean,
+    ) as WorkflowGraph[]
+    out.push({ id: wf.id, name: wf.name, graphs })
+  }
+  return out
+}
+
 export async function listWorkflowsReferencingAgent(
   db: WfDb,
   input: { agentId: string },
 ): Promise<{ id: string; name: string }[]> {
-  const workflows = await db
-    .select({ id: wfWorkflow.id, name: wfWorkflow.name })
-    .from(wfWorkflow)
-  const referencing: { id: string; name: string }[] = []
-  for (const wf of workflows) {
-    const draft = (
-      await db
-        .select({ graph: wfWorkflowDraft.graph })
-        .from(wfWorkflowDraft)
-        .where(eq(wfWorkflowDraft.workflowId, wf.id))
-        .limit(1)
-    )[0]
-    const version = await latestVersion(db, wf.id)
-    const graphs = [draft?.graph, version?.graph].filter(
-      Boolean,
-    ) as WorkflowGraph[]
-    const referenced = graphs.some((g) =>
-      agentIdsInGraph(g).includes(input.agentId),
+  const all = await loadWorkflowReferenceGraphs(db)
+  return all
+    .filter((wf) =>
+      wf.graphs.some((g) => agentIdsInGraph(g).includes(input.agentId)),
     )
-    if (referenced) {
-      referencing.push({ id: wf.id, name: wf.name })
-    }
-  }
-  return referencing
+    .map((wf) => ({ id: wf.id, name: wf.name }))
 }
 
 // The inverse of {@link listWorkflowsReferencingAgent} for every agent at once:
@@ -499,24 +510,11 @@ export async function listWorkflowsReferencingAgent(
 export async function listWorkflowsReferencingAllAgents(
   db: WfDb,
 ): Promise<Map<string, { id: string; name: string }[]>> {
-  const workflows = await db
-    .select({ id: wfWorkflow.id, name: wfWorkflow.name })
-    .from(wfWorkflow)
+  const all = await loadWorkflowReferenceGraphs(db)
   const byAgent = new Map<string, { id: string; name: string }[]>()
-  for (const wf of workflows) {
-    const draft = (
-      await db
-        .select({ graph: wfWorkflowDraft.graph })
-        .from(wfWorkflowDraft)
-        .where(eq(wfWorkflowDraft.workflowId, wf.id))
-        .limit(1)
-    )[0]
-    const version = await latestVersion(db, wf.id)
-    const graphs = [draft?.graph, version?.graph].filter(
-      Boolean,
-    ) as WorkflowGraph[]
+  for (const wf of all) {
     const agentIds = new Set<string>()
-    for (const g of graphs) {
+    for (const g of wf.graphs) {
       for (const id of agentIdsInGraph(g)) agentIds.add(id)
     }
     for (const id of agentIds) {
