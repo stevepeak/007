@@ -92,6 +92,9 @@ export async function executeWorkflow<TDeps>(
           resolveImageRef: config.resolveImageRef,
           simulate: runContext.simulate,
           fixtures: runContext.fixtures,
+          // An iteration node records its inner subgraph steps (once per item)
+          // through the same recorder that persists top-level steps.
+          subStepRecorder: recorder,
         },
       )
       await recorder.record({

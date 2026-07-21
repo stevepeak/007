@@ -985,6 +985,8 @@ function buildHandlers<TDeps>(
       const steps: WfRunStepDTO[] = result.steps.map((s) => ({
         nodeId: s.nodeId,
         nodeKind: s.nodeKind,
+        parentNodeId: s.parentNodeId ?? null,
+        itemIndex: s.itemIndex,
         sequence: s.sequence,
         status: s.status,
         input: s.input,
@@ -1421,13 +1423,17 @@ function buildHandlers<TDeps>(
       if (!runResult) {
         throw new Error('Run not found.')
       }
-      const steps: GradeStep[] = runResult.steps.map((s) => ({
-        nodeId: s.nodeId,
-        nodeKind: s.nodeKind,
-        input: s.input,
-        output: s.output,
-        meta: s.meta,
-      }))
+      // Top-level steps only — checks address the workflow's own nodes, not an
+      // iteration's per-item inner subgraph steps.
+      const steps: GradeStep[] = runResult.steps
+        .filter((s) => !s.parentNodeId)
+        .map((s) => ({
+          nodeId: s.nodeId,
+          nodeKind: s.nodeKind,
+          input: s.input,
+          output: s.output,
+          meta: s.meta,
+        }))
       const env = await c.env()
       // Judge checks resolve their model through the host's live seam.
       const getModel: GradeModelFactory = (modelId) =>

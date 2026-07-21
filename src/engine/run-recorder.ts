@@ -15,6 +15,14 @@ export type WfRunStepStatus = 'running' | 'completed' | 'failed' | 'skipped'
 export type RecordStepArgs = {
   nodeId: string
   nodeKind: WfNodeKind
+  /**
+   * Iteration container this step ran inside, or omitted/null for a top-level
+   * step. Paired with {@link itemIndex} it lets one subgraph node record a row
+   * per item without colliding on the `(run_id, node_id, item_index)` key.
+   */
+  parentNodeId?: string | null
+  /** 0-based item index within an iteration; omitted (→ `-1`) at top level. */
+  itemIndex?: number | null
   sequence: number
   input: unknown
   status: WfRunStepStatus

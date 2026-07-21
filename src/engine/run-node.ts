@@ -18,6 +18,7 @@ import { executeRaceNode } from './nodes/race'
 import { executeSwitchNode } from './nodes/switch'
 import { executeToolNode } from './nodes/tool'
 import { executeWorkflowNode } from './nodes/workflow'
+import type { RunRecorder } from './run-recorder'
 import type { ExecuteInstruction } from './scheduler'
 import type { StreamSink } from './stream-sink'
 import type { ToolRegistry } from './tool-registry'
@@ -70,6 +71,13 @@ export type RunNodeContext<TDeps> = {
   simulate?: boolean
   /** Canned tool outputs consumed under `simulate`, keyed by tool id. */
   fixtures?: Record<string, unknown>
+  /**
+   * When set, an iteration node records each inner subgraph node once per item
+   * (scoped by the container id + item index) through this recorder, so the run
+   * viewer can drill into an individual item's trace. Omitted → iteration still
+   * runs, but only its single aggregate step is persisted (by the backend).
+   */
+  subStepRecorder?: RunRecorder
 }
 
 export async function runNode<TDeps>(
@@ -220,7 +228,19 @@ export async function runNode<TDeps>(
         // The list is a ref into an upstream node's output, resolved against the
         // run's global outputs — not read out of the forwarded input.
         list: resolveIterationList(node, ctx.nodeOutputs),
-        runItem: (item) => executeSubgraph(node.config.subgraph, item, ctx),
+        runItem: (item, index) =>
+          executeSubgraph(
+            node.config.subgraph,
+            item,
+            ctx,
+            ctx.subStepRecorder
+              ? {
+                  recorder: ctx.subStepRecorder,
+                  parentNodeId: node.id,
+                  itemIndex: index,
+                }
+              : undefined,
+          ),
       })
       return {
         schedulerOutput: r.results,

@@ -2,7 +2,7 @@ import { Activity, ChevronDown, ExternalLink, RotateCcw } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import type { WorkflowGraph, WorkflowNode } from '../engine'
-import type { RetryRunMode } from '../server/protocol'
+import type { RetryRunMode, WfRunStepDTO } from '../server/protocol'
 import { useWfComponents } from './context'
 import { cn } from './cn'
 import { WorkflowCanvas } from './editor/workflow-canvas'
@@ -82,18 +82,29 @@ function fmtRelative(ms: number): string {
   return `${value} ${label}${value === 1 ? '' : 's'} ago`
 }
 
-// Find a node by id across the top level AND any iteration container's subgraph,
-// so selecting an inner loop node still resolves (its steps aren't recorded
-// individually, so the dock shows it as "not run", which is accurate).
-function findNode(graph: WorkflowGraph, id: string): WorkflowNode | null {
+// Find a node by id across the top level AND any iteration container's subgraph.
+// `parentIterationId` is the container's id when the match is an inner loop node
+// (null at top level) — that's what tells the dock to show a per-item picker and
+// resolve the node's step against a chosen item index.
+function findNode(
+  graph: WorkflowGraph,
+  id: string,
+): { node: WorkflowNode; parentIterationId: string | null } | null {
   for (const n of graph.nodes) {
-    if (n.id === id) return n
+    if (n.id === id) return { node: n, parentIterationId: null }
     if (n.kind === 'iteration') {
       const child = n.config.subgraph.nodes.find((c) => c.id === id)
-      if (child) return child
+      if (child) return { node: child, parentIterationId: n.id }
     }
   }
   return null
+}
+
+// The number of items an iteration node fanned out over, read from its recorded
+// step meta (`{ total }`). 0 when the node never ran or isn't an iteration.
+function iterationItemCount(step: WfRunStepDTO | null | undefined): number {
+  const total = (step?.meta as { total?: unknown } | null)?.total
+  return typeof total === 'number' ? total : 0
 }
 
 export type RunPageProps = {
@@ -107,12 +118,21 @@ export function RunPage({ runId, className }: RunPageProps) {
   const { data, isLoading, error } = useRun(runId)
   const retry = useRetryRun()
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // Which iteration item the dock is focused on when an inner-subgraph node is
+  // selected. Clamped to the node's item count at read time, so it survives
+  // switching between iterations of different lengths without a reset.
+  const [selectedItemIndex, setSelectedItemIndex] = useState(0)
 
-  // nodeId → status, driving the canvas tint + status dots. Steps only cover
-  // top-level nodes (iteration inner steps aren't recorded), which is exactly
-  // the set the canvas renders as top-level nodes.
+  // nodeId → status for the top-level graph (the canvas's own nodes), driving
+  // the tint + status dots. Iteration inner steps are keyed per item and layered
+  // on separately (see `canvasStatuses`) so they don't collide here.
   const nodeStatuses = useMemo(
-    () => new Map((data?.steps ?? []).map((s) => [s.nodeId, s.status])),
+    () =>
+      new Map(
+        (data?.steps ?? [])
+          .filter((s) => !s.parentNodeId)
+          .map((s) => [s.nodeId, s.status]),
+      ),
     [data?.steps],
   )
 
@@ -150,11 +170,52 @@ export function RunPage({ runId, className }: RunPageProps) {
     !!data.graph &&
     data.steps.some((s) => s.status === 'failed')
 
-  const selectedNode =
+  const found =
     selectedId && data.graph ? findNode(data.graph, selectedId) : null
-  const selectedStep = selectedId
-    ? (data.steps.find((s) => s.nodeId === selectedId) ?? null)
+  const selectedNode = found?.node ?? null
+  const parentIterationId = found?.parentIterationId ?? null
+
+  // How many items the relevant iteration fanned out over — for the container's
+  // own aggregate step when it's selected, or the parent container's step when
+  // an inner node is selected. Drives the per-item picker + the itemIndex clamp.
+  const iterationId =
+    parentIterationId ??
+    (selectedNode?.kind === 'iteration' ? selectedId : null)
+  const iterationStep = iterationId
+    ? (data.steps.find((s) => s.nodeId === iterationId && !s.parentNodeId) ??
+      null)
     : null
+  const itemCount = iterationItemCount(iterationStep)
+  const itemIndex =
+    itemCount > 0 ? Math.min(selectedItemIndex, itemCount - 1) : 0
+
+  // An inner-subgraph node's step is addressed by (nodeId, container, item);
+  // a top-level node's step is the single row with no parent.
+  const selectedStep = !selectedId
+    ? null
+    : parentIterationId
+      ? (data.steps.find(
+          (s) =>
+            s.nodeId === selectedId &&
+            s.parentNodeId === parentIterationId &&
+            s.itemIndex === itemIndex,
+        ) ?? null)
+      : (data.steps.find((s) => s.nodeId === selectedId && !s.parentNodeId) ??
+        null)
+
+  // Canvas tint: top-level statuses, plus — when an iteration or one of its
+  // inner nodes is selected — that iteration's inner nodes tinted by the focused
+  // item, so stepping through items lights up the subgraph item by item.
+  const canvasStatuses = iterationId
+    ? new Map([
+        ...nodeStatuses,
+        ...data.steps
+          .filter(
+            (s) => s.parentNodeId === iterationId && s.itemIndex === itemIndex,
+          )
+          .map((s) => [s.nodeId, s.status] as const),
+      ])
+    : nodeStatuses
 
   const handleRetry = (mode: RetryRunMode) => {
     retry.mutate(
@@ -254,7 +315,7 @@ export function RunPage({ runId, className }: RunPageProps) {
             <WorkflowCanvas
               graph={data.graph}
               readOnly
-              nodeStatuses={nodeStatuses}
+              nodeStatuses={canvasStatuses}
               onSelectionChange={setSelectedId}
             />
           ) : (

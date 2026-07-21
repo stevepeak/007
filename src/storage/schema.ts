@@ -232,8 +232,14 @@ export const wfRun = sqliteTable(
 
 // Ordered execution trace — one row per node fired. `node_id` is the stable
 // UUID from the graph (joined back to the version's graph JSON for display).
-// The unique (run_id, node_id) constraint is what makes the durable recorder's
-// upsert idempotent across `step.do` retries.
+//
+// A node inside an iteration's subgraph runs once per item, so a single
+// `node_id` can produce many rows in one run. `item_index` disambiguates them:
+// top-level steps use the sentinel `-1` (never NULL — SQLite treats NULLs as
+// distinct in a unique index, which would break the idempotent upsert), and a
+// sub-step of iteration container N carries its 0-based item index plus
+// `parent_node_id = N`. The unique (run_id, node_id, item_index) constraint is
+// what makes the durable recorder's upsert idempotent across `step.do` retries.
 export const wfRunStep = sqliteTable(
   'wf_run_step',
   {
@@ -243,6 +249,10 @@ export const wfRunStep = sqliteTable(
     runId: text('run_id').notNull(),
     nodeId: text('node_id').notNull(),
     nodeKind: text('node_kind').notNull(),
+    /** Iteration container this step ran inside, or NULL for a top-level step. */
+    parentNodeId: text('parent_node_id'),
+    /** 0-based item index within an iteration; `-1` for a top-level step. */
+    itemIndex: integer('item_index').notNull().default(-1),
     sequence: integer('sequence').notNull(),
     status: text('status', { enum: WF_RUN_STEP_STATUSES }).notNull(),
     input: text('input', { mode: 'json' })
@@ -261,7 +271,7 @@ export const wfRunStep = sqliteTable(
   },
   (t) => [
     index('wf_run_step_run_sequence_idx').on(t.runId, t.sequence),
-    uniqueIndex('wf_run_step_run_node_idx').on(t.runId, t.nodeId),
+    uniqueIndex('wf_run_step_run_node_idx').on(t.runId, t.nodeId, t.itemIndex),
   ],
 )
 

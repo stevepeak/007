@@ -1,6 +1,7 @@
 import { resolveBinding } from '../binding'
 import type { IterationNode, WorkflowGraph } from '../graph'
 import { runNode, type RunNodeContext } from '../run-node'
+import type { RunRecorder } from '../run-recorder'
 import { Scheduler, WorkflowStalledError } from '../scheduler'
 
 // The iteration node fans a list out over an embedded subgraph: the subgraph
@@ -15,9 +16,12 @@ import { Scheduler, WorkflowStalledError } from '../scheduler'
 //     supplied by the caller as `runItem`, mirroring the engine's "pure core,
 //     backend-supplied durability" split.
 //
-// Neither threads a recorder: in this version a whole iteration is persisted as
-// a single run-step (output = the collection, meta = per-item summaries); inner
-// sub-node steps are not individually recorded.
+// The iteration is persisted as a single run-step (output = the collection,
+// meta = per-item summaries). When a `SubgraphRecorder` is supplied,
+// `executeSubgraph` ALSO records each inner node once per item — stamped with
+// `parentNodeId` (the container) + `itemIndex` — so the run viewer can drill
+// into any one item's per-node trace. Backends supply the recorder; the pure
+// core stays unaware of where the rows land.
 
 /** Marker stored in the results array for an item whose subgraph threw when
  * `stopOnError` is false, so positions stay aligned with the input list. */
@@ -45,20 +49,62 @@ function messageOf(err: unknown): string {
 }
 
 /**
+ * Records each inner node of ONE iteration item, so the run viewer can drill
+ * into that item's per-node trace. The `recorder` is the same seam the backends
+ * use for top-level steps; `parentNodeId`/`itemIndex` scope the rows to this
+ * container + item. Sequence numbers are local to the item (0-based), which is
+ * enough to order one item's own timeline.
+ */
+export type SubgraphRecorder = {
+  recorder: RunRecorder
+  parentNodeId: string
+  itemIndex: number
+}
+
+/**
  * Run an iteration node's subgraph for a single item and return the value its
  * Output node forwards. A fresh {@link Scheduler} (and fresh node-output cache)
  * is created per item so items never see each other's intermediate outputs; the
  * item is seeded as the subgraph trigger's output (the `iteration_item` trigger
  * is identity). The subgraph is strictly re-validated here — a structurally
  * broken subgraph fails the item rather than the parent parse.
+ *
+ * When `record` is supplied, every inner node (plus the trigger and output) is
+ * persisted as a scoped run-step; a failing node records its failed step before
+ * the error propagates so the item's break point is inspectable.
  */
 export async function executeSubgraph<TDeps>(
   subgraph: WorkflowGraph,
   item: unknown,
   ctx: RunNodeContext<TDeps>,
+  record?: SubgraphRecorder,
 ): Promise<unknown> {
   const scheduler = new Scheduler(subgraph)
   scheduler.seedTrigger(item)
+
+  // Local, per-item sequence + a thin wrapper that stamps the container/item
+  // scope onto every row. Omitted entirely when no recorder is wired.
+  let seq = 0
+  const rec = record
+    ? (args: Omit<Parameters<RunRecorder['record']>[0], 'sequence'>) =>
+        record.recorder.record({
+          ...args,
+          parentNodeId: record.parentNodeId,
+          itemIndex: record.itemIndex,
+          sequence: seq++,
+        })
+    : null
+
+  // The subgraph trigger is identity — its output IS the item.
+  if (rec) {
+    await rec({
+      nodeId: scheduler.trigger.id,
+      nodeKind: 'trigger',
+      input: item,
+      status: 'completed',
+      output: item,
+    })
+  }
 
   while (true) {
     const instruction = scheduler.next()
@@ -66,15 +112,52 @@ export async function executeSubgraph<TDeps>(
       throw new WorkflowStalledError()
     }
     if (instruction.type === 'output') {
+      if (rec) {
+        await rec({
+          nodeId: instruction.nodeId,
+          nodeKind: 'output',
+          input: instruction.output,
+          status: 'completed',
+          output: instruction.output,
+        })
+      }
       return instruction.output
     }
-    const result = await runNode(instruction, {
-      ...ctx,
-      // Per-item output cache — ref bindings inside the subgraph resolve against
-      // this run's nodes only.
-      nodeOutputs: scheduler.getOutputs(),
-    })
-    scheduler.report(instruction.node.id, {
+    const { node, input } = instruction
+    let result
+    try {
+      result = await runNode(instruction, {
+        ...ctx,
+        // Per-item output cache — ref bindings inside the subgraph resolve
+        // against this run's nodes only.
+        nodeOutputs: scheduler.getOutputs(),
+      })
+    } catch (err) {
+      if (rec) {
+        await rec({
+          nodeId: node.id,
+          nodeKind: node.kind,
+          input,
+          status: 'failed',
+          error: messageOf(err),
+        })
+      }
+      throw err
+    }
+    if (rec) {
+      await rec({
+        nodeId: node.id,
+        nodeKind: node.kind,
+        input,
+        status: 'completed',
+        output: result.recordedOutput,
+        meta: result.meta,
+        branchResult: result.branchResult
+          ? { result: result.branchResult, reasoning: result.branchReasoning ?? '' }
+          : null,
+      })
+    }
+    scheduler.report(node.id, {
       output: result.schedulerOutput,
       branchResult: result.branchResult,
     })

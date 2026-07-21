@@ -211,6 +211,14 @@ export type RetryRunMode = 'restart' | 'resume'
 export type WfRunStepDTO = {
   nodeId: string
   nodeKind: string
+  /**
+   * The iteration container this step ran inside, or null for a top-level step.
+   * Sub-steps of an iteration repeat their `nodeId` once per item — pair with
+   * {@link WfRunStepDTO.itemIndex} to address a specific item's node.
+   */
+  parentNodeId: string | null
+  /** 0-based item index within an iteration; null for a top-level step. */
+  itemIndex: number | null
   sequence: number
   status: string
   input: unknown

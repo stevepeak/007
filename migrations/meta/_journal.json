@@ -120,6 +120,13 @@
       "when": 1784651559782,
       "tag": "0016_redundant_pride",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1784660619022,
+      "tag": "0017_glossy_bastion",
+      "breakpoints": true
     }
   ]
 }

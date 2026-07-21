@@ -114,9 +114,11 @@ export function RunViewer({ runId, className }: RunViewerProps) {
         </div>
       ) : null}
       <div className="space-y-1.5">
-        {data.steps.map((step) => (
-          <StepRow key={step.nodeId} step={step} />
-        ))}
+        {data.steps
+          .filter((step) => !step.parentNodeId)
+          .map((step) => (
+            <StepRow key={step.nodeId} step={step} />
+          ))}
       </div>
     </div>
   )

@@ -1283,7 +1283,9 @@ export async function getRun(db: WfDb, runId: string) {
       totalTokens = (totalTokens ?? 0) + usage.inputTokens + usage.outputTokens
     }
     if (stepCost != null) costUsd = (costUsd ?? 0) + stepCost
-    return { ...s, costUsd: stepCost }
+    // `-1` is the top-level sentinel (see wfRunStep) — surface it as null so the
+    // client's `itemIndex: number | null` reads naturally.
+    return { ...s, itemIndex: s.itemIndex === -1 ? null : s.itemIndex, costUsd: stepCost }
   })
   const logs = await getRunLogs(db, runId)
   const version = (
@@ -1348,7 +1350,15 @@ export async function loadResumeSteps(db: WfDb, runId: string) {
       branchResult: wfRunStep.branchResult,
     })
     .from(wfRunStep)
-    .where(and(eq(wfRunStep.runId, runId), eq(wfRunStep.status, 'completed')))
+    .where(
+      and(
+        eq(wfRunStep.runId, runId),
+        eq(wfRunStep.status, 'completed'),
+        // Top-level steps only (sentinel -1): resume seeds the top-level
+        // scheduler, never an iteration's inner subgraph nodes.
+        eq(wfRunStep.itemIndex, -1),
+      ),
+    )
     .orderBy(asc(wfRunStep.sequence))
   return rows.filter((r) => r.nodeKind !== 'trigger' && r.nodeKind !== 'output')
 }

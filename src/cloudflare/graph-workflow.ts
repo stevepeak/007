@@ -469,20 +469,37 @@ export function makeGraphWorkflow<
                   async () => {
                     const rc = { ...p.runContext, env }
                     const toolDeps = await config.buildRunDeps(rc)
-                    return await executeSubgraph(node.config.subgraph, item, {
-                      getModel: (modelId) => config.getModel(modelId, rc),
-                      toolRegistry: config.toolRegistry,
-                      toolDeps,
-                      // Overridden per item inside executeSubgraph.
-                      nodeOutputs: new Map(),
-                      promptVariables: p.runContext.promptVariables,
-                      manifest,
-                      sink,
-                      resolveBlobRef: config.resolveBlobRef,
-                      resolveImageRef: config.resolveImageRef,
-                      simulate: p.runContext.simulate,
-                      fixtures: p.runContext.fixtures,
-                    })
+                    return await executeSubgraph(
+                      node.config.subgraph,
+                      item,
+                      {
+                        getModel: (modelId) => config.getModel(modelId, rc),
+                        toolRegistry: config.toolRegistry,
+                        toolDeps,
+                        // Overridden per item inside executeSubgraph.
+                        nodeOutputs: new Map(),
+                        promptVariables: p.runContext.promptVariables,
+                        manifest,
+                        sink,
+                        resolveBlobRef: config.resolveBlobRef,
+                        resolveImageRef: config.resolveImageRef,
+                        simulate: p.runContext.simulate,
+                        fixtures: p.runContext.fixtures,
+                      },
+                      // Record each inner node once per item. The recorder is
+                      // built inside this `iter:` step.do closure (a D1 binding
+                      // can't cross a step boundary); the whole closure replays
+                      // on retry, and the `(run_id, node_id, item_index)` upsert
+                      // makes that replay idempotent.
+                      {
+                        recorder: createDurableRunRecorder({
+                          db: createWfDb(env.DB),
+                          runId: p.workflowRunId,
+                        }),
+                        parentNodeId: node.id,
+                        itemIndex: index,
+                      },
+                    )
                   },
                 ),
             })
