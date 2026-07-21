@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { analyzeJoinTopology, bothArmsJoinDecision } from './graph-topology'
 import {
   ITERATION_ITEM_TRIGGER_KIND,
   MANUAL_TRIGGER_KIND,
@@ -514,64 +515,70 @@ export const workflowGraphShapeSchema = z.object({
   edges: z.array(workflowEdgeSchema),
 })
 
-// Top-level schema. `version: 1` is the future-evolution lever — new schema
-// shapes ship as v2 and the executor branches on this. This is the strict
-// runtime gate: the Scheduler parses through it, so a graph that fails here
-// can't run. Author-time saving deliberately uses `workflowGraphShapeSchema`.
-export const workflowGraphSchema = workflowGraphShapeSchema.superRefine(
-  (g, ctx) => {
-    const triggers = g.nodes.filter((n) => n.kind === 'trigger')
-    if (triggers.length !== 1) {
+// The strict runtime gate is a sequence of independent structural checks. Each
+// is a named function taking the parsed shape + a minimal issue sink (decoupled
+// from zod's RefinementCtx), split out of what was one ~250-line closure so each
+// rule reads on its own. The author-time diagnostics in graph-issues.ts mirror
+// these (with softer severity) and share the join/cone analysis via
+// graph-topology.ts, so the reject-vs-warn pair can't drift.
+type GraphShape = z.infer<typeof workflowGraphShapeSchema>
+type GraphCheckCtx = {
+  addIssue(issue: { code: 'custom'; message: string }): void
+}
+
+// Exactly one trigger, at least one output, unique ids, edges pointing at real
+// nodes, and every Output reachable (it has an incoming edge, else it stalls).
+function checkGraphShape(g: GraphShape, ctx: GraphCheckCtx): void {
+  const triggers = g.nodes.filter((n) => n.kind === 'trigger')
+  if (triggers.length !== 1) {
+    ctx.addIssue({
+      code: 'custom',
+      message: `Graph must have exactly one trigger node (found ${triggers.length}).`,
+    })
+  }
+  const outputs = g.nodes.filter((n) => n.kind === 'output')
+  if (outputs.length === 0) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'Graph must have at least one output node.',
+    })
+  }
+  const ids = new Set(g.nodes.map((n) => n.id))
+  if (ids.size !== g.nodes.length) {
+    ctx.addIssue({ code: 'custom', message: 'Node ids must be unique.' })
+  }
+  for (const e of g.edges) {
+    if (!ids.has(e.source) || !ids.has(e.target)) {
       ctx.addIssue({
         code: 'custom',
-        message: `Graph must have exactly one trigger node (found ${triggers.length}).`,
+        message: `Edge ${e.id} references missing node (${e.source} → ${e.target}).`,
       })
     }
-    const outputs = g.nodes.filter((n) => n.kind === 'output')
-    if (outputs.length === 0) {
+  }
+  for (const o of outputs) {
+    if (!g.edges.some((e) => e.target === o.id)) {
       ctx.addIssue({
         code: 'custom',
-        message: 'Graph must have at least one output node.',
+        message: `Output node ${o.id} has no incoming edges.`,
       })
     }
-    const ids = new Set(g.nodes.map((n) => n.id))
-    if (ids.size !== g.nodes.length) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'Node ids must be unique.',
-      })
-    }
-    for (const e of g.edges) {
-      if (!ids.has(e.source) || !ids.has(e.target)) {
-        ctx.addIssue({
-          code: 'custom',
-          message: `Edge ${e.id} references missing node (${e.source} → ${e.target}).`,
-        })
-      }
-    }
-    // Every Output node needs at least one incoming edge — otherwise it's
-    // unreachable and the workflow would stall waiting for it.
-    for (const o of outputs) {
-      const hasIncoming = g.edges.some((e) => e.target === o.id)
-      if (!hasIncoming) {
-        ctx.addIssue({
-          code: 'custom',
-          message: `Output node ${o.id} has no incoming edges.`,
-        })
-      }
-    }
-    // Validate ref bindings point at real nodes. Tool `args` and Workflow
-    // `inputs` share the ArgBinding shape; check both.
-    for (const n of g.nodes) {
-      const bindings =
-        n.kind === 'tool'
-          ? n.config.args
-          : n.kind === 'workflow'
-            ? n.config.inputs
-            : null
-      if (!bindings) {
-        continue
-      }
+  }
+}
+
+// Ref bindings must point at real nodes. Tool `args`, Workflow `inputs`, and a
+// Branch's single `source` all share the ArgBinding shape. A binary decision
+// (branch) may still leave one arm unconnected — it "fizzles out" at run time —
+// so a missing yes/no edge is deliberately not flagged here.
+function checkRefBindings(g: GraphShape, ctx: GraphCheckCtx): void {
+  const ids = new Set(g.nodes.map((n) => n.id))
+  for (const n of g.nodes) {
+    const bindings =
+      n.kind === 'tool'
+        ? n.config.args
+        : n.kind === 'workflow'
+          ? n.config.inputs
+          : null
+    if (bindings) {
       const label = n.kind === 'tool' ? 'arg' : 'input'
       for (const [argName, binding] of Object.entries(bindings)) {
         if (binding.kind === 'ref' && !ids.has(binding.nodeId)) {
@@ -582,12 +589,7 @@ export const workflowGraphSchema = workflowGraphShapeSchema.superRefine(
         }
       }
     }
-    // A Branch reads the value it tests via a single `source` ref binding — the
-    // same shape, so it needs the same "points at a real node" guard.
-    for (const n of g.nodes) {
-      if (n.kind !== 'branch') {
-        continue
-      }
+    if (n.kind === 'branch') {
       const src = n.config.source
       if (src && !ids.has(src.nodeId)) {
         ctx.addIssue({
@@ -596,213 +598,144 @@ export const workflowGraphSchema = workflowGraphShapeSchema.superRefine(
         })
       }
     }
-    // A binary decision node (branch) may leave one arm unconnected: an
-    // author often wires only the arm that does work and lets the other "fizzle
-    // out" (that path just ends). At run time an unmatched decision routes to no
-    // node and terminates that path — so we deliberately do NOT require both the
-    // yes and no edges here. (Switch still needs a 'default' fallback, below.)
+  }
+}
 
-    // Validate every switch node: unique, non-reserved case keys; an outgoing
-    // edge for each case key; a single 'default' fallback edge; and no outgoing
-    // edge whose condition matches neither a declared case nor 'default'.
-    for (const n of g.nodes) {
-      if (n.kind !== 'switch') {
-        continue
-      }
-      const keys = n.config.cases.map((c) => c.key)
-      const keySet = new Set(keys)
-      if (keySet.size !== keys.length) {
+// Switch nodes: unique, non-reserved case keys; an outgoing edge per case; a
+// single 'default' fallback edge; and no outgoing edge whose condition matches
+// neither a declared case nor 'default'.
+function checkSwitchNodes(g: GraphShape, ctx: GraphCheckCtx): void {
+  for (const n of g.nodes) {
+    if (n.kind !== 'switch') continue
+    const keys = n.config.cases.map((c) => c.key)
+    const keySet = new Set(keys)
+    if (keySet.size !== keys.length) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Switch node ${n.id} has duplicate case keys.`,
+      })
+    }
+    if (keySet.has(SWITCH_DEFAULT_CASE)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Switch node ${n.id} uses the reserved case key '${SWITCH_DEFAULT_CASE}'.`,
+      })
+    }
+    const outs = g.edges.filter((e) => e.source === n.id)
+    const conds = new Set(outs.map((e) => e.condition))
+    for (const k of keySet) {
+      if (!conds.has(k)) {
         ctx.addIssue({
           code: 'custom',
-          message: `Switch node ${n.id} has duplicate case keys.`,
+          message: `Switch node ${n.id} case '${k}' has no outgoing edge.`,
         })
-      }
-      if (keySet.has(SWITCH_DEFAULT_CASE)) {
-        ctx.addIssue({
-          code: 'custom',
-          message: `Switch node ${n.id} uses the reserved case key '${SWITCH_DEFAULT_CASE}'.`,
-        })
-      }
-      const outs = g.edges.filter((e) => e.source === n.id)
-      const conds = new Set(outs.map((e) => e.condition))
-      for (const k of keySet) {
-        if (!conds.has(k)) {
-          ctx.addIssue({
-            code: 'custom',
-            message: `Switch node ${n.id} case '${k}' has no outgoing edge.`,
-          })
-        }
-      }
-      if (!conds.has(SWITCH_DEFAULT_CASE)) {
-        ctx.addIssue({
-          code: 'custom',
-          message: `Switch node ${n.id} must have a '${SWITCH_DEFAULT_CASE}' (fallback) outgoing edge.`,
-        })
-      }
-      for (const e of outs) {
-        if (
-          e.condition == null ||
-          (!keySet.has(e.condition) && e.condition !== SWITCH_DEFAULT_CASE)
-        ) {
-          ctx.addIssue({
-            code: 'custom',
-            message: `Switch node ${n.id} edge ${e.id} condition '${e.condition ?? 'null'}' matches no declared case or '${SWITCH_DEFAULT_CASE}'.`,
-          })
-        }
       }
     }
-
-    // Iteration subgraph contract. The subgraph itself is stored shape-only and
-    // fully validated at run time by its own Scheduler, but two rules must hold
-    // structurally: its source must be the `iteration_item` trigger (its output
-    // is the current element), and it may not itself contain an iteration node
-    // (nested iteration is not supported in this version).
-    for (const n of g.nodes) {
-      if (n.kind !== 'iteration') {
-        continue
-      }
-      const sub = n.config.subgraph
-      const subTrigger = sub.nodes.find((sn) => sn.kind === 'trigger')
+    if (!conds.has(SWITCH_DEFAULT_CASE)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Switch node ${n.id} must have a '${SWITCH_DEFAULT_CASE}' (fallback) outgoing edge.`,
+      })
+    }
+    for (const e of outs) {
       if (
-        subTrigger &&
-        subTrigger.config.triggerKind !== ITERATION_ITEM_TRIGGER_KIND
+        e.condition == null ||
+        (!keySet.has(e.condition) && e.condition !== SWITCH_DEFAULT_CASE)
       ) {
         ctx.addIssue({
           code: 'custom',
-          message: `Iteration node ${n.id} subgraph must start with an '${ITERATION_ITEM_TRIGGER_KIND}' trigger.`,
+          message: `Switch node ${n.id} edge ${e.id} condition '${e.condition ?? 'null'}' matches no declared case or '${SWITCH_DEFAULT_CASE}'.`,
         })
       }
-      if (sub.nodes.some((sn) => sn.kind === 'iteration')) {
+    }
+  }
+}
+
+// Iteration subgraph contract: it must start with an `iteration_item` trigger
+// (its output is the current element) and may not nest another iteration
+// (unsupported this version). The subgraph is otherwise validated at run time by
+// its own Scheduler.
+function checkIterationSubgraphs(g: GraphShape, ctx: GraphCheckCtx): void {
+  for (const n of g.nodes) {
+    if (n.kind !== 'iteration') continue
+    const sub = n.config.subgraph
+    const subTrigger = sub.nodes.find((sn) => sn.kind === 'trigger')
+    if (
+      subTrigger &&
+      subTrigger.config.triggerKind !== ITERATION_ITEM_TRIGGER_KIND
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Iteration node ${n.id} subgraph must start with an '${ITERATION_ITEM_TRIGGER_KIND}' trigger.`,
+      })
+    }
+    if (sub.nodes.some((sn) => sn.kind === 'iteration')) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Iteration node ${n.id} cannot contain another iteration node (nested iteration is not supported).`,
+      })
+    }
+  }
+}
+
+// Fan-in shapes the scheduler can actually run. Its readiness rule is
+// all-incoming-edges-alive (`every`) for work nodes and any-incoming-edge-alive
+// (`some`) for Output nodes; a branch's outgoing edges are alive only for the
+// matching outcome. Two shapes break that silently — reject them at author time
+// rather than stall / drop nodes at run time. Cone/decision analysis is shared
+// with the author-time diagnostics (graph-topology.ts).
+function checkJoinTopology(g: GraphShape, ctx: GraphCheckCtx): void {
+  const topo = analyzeJoinTopology(g)
+  for (const n of g.nodes) {
+    const incoming = topo.incoming.get(n.id) ?? []
+    if (incoming.length < 2) continue
+
+    // A Race is a first-to-finish join (`some` readiness): every fan-in shape is
+    // legal — parallel paths and both branch arms alike.
+    if (n.kind === 'race') continue
+
+    if (n.kind === 'output') {
+      // Only mutually-exclusive branch arms may converge on one Output; two or
+      // more always-live (unconditional) incoming edges are parallel paths, one
+      // of which would be silently dropped.
+      const unconditional = incoming.filter((e) => !topo.isConditional(e.source))
+      if (unconditional.length >= 2) {
         ctx.addIssue({
           code: 'custom',
-          message: `Iteration node ${n.id} cannot contain another iteration node (nested iteration is not supported).`,
+          message: `Output node ${n.id} merges ${unconditional.length} parallel paths; only mutually-exclusive branch arms may converge on one Output. Give each parallel path its own Output node.`,
+        })
+      }
+    } else {
+      // A work node fires only when ALL its incoming edges are alive; it stalls
+      // when a single branch feeds BOTH its arms into this node (mutually
+      // exclusive, so one arm's edge stays dead forever).
+      const d = bothArmsJoinDecision(
+        n.id,
+        topo.ancestorCone(n.id),
+        topo.decisionIds,
+        g.edges,
+      )
+      if (d) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `Node ${n.id} joins both arms of branch ${d}; those paths are mutually exclusive and can never all complete, so the join would stall. Route each arm to its own Output, or converge only paths on the same branch arm.`,
         })
       }
     }
+  }
+}
 
-    // Topology the scheduler can actually run. Its readiness rule is
-    // all-incoming-edges-alive (`every`) for work nodes and any-incoming-edge-
-    // alive (`some`) for Output nodes, and a branch's outgoing edges are only
-    // alive for the matching outcome. Two shapes break that contract silently,
-    // so we reject them at author time instead of stalling / dropping nodes at
-    // run time. `conditional` = a node whose execution depends on a decision
-    // outcome (a branch/switch, or anything downstream of one).
-    const decisionIds = new Set(
-      g.nodes.filter((n) => isDecisionKind(n.kind)).map((n) => n.id),
-    )
-    // A YES/NO (boolean) agent routes like a branch but its "decision-ness"
-    // isn't visible from the node kind — the agent's output contract lives in
-    // the referenced `wf_agent`, not the graph. The graph-local signal is the
-    // conditioned outgoing edge: any node with one routes, so treat it as a
-    // decision for the cone/join analysis below.
-    for (const e of g.edges) {
-      if (e.condition != null) {
-        decisionIds.add(e.source)
-      }
-    }
-    const outAdj = new Map<string, string[]>()
-    for (const e of g.edges) {
-      const list = outAdj.get(e.source)
-      if (list) list.push(e.target)
-      else outAdj.set(e.source, [e.target])
-    }
-    const conditional = new Set<string>()
-    const stack = g.edges
-      .filter((e) => decisionIds.has(e.source))
-      .map((e) => e.target)
-    while (stack.length > 0) {
-      const id = stack.pop() as string
-      if (conditional.has(id)) continue
-      conditional.add(id)
-      for (const t of outAdj.get(id) ?? []) stack.push(t)
-    }
-    const isConditional = (nodeId: string): boolean =>
-      decisionIds.has(nodeId) || conditional.has(nodeId)
-
-    // Reverse adjacency + ancestor cones, for reasoning about which decisions
-    // gate a work-node join.
-    const inAdj = new Map<string, WorkflowEdge[]>()
-    for (const e of g.edges) {
-      const list = inAdj.get(e.target)
-      if (list) list.push(e)
-      else inAdj.set(e.target, [e])
-    }
-    const raceIds = new Set(
-      g.nodes.filter((n) => n.kind === 'race').map((n) => n.id),
-    )
-    // Every node with a directed path into `nodeId` (its ancestor cone), but
-    // SEALED at Race nodes: a Race is included as a boundary yet we don't walk
-    // through its predecessors. A Race fires on the first live arm and always
-    // completes regardless of which arm ran, so it collapses a branch — anything
-    // downstream of it no longer joins "both arms". Walking through the Race
-    // would keep both arms in the cone and falsely flag a stall that can't happen
-    // (e.g. branch → race → work node). A branch arm reaching the join by a path
-    // that BYPASSES the race still lands in the cone, so real stalls are caught.
-    const ancestorsOf = (nodeId: string): Set<string> => {
-      const seen = new Set<string>()
-      const stack = (inAdj.get(nodeId) ?? []).map((e) => e.source)
-      while (stack.length > 0) {
-        const id = stack.pop() as string
-        if (seen.has(id)) continue
-        seen.add(id)
-        if (raceIds.has(id)) continue // boundary: don't traverse past a Race
-        for (const e of inAdj.get(id) ?? []) stack.push(e.source)
-      }
-      return seen
-    }
-
-    for (const n of g.nodes) {
-      const incoming = g.edges.filter((e) => e.target === n.id)
-      if (incoming.length < 2) continue
-
-      if (n.kind === 'race') {
-        // A Race is a first-to-finish join: it fires on the FIRST live incoming
-        // edge (`some` readiness) and passes that winner through. Every fan-in
-        // shape is legal here — multiple always-live parallel paths (the whole
-        // point) and both arms of a branch alike — so it's exempt from the
-        // Output "no parallel merge" and work-node "no both-arms join" rules.
-        continue
-      }
-
-      if (n.kind === 'output') {
-        // Only mutually-exclusive branch arms may converge on one Output; the
-        // scheduler picks the single live incoming edge. Two or more *always-
-        // live* (unconditional) incoming edges are parallel paths — one would
-        // be silently dropped. Give each parallel path its own Output.
-        const unconditional = incoming.filter((e) => !isConditional(e.source))
-        if (unconditional.length >= 2) {
-          ctx.addIssue({
-            code: 'custom',
-            message: `Output node ${n.id} merges ${unconditional.length} parallel paths; only mutually-exclusive branch arms may converge on one Output. Give each parallel path its own Output node.`,
-          })
-        }
-      } else {
-        // A work node fires only when ALL its incoming edges are alive, so every
-        // node in its ancestor cone must run. That's fine for a fan-in whose
-        // paths all sit on the *same* side of every branch (e.g. parallel
-        // enrichment on one arm — all complete together). It stalls only when a
-        // single branch has *both* arms feeding paths into this node: the two
-        // arms are mutually exclusive, so one arm's edge stays dead forever and
-        // the join never becomes ready. Reject exactly that case.
-        const cone = ancestorsOf(n.id)
-        for (const d of decisionIds) {
-          if (!cone.has(d)) continue
-          const arms = new Set<string>()
-          for (const e of g.edges) {
-            if (e.source !== d || !e.condition) continue
-            // This arm feeds `n` iff its target can still reach `n`.
-            if (e.target === n.id || cone.has(e.target)) arms.add(e.condition)
-          }
-          if (arms.size >= 2) {
-            ctx.addIssue({
-              code: 'custom',
-              message: `Node ${n.id} joins both arms of branch ${d}; those paths are mutually exclusive and can never all complete, so the join would stall. Route each arm to its own Output, or converge only paths on the same branch arm.`,
-            })
-            break
-          }
-        }
-      }
-    }
+// Top-level schema. `version: 1` is the future-evolution lever — new schema
+// shapes ship as v2 and the executor branches on this. This is the strict
+// runtime gate: the Scheduler parses through it, so a graph that fails here
+// can't run. Author-time saving deliberately uses `workflowGraphShapeSchema`.
+export const workflowGraphSchema = workflowGraphShapeSchema.superRefine(
+  (g, ctx) => {
+    checkGraphShape(g, ctx)
+    checkRefBindings(g, ctx)
+    checkSwitchNodes(g, ctx)
+    checkIterationSubgraphs(g, ctx)
+    checkJoinTopology(g, ctx)
   },
 )
 

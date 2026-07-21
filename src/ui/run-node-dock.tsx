@@ -7,6 +7,7 @@ import { useWfComponents } from './context'
 import { cn } from './cn'
 import { RunActivityLog } from './run-activity-log'
 import { RunLog } from './run-log'
+import { runStatusClass } from './run-status'
 
 // The run viewer's bottom dock (DevTools-style, like the editor's Data/Issues
 // dock). Two tabs:
@@ -16,14 +17,6 @@ import { RunLog } from './run-log'
 //     (Input → thinking → tool call → … → Output).
 // The graph itself is the node list, so there's no list here. Collapsible via a
 // tab, the chevron, or a click on the top border.
-
-const statusBadge: Record<string, string> = {
-  completed: 'bg-green-100 text-green-700 border-green-200',
-  running: 'bg-blue-100 text-blue-700 border-blue-200',
-  failed: 'bg-red-100 text-red-700 border-red-200',
-  skipped: 'bg-neutral-100 text-neutral-500 border-neutral-200',
-  queued: 'bg-amber-100 text-amber-700 border-amber-200',
-}
 
 export type RunNodeDockProps = {
   /** The node selected on the run graph, or null when nothing is selected. */
@@ -199,7 +192,7 @@ export function RunNodeDock({
               {node.label}
             </span>
             {step ? (
-              <Badge className={cn('border', statusBadge[step.status])}>
+              <Badge className={cn('border', runStatusClass[step.status])}>
                 {step.status}
               </Badge>
             ) : (

@@ -33,6 +33,7 @@ import {
 import { agentColor, agentIcon } from '../agent-appearance'
 import { cn } from '../cn'
 import { useAgents, useTools, useTriggerEvents, useWorkflows } from '../hooks'
+import { runStatusDotClass } from '../run-status'
 import { ToolIcon } from '../tool-icon'
 import { NoteMarkdown } from './note-markdown'
 
@@ -92,14 +93,6 @@ function useNodeRunStatus(id: string): string | undefined {
   return useContext(RunStatusContext).get(id)
 }
 
-const RUN_STATUS_DOT: Record<string, string> = {
-  completed: 'bg-emerald-500',
-  failed: 'bg-rose-500',
-  running: 'bg-blue-500 animate-pulse',
-  skipped: 'bg-neutral-300',
-  queued: 'bg-amber-400',
-}
-
 // A small corner badge marking a node's run status — sits just outside the card
 // so it reads at a glance without crowding the label.
 function RunStatusDot({ status }: { status: string }) {
@@ -107,7 +100,7 @@ function RunStatusDot({ status }: { status: string }) {
     <span
       className={cn(
         'absolute -top-1 -right-1 size-2.5 rounded-full ring-2 ring-white',
-        RUN_STATUS_DOT[status] ?? 'bg-neutral-300',
+        runStatusDotClass[status] ?? 'bg-neutral-300',
       )}
       aria-label={`Status: ${status}`}
       title={status}

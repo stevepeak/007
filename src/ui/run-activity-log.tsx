@@ -11,6 +11,7 @@ import type { LucideIcon } from 'lucide-react'
 
 import type { WfRunLogDTO } from '../server/protocol'
 import { cn } from './cn'
+import { formatClock } from './cost'
 
 // The run viewer's run-wide progress feed — the "Activity" tab of the dock. A
 // chronological, console-style stream of the structured entries the engine
@@ -56,14 +57,6 @@ const LEVEL_STYLE: Record<
 
 function styleFor(level: Level) {
   return LEVEL_STYLE[level] ?? LEVEL_STYLE.info
-}
-
-function fmtClock(ms: number): string {
-  return new Date(ms).toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
 }
 
 export type RunActivityLogProps = {
@@ -130,7 +123,7 @@ export function RunActivityLog({
             )}
           >
             <span className="shrink-0 tabular-nums text-neutral-300">
-              {fmtClock(entry.ts)}
+              {formatClock(entry.ts)}
             </span>
             <Icon className={cn('mt-0.5 size-3 shrink-0', s.iconTone)} />
             <span className={cn('min-w-0 break-words whitespace-pre-wrap', s.tone)}>

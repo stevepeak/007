@@ -2,6 +2,7 @@ import { useWfComponents } from './context'
 import { cn } from './cn'
 import { DataView } from './data-view'
 import { useRun } from './hooks'
+import { runStatusClass } from './run-status'
 import type { WfRunStepDTO } from '../server/protocol'
 
 // Interface #1 — view a single run and its step logs. Reads the run via the
@@ -9,13 +10,11 @@ import type { WfRunStepDTO } from '../server/protocol'
 // Framework-agnostic React: all styling is Tailwind, all chrome is injected
 // primitives, so it drops into any host page.
 
+// Same palette as the shared runStatusClass, except this surface renders
+// `queued` in neutral (not amber) — preserved as a local override.
 const statusClass: Record<string, string> = {
-  completed: 'bg-green-100 text-green-700 border-green-200',
-  running: 'bg-blue-100 text-blue-700 border-blue-200',
-  failed: 'bg-red-100 text-red-700 border-red-200',
+  ...runStatusClass,
   queued: 'bg-neutral-100 text-neutral-600 border-neutral-200',
-  cancelled: 'bg-neutral-100 text-neutral-500 border-neutral-200',
-  skipped: 'bg-neutral-100 text-neutral-500 border-neutral-200',
 }
 
 export function StepRow({ step }: { step: WfRunStepDTO }) {

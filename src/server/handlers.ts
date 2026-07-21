@@ -389,12 +389,64 @@ function parseGraph(params: unknown): WorkflowGraph {
   return workflowGraphShapeSchema.parse(graph)
 }
 
+// A client-input problem (bad/missing params) — distinct from an unexpected
+// server fault so the dispatcher can answer 400 rather than 500.
+class BadRequestError extends Error {}
+
 function str(params: unknown, key: string): string {
   const v = (params as Record<string, unknown>)[key]
   if (typeof v !== 'string' || !v) {
-    throw new Error(`Missing '${key}' parameter.`)
+    throw new BadRequestError(`Missing '${key}' parameter.`)
   }
   return v
+}
+
+// Per-method input schemas, validated in the dispatcher BEFORE the handler runs,
+// so a malformed body fails fast with a 400 instead of surfacing as an opaque
+// 500 deep in a handler or a DB query (the flagged risk: an untyped `since` /
+// `limit` / `enabled` cast straight into logic). This is the single source of
+// truth for a method's wire input; add an entry as methods gain non-trivial
+// params. Objects are non-strict (unknown keys pass), so a schema only asserts
+// the fields it names — declaring one can't reject an otherwise-valid call.
+// Methods with no entry are passed through unchanged (validated by their own
+// `parseGraph`/`parseAgentConfig`/`str`, whose failures the dispatcher still
+// maps to 400).
+const wfInputSchemas: Partial<Record<keyof WfDataClient, z.ZodType>> = {
+  refreshModels: z.object({ providerId: z.string() }),
+  setModelEnabled: z.object({ modelId: z.string(), enabled: z.boolean() }),
+  listToolInvocations: z.object({
+    toolId: z.string(),
+    limit: z.number().optional(),
+  }),
+  getWorkflow: z.object({ workflowId: z.string() }),
+  discardDraft: z.object({ workflowId: z.string() }),
+  listVersions: z.object({ workflowId: z.string() }),
+  getVersion: z.object({ versionId: z.string() }),
+  listRuns: z.object({
+    workflowVersionId: z.string().optional(),
+    workflowId: z.string().optional(),
+    triggerKind: z.string().optional(),
+    status: z.string().optional(),
+    search: z.string().optional(),
+    since: z.number().optional(),
+    until: z.number().optional(),
+    limit: z.number().optional(),
+    offset: z.number().optional(),
+  }),
+  getRun: z.object({ runId: z.string() }),
+  retryRun: z.object({
+    runId: z.string(),
+    mode: z.enum(['restart', 'resume']).optional(),
+  }),
+  getAgent: z.object({ agentId: z.string() }),
+  listAgentVersions: z.object({ agentId: z.string() }),
+  countAgentReferences: z.object({ agentId: z.string() }),
+  listAgentReferences: z.object({ agentId: z.string() }),
+  archiveAgent: z.object({ agentId: z.string() }),
+  getEvalSet: z.object({ setId: z.string() }),
+  deleteEvalSet: z.object({ setId: z.string() }),
+  deleteEvalRow: z.object({ rowId: z.string() }),
+  getEvalRun: z.object({ evalRunId: z.string() }),
 }
 
 // Coerce an untrusted `{ [k]: v }` bag into a string→string record, dropping
@@ -1603,13 +1655,27 @@ export function createWfSdkHandlers<TDeps>(
       return json({ error: 'Invalid JSON body' }, 400)
     }
     const method = envelope.method
-    const params = envelope.params ?? {}
+    let params: unknown = envelope.params ?? {}
     if (!method) {
       return json({ error: 'Missing method' }, 400)
     }
     const handler = (handlers as Record<string, HandlerFn>)[method]
     if (!handler) {
       return json({ error: `Unknown method '${method}'` }, 400)
+    }
+
+    // Validate the body against the method's registered input schema (if any)
+    // before dispatch, so malformed params answer 400 instead of 500.
+    const schema = wfInputSchemas[method as keyof WfDataClient]
+    if (schema) {
+      const parsed = schema.safeParse(params)
+      if (!parsed.success) {
+        return json(
+          { error: `Invalid params for '${method}': ${parsed.error.message}` },
+          400,
+        )
+      }
+      params = parsed.data
     }
 
     try {
@@ -1629,6 +1695,11 @@ export function createWfSdkHandlers<TDeps>(
       const result = await handler({ params, ctx, db, req, env })
       return json(result)
     } catch (err) {
+      // Bad client input (a `str()` guard or a handler-level zod parse) is a
+      // 400, not a server fault — don't log it as a 500.
+      if (err instanceof BadRequestError || err instanceof z.ZodError) {
+        return json({ error: errorMessage(err) }, 400)
+      }
       // Surface the failure in the server log — otherwise a 500 from any
       // handler is invisible (the client only sees a generic error string).
       console.error(`[wf] ${method} failed:`, err)

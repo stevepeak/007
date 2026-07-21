@@ -9,6 +9,7 @@ import type {
 import { WfAutoForm } from './autoform/wf-auto-form'
 import { cn } from './cn'
 import { useWfComponents } from './context'
+import { formatTimestamp } from './cost'
 import { DataView } from './data-view'
 import {
   useRunToolPreview,
@@ -17,6 +18,7 @@ import {
   useTools,
 } from './hooks'
 import { useWfNav } from './nav'
+import { runStatusClass } from './run-status'
 import { ToolIcon } from './tool-icon'
 
 // The tool detail page: one tool's identity, a real-execution playground, and
@@ -26,22 +28,6 @@ import { ToolIcon } from './tool-icon'
 // The playground runs the ACTUAL tool with the host's live deps — it is not a
 // simulation. That's a deliberate, clearly-flagged action (see the warning
 // banner): a real call can hit external services, cost money, and mutate data.
-
-const stepStatusClass: Record<string, string> = {
-  completed: 'bg-green-100 text-green-700 border-green-200',
-  running: 'bg-blue-100 text-blue-700 border-blue-200',
-  failed: 'bg-red-100 text-red-700 border-red-200',
-  skipped: 'bg-neutral-100 text-neutral-500 border-neutral-200',
-}
-
-function fmtTime(ms: number): string {
-  return new Date(ms).toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
 
 export type ToolDetailProps = {
   toolId: string
@@ -330,14 +316,14 @@ function InvocationRow({ inv }: { inv: WfToolInvocation }) {
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-3 p-3 text-left"
       >
-        <Badge className={cn('border', stepStatusClass[inv.status])}>
+        <Badge className={cn('border', runStatusClass[inv.status])}>
           {inv.status}
         </Badge>
         <span className="min-w-0 flex-1 truncate text-sm text-neutral-700">
           {inv.workflowName ?? '(unknown workflow)'}
         </span>
         <span className="shrink-0 text-xs text-neutral-400">
-          {inv.startedAt ? fmtTime(inv.startedAt) : '—'}
+          {inv.startedAt ? formatTimestamp(inv.startedAt) : '—'}
         </span>
         <span className="text-xs text-neutral-400">{open ? '▾' : '▸'}</span>
       </button>

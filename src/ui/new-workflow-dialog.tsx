@@ -1,10 +1,11 @@
-import { CalendarClock, Hand, Webhook, X } from 'lucide-react'
+import { CalendarClock, Hand, Webhook } from 'lucide-react'
 import { useState } from 'react'
 
 import { buildStarterGraph, type NewWorkflowTrigger } from '../engine/graph'
 import { cn } from './cn'
 import { useWfComponents } from './context'
 import { useCreateWorkflow, useTriggerEvents } from './hooks'
+import { Modal } from './modal'
 
 // Create-workflow flow. A workflow can't exist without knowing how it starts, so
 // creation is a small dialog: name it, then choose one of three trigger modes —
@@ -93,25 +94,23 @@ export function NewWorkflowDialog({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
+    <Modal
+      open={open}
+      onClose={onClose}
+      closeOnEsc={false}
+      title="New workflow"
+      panelClassName="w-full max-w-lg rounded-lg border border-neutral-200 bg-white shadow-xl"
+      footer={
+        <>
+          <Button variant="outline" size="sm" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button size="sm" onClick={submit} disabled={!canSubmit}>
+            {create.isPending ? 'Creating…' : 'Create workflow'}
+          </Button>
+        </>
+      }
     >
-      <div
-        className="w-full max-w-lg rounded-lg border border-neutral-200 bg-white shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-3">
-          <h2 className="text-sm font-semibold">New workflow</h2>
-          <button
-            aria-label="Close"
-            onClick={onClose}
-            className="text-neutral-400 transition hover:text-neutral-700"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-
         <div className="space-y-4 px-5 py-4">
           <div className="space-y-1">
             <Label>Name</Label>
@@ -229,16 +228,6 @@ export function NewWorkflowDialog({
             </div>
           ) : null}
         </div>
-
-        <div className="flex justify-end gap-2 border-t border-neutral-200 px-5 py-3">
-          <Button variant="outline" size="sm" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button size="sm" onClick={submit} disabled={!canSubmit}>
-            {create.isPending ? 'Creating…' : 'Create workflow'}
-          </Button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

@@ -6,10 +6,11 @@ import type { RetryRunMode, WfRunStepDTO } from '../server/protocol'
 import { useWfComponents } from './context'
 import { cn } from './cn'
 import { WorkflowCanvas } from './editor/workflow-canvas'
-import { formatTokens, formatUsd } from './cost'
+import { formatDuration, formatTimestamp, formatTokens, formatUsd } from './cost'
 import { useRetryRun, useRun } from './hooks'
 import { useWfNav } from './nav'
 import { RunNodeDock } from './run-node-dock'
+import { runStatusClass } from './run-status'
 import { WfShell } from './shell'
 
 // Full-page run viewer. Clicking a row in the runs explorer lands here. The
@@ -17,33 +18,6 @@ import { WfShell } from './shell'
 // with each node tinted by its run status (failed = red). Selecting a node opens
 // its Input / Logs / Output in the bottom dock — the graph IS the node list, so
 // there's no separate trace column. A failed run can be re-dispatched via Retry.
-
-const statusClass: Record<string, string> = {
-  completed: 'bg-green-100 text-green-700 border-green-200',
-  running: 'bg-blue-100 text-blue-700 border-blue-200',
-  failed: 'bg-red-100 text-red-700 border-red-200',
-  queued: 'bg-amber-100 text-amber-700 border-amber-200',
-  cancelled: 'bg-neutral-100 text-neutral-500 border-neutral-200',
-}
-
-function fmtTime(ms: number): string {
-  return new Date(ms).toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function fmtDuration(start: number, end: number | null): string {
-  if (end == null) return '—'
-  const secs = Math.max(0, Math.round((end - start) / 1000))
-  if (secs < 60) return `${secs}s`
-  const mins = Math.floor(secs / 60)
-  if (mins < 60) return `${mins}m ${secs % 60}s`
-  const hrs = Math.floor(mins / 60)
-  return `${hrs}h ${mins % 60}m`
-}
 
 // Human labels for a run's trigger kind, so the breadcrumb reads "Chat message"
 // rather than the raw `chat` slug. Unknown kinds are title-cased as a fallback.
@@ -248,7 +222,7 @@ export function RunPage({ runId, className }: RunPageProps) {
               <span className="text-neutral-400"> v{data.versionNumber}</span>
             ) : null}
           </span>
-          <Badge className={cn('border', statusClass[run.status])}>
+          <Badge className={cn('border', runStatusClass[run.status])}>
             {run.status}
           </Badge>
           {run.sentryTraceUrl ? (
@@ -265,10 +239,10 @@ export function RunPage({ runId, className }: RunPageProps) {
             </a>
           ) : null}
           <span className="text-xs text-neutral-500">
-            {fmtTime(run.createdAt)}
+            {formatTimestamp(run.createdAt)}
           </span>
           <span className="text-xs text-neutral-500">
-            {fmtDuration(start, end)}
+            {formatDuration(start, end)}
           </span>
           {run.costUsd != null ? (
             <span

@@ -1,5 +1,7 @@
-import { FlaskConical, Layers, ListChecks, Target, X } from 'lucide-react'
-import { useEffect, type ReactNode } from 'react'
+import { FlaskConical, Layers, ListChecks, Target } from 'lucide-react'
+import { type ReactNode } from 'react'
+
+import { Modal } from '../modal'
 
 // Explains the Evals → Goals → Samples → Tests hierarchy and why it exists.
 // Opened from the (?) button on the Evals catalog. Purely informational.
@@ -10,37 +12,13 @@ export type EvalsHelpDialogProps = {
 }
 
 export function EvalsHelpDialog({ open, onClose }: EvalsHelpDialogProps) {
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
-
-  if (!open) return null
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="How Evals work"
+      panelClassName="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-lg border border-neutral-200 bg-white shadow-xl"
     >
-      <div
-        className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-lg border border-neutral-200 bg-white shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-3">
-          <h2 className="text-sm font-semibold">How Evals work</h2>
-          <button
-            aria-label="Close"
-            onClick={onClose}
-            className="text-neutral-400 transition hover:text-neutral-700"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-
         <div className="space-y-5 px-5 py-5">
           <p className="text-sm leading-relaxed text-neutral-600">
             Evals let you prove your agents and workflows still do the right
@@ -109,8 +87,7 @@ export function EvalsHelpDialog({ open, onClose }: EvalsHelpDialogProps) {
             </ul>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 

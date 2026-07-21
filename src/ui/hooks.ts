@@ -29,11 +29,16 @@ const keys = {
   toolContextFields: ['wf', 'tool-context-fields'] as const,
   toolInvocations: (toolId: string, limit?: number) =>
     ['wf', 'tool-invocations', toolId, limit ?? null] as const,
+  // Prefix key: invalidates every limit variant of a tool's invocations.
+  toolInvocationsAll: (toolId: string) =>
+    ['wf', 'tool-invocations', toolId] as const,
   triggerEvents: ['wf', 'trigger-events'] as const,
   workflows: ['wf', 'workflows'] as const,
   workflow: (id: string) => ['wf', 'workflow', id] as const,
   versions: (id: string) => ['wf', 'versions', id] as const,
   runs: (input: WfRunListInput) => ['wf', 'runs', input] as const,
+  // Prefix key: invalidates every filter/page variant of the runs list.
+  runsAll: ['wf', 'runs'] as const,
   runTriggerKinds: ['wf', 'run-trigger-kinds'] as const,
   run: (id: string) => ['wf', 'run', id] as const,
   agents: ['wf', 'agents'] as const,
@@ -42,8 +47,12 @@ const keys = {
   agentReferences: (id: string) => ['wf', 'agent-references', id] as const,
   evalSets: (includeArchived?: boolean) =>
     ['wf', 'eval-sets', includeArchived ?? false] as const,
+  // Prefix key: invalidates both archived/active variants of the eval sets list.
+  evalSetsAll: ['wf', 'eval-sets'] as const,
   evalSet: (id: string) => ['wf', 'eval-set', id] as const,
   evalRuns: (limit?: number) => ['wf', 'eval-runs', limit ?? null] as const,
+  // Prefix key: invalidates every limit variant of the eval runs list.
+  evalRunsAll: ['wf', 'eval-runs'] as const,
   evalRun: (id: string) => ['wf', 'eval-run', id] as const,
 }
 
@@ -135,7 +144,7 @@ export function useRunToolPreview(toolId: string) {
       context?: Record<string, string>
     }) => client.runToolPreview(input),
     onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ['wf', 'tool-invocations', toolId] }),
+      qc.invalidateQueries({ queryKey: keys.toolInvocationsAll(toolId) }),
   })
 }
 
@@ -209,7 +218,7 @@ export function useRetryRun() {
       client.retryRun(input),
     onSuccess: (_r, input) => {
       void qc.invalidateQueries({ queryKey: keys.run(input.runId) })
-      void qc.invalidateQueries({ queryKey: ['wf', 'runs'] })
+      void qc.invalidateQueries({ queryKey: keys.runsAll })
     },
   })
 }
@@ -472,7 +481,7 @@ export function useCreateEvalSet() {
       targetVersion?: number | null
       triggerKind: string
     }) => client.createEvalSet(input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['wf', 'eval-sets'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.evalSetsAll }),
   })
 }
 
@@ -491,7 +500,7 @@ export function useUpdateEvalSet() {
       archived?: boolean
     }) => client.updateEvalSet(input),
     onSuccess: (_r, input) => {
-      void qc.invalidateQueries({ queryKey: ['wf', 'eval-sets'] })
+      void qc.invalidateQueries({ queryKey: keys.evalSetsAll })
       void qc.invalidateQueries({ queryKey: keys.evalSet(input.setId) })
     },
   })
@@ -502,7 +511,7 @@ export function useDeleteEvalSet() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (setId: string) => client.deleteEvalSet(setId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['wf', 'eval-sets'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.evalSetsAll }),
   })
 }
 
@@ -635,6 +644,6 @@ export function useRunEval() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (input: RunEvalInput) => runEval(client, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['wf', 'eval-runs'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.evalRunsAll }),
   })
 }

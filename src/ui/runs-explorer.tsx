@@ -1,26 +1,18 @@
-import { CircleDashed } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import type { WfRunListInput, WfRunSummary } from '../server/protocol'
 import { useWfComponents } from './context'
 import { cn } from './cn'
-import { formatUsd } from './cost'
+import { formatDuration, formatTimestamp, formatUsd } from './cost'
 import { useRuns, useRunTriggerKinds, useWorkflows } from './hooks'
 import { useWfNav } from './nav'
+import { RunStatusBadge } from './run-status'
 
 // Interface #2 — the runs explorer. A dense, server-filtered, paginated table
 // built for thousands of runs: search by workflow name / trigger / reference,
 // filter by trigger kind, status, and timeframe. Clicking a row opens that
 // run's full-page viewer. All querying happens server-side (see `listRuns`), so
 // the browser only ever holds one page.
-
-const statusClass: Record<string, string> = {
-  completed: 'bg-green-100 text-green-700 border-green-200',
-  running: 'bg-blue-100 text-blue-700 border-blue-200',
-  failed: 'bg-red-100 text-red-700 border-red-200',
-  queued: 'bg-amber-100 text-amber-700 border-amber-200',
-  cancelled: 'bg-neutral-100 text-neutral-500 border-neutral-200',
-}
 
 const STATUS_OPTIONS = [
   'queued',
@@ -39,27 +31,10 @@ const TIMEFRAMES: { label: string; ms: number | null }[] = [
   { label: 'Last 30 days', ms: 30 * 24 * 60 * 60 * 1000 },
 ]
 
-function fmtTime(ms: number): string {
-  const d = new Date(ms)
-  return d.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
 function fmtDuration(run: WfRunSummary): string {
   const start = run.startedAt ?? run.createdAt
   const end = run.finishedAt ?? (run.status === 'running' ? Date.now() : null)
-  if (end == null) return '—'
-  const secs = Math.max(0, Math.round((end - start) / 1000))
-  if (secs < 60) return `${secs}s`
-  const mins = Math.floor(secs / 60)
-  const rem = secs % 60
-  if (mins < 60) return `${mins}m ${rem}s`
-  const hrs = Math.floor(mins / 60)
-  return `${hrs}h ${mins % 60}m`
+  return formatDuration(start, end)
 }
 
 function useDebounced<T>(value: T, delayMs: number): T {
@@ -98,19 +73,6 @@ function Select({
       {children}
     </select>
   )
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const { Badge } = useWfComponents()
-  if (status === 'running' || status === 'queued') {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700">
-        <CircleDashed className="size-3 animate-spin" />
-        {status}
-      </span>
-    )
-  }
-  return <Badge className={cn('border', statusClass[status])}>{status}</Badge>
 }
 
 export type RunsExplorerProps = {
@@ -285,7 +247,7 @@ export function RunsExplorer({
                 className="cursor-pointer border-b border-neutral-100 hover:bg-neutral-50"
               >
                 <td className="px-3 py-2">
-                  <StatusBadge status={r.status} />
+                  <RunStatusBadge status={r.status} />
                 </td>
                 <td className="px-3 py-2">
                   <div className="font-medium text-neutral-800">
@@ -301,7 +263,7 @@ export function RunsExplorer({
                   </span>
                 </td>
                 <td className="whitespace-nowrap px-3 py-2 text-neutral-600">
-                  {fmtTime(r.createdAt)}
+                  {formatTimestamp(r.createdAt)}
                 </td>
                 <td className="whitespace-nowrap px-3 py-2 text-right text-neutral-600">
                   {fmtDuration(r)}

@@ -18,6 +18,7 @@ import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { PromptBodyEditor } from '../editor/prompt-body-editor'
 import { useAgents, useEvalSets, useModels, useProviders, useRunEval } from '../hooks'
+import { Modal } from '../modal'
 import { useWfNav } from '../nav'
 import { IdeaSpark } from '../idea-spark'
 import { BrandMark, inferModelBrand } from './shared'
@@ -149,15 +150,6 @@ export function RunConfigDialog({
     }
   }, [open])
 
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
-
   if (!open) return null
 
   const setCount = (modelId: string, next: number) =>
@@ -201,14 +193,43 @@ export function RunConfigDialog({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
+    <Modal
+      open={open}
+      onClose={onClose}
+      panelClassName="flex max-h-[85vh] w-full max-w-lg flex-col rounded-lg border border-neutral-200 bg-white shadow-xl"
+      footer={
+        step === 'configure' ? (
+          <>
+            <Button variant="outline" size="sm" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={!canConfigure}
+              onClick={() => setStep('confirm')}
+            >
+              Review run
+              <ArrowRight className="size-4" />
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setStep('configure')}
+            >
+              <ArrowLeft className="size-4" />
+              Back
+            </Button>
+            <Button size="sm" disabled={!canRun} onClick={() => void launch()}>
+              <Play className="size-4" />
+              {runEval.isPending ? 'Launching…' : 'Start run'}
+            </Button>
+          </>
+        )
+      }
     >
-      <div
-        className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-lg border border-neutral-200 bg-white shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
         <div className="flex items-start justify-between border-b border-neutral-200 px-5 py-3">
           <div>
             <h2 className="text-sm font-semibold text-neutral-900">
@@ -461,40 +482,7 @@ export function RunConfigDialog({
           />
         )}
 
-        <div className="flex justify-end gap-2 border-t border-neutral-200 px-5 py-3">
-          {step === 'configure' ? (
-            <>
-              <Button variant="outline" size="sm" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                disabled={!canConfigure}
-                onClick={() => setStep('confirm')}
-              >
-                Review run
-                <ArrowRight className="size-4" />
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setStep('configure')}
-              >
-                <ArrowLeft className="size-4" />
-                Back
-              </Button>
-              <Button size="sm" disabled={!canRun} onClick={() => void launch()}>
-                <Play className="size-4" />
-                {runEval.isPending ? 'Launching…' : 'Start run'}
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 

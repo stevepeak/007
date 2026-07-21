@@ -1,9 +1,9 @@
 import {
-  isDecisionKind,
   SWITCH_DEFAULT_CASE,
   type WorkflowGraph,
   type WorkflowNode,
 } from './graph'
+import { analyzeJoinTopology, bothArmsJoinDecision } from './graph-topology'
 
 // Author-time graph diagnostics. Where `workflowGraphSchema`'s superRefine is
 // the strict *runtime* gate (a failing graph can't run), this collects the same
@@ -29,29 +29,6 @@ export type GraphIssue = {
   nodeLabel?: string
   message: string
   severity: GraphIssueSeverity
-}
-
-// Every node with a directed path into `nodeId` (its ancestor cone). When
-// `sealAt` is given, traversal stops at those nodes: the node is included as a
-// boundary but its predecessors are not. Used to seal the cone at Race nodes for
-// the mutually-exclusive-join check — a Race collapses a branch (it fires on the
-// first live arm and always completes), so anything downstream of it no longer
-// joins "both arms" and must not be flagged as a stall.
-function ancestorCone(
-  nodeId: string,
-  incoming: Map<string, WorkflowGraph['edges']>,
-  sealAt?: Set<string>,
-): Set<string> {
-  const seen = new Set<string>()
-  const stack = (incoming.get(nodeId) ?? []).map((e) => e.source)
-  while (stack.length > 0) {
-    const id = stack.pop() as string
-    if (seen.has(id)) continue
-    seen.add(id)
-    if (sealAt?.has(id)) continue // boundary: don't traverse past this node
-    for (const e of incoming.get(id) ?? []) stack.push(e.source)
-  }
-  return seen
 }
 
 // Per-node "is this configured enough to run?" checks that need no external
@@ -123,16 +100,11 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
   const issues: GraphIssue[] = []
   const byId = new Map(graph.nodes.map((n) => [n.id, n]))
 
-  const incoming = new Map<string, WorkflowGraph['edges']>()
-  const outgoing = new Map<string, WorkflowGraph['edges']>()
-  for (const e of graph.edges) {
-    const inc = incoming.get(e.target)
-    if (inc) inc.push(e)
-    else incoming.set(e.target, [e])
-    const out = outgoing.get(e.source)
-    if (out) out.push(e)
-    else outgoing.set(e.source, [e])
-  }
+  // Shared join/cone analysis (adjacency, decision sources, sealed cones) — the
+  // same reasoning the strict schema uses, so author-time flags match runtime
+  // rejects. See graph-topology.ts.
+  const topo = analyzeJoinTopology(graph)
+  const { incoming, outgoing } = topo
 
   // ── Graph-wide shape ──────────────────────────────────────────────────────
   const triggers = graph.nodes.filter((n) => n.kind === 'trigger')
@@ -155,27 +127,6 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
       })
     }
   }
-
-  // Decision cone membership, for the mutually-exclusive-join check below. A
-  // YES/NO (boolean) agent routes like a branch but isn't a decision *kind* —
-  // its routing shows up graph-locally as a conditioned outgoing edge, so any
-  // node with one counts as a decision source here too.
-  const decisionIds = new Set(
-    graph.nodes.filter((n) => isDecisionKind(n.kind)).map((n) => n.id),
-  )
-  for (const e of graph.edges) {
-    if (e.condition != null) decisionIds.add(e.source)
-  }
-  // A Race collapses a branch (fires on the first live arm, always completes),
-  // so the mutually-exclusive-join cone is sealed at Race nodes — see below.
-  const raceIds = new Set(
-    graph.nodes.filter((n) => n.kind === 'race').map((n) => n.id),
-  )
-  // A node is "conditional" when it — or any ancestor — is a decision node, so
-  // its execution depends on a branch outcome.
-  const isConditional = (nodeId: string): boolean =>
-    decisionIds.has(nodeId) ||
-    [...ancestorCone(nodeId, incoming)].some((id) => decisionIds.has(id))
 
   // ── Per-node ──────────────────────────────────────────────────────────────
   for (const node of graph.nodes) {
@@ -265,7 +216,9 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
       } else if (node.kind === 'output') {
         // Two always-live (unconditional) paths into one Output silently drop
         // one. Only mutually-exclusive branch arms may converge here.
-        const unconditional = inc.filter((e) => !isConditional(e.source)).length
+        const unconditional = inc.filter(
+          (e) => !topo.isConditional(e.source),
+        ).length
         if (unconditional >= 2) {
           issues.push({
             ...base,
@@ -275,24 +228,19 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
           })
         }
       } else {
-        const cone = ancestorCone(node.id, incoming, raceIds)
-        for (const d of decisionIds) {
-          if (!cone.has(d)) continue
-          const arms = new Set<string>()
-          for (const e of graph.edges) {
-            if (e.source !== d || !e.condition) continue
-            if (e.target === node.id || cone.has(e.target))
-              arms.add(e.condition)
-          }
-          if (arms.size >= 2) {
-            const branch = byId.get(d)
-            issues.push({
-              ...base,
-              severity: 'error',
-              message: `Joins both arms of branch "${branch?.label ?? d}" — those paths never run together, so this node would stall. Route each arm to its own Output.`,
-            })
-            break
-          }
+        const d = bothArmsJoinDecision(
+          node.id,
+          topo.ancestorCone(node.id),
+          topo.decisionIds,
+          graph.edges,
+        )
+        if (d) {
+          const branch = byId.get(d)
+          issues.push({
+            ...base,
+            severity: 'error',
+            message: `Joins both arms of branch "${branch?.label ?? d}" — those paths never run together, so this node would stall. Route each arm to its own Output.`,
+          })
         }
       }
     }

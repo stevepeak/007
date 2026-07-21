@@ -18,3 +18,33 @@ export function formatTokens(v: number | null | undefined): string {
   if (v < 1_000_000) return `${(v / 1000).toFixed(v < 10_000 ? 1 : 0)}k`
   return `${(v / 1_000_000).toFixed(1)}M`
 }
+
+/** Absolute timestamp as `Mar 5, 09:05 AM` (locale-formatted, 2-digit hour). */
+export function formatTimestamp(ms: number): string {
+  return new Date(ms).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+/** Elapsed time between two epoch-ms marks as `42s` / `3m 20s` / `1h 5m`. */
+export function formatDuration(start: number, end: number | null): string {
+  if (end == null) return '—'
+  const secs = Math.max(0, Math.round((end - start) / 1000))
+  if (secs < 60) return `${secs}s`
+  const mins = Math.floor(secs / 60)
+  if (mins < 60) return `${mins}m ${secs % 60}s`
+  const hrs = Math.floor(mins / 60)
+  return `${hrs}h ${mins % 60}m`
+}
+
+/** Wall-clock time of day as `09:05:03` (locale-formatted, seconds included). */
+export function formatClock(ms: number): string {
+  return new Date(ms).toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+}
