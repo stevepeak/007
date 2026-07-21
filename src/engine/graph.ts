@@ -711,7 +711,17 @@ export const workflowGraphSchema = workflowGraphShapeSchema.superRefine(
       if (list) list.push(e)
       else inAdj.set(e.target, [e])
     }
-    // Every node with a directed path into `nodeId` (its ancestor cone).
+    const raceIds = new Set(
+      g.nodes.filter((n) => n.kind === 'race').map((n) => n.id),
+    )
+    // Every node with a directed path into `nodeId` (its ancestor cone), but
+    // SEALED at Race nodes: a Race is included as a boundary yet we don't walk
+    // through its predecessors. A Race fires on the first live arm and always
+    // completes regardless of which arm ran, so it collapses a branch — anything
+    // downstream of it no longer joins "both arms". Walking through the Race
+    // would keep both arms in the cone and falsely flag a stall that can't happen
+    // (e.g. branch → race → work node). A branch arm reaching the join by a path
+    // that BYPASSES the race still lands in the cone, so real stalls are caught.
     const ancestorsOf = (nodeId: string): Set<string> => {
       const seen = new Set<string>()
       const stack = (inAdj.get(nodeId) ?? []).map((e) => e.source)
@@ -719,6 +729,7 @@ export const workflowGraphSchema = workflowGraphShapeSchema.superRefine(
         const id = stack.pop() as string
         if (seen.has(id)) continue
         seen.add(id)
+        if (raceIds.has(id)) continue // boundary: don't traverse past a Race
         for (const e of inAdj.get(id) ?? []) stack.push(e.source)
       }
       return seen

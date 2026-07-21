@@ -31,10 +31,16 @@ export type GraphIssue = {
   severity: GraphIssueSeverity
 }
 
-// Every node with a directed path into `nodeId` (its ancestor cone).
+// Every node with a directed path into `nodeId` (its ancestor cone). When
+// `sealAt` is given, traversal stops at those nodes: the node is included as a
+// boundary but its predecessors are not. Used to seal the cone at Race nodes for
+// the mutually-exclusive-join check — a Race collapses a branch (it fires on the
+// first live arm and always completes), so anything downstream of it no longer
+// joins "both arms" and must not be flagged as a stall.
 function ancestorCone(
   nodeId: string,
   incoming: Map<string, WorkflowGraph['edges']>,
+  sealAt?: Set<string>,
 ): Set<string> {
   const seen = new Set<string>()
   const stack = (incoming.get(nodeId) ?? []).map((e) => e.source)
@@ -42,6 +48,7 @@ function ancestorCone(
     const id = stack.pop() as string
     if (seen.has(id)) continue
     seen.add(id)
+    if (sealAt?.has(id)) continue // boundary: don't traverse past this node
     for (const e of incoming.get(id) ?? []) stack.push(e.source)
   }
   return seen
@@ -159,6 +166,11 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
   for (const e of graph.edges) {
     if (e.condition != null) decisionIds.add(e.source)
   }
+  // A Race collapses a branch (fires on the first live arm, always completes),
+  // so the mutually-exclusive-join cone is sealed at Race nodes — see below.
+  const raceIds = new Set(
+    graph.nodes.filter((n) => n.kind === 'race').map((n) => n.id),
+  )
   // A node is "conditional" when it — or any ancestor — is a decision node, so
   // its execution depends on a branch outcome.
   const isConditional = (nodeId: string): boolean =>
@@ -263,7 +275,7 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
           })
         }
       } else {
-        const cone = ancestorCone(node.id, incoming)
+        const cone = ancestorCone(node.id, incoming, raceIds)
         for (const d of decisionIds) {
           if (!cone.has(d)) continue
           const arms = new Set<string>()

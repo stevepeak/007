@@ -170,6 +170,46 @@ describe('collectGraphIssues', () => {
     ).toBe(false)
   })
 
+  test('a work node downstream of a branch-joining race is not flagged', () => {
+    // branch yes→race, no→v→race, then race→j (a work node). The race collapses
+    // the branch, so `j` never joins both arms — the cone must be sealed at the
+    // race. This is the "Ingest document" Save-enrichment shape.
+    const g = graph(
+      [trigger, branch('b'), agent('v'), race('r'), agent('j'), output('o')],
+      [
+        edge('t', 'b'),
+        edge('b', 'r', 'yes'),
+        edge('b', 'v', 'no'),
+        edge('v', 'r'),
+        edge('r', 'j'),
+        edge('j', 'o'),
+      ],
+    )
+    expect(
+      collectGraphIssues(g).some((i) => /both arms/.test(i.message)),
+    ).toBe(false)
+  })
+
+  test('still flags a work node when an arm bypasses the race', () => {
+    // yes→race→j, but no→j directly. The direct arm keeps both arms in j's cone,
+    // so the stall is real and the race seal must not hide it.
+    const g = graph(
+      [trigger, branch('b'), race('r'), agent('j'), output('o')],
+      [
+        edge('t', 'b'),
+        edge('b', 'r', 'yes'),
+        edge('r', 'j'),
+        edge('b', 'j', 'no'),
+        edge('j', 'o'),
+      ],
+    )
+    expect(
+      collectGraphIssues(g).some(
+        (i) => i.nodeId === 'j' && /both arms/.test(i.message),
+      ),
+    ).toBe(true)
+  })
+
   test('warns when a race has only one input', () => {
     const g = graph(
       [trigger, agent('a'), race('r'), output('o')],
