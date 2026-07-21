@@ -1,7 +1,5 @@
 import {
   Archive,
-  GitBranch,
-  History,
   Loader2,
   Sparkles,
   Workflow as WorkflowIcon,
@@ -25,8 +23,11 @@ import {
 } from '../hooks'
 import { WfShell } from '../shell'
 import { BottomDock } from './bottom-dock'
+import { HistoryMenu, VersionsMenu } from './editor-menus'
 import { NodeInspector } from './node-inspector'
 import { NodePalette } from './node-palette'
+import { useEditHistory } from './use-edit-history'
+import { useStoredEdit } from './use-stored-edit'
 import { invalidNodeIdsOf, useGraphIssues } from './use-graph-issues'
 import { WorkflowCanvas, type NodeDefaults } from './workflow-canvas'
 
@@ -89,106 +90,6 @@ export function WorkflowEditor({
   )
 }
 
-// One entry in the undo/redo change history. The workflow name lives here too
-// (not in the graph), so renaming the title is undoable alongside graph edits.
-// `label` is a short human description of what the change did.
-type EditSnapshot = { graph: WorkflowGraph; name: string; label: string }
-
-// Best-effort short description of a graph edit, for the change-history log.
-function describeChange(prev: WorkflowGraph, next: WorkflowGraph): string {
-  const prevNodes = new Map(prev.nodes.map((n) => [n.id, n]))
-  const nextNodes = new Map(next.nodes.map((n) => [n.id, n]))
-  for (const [id, n] of nextNodes) {
-    if (!prevNodes.has(id)) return `Added ${n.kind} node`
-  }
-  for (const [id, n] of prevNodes) {
-    if (!nextNodes.has(id)) return `Removed ${n.kind} node`
-  }
-  if (next.edges.length > prev.edges.length) return 'Connected nodes'
-  if (next.edges.length < prev.edges.length) return 'Removed connection'
-  let movedKind: string | null = null
-  for (const [id, nn] of nextNodes) {
-    const pn = prevNodes.get(id)
-    if (!pn) continue
-    const dataChanged =
-      JSON.stringify({ label: pn.label, config: pn.config }) !==
-      JSON.stringify({ label: nn.label, config: nn.config })
-    if (dataChanged) return `Edited ${nn.kind} node`
-    if (pn.position.x !== nn.position.x || pn.position.y !== nn.position.y) {
-      movedKind = nn.kind
-    }
-  }
-  if (movedKind) return `Moved ${movedKind} node`
-  return 'Edited workflow'
-}
-
-// Unsaved edits are persisted to localStorage so navigating away and back
-// doesn't lose work. Keyed per workflow; cleared once the edit is saved.
-const EDIT_STORAGE_PREFIX = 'wf-sdk:edit:'
-type StoredEdit = { graph: WorkflowGraph; name: string }
-
-function readStoredEdit(workflowId: string): StoredEdit | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const raw = window.localStorage.getItem(EDIT_STORAGE_PREFIX + workflowId)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<StoredEdit>
-    if (parsed && parsed.graph && typeof parsed.name === 'string') {
-      return { graph: parsed.graph, name: parsed.name }
-    }
-    return null
-  } catch {
-    return null
-  }
-}
-
-function writeStoredEdit(workflowId: string, edit: StoredEdit): void {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.setItem(
-      EDIT_STORAGE_PREFIX + workflowId,
-      JSON.stringify(edit),
-    )
-  } catch {
-    // storage full / unavailable — best-effort only
-  }
-}
-
-function clearStoredEdit(workflowId: string): void {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.removeItem(EDIT_STORAGE_PREFIX + workflowId)
-  } catch {
-    // ignore
-  }
-}
-
-// Commit-graph node for a change-history row: a dot on a connecting rail. The
-// newest change is dark; older ones are a single muted grey tone.
-function HistoryDot({ muted }: { muted?: boolean }) {
-  return (
-    <span className="relative flex w-3 shrink-0 justify-center self-stretch">
-      <span className="absolute inset-y-0 w-px bg-neutral-200" />
-      <span
-        className={cn(
-          'relative mt-2 size-2 rounded-full',
-          muted ? 'bg-neutral-300' : 'bg-neutral-800',
-        )}
-      />
-    </span>
-  )
-}
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  const el = target as HTMLElement | null
-  return (
-    !!el &&
-    (el.tagName === 'INPUT' ||
-      el.tagName === 'TEXTAREA' ||
-      el.isContentEditable)
-  )
-}
-
 function EditorInner({
   workflowId,
   initialGraph,
@@ -210,9 +111,7 @@ function EditorInner({
 }) {
   const { Button } = useWfComponents()
   const client = useWfClient()
-  const [graph, setGraph] = useState<WorkflowGraph>(initialGraph)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [name, setName] = useState(initialName)
   // The workflow's description — a plain field, committed to the server on blur
   // (not part of the graph/undo history or the unsaved-draft dirty state).
   const [description, setDescription] = useState(initialDescription)
@@ -226,18 +125,14 @@ function EditorInner({
   const applyGraphRef = useRef<((g: WorkflowGraph) => void) | null>(null)
   const selectNodeRef = useRef<((nodeId: string) => void) | null>(null)
 
-  // Undo/redo history. `applyingRef` suppresses recording the change the canvas
-  // re-emits when we programmatically apply a snapshot (undo/redo/version load).
-  const historyRef = useRef<EditSnapshot[]>([
-    { graph: initialGraph, name: initialName, label: 'Opened' },
-  ])
-  const indexRef = useRef(0)
-  const applyingRef = useRef(false)
-  // Which history index reflects the last-saved state (drives the dirty flag).
-  const [savedIndex, setSavedIndex] = useState(0)
-  // Bumped on any history mutation so the toolbar re-renders (refs alone don't).
-  const [, forceRender] = useState(0)
-  const bump = () => forceRender((n) => n + 1)
+  // Undo/redo history: owns the `graph`/`name` under edit, the snapshot stack,
+  // dirty tracking, and keyboard undo/redo. Snapshots re-apply to the xyflow
+  // canvas via its imperative ref.
+  const history = useEditHistory(initialGraph, initialName, (g) =>
+    applyGraphRef.current?.(g),
+  )
+  const { graph, name } = history
+  const dirty = history.dirty
 
   const tools = useTools()
   const versions = useVersions(workflowId)
@@ -286,68 +181,25 @@ function EditorInner({
   const issues = useGraphIssues(graph)
   const invalidNodeIds = useMemo(() => invalidNodeIdsOf(issues), [issues])
 
-  // Push a new snapshot onto the history stack, truncating any redo tail.
-  function pushSnapshot(snap: EditSnapshot) {
-    const trimmed = historyRef.current.slice(0, indexRef.current + 1)
-    trimmed.push(snap)
-    historyRef.current = trimmed
-    indexRef.current = trimmed.length - 1
-    bump()
-  }
-
-  function onCanvasChange(next: WorkflowGraph) {
-    setGraph(next)
-    if (applyingRef.current) {
-      applyingRef.current = false
-      return
-    }
-    const prev = historyRef.current[indexRef.current]
-    const label = prev ? describeChange(prev.graph, next) : 'Edited workflow'
-    // Coalesce a run of drag emissions into a single "Moved" entry so the
-    // change log stays readable (xyflow emits a change per drag tick).
-    const atTip = indexRef.current === historyRef.current.length - 1
-    if (atTip && label.startsWith('Moved') && prev?.label.startsWith('Moved')) {
-      const copy = historyRef.current.slice()
-      copy[indexRef.current] = { graph: next, name, label }
-      historyRef.current = copy
-      return
-    }
-    pushSnapshot({ graph: next, name, label })
-  }
-
-  function applySnapshot(index: number) {
-    const snap = historyRef.current[index]
-    if (!snap) return
-    indexRef.current = index
-    applyingRef.current = true
-    applyGraphRef.current?.(snap.graph)
-    setGraph(snap.graph)
-    setName(snap.name)
-    bump()
-  }
-
   async function loadVersion(versionId: string) {
     const v = await client.getVersion(versionId)
     setShowVersions(false)
     if (!v) return
     // Load as a fresh edit so it's recorded in history (undoable).
-    applyingRef.current = true
-    applyGraphRef.current?.(v.graph)
-    setGraph(v.graph)
-    pushSnapshot({ graph: v.graph, name, label: `Loaded v${v.versionNumber}` })
+    history.loadSnapshot({ graph: v.graph, label: `Loaded v${v.versionNumber}` })
   }
 
   // Blurring the title commits the rename and records it as an undoable change.
   function commitRename() {
     const trimmed = name.trim()
-    const current = historyRef.current[indexRef.current]?.name ?? initialName
+    const current = history.snapshots[history.index]?.name ?? initialName
     if (!trimmed || trimmed === current) {
       // Nothing meaningful changed — snap the field back to the committed name.
-      setName(current)
+      history.setName(current)
       return
     }
-    setName(trimmed)
-    pushSnapshot({ graph, name: trimmed, label: `Renamed to "${trimmed}"` })
+    history.setName(trimmed)
+    history.push({ graph, name: trimmed, label: `Renamed to "${trimmed}"` })
     update.mutate({ workflowId, name: trimmed })
   }
 
@@ -360,70 +212,21 @@ function EditorInner({
     update.mutate({ workflowId, description: next || null })
   }
 
-  function undo() {
-    if (indexRef.current > 0) applySnapshot(indexRef.current - 1)
-  }
-  function redo() {
-    if (indexRef.current < historyRef.current.length - 1) {
-      applySnapshot(indexRef.current + 1)
-    }
-  }
-
-  const dirty = indexRef.current !== savedIndex
-
-  // Keyboard undo/redo (the toolbar buttons were removed). Ignore when typing in
-  // a field. Cmd/Ctrl+Z = undo, Cmd/Ctrl+Shift+Z or Ctrl+Y = redo.
-  const undoRef = useRef(undo)
-  const redoRef = useRef(redo)
-  undoRef.current = undo
-  redoRef.current = redo
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (!(e.metaKey || e.ctrlKey) || isEditableTarget(e.target)) return
-      const key = e.key.toLowerCase()
-      if (key === 'z') {
-        e.preventDefault()
-        if (e.shiftKey) redoRef.current()
-        else undoRef.current()
-      } else if (key === 'y') {
-        e.preventDefault()
-        redoRef.current()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
-
-  // Restore an unsaved edit persisted from a previous visit (once, on mount).
-  const restoredRef = useRef(false)
-  useEffect(() => {
-    if (restoredRef.current) return
-    restoredRef.current = true
-    const stored = readStoredEdit(workflowId)
-    if (!stored) return
-    if (
-      JSON.stringify(stored.graph) === JSON.stringify(initialGraph) &&
-      stored.name === initialName
-    ) {
-      return
-    }
-    applyingRef.current = true
-    applyGraphRef.current?.(stored.graph)
-    setGraph(stored.graph)
-    setName(stored.name)
-    pushSnapshot({
-      graph: stored.graph,
-      name: stored.name,
-      label: 'Restored unsaved edit',
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workflowId])
-
-  // Persist the current edit while dirty; clear it once saved (or reverted).
-  useEffect(() => {
-    if (dirty) writeStoredEdit(workflowId, { graph, name })
-    else clearStoredEdit(workflowId)
-  }, [dirty, graph, name, workflowId])
+  // Persist the in-flight edit to localStorage while dirty, and restore it on a
+  // later visit — replayed through history so the restore itself is undoable.
+  useStoredEdit(workflowId, {
+    initialGraph,
+    initialName,
+    graph,
+    name,
+    dirty,
+    onRestore: (stored) =>
+      history.loadSnapshot({
+        graph: stored.graph,
+        name: stored.name,
+        label: 'Restored unsaved edit',
+      }),
+  })
 
   function publishVersion(input: {
     changeNote: string
@@ -440,7 +243,7 @@ function EditorInner({
       },
       {
         onSuccess: (result) => {
-          setSavedIndex(indexRef.current)
+          history.markSaved()
           setShowPublish(false)
           onPublished?.(result)
         },
@@ -448,7 +251,7 @@ function EditorInner({
     )
   }
 
-  const changeCount = historyRef.current.length - 1
+  const changeCount = history.snapshots.length - 1
 
   return (
     <>
@@ -460,7 +263,7 @@ function EditorInner({
           {
             editable: {
               value: name,
-              onChange: setName,
+              onChange: history.setName,
               onCommit: commitRename,
               ariaLabel: 'Workflow name',
             },
@@ -521,97 +324,30 @@ function EditorInner({
               savedTooltip="All changes saved"
             />
 
-            <div className="relative">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setShowHistory((s) => !s)
-                  setShowVersions(false)
-                }}
-              >
-                <History className="size-4" />
-                History
-                {changeCount > 0 ? (
-                  <span className="ml-1 rounded-full bg-indigo-100 px-1.5 py-0.5 text-[11px] font-semibold text-indigo-700">
-                    {changeCount}
-                  </span>
-                ) : null}
-              </Button>
-              {showHistory ? (
-                <div className="absolute right-0 z-20 mt-1 max-h-80 w-72 overflow-y-auto rounded-md border border-neutral-200 bg-white shadow-lg">
-                  {historyRef.current
-                    .map((snap, idx) => ({ snap, idx }))
-                    .reverse()
-                    .map(({ snap, idx }, i) => (
-                      <button
-                        key={idx}
-                        onClick={() => {
-                          applySnapshot(idx)
-                          setShowHistory(false)
-                        }}
-                        className={cn(
-                          'flex w-full items-stretch gap-2 px-3 py-2 text-left text-sm hover:bg-neutral-50',
-                          idx === indexRef.current && 'bg-indigo-50',
-                        )}
-                      >
-                        <HistoryDot muted={i > 0} />
-                        <span className="flex-1 truncate self-center">
-                          {snap.label}
-                        </span>
-                        {idx === indexRef.current ? (
-                          <span className="self-center text-xs text-indigo-600">
-                            current
-                          </span>
-                        ) : null}
-                      </button>
-                    ))}
-                </div>
-              ) : null}
-            </div>
+            <HistoryMenu
+              open={showHistory}
+              onToggle={() => {
+                setShowHistory((s) => !s)
+                setShowVersions(false)
+              }}
+              snapshots={history.snapshots}
+              currentIndex={history.index}
+              changeCount={changeCount}
+              onSelect={(idx) => {
+                history.applySnapshot(idx)
+                setShowHistory(false)
+              }}
+            />
 
-            <div className="relative">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setShowVersions((s) => !s)
-                  setShowHistory(false)
-                }}
-              >
-                <GitBranch className="size-4" />
-                Versions ({versions.data?.length ?? 0})
-              </Button>
-              {showVersions ? (
-                <div className="absolute right-0 z-20 mt-1 max-h-72 w-72 overflow-y-auto rounded-md border border-neutral-200 bg-white shadow-lg">
-                  {versions.data?.length === 0 ? (
-                    <div className="p-3 text-sm text-neutral-500">
-                      No versions yet.
-                    </div>
-                  ) : null}
-                  {versions.data?.map((v) => (
-                    <button
-                      key={v.id}
-                      onClick={() => void loadVersion(v.id)}
-                      className="block w-full border-b border-neutral-100 px-3 py-2 text-left text-sm hover:bg-neutral-50"
-                    >
-                      <span className="font-medium">v{v.versionNumber}</span>
-                      {v.changeNote ? (
-                        <span className="text-neutral-600"> — {v.changeNote}</span>
-                      ) : null}
-                      {v.aiSummaryShort ? (
-                        <span className="mt-0.5 flex items-start gap-1 text-xs text-neutral-500">
-                          <Sparkles className="mt-0.5 size-3 shrink-0 text-indigo-500" />
-                          <span className="line-clamp-2">
-                            {v.aiSummaryShort}
-                          </span>
-                        </span>
-                      ) : null}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
+            <VersionsMenu
+              open={showVersions}
+              onToggle={() => {
+                setShowVersions((s) => !s)
+                setShowHistory(false)
+              }}
+              versions={versions.data}
+              onSelect={(id) => void loadVersion(id)}
+            />
 
             <Button
               variant="outline"
@@ -619,7 +355,7 @@ function EditorInner({
               onClick={() =>
                 saveDraft.mutate(
                   { workflowId, graph },
-                  { onSuccess: () => setSavedIndex(indexRef.current) },
+                  { onSuccess: () => history.markSaved() },
                 )
               }
               disabled={saveDraft.isPending}
@@ -644,7 +380,7 @@ function EditorInner({
                 graph={initialGraph}
                 defaults={defaults}
                 invalidNodeIds={invalidNodeIds}
-                onChange={onCanvasChange}
+                onChange={history.recordCanvasChange}
                 onSelectionChange={setSelectedId}
                 registerNodePatcher={(patch) => {
                   patcherRef.current = patch
