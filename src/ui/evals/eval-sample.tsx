@@ -33,6 +33,7 @@ import { useOpenAsset, useWfNav } from '../nav'
 import { ArchiveButton } from '../archive-button'
 import { WfShell } from '../shell'
 import { ToolIcon } from '../tool-icon'
+import { sectionCrumb } from '../wf-crumbs'
 import { RunConfigDialog } from './run-config-dialog'
 import {
   describeCheck,
@@ -148,6 +149,7 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
       assetLabel="Sample"
       crumbs={[
         { home: true },
+        sectionCrumb('evals'),
         {
           assetLabel: 'Goal',
           label: set?.name ?? 'Goal',

@@ -10,6 +10,7 @@ import { useOpenAsset, useWfNav, WfLink } from '../nav'
 import { ArchiveButton } from '../archive-button'
 import { IdeaSpark } from '../idea-spark'
 import { WfShell } from '../shell'
+import { sectionCrumb } from '../wf-crumbs'
 import { RunConfigDialog } from './run-config-dialog'
 import { EmptyState, formatTimestamp, PassRate, Score, Tabs } from './shared'
 
@@ -70,6 +71,7 @@ export function EvalSet({ setId, className }: EvalSetProps) {
       assetLabel="Goal"
       crumbs={[
         { home: true },
+        sectionCrumb('evals'),
         set
           ? {
               editable: {
