@@ -29,6 +29,7 @@ export {
 export { assertWfSchema } from './assert-schema'
 export { createDurableRunRecorder } from './run-recorder'
 export {
+  archiveAgent,
   assignWorkflow,
   buildEvalSnapshot,
   countWorkflowsReferencingAgent,
@@ -59,6 +60,7 @@ export {
   latestAgentVersion,
   listAgents,
   listAgentVersions,
+  listWorkflowsReferencingAgent,
   listEnabledModels,
   listEvalRuns,
   listEvalSets,

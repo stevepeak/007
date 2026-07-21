@@ -515,17 +515,21 @@ export async function resolveRunManifest(
 }
 
 /**
- * How many workflows reference an agent (in their draft or their latest
- * published version) — powers the agent publish-warning dialog. Workflow agent
+ * The workflows that reference an agent in their draft OR their latest published
+ * version — the "live" references. Historical published versions are ignored, so
+ * this is the set that would break if the agent were archived. Powers both the
+ * archive guard (block + list) and the publish-warning count. Workflow agent
  * nodes float to the agent's latest published version, so publishing updates
  * every referencing workflow immediately.
  */
-export async function countWorkflowsReferencingAgent(
+export async function listWorkflowsReferencingAgent(
   db: WfDb,
   input: { agentId: string },
-): Promise<number> {
-  const workflows = await db.select({ id: wfWorkflow.id }).from(wfWorkflow)
-  let count = 0
+): Promise<{ id: string; name: string }[]> {
+  const workflows = await db
+    .select({ id: wfWorkflow.id, name: wfWorkflow.name })
+    .from(wfWorkflow)
+  const referencing: { id: string; name: string }[] = []
   for (const wf of workflows) {
     const draft = (
       await db
@@ -542,10 +546,18 @@ export async function countWorkflowsReferencingAgent(
       agentIdsInGraph(g).includes(input.agentId),
     )
     if (referenced) {
-      count++
+      referencing.push({ id: wf.id, name: wf.name })
     }
   }
-  return count
+  return referencing
+}
+
+/** How many workflows reference an agent (draft or latest published version). */
+export async function countWorkflowsReferencingAgent(
+  db: WfDb,
+  input: { agentId: string },
+): Promise<number> {
+  return (await listWorkflowsReferencingAgent(db, input)).length
 }
 
 // ---------------------------------------------------------------------------
@@ -557,9 +569,12 @@ export async function countWorkflowsReferencingAgent(
 // on the entity, edited in place via `updateAgentMeta`.
 
 export async function listAgents(db: WfDb) {
+  // Archived agents drop out of the list (and, via the same hook, the workflow
+  // node picker). getAgent stays unfiltered so an in-flight editor still loads.
   const agents = await db
     .select()
     .from(wfAgent)
+    .where(eq(wfAgent.archived, false))
     .orderBy(desc(wfAgent.createdAt))
   if (agents.length === 0) {
     return []
@@ -737,6 +752,25 @@ export async function updateAgentMeta(
       ...pickDefined(input, ['name', 'description', 'icon', 'color']),
       updatedAt: new Date(),
     })
+    .where(eq(wfAgent.id, input.agentId))
+}
+
+/**
+ * Soft-delete an agent. Re-checks live workflow references first (defense against
+ * a race where a workflow connected the agent between the dialog opening and the
+ * confirm) and refuses if any remain — the caller is expected to have already
+ * surfaced the block, so this throw is a backstop, not the primary UX.
+ */
+export async function archiveAgent(db: WfDb, input: { agentId: string }) {
+  const referencing = await listWorkflowsReferencingAgent(db, input)
+  if (referencing.length > 0) {
+    throw new Error(
+      `Cannot archive: this agent is still used by ${referencing.length} workflow(s). Disconnect it first.`,
+    )
+  }
+  await db
+    .update(wfAgent)
+    .set({ archived: true, updatedAt: new Date() })
     .where(eq(wfAgent.id, input.agentId))
 }
 

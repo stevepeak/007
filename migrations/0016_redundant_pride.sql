@@ -1,0 +1,1 @@
+ALTER TABLE `wf_agent` ADD `archived` integer DEFAULT false NOT NULL;

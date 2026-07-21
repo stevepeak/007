@@ -80,6 +80,9 @@ export function createHttpWfDataClient(
     discardAgentDraft: (input) => call('discardAgentDraft', input),
     countAgentReferences: (agentId) =>
       call('countAgentReferences', { agentId }),
+    listAgentReferences: (agentId) =>
+      call('listAgentReferences', { agentId }),
+    archiveAgent: (agentId) => call('archiveAgent', { agentId }),
     // A tool-calling agent can run well past the default 20s UI backstop, so
     // give the playground its own longer budget.
     runAgentPreview: (input) => call('runAgentPreview', input, 120000),

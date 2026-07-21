@@ -39,6 +39,7 @@ const keys = {
   agents: ['wf', 'agents'] as const,
   agent: (id: string) => ['wf', 'agent', id] as const,
   agentVersions: (id: string) => ['wf', 'agent-versions', id] as const,
+  agentReferences: (id: string) => ['wf', 'agent-references', id] as const,
   evalSets: (includeArchived?: boolean) =>
     ['wf', 'eval-sets', includeArchived ?? false] as const,
   evalSet: (id: string) => ['wf', 'eval-set', id] as const,
@@ -385,6 +386,26 @@ export function useUpdateAgentMeta() {
       void qc.invalidateQueries({ queryKey: keys.agent(input.agentId) })
       void qc.invalidateQueries({ queryKey: keys.agents })
     },
+  })
+}
+
+// The workflows that reference this agent (draft or latest published version) —
+// drives the archive dialog's block/list. `enabled` gates it to the open dialog.
+export function useAgentReferences(agentId: string, enabled: boolean) {
+  const client = useWfClient()
+  return useQuery({
+    queryKey: keys.agentReferences(agentId),
+    queryFn: () => client.listAgentReferences(agentId),
+    enabled,
+  })
+}
+
+export function useArchiveAgent() {
+  const client = useWfClient()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (agentId: string) => client.archiveAgent(agentId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.agents }),
   })
 }
 

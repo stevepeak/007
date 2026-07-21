@@ -121,6 +121,10 @@ export const wfAgent = sqliteTable('wf_agent', {
   // Lucide icon name + a color token — purely for the agent cards.
   icon: text('icon'),
   color: text('color'),
+  // Soft-delete: an archived agent drops out of the agents list and the workflow
+  // node picker, but its row + versions are kept so historical runs stay
+  // reproducible. Archiving is blocked while a live workflow still references it.
+  archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
   createdBy: text('created_by'),
   createdAt: createdAt(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }),

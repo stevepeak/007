@@ -541,6 +541,18 @@ export interface WfDataClient {
   discardAgentDraft(input: { agentId: string }): Promise<void>
   /** For the publish-warning dialog — how many workflows reference this agent. */
   countAgentReferences(agentId: string): Promise<{ workflows: number }>
+  /**
+   * The workflows that reference this agent in their draft or latest published
+   * version — powers the archive dialog's "disconnect these first" block.
+   */
+  listAgentReferences(
+    agentId: string,
+  ): Promise<{ workflows: { id: string; name: string }[] }>
+  /**
+   * Soft-delete the agent (drops it from the agents list + node picker). Rejects
+   * if any workflow still references it — the UI blocks first, this is a backstop.
+   */
+  archiveAgent(agentId: string): Promise<void>
   /** Playground — run an agent draft in isolation against a scratch input. */
   runAgentPreview(input: AgentPreviewInput): Promise<AgentPreviewResult>
 

@@ -23,6 +23,7 @@ import {
 } from '../eval'
 import type { WfDb } from '../storage/client'
 import {
+  archiveAgent,
   buildEvalSnapshot,
   countWorkflowsReferencingAgent,
   createAgent,
@@ -47,6 +48,7 @@ import {
   insertEvalResult,
   listAgents,
   listAgentVersions,
+  listWorkflowsReferencingAgent,
   listEnabledModels,
   listEvalRuns,
   listEvalSets,
@@ -1164,6 +1166,20 @@ function buildHandlers<TDeps>(
       await requireAgentExists(c.db, agentId)
       const workflows = await countWorkflowsReferencingAgent(c.db, { agentId })
       return { workflows }
+    },
+
+    listAgentReferences: async (c) => {
+      const agentId = str(c.params, 'agentId')
+      await requireAgentExists(c.db, agentId)
+      const workflows = await listWorkflowsReferencingAgent(c.db, { agentId })
+      return { workflows }
+    },
+
+    archiveAgent: async (c) => {
+      const agentId = str(c.params, 'agentId')
+      await requireAgentExists(c.db, agentId)
+      await archiveAgent(c.db, { agentId })
+      return { ok: true }
     },
 
     runAgentPreview: async (c) => {
