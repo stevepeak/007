@@ -6,6 +6,7 @@ import type { RetryRunMode } from '../server/protocol'
 import { useWfComponents } from './context'
 import { cn } from './cn'
 import { WorkflowCanvas } from './editor/workflow-canvas'
+import { formatTokens, formatUsd } from './cost'
 import { useRetryRun, useRun } from './hooks'
 import { useWfNav } from './nav'
 import { RunNodeDock } from './run-node-dock'
@@ -208,6 +209,23 @@ export function RunPage({ runId, className }: RunPageProps) {
           <span className="text-xs text-neutral-500">
             {fmtDuration(start, end)}
           </span>
+          {run.costUsd != null ? (
+            <span
+              className="text-xs font-medium text-neutral-600 tabular-nums"
+              title={
+                run.totalTokens != null
+                  ? `${run.totalTokens.toLocaleString()} tokens`
+                  : undefined
+              }
+            >
+              {formatUsd(run.costUsd)}
+              {run.totalTokens != null ? (
+                <span className="ml-1 font-normal text-neutral-400">
+                  · {formatTokens(run.totalTokens)} tok
+                </span>
+              ) : null}
+            </span>
+          ) : null}
           {canRetry ? (
             <RetryMenu
               canResume={canResume}

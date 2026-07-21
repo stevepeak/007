@@ -168,6 +168,11 @@ export type WfRunSummary = {
   startedAt: number | null
   finishedAt: number | null
   error: string | null
+  /** Total tokens across the run's agent steps; null when it ran no agents. */
+  totalTokens: number | null
+  /** Aggregate USD cost across the run's agent steps; null when no agent ran or
+   *  none of their models are priced. Derived from token usage × model price. */
+  costUsd: number | null
   /** Stable 32-hex trace id for the run's Sentry spans (null for old runs). */
   sentryTraceId: string | null
   /** Deep-link into the Sentry trace, built by the host from `sentryTraceId`.
@@ -213,6 +218,13 @@ export type WfRunStepDTO = {
   branchResult: unknown
   meta: unknown
   error: string | null
+  /** Node execution window (epoch millis) — drives the Inspect "speed" card.
+   *  Null when the recorder captured no timing. */
+  startedAt: number | null
+  finishedAt: number | null
+  /** Derived USD cost of this step's token usage; null for non-agent steps or
+   *  models the catalog hasn't priced. */
+  costUsd: number | null
 }
 
 // One structured entry in the run's progress feed (the run viewer's Logs panel).

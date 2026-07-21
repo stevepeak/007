@@ -14,8 +14,10 @@ import type { ReactNode } from 'react'
 
 import type { AgentNodeMeta, WfRunStepDTO } from '../server/protocol'
 import { cn } from './cn'
+import { formatTokens, formatUsd } from './cost'
 import { DataView } from './data-view'
 import { NoteMarkdown } from './editor/note-markdown'
+import { BrandMark, inferModelBrand } from './evals/shared'
 
 // The Logs view renders a step's execution as an AI-style vertical timeline:
 //   Input → thinking → tool call → … → Output.
@@ -60,7 +62,9 @@ type LogStep = {
 function TimelineRow({ step, last }: { step: LogStep; last: boolean }) {
   const header = (
     <>
-      <span className="truncate font-medium text-neutral-700">{step.title}</span>
+      <span className="truncate font-medium text-neutral-700">
+        {step.title}
+      </span>
       {step.subtitle ? (
         <span className="shrink-0 text-[11px] text-neutral-400">
           {step.subtitle}
@@ -214,6 +218,103 @@ function thinkingStep(text: string): LogStep {
   }
 }
 
+// ── Agent stat cards ──────────────────────────────────────────────────────────
+// The header on an agent step: model, tokens, speed, and cost as compact cards.
+// Cost comes from the server (token usage × catalog price); speed is derived from
+// the step's recorded start/finish window.
+
+function fmtMs(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  const s = ms / 1000
+  if (s < 60) return `${s.toFixed(s < 10 ? 1 : 0)}s`
+  const m = Math.floor(s / 60)
+  return `${m}m ${Math.round(s % 60)}s`
+}
+
+function StatCard({
+  label,
+  value,
+  sub,
+  icon,
+  className,
+}: {
+  label: string
+  value: ReactNode
+  sub?: ReactNode
+  icon?: ReactNode
+  className?: string
+}) {
+  return (
+    <div
+      className={cn(
+        'flex min-w-0 items-center gap-2 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5',
+        className,
+      )}
+    >
+      {icon ? <span className="shrink-0">{icon}</span> : null}
+      <div className="min-w-0">
+        <div className="text-[10px] font-medium tracking-wide text-neutral-400 uppercase">
+          {label}
+        </div>
+        <div className="truncate text-xs font-semibold text-neutral-800">
+          {value}
+        </div>
+        {sub ? (
+          <div className="truncate text-[10px] text-neutral-400">{sub}</div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function AgentMetaBar({
+  meta,
+  step,
+}: {
+  meta: AgentNodeMeta
+  step: WfRunStepDTO
+}) {
+  const inTok = meta.totalUsage.inputTokens
+  const outTok = meta.totalUsage.outputTokens
+  const total = inTok + outTok
+  const durationMs =
+    step.startedAt != null &&
+    step.finishedAt != null &&
+    step.finishedAt >= step.startedAt
+      ? step.finishedAt - step.startedAt
+      : null
+  const tps =
+    durationMs && durationMs > 0
+      ? Math.round(total / (durationMs / 1000))
+      : null
+  return (
+    <div className="mb-3 flex flex-wrap items-stretch gap-2">
+      <StatCard
+        label="Model"
+        value={meta.model}
+        icon={
+          <BrandMark
+            brand={inferModelBrand(meta.model)}
+            fallback={meta.model}
+          />
+        }
+        className="max-w-[15rem]"
+      />
+      <StatCard
+        label="Tokens"
+        value={formatTokens(total)}
+        sub={`${formatTokens(inTok)} in · ${formatTokens(outTok)} out`}
+      />
+      <StatCard
+        label="Speed"
+        value={durationMs != null ? fmtMs(durationMs) : '—'}
+        sub={tps != null ? `${tps.toLocaleString()} tok/s` : undefined}
+      />
+      <StatCard label="Cost" value={formatUsd(step.costUsd)} />
+    </div>
+  )
+}
+
 export function RunLog({ step }: { step: WfRunStepDTO }) {
   const agentMeta = asAgentMeta(step.meta)
   const iterMeta = asIterationMeta(step.meta)
@@ -282,14 +383,7 @@ export function RunLog({ step }: { step: WfRunStepDTO }) {
 
   return (
     <div>
-      {agentMeta ? (
-        <div className="mb-2 text-[11px] text-neutral-500">
-          <span className="font-medium text-neutral-600">{agentMeta.model}</span>{' '}
-          ·{' '}
-          {agentMeta.totalUsage.inputTokens + agentMeta.totalUsage.outputTokens}{' '}
-          tokens
-        </div>
-      ) : null}
+      {agentMeta ? <AgentMetaBar meta={agentMeta} step={step} /> : null}
       {iterMeta ? (
         <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[11px] text-neutral-500">
           <span className="inline-flex items-center gap-1 rounded bg-neutral-100 px-1.5 py-0.5 font-medium text-neutral-600">

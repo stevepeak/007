@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { WfRunListInput, WfRunSummary } from '../server/protocol'
 import { useWfComponents } from './context'
 import { cn } from './cn'
+import { formatUsd } from './cost'
 import { useRuns, useRunTriggerKinds, useWorkflows } from './hooks'
 import { useWfNav } from './nav'
 
@@ -273,6 +274,7 @@ export function RunsExplorer({
               <th className="px-3 py-2 font-medium">Trigger</th>
               <th className="px-3 py-2 font-medium">Started</th>
               <th className="px-3 py-2 text-right font-medium">Duration</th>
+              <th className="px-3 py-2 text-right font-medium">Cost</th>
             </tr>
           </thead>
           <tbody>
@@ -304,12 +306,27 @@ export function RunsExplorer({
                 <td className="whitespace-nowrap px-3 py-2 text-right text-neutral-600">
                   {fmtDuration(r)}
                 </td>
+                <td className="whitespace-nowrap px-3 py-2 text-right text-neutral-600 tabular-nums">
+                  {r.costUsd != null ? (
+                    <span
+                      title={
+                        r.totalTokens != null
+                          ? `${r.totalTokens.toLocaleString()} tokens`
+                          : undefined
+                      }
+                    >
+                      {formatUsd(r.costUsd)}
+                    </span>
+                  ) : (
+                    <span className="text-neutral-300">—</span>
+                  )}
+                </td>
               </tr>
             ))}
             {!runsQuery.isLoading && runs.length === 0 ? (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={6}
                   className="px-3 py-12 text-center text-sm text-neutral-400"
                 >
                   {hasFilters ? 'No runs match these filters.' : 'No runs yet.'}

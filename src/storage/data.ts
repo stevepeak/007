@@ -40,6 +40,12 @@ import {
 } from '../eval/checks'
 
 import type { WfDb } from './client'
+import {
+  agentUsage,
+  tokenCostUsd,
+  type ModelPrice,
+  type ModelPriceMap,
+} from './cost'
 import type {
   WF_EVAL_RESULT_STATUSES,
   WF_EVAL_TARGET_KINDS,
@@ -61,7 +67,7 @@ import {
   wfWorkflow,
   wfWorkflowAssignment,
   wfWorkflowDraft,
-  wfWorkflowVersion
+  wfWorkflowVersion,
 } from './schema'
 import { createVersionedEntity } from './versioned-entity'
 
@@ -360,7 +366,9 @@ export async function discardDraft(db: WfDb, input: { workflowId: string }) {
 // sub-workflow call living inside a subgraph must contribute to the manifest
 // just as a top-level one does. (Iteration can't nest, but a subgraph may hold a
 // `workflow` node, whose callee is resolved transitively by `resolveInto`.)
-function* allNodes(graph: WorkflowGraph): Generator<WorkflowGraph['nodes'][number]> {
+function* allNodes(
+  graph: WorkflowGraph,
+): Generator<WorkflowGraph['nodes'][number]> {
   for (const node of graph.nodes) {
     yield node
     if (node.kind === 'iteration') {
@@ -392,7 +400,8 @@ function agentPinsInGraph(
     if (node.kind === 'agent' && node.config.agentId) {
       const version = node.config.version ?? null
       const key = `${node.config.agentId}@${version ?? 'latest'}`
-      if (!seen.has(key)) seen.set(key, { agentId: node.config.agentId, version })
+      if (!seen.has(key))
+        seen.set(key, { agentId: node.config.agentId, version })
     }
   }
   return [...seen.values()]
@@ -905,7 +914,9 @@ export async function replaceNodeLogs(
 ): Promise<void> {
   await db
     .delete(wfRunLog)
-    .where(and(eq(wfRunLog.runId, input.runId), eq(wfRunLog.nodeId, input.nodeId)))
+    .where(
+      and(eq(wfRunLog.runId, input.runId), eq(wfRunLog.nodeId, input.nodeId)),
+    )
   if (input.entries.length === 0) return
   const rows = input.entries.map((e) => ({
     id: crypto.randomUUID(),
@@ -1013,6 +1024,36 @@ const RUN_PAGE_MAX = 200
 // Data-rich, filtered, paginated run listing. Joins each run to its version and
 // owning workflow so callers can display + search by workflow name. Returns the
 // page plus the unpaginated total so the UI can render "N of M".
+/**
+ * Every catalogued model's price, keyed for cost derivation. A run step records
+ * `meta.model` as the provider-native id (`wf_model.modelId`); we key by that AND
+ * the composite `id` so either resolves. One small table scan, shared by the runs
+ * list (aggregate) and the run inspector (per node).
+ */
+export async function loadModelPriceMap(db: WfDb): Promise<ModelPriceMap> {
+  const rows = await db
+    .select({
+      id: wfModel.id,
+      modelId: wfModel.modelId,
+      costPerMTok: wfModel.costPerMTok,
+      promptPricePerMTok: wfModel.promptPricePerMTok,
+      completionPricePerMTok: wfModel.completionPricePerMTok,
+    })
+    .from(wfModel)
+  const map: ModelPriceMap = new Map()
+  for (const r of rows) {
+    const price: ModelPrice = {
+      promptPerMTok: r.promptPricePerMTok,
+      completionPerMTok: r.completionPricePerMTok,
+      blendedPerMTok: r.costPerMTok,
+    }
+    map.set(r.modelId, price)
+    // Don't let a composite-id entry clobber a bare-id match (what steps record).
+    if (!map.has(r.id)) map.set(r.id, price)
+  }
+  return map
+}
+
 export async function listRuns(db: WfDb, input: ListRunsFilter) {
   const conds: SQL[] = []
   if (!input.includeEval) {
@@ -1091,12 +1132,72 @@ export async function listRuns(db: WfDb, input: ListRunsFilter) {
     .innerJoin(wfWorkflow, eq(wfWorkflowVersion.workflowId, wfWorkflow.id))
     .where(where)
 
+  // Aggregate token + dollar cost per run across this page's agent steps. Only
+  // this page's runs are queried, so the explorer stays a single-page load.
+  const rowsWithCost = await attachRunCost(db, rows)
+
   return {
-    rows,
+    rows: rowsWithCost,
     total: Number(totalRow[0]?.count ?? 0),
     limit,
     offset,
   }
+}
+
+/**
+ * Fold each run's agent-step token usage into a `{ totalTokens, costUsd }` pair.
+ * `totalTokens` is null when a run fired no agents; `costUsd` is null when none
+ * of its agents' models were priced (partial pricing yields a best-effort sum).
+ */
+async function attachRunCost<R extends { id: string }>(
+  db: WfDb,
+  rows: R[],
+): Promise<Array<R & { totalTokens: number | null; costUsd: number | null }>> {
+  if (rows.length === 0) return []
+  const runIds = rows.map((r) => r.id)
+  const [priceMap, stepRows] = await Promise.all([
+    loadModelPriceMap(db),
+    db
+      .select({ runId: wfRunStep.runId, meta: wfRunStep.meta })
+      .from(wfRunStep)
+      .where(inArray(wfRunStep.runId, runIds)),
+  ])
+
+  const agg = new Map<
+    string,
+    { tokens: number; hasTokens: boolean; cost: number; hasCost: boolean }
+  >()
+  for (const sr of stepRows) {
+    const usage = agentUsage(sr.meta)
+    if (!usage) continue
+    const a = agg.get(sr.runId) ?? {
+      tokens: 0,
+      hasTokens: false,
+      cost: 0,
+      hasCost: false,
+    }
+    a.tokens += usage.inputTokens + usage.outputTokens
+    a.hasTokens = true
+    const c = tokenCostUsd(
+      usage.inputTokens,
+      usage.outputTokens,
+      priceMap.get(usage.model),
+    )
+    if (c != null) {
+      a.cost += c
+      a.hasCost = true
+    }
+    agg.set(sr.runId, a)
+  }
+
+  return rows.map((r) => {
+    const a = agg.get(r.id)
+    return {
+      ...r,
+      totalTokens: a?.hasTokens ? a.tokens : null,
+      costUsd: a?.hasCost ? a.cost : null,
+    }
+  })
 }
 
 /**
@@ -1134,10 +1235,7 @@ export async function listToolInvocations(
     .where(
       and(
         eq(wfRunStep.nodeKind, 'tool'),
-        eq(
-          sql`json_extract(${wfRunStep.meta}, '$.toolId')`,
-          input.toolId,
-        ),
+        eq(sql`json_extract(${wfRunStep.meta}, '$.toolId')`, input.toolId),
       ),
     )
     .orderBy(desc(wfRunStep.startedAt))
@@ -1162,11 +1260,31 @@ export async function getRun(db: WfDb, runId: string) {
   if (!run) {
     return null
   }
-  const steps = await db
+  const rawSteps = await db
     .select()
     .from(wfRunStep)
     .where(eq(wfRunStep.runId, runId))
     .orderBy(asc(wfRunStep.sequence))
+  // Derive each step's dollar cost from its token usage × the model's catalog
+  // price, and roll the run's totals up for the header.
+  const priceMap = await loadModelPriceMap(db)
+  let costUsd: number | null = null
+  let totalTokens: number | null = null
+  const steps = rawSteps.map((s) => {
+    const usage = agentUsage(s.meta)
+    const stepCost = usage
+      ? tokenCostUsd(
+          usage.inputTokens,
+          usage.outputTokens,
+          priceMap.get(usage.model),
+        )
+      : null
+    if (usage) {
+      totalTokens = (totalTokens ?? 0) + usage.inputTokens + usage.outputTokens
+    }
+    if (stepCost != null) costUsd = (costUsd ?? 0) + stepCost
+    return { ...s, costUsd: stepCost }
+  })
   const logs = await getRunLogs(db, runId)
   const version = (
     await db
@@ -1192,6 +1310,8 @@ export async function getRun(db: WfDb, runId: string) {
     versionNumber: version?.versionNumber ?? null,
     workflowId: workflow?.id ?? null,
     workflowName: workflow?.name ?? null,
+    costUsd,
+    totalTokens,
   }
 }
 
@@ -1271,7 +1391,10 @@ function toEvalRow(r: typeof wfEvalRow.$inferSelect): EvalRowRecord {
 }
 
 /** Eval sets, newest first, each with its (non-archived) row count. */
-export async function listEvalSets(db: WfDb, opts?: { includeArchived?: boolean }) {
+export async function listEvalSets(
+  db: WfDb,
+  opts?: { includeArchived?: boolean },
+) {
   const rows = await db
     .select({
       id: wfEvalSet.id,

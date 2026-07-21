@@ -468,6 +468,8 @@ function runSummary(
     startedAt: Date | null
     finishedAt: Date | null
     error: string | null
+    totalTokens?: number | null
+    costUsd?: number | null
     sentryTraceId?: string | null
   },
   traceUrl?: (traceId: string) => string | null,
@@ -486,6 +488,8 @@ function runSummary(
     startedAt: toEpoch(r.startedAt),
     finishedAt: toEpoch(r.finishedAt),
     error: r.error,
+    totalTokens: r.totalTokens ?? null,
+    costUsd: r.costUsd ?? null,
     sentryTraceId,
     sentryTraceUrl:
       sentryTraceId && traceUrl ? (traceUrl(sentryTraceId) ?? null) : null,
@@ -689,7 +693,12 @@ function buildHandlers<TDeps>(
       // a working set. Defaults are bare ids; the catalog uses composite ids.
       const defaults = await opts.config.listModels({ env })
       const defaultEnabledIds = defaults.map((m) => `${providerId}:${m.id}`)
-      const count = await upsertModels(c.db, providerId, entries, defaultEnabledIds)
+      const count = await upsertModels(
+        c.db,
+        providerId,
+        entries,
+        defaultEnabledIds,
+      )
       const refreshedAt = new Date()
       const providers = await opts.config.listProviders({ env })
       const provider = providers.find((p) => p.id === providerId) ?? {
@@ -983,6 +992,9 @@ function buildHandlers<TDeps>(
         branchResult: s.branchResult,
         meta: s.meta,
         error: s.error,
+        startedAt: toEpoch(s.startedAt),
+        finishedAt: toEpoch(s.finishedAt),
+        costUsd: s.costUsd ?? null,
       }))
       const logs: WfRunLogDTO[] = result.logs.map((l) => ({
         nodeId: l.nodeId,
@@ -1001,6 +1013,8 @@ function buildHandlers<TDeps>(
               workflowId: result.workflowId ?? '',
               workflowName: result.workflowName ?? '(unknown workflow)',
               versionNumber: result.versionNumber ?? 0,
+              totalTokens: result.totalTokens,
+              costUsd: result.costUsd,
             },
             opts.sentryTraceUrl,
           ),
@@ -1021,9 +1035,7 @@ function buildHandlers<TDeps>(
       )
       const runId = str(c.params, 'runId')
       const mode: RetryRunMode =
-        (c.params as { mode?: string }).mode === 'resume'
-          ? 'resume'
-          : 'restart'
+        (c.params as { mode?: string }).mode === 'resume' ? 'resume' : 'restart'
       const result = await getRun(c.db, runId)
       if (!result) {
         throw new Error('Run not found.')
@@ -1218,7 +1230,9 @@ function buildHandlers<TDeps>(
         rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs)
           ? (rawArgs as Record<string, unknown>)
           : {}
-      const context = parseStringRecord((c.params as { context?: unknown }).context)
+      const context = parseStringRecord(
+        (c.params as { context?: unknown }).context,
+      )
       return await runToolPreview({
         toolId,
         args,
@@ -1419,8 +1433,7 @@ function buildHandlers<TDeps>(
       const getModel: GradeModelFactory = (modelId) =>
         opts.config.getModel(modelId, { triggerKind: 'eval', env })
       const defaultJudgeModelId =
-        opts.evalJudgeModelId ??
-        (await opts.config.listModels({ env }))[0]?.id
+        opts.evalJudgeModelId ?? (await opts.config.listModels({ env }))[0]?.id
       const graded = await gradeRow({
         checks: found.row.checks,
         steps,
