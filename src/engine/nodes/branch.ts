@@ -20,10 +20,6 @@ export type ExecuteBranchNodeDeps = {
   nodeOutputs: Map<string, unknown>
 }
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null
-}
-
 // Coerce any value to a string for text comparisons without tripping the
 // '[object Object]' foot-gun: objects/arrays serialize as JSON, scalars use
 // their own string form, nullish becomes ''.
@@ -41,24 +37,6 @@ function scalarString(v: unknown): string {
   // Objects, arrays, and anything else (function/symbol) serialize as JSON;
   // JSON.stringify yields `undefined` for those non-JSON types → treat as ''.
   return JSON.stringify(v) ?? ''
-}
-
-// Walk a dotted path into the input. '' returns the whole input. A miss (or a
-// null/undefined along the way) yields `undefined`. Array indices work as
-// numeric keys (e.g. "pages.0.text"). Shared with the Switch node so both route
-// off the same path semantics.
-export function resolvePath(input: unknown, path: string): unknown {
-  if (!path) {
-    return input
-  }
-  let cur: unknown = input
-  for (const key of path.split('.')) {
-    if (!isRecord(cur)) {
-      return undefined
-    }
-    cur = cur[key]
-  }
-  return cur
 }
 
 // "Empty" spans the shapes an upstream node realistically produces: nullish,
@@ -130,8 +108,12 @@ function evaluate(
       const v = toNumber(value)
       return t != null && v != null && t < v
     }
-    default:
+    default: {
+      // Exhaustive over BranchOperator — a new operator without a case is a
+      // compile error here; the `false` still guards wider runtime input.
+      operator satisfies never
       return false
+    }
   }
 }
 

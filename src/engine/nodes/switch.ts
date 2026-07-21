@@ -1,6 +1,7 @@
+import { resolvePath } from '../binding'
 import { SWITCH_DEFAULT_CASE, type SwitchNode } from '../graph'
 
-import { looseEquals, resolvePath } from './branch'
+import { looseEquals } from './branch'
 
 // Multi-way deterministic routing — the code sibling of the binary Branch.
 // Selects the value at `path` and picks the FIRST case whose `value`

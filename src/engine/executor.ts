@@ -1,7 +1,7 @@
 import type { RunContext, WfSdkConfig } from './config'
 import { isDecisionKind } from './graph'
 import { errorMessage, runNode } from './run-node'
-import type { RunRecorder } from './run-recorder'
+import { recordedBranchResult, type RunRecorder } from './run-recorder'
 import {
   Scheduler,
   WorkflowStalledError,
@@ -105,12 +105,7 @@ export async function executeWorkflow<TDeps>(
         status: 'completed',
         output: result.recordedOutput,
         meta: result.meta,
-        branchResult: result.branchResult
-          ? {
-              result: result.branchResult,
-              reasoning: result.branchReasoning ?? '',
-            }
-          : null,
+        branchResult: recordedBranchResult(result),
       })
       return {
         nodeId: node.id,

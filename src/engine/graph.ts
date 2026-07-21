@@ -466,6 +466,22 @@ export function isDecisionKind(kind: string): boolean {
   return kind === 'branch' || kind === 'switch'
 }
 
+// Engine-managed bookend kinds — never an executable instruction. Trigger and
+// Output are seeded/terminated by the driver loop; a portless Note has no
+// incoming edges, so it never becomes ready. Used to narrow WorkflowNode to the
+// executable set (see `ExecutableNode` in scheduler.ts).
+export const BOOKEND_NODE_KINDS = ['trigger', 'output', 'note'] as const
+export type BookendNodeKind = (typeof BOOKEND_NODE_KINDS)[number]
+// Node-level guard (not just the kind string) so it narrows a WorkflowNode: the
+// false branch excludes the bookend members, yielding the executable set.
+export function isBookendKind<T extends { kind: string }>(
+  node: T,
+): node is T & { kind: BookendNodeKind } {
+  return (
+    node.kind === 'trigger' || node.kind === 'output' || node.kind === 'note'
+  )
+}
+
 // The binary decision kinds specifically — those whose only valid outgoing
 // conditions are exactly 'yes' and 'no' (Switch is multi-way, so it is
 // excluded and validated separately).

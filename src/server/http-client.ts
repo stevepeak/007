@@ -20,7 +20,7 @@ export function createHttpWfDataClient(
   const doFetch = opts.fetch ?? fetch
 
   async function call<T>(
-    method: string,
+    method: keyof WfDataClient,
     params: unknown,
     timeoutMs?: number,
   ): Promise<T> {
@@ -41,43 +41,55 @@ export function createHttpWfDataClient(
     return data
   }
 
+  // Bind a zero-arg or single-object-input method to its wire call. Constraining
+  // the name to `keyof WfDataClient` AND returning the protocol's own return type
+  // means a typo, a rename the server outpaces, or a copy-pasted wrong method
+  // (whose return shape differs) becomes a COMPILE error — the one wire contract
+  // the shared type otherwise couldn't enforce. Methods that take a POSITIONAL id
+  // (wrapped into `{ key: id }` for the wire) keep an explicit arrow below; their
+  // literal is still `keyof`-checked via `call`.
+  const bind =
+    <K extends keyof WfDataClient>(method: K, timeoutMs?: number) =>
+    (params: unknown = {}): ReturnType<WfDataClient[K]> =>
+      call(method, params, timeoutMs) as ReturnType<WfDataClient[K]>
+
   return {
-    listModels: () => call('listModels', {}),
-    listProviders: () => call('listProviders', {}),
-    getModelCatalog: () => call('getModelCatalog', {}),
+    listModels: bind('listModels'),
+    listProviders: bind('listProviders'),
+    getModelCatalog: bind('getModelCatalog'),
     // Fetching a provider's full catalog hits an external `/models` endpoint and
     // upserts 300+ rows — give it a longer budget than the 20s UI backstop.
-    refreshModels: (input) => call('refreshModels', input, 120000),
-    setModelEnabled: (input) => call('setModelEnabled', input),
-    listTools: () => call('listTools', {}),
-    listToolInvocations: (input) => call('listToolInvocations', input),
-    listToolContextFields: () => call('listToolContextFields', {}),
+    refreshModels: bind('refreshModels', 120000),
+    setModelEnabled: bind('setModelEnabled'),
+    listTools: bind('listTools'),
+    listToolInvocations: bind('listToolInvocations'),
+    listToolContextFields: bind('listToolContextFields'),
     // A real tool call can run past the default 20s UI backstop (external
     // services), so give the playground its own longer budget.
-    runToolPreview: (input) => call('runToolPreview', input, 120000),
-    listTriggerEvents: () => call('listTriggerEvents', {}),
-    listWorkflows: () => call('listWorkflows', {}),
+    runToolPreview: bind('runToolPreview', 120000),
+    listTriggerEvents: bind('listTriggerEvents'),
+    listWorkflows: bind('listWorkflows'),
     getWorkflow: (workflowId) => call('getWorkflow', { workflowId }),
-    createWorkflow: (input) => call('createWorkflow', input),
-    updateDraft: (input) => call('updateDraft', input),
-    saveVersion: (input) => call('saveVersion', input),
-    summarizeChanges: (input) => call('summarizeChanges', input),
-    updateWorkflow: (input) => call('updateWorkflow', input),
-    discardDraft: (input) => call('discardDraft', input),
+    createWorkflow: bind('createWorkflow'),
+    updateDraft: bind('updateDraft'),
+    saveVersion: bind('saveVersion'),
+    summarizeChanges: bind('summarizeChanges'),
+    updateWorkflow: bind('updateWorkflow'),
+    discardDraft: bind('discardDraft'),
     listVersions: (workflowId) => call('listVersions', { workflowId }),
     getVersion: (versionId) => call('getVersion', { versionId }),
-    listRuns: (input) => call('listRuns', input),
-    listRunTriggerKinds: () => call('listRunTriggerKinds', {}),
+    listRuns: bind('listRuns'),
+    listRunTriggerKinds: bind('listRunTriggerKinds'),
     getRun: (runId) => call('getRun', { runId }),
-    retryRun: (input) => call('retryRun', input),
-    listAgents: () => call('listAgents', {}),
+    retryRun: bind('retryRun'),
+    listAgents: bind('listAgents'),
     getAgent: (agentId) => call('getAgent', { agentId }),
-    createAgent: (input) => call('createAgent', input),
-    updateAgentDraft: (input) => call('updateAgentDraft', input),
-    publishAgent: (input) => call('publishAgent', input),
+    createAgent: bind('createAgent'),
+    updateAgentDraft: bind('updateAgentDraft'),
+    publishAgent: bind('publishAgent'),
     listAgentVersions: (agentId) => call('listAgentVersions', { agentId }),
-    updateAgentMeta: (input) => call('updateAgentMeta', input),
-    discardAgentDraft: (input) => call('discardAgentDraft', input),
+    updateAgentMeta: bind('updateAgentMeta'),
+    discardAgentDraft: bind('discardAgentDraft'),
     countAgentReferences: (agentId) =>
       call('countAgentReferences', { agentId }),
     listAgentReferences: (agentId) =>
@@ -85,23 +97,23 @@ export function createHttpWfDataClient(
     archiveAgent: (agentId) => call('archiveAgent', { agentId }),
     // A tool-calling agent can run well past the default 20s UI backstop, so
     // give the playground its own longer budget.
-    runAgentPreview: (input) => call('runAgentPreview', input, 120000),
+    runAgentPreview: bind('runAgentPreview', 120000),
 
     // Evals.
-    listEvalSets: (input) => call('listEvalSets', input ?? {}),
+    listEvalSets: bind('listEvalSets'),
     getEvalSet: (setId) => call('getEvalSet', { setId }),
-    createEvalSet: (input) => call('createEvalSet', input),
-    updateEvalSet: (input) => call('updateEvalSet', input),
+    createEvalSet: bind('createEvalSet'),
+    updateEvalSet: bind('updateEvalSet'),
     deleteEvalSet: (setId) => call('deleteEvalSet', { setId }),
-    upsertEvalRow: (input) => call('upsertEvalRow', input),
+    upsertEvalRow: bind('upsertEvalRow'),
     deleteEvalRow: (rowId) => call('deleteEvalRow', { rowId }),
-    createEvalRun: (input) => call('createEvalRun', input),
+    createEvalRun: bind('createEvalRun'),
     // Launching a real (simulated) run can outrun the default 20s backstop.
-    startEvalRun: (input) => call('startEvalRun', input, 120000),
+    startEvalRun: bind('startEvalRun', 120000),
     // Judge checks call a model — give grading its own longer budget.
-    gradeEvalResult: (input) => call('gradeEvalResult', input, 120000),
-    finalizeEvalRun: (input) => call('finalizeEvalRun', input),
-    listEvalRuns: (input) => call('listEvalRuns', input ?? {}),
+    gradeEvalResult: bind('gradeEvalResult', 120000),
+    finalizeEvalRun: bind('finalizeEvalRun'),
+    listEvalRuns: bind('listEvalRuns'),
     getEvalRun: (evalRunId) => call('getEvalRun', { evalRunId }),
   }
 }

@@ -41,6 +41,21 @@ export interface RunRecorder {
 }
 
 /**
+ * The persisted `branchResult` for a step: a decision node (branch/switch)
+ * records its routing outcome + reasoning; every other node records null.
+ * Centralized so all three backends (in-process executor, iteration subgraph,
+ * Cloudflare workflow) persist the identical shape and can't drift.
+ */
+export function recordedBranchResult(result: {
+  branchResult?: string
+  branchReasoning?: string
+}): { result: string; reasoning: string } | null {
+  return result.branchResult
+    ? { result: result.branchResult, reasoning: result.branchReasoning ?? '' }
+    : null
+}
+
+/**
  * In-memory recorder for eval / tests. Captures every recorded step in order
  * so assertions can inspect the run trace without a database.
  */

@@ -585,6 +585,30 @@ function evalResultDTO(r: {
   }
 }
 
+// The top-level run steps a grader reads. Iteration inner-subgraph steps (those
+// with a `parentNodeId`) are excluded — checks address the workflow's own nodes,
+// not an iteration's per-item subgraph nodes.
+function toGradeSteps(
+  steps: Array<{
+    nodeId: string
+    nodeKind: string
+    parentNodeId?: string | null
+    input?: unknown
+    output?: unknown
+    meta?: unknown
+  }>,
+): GradeStep[] {
+  return steps
+    .filter((s) => !s.parentNodeId)
+    .map((s) => ({
+      nodeId: s.nodeId,
+      nodeKind: s.nodeKind,
+      input: s.input,
+      output: s.output,
+      meta: s.meta,
+    }))
+}
+
 // Per-request state each method handler receives. A handler parses what it needs
 // off `params`, does the work, and returns a plain value — the dispatcher below
 // owns the shared frame (auth/db resolution, JSON wrapping, error handling), so
@@ -1475,17 +1499,7 @@ function buildHandlers<TDeps>(
       if (!runResult) {
         throw new Error('Run not found.')
       }
-      // Top-level steps only — checks address the workflow's own nodes, not an
-      // iteration's per-item inner subgraph steps.
-      const steps: GradeStep[] = runResult.steps
-        .filter((s) => !s.parentNodeId)
-        .map((s) => ({
-          nodeId: s.nodeId,
-          nodeKind: s.nodeKind,
-          input: s.input,
-          output: s.output,
-          meta: s.meta,
-        }))
+      const steps = toGradeSteps(runResult.steps)
       const env = await c.env()
       // Judge checks resolve their model through the host's live seam.
       const getModel: GradeModelFactory = (modelId) =>
@@ -1515,7 +1529,10 @@ function buildHandlers<TDeps>(
         snapshot,
         snapshotHash,
       })
-      const dto: WfEvalResultDTO = {
+      // Reuse the shared mapper so this result's shape can't drift from the one
+      // `getEvalRun` returns. `createdAt` is the response's best-effort now (the
+      // row isn't re-read); the mapper takes a Date and emits epoch ms.
+      return evalResultDTO({
         id: resultId,
         evalRunId,
         rowId,
@@ -1525,9 +1542,8 @@ function buildHandlers<TDeps>(
         checkResults: graded.checkResults,
         snapshot,
         snapshotHash,
-        createdAt: Date.now(),
-      }
-      return dto
+        createdAt: new Date(),
+      })
     },
 
     finalizeEvalRun: async (c) => {

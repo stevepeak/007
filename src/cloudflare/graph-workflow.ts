@@ -19,7 +19,10 @@ import {
   runIteration,
 } from '../engine/nodes/iteration'
 import { errorMessage, runNode, type NodeRunResult } from '../engine/run-node'
-import type { RecordStepArgs } from '../engine/run-recorder'
+import {
+  recordedBranchResult,
+  type RecordStepArgs,
+} from '../engine/run-recorder'
 import {
   Scheduler,
   WorkflowStalledError,
@@ -599,12 +602,7 @@ export function makeGraphWorkflow<
             status: 'completed',
             output: result.recordedOutput,
             meta: result.meta,
-            branchResult: result.branchResult
-              ? {
-                  result: result.branchResult,
-                  reasoning: result.branchReasoning ?? '',
-                }
-              : null,
+            branchResult: recordedBranchResult(result),
           })
           await persistLogs(
             result.logs ?? [],
@@ -622,6 +620,29 @@ export function makeGraphWorkflow<
         }
       }
 
+      // Settle a completed run: persist the final output, mirror it to the
+      // RunRoom, and best-effort notify the host. Shared by the two success
+      // exits — a reached Output (with its node id) and a decision that fizzled
+      // out (output `undefined`, no node id).
+      const finishRun = async (
+        output: unknown,
+        outputNodeId: string | null,
+      ): Promise<GraphWorkflowResult> => {
+        await stepDo(step, 'finalize', () =>
+          finalizeRun(createWfDb(env.DB), { runId: p.workflowRunId, output }),
+        )
+        await stepDo(step, 'room-output', () => room.setOutput(output))
+        if (config.onRunComplete) {
+          await notifyHost(step, 'on-complete', () =>
+            config.onRunComplete!(
+              { ...p.runContext, env },
+              { output, outputNodeId },
+            ),
+          )
+        }
+        return { output, outputNodeId }
+      }
+
       try {
         while (true) {
           const instruction = scheduler.nextBatch()
@@ -634,22 +655,7 @@ export function makeGraphWorkflow<
             if (!scheduler.hasRoutedDecision()) {
               throw new WorkflowStalledError()
             }
-            await stepDo(step, 'finalize', () =>
-              finalizeRun(createWfDb(env.DB), {
-                runId: p.workflowRunId,
-                output: undefined,
-              }),
-            )
-            await stepDo(step, 'room-output', () => room.setOutput(undefined))
-            if (config.onRunComplete) {
-              await notifyHost(step, 'on-complete', () =>
-                config.onRunComplete!(
-                  { ...p.runContext, env },
-                  { output: undefined, outputNodeId: null },
-                ),
-              )
-            }
-            return { output: undefined, outputNodeId: null }
+            return await finishRun(undefined, null)
           }
 
           if (instruction.type === 'output') {
@@ -666,22 +672,7 @@ export function makeGraphWorkflow<
                 output,
               }),
             )
-            await stepDo(step, 'finalize', () =>
-              finalizeRun(createWfDb(env.DB), {
-                runId: p.workflowRunId,
-                output,
-              }),
-            )
-            await stepDo(step, 'room-output', () => room.setOutput(output))
-            if (config.onRunComplete) {
-              await notifyHost(step, 'on-complete', () =>
-                config.onRunComplete!(
-                  { ...p.runContext, env },
-                  { output, outputNodeId },
-                ),
-              )
-            }
-            return { output, outputNodeId }
+            return await finishRun(output, outputNodeId)
           }
 
           // Assign sequence numbers up front, in the batch's stable order, so

@@ -1,5 +1,7 @@
 import {
+  isBookendKind,
   workflowGraphSchema,
+  type BookendNodeKind,
   type WorkflowEdge,
   type WorkflowGraph,
   type WorkflowNode,
@@ -22,7 +24,7 @@ import {
 // the three is ever an executable instruction.
 export type ExecutableNode = Exclude<
   WorkflowNode,
-  { kind: 'trigger' | 'output' | 'note' }
+  { kind: BookendNodeKind }
 >
 
 /** A node the backend must execute, with its resolved input. */
@@ -282,11 +284,7 @@ export class Scheduler {
     if (!next) {
       return { type: 'stall' }
     }
-    if (
-      next.kind === 'trigger' ||
-      next.kind === 'output' ||
-      next.kind === 'note'
-    ) {
+    if (isBookendKind(next)) {
       // Defensive — the bookends are handled outside the dispatch path, and a
       // portless Note never has live incoming edges to become ready.
       throw new Error(`Scheduler produced a ${next.kind} node as executable.`)
@@ -324,11 +322,7 @@ export class Scheduler {
     // replay. The bookend kinds never satisfy `isReady`, but we exclude them
     // explicitly so the result narrows to `ExecutableNode`.
     const ready = this.graph.nodes.filter(
-      (n): n is ExecutableNode =>
-        n.kind !== 'trigger' &&
-        n.kind !== 'output' &&
-        n.kind !== 'note' &&
-        this.isReady(n.id),
+      (n): n is ExecutableNode => !isBookendKind(n) && this.isReady(n.id),
     )
     if (ready.length === 0) {
       return { type: 'stall' }

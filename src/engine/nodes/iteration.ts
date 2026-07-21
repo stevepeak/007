@@ -1,7 +1,7 @@
 import { resolveBinding } from '../binding'
 import type { IterationNode, WorkflowGraph } from '../graph'
 import { runNode, type NodeRunResult, type RunNodeContext } from '../run-node'
-import type { RunRecorder } from '../run-recorder'
+import { recordedBranchResult, type RunRecorder } from '../run-recorder'
 import { Scheduler, WorkflowStalledError } from '../scheduler'
 
 // The iteration node fans a list out over an embedded subgraph: the subgraph
@@ -157,9 +157,7 @@ export async function executeSubgraph<TDeps>(
         status: 'completed',
         output: result.recordedOutput,
         meta: result.meta,
-        branchResult: result.branchResult
-          ? { result: result.branchResult, reasoning: result.branchReasoning ?? '' }
-          : null,
+        branchResult: recordedBranchResult(result),
       })
     }
     scheduler.report(node.id, {

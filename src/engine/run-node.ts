@@ -249,9 +249,13 @@ export async function runNode<TDeps>(
       }
     }
     default: {
-      // Trigger/Output are handled by the driver loop — landing here means the
-      // graph schema is wider than runNode expects.
+      // Every executable kind is handled above, so `node` narrows to `never`
+      // here — this assignment makes adding an ExecutableNode kind without a
+      // case a COMPILE error rather than a runtime one. The runtime throw still
+      // guards input that is wider than the type (Trigger/Output/Note are driven
+      // by the loop, not dispatched here).
       const unexpected = node as { kind: string; id: string }
+      node satisfies never
       throw new Error(
         `Unhandled node kind '${unexpected.kind}' for node ${unexpected.id}.`,
       )
