@@ -29,6 +29,7 @@ import { useWfNav } from '../nav'
 import { ArchiveButton } from '../archive-button'
 import { WfShell } from '../shell'
 import { ToolIcon } from '../tool-icon'
+import { useDismiss } from '../use-dismiss'
 import { sectionCrumb } from '../wf-crumbs'
 import { ModelSelect } from '../editor/model-select'
 import { RunConfigDialog } from './run-config-dialog'
@@ -773,21 +774,7 @@ function ToolPicker({
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    window.addEventListener('mousedown', onDown)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('mousedown', onDown)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [open])
+  useDismiss(rootRef, open, () => setOpen(false))
 
   return (
     <div className="space-y-1">

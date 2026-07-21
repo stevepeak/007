@@ -1,14 +1,12 @@
 import { AlertTriangle, Check, ChevronDown, ChevronRight } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 
-import type {
-  ModelCapabilities,
-  ModelOption,
-  ModelProvider,
-} from '../../engine/config'
+import type { ModelCapabilities, ModelOption } from '../../engine/config'
 import { cn } from '../cn'
 import { BrandMark, CapabilityBadges, inferModelBrand } from '../evals/shared'
 import { useModels, useProviders } from '../hooks'
+import { useDismiss } from '../use-dismiss'
+import { groupModelsByProvider } from './model-grouping'
 
 // Short "why this model is unavailable" reason per required capability.
 const REQUIREMENT_REASON: Record<keyof ModelCapabilities, string> = {
@@ -39,35 +37,6 @@ function unmetRequirements(
 // vendor's real SVG logomark plus cost / speed. Unlike the evals dialog (a
 // multi-select best-of-N table) this picks exactly one model — for an agent's
 // or node's Model field — via a compact dropdown.
-
-/** Bucket models under the provider the host declared for them, in declared
- * order. Orphans (no matching provider) fall into a synthetic trailing group so
- * nothing is silently hidden — same rule the run-config dialog uses. */
-function groupModelsByProvider(
-  models: ModelOption[],
-  providers: ModelProvider[],
-): { provider: ModelProvider; models: ModelOption[] }[] {
-  const declared = providers
-    .map((provider) => ({
-      provider,
-      models: models.filter((m) => m.providerId === provider.id),
-    }))
-    .filter((g) => g.models.length > 0)
-
-  const claimed = new Set(declared.flatMap((g) => g.models.map((m) => m.id)))
-  const orphans = models.filter((m) => !claimed.has(m.id))
-  if (orphans.length > 0) {
-    declared.push({
-      provider: {
-        id: '__ungrouped__',
-        label: providers.length > 0 ? 'Other' : 'Models',
-        kind: 'custom',
-      },
-      models: orphans,
-    })
-  }
-  return declared
-}
 
 export function ModelSelect({
   value,
@@ -106,21 +75,7 @@ export function ModelSelect({
     : []
 
   // Close on outside-click or Escape.
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    window.addEventListener('mousedown', onDown)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('mousedown', onDown)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [open])
+  useDismiss(rootRef, open, () => setOpen(false))
 
   const brand = selected
     ? inferModelBrand(`${selected.id} ${selected.label}`)

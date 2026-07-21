@@ -1,6 +1,11 @@
-import { Braces, Eye, Sparkles, Wrench } from 'lucide-react'
+import { Braces, CircleDashed, Eye, Sparkles, Wrench } from 'lucide-react'
+import type { MouseEvent, ReactNode } from 'react'
 
-import type { EvalCheck, ModelCapabilities } from '../../server/protocol'
+import type {
+  EvalCheck,
+  ModelCapabilities,
+  WfEvalRunSummary,
+} from '../../server/protocol'
 import { cn } from '../cn'
 import { Tooltip } from '../tooltip'
 import { getProvider, ProviderLogo } from './provider-logos'
@@ -240,4 +245,84 @@ export function describeCheck(check: EvalCheck | undefined): string {
         ? `judge: ${check.rubric.slice(0, 60)}${check.rubric.length > 60 ? '…' : ''}`
         : 'judge'
   }
+}
+
+export function RunStatusBadge({ status }: { status: string }) {
+  if (status === 'running' || status === 'queued') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700">
+        <CircleDashed className="size-3 animate-spin" />
+        {status}
+      </span>
+    )
+  }
+  return (
+    <span
+      className={cn(
+        'rounded-full px-2 py-0.5 text-[11px] font-medium',
+        status === 'failed' || status === 'cancelled'
+          ? 'bg-red-50 text-red-700'
+          : 'bg-neutral-100 text-neutral-500',
+      )}
+    >
+      {status}
+    </span>
+  )
+}
+
+// Shared "test runs" table: When / Pass / Score columns over a list of eval
+// runs. Clicking a row opens its report via `onOpenRun`. The first cell defaults
+// to a timestamp + RunStatusBadge; pass `renderFirstCell` for a richer cell
+// (e.g. the goals list's subtitle line).
+export function EvalRunsTable({
+  runs,
+  emptyMessage,
+  loadingMessage,
+  isLoading,
+  onOpenRun,
+  renderFirstCell,
+}: {
+  runs: WfEvalRunSummary[]
+  emptyMessage: string
+  loadingMessage?: string
+  isLoading?: boolean
+  onOpenRun: (runId: string, e: MouseEvent) => void
+  renderFirstCell?: (run: WfEvalRunSummary) => ReactNode
+}) {
+  if (isLoading && loadingMessage) return <EmptyState message={loadingMessage} />
+  if (runs.length === 0) return <EmptyState message={emptyMessage} />
+  return (
+    <div className="overflow-hidden rounded-lg border border-neutral-200">
+      <div className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-neutral-100 bg-neutral-50 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+        <span>When</span>
+        <span className="text-right">Pass</span>
+        <span className="w-24 text-right">Score</span>
+      </div>
+      {runs.map((r) => (
+        <button
+          key={r.id}
+          type="button"
+          onClick={(e) => onOpenRun(r.id, e)}
+          className="grid w-full grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-neutral-100 px-4 py-3 text-left last:border-b-0 hover:bg-neutral-50"
+        >
+          {renderFirstCell ? (
+            renderFirstCell(r)
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-neutral-700">
+                {formatTimestamp(r.createdAt)}
+              </span>
+              <RunStatusBadge status={r.status} />
+            </div>
+          )}
+          <div className="text-right">
+            <PassRate passed={r.passed} total={r.total} />
+          </div>
+          <div className="w-24 text-right">
+            <Score value={r.score} />
+          </div>
+        </button>
+      ))}
+    </div>
+  )
 }

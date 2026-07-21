@@ -12,6 +12,7 @@ import type { WorkflowGraph } from '../../engine'
 import { ArchiveButton } from '../archive-button'
 import { cn } from '../cn'
 import { useWfClient, useWfComponents } from '../context'
+import { SaveStateBadge } from '../save-state-badge'
 import { Tooltip } from '../tooltip'
 import {
   useSaveDraft,
@@ -514,29 +515,11 @@ function EditorInner({
               />
             )}
 
-            <Tooltip
-              side="bottom"
-              content={
-                dirty
-                  ? 'You have unsaved changes (kept locally until you save)'
-                  : 'All changes saved'
-              }
-            >
-              <span
-                className={cn(
-                  'flex items-center gap-1.5 text-xs',
-                  dirty ? 'text-amber-600' : 'text-neutral-400',
-                )}
-              >
-                <span
-                  className={cn(
-                    'size-1.5 rounded-full',
-                    dirty ? 'bg-amber-500' : 'bg-neutral-300',
-                  )}
-                />
-                {dirty ? 'Unsaved' : 'Saved'}
-              </span>
-            </Tooltip>
+            <SaveStateBadge
+              dirty={dirty}
+              dirtyTooltip="You have unsaved changes (kept locally until you save)"
+              savedTooltip="All changes saved"
+            />
 
             <div className="relative">
               <Button

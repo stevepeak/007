@@ -1125,15 +1125,10 @@ function buildHandlers<TDeps>(
         finishedAt: toEpoch(s.finishedAt),
         costUsd: s.costUsd ?? null,
       }))
-      const logs: WfRunLogDTO[] = result.logs.map((l) => ({
-        nodeId: l.nodeId,
-        nodeKind: l.nodeKind,
-        sequence: l.sequence,
-        level: l.level,
-        message: l.message,
-        meta: l.meta,
-        ts: l.ts,
-      }))
+      // `getRunLogs` already returns exactly the wire shape (WfRunLogRow is
+      // field-identical to WfRunLogDTO), so this is a direct assignment, not a
+      // remap — the annotation makes any future field drift a compile error.
+      const logs: WfRunLogDTO[] = result.logs
       const detail: WfRunDetail = {
         run: {
           ...runSummary(

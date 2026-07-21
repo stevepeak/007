@@ -1,5 +1,5 @@
 import { ChevronDown, Workflow } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 
 import {
   BRANCH_OPERATORS,
@@ -20,6 +20,7 @@ import {
   NodeInputsPanel,
 } from './node-data-panel'
 import { ToolIcon } from '../tool-icon'
+import { useDismiss } from '../use-dismiss'
 
 // Per-kind config editor for the selected node. Uses injected primitives so it
 // themes with the host; model/tool choices come from the data client. Advanced
@@ -490,21 +491,7 @@ function WorkflowSelect({
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (!open) return
-    function onDocMouseDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('mousedown', onDocMouseDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDocMouseDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
+  useDismiss(ref, open, () => setOpen(false))
 
   const selected = workflows.find((w) => w.id === value)
 
@@ -587,21 +574,7 @@ function ToolSelect({
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (!open) return
-    function onDocMouseDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('mousedown', onDocMouseDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDocMouseDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
+  useDismiss(ref, open, () => setOpen(false))
 
   const selected = tools.find((t) => t.id === value)
 

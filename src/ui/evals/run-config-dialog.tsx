@@ -13,9 +13,10 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import type { ModelOption, ModelProvider } from '../../engine/config'
+import type { ModelOption } from '../../engine/config'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
+import { groupModelsByProvider } from '../editor/model-grouping'
 import { PromptBodyEditor } from '../editor/prompt-body-editor'
 import { useAgents, useEvalSets, useModels, useProviders, useRunEval } from '../hooks'
 import { Modal } from '../modal'
@@ -55,35 +56,6 @@ export type RunConfigDialogProps = {
   targetName: string
   /** The eval set(s) to run. Empty = nothing to launch (button disabled). */
   setIds: string[]
-}
-
-/** Bucket models under the provider the host declared for them, in declared
- * order. Orphans (no matching provider) fall into a synthetic trailing group so
- * nothing is silently hidden — same rule the model picker uses. */
-function groupModelsByProvider(
-  models: ModelOption[],
-  providers: ModelProvider[],
-): { provider: ModelProvider; models: ModelOption[] }[] {
-  const declared = providers
-    .map((provider) => ({
-      provider,
-      models: models.filter((m) => m.providerId === provider.id),
-    }))
-    .filter((g) => g.models.length > 0)
-
-  const claimed = new Set(declared.flatMap((g) => g.models.map((m) => m.id)))
-  const orphans = models.filter((m) => !claimed.has(m.id))
-  if (orphans.length > 0) {
-    declared.push({
-      provider: {
-        id: '__ungrouped__',
-        label: providers.length > 0 ? 'Other' : 'Models',
-        kind: 'custom',
-      },
-      models: orphans,
-    })
-  }
-  return declared
 }
 
 // One extra system prompt authored for the test matrix. `id` is a client-only

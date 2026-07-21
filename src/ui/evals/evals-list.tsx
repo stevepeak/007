@@ -1,13 +1,12 @@
 import {
   Check,
   ChevronDown,
-  CircleDashed,
   HelpCircle,
   Play,
   Plus,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 
 import type {
   WfAgentSummary,
@@ -20,10 +19,17 @@ import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { useAgents, useEvalRuns, useEvalSets, useWorkflows } from '../hooks'
 import { useWfNav } from '../nav'
+import { useDismiss } from '../use-dismiss'
 import { EvalsHelpDialog } from './evals-help-dialog'
 import { NewGoalDialog } from './new-goal-dialog'
 import { RunConfigDialog } from './run-config-dialog'
-import { EmptyState, formatTimestamp, PassRate, Score, Tabs } from './shared'
+import {
+  EmptyState,
+  EvalRunsTable,
+  formatTimestamp,
+  RunStatusBadge,
+  Tabs,
+} from './shared'
 
 // The Evals catalog — the landing page reached from the hub's "Evals" card. Two
 // tabs: the authored GOALS (real wf_eval_set rows) and the history of TEST RUNS
@@ -218,21 +224,7 @@ function TargetFilter({
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    window.addEventListener('mousedown', onDown)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('mousedown', onDown)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [open])
+  useDismiss(rootRef, open, () => setOpen(false))
 
   const selectedAgent = agents.find((a) => a.id === value)
   const selectedWorkflow = workflows.find((w) => w.id === value)
@@ -391,68 +383,25 @@ function AgentPill({ agent }: { agent?: WfAgentSummary }) {
 
 function RunsTable({ runs }: { runs: WfEvalRunSummary[] }) {
   const { navigate } = useWfNav()
-  if (runs.length === 0) {
-    return (
-      <EmptyState message="No test runs yet. Run a goal to see results here." />
-    )
-  }
   return (
-    <div className="overflow-hidden rounded-lg border border-neutral-200">
-      <div className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-neutral-100 bg-neutral-50 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-neutral-400">
-        <span>When</span>
-        <span className="text-right">Pass</span>
-        <span className="w-24 text-right">Score</span>
-      </div>
-      {runs.map((r) => (
-        <button
-          key={r.id}
-          type="button"
-          onClick={() => navigate(`evals/runs/${r.id}`)}
-          className="grid w-full grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-neutral-100 px-4 py-3 text-left last:border-b-0 hover:bg-neutral-50"
-        >
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="truncate text-sm font-medium text-neutral-900">
-                {formatTimestamp(r.createdAt)}
-              </span>
-              <RunStatusBadge status={r.status} />
-            </div>
-            <div className="mt-0.5 truncate text-xs text-neutral-500">
-              {r.setIds.length} goal{r.setIds.length === 1 ? '' : 's'} ·{' '}
-              {r.total} sample{r.total === 1 ? '' : 's'}
-            </div>
+    <EvalRunsTable
+      runs={runs}
+      emptyMessage="No test runs yet. Run a goal to see results here."
+      onOpenRun={(id) => navigate(`evals/runs/${id}`)}
+      renderFirstCell={(r) => (
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm font-medium text-neutral-900">
+              {formatTimestamp(r.createdAt)}
+            </span>
+            <RunStatusBadge status={r.status} />
           </div>
-          <div className="text-right">
-            <PassRate passed={r.passed} total={r.total} />
+          <div className="mt-0.5 truncate text-xs text-neutral-500">
+            {r.setIds.length} goal{r.setIds.length === 1 ? '' : 's'} ·{' '}
+            {r.total} sample{r.total === 1 ? '' : 's'}
           </div>
-          <div className="w-24 text-right">
-            <Score value={r.score} />
-          </div>
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function RunStatusBadge({ status }: { status: string }) {
-  if (status === 'running' || status === 'queued') {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700">
-        <CircleDashed className="size-3 animate-spin" />
-        {status}
-      </span>
-    )
-  }
-  return (
-    <span
-      className={cn(
-        'rounded-full px-2 py-0.5 text-[11px] font-medium',
-        status === 'failed' || status === 'cancelled'
-          ? 'bg-red-50 text-red-700'
-          : 'bg-neutral-100 text-neutral-500',
+        </div>
       )}
-    >
-      {status}
-    </span>
+    />
   )
 }

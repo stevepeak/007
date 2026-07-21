@@ -12,7 +12,7 @@ import { IdeaSpark } from '../idea-spark'
 import { WfShell } from '../shell'
 import { sectionCrumb } from '../wf-crumbs'
 import { RunConfigDialog } from './run-config-dialog'
-import { EmptyState, formatTimestamp, PassRate, Score, Tabs } from './shared'
+import { EmptyState, EvalRunsTable, Tabs } from './shared'
 
 // The Goal detail page (route: evals/<setId>). A goal is a wf_eval_set: its
 // name + description are editable in place, its TARGET (the agent its samples
@@ -289,40 +289,15 @@ function RunsForSet({ setId }: { setId: string }) {
   const open = useOpenAsset()
   const runsQuery = useEvalRuns()
   const runs = (runsQuery.data ?? []).filter((r) => r.setIds.includes(setId))
-  if (runsQuery.isLoading) return <EmptyState message="Loading test runs…" />
-  if (runs.length === 0) {
-    return <EmptyState message="No test runs yet. Run this goal to see results here." />
-  }
   return (
-    <div className="overflow-hidden rounded-lg border border-neutral-200">
-      <div className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-neutral-100 bg-neutral-50 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-neutral-400">
-        <span>When</span>
-        <span className="text-right">Pass</span>
-        <span className="w-24 text-right">Score</span>
-      </div>
-      {runs.map((r) => (
-        <button
-          key={r.id}
-          type="button"
-          onClick={(e) =>
-            open(`evals/runs/${r.id}`, { newTab: e.metaKey || e.ctrlKey })
-          }
-          className="grid w-full grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-neutral-100 px-4 py-3 text-left last:border-b-0 hover:bg-neutral-50"
-        >
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-neutral-700">
-              {formatTimestamp(r.createdAt)}
-            </span>
-            <span className="text-xs text-neutral-400">{r.status}</span>
-          </div>
-          <div className="text-right">
-            <PassRate passed={r.passed} total={r.total} />
-          </div>
-          <div className="w-24 text-right">
-            <Score value={r.score} />
-          </div>
-        </button>
-      ))}
-    </div>
+    <EvalRunsTable
+      runs={runs}
+      isLoading={runsQuery.isLoading}
+      loadingMessage="Loading test runs…"
+      emptyMessage="No test runs yet. Run this goal to see results here."
+      onOpenRun={(id, e) =>
+        open(`evals/runs/${id}`, { newTab: e.metaKey || e.ctrlKey })
+      }
+    />
   )
 }

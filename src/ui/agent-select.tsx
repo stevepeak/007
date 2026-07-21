@@ -1,10 +1,11 @@
 import { Check, ChevronDown, Minus, Plus } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 
 import type { WfAgentSummary } from '../server/protocol'
 import { agentColor, agentIcon } from './agent-appearance'
 import { cn } from './cn'
 import { useAgents, useAgentVersions } from './hooks'
+import { useDismiss } from './use-dismiss'
 
 // A rich, reusable agent picker used across 007 (workflow agent nodes, the New
 // Goal dialog, …). A native <select> can only render text, so we roll our own
@@ -41,21 +42,7 @@ export function AgentSelect({
   const fetched = useAgents()
   const agents = agentsProp ?? fetched.data ?? []
 
-  useEffect(() => {
-    if (!open) return
-    function onDocMouseDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('mousedown', onDocMouseDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDocMouseDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
+  useDismiss(ref, open, () => setOpen(false))
 
   const selected = agents.find((a) => a.id === value.agentId)
   const SelectedIcon = selected ? agentIcon(selected.icon) : null

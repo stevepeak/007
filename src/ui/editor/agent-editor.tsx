@@ -27,6 +27,7 @@ import {
 } from '../hooks'
 import { useOpenAsset, useWfNav } from '../nav'
 import { WfShell } from '../shell'
+import { SaveStateBadge } from '../save-state-badge'
 import { Tooltip } from '../tooltip'
 import { AgentOutputEditor } from './agent-output-editor'
 import { ModelSelect } from './model-select'
@@ -218,29 +219,11 @@ function AgentEditorInner({
         ]}
         actions={
           <>
-            <Tooltip
-              side="bottom"
-              content={
-                dirty
-                  ? 'You have unsaved changes'
-                  : 'All configuration changes saved'
-              }
-            >
-              <span
-                className={cn(
-                  'flex items-center gap-1.5 text-xs',
-                  dirty ? 'text-amber-600' : 'text-neutral-400',
-                )}
-              >
-                <span
-                  className={cn(
-                    'size-1.5 rounded-full',
-                    dirty ? 'bg-amber-500' : 'bg-neutral-300',
-                  )}
-                />
-                {dirty ? 'Unsaved' : 'Saved'}
-              </span>
-            </Tooltip>
+            <SaveStateBadge
+              dirty={dirty}
+              dirtyTooltip="You have unsaved changes"
+              savedTooltip="All configuration changes saved"
+            />
             {saveError ? (
               <span className="text-xs text-red-600">{saveError}</span>
             ) : null}
