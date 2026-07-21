@@ -39,13 +39,29 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === 'object' && !Array.isArray(v)
 }
 
+// A first-level string that is long/multiline renders as a full TextBlock — this
+// is what counts as a "representative text body". Used both to pick which fields
+// expand below the pills and to decide whether Text mode is worth defaulting to.
+function isTextBody(v: unknown): boolean {
+  return typeof v === 'string' && !isSmallValue(v)
+}
+
+// Does the value have any prose/markdown body to show in Text mode? A bare
+// string, or a plain object with at least one long first-level string field.
+// Objects that are only scalars/lists (pills) have no text body → prefer JSON.
+function hasTextBody(v: unknown): boolean {
+  if (typeof v === 'string') return v.trim().length > 0
+  if (isPlainObject(v)) return Object.values(v).some(isTextBody)
+  return false
+}
+
 function Pill({ label, value }: { label: string; value: unknown }) {
   return (
     <span className="inline-flex max-w-full items-center overflow-hidden rounded-full border border-neutral-200 bg-neutral-50 text-[11px]">
       <span className="shrink-0 px-2 py-0.5 font-medium text-neutral-500">
         {label}
       </span>
-      <span className="truncate border-l border-neutral-200 px-2 py-0.5 font-mono text-neutral-700">
+      <span className="truncate border-l border-neutral-200 bg-white px-2 py-0.5 font-mono text-neutral-700">
         {value === null ? 'null' : String(value)}
       </span>
     </span>
@@ -150,15 +166,27 @@ function TextView({ value }: { value: unknown }) {
   if (isPlainObject(value)) {
     const entries = Object.entries(value)
     const pills = entries.filter(([, v]) => isSmallValue(v))
-    const textBlocks = entries.filter(
-      ([, v]) => typeof v === 'string' && !isSmallValue(v),
-    )
+    // Array-valued keys collapse to a count pill (e.g. { memories: [...] } →
+    // `[memories | 3 items]`) so their presence and size are visible in Text
+    // mode without dumping the whole list — that's the JSON view's job.
+    const listPills = entries.filter(([, v]) => Array.isArray(v)) as [
+      string,
+      unknown[],
+    ][]
+    const textBlocks = entries.filter(([, v]) => isTextBody(v))
     return (
       <div className="space-y-3">
-        {pills.length ? (
+        {pills.length || listPills.length ? (
           <div className="flex flex-wrap gap-1.5">
             {pills.map(([k, v]) => (
               <Pill key={k} label={k} value={v} />
+            ))}
+            {listPills.map(([k, v]) => (
+              <Pill
+                key={k}
+                label={k}
+                value={`${v.length} item${v.length === 1 ? '' : 's'}`}
+              />
             ))}
           </div>
         ) : null}
@@ -183,7 +211,9 @@ export type DataViewProps = {
 }
 
 export function DataView({ value, className }: DataViewProps) {
-  const [mode, setMode] = useState<Mode>('text')
+  // Default to Text only when there's a real text body to show; otherwise the
+  // JSON view is more useful than a lone row of pills.
+  const [mode, setMode] = useState<Mode>(hasTextBody(value) ? 'text' : 'json')
   const [copied, setCopied] = useState(false)
 
   if (value === null || value === undefined) {

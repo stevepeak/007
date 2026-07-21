@@ -152,7 +152,7 @@ export function RunNodeDock({
               : 'border-transparent text-neutral-500 hover:text-neutral-700',
           )}
         >
-          Logs
+          Inspect
         </button>
         <div className="flex-1" />
         {tab === 'logs' && node ? (
