@@ -212,22 +212,19 @@ export async function getModelUsage(
 }
 
 /**
- * Persist a provider's freshly-fetched catalog. New models are inserted DISABLED
- * (the user opts them in) and existing rows keep their `enabled` flag while their
- * metadata refreshes. `defaultEnabledIds` are enabled only on FIRST insert (the
- * host's static model ids), so there is always a working selection after the very
- * first refresh — without re-enabling a model the user later turned off. Returns
- * the number of catalog entries written.
+ * Persist a provider's freshly-fetched catalog. New models are ALWAYS inserted
+ * DISABLED — the admin opts them in explicitly — and existing rows keep their
+ * `enabled` flag while their metadata refreshes. A refresh therefore never
+ * auto-enables anything (a fresh DB starts with zero enabled models) and never
+ * re-hides a model the user turned on. Returns the number of entries written.
  */
 export async function upsertModels(
   db: WfDb,
   providerId: string,
   entries: Omit<ModelCatalogEntry, 'enabled'>[],
-  defaultEnabledIds: readonly string[] = [],
 ): Promise<number> {
   if (entries.length === 0) return 0
   const now = new Date()
-  const enableByDefault = new Set(defaultEnabledIds)
   for (const e of entries) {
     const caps: ModelCapabilities = e.capabilities ?? {}
     // `enabled` is intentionally absent from `meta`, so the conflict path never
@@ -252,7 +249,7 @@ export async function upsertModels(
     }
     await db
       .insert(wfModel)
-      .values({ id: e.id, enabled: enableByDefault.has(e.id), ...meta })
+      .values({ id: e.id, enabled: false, ...meta })
       .onConflictDoUpdate({ target: wfModel.id, set: meta })
   }
   return entries.length

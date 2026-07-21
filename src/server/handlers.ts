@@ -822,16 +822,11 @@ function buildHandlers<TDeps>(
       }
       const env = await c.env()
       const entries = await fetchCatalog({ env }, providerId)
-      // Keep the host's default models enabled on first insert so there is always
-      // a working set. Defaults are bare ids; the catalog uses composite ids.
-      const defaults = await opts.config.listModels({ env })
-      const defaultEnabledIds = defaults.map((m) => `${providerId}:${m.id}`)
-      const count = await upsertModels(
-        c.db,
-        providerId,
-        entries,
-        defaultEnabledIds,
-      )
+      // Refresh never auto-enables anything: newly discovered models are inserted
+      // DISABLED and the admin opts them in explicitly. (Existing rows keep their
+      // `enabled` flag — see `upsertModels`.) A fresh DB thus starts with zero
+      // enabled models until someone turns them on.
+      const count = await upsertModels(c.db, providerId, entries)
       const refreshedAt = new Date()
       const providers = await opts.config.listProviders({ env })
       const provider = providers.find((p) => p.id === providerId) ?? {
