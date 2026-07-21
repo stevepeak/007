@@ -290,6 +290,16 @@ export function RunLog({ step }: { step: WfRunStepDTO }) {
           tokens
         </div>
       ) : null}
+      {iterMeta ? (
+        <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[11px] text-neutral-500">
+          <span className="inline-flex items-center gap-1 rounded bg-neutral-100 px-1.5 py-0.5 font-medium text-neutral-600">
+            <Repeat className="size-3" />
+            concurrency {iterMeta.concurrency}
+          </span>
+          <span>· {iterMeta.total} items</span>
+          {iterMeta.stopOnError ? <span>· stop on error</span> : null}
+        </div>
+      ) : null}
       {step.error ? (
         <div className="mb-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs whitespace-pre-wrap text-red-700">
           {step.error}
