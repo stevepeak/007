@@ -142,6 +142,26 @@ export function ModelSelect({
         <ChevronDown className="size-4 shrink-0 text-neutral-400" />
       </button>
 
+      {/* Selected model's cost + speed, so the Model field surfaces them
+          without opening the dropdown. Each is shown only when reported. */}
+      {selected != null &&
+      (selected.costPerMTok != null || selected.tokensPerSec != null) ? (
+        <div className="mt-1 flex items-center gap-3 px-1 text-xs tabular-nums text-neutral-400">
+          {selected.costPerMTok != null ? (
+            <span>
+              ${selected.costPerMTok.toFixed(2)}
+              <span className="text-neutral-300">/M</span>
+            </span>
+          ) : null}
+          {selected.tokensPerSec != null ? (
+            <span>
+              {Math.round(selected.tokensPerSec)}
+              <span className="text-neutral-300"> tok/s</span>
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
       {selectedUnmet.length > 0 ? (
         <div className="mt-1 flex items-center gap-1 text-xs text-amber-600">
           <AlertTriangle className="size-3 shrink-0" />

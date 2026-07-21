@@ -331,6 +331,11 @@ export function RunPage({ runId, className }: RunPageProps) {
           live={live}
           selectedNodeId={selectedId}
           onSelectNode={setSelectedId}
+          // Per-item picker: only meaningful when inspecting a node INSIDE an
+          // iteration, where itemIndex selects which recorded item to show.
+          itemIndex={parentIterationId ? itemIndex : null}
+          itemCount={parentIterationId ? itemCount : 0}
+          onSelectItem={setSelectedItemIndex}
         />
       </div>
     </WfShell>

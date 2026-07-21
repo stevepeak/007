@@ -18,6 +18,7 @@ import {
   useAgent,
   useAgentReferences,
   useArchiveAgent,
+  useModels,
   usePublishAgent,
   useRunAgentPreview,
   useSaveAgentDraft,
@@ -108,6 +109,12 @@ function AgentEditorInner({
   const aiTools = (tools.data ?? []).filter((t) => t.kind === 'ai-tool')
 
   const [config, setConfig] = useState<AgentConfig>(initialConfig)
+  // What the currently-selected model can do. The picker only offers models
+  // that meet the agent's needs, so the inverse holds here: if the chosen model
+  // is KNOWN to lack a capability, the editor sections that depend on it are
+  // disabled. Capabilities are only gated when reported — a model with no
+  // capability info (e.g. the pre-refresh static list) is treated as capable.
+  const models = useModels()
   const [name, setName] = useState(initialName)
   const [icon, setIcon] = useState(initialIcon)
   const [color, setColor] = useState(initialColor)
@@ -120,6 +127,14 @@ function AgentEditorInner({
   const publish = usePublishAgent()
   const updateMeta = useUpdateAgentMeta()
   const { navigate } = useWfNav()
+
+  const selectedModel = (models.data ?? []).find((m) => m.id === config.modelId)
+  const modelCaps = selectedModel?.capabilities
+  // Only disable a section when the model is KNOWN to lack the capability (its
+  // catalog reported one but not this flag). Unknown capabilities stay enabled.
+  const modelLacksTools = modelCaps != null && !modelCaps.tools
+  const modelLacksStructuredOutput =
+    modelCaps != null && !modelCaps.structuredOutput
 
   const dirty = JSON.stringify(config) !== JSON.stringify(savedConfig)
   const saveError =
@@ -309,10 +324,13 @@ function AgentEditorInner({
                 value={config.modelId}
                 onChange={(modelId) => patch({ modelId })}
                 // Gate the picker on what THIS agent needs: a tool-calling model
-                // when tools are attached, and structured output for object output.
+                // when tools are attached, and structured output for a Yes/No or
+                // structured result (both go through `generateObject`).
                 requirements={{
                   tools: config.toolIds.length > 0,
-                  structuredOutput: config.output.kind === 'object',
+                  structuredOutput:
+                    config.output.kind === 'object' ||
+                    config.output.kind === 'boolean',
                 }}
               />
             </section>
@@ -333,6 +351,8 @@ function AgentEditorInner({
                 tools={aiTools}
                 selectedIds={config.toolIds}
                 onChange={(toolIds) => patch({ toolIds })}
+                disabled={modelLacksTools}
+                disabledReason={`${selectedModel?.label ?? 'The selected model'} can’t call tools — pick a tool-calling model to attach tools.`}
               />
             </section>
 
@@ -342,6 +362,8 @@ function AgentEditorInner({
               <AgentOutputEditor
                 value={config.output}
                 onChange={(output) => patch({ output })}
+                structuredDisabled={modelLacksStructuredOutput}
+                structuredDisabledReason={`${selectedModel?.label ?? 'The selected model'} doesn’t support structured output — only a Text result is available.`}
               />
             </section>
 

@@ -49,6 +49,7 @@ import {
   listAgents,
   listAgentVersions,
   listWorkflowsReferencingAgent,
+  listWorkflowsReferencingAllAgents,
   listEnabledModels,
   listEvalRuns,
   listEvalSets,
@@ -433,6 +434,7 @@ function agentSummary(
     createdAt: Date
   },
   config?: unknown,
+  workflows: { id: string; name: string }[] = [],
 ): WfAgentSummary {
   // `config` is an untyped JSON column; parse it defensively so a malformed row
   // degrades to "no variables/output" rather than throwing the whole listing.
@@ -447,6 +449,9 @@ function agentSummary(
     createdAt: a.createdAt.getTime(),
     inputVariables: cfg ? inferPromptVariables(cfg.prompt) : [],
     output: cfg?.output ?? null,
+    modelId: cfg?.modelId ?? null,
+    toolIds: cfg?.toolIds ?? [],
+    workflows,
   }
 }
 
@@ -605,6 +610,18 @@ function requireHook<T>(hook: T | undefined, message: string): T {
   return hook
 }
 
+// The set of provider ids the host currently declares — the authority for which
+// providers/models this client actually offers. Cached catalog rows are gated
+// against it so a provider dropped from the host config (its rows lingering in
+// the DB from a past refresh) no longer surfaces in pickers.
+async function hostProviderIds<TDeps>(
+  config: CreateWfSdkHandlersOptions<TDeps>['config'],
+  c: HandlerCtx,
+): Promise<Set<string>> {
+  const host = await config.listProviders({ env: await c.env() })
+  return new Set(host.map((p) => p.id))
+}
+
 // The method table. Typed against `keyof WfDataClient` so the compiler proves
 // the server implements exactly the protocol the client calls — no drift, no
 // silently-missing or stray method. Each entry is the old `switch` arm's body,
@@ -619,13 +636,20 @@ function buildHandlers<TDeps>(
     // honor the user's curation — even an empty selection.
     listModels: async (c) => {
       try {
-        const enabled = await listEnabledModels(c.db)
-        if (enabled.length > 0) return enabled
         const providers = await listModelProviders(c.db)
         if (providers.length === 0) {
+          // No cached catalog yet — fall back to the host's static list.
           return await opts.config.listModels({ env: await c.env() })
         }
-        return enabled
+        // Show only enabled models from providers the host STILL declares. A
+        // provider cached from a past refresh but no longer wired up (e.g.
+        // OpenRouter on a Venice-only host) is dropped, along with its models.
+        // An empty result honors the user's curation (all models disabled).
+        const allowed = await hostProviderIds(opts.config, c)
+        const enabled = await listEnabledModels(c.db)
+        return enabled.filter(
+          (m) => m.providerId != null && allowed.has(m.providerId),
+        )
       } catch {
         return await opts.config.listModels({ env: await c.env() })
       }
@@ -633,34 +657,46 @@ function buildHandlers<TDeps>(
 
     listProviders: async (c) => {
       try {
-        const providers = await listModelProviders(c.db)
-        if (providers.length > 0) return providers
-        return await opts.config.listProviders({ env: await c.env() })
+        const host = await opts.config.listProviders({ env: await c.env() })
+        // The host config is the source of truth for WHICH providers this
+        // client offers. Prefer the DB rows (they carry refresh metadata) but
+        // keep only the providers the host still declares; fall back to the
+        // host list before the first refresh caches any rows.
+        const allowed = new Set(host.map((p) => p.id))
+        const db = await listModelProviders(c.db)
+        const filtered = db.filter((p) => allowed.has(p.id))
+        return filtered.length > 0 ? filtered : host
       } catch {
-        return await opts.config.listProviders({ env: await c.env() })
+        return await listModelProviders(c.db)
       }
     },
 
-    // The host config is the source of truth for WHICH providers exist; the DB
-    // adds each one's last-refresh time and model counts. Merging means a
-    // freshly-wired provider (OpenRouter) shows up with a Refresh button BEFORE
-    // its first refresh — instead of an empty "no providers" page (its rows only
-    // appear once refreshed).
+    // The host config is the source of truth for WHICH providers this client
+    // offers; the DB adds each one's last-refresh time, cached models, and
+    // counts. A freshly-wired provider (e.g. OpenRouter) shows up with a
+    // Refresh button BEFORE its first refresh, and a provider the host no
+    // longer declares — but whose rows linger in the DB from a past refresh —
+    // is dropped, along with its models, so clients only ever see what they
+    // actually provide.
     getModelCatalog: async (c) => {
       const [dbCatalog, usage] = await Promise.all([
         getModelCatalog(c.db),
         getModelUsage(c.db),
       ])
-      let hostProviders: ModelProvider[] = []
+      let hostProviders: ModelProvider[]
       try {
         hostProviders = await opts.config.listProviders({ env: await c.env() })
       } catch {
-        hostProviders = []
+        // Can't determine the host's providers right now — fall back to the
+        // cached DB catalog rather than blanking the page on a transient error.
+        return {
+          providers: dbCatalog.providers,
+          models: dbCatalog.models,
+          usage,
+        }
       }
       const dbById = new Map(dbCatalog.providers.map((p) => [p.id, p]))
-      const seen = new Set<string>()
       const providers: ModelProviderStatus[] = hostProviders.map((hp) => {
-        seen.add(hp.id)
         const db = dbById.get(hp.id)
         const models = dbCatalog.models.filter((m) => m.providerId === hp.id)
         return {
@@ -671,12 +707,11 @@ function buildHandlers<TDeps>(
           enabledCount: models.filter((m) => m.enabled).length,
         }
       })
-      // Keep any DB providers the host no longer declares, so cached models stay
-      // visible rather than silently vanishing.
-      for (const p of dbCatalog.providers) {
-        if (!seen.has(p.id)) providers.push(p)
-      }
-      return { providers, models: dbCatalog.models, usage }
+      const allowed = new Set(hostProviders.map((p) => p.id))
+      const models = dbCatalog.models.filter(
+        (m) => m.providerId != null && allowed.has(m.providerId),
+      )
+      return { providers, models, usage }
     },
 
     refreshModels: async (c) => {
@@ -1068,7 +1103,8 @@ function buildHandlers<TDeps>(
 
     listAgents: async (c) => {
       const rows = await listAgents(c.db)
-      return rows.map((r) => agentSummary(r, r.config))
+      const byAgent = await listWorkflowsReferencingAllAgents(c.db)
+      return rows.map((r) => agentSummary(r, r.config, byAgent.get(r.id) ?? []))
     },
 
     getAgent: async (c) => {

@@ -1,6 +1,6 @@
 import { resolveBinding } from '../binding'
 import type { IterationNode, WorkflowGraph } from '../graph'
-import { runNode, type RunNodeContext } from '../run-node'
+import { runNode, type NodeRunResult, type RunNodeContext } from '../run-node'
 import type { RunRecorder } from '../run-recorder'
 import { Scheduler, WorkflowStalledError } from '../scheduler'
 
@@ -124,13 +124,18 @@ export async function executeSubgraph<TDeps>(
       return instruction.output
     }
     const { node, input } = instruction
-    let result
+    let result: NodeRunResult
     try {
       result = await runNode(instruction, {
         ...ctx,
         // Per-item output cache — ref bindings inside the subgraph resolve
         // against this run's nodes only.
         nodeOutputs: scheduler.getOutputs(),
+        // Record exactly one level deep. A nested iteration inside this subgraph
+        // still runs, but doesn't record its own inner steps — those would key
+        // on the same (nodeId, parentNodeId, itemIndex) across every outer item
+        // and clobber each other, and the run viewer only drills one level in.
+        subStepRecorder: undefined,
       })
     } catch (err) {
       if (rec) {

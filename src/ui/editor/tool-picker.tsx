@@ -19,6 +19,13 @@ export type ToolPickerProps = {
   onChange: (ids: string[]) => void
   /** Placeholder for the empty-selection state. */
   emptyLabel?: string
+  /**
+   * Disable the whole picker — e.g. the selected model can't call tools. Any
+   * already-attached tools are shown read-only so nothing silently vanishes.
+   */
+  disabled?: boolean
+  /** Why the picker is disabled; shown in place of the search box. */
+  disabledReason?: string
 }
 
 /**
@@ -63,6 +70,8 @@ export function ToolPicker({
   selectedIds,
   onChange,
   emptyLabel = 'No tools selected yet.',
+  disabled = false,
+  disabledReason,
 }: ToolPickerProps) {
   const { Input } = useWfComponents()
   const [query, setQuery] = useState('')
@@ -94,6 +103,38 @@ export function ToolPicker({
   }
   function remove(id: string) {
     onChange(selectedIds.filter((i) => i !== id))
+  }
+
+  // Disabled (e.g. the model can't call tools): drop the search box and show the
+  // reason. Any already-attached tools stay listed read-only.
+  if (disabled) {
+    return (
+      <div className="space-y-2">
+        {selected.length > 0 ? (
+          <ul className="space-y-1.5 opacity-60">
+            {selected.map((t) => (
+              <li
+                key={t.id}
+                className="flex items-center gap-2.5 rounded-md border border-neutral-200 bg-neutral-50 p-2"
+              >
+                <ToolIcon icon={t.icon} className="size-6 shrink-0" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-neutral-800">
+                    {t.name}
+                  </span>
+                  <span className="block truncate text-xs text-neutral-400">
+                    {t.description}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <div className="rounded-md border border-dashed border-neutral-200 bg-neutral-50 p-3 text-center text-xs text-neutral-400">
+          {disabledReason ?? 'The selected model can’t call tools.'}
+        </div>
+      </div>
+    )
   }
 
   return (

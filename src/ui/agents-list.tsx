@@ -1,12 +1,13 @@
-import { Plus, Sparkles } from 'lucide-react'
-import { useState } from 'react'
+import { Cpu, Plus, Sparkles, Workflow } from 'lucide-react'
+import { type ReactNode, useMemo, useState } from 'react'
 
 import type { AgentTemplate } from '../engine'
 import { agentColor, agentIcon, DEFAULT_AGENT_COLOR } from './agent-appearance'
 import { cn } from './cn'
 import { useWfComponents } from './context'
-import { useAgents, useCreateAgent, useModels } from './hooks'
+import { useAgents, useCreateAgent, useModels, useTools } from './hooks'
 import { useWfNav } from './nav'
+import { ToolIcon } from './tool-icon'
 
 // The reusable agents (wf_agent via the injected data client), shown as
 // cards so richer metadata (last run, referencing workflows…) can layer in.
@@ -29,12 +30,24 @@ export type AgentsListProps = {
 export function AgentsList({ className, templates = [] }: AgentsListProps) {
   const { data, isLoading, error } = useAgents()
   const models = useModels()
+  const tools = useTools()
   const { Button } = useWfComponents()
   const { navigate } = useWfNav()
   const create = useCreateAgent()
   const [picking, setPicking] = useState(false)
 
   const defaultModelId = models.data?.[0]?.id ?? 'default'
+
+  // Lookups so each card can label its model and show its tools' brand icons
+  // without re-scanning the (small) catalogs per render.
+  const modelLabel = useMemo(() => {
+    const byId = new Map(models.data?.map((m) => [m.id, m.label]))
+    return (id: string | null) => (id ? (byId.get(id) ?? id) : null)
+  }, [models.data])
+  const toolById = useMemo(
+    () => new Map(tools.data?.map((t) => [t.id, t])),
+    [tools.data],
+  )
 
   function createBlank() {
     create.mutate(
@@ -108,6 +121,10 @@ export function AgentsList({ className, templates = [] }: AgentsListProps) {
         {data?.map((a) => {
           const Icon = agentIcon(a.icon)
           const color = agentColor(a.color)
+          const model = modelLabel(a.modelId)
+          const agentTools = a.toolIds
+            .map((id) => toolById.get(id))
+            .filter((t): t is NonNullable<typeof t> => !!t)
           return (
             <button
               key={a.id}
@@ -131,6 +148,49 @@ export function AgentsList({ className, templates = [] }: AgentsListProps) {
               <p className="line-clamp-2 min-h-[2.5rem] text-sm text-neutral-500">
                 {a.description || 'No description yet.'}
               </p>
+
+              <div className="flex w-full flex-wrap items-center gap-1.5">
+                {model ? (
+                  <Pill title={`Model: ${model}`}>
+                    <Cpu className="size-3.5 text-neutral-400" />
+                    <span className="max-w-[10rem] truncate">{model}</span>
+                  </Pill>
+                ) : null}
+
+                {a.toolIds.length > 0 ? (
+                  <Pill
+                    title={
+                      agentTools.length > 0
+                        ? `Tools: ${agentTools.map((t) => t.name).join(', ')}`
+                        : `${a.toolIds.length} tool${a.toolIds.length === 1 ? '' : 's'}`
+                    }
+                  >
+                    {agentTools.slice(0, 3).map((t) => (
+                      <ToolIcon key={t.id} icon={t.icon} className="size-3.5" />
+                    ))}
+                    <span>
+                      {a.toolIds.length} tool{a.toolIds.length === 1 ? '' : 's'}
+                    </span>
+                  </Pill>
+                ) : null}
+
+                {a.workflows.length > 0 ? (
+                  <Pill
+                    title={`Used in: ${a.workflows.map((w) => w.name).join(', ')}`}
+                  >
+                    <Workflow className="size-3.5 text-neutral-400" />
+                    <span>
+                      {a.workflows.length} workflow
+                      {a.workflows.length === 1 ? '' : 's'}
+                    </span>
+                  </Pill>
+                ) : (
+                  <Pill className="text-neutral-400" title="Not used in any workflow">
+                    <Workflow className="size-3.5" />
+                    <span>Unused</span>
+                  </Pill>
+                )}
+              </div>
             </button>
           )
         })}
@@ -152,6 +212,29 @@ export function AgentsList({ className, templates = [] }: AgentsListProps) {
         />
       ) : null}
     </div>
+  )
+}
+
+// A small metadata chip shown on an agent card (model, tools, workflow usage).
+function Pill({
+  children,
+  className,
+  title,
+}: {
+  children: ReactNode
+  className?: string
+  title?: string
+}) {
+  return (
+    <span
+      title={title}
+      className={cn(
+        'inline-flex items-center gap-1 rounded-md border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-xs font-medium text-neutral-600',
+        className,
+      )}
+    >
+      {children}
+    </span>
   )
 }
 

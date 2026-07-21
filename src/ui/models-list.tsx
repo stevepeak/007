@@ -422,6 +422,16 @@ function ModelRow({
         )}
       </span>
       <span className="hidden w-20 shrink-0 text-right text-xs tabular-nums text-neutral-500 sm:inline">
+        {model.tokensPerSec != null ? (
+          <>
+            {Math.round(model.tokensPerSec)}
+            <span className="text-neutral-300"> tok/s</span>
+          </>
+        ) : (
+          <span className="text-neutral-300">—</span>
+        )}
+      </span>
+      <span className="hidden w-20 shrink-0 text-right text-xs tabular-nums text-neutral-500 sm:inline">
         {model.contextLength != null ? (
           <>
             {formatContext(model.contextLength)}

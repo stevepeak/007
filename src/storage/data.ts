@@ -561,6 +561,41 @@ export async function listWorkflowsReferencingAgent(
   return referencing
 }
 
+// The inverse of {@link listWorkflowsReferencingAgent} for every agent at once:
+// one pass over all workflow graphs building agentId → referencing workflows.
+// Lets the agents list show each agent's workflow usage without an N+1 scan.
+export async function listWorkflowsReferencingAllAgents(
+  db: WfDb,
+): Promise<Map<string, { id: string; name: string }[]>> {
+  const workflows = await db
+    .select({ id: wfWorkflow.id, name: wfWorkflow.name })
+    .from(wfWorkflow)
+  const byAgent = new Map<string, { id: string; name: string }[]>()
+  for (const wf of workflows) {
+    const draft = (
+      await db
+        .select({ graph: wfWorkflowDraft.graph })
+        .from(wfWorkflowDraft)
+        .where(eq(wfWorkflowDraft.workflowId, wf.id))
+        .limit(1)
+    )[0]
+    const version = await latestVersion(db, wf.id)
+    const graphs = [draft?.graph, version?.graph].filter(
+      Boolean,
+    ) as WorkflowGraph[]
+    const agentIds = new Set<string>()
+    for (const g of graphs) {
+      for (const id of agentIdsInGraph(g)) agentIds.add(id)
+    }
+    for (const id of agentIds) {
+      const list = byAgent.get(id) ?? []
+      list.push({ id: wf.id, name: wf.name })
+      byAgent.set(id, list)
+    }
+  }
+  return byAgent
+}
+
 /** How many workflows reference an agent (draft or latest published version). */
 export async function countWorkflowsReferencingAgent(
   db: WfDb,

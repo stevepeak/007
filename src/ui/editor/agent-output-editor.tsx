@@ -32,9 +32,21 @@ type Kind = AgentOutput['kind']
 export type AgentOutputEditorProps = {
   value: AgentOutput
   onChange: (value: AgentOutput) => void
+  /**
+   * The selected model can't produce structured output — both Yes/No and
+   * Structured go through `generateObject`, so they're disabled, leaving Text.
+   */
+  structuredDisabled?: boolean
+  /** Why the structured shapes are disabled; shown as a hint. */
+  structuredDisabledReason?: string
 }
 
-export function AgentOutputEditor({ value, onChange }: AgentOutputEditorProps) {
+export function AgentOutputEditor({
+  value,
+  onChange,
+  structuredDisabled = false,
+  structuredDisabledReason,
+}: AgentOutputEditorProps) {
   // Local source state for the structured editor so keystrokes stay smooth even
   // when a given keystroke doesn't compile.
   const [source, setSource] = useState(
@@ -87,23 +99,33 @@ export function AgentOutputEditor({ value, onChange }: AgentOutputEditorProps) {
       <div className="grid grid-cols-3 gap-2">
         {options.map((o) => {
           const active = value.kind === o.kind
+          // Yes/No and Structured both need model structured-output support.
+          const optDisabled = structuredDisabled && o.kind !== 'text'
           return (
             <button
               key={o.kind}
               type="button"
+              disabled={optDisabled}
+              title={optDisabled ? structuredDisabledReason : undefined}
               onClick={() => selectKind(o.kind)}
               className={cn(
                 'rounded-md border px-3 py-2 text-left text-sm transition',
-                active
-                  ? 'border-neutral-800 bg-neutral-900 text-white'
-                  : 'border-neutral-300 text-neutral-700 hover:border-neutral-400',
+                optDisabled
+                  ? 'cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-300'
+                  : active
+                    ? 'border-neutral-800 bg-neutral-900 text-white'
+                    : 'border-neutral-300 text-neutral-700 hover:border-neutral-400',
               )}
             >
               <div className="font-medium">{o.label}</div>
               <div
                 className={cn(
                   'mt-0.5 text-xs',
-                  active ? 'text-neutral-300' : 'text-neutral-400',
+                  optDisabled
+                    ? 'text-neutral-300'
+                    : active
+                      ? 'text-neutral-300'
+                      : 'text-neutral-400',
                 )}
               >
                 {o.hint}
@@ -112,6 +134,16 @@ export function AgentOutputEditor({ value, onChange }: AgentOutputEditorProps) {
           )
         })}
       </div>
+
+      {structuredDisabled ? (
+        <p className="flex items-start gap-1.5 text-xs text-neutral-500">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
+          <span>
+            {structuredDisabledReason ??
+              'The selected model doesn’t support structured output — only Text is available.'}
+          </span>
+        </p>
+      ) : null}
 
       {value.kind === 'boolean' ? (
         <p className="text-xs text-neutral-500">

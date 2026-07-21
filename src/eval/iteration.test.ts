@@ -120,18 +120,34 @@ describe('eval harness — iteration graph', () => {
     ])
     expect(run.outputNodeId).toBe('o')
 
-    // The whole iteration is recorded as ONE step (output = the collection).
-    expect(run.steps.map((s) => s.nodeKind)).toEqual([
+    // The top-level trace is still trigger → iteration → output, with the whole
+    // iteration rolled up into ONE step (output = the collection).
+    const topLevel = run.steps.filter((s) => !s.parentNodeId)
+    expect(topLevel.map((s) => s.nodeKind)).toEqual([
       'trigger',
       'iteration',
       'output',
     ])
-    const iterStep = run.steps.find((s) => s.nodeKind === 'iteration')!
+    const iterStep = topLevel.find((s) => s.nodeKind === 'iteration')!
     expect(iterStep.status).toBe('completed')
     expect(iterStep.output).toHaveLength(3)
     const meta = iterStep.meta as { total: number; items: unknown[] }
     expect(meta.total).toBe(3)
     expect(meta.items).toHaveLength(3)
+
+    // Each item ALSO records its inner subgraph nodes, scoped by the container
+    // id + a 0-based item index — this is what lets the run viewer drill into a
+    // single item's per-node trace. (Order is interleaved: items run
+    // concurrently, so assert per-item content, not global sequence.)
+    const sub = run.steps.filter((s) => s.parentNodeId === 'it')
+    expect(new Set(sub.map((s) => s.itemIndex))).toEqual(new Set([0, 1, 2]))
+    for (const idx of [0, 1, 2]) {
+      const kinds = sub
+        .filter((s) => s.itemIndex === idx)
+        .map((s) => s.nodeKind)
+        .sort()
+      expect(kinds).toEqual(['output', 'tool', 'trigger'])
+    }
   })
 
   test('empty list yields an empty collection', async () => {

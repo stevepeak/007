@@ -274,6 +274,24 @@ export type WfAgentSummary = {
    * used to show what data an agent node produces. Null when unpublished.
    */
   output: AgentOutput | null
+  /**
+   * The model id the agent's latest published (or, in {@link WfAgentDetail},
+   * current) config resolves through `getModel`. Null when unpublished or the
+   * config is malformed. Pair with {@link WfDataClient.listModels} for a label.
+   */
+  modelId: string | null
+  /**
+   * The tool ids the agent's config enables. Empty when it uses none, is
+   * unpublished, or the config is malformed. Resolve to names/icons via
+   * {@link WfDataClient.listTools}.
+   */
+  toolIds: string[]
+  /**
+   * The workflows whose draft or latest published version reference this agent
+   * (via an agent node). Populated by {@link WfDataClient.listAgents}; empty in
+   * the single-agent {@link WfDataClient.getAgent} summary.
+   */
+  workflows: { id: string; name: string }[]
 }
 
 export type WfAgentVersionSummary = {
