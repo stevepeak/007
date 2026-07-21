@@ -1,5 +1,4 @@
-import { ChevronDown, Workflow } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { Workflow } from 'lucide-react'
 
 import {
   BRANCH_OPERATORS,
@@ -13,14 +12,13 @@ import type { ToolOption, WfWorkflowSummary } from '../../server/protocol'
 import { AgentSelect } from '../agent-select'
 import { useWfComponents } from '../context'
 import { useAgents, useTools, useTriggerEvents, useWorkflows } from '../hooks'
-import { cn } from '../cn'
 import {
   DataRefField,
   IterationListField,
   NodeInputsPanel,
 } from './node-data-panel'
+import { RichSelect } from '../rich-select'
 import { ToolIcon } from '../tool-icon'
-import { useDismiss } from '../use-dismiss'
 
 // Per-kind config editor for the selected node. Uses injected primitives so it
 // themes with the host; model/tool choices come from the data client. Advanced
@@ -476,9 +474,9 @@ export function NodeInspector({
   )
 }
 
-// Workflow picker for a Workflow (call-another-workflow) node. Mirrors the
-// popover shape of AgentSelect/ToolSelect, listing each callable workflow's name
-// and description. The current workflow is filtered out by the caller.
+// Workflow picker for a Workflow (call-another-workflow) node. Lists each
+// callable workflow's name and description; the current workflow is filtered
+// out by the caller.
 function WorkflowSelect({
   workflows,
   value,
@@ -488,80 +486,37 @@ function WorkflowSelect({
   value: string
   onChange: (workflowId: string) => void
 }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useDismiss(ref, open, () => setOpen(false))
-
-  const selected = workflows.find((w) => w.id === value)
-
   return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        className="flex h-9 w-full items-center gap-2 rounded-md border border-neutral-300 bg-transparent px-2 text-left text-sm outline-none focus:border-neutral-500"
-      >
-        <Workflow className="size-4 shrink-0 text-neutral-400" />
-        {selected ? (
-          <span className="min-w-0 flex-1 truncate">{selected.name}</span>
-        ) : (
-          <span className="text-muted-foreground flex-1">
-            Select a workflow…
+    <RichSelect
+      options={workflows}
+      value={value}
+      onChange={(w) => onChange(w.id)}
+      getKey={(w) => w.id}
+      placeholder="Select a workflow…"
+      empty="No other workflows to call yet."
+      triggerLeading={<Workflow className="size-4 shrink-0 text-neutral-400" />}
+      renderValue={(w) => (
+        <span className="min-w-0 flex-1 truncate">{w.name}</span>
+      )}
+      renderOption={(w) => (
+        <>
+          <Workflow className="mt-0.5 size-4 shrink-0 text-neutral-400" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium text-neutral-900">
+              {w.name}
+            </span>
+            <span className="mt-0.5 line-clamp-2 block text-xs text-neutral-500">
+              {w.description || 'No description yet.'}
+            </span>
           </span>
-        )}
-        <ChevronDown className="size-4 shrink-0 text-neutral-400" />
-      </button>
-
-      {open ? (
-        <div
-          role="listbox"
-          className="absolute z-50 mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-neutral-200 bg-white p-1 shadow-lg"
-        >
-          {workflows.length === 0 ? (
-            <div className="p-2 text-xs text-neutral-400">
-              No other workflows to call yet.
-            </div>
-          ) : null}
-          {workflows.map((w) => {
-            const isSelected = w.id === value
-            return (
-              <button
-                key={w.id}
-                type="button"
-                role="option"
-                aria-selected={isSelected}
-                onClick={() => {
-                  onChange(w.id)
-                  setOpen(false)
-                }}
-                className={cn(
-                  'flex w-full items-start gap-2 rounded-md p-2 text-left transition hover:bg-neutral-50',
-                  isSelected && 'bg-neutral-50',
-                )}
-              >
-                <Workflow className="mt-0.5 size-4 shrink-0 text-neutral-400" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-neutral-900">
-                    {w.name}
-                  </span>
-                  <span className="mt-0.5 line-clamp-2 block text-xs text-neutral-500">
-                    {w.description || 'No description yet.'}
-                  </span>
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      ) : null}
-    </div>
+        </>
+      )}
+    />
   )
 }
 
-// Rich tool picker: mirrors AgentSelect but shows each tool's brand icon and
-// name (a native <select> can't render the inline-SVG ToolIcon).
+// Rich tool picker: shows each tool's brand icon and name (a native <select>
+// can't render the inline-SVG ToolIcon).
 function ToolSelect({
   tools,
   value,
@@ -571,74 +526,33 @@ function ToolSelect({
   value: string
   onChange: (toolId: string) => void
 }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useDismiss(ref, open, () => setOpen(false))
-
-  const selected = tools.find((t) => t.id === value)
-
   return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        className="flex h-9 w-full items-center gap-2 rounded-md border border-neutral-300 bg-transparent px-2 text-left text-sm outline-none focus:border-neutral-500"
-      >
-        {selected ? (
-          <>
-            <ToolIcon icon={selected.icon} className="size-4" />
-            <span className="min-w-0 flex-1 truncate">{selected.name}</span>
-          </>
-        ) : (
-          <span className="text-muted-foreground flex-1">Select a tool…</span>
-        )}
-        <ChevronDown className="size-4 shrink-0 text-neutral-400" />
-      </button>
-
-      {open ? (
-        <div
-          role="listbox"
-          className="absolute z-50 mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-neutral-200 bg-white p-1 shadow-lg"
-        >
-          {tools.length === 0 ? (
-            <div className="p-2 text-xs text-neutral-400">
-              No tools registered.
-            </div>
-          ) : null}
-          {tools.map((t) => {
-            const isSelected = t.id === value
-            return (
-              <button
-                key={t.id}
-                type="button"
-                role="option"
-                aria-selected={isSelected}
-                onClick={() => {
-                  onChange(t.id)
-                  setOpen(false)
-                }}
-                className={cn(
-                  'flex w-full items-start gap-2 rounded-md p-2 text-left transition hover:bg-neutral-50',
-                  isSelected && 'bg-neutral-50',
-                )}
-              >
-                <ToolIcon icon={t.icon} className="mt-0.5 size-6" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-neutral-900">
-                    {t.name}
-                  </span>
-                  <span className="mt-0.5 line-clamp-2 block text-xs text-neutral-500">
-                    {t.description}
-                  </span>
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      ) : null}
-    </div>
+    <RichSelect
+      options={tools}
+      value={value}
+      onChange={(t) => onChange(t.id)}
+      getKey={(t) => t.id}
+      placeholder="Select a tool…"
+      empty="No tools registered."
+      renderValue={(t) => (
+        <>
+          <ToolIcon icon={t.icon} className="size-4" />
+          <span className="min-w-0 flex-1 truncate">{t.name}</span>
+        </>
+      )}
+      renderOption={(t) => (
+        <>
+          <ToolIcon icon={t.icon} className="mt-0.5 size-6" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium text-neutral-900">
+              {t.name}
+            </span>
+            <span className="mt-0.5 line-clamp-2 block text-xs text-neutral-500">
+              {t.description}
+            </span>
+          </span>
+        </>
+      )}
+    />
   )
 }
