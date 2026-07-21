@@ -1,11 +1,11 @@
-import { Check, ChevronDown, Minus, Plus } from 'lucide-react'
-import { useMemo, useRef, useState } from 'react'
+import { Check, Minus, Plus } from 'lucide-react'
+import { useMemo } from 'react'
 
 import type { WfAgentSummary } from '../server/protocol'
 import { agentColor, agentIcon } from './agent-appearance'
 import { cn } from './cn'
 import { useAgents, useAgentVersions } from './hooks'
-import { useDismiss } from './use-dismiss'
+import { RichSelect } from './rich-select'
 
 // A rich, reusable agent picker used across 007 (workflow agent nodes, the New
 // Goal dialog, …). A native <select> can only render text, so we roll our own
@@ -36,113 +36,85 @@ export function AgentSelect({
   placeholder?: string
   className?: string
 }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
   const fetched = useAgents()
   const agents = agentsProp ?? fetched.data ?? []
 
-  useDismiss(ref, open, () => setOpen(false))
-
-  const selected = agents.find((a) => a.id === value.agentId)
-  const SelectedIcon = selected ? agentIcon(selected.icon) : null
-
   return (
-    <div ref={ref} className={cn('relative flex items-stretch gap-1.5', className)}>
-      <button
-        type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        disabled={disabled}
-        onClick={() => setOpen((o) => !o)}
-        className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border border-neutral-300 bg-transparent px-2 text-left text-sm outline-none focus:border-neutral-500 disabled:opacity-50"
-      >
-        {selected && SelectedIcon ? (
+    <RichSelect
+      options={agents}
+      value={value.agentId}
+      getKey={(a) => a.id}
+      onChange={(a) =>
+        // Switching agents resets the pin to Latest — a version number is only
+        // meaningful for the agent it came from.
+        onChange({
+          agentId: a.id,
+          version: a.id === value.agentId ? value.version : null,
+        })
+      }
+      disabled={disabled}
+      placeholder={placeholder}
+      className={cn('flex items-stretch gap-1.5', className)}
+      triggerClassName="min-w-0 flex-1"
+      listClassName="left-0 right-0 top-full"
+      empty={
+        <div className="px-3 py-6 text-center text-sm text-neutral-400">
+          No agents yet.
+        </div>
+      }
+      trailing={
+        value.agentId ? (
+          <VersionStepper
+            agentId={value.agentId}
+            version={value.version}
+            disabled={disabled}
+            onChange={(version) => onChange({ ...value, version })}
+          />
+        ) : null
+      }
+      renderValue={(a) => {
+        const Icon = agentIcon(a.icon)
+        return (
           <>
             <span
               className={cn(
                 'flex size-5 shrink-0 items-center justify-center rounded',
-                agentColor(selected.color).chip,
+                agentColor(a.color).chip,
               )}
             >
-              <SelectedIcon className="size-3" />
+              <Icon className="size-3" />
             </span>
-            <span className="min-w-0 flex-1 truncate">{selected.name}</span>
+            <span className="min-w-0 flex-1 truncate">{a.name}</span>
           </>
-        ) : (
-          <span className="text-muted-foreground flex-1">{placeholder}</span>
-        )}
-        <ChevronDown className="size-4 shrink-0 text-neutral-400" />
-      </button>
-
-      {value.agentId ? (
-        <VersionStepper
-          agentId={value.agentId}
-          version={value.version}
-          disabled={disabled}
-          onChange={(version) => onChange({ ...value, version })}
-        />
-      ) : null}
-
-      {open ? (
-        <div
-          role="listbox"
-          className="absolute left-0 right-0 top-full z-50 mt-1 max-h-72 overflow-y-auto rounded-md border border-neutral-200 bg-white p-1 shadow-lg"
-        >
-          {agents.length === 0 ? (
-            <div className="px-3 py-6 text-center text-sm text-neutral-400">
-              No agents yet.
-            </div>
-          ) : (
-            agents.map((a) => {
-              const Icon = agentIcon(a.icon)
-              const isSelected = a.id === value.agentId
-              return (
-                <button
-                  key={a.id}
-                  type="button"
-                  role="option"
-                  aria-selected={isSelected}
-                  onClick={() => {
-                    // Switching agents resets the pin to Latest — a version
-                    // number is only meaningful for the agent it came from.
-                    onChange({
-                      agentId: a.id,
-                      version: a.id === value.agentId ? value.version : null,
-                    })
-                    setOpen(false)
-                  }}
-                  className={cn(
-                    'flex w-full items-start gap-2 rounded-md p-2 text-left transition hover:bg-neutral-50',
-                    isSelected && 'bg-neutral-50',
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'flex size-8 shrink-0 items-center justify-center rounded-md',
-                      agentColor(a.color).chip,
-                    )}
-                  >
-                    <Icon className="size-4" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-neutral-900">
-                      {a.name}
-                    </span>
-                    <span className="mt-0.5 line-clamp-2 block text-xs text-neutral-500">
-                      {a.description || 'No description yet.'}
-                    </span>
-                  </span>
-                  {isSelected ? (
-                    <Check className="mt-0.5 size-4 shrink-0 text-neutral-900" />
-                  ) : null}
-                </button>
-              )
-            })
-          )}
-        </div>
-      ) : null}
-    </div>
+        )
+      }}
+      renderOption={(a, isSelected) => {
+        const Icon = agentIcon(a.icon)
+        return (
+          <>
+            <span
+              className={cn(
+                'flex size-8 shrink-0 items-center justify-center rounded-md',
+                agentColor(a.color).chip,
+              )}
+            >
+              <Icon className="size-4" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium text-neutral-900">
+                {a.name}
+              </span>
+              <span className="mt-0.5 line-clamp-2 block text-xs text-neutral-500">
+                {a.description || 'No description yet.'}
+              </span>
+            </span>
+            {isSelected ? (
+              <Check className="mt-0.5 size-4 shrink-0 text-neutral-900" />
+            ) : null}
+          </>
+        )
+      }}
+    />
   )
 }
 

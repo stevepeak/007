@@ -28,8 +28,8 @@ export function RichSelect<T>({
   empty,
   disabled,
   className,
-  triggerClassName,
-  listClassName,
+  triggerClassName = 'w-full',
+  listClassName = 'w-full',
   triggerLeading,
   trailing,
 }: {
@@ -52,7 +52,9 @@ export function RichSelect<T>({
   disabled?: boolean
   /** Class for the relative container (override for e.g. a flex row with a sibling control). */
   className?: string
+  /** Trigger width/layout; defaults to `w-full`. Override for a flex row (e.g. `min-w-0 flex-1`). */
   triggerClassName?: string
+  /** Popover width/position; defaults to `w-full`. Override for e.g. `left-0 right-0 top-full`. */
   listClassName?: string
   /** Fixed leading node in the trigger, shown even with no selection (e.g. a category icon). */
   triggerLeading?: ReactNode
@@ -75,7 +77,7 @@ export function RichSelect<T>({
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
         className={cn(
-          'flex h-9 w-full items-center gap-2 rounded-md border border-neutral-300 bg-transparent px-2 text-left text-sm outline-none focus:border-neutral-500 disabled:opacity-50',
+          'flex h-9 items-center gap-2 rounded-md border border-neutral-300 bg-transparent px-2 text-left text-sm outline-none focus:border-neutral-500 disabled:opacity-50',
           triggerClassName,
         )}
       >
@@ -94,7 +96,7 @@ export function RichSelect<T>({
         <div
           role="listbox"
           className={cn(
-            'absolute z-50 mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-neutral-200 bg-white p-1 shadow-lg',
+            'absolute z-50 mt-1 max-h-72 overflow-y-auto rounded-md border border-neutral-200 bg-white p-1 shadow-lg',
             listClassName,
           )}
         >
