@@ -300,6 +300,7 @@ export function RunPage({ runId, className }: RunPageProps) {
               <RunNodeDock
                 node={selectedNode}
                 step={selectedStep}
+                steps={data.steps}
                 logs={data.logs}
                 live={live}
                 selectedNodeId={selectedId}

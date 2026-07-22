@@ -5,6 +5,7 @@ import type { WorkflowNode } from '../engine'
 import type { WfRunLogDTO, WfRunStepDTO } from '../server/protocol'
 import { useWfComponents } from './context'
 import { cn } from './cn'
+import { CreateSampleFromRun } from './evals/create-sample-from-run'
 import { RunActivityLog } from './run-activity-log'
 import { RunLog } from './run-log'
 import { runStatusClass } from './run-status'
@@ -23,6 +24,9 @@ export type RunNodeDockProps = {
   node: WorkflowNode | null
   /** The recorded step for that node, or null if it never executed (skipped). */
   step: WfRunStepDTO | null
+  /** Every recorded step in the run — lets the "Create Sample" action rebuild an
+   *  agent node's Given by resolving its ref inputs against recorded outputs. */
+  steps: WfRunStepDTO[]
   /** The whole run's structured progress feed (drives the Activity tab). */
   logs: WfRunLogDTO[]
   /** True while the run is still executing — enables the live/auto-scroll UI. */
@@ -55,6 +59,7 @@ function maxDockH(): number {
 export function RunNodeDock({
   node,
   step,
+  steps,
   logs,
   live,
   selectedNodeId,
@@ -200,6 +205,7 @@ export function RunNodeDock({
                 {hasItemPicker ? 'no data for this item' : 'not run'}
               </span>
             )}
+            <CreateSampleFromRun node={node} step={step} steps={steps} />
           </span>
         ) : null}
         <button
