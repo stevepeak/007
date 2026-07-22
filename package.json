@@ -10,6 +10,9 @@
     "url": "git+https://github.com/stevepeak/007.git"
   },
   "main": "src/index.ts",
+  "bin": {
+    "wf-dump-run": "./src/cli/dump-run.ts"
+  },
   "exports": {
     ".": "./src/index.ts",
     "./cloudflare": "./src/cloudflare/index.ts",

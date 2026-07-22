@@ -211,9 +211,17 @@ class Parser {
         throw new ParseError(`Duplicate field "${key}".`)
       }
       this.expect('punct', ':')
-      const { schema, optional } = this.parseExpr()
+      const { schema } = this.parseExpr()
       properties[key] = schema
-      if (!optional) required.push(key)
+      // Strict structured outputs (OpenAI/Venice `response_format: json_schema`)
+      // require EVERY property to appear in `required`. A key left OUT of
+      // `required` makes the provider rewrite the field as an `anyOf` union —
+      // and for an array that rewrite drops `items`, which Venice rejects with a
+      // 400 ("array schema missing items"). So every field is always required.
+      // `.optional()` is still accepted in the source (authoring intent) but no
+      // longer relaxes the schema; an unfilled field comes back as an empty
+      // value, which downstream normalizers already tolerate.
+      required.push(key)
       if (this.peek()?.kind === 'punct' && this.peek()!.value === ',')
         this.pos++
       else break

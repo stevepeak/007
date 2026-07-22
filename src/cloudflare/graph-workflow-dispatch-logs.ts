@@ -92,7 +92,7 @@ export async function recordTerminal<TDeps, E extends GraphWorkflowEnv>(
   input: unknown,
   startEntry: RunLogEntry,
   outcome:
-    | { status: 'failed'; error: string }
+    | { status: 'failed'; error: string; feed?: string }
     | {
         status: 'completed'
         output: unknown
@@ -117,7 +117,7 @@ export async function recordTerminal<TDeps, E extends GraphWorkflowEnv>(
         seq,
         startEntry,
         [],
-        endEntryOf(node, seq, Date.now(), true, outcome.error),
+        endEntryOf(node, seq, Date.now(), true, outcome.feed ?? outcome.error),
       )
     } else {
       await ctx.recordOne({

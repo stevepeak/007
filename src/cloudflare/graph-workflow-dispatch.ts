@@ -7,7 +7,8 @@ import {
   resolveIterationList,
   runIteration,
 } from '../engine/nodes/iteration'
-import { errorMessage, runNode, type NodeRunResult } from '../engine/run-node'
+import { errorFeedLine, errorStored } from '../engine/error-detail'
+import { runNode, type NodeRunResult } from '../engine/run-node'
 import { recordedBranchResult } from '../engine/run-recorder'
 import type { ExecutableNode, ReportResult } from '../engine/scheduler'
 import type { RunLogEntry, StreamSink } from '../engine/stream-sink'
@@ -237,10 +238,10 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
       )
     }
   } catch (err) {
-    const message = errorMessage(err)
     await recordTerminal(ctx, node, seq, input, startEntry, {
       status: 'failed',
-      error: message,
+      error: errorStored(err),
+      feed: errorFeedLine(err),
     })
     // Best-effort node: swallow the failure and let the run continue with a
     // `null` output (downstream refs resolve to null). Never for decision

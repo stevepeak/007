@@ -1,5 +1,7 @@
 import * as Sentry from '@sentry/cloudflare'
 
+import { apiErrorDetail } from '../engine/error-detail'
+
 // Per-node Sentry tracing for the durable backend. Worker-only (imports
 // `@sentry/cloudflare`), so it lives beside `graph-workflow.ts` in the
 // `/runtime` subpath and is never dragged into the import-safe barrel.
@@ -56,6 +58,34 @@ export async function withNodeSpan<T>(
   }
   if (info.traceId) attributes['wf.trace_id'] = info.traceId
 
+  // Capture a node failure as a Sentry issue from *inside* the span, so it is
+  // attached to this node's span on the run's pinned trace (auto-instrumented
+  // fetch spans record the request but not the thrown error or its body). The
+  // provider response body / status go on a dedicated context so the actual
+  // rejection reason is one click away in Sentry, not just "Bad Request".
+  const captured = async (): Promise<T> => {
+    try {
+      return await fn()
+    } catch (err) {
+      Sentry.captureException(err, (scope) => {
+        scope.setTag('wf.run_id', info.runId)
+        scope.setTag('wf.node_id', info.nodeId)
+        scope.setTag('wf.node_kind', info.nodeKind)
+        const d = apiErrorDetail(err)
+        if (d) {
+          scope.setContext('ai_api_call', {
+            statusCode: d.statusCode ?? null,
+            url: d.url ?? null,
+            responseBody: d.responseBody ?? null,
+            requestBodyValues: d.requestBodyValues ?? null,
+          })
+        }
+        return scope
+      })
+      throw err
+    }
+  }
+
   const runSpan = async (): Promise<T> =>
     await Sentry.startSpan(
       {
@@ -63,7 +93,7 @@ export async function withNodeSpan<T>(
         op: 'wf.node',
         attributes,
       },
-      fn,
+      captured,
     )
 
   if (!info.traceId) return await runSpan()
