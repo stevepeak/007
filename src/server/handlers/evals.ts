@@ -23,7 +23,6 @@ import {
   updateEvalSet,
   upsertEvalRow,
 } from '../../storage/data'
-
 import type {
   EvalRowSnapshot,
   WfEvalResultDTO,
@@ -32,6 +31,7 @@ import type {
   WfEvalSetSummary,
   WfEvalTargetKind,
 } from '../protocol'
+
 import {
   requireHook,
   str,

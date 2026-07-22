@@ -1,5 +1,5 @@
-import { buildAdjacency } from './graph-adjacency'
 import type { WorkflowGraph } from './graph'
+import { buildAdjacency } from './graph-adjacency'
 
 // Author-time graph traversal. Unlike the runtime scheduler (which only walks
 // *alive* edges once branch decisions are known), these helpers answer the

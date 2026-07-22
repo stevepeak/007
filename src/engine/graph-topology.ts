@@ -1,5 +1,5 @@
-import { buildAdjacency } from './graph-adjacency'
 import type { WorkflowEdge, WorkflowGraph } from './graph'
+import { buildAdjacency } from './graph-adjacency'
 
 // The join/cone topology analysis shared by the strict runtime gate
 // (`workflowGraphSchema.superRefine`) and the author-time diagnostics

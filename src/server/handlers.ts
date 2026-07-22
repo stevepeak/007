@@ -2,7 +2,6 @@ import { z } from 'zod'
 
 import { errorMessage } from '../engine/run-node'
 
-import type { WfDataClient } from './protocol'
 import { buildAgentHandlers } from './handlers/agents'
 import { buildEvalHandlers } from './handlers/evals'
 import { buildModelHandlers } from './handlers/models'
@@ -15,6 +14,7 @@ import {
   type WfHandlers,
 } from './handlers/shared'
 import { buildWorkflowHandlers } from './handlers/workflows'
+import type { WfDataClient } from './protocol'
 
 export type {
   CreateWfSdkHandlersOptions,

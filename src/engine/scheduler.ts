@@ -1,4 +1,3 @@
-import { buildAdjacency } from './graph-adjacency'
 import {
   isBookendKind,
   workflowGraphSchema,
@@ -7,6 +6,7 @@ import {
   type WorkflowGraph,
   type WorkflowNode,
 } from './graph'
+import { buildAdjacency } from './graph-adjacency'
 
 // The Scheduler is the runtime-agnostic heart of workflow execution. It owns
 // the graph walk — which node is ready next, how branches route, how inputs
