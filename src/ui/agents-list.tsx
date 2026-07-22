@@ -1,11 +1,17 @@
-import { Cpu, Plus, Sparkles, Workflow } from 'lucide-react'
+import { Cpu, Goal, Plus, Sparkles, Workflow } from 'lucide-react'
 import { type ReactNode, useMemo, useState } from 'react'
 
 import type { AgentTemplate } from '../engine'
 import { agentColor, agentIcon, DEFAULT_AGENT_COLOR } from './agent-appearance'
 import { cn } from './cn'
 import { useWfComponents } from './context'
-import { useAgents, useCreateAgent, useModels, useTools } from './hooks'
+import {
+  useAgents,
+  useCreateAgent,
+  useEvalSets,
+  useModels,
+  useTools,
+} from './hooks'
 import { Modal } from './modal'
 import { useWfNav } from './nav'
 import { QueryState } from './query-state'
@@ -33,6 +39,7 @@ export function AgentsList({ className, templates = [] }: AgentsListProps) {
   const { data, isLoading, error } = useAgents()
   const models = useModels()
   const tools = useTools()
+  const evalSets = useEvalSets()
   const { Button } = useWfComponents()
   const { navigate } = useWfNav()
   const create = useCreateAgent()
@@ -50,6 +57,16 @@ export function AgentsList({ className, templates = [] }: AgentsListProps) {
     () => new Map(tools.data?.map((t) => [t.id, t])),
     [tools.data],
   )
+  // How many product goals (eval sets) each agent is targeted by — counts only
+  // live (non-archived) sets whose target is this agent.
+  const goalCountByAgent = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const set of evalSets.data ?? []) {
+      if (set.archived || set.targetKind !== 'agent') continue
+      counts.set(set.targetId, (counts.get(set.targetId) ?? 0) + 1)
+    }
+    return counts
+  }, [evalSets.data])
 
   function createBlank() {
     create.mutate(
@@ -129,6 +146,7 @@ export function AgentsList({ className, templates = [] }: AgentsListProps) {
           const agentTools = a.toolIds
             .map((id) => toolById.get(id))
             .filter((t): t is NonNullable<typeof t> => !!t)
+          const goalCount = goalCountByAgent.get(a.id) ?? 0
           return (
             <button
               key={a.id}
@@ -174,6 +192,17 @@ export function AgentsList({ className, templates = [] }: AgentsListProps) {
                     ))}
                     <span>
                       {a.toolIds.length} tool{a.toolIds.length === 1 ? '' : 's'}
+                    </span>
+                  </Pill>
+                ) : null}
+
+                {goalCount > 0 ? (
+                  <Pill
+                    title={`Targeted by ${goalCount} product goal${goalCount === 1 ? '' : 's'} (evals)`}
+                  >
+                    <Goal className="size-3.5 text-neutral-400" />
+                    <span>
+                      {goalCount} Goal{goalCount === 1 ? '' : 's'}
                     </span>
                   </Pill>
                 ) : null}
