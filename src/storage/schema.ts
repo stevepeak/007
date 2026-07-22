@@ -427,11 +427,24 @@ export const wfEvalResult = sqliteTable(
     // compared ("did the definition change?") and identical snapshots deduped,
     // without reintroducing a version counter on Samples/Tests.
     snapshotHash: text('snapshot_hash'),
+    // ── Matrix cell identity ─────────────────────────────────────────────────
+    // Which (model × prompt × attempt) cell of a matrix run produced this result.
+    // All nullable: a non-matrix run (the target's own saved model/prompt, single
+    // attempt) leaves them null and the report collapses those into one baseline
+    // cell. `modelId` is the composite catalog id (providerId:modelId) the cell
+    // ran; `promptBody` null means the baseline (agent's saved prompt). Cost /
+    // tokens / duration are NOT stored here — they're derived live per result via
+    // `loadRunStats` (the run's agent steps are the single source of truth).
+    modelId: text('model_id'),
+    promptLabel: text('prompt_label'),
+    promptBody: text('prompt_body'),
+    attempt: integer('attempt'),
     createdAt: createdAt(),
   },
   (t) => [
     index('wf_eval_result_run_idx').on(t.evalRunId),
     index('wf_eval_result_row_idx').on(t.rowId),
+    index('wf_eval_result_cell_idx').on(t.evalRunId, t.modelId, t.promptLabel),
   ],
 )
 

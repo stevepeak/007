@@ -602,12 +602,38 @@ async function pool<T>(
   await Promise.all(runners)
 }
 
+// One prompt variation in the matrix. `body` undefined = the agent's saved
+// prompt (the always-present baseline); a string overrides it. `label` names the
+// column in the report ("Agent's saved prompt", "Test prompt 1", …).
+export type EvalMatrixPrompt = { label: string; body?: string }
+// One model column. `attempts` is best-of-N — each attempt is a separate run of
+// every sample × prompt, so a cell aggregates all its attempts.
+export type EvalMatrixModel = { modelId: string; attempts: number }
+
 export type RunEvalInput = {
   setIds: string[]
+  /**
+   * The model × prompt sweep. Omitted → a single plain run per sample on the
+   * target's own saved model + prompt (preserves the pre-matrix behavior). When
+   * present, every sample is run for each (model × prompt × attempt) cell.
+   */
+  matrix?: { models: EvalMatrixModel[]; prompts: EvalMatrixPrompt[] }
   concurrency?: number
   pollIntervalMs?: number
   timeoutMs?: number
   onProgress?: (p: { done: number; total: number }) => void
+}
+
+// The per-run unit of work: a sample crossed with one matrix cell. `modelId` /
+// `promptBody` are the overrides handed to `startEvalRun` (both undefined on the
+// plain path); `promptLabel` / `attempt` are stamped on the graded result so the
+// report can group by cell.
+type EvalJob = {
+  rowId: string
+  modelId?: string
+  promptLabel?: string
+  promptBody?: string
+  attempt?: number
 }
 
 export async function runEval(
@@ -617,9 +643,27 @@ export async function runEval(
   const sets = await Promise.all(
     input.setIds.map((id) => client.getEvalSet(id)),
   )
-  const jobs = sets
+  const rowIds = sets
     .filter((s): s is NonNullable<typeof s> => !!s)
-    .flatMap((s) => s.rows.map((row) => ({ rowId: row.id })))
+    .flatMap((s) => s.rows.map((row) => row.id))
+
+  // Expand the matrix into per-run cells. Absent matrix → one plain cell (no
+  // overrides), so `jobs` stays one-per-sample exactly as before.
+  const cells: Omit<EvalJob, 'rowId'>[] = input.matrix
+    ? input.matrix.models.flatMap((m) =>
+        input.matrix!.prompts.flatMap((p) =>
+          Array.from({ length: Math.max(1, m.attempts) }, (_, attempt) => ({
+            modelId: m.modelId,
+            promptLabel: p.label,
+            promptBody: p.body,
+            attempt,
+          })),
+        ),
+      )
+    : [{}]
+  const jobs: EvalJob[] = rowIds.flatMap((rowId) =>
+    cells.map((cell) => ({ rowId, ...cell })),
+  )
 
   const { evalRunId } = await client.createEvalRun({
     setIds: input.setIds,
@@ -636,11 +680,21 @@ export async function runEval(
       const { wfRunId } = await client.startEvalRun({
         evalRunId,
         rowId: job.rowId,
+        modelId: job.modelId,
+        promptBody: job.promptBody,
       })
       await waitForRun(client, wfRunId, wait)
-      await client.gradeEvalResult({ evalRunId, rowId: job.rowId, wfRunId })
+      await client.gradeEvalResult({
+        evalRunId,
+        rowId: job.rowId,
+        wfRunId,
+        modelId: job.modelId,
+        promptLabel: job.promptLabel,
+        promptBody: job.promptBody,
+        attempt: job.attempt,
+      })
     } catch (err) {
-      // Keep the batch going — a single sample's failure is captured by the
+      // Keep the batch going — a single cell's failure is captured by the
       // absence of its result and the run still finalizes.
       console.error(`[wf] eval sample ${job.rowId} failed:`, err)
     } finally {

@@ -31,6 +31,11 @@ export type StartGraphRunInput = {
   fixtures?: Record<string, unknown>
   /** Marks the produced `wf_run` as eval-owned (hidden from the Runs explorer). */
   isEval?: boolean
+  /**
+   * Eval matrix override — swaps the modelId and/or system prompt on every agent
+   * node for this run (the eval wrapper's single agent). See RunContext.
+   */
+  agentOverride?: { modelId?: string; prompt?: string }
   /** Optional human label for the RunRoom snapshot. */
   label?: string
   /** Resume mode: replay a prior failed run's completed steps into this run and
@@ -86,6 +91,7 @@ export async function startGraphRun(
         promptVariables: input.promptVariables,
         simulate: input.simulate,
         fixtures: input.fixtures,
+        agentOverride: input.agentOverride,
         traceId,
       },
       resumeFromRunId: input.resumeFromRunId,

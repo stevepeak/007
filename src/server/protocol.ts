@@ -422,6 +422,17 @@ export type WfEvalRunSummary = {
   finishedAt: number | null
 }
 
+// Cost / speed / model of the AGENT CALL a result graded — scoped to the agent
+// steps only, never the judge/test grading that runs afterward. `models` are
+// the provider-native ids of those agent steps; `durationMs` is their own
+// wall-clock (see {@link RunStats}).
+export type WfEvalResultRunStats = {
+  totalTokens: number | null
+  costUsd: number | null
+  models: string[]
+  durationMs: number | null
+}
+
 // One row's outcome within an eval run: the verdict, the judge score, the
 // per-check breakdown, and a link to the real `wf_run` it graded.
 export type WfEvalResultDTO = {
@@ -430,6 +441,12 @@ export type WfEvalResultDTO = {
   rowId: string
   /** The `wf_run` produced for this row (null until it starts). */
   wfRunId: string | null
+  /**
+   * Cost / speed / model of the `wf_run` this row graded — for an agent-target
+   * eval, the agent call itself. Derived live from the run + its agent steps;
+   * null when the run hasn't produced stats (or predates the wfRun link).
+   */
+  runStats: WfEvalResultRunStats | null
   status: WfEvalResultStatus
   score: number | null
   checkResults: CheckResult[]
@@ -442,6 +459,17 @@ export type WfEvalResultDTO = {
   snapshot: EvalRowSnapshot | null
   /** sha256 of `snapshot`'s reproducibility-relevant fields; null when no snapshot. */
   snapshotHash: string | null
+  /**
+   * Matrix cell this result belongs to — which (model × prompt × attempt) of the
+   * run's model×prompt sweep produced it. All null for a plain run (the target's
+   * own saved model/prompt); the report then collapses them into one baseline
+   * cell. `modelId` is the composite catalog id; `promptLabel` names the prompt
+   * variation (e.g. "Agent's saved prompt" / "Test prompt 1").
+   */
+  modelId: string | null
+  promptLabel: string | null
+  promptBody: string | null
+  attempt: number | null
   createdAt: number
 }
 
@@ -670,6 +698,10 @@ export interface WfDataClient {
   startEvalRun(input: {
     evalRunId: string
     rowId: string
+    /** Matrix cell: override the target agent's model (composite catalog id). */
+    modelId?: string
+    /** Matrix cell: replace the target agent's system prompt (baseline omits it). */
+    promptBody?: string
   }): Promise<{ wfRunId: string }>
   /**
    * Grade a finished row run: load the `wf_run` trace, evaluate the row's check
@@ -680,6 +712,11 @@ export interface WfDataClient {
     evalRunId: string
     rowId: string
     wfRunId: string
+    /** Matrix cell identity to stamp on the result (all optional for a plain run). */
+    modelId?: string
+    promptLabel?: string
+    promptBody?: string
+    attempt?: number
   }): Promise<WfEvalResultDTO>
   /** Roll up an eval run's results into its final counts/score + status. */
   finalizeEvalRun(input: { evalRunId: string }): Promise<WfEvalRunSummary>

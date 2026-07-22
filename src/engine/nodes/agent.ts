@@ -221,6 +221,14 @@ export type ExecuteAgentNodeArgs<TDeps> = {
   simulate?: boolean
   /** Canned tool outputs consumed under `simulate`. */
   fixtures?: Record<string, unknown>
+  /**
+   * Eval matrix override. When set, `modelId` swaps the model this node runs on
+   * and `prompt` REPLACES the system-prompt template (still `${var}`-interpolated
+   * against the run's promptVariables). Either omitted → the agent's saved value.
+   * The override is not persisted to `wf_run.manifest`; only the effective model
+   * is reflected in `AgentNodeMeta.model` so cost prices against the model used.
+   */
+  agentOverride?: { modelId?: string; prompt?: string }
 }
 
 // Resolve the agent an agent node points at from the frozen run manifest. The
@@ -259,9 +267,15 @@ export async function executeAgentNode<TDeps>(
     resolveImage,
     simulate,
     fixtures,
+    agentOverride,
   } = deps
   const config = resolveAgentConfig(node, manifest)
-  const model = getModel(config.modelId)
+  // Eval matrix override: swap the model and/or the system-prompt template. Left
+  // undefined → the agent's saved value. `modelId` drives both `getModel` and the
+  // meta below (so run cost prices against the model actually used).
+  const modelId = agentOverride?.modelId ?? config.modelId
+  const promptTemplate = agentOverride?.prompt ?? config.prompt
+  const model = getModel(modelId)
   const tools = buildAgentToolSet(toolRegistry, config.toolIds, toolDeps, {
     simulate,
     fixtures,
@@ -271,7 +285,7 @@ export async function executeAgentNode<TDeps>(
     ...promptVariables,
     ...(await resolveNodeInputs(node, nodeOutputs, rehydrate)),
   }
-  const systemPrompt = substitutePromptVariables(config.prompt, vars)
+  const systemPrompt = substitutePromptVariables(promptTemplate, vars)
   // Any bound image inputs ride along as vision parts on the user turn.
   const imageParts = await resolveImageInputs(node, nodeOutputs, resolveImage)
   const messages = attachImages(coerceToMessages(input), imageParts)
@@ -290,7 +304,7 @@ export async function executeAgentNode<TDeps>(
       schema: jsonSchema(schema),
     })
     const meta: AgentNodeMeta = {
-      model: config.modelId,
+      model: modelId,
       systemPrompt,
       steps: [
         {
@@ -392,7 +406,7 @@ export async function executeAgentNode<TDeps>(
   return {
     output: { text: result.text },
     meta: {
-      model: config.modelId,
+      model: modelId,
       systemPrompt,
       steps: stepTraces,
       totalUsage,

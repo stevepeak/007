@@ -91,6 +91,7 @@ export async function runWorkflowUnderConditions<TDeps>(
     manifest: tc.manifest ?? tc.runContext?.manifest,
     simulate: tc.runContext?.simulate,
     fixtures: tc.runContext?.fixtures,
+    agentOverride: tc.runContext?.agentOverride,
     env: tc.runContext?.env,
   }
 

@@ -53,6 +53,8 @@ export type GraphRunContextInput = {
   simulate?: boolean
   /** Canned tool outputs consumed under `simulate`, keyed by tool id. */
   fixtures?: Record<string, unknown>
+  /** Eval matrix override — swaps an agent node's modelId/prompt. See RunContext. */
+  agentOverride?: { modelId?: string; prompt?: string }
   /** Stable 32-hex trace id, minted by `startGraphRun`, used to group every
    * per-node Sentry span into one distributed trace. */
   traceId?: string

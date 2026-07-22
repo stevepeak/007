@@ -220,6 +220,16 @@ export type RunContext = {
    */
   fixtures?: Record<string, unknown>
   /**
+   * Eval matrix override — swaps the `modelId` and/or the system prompt on
+   * EVERY agent node for this run. Set only by the eval matrix runner, whose
+   * target is always the single-agent eval wrapper, so "every agent node" is
+   * exactly the one node under test. Applied at point-of-use in the agent node
+   * (after the frozen `manifest` is read), so it never rewrites `wf_run.manifest`
+   * — the override is recorded on `wf_eval_result`, not the run's frozen config.
+   * A `modelId`/`prompt` left undefined falls through to the agent's saved value.
+   */
+  agentOverride?: { modelId?: string; prompt?: string }
+  /**
    * Stable 32-hex trace id for the whole run. Minted at run start, persisted to
    * `wf_run`, and used to (a) seed every per-node Sentry span so the run groups
    * into one distributed trace and (b) build the "View trace in Sentry"

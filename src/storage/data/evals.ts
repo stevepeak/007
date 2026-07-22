@@ -78,10 +78,18 @@ export async function listEvalSets(
       archived: wfEvalSet.archived,
       createdAt: wfEvalSet.createdAt,
       updatedAt: wfEvalSet.updatedAt,
-      rowCount: sql<number>`(select count(*) from ${wfEvalRow} where ${wfEvalRow.setId} = ${wfEvalSet.id} and ${wfEvalRow.archived} = 0)`,
+      // A `leftJoin` + `groupBy` counts non-archived rows per set. A raw
+      // correlated subquery here renders both columns unqualified (`set_id = id`),
+      // so `id` binds to wf_eval_row's own id and the count is always 0.
+      rowCount: sql<number>`count(${wfEvalRow.id})`,
     })
     .from(wfEvalSet)
+    .leftJoin(
+      wfEvalRow,
+      and(eq(wfEvalRow.setId, wfEvalSet.id), eq(wfEvalRow.archived, false)),
+    )
     .where(opts?.includeArchived ? undefined : eq(wfEvalSet.archived, false))
+    .groupBy(wfEvalSet.id)
     .orderBy(desc(wfEvalSet.createdAt))
   return rows
 }
@@ -409,6 +417,11 @@ export async function insertEvalResult(
     snapshot?: EvalRowSnapshot | null
     /** sha256 of `snapshot` — see hashEvalSnapshot. */
     snapshotHash?: string | null
+    /** Matrix cell identity — all null for a non-matrix run. */
+    modelId?: string | null
+    promptLabel?: string | null
+    promptBody?: string | null
+    attempt?: number | null
   },
 ): Promise<string> {
   const id = crypto.randomUUID()
@@ -422,6 +435,10 @@ export async function insertEvalResult(
     checkResults: input.checkResults ?? [],
     snapshot: input.snapshot ?? null,
     snapshotHash: input.snapshotHash ?? null,
+    modelId: input.modelId ?? null,
+    promptLabel: input.promptLabel ?? null,
+    promptBody: input.promptBody ?? null,
+    attempt: input.attempt ?? null,
   })
   return id
 }

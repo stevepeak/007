@@ -19,9 +19,11 @@ import {
   insertEvalResult,
   listEvalRuns,
   listEvalSets,
+  loadRunStats,
   updateEvalRun,
   updateEvalSet,
   upsertEvalRow,
+  type RunStats,
 } from '../../storage/data'
 import type {
   EvalRowSnapshot,
@@ -97,23 +99,31 @@ function evalRunSummary(r: {
   }
 }
 
-function evalResultDTO(r: {
-  id: string
-  evalRunId: string
-  rowId: string
-  wfRunId: string | null
-  status: WfEvalResultDTO['status']
-  score: number | null
-  checkResults: unknown
-  snapshot?: unknown
-  snapshotHash?: string | null
-  createdAt: Date
-}): WfEvalResultDTO {
+function evalResultDTO(
+  r: {
+    id: string
+    evalRunId: string
+    rowId: string
+    wfRunId: string | null
+    status: WfEvalResultDTO['status']
+    score: number | null
+    checkResults: unknown
+    snapshot?: unknown
+    snapshotHash?: string | null
+    modelId?: string | null
+    promptLabel?: string | null
+    promptBody?: string | null
+    attempt?: number | null
+    createdAt: Date
+  },
+  runStats?: RunStats | null,
+): WfEvalResultDTO {
   return {
     id: r.id,
     evalRunId: r.evalRunId,
     rowId: r.rowId,
     wfRunId: r.wfRunId,
+    runStats: runStats ?? null,
     status: r.status,
     score: r.score,
     checkResults: Array.isArray(r.checkResults)
@@ -121,6 +131,10 @@ function evalResultDTO(r: {
       : [],
     snapshot: (r.snapshot as EvalRowSnapshot | null) ?? null,
     snapshotHash: r.snapshotHash ?? null,
+    modelId: r.modelId ?? null,
+    promptLabel: r.promptLabel ?? null,
+    promptBody: r.promptBody ?? null,
+    attempt: r.attempt ?? null,
     createdAt: r.createdAt.getTime(),
   }
 }
@@ -295,6 +309,9 @@ export function buildEvalHandlers<TDeps>(
       )
       const evalRunId = str(c.params, 'evalRunId')
       const rowId = str(c.params, 'rowId')
+      // Matrix cell overrides — swap the target agent's model / system prompt for
+      // this run. Absent → the agent's own saved model/prompt (the plain path).
+      const cell = c.params as { modelId?: string; promptBody?: string }
       const run = await getEvalRun(c.db, evalRunId)
       if (!run) {
         throw new NotFoundError('Eval run not found.')
@@ -321,6 +338,8 @@ export function buildEvalHandlers<TDeps>(
         triggerInput: row.initialCondition.triggerInput ?? {},
         promptVariables: row.initialCondition.promptVariables ?? {},
         fixtures: row.fixtures,
+        modelId: cell.modelId,
+        promptBody: cell.promptBody,
         ctx: c.ctx,
         req: c.req,
       })
@@ -339,6 +358,13 @@ export function buildEvalHandlers<TDeps>(
       const evalRunId = str(c.params, 'evalRunId')
       const rowId = str(c.params, 'rowId')
       const wfRunId = str(c.params, 'wfRunId')
+      // Matrix cell identity to stamp on the result — all absent for a plain run.
+      const cell = c.params as {
+        modelId?: string
+        promptLabel?: string
+        promptBody?: string
+        attempt?: number
+      }
       const found = await getEvalRow(c.db, rowId)
       if (!found) {
         throw new NotFoundError('Eval sample not found.')
@@ -376,22 +402,34 @@ export function buildEvalHandlers<TDeps>(
         checkResults: graded.checkResults,
         snapshot,
         snapshotHash,
+        modelId: cell.modelId,
+        promptLabel: cell.promptLabel,
+        promptBody: cell.promptBody,
+        attempt: cell.attempt,
       })
       // Reuse the shared mapper so this result's shape can't drift from the one
       // `getEvalRun` returns. `createdAt` is the response's best-effort now (the
       // row isn't re-read); the mapper takes a Date and emits epoch ms.
-      return evalResultDTO({
-        id: resultId,
-        evalRunId,
-        rowId,
-        wfRunId,
-        status: graded.status,
-        score: graded.score,
-        checkResults: graded.checkResults,
-        snapshot,
-        snapshotHash,
-        createdAt: new Date(),
-      })
+      const stats = await loadRunStats(c.db, [wfRunId])
+      return evalResultDTO(
+        {
+          id: resultId,
+          evalRunId,
+          rowId,
+          wfRunId,
+          status: graded.status,
+          score: graded.score,
+          checkResults: graded.checkResults,
+          snapshot,
+          snapshotHash,
+          modelId: cell.modelId,
+          promptLabel: cell.promptLabel,
+          promptBody: cell.promptBody,
+          attempt: cell.attempt,
+          createdAt: new Date(),
+        },
+        stats.get(wfRunId),
+      )
     },
 
     finalizeEvalRun: async (c) => {
@@ -428,9 +466,17 @@ export function buildEvalHandlers<TDeps>(
       if (!result) {
         return null
       }
+      // Enrich each result with the cost/speed/model of its wf_run (the agent
+      // call), derived live so it reflects current pricing and old runs too.
+      const runIds = result.results
+        .map((r) => r.wfRunId)
+        .filter((id): id is string => id != null)
+      const stats = await loadRunStats(c.db, runIds)
       return {
         run: evalRunSummary(result.run),
-        results: result.results.map(evalResultDTO),
+        results: result.results.map((r) =>
+          evalResultDTO(r, r.wfRunId ? stats.get(r.wfRunId) : null),
+        ),
       }
     },
   }

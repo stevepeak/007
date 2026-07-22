@@ -4,12 +4,19 @@ import {
   Braces,
   ChevronDown,
   Gauge,
+  HelpCircle,
   type LucideIcon,
   Text,
   Waypoints,
   Wrench,
 } from 'lucide-react'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import {
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import { createPortal } from 'react-dom'
 
 import type { JsonSchema } from '../../engine'
@@ -21,6 +28,8 @@ import {
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { ModelSelect } from '../editor/model-select'
+import { useModels } from '../hooks'
+import { Modal } from '../modal'
 import { useCommittedField } from '../use-committed-field'
 import {
   BoolPicker,
@@ -88,6 +97,7 @@ export function defaultCheck(type: EvalCheck['type']): EvalCheck {
     case 'output_match':
       return { type, match: 'contains', value: '' }
     case 'llm_judge':
+      // modelId is filled in by JudgeConfig once the model list loads.
       return { type, rubric: '', threshold: 0.7, weight: 1 }
   }
 }
@@ -454,19 +464,23 @@ function JudgeConfig({
     persist({ ...check, rubric }),
   )
 
+  // The judge model is required, so keep one selected: as soon as the model list
+  // loads, seed an empty selection with the first available model.
+  const models = useModels()
+  useEffect(() => {
+    if (check.modelId) return
+    const first = models.data?.[0]?.id
+    if (first) persist({ ...check, modelId: first })
+  }, [check, models.data, persist])
+
   return (
     <div className="space-y-3">
       <div className="space-y-1">
         <Label>Judge model</Label>
         <ModelSelect
           value={check.modelId ?? ''}
-          onChange={(modelId) =>
-            persist({ ...check, modelId: modelId || undefined })
-          }
+          onChange={(modelId) => persist({ ...check, modelId })}
         />
-        <p className="text-xs text-neutral-400">
-          Optional — falls back to the host&apos;s default judge model.
-        </p>
       </div>
       <div className="space-y-1">
         <Label>Rubric</Label>
@@ -480,7 +494,24 @@ function JudgeConfig({
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
-          <Label>Threshold</Label>
+          <div className="flex items-center gap-1">
+            <Label>Threshold</Label>
+            <FieldHelp title="Threshold">
+              <p>
+                The pass/fail cutoff for this scored test. The judge rates the
+                run on a <strong>0–1</strong> scale against your rubric; a score
+                at or above the threshold <strong>passes</strong>, below it{' '}
+                <strong>fails</strong>.
+              </p>
+              <p>
+                Raise it to demand higher-quality answers (stricter), lower it
+                to be more forgiving. <strong>0.7</strong> is a sensible default
+                — roughly “clearly good, minor flaws OK”. The threshold only
+                decides pass/fail; the raw 0–1 score still feeds the weighted
+                quality score.
+              </p>
+            </FieldHelp>
+          </div>
           <Input
             type="number"
             step="0.05"
@@ -493,7 +524,24 @@ function JudgeConfig({
           />
         </div>
         <div className="space-y-1">
-          <Label>Weight</Label>
+          <div className="flex items-center gap-1">
+            <Label>Weight</Label>
+            <FieldHelp title="Weight">
+              <p>
+                How much this test counts toward the sample’s overall quality
+                score. Every scored test’s 0–1 judge score is combined as a{' '}
+                <strong>weighted mean</strong>, and weight scales this test’s
+                share of that mean relative to the others.
+              </p>
+              <p>
+                A weight of <strong>2</strong> makes a test count twice as much
+                as a weight-<strong>1</strong> test; <strong>0.5</strong> counts
+                half. Leave it at the default <strong>1</strong> to weigh all
+                scored tests equally. Weight affects the aggregate score only —
+                not whether this individual test passes.
+              </p>
+            </FieldHelp>
+          </div>
           <Input
             type="number"
             step="0.5"
@@ -510,5 +558,39 @@ function JudgeConfig({
         0–1 judge score to pass/fail, weight scales its share of the mean.
       </p>
     </div>
+  )
+}
+
+// Small "(?)" affordance next to a field label that opens a Modal explaining
+// what the field does. Owns its own open state so it can be dropped inline.
+function FieldHelp({
+  title,
+  children,
+}: {
+  title: string
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button
+        type="button"
+        aria-label={`About ${title}`}
+        onClick={() => setOpen(true)}
+        className="inline-flex size-4 items-center justify-center rounded-full text-neutral-400 transition hover:text-neutral-700"
+      >
+        <HelpCircle className="size-3.5" />
+      </button>
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title={title}
+        panelClassName="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-lg border border-neutral-200 bg-white shadow-xl"
+      >
+        <div className="space-y-3 px-5 py-5 text-sm leading-relaxed text-neutral-600">
+          {children}
+        </div>
+      </Modal>
+    </>
   )
 }

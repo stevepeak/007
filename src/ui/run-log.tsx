@@ -4,6 +4,7 @@ import {
   ChevronRight,
   CircleCheck,
   CircleDot,
+  Cog,
   FileText,
   GitBranch,
   Repeat,
@@ -29,6 +30,7 @@ import { BrandMark, inferModelBrand } from './evals/shared'
 
 type Tone =
   | 'input'
+  | 'system'
   | 'user'
   | 'thinking'
   | 'tool'
@@ -39,6 +41,7 @@ type Tone =
 
 const toneRing: Record<Tone, string> = {
   input: 'border-neutral-300 bg-white text-neutral-500',
+  system: 'border-neutral-300 bg-neutral-50 text-neutral-500',
   user: 'border-neutral-300 bg-neutral-100 text-neutral-600',
   thinking: 'border-violet-200 bg-violet-50 text-violet-600',
   tool: 'border-sky-200 bg-sky-50 text-sky-600',
@@ -130,6 +133,23 @@ function outputStep(value: unknown): LogStep {
     icon: <CircleCheck className="size-3.5" />,
     title: 'Output',
     body: <DataView value={value} />,
+  }
+}
+
+// The agent's effective system prompt — `${…}` variables already substituted
+// from the run's promptVariables. Most agents are system-only (their user turn
+// is empty), so this is where the real input lives; surfacing it explains what
+// the agent actually received.
+function systemStep(prompt: string): LogStep {
+  return {
+    tone: 'system',
+    icon: <Cog className="size-3.5" />,
+    title: 'System prompt',
+    body: (
+      <div className="text-sm text-neutral-700">
+        <NoteMarkdown text={prompt} />
+      </div>
+    ),
   }
 }
 
@@ -323,11 +343,15 @@ export function RunLog({ step }: { step: WfRunStepDTO }) {
     reasoning?: string
   } | null
 
-  // Agent steps read as a chat: user message → thinking/tool calls → response.
-  // Everything else keeps the neutral Input → … → Output framing.
-  const steps: LogStep[] = [
-    agentMeta ? userStep(step.input) : inputStep(step.input),
-  ]
+  // Agent steps read as a chat: system prompt → user message → thinking/tool
+  // calls → response. Everything else keeps the neutral Input → … → Output
+  // framing.
+  const steps: LogStep[] = agentMeta
+    ? [
+        ...(agentMeta.systemPrompt ? [systemStep(agentMeta.systemPrompt)] : []),
+        userStep(step.input),
+      ]
+    : [inputStep(step.input)]
 
   // AI steps only: the model's thinking + tool calls between the message and
   // the response. Two things read as "thinking": the model's real reasoning

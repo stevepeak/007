@@ -318,6 +318,7 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
             resolveImageRef: config.resolveImageRef,
             simulate: p.runContext.simulate,
             fixtures: p.runContext.fixtures,
+            agentOverride: p.runContext.agentOverride,
           },
           // Record each inner node once per item. The recorder is
           // built inside this `iter:` step.do closure (a D1 binding
@@ -450,6 +451,7 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
                   resolveImageRef: config.resolveImageRef,
                   simulate: p.runContext.simulate,
                   fixtures: p.runContext.fixtures,
+                  agentOverride: p.runContext.agentOverride,
                 },
               ),
           )

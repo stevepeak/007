@@ -71,6 +71,8 @@ export type RunNodeContext<TDeps> = {
   simulate?: boolean
   /** Canned tool outputs consumed under `simulate`, keyed by tool id. */
   fixtures?: Record<string, unknown>
+  /** Eval matrix override — swaps an agent node's modelId/prompt. See RunContext. */
+  agentOverride?: { modelId?: string; prompt?: string }
   /**
    * When set, an iteration node records each inner subgraph node once per item
    * (scoped by the container id + item index) through this recorder, so the run
@@ -119,6 +121,7 @@ export async function runNode<TDeps>(
         resolveImage,
         simulate: ctx.simulate,
         fixtures: ctx.fixtures,
+        agentOverride: ctx.agentOverride,
       })
       return {
         schedulerOutput: r.output,

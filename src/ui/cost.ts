@@ -40,6 +40,17 @@ export function formatDuration(start: number, end: number | null): string {
   return `${hrs}h ${mins % 60}m`
 }
 
+/** A raw millisecond span as `820ms` / `3.4s` / `1m 5s`, or "—" when null.
+ *  Sub-second precision matters for fast agent calls, so keep ms below 1s. */
+export function formatDurationMs(ms: number | null | undefined): string {
+  if (ms == null) return '—'
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  const secs = ms / 1000
+  if (secs < 60) return `${secs.toFixed(1)}s`
+  const mins = Math.floor(secs / 60)
+  return `${mins}m ${Math.round(secs % 60)}s`
+}
+
 /** Wall-clock time of day as `09:05:03` (locale-formatted, seconds included). */
 export function formatClock(ms: number): string {
   return new Date(ms).toLocaleTimeString(undefined, {

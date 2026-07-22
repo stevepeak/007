@@ -40,12 +40,12 @@ import { BrandMark, inferModelBrand } from './shared'
 // Launching is a two-step flow: configure the matrix, then CONFIRM — a screen
 // that lays the matrix out and shows an (estimated) cost before anything runs.
 //
-// The engine can't yet fan a run out across models or swap prompts
-// (`startEvalRun` runs each sample once on the target's own configured model
-// with its saved prompt), so any matrix beyond a single model / the saved
-// prompt disables the launch with a note; the plain path still works. Wiring the
-// fan-out — and real cost estimates — is the follow-up captured in the ✨ note.
-const SUPPORTS_MATRIX = false
+// The engine fans a run out across the model × prompt matrix: `runEval` expands
+// each sample into one run per (model × prompt × best-of-N attempt), and
+// `startEvalRun` swaps the wrapper agent's model / system prompt per run via the
+// run context's `agentOverride`. Each graded result is stamped with its cell so
+// the report can group by model × prompt and surface the per-column winners.
+const SUPPORTS_MATRIX = true
 
 export type RunConfigDialogProps = {
   open: boolean
@@ -148,18 +148,29 @@ export function RunConfigDialog({
   const promptVariations = 1 + prompts.length
   const totalTests = totalRuns * promptVariations
 
-  const needsMatrix = selectedIds.length > 1 || totalRuns > selectedIds.length || prompts.length > 0
-  const matrixBlocked = needsMatrix && !SUPPORTS_MATRIX
+  // The engine now fans out across the full matrix, so a run is blocked only
+  // while it lacks a model selection or is mid-launch — never by matrix size.
+  const matrixBlocked = SUPPORTS_MATRIX ? false : selectedIds.length > 1
 
   const canConfigure = setIds.length > 0 && selectedIds.length > 0
   const canRun = canConfigure && !matrixBlocked && !runEval.isPending
 
   const launch = async () => {
     if (!canRun) return
-    // TODO: thread `selectedIds` / per-model counts / `prompts` through once the
-    // engine can fan a run out across the model × prompt matrix. Today the run
-    // uses the target's own model and saved prompt.
-    const { evalRunId } = await runEval.mutateAsync({ setIds })
+    // Build the model × prompt sweep. Baseline (the agent's saved prompt) is
+    // always the first prompt column and carries no `body` so the engine falls
+    // through to the saved prompt; each extra prompt overrides it.
+    const matrix = {
+      models: selectedIds.map((id) => ({
+        modelId: id,
+        attempts: counts[id] ?? 1,
+      })),
+      prompts: [
+        { label: 'Agent’s saved prompt' },
+        ...prompts.map((p, i) => ({ label: `Test prompt ${i + 1}`, body: p.body })),
+      ],
+    }
+    const { evalRunId } = await runEval.mutateAsync({ setIds, matrix })
     onClose()
     navigate(`evals/runs/${evalRunId}`)
   }

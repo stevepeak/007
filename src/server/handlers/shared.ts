@@ -198,6 +198,13 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
     promptVariables: Record<string, string>
     /** Canned read-tool outputs, keyed by tool id (consumed under `simulate`). */
     fixtures: Record<string, unknown>
+    /**
+     * Matrix cell overrides — swap the target agent's model / system prompt for
+     * this run (the host passes them into `startGraphRun` as `agentOverride`).
+     * Undefined → the agent's saved value (the plain, non-matrix path).
+     */
+    modelId?: string
+    promptBody?: string
     ctx: WfServerContext
     req: Request
   }) => Promise<{ wfRunId: string }>
