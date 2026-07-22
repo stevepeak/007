@@ -65,6 +65,14 @@ export function EvalTest({
     return output ? agentOutputJsonSchema(output) : null
   }, [set?.targetKind, set?.targetId, agentsQuery.data])
 
+  // The target agent's wired tools — the only tools a run could ever call, so the
+  // tool pickers are scoped to them. Undefined for workflow targets (tools are
+  // spread across nodes), where the picker keeps offering every host tool.
+  const allowToolIds = useMemo<string[] | undefined>(() => {
+    if (set?.targetKind !== 'agent') return undefined
+    return agentsQuery.data?.find((a) => a.id === set.targetId)?.toolIds
+  }, [set?.targetKind, set?.targetId, agentsQuery.data])
+
   // Local draft of this one check, synced per (row, index). Title/description
   // mirror the draft's label/description as their own inputs so typing stays
   // smooth; they commit on blur.
@@ -225,6 +233,7 @@ export function EvalTest({
               setFamily={setFamily}
               targetKind={set?.targetKind}
               outputSchema={outputSchema}
+              allowToolIds={allowToolIds}
             />
           </>
         )}

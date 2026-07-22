@@ -18,7 +18,11 @@ import type {
   WfEvalRowDTO,
   WfEvalTargetKind,
 } from '../../server/protocol'
-import { WfAutoForm } from '../autoform/wf-auto-form'
+import {
+  isPlainObject,
+  sampleFromSchema,
+  validateAgainstSchema,
+} from '../autoform/json-schema-provider'
 import { useWfComponents } from '../context'
 import {
   useAgent,
@@ -555,6 +559,11 @@ function AgentToolMocks({
         <div className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-neutral-200">
           {mockedIds.map((toolId) => {
             const tool = byId.get(toolId)
+            // Warn (but don't block) when a saved mock no longer matches the
+            // tool's output schema — mirrors the editor's warn-but-allow check.
+            const mismatch =
+              tool &&
+              !validateAgainstSchema(tool.outputSchema, fixtures[toolId]).ok
             return (
               <div key={toolId} className="flex items-start gap-2 px-4 py-3">
                 <ToolIcon icon={tool?.icon} className="mt-0.5 size-5" />
@@ -566,6 +575,13 @@ function AgentToolMocks({
                     {!tool ? (
                       <span className="shrink-0 text-xs text-amber-600">
                         (not in agent)
+                      </span>
+                    ) : mismatch ? (
+                      <span
+                        className="shrink-0 text-xs text-amber-600"
+                        title="This mock doesn't match the tool's output schema."
+                      >
+                        (off-schema)
                       </span>
                     ) : null}
                   </div>
@@ -609,14 +625,11 @@ function AgentToolMocks({
               Cancel
             </button>
           </div>
-          <WfAutoForm
+          <MockOutputEditor
             key={editingTool.id}
             schema={editingTool.outputSchema}
-            defaultValues={asRecord(fixtures[editingTool.id])}
-            submitLabel="Save mock"
-            submitIcon={<Check className="size-4" />}
-            emptyLabel="Output (JSON)"
-            onSubmit={(output) => save(editingTool.id, output)}
+            initial={asRecord(fixtures[editingTool.id])}
+            onSave={(output) => save(editingTool.id, output)}
           />
         </div>
       ) : (
@@ -631,6 +644,105 @@ function AgentToolMocks({
         />
       )}
     </div>
+  )
+}
+
+// A raw-JSON editor for a tool's mocked output, seeded from the tool's output
+// schema so the author starts from its shape (`{ "memories": [{ "id":
+// "<string>", … }] }`) rather than a bare `{}`. It validates live against that
+// schema and *warns* on a mismatch but never blocks the save (a mock may be
+// deliberately malformed to test error handling) — only unparseable JSON, or a
+// non-object, blocks. Remounted per tool by its `key`, so the seed is computed
+// once from `initial`/the schema.
+function MockOutputEditor({
+  schema,
+  initial,
+  onSave,
+}: {
+  schema: ToolOption['outputSchema']
+  initial: Record<string, unknown> | undefined
+  onSave: (output: Record<string, unknown>) => void
+}) {
+  const { Button, Label, Textarea } = useWfComponents()
+  const [text, setText] = useState(() => {
+    const seed =
+      initial && Object.keys(initial).length > 0
+        ? initial
+        : (sampleFromSchema(schema) ?? {})
+    try {
+      return JSON.stringify(seed, null, 2)
+    } catch {
+      return '{}'
+    }
+  })
+
+  // Live parse + validate: a JSON/shape error blocks the save; schema mismatches
+  // are surfaced as non-blocking warnings.
+  const { object, jsonError, warnings } = useMemo(() => {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      return { object: null, jsonError: 'Output must be valid JSON.', warnings: [] }
+    }
+    if (!isPlainObject(parsed)) {
+      return {
+        object: null,
+        jsonError: 'Output must be a JSON object.',
+        warnings: [],
+      }
+    }
+    return {
+      object: parsed,
+      jsonError: null,
+      warnings: validateAgainstSchema(schema, parsed).errors,
+    }
+  }, [text, schema])
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (object) onSave(object)
+  }
+  function onKeyDown(e: React.KeyboardEvent<HTMLFormElement>) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault()
+      e.currentTarget.requestSubmit()
+    }
+  }
+
+  return (
+    <form onSubmit={submit} onKeyDown={onKeyDown} className="space-y-3">
+      <div className="space-y-1.5">
+        <Label htmlFor="mock-output">Output (JSON)</Label>
+        <Textarea
+          id="mock-output"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={10}
+          spellCheck={false}
+          className="font-mono text-xs"
+        />
+      </div>
+      {jsonError ? (
+        <p className="text-xs text-red-600">{jsonError}</p>
+      ) : warnings.length > 0 ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+          <p className="text-xs font-medium text-amber-700">
+            Doesn&apos;t match the tool&apos;s output schema — you can still save
+            it.
+          </p>
+          <ul className="mt-1 list-disc pl-4 text-[11px] text-amber-600">
+            {warnings.slice(0, 6).map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      <Button type="submit" disabled={!object}>
+        <Check className="size-4" />
+        Save mock
+      </Button>
+    </form>
   )
 }
 

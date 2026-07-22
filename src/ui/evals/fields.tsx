@@ -33,17 +33,27 @@ function parseValue(s: string): unknown {
 
 // Tool selector — a dropdown of the host's tools (icon + name + short blurb),
 // replacing the bare name-only <select>. Expands inline (in normal flow) so it
-// can't be clipped by the StepFlow card's `overflow-hidden`.
+// can't be clipped by the StepFlow card's `overflow-hidden`. When `allowToolIds`
+// is given (an agent target's wired tools), the list is scoped to just those —
+// a tool the agent can't call would never fire, so it's never worth offering.
 export function ToolPicker({
   value,
   onChange,
+  allowToolIds,
 }: {
   value: string
   onChange: (toolId: string) => void
+  /** Restrict the options to these tool ids (undefined = all host tools). */
+  allowToolIds?: string[]
 }) {
   const { Label } = useWfComponents()
   const toolsQuery = useTools()
-  const tools = toolsQuery.data ?? []
+  const all = toolsQuery.data ?? []
+  // Keep a stored-but-out-of-scope value visible so switching targets or a
+  // hand-authored id never silently vanishes (the trigger shows "(not found)").
+  const tools = allowToolIds
+    ? all.filter((t) => allowToolIds.includes(t.id) || t.id === value)
+    : all
   const selected = tools.find((t) => t.id === value)
 
   const [open, setOpen] = useState(false)

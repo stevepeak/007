@@ -103,12 +103,15 @@ export function ConfigForm({
   setFamily,
   targetKind,
   outputSchema,
+  allowToolIds,
 }: {
   draft: EvalCheck
   persist: (next: EvalCheck) => void
   setFamily: (family: TestFamily) => void
   targetKind?: WfEvalTargetKind
   outputSchema?: JsonSchema | null
+  /** Scope the tool pickers to the target agent's wired tools (undefined = all). */
+  allowToolIds?: string[]
 }) {
   const family = familyOf(draft)
   const steps: Step[] = [
@@ -124,6 +127,7 @@ export function ConfigForm({
             persist={persist}
             targetKind={targetKind}
             outputSchema={outputSchema}
+            allowToolIds={allowToolIds}
           />
         ),
     },
@@ -162,11 +166,13 @@ function BinaryConfig({
   persist,
   targetKind,
   outputSchema,
+  allowToolIds,
 }: {
   check: EvalCheck
   persist: (next: EvalCheck) => void
   targetKind?: WfEvalTargetKind
   outputSchema?: JsonSchema | null
+  allowToolIds?: string[]
 }) {
   const { Label } = useWfComponents()
   return (
@@ -183,6 +189,7 @@ function BinaryConfig({
         check={check}
         persist={persist}
         outputSchema={outputSchema}
+        allowToolIds={allowToolIds}
       />
       <p className="text-xs text-neutral-400">
         Binary checks are pure pass/fail — they never enter the score.
@@ -334,10 +341,12 @@ function BinaryFields({
   check,
   persist,
   outputSchema,
+  allowToolIds,
 }: {
   check: EvalCheck
   persist: (next: EvalCheck) => void
   outputSchema?: JsonSchema | null
+  allowToolIds?: string[]
 }) {
   switch (check.type) {
     case 'tool_called':
@@ -346,6 +355,7 @@ function BinaryFields({
           <ToolPicker
             value={check.toolId}
             onChange={(toolId) => persist({ ...check, toolId })}
+            allowToolIds={allowToolIds}
           />
           <BoolPicker
             label="Expectation"
@@ -362,6 +372,7 @@ function BinaryFields({
           <ToolPicker
             value={check.toolId}
             onChange={(toolId) => persist({ ...check, toolId })}
+            allowToolIds={allowToolIds}
           />
           <MatchRow
             path={check.path}
