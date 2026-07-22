@@ -217,6 +217,18 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
                   simulate: p.runContext.simulate,
                   fixtures: p.runContext.fixtures,
                   agentOverride: p.runContext.agentOverride,
+                  // Delegation: an agent node may spawn sub-agents/workflows
+                  // inline and record each as a child step. Built inside this
+                  // `run:` closure (a D1 binding can't cross a step boundary);
+                  // the whole closure replays on retry and the
+                  // `(run_id, node_id, item_index)` upsert makes that idempotent.
+                  subStepRecorder:
+                    node.kind === 'agent'
+                      ? createDurableRunRecorder({
+                          db: createWfDb(env.DB),
+                          runId: p.workflowRunId,
+                        })
+                      : undefined,
                 },
               ),
           )

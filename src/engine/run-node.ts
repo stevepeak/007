@@ -122,6 +122,10 @@ export async function runNode<TDeps>(
         simulate: ctx.simulate,
         fixtures: ctx.fixtures,
         agentOverride: ctx.agentOverride,
+        // Delegation: give the node this run's full context + its own id so it
+        // can synthesize spawn/await tools that launch whitelisted sub-agents
+        // inline (recording each as a child step via `ctx.subStepRecorder`).
+        subAgentCtx: { ctx, primaryNodeId: node.id },
       })
       return {
         schedulerOutput: r.output,

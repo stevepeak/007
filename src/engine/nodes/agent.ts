@@ -3,6 +3,7 @@ import {
   generateObject,
   generateText,
   jsonSchema,
+  type LanguageModel,
   stepCountIs,
   type StepResult,
   type ToolSet,
@@ -17,11 +18,14 @@ import {
   agentFromManifest,
   type AgentConfig,
   type AgentNode,
+  type AgentOutput,
   substitutePromptVariables,
   type WfRunManifestEntry,
 } from '../graph'
 import type { StreamSink } from '../stream-sink'
 import { buildAgentToolSet, type ToolRegistry } from '../tool-registry'
+
+import { type SubAgentCtx, synthesizeDelegationTools } from './sub-agent'
 
 export type AgentNodeMeta = {
   model: string
@@ -61,7 +65,7 @@ export type AgentNodeResult = {
 //     use those messages directly.
 //   - Otherwise wrap the stringified input as a single user message so a
 //     downstream agent can run on a tool node's output.
-function coerceToMessages(input: unknown): UIMessage[] {
+export function coerceToMessages(input: unknown): UIMessage[] {
   if (
     input !== null &&
     typeof input === 'object' &&
@@ -229,6 +233,13 @@ export type ExecuteAgentNodeArgs<TDeps> = {
    * is reflected in `AgentNodeMeta.model` so cost prices against the model used.
    */
   agentOverride?: { modelId?: string; prompt?: string }
+  /**
+   * Delegation context. When present and the agent's config whitelists
+   * sub-agents/workflows, the node synthesizes `spawn_*` / `await_subagents`
+   * tools (backed by a per-execution SpawnManager) into its tool set. Omitted →
+   * no delegation tools (e.g. a preview run, or an agent with no whitelist).
+   */
+  subAgentCtx?: SubAgentCtx<TDeps>
 }
 
 // Resolve the agent an agent node points at from the frozen run manifest. The
@@ -268,6 +279,7 @@ export async function executeAgentNode<TDeps>(
     simulate,
     fixtures,
     agentOverride,
+    subAgentCtx,
   } = deps
   const config = resolveAgentConfig(node, manifest)
   // Eval matrix override: swap the model and/or the system-prompt template. Left
@@ -290,13 +302,82 @@ export async function executeAgentNode<TDeps>(
   const imageParts = await resolveImageInputs(node, nodeOutputs, resolveImage)
   const messages = attachImages(coerceToMessages(input), imageParts)
 
+  // Delegation: when this agent whitelists sub-agents/workflows, merge the
+  // synthesized spawn/await tools into its tool set (text agents only — the
+  // structured-output paths run no tool loop). A synthesized name that collides
+  // with a registered tool is an author error surfaced loudly here.
+  let effectiveTools = tools
+  if (
+    subAgentCtx &&
+    config.output.kind === 'text' &&
+    (config.subAgents?.targets.length ?? 0) > 0
+  ) {
+    const delegation = synthesizeDelegationTools(config.subAgents, subAgentCtx)
+    for (const name of Object.keys(delegation)) {
+      if (name in tools) {
+        throw new Error(
+          `Agent ${node.id}: delegation tool '${name}' collides with a registered tool. Rename the sub-agent target's tool name.`,
+        )
+      }
+    }
+    effectiveTools = { ...tools, ...delegation }
+  }
+
+  return await runAgentGeneration({
+    model,
+    modelId,
+    output: config.output,
+    maxTurns: config.maxTurns,
+    exposeThinking: config.exposeThinking,
+    systemPrompt,
+    messages,
+    tools: effectiveTools,
+    sink,
+  })
+}
+
+// The shared model-loop core, factored out of `executeAgentNode` so a spawned
+// sub-agent (see `nodes/sub-agent.ts`) runs the IDENTICAL generation logic — one
+// place owns the generateObject / YES-NO / tool-calling-loop behavior, so the two
+// entry points can never drift. Callers resolve the model, system prompt,
+// messages, and tool set; this owns only how the model is driven and how the
+// result is shaped into an {@link AgentNodeResult}.
+export type RunAgentGenerationArgs = {
+  model: LanguageModel
+  /** The model id, reflected into `meta.model` so cost prices correctly. */
+  modelId: string
+  /** The agent's expected-output contract — selects the generation path. */
+  output: AgentOutput
+  /** Max rounds of tool-calling before a final answer (text agents only). */
+  maxTurns: number
+  /** Forward per-step text to the sink's 'progress' channel when true. */
+  exposeThinking: boolean
+  systemPrompt: string
+  messages: UIMessage[]
+  tools: ToolSet
+  sink?: StreamSink
+}
+
+export async function runAgentGeneration(
+  args: RunAgentGenerationArgs,
+): Promise<AgentNodeResult> {
+  const {
+    model,
+    modelId,
+    output,
+    maxTurns,
+    exposeThinking,
+    systemPrompt,
+    messages,
+    tools,
+    sink,
+  } = args
+
   // generateObject path — for the structured-object and YES/NO output kinds we
   // return the parsed object as the node output. No tool loop, no progress.
-  if (config.output.kind === 'object' || config.output.kind === 'boolean') {
+  if (output.kind === 'object' || output.kind === 'boolean') {
     const schema =
-      config.output.kind === 'boolean'
-        ? BOOLEAN_OUTPUT_SCHEMA
-        : config.output.schema
+      output.kind === 'boolean' ? BOOLEAN_OUTPUT_SCHEMA : output.schema
     const result = await generateObject({
       model,
       system: systemPrompt,
@@ -325,20 +406,19 @@ export async function executeAgentNode<TDeps>(
         outputTokens: result.usage?.outputTokens ?? 0,
       },
     }
-    const output = result.object as Record<string, unknown>
+    const obj = result.object as Record<string, unknown>
     // A YES/NO agent doubles as a decision: its `answer` routes the node's
     // yes/no edges (the `object` kind produces data only, never routes). The
     // full `{ answer, reason }` still flows downstream as the node's output.
-    if (config.output.kind === 'boolean') {
+    if (output.kind === 'boolean') {
       return {
-        output,
+        output: obj,
         meta,
-        decision: output.answer ? 'yes' : 'no',
-        decisionReasoning:
-          typeof output.reason === 'string' ? output.reason : '',
+        decision: obj.answer ? 'yes' : 'no',
+        decisionReasoning: typeof obj.reason === 'string' ? obj.reason : '',
       }
     }
-    return { output, meta }
+    return { output: obj, meta }
   }
 
   // Tool-calling agent loop. Background execution is non-streaming
@@ -351,7 +431,7 @@ export async function executeAgentNode<TDeps>(
     system: systemPrompt,
     messages: await convertToModelMessages(messages),
     tools,
-    stopWhen: stepCountIs(config.maxTurns),
+    stopWhen: stepCountIs(maxTurns),
     onStepFinish: (step: StepResult<ToolSet>) => {
       const toolCalls = (step.toolCalls ?? []).map((tc) => {
         const r = step.toolResults?.find(
@@ -384,7 +464,10 @@ export async function executeAgentNode<TDeps>(
         // reasoning, then a line per tool call. These make "what is it doing
         // right now" legible without waiting for the node to finish.
         if (step.reasoningText?.trim()) {
-          void sink.log?.({ level: 'thinking', message: step.reasoningText.trim() })
+          void sink.log?.({
+            level: 'thinking',
+            message: step.reasoningText.trim(),
+          })
         }
         for (const tc of toolCalls) {
           void sink.log?.({
@@ -395,7 +478,7 @@ export async function executeAgentNode<TDeps>(
         }
         // The legacy free-text 'progress' channel (chat toasts) + a mirrored
         // structured line, gated by the agent's exposeThinking flag.
-        if (config.exposeThinking && step.text?.trim()) {
+        if (exposeThinking && step.text?.trim()) {
           void sink.append('progress', step.text)
           void sink.log?.({ level: 'info', message: step.text.trim() })
         }

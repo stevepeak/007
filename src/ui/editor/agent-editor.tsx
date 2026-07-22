@@ -30,6 +30,7 @@ import { PlaygroundPanel } from './agent-editor-playground'
 import { PublishAgentDialog } from './agent-editor-publish'
 import { ModelSelect } from './model-select'
 import { PromptBodyEditor } from './prompt-body-editor'
+import { SubAgentPicker } from './sub-agent-picker'
 import { ToolPicker } from './tool-picker'
 
 // The agent editor — same draft/version lifecycle as the prompt editor, but
@@ -336,6 +337,22 @@ function AgentEditorInner({
                 onChange={(toolIds) => patch({ toolIds })}
                 disabled={modelLacksTools}
                 disabledReason={`${selectedModel?.label ?? 'The selected model'} can’t call tools — pick a tool-calling model to attach tools.`}
+              />
+            </section>
+
+            {/* Sub-agents (delegation) */}
+            <section className="space-y-1">
+              <Label>Sub-agents</Label>
+              <p className="text-xs text-neutral-400">
+                Agents or workflows this agent may spawn as sub-agents. It gets a
+                tool to launch each in the background and an{' '}
+                <code className="text-[11px]">await_subagents</code> tool to
+                gather their results — like Claude Code's sub-agents.
+              </p>
+              <SubAgentPicker
+                value={config.subAgents}
+                onChange={(subAgents) => patch({ subAgents })}
+                currentAgentId={agentId}
               />
             </section>
 

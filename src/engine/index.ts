@@ -7,6 +7,10 @@ export {
   buildIterationSubgraph,
   buildStarterGraph,
   inferPromptVariables,
+  subAgentsConfigSchema,
+  subAgentTargetSchema,
+  type SubAgentsConfig,
+  type SubAgentTarget,
   WF_NODE_KINDS,
   workflowEdgeSchema,
   workflowGraphSchema,
@@ -184,3 +188,9 @@ export {
   type WorkflowNodeMeta,
   type WorkflowNodeResult,
 } from './nodes/workflow'
+export {
+  previewSpawnTools,
+  synthesizeTargets,
+  type SynthesizedTarget,
+  type TargetDisplay,
+} from './nodes/sub-agent-tools'

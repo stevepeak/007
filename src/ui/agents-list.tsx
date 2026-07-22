@@ -79,6 +79,12 @@ export function AgentsList({ className, templates = [] }: AgentsListProps) {
           maxTurns: 5,
           exposeThinking: false,
           output: { kind: 'text' },
+          subAgents: {
+            targets: [],
+            maxConcurrent: 4,
+            maxSpawns: 10,
+            allowStopSignal: true,
+          },
         },
       },
       { onSuccess: (r) => navigate(`agents/${r.agentId}/edit`) },
