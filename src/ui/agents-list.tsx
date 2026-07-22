@@ -1,4 +1,4 @@
-import { Cpu, Goal, Plus, Sparkles, Workflow } from 'lucide-react'
+import { Cpu, Goal, Plus, Sparkles, Wrench, Workflow } from 'lucide-react'
 import { type ReactNode, useMemo, useState } from 'react'
 
 import type { AgentTemplate } from '../engine'
@@ -15,7 +15,6 @@ import {
 import { Modal } from './modal'
 import { useWfNav } from './nav'
 import { QueryState } from './query-state'
-import { ToolIcon } from './tool-icon'
 
 // The reusable agents (wf_agent via the injected data client), shown as
 // cards so richer metadata (last run, referencing workflows…) can layer in.
@@ -187,9 +186,7 @@ export function AgentsList({ className, templates = [] }: AgentsListProps) {
                         : `${a.toolIds.length} tool${a.toolIds.length === 1 ? '' : 's'}`
                     }
                   >
-                    {agentTools.slice(0, 3).map((t) => (
-                      <ToolIcon key={t.id} icon={t.icon} className="size-3.5" />
-                    ))}
+                    <Wrench className="size-3.5 text-neutral-400" />
                     <span>
                       {a.toolIds.length} tool{a.toolIds.length === 1 ? '' : 's'}
                     </span>
