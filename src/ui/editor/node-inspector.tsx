@@ -38,10 +38,8 @@ export type NodeInspectorProps = {
   currentWorkflowId?: string
 }
 
-// Shared field/select classNames used across the per-kind inspectors.
+// Shared field className used across the per-kind inspectors.
 const field = 'space-y-1'
-const selectCls =
-  'h-9 w-full rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none focus:border-neutral-500'
 
 function triggerModeLabel(triggerKind: string): string {
   if (triggerKind === MANUAL_TRIGGER_KIND) return 'Manually'
@@ -119,7 +117,7 @@ function AgentInspector({
           }
         />
       </div>
-      <div className="border-t border-neutral-200" />
+      <div className="border-t border-border" />
       <NodeInputsPanel
         node={node}
         graph={graph}
@@ -158,7 +156,7 @@ function ToolInspector({
           }
         />
       </div>
-      <div className="border-t border-neutral-200" />
+      <div className="border-t border-border" />
       <NodeInputsPanel
         node={node}
         graph={graph}
@@ -175,7 +173,7 @@ function BranchInspector({
   onChange,
   itemSchema,
 }: NodeInspectorProps) {
-  const { Input, Label } = useWfComponents()
+  const { Input, Label, Select } = useWfComponents()
   if (node.kind !== 'branch') return null
   return (
     <>
@@ -200,8 +198,7 @@ function BranchInspector({
       </div>
       <div className={field}>
         <Label>Condition</Label>
-        <select
-          className={selectCls}
+        <Select
           value={node.config.operator}
           onChange={(e) =>
             onChange({
@@ -219,7 +216,7 @@ function BranchInspector({
               {op.replace(/_/g, ' ')}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
       {node.config.operator !== 'is_empty' &&
       node.config.operator !== 'is_not_empty' ? (
@@ -335,7 +332,7 @@ function IterationInspector({
   onChange,
   itemSchema,
 }: NodeInspectorProps) {
-  const { Input, Label } = useWfComponents()
+  const { Input, Label, Checkbox } = useWfComponents()
   if (node.kind !== 'iteration') return null
   return (
     <>
@@ -388,8 +385,7 @@ function IterationInspector({
         </p>
       </div>
       <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={node.config.stopOnError}
           onChange={(e) =>
             onChange({
@@ -547,7 +543,7 @@ export function NodeInspector(props: NodeInspectorProps) {
   const Inspector = NODE_INSPECTORS[node.kind]
 
   return (
-    <div className="flex h-full w-80 flex-col gap-4 overflow-y-auto border-l border-neutral-200 p-4">
+    <div className="flex h-full w-80 flex-col gap-4 overflow-y-auto border-l border-border p-4">
       <div>
         <div className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
           {node.kind}
@@ -586,18 +582,18 @@ function WorkflowSelect({
       getKey={(w) => w.id}
       placeholder="Select a workflow…"
       empty="No other workflows to call yet."
-      triggerLeading={<Workflow className="size-4 shrink-0 text-neutral-400" />}
+      triggerLeading={<Workflow className="size-4 shrink-0 text-muted-foreground" />}
       renderValue={(w) => (
         <span className="min-w-0 flex-1 truncate">{w.name}</span>
       )}
       renderOption={(w) => (
         <>
-          <Workflow className="mt-0.5 size-4 shrink-0 text-neutral-400" />
+          <Workflow className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-medium text-neutral-900">
+            <span className="block truncate text-sm font-medium text-foreground">
               {w.name}
             </span>
-            <span className="mt-0.5 line-clamp-2 block text-xs text-neutral-500">
+            <span className="mt-0.5 line-clamp-2 block text-xs text-muted-foreground">
               {w.description || 'No description yet.'}
             </span>
           </span>
@@ -636,10 +632,10 @@ function ToolSelect({
         <>
           <ToolIcon icon={t.icon} className="mt-0.5 size-6" />
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-medium text-neutral-900">
+            <span className="block truncate text-sm font-medium text-foreground">
               {t.name}
             </span>
-            <span className="mt-0.5 line-clamp-2 block text-xs text-neutral-500">
+            <span className="mt-0.5 line-clamp-2 block text-xs text-muted-foreground">
               {t.description}
             </span>
           </span>

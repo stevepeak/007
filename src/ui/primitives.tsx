@@ -4,6 +4,7 @@ import type {
   InputHTMLAttributes,
   LabelHTMLAttributes,
   ReactNode,
+  SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from 'react'
 
@@ -23,6 +24,8 @@ export type WfBadgeProps = { children: ReactNode; className?: string }
 export type WfInputProps = InputHTMLAttributes<HTMLInputElement>
 export type WfLabelProps = LabelHTMLAttributes<HTMLLabelElement>
 export type WfTextareaProps = TextareaHTMLAttributes<HTMLTextAreaElement>
+export type WfSelectProps = SelectHTMLAttributes<HTMLSelectElement>
+export type WfCheckboxProps = InputHTMLAttributes<HTMLInputElement>
 
 export type WfComponents = {
   Button: FC<WfButtonProps>
@@ -30,6 +33,8 @@ export type WfComponents = {
   Input: FC<WfInputProps>
   Label: FC<WfLabelProps>
   Textarea: FC<WfTextareaProps>
+  Select: FC<WfSelectProps>
+  Checkbox: FC<WfCheckboxProps>
 }
 
 const buttonVariants: Record<NonNullable<WfButtonProps['variant']>, string> = {
@@ -94,10 +99,30 @@ const DefaultTextarea: FC<WfTextareaProps> = ({ className, ...props }) => (
   />
 )
 
+const DefaultSelect: FC<WfSelectProps> = ({ className, ...props }) => (
+  <select
+    className={cn(
+      'h-9 w-full rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none focus:border-neutral-500',
+      className,
+    )}
+    {...props}
+  />
+)
+
+const DefaultCheckbox: FC<WfCheckboxProps> = ({ className, ...props }) => (
+  <input
+    type="checkbox"
+    className={cn('size-4 rounded border-neutral-300', className)}
+    {...props}
+  />
+)
+
 export const defaultComponents: WfComponents = {
   Button: DefaultButton,
   Badge: DefaultBadge,
   Input: DefaultInput,
   Label: DefaultLabel,
   Textarea: DefaultTextarea,
+  Select: DefaultSelect,
+  Checkbox: DefaultCheckbox,
 }

@@ -107,7 +107,7 @@ function BottomTray({
   const active = tabs.find((t) => t.id === activeId) ?? tabs[0]
 
   return (
-    <div className="relative flex shrink-0 flex-col border-t border-neutral-200 bg-white">
+    <div className="relative flex shrink-0 flex-col border-t border-border bg-card">
       {/* Grab bar straddling the top edge — drag to resize (^v cursor). */}
       <div
         role="separator"
@@ -136,8 +136,8 @@ function BottomTray({
               className={cn(
                 'flex items-center gap-1.5 border-b-2 px-2 py-1.5 text-xs font-medium transition-colors',
                 isActive && open
-                  ? 'border-neutral-800 text-neutral-800'
-                  : 'border-transparent text-neutral-500 hover:text-neutral-700',
+                  ? 'border-neutral-800 text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground',
               )}
             >
               {t.icon ? <t.icon className="size-3.5 text-violet-500" /> : null}
@@ -163,7 +163,7 @@ function BottomTray({
           type="button"
           aria-label={open ? 'Collapse panel' : 'Expand panel'}
           onClick={() => setOpen((o) => !o)}
-          className="ml-1 rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"
+          className="ml-1 rounded p-1 text-muted-foreground hover:bg-accent hover:text-muted-foreground"
         >
           <ChevronDown
             className={cn('size-4 transition-transform', !open && 'rotate-180')}
@@ -213,7 +213,7 @@ export function BottomDock({
       id: 'data',
       label: 'Data',
       accessory: node ? (
-        <span className="truncate text-[11px] text-neutral-400">
+        <span className="truncate text-[11px] text-muted-foreground">
           {node.label}
         </span>
       ) : undefined,
@@ -281,20 +281,20 @@ function ChatView({ subject }: { subject: ChatSubject }) {
         <Sparkles className="size-5 text-violet-500" />
       </div>
       <div className="space-y-1">
-        <p className="flex items-center justify-center gap-1.5 text-sm font-medium text-neutral-700">
+        <p className="flex items-center justify-center gap-1.5 text-sm font-medium text-foreground">
           Chat
           <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-600">
             Coming soon
           </span>
         </p>
-        <p className="mx-auto max-w-sm text-xs text-neutral-500">
+        <p className="mx-auto max-w-sm text-xs text-muted-foreground">
           Ask the AI to help you understand and optimize this {subject}. It will
           be able to make changes for you, under your direction.
         </p>
       </div>
       <div className="w-full max-w-md">
-        <div className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-400">
-          <Sparkles className="size-3.5 shrink-0 text-neutral-300" />
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+          <Sparkles className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="flex-1 text-left">Ask about this {subject}…</span>
         </div>
       </div>
@@ -378,11 +378,11 @@ function IssueRow({
         )}
         <span className="min-w-0 flex-1 text-xs">
           {issue.nodeLabel ? (
-            <span className="font-medium text-neutral-700">
+            <span className="font-medium text-foreground">
               {issue.nodeLabel}:{' '}
             </span>
           ) : null}
-          <span className="text-neutral-600">{issue.message}</span>
+          <span className="text-muted-foreground">{issue.message}</span>
         </span>
       </Tag>
     </li>

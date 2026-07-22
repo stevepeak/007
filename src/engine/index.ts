@@ -70,6 +70,7 @@ export {
   type GraphIssueSeverity,
 } from './graph-issues'
 export {
+  DEFAULT_NODE_BUDGET,
   Scheduler,
   WorkflowBudgetError,
   WorkflowStalledError,
@@ -143,6 +144,7 @@ export {
   type RunCompletion,
   type RunContext,
   type RunFailure,
+  type WfRunLimits,
   type WfSdkConfig,
 } from './config'
 // Per-kind node executors — exported for hosts that compose custom backends.

@@ -165,7 +165,7 @@ export function makeGraphWorkflow<
       )
       await stepDo(step, 'room-running', () => room.setStatus('running'))
 
-      const scheduler = new Scheduler(graphJson)
+      const scheduler = new Scheduler(graphJson, config.limits?.nodeBudget)
       const trigger = scheduler.trigger
       const validatedTriggerInput = resolveTriggerInput(
         config.triggers,

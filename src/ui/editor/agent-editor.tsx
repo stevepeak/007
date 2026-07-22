@@ -109,7 +109,7 @@ function AgentEditorInner({
   className?: string
   onPublished?: (result: { versionId: string; versionNumber: number }) => void
 }) {
-  const { Button, Label, Input } = useWfComponents()
+  const { Button, Label, Input, Checkbox } = useWfComponents()
   const tools = useTools()
   const aiTools = (tools.data ?? []).filter((t) => t.kind === 'ai-tool')
 
@@ -381,8 +381,7 @@ function AgentEditorInner({
                 </div>
                 <div className="space-y-1">
                   <label className="flex items-center gap-2 text-sm font-medium text-neutral-800">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={config.exposeThinking}
                       onChange={(e) =>
                         patch({ exposeThinking: e.target.checked })

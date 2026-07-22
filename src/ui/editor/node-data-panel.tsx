@@ -172,12 +172,12 @@ export function DataRefField({
     : 'Whole input'
 
   return (
-    <div className="rounded-md border border-neutral-200">
+    <div className="rounded-md border border-input">
       <div className="flex items-center gap-2 px-2 py-1.5">
         <span
           className={cn(
             'min-w-0 flex-1 truncate text-xs',
-            value ? 'text-neutral-600' : 'text-neutral-400',
+            value ? 'text-muted-foreground' : 'text-muted-foreground',
           )}
         >
           {label}
@@ -187,7 +187,7 @@ export function DataRefField({
             type="button"
             aria-label="Clear source"
             onClick={() => onChange(undefined)}
-            className="shrink-0 rounded p-0.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"
+            className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-muted-foreground"
           >
             <X className="size-3.5" />
           </button>
@@ -197,10 +197,10 @@ export function DataRefField({
           aria-label="Connect to upstream data"
           onClick={() => setOpen((o) => !o)}
           className={cn(
-            'shrink-0 rounded p-0.5 hover:bg-neutral-100',
+            'shrink-0 rounded p-0.5 hover:bg-accent',
             open
-              ? 'text-neutral-700'
-              : 'text-neutral-400 hover:text-neutral-600',
+              ? 'text-foreground'
+              : 'text-muted-foreground hover:text-muted-foreground',
           )}
         >
           <Link2 className="size-3.5" />
@@ -269,13 +269,13 @@ export function IterationListField({
     : 'Select a list…'
 
   return (
-    <div className="rounded-md border border-neutral-200">
+    <div className="rounded-md border border-input">
       <div className="flex items-center gap-2 px-2 py-1.5">
-        <ListOrdered className="size-3.5 shrink-0 text-neutral-400" />
+        <ListOrdered className="size-3.5 shrink-0 text-muted-foreground" />
         <span
           className={cn(
             'min-w-0 flex-1 truncate text-xs',
-            value ? 'text-neutral-600' : 'text-neutral-400',
+            value ? 'text-muted-foreground' : 'text-muted-foreground',
           )}
         >
           {label}
@@ -285,7 +285,7 @@ export function IterationListField({
             type="button"
             aria-label="Clear list"
             onClick={() => onSelect(undefined, undefined)}
-            className="shrink-0 rounded p-0.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"
+            className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-muted-foreground"
           >
             <X className="size-3.5" />
           </button>
@@ -295,10 +295,10 @@ export function IterationListField({
           aria-label="Pick a list to iterate"
           onClick={() => setOpen((o) => !o)}
           className={cn(
-            'shrink-0 rounded p-0.5 hover:bg-neutral-100',
+            'shrink-0 rounded p-0.5 hover:bg-accent',
             open
-              ? 'text-neutral-700'
-              : 'text-neutral-400 hover:text-neutral-600',
+              ? 'text-foreground'
+              : 'text-muted-foreground hover:text-muted-foreground',
           )}
         >
           <Link2 className="size-3.5" />
@@ -348,21 +348,21 @@ function IterationSourceNode({
   const selectedWhole =
     value?.nodeId === node.nodeId && (value.path ?? '') === ''
   return (
-    <div className="rounded border border-neutral-100 bg-neutral-50/50">
+    <div className="rounded border border-neutral-100 bg-muted/50">
       <button
         type="button"
         disabled={!wholeIsList}
         onClick={() => onPick({ kind: 'ref', nodeId: node.nodeId, path: '' })}
         className={cn(
           'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left',
-          wholeIsList ? 'hover:bg-neutral-100' : 'cursor-default',
+          wholeIsList ? 'hover:bg-accent' : 'cursor-default',
           wholeIsList && selectedWhole && 'bg-violet-50',
         )}
       >
-        <span className="min-w-0 flex-1 truncate text-xs font-medium text-neutral-700">
+        <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
           {node.label}
         </span>
-        <span className="shrink-0 text-[10px] text-neutral-400">
+        <span className="shrink-0 text-[10px] text-muted-foreground">
           {wholeIsList ? 'list' : node.wholeType}
         </span>
       </button>
@@ -411,19 +411,19 @@ function IterationField({
         style={{ paddingLeft: depth * 12 + 6 }}
         className={cn(
           'flex w-full items-center gap-1.5 py-0.5 pr-1.5 text-left',
-          isList ? 'hover:bg-neutral-100' : 'cursor-default',
+          isList ? 'hover:bg-accent' : 'cursor-default',
           isList && selected && 'bg-violet-50',
         )}
       >
         <span
           className={cn(
             'min-w-0 truncate text-xs',
-            isList ? 'text-neutral-700' : 'text-neutral-400',
+            isList ? 'text-foreground' : 'text-muted-foreground',
           )}
         >
           {field.label}
         </span>
-        <span className="shrink-0 text-[10px] text-neutral-400">
+        <span className="shrink-0 text-[10px] text-muted-foreground">
           {field.type}
         </span>
       </button>
@@ -575,7 +575,7 @@ function BindingField({
   accessible: AccessibleNode[]
   onSet: (binding: ArgBinding | null) => void
 }) {
-  const { Input } = useWfComponents()
+  const { Input, Select } = useWfComponents()
   const [open, setOpen] = useState(false)
   const [literal, setLiteral] = useState(
     binding?.kind === 'literal' ? String(binding.value ?? '') : '',
@@ -583,16 +583,16 @@ function BindingField({
   const mapped = Boolean(binding)
 
   return (
-    <div className="rounded-md border border-neutral-200">
+    <div className="rounded-md border border-input">
       <div className="flex items-center gap-2 px-2 py-1.5">
-        <code className="shrink-0 rounded bg-neutral-100 px-1 py-0.5 text-xs font-medium text-neutral-700">
+        <code className="shrink-0 rounded bg-muted px-1 py-0.5 text-xs font-medium text-foreground">
           {label}
         </code>
         {required ? <span className="text-xs text-rose-500">*</span> : null}
         <span
           className={cn(
             'min-w-0 flex-1 truncate text-xs',
-            mapped ? 'text-neutral-600' : 'text-neutral-400',
+            mapped ? 'text-muted-foreground' : 'text-muted-foreground',
           )}
           title={description}
         >
@@ -606,7 +606,7 @@ function BindingField({
               onSet(null)
               setLiteral('')
             }}
-            className="shrink-0 rounded p-0.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"
+            className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-muted-foreground"
           >
             <X className="size-3.5" />
           </button>
@@ -616,10 +616,10 @@ function BindingField({
           aria-label="Map input"
           onClick={() => setOpen((o) => !o)}
           className={cn(
-            'shrink-0 rounded p-0.5 hover:bg-neutral-100',
+            'shrink-0 rounded p-0.5 hover:bg-accent',
             open
-              ? 'text-neutral-700'
-              : 'text-neutral-400 hover:text-neutral-600',
+              ? 'text-foreground'
+              : 'text-muted-foreground hover:text-muted-foreground',
           )}
         >
           <Link2 className="size-3.5" />
@@ -650,8 +650,8 @@ function BindingField({
             // Enum input: pick from the allowed values — no free-text, so an
             // invalid literal can't be entered. Selecting sets it immediately.
             <div className="flex items-center gap-1.5 border-t border-neutral-100 pt-2">
-              <Pencil className="size-3 shrink-0 text-neutral-400" />
-              <select
+              <Pencil className="size-3 shrink-0 text-muted-foreground" />
+              <Select
                 value={
                   binding?.kind === 'literal' ? String(binding.value ?? '') : ''
                 }
@@ -663,7 +663,7 @@ function BindingField({
                   onSet({ kind: 'literal', value: picked })
                   setOpen(false)
                 }}
-                className="h-7 flex-1 rounded border border-neutral-200 bg-white px-1.5 text-xs text-neutral-700"
+                className="h-7 flex-1 rounded border border-input bg-card px-1.5 text-xs text-foreground"
               >
                 <option value="" disabled>
                   Select a value…
@@ -673,11 +673,11 @@ function BindingField({
                     {String(v)}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
           ) : (
             <div className="flex items-center gap-1.5 border-t border-neutral-100 pt-2">
-              <Pencil className="size-3 shrink-0 text-neutral-400" />
+              <Pencil className="size-3 shrink-0 text-muted-foreground" />
               <Input
                 value={literal}
                 placeholder="or type a literal value…"
@@ -694,7 +694,7 @@ function BindingField({
                   })
                   setOpen(false)
                 }}
-                className="shrink-0 rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-600 transition hover:bg-neutral-50 disabled:opacity-40"
+                className="shrink-0 rounded border border-border px-2 py-1 text-xs text-muted-foreground transition hover:bg-accent disabled:opacity-40"
               >
                 Set
               </button>
@@ -716,16 +716,16 @@ function BindingSourceNode({
   onPick: (path: string) => void
 }) {
   return (
-    <div className="rounded border border-neutral-100 bg-neutral-50/50">
+    <div className="rounded border border-neutral-100 bg-muted/50">
       <button
         type="button"
         onClick={() => onPick('')}
-        className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left hover:bg-neutral-100"
+        className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left hover:bg-accent"
       >
-        <span className="min-w-0 flex-1 truncate text-xs font-medium text-neutral-700">
+        <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
           {node.label}
         </span>
-        <span className="shrink-0 text-[10px] text-neutral-400">
+        <span className="shrink-0 text-[10px] text-muted-foreground">
           {node.wholeType}
         </span>
       </button>
@@ -756,12 +756,12 @@ function PickableField({
         onClick={() => onPick(field.path)}
         title={field.description}
         style={{ paddingLeft: depth * 12 + 6 }}
-        className="flex w-full items-center gap-1.5 py-0.5 pr-1.5 text-left hover:bg-neutral-100"
+        className="flex w-full items-center gap-1.5 py-0.5 pr-1.5 text-left hover:bg-accent"
       >
-        <span className="min-w-0 truncate text-xs text-neutral-600">
+        <span className="min-w-0 truncate text-xs text-muted-foreground">
           {field.label}
         </span>
-        <span className="shrink-0 text-[10px] text-neutral-400">
+        <span className="shrink-0 text-[10px] text-muted-foreground">
           {field.type}
         </span>
       </button>
@@ -783,7 +783,7 @@ function AccessibleNodeView({ node }: { node: AccessibleNode }) {
   const [open, setOpen] = useState(true)
   const hasFields = node.fields.length > 0
   return (
-    <div className="rounded-md border border-neutral-200">
+    <div className="rounded-md border border-border">
       <button
         type="button"
         disabled={!hasFields}
@@ -793,17 +793,17 @@ function AccessibleNodeView({ node }: { node: AccessibleNode }) {
         {hasFields ? (
           <ChevronRight
             className={cn(
-              'size-3.5 shrink-0 text-neutral-400 transition-transform',
+              'size-3.5 shrink-0 text-muted-foreground transition-transform',
               open && 'rotate-90',
             )}
           />
         ) : (
           <span className="size-3.5 shrink-0" />
         )}
-        <span className="min-w-0 flex-1 truncate text-xs font-medium text-neutral-700">
+        <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
           {node.label}
         </span>
-        <span className="shrink-0 text-[10px] text-neutral-400">
+        <span className="shrink-0 text-[10px] text-muted-foreground">
           {node.wholeType}
         </span>
       </button>
@@ -826,14 +826,14 @@ function FieldView({ field, depth }: { field: DataField; depth: number }) {
         className="flex items-center gap-1.5 py-0.5 pr-2"
         title={field.description}
       >
-        <span className="min-w-0 truncate text-xs text-neutral-600">
+        <span className="min-w-0 truncate text-xs text-muted-foreground">
           {field.label}
         </span>
-        <span className="shrink-0 text-[10px] text-neutral-400">
+        <span className="shrink-0 text-[10px] text-muted-foreground">
           {field.type}
         </span>
         {field.description ? (
-          <span className="min-w-0 flex-1 truncate text-[10px] text-neutral-400">
+          <span className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground">
             — {field.description}
           </span>
         ) : null}

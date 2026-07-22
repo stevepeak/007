@@ -12,9 +12,9 @@ import { useDismiss } from './use-dismiss'
 // content, the option-row content, and the empty message. Dismiss-on-outside-
 // click / Escape comes free from `useDismiss`.
 //
-// Styling is kept faithful to the pickers this replaces (raw neutral palette).
-// This is the single place to later swap in the semantic theme tokens
-// (`bg-popover`, `bg-card`, …) so every select re-themes for a host at once.
+// Styled with the semantic theme tokens (`bg-popover`, `border-input`,
+// `bg-accent`, `text-muted-foreground`, …) so every select re-themes with the
+// host — this one component is the shared surface for all the pickers built on it.
 
 export function RichSelect<T>({
   options,
@@ -77,7 +77,7 @@ export function RichSelect<T>({
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
         className={cn(
-          'flex h-9 items-center gap-2 rounded-md border border-neutral-300 bg-transparent px-2 text-left text-sm outline-none focus:border-neutral-500 disabled:opacity-50',
+          'flex h-9 items-center gap-2 rounded-md border border-input bg-transparent px-2 text-left text-sm outline-none focus:border-neutral-500 disabled:opacity-50',
           triggerClassName,
         )}
       >
@@ -87,7 +87,7 @@ export function RichSelect<T>({
         ) : (
           <span className="text-muted-foreground flex-1">{placeholder}</span>
         )}
-        <ChevronDown className="size-4 shrink-0 text-neutral-400" />
+        <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
       </button>
 
       {trailing}
@@ -96,13 +96,13 @@ export function RichSelect<T>({
         <div
           role="listbox"
           className={cn(
-            'absolute z-50 mt-1 max-h-72 overflow-y-auto rounded-md border border-neutral-200 bg-white p-1 shadow-lg',
+            'absolute z-50 mt-1 max-h-72 overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg',
             listClassName,
           )}
         >
           {options.length === 0 && empty != null ? (
             typeof empty === 'string' ? (
-              <div className="p-2 text-xs text-neutral-400">{empty}</div>
+              <div className="p-2 text-xs text-muted-foreground">{empty}</div>
             ) : (
               empty
             )
@@ -124,8 +124,8 @@ export function RichSelect<T>({
                   setOpen(false)
                 }}
                 className={cn(
-                  'flex w-full items-start gap-2 rounded-md p-2 text-left transition hover:bg-neutral-50',
-                  isSelected && 'bg-neutral-50',
+                  'flex w-full items-start gap-2 rounded-md p-2 text-left transition hover:bg-accent',
+                  isSelected && 'bg-accent',
                   optDisabled && 'cursor-not-allowed opacity-50',
                 )}
               >

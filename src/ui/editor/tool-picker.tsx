@@ -115,14 +115,14 @@ export function ToolPicker({
             {selected.map((t) => (
               <li
                 key={t.id}
-                className="flex items-center gap-2.5 rounded-md border border-neutral-200 bg-neutral-50 p-2"
+                className="flex items-center gap-2.5 rounded-md border border-border bg-muted p-2"
               >
                 <ToolIcon icon={t.icon} className="size-6 shrink-0" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-neutral-800">
+                  <span className="block truncate text-sm font-medium text-foreground">
                     {t.name}
                   </span>
-                  <span className="block truncate text-xs text-neutral-400">
+                  <span className="block truncate text-xs text-muted-foreground">
                     {t.description}
                   </span>
                 </span>
@@ -130,7 +130,7 @@ export function ToolPicker({
             ))}
           </ul>
         ) : null}
-        <div className="rounded-md border border-dashed border-neutral-200 bg-neutral-50 p-3 text-center text-xs text-neutral-400">
+        <div className="rounded-md border border-dashed border-border bg-muted p-3 text-center text-xs text-muted-foreground">
           {disabledReason ?? 'The selected model can’t call tools.'}
         </div>
       </div>
@@ -145,14 +145,14 @@ export function ToolPicker({
           {selected.map((t) => (
             <li
               key={t.id}
-              className="flex items-center gap-2.5 rounded-md border border-neutral-200 bg-white p-2"
+              className="flex items-center gap-2.5 rounded-md border border-border bg-card p-2"
             >
               <ToolIcon icon={t.icon} className="size-6 shrink-0" />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-neutral-800">
+                <span className="block truncate text-sm font-medium text-foreground">
                   {t.name}
                 </span>
-                <span className="block truncate text-xs text-neutral-400">
+                <span className="block truncate text-xs text-muted-foreground">
                   {t.description}
                 </span>
               </span>
@@ -160,7 +160,7 @@ export function ToolPicker({
                 type="button"
                 aria-label={`Remove ${t.name}`}
                 onClick={() => remove(t.id)}
-                className="shrink-0 rounded p-1 text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600"
               >
                 <X className="size-4" />
               </button>
@@ -168,14 +168,14 @@ export function ToolPicker({
           ))}
         </ul>
       ) : (
-        <div className="rounded-md border border-dashed border-neutral-200 p-3 text-center text-xs text-neutral-400">
+        <div className="rounded-md border border-dashed border-border p-3 text-center text-xs text-muted-foreground">
           {emptyLabel}
         </div>
       )}
 
       {/* Fuzzy search */}
       <div className="relative">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-neutral-400" />
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -200,9 +200,9 @@ export function ToolPicker({
         />
 
         {open ? (
-          <div className="absolute z-10 mt-1 max-h-64 w-full overflow-auto rounded-md border border-neutral-200 bg-white p-1 shadow-lg">
+          <div className="absolute z-10 mt-1 max-h-64 w-full overflow-auto rounded-md border border-border bg-popover p-1 shadow-lg">
             {results.length === 0 ? (
-              <div className="p-2 text-xs text-neutral-400">
+              <div className="p-2 text-xs text-muted-foreground">
                 {tools.length === 0
                   ? 'No tools registered.'
                   : query.trim().length > 0
@@ -221,19 +221,19 @@ export function ToolPicker({
                     add(t.id)
                   }}
                   className={cn(
-                    'flex w-full items-center gap-2.5 rounded-md p-2 text-left transition-colors hover:bg-neutral-50',
+                    'flex w-full items-center gap-2.5 rounded-md p-2 text-left transition-colors hover:bg-accent',
                   )}
                 >
                   <ToolIcon icon={t.icon} className="size-6 shrink-0" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-neutral-800">
+                    <span className="block truncate text-sm font-medium text-foreground">
                       {t.name}
                     </span>
-                    <span className="block truncate text-xs text-neutral-400">
+                    <span className="block truncate text-xs text-muted-foreground">
                       {t.description}
                     </span>
                   </span>
-                  <Wrench className="size-3.5 shrink-0 text-neutral-300" />
+                  <Wrench className="size-3.5 shrink-0 text-muted-foreground" />
                 </button>
               ))
             )}

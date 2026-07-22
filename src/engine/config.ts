@@ -230,6 +230,28 @@ export type RunContext = {
   env?: unknown
 }
 
+/**
+ * Optional host-tunable runtime execution limits. Only the per-run **node
+ * budget** is exposed — the runaway-loop backstop that aborts a run once it has
+ * fired this many nodes (default {@link DEFAULT_NODE_BUDGET} = 256). A host that
+ * genuinely needs a larger fan-out raises it here.
+ *
+ * The graph *schema* ceilings (agent `maxTurns` ≤ 20, iteration `concurrency` ≤
+ * 20, retry `limit` ≤ 10) are deliberately NOT here: they're static validation
+ * bounds baked into the graph schema, so a graph that exceeds them is rejected
+ * at author time rather than clamped at runtime. Making them per-host would mean
+ * turning the statically-imported schema into a factory — a wide contract change
+ * for a speculative need — so they stay fixed until a concrete case appears.
+ */
+export type WfRunLimits = {
+  /**
+   * Max nodes a single run may fire before the scheduler aborts with a
+   * `WorkflowBudgetError`. Defaults to 256. Nested iteration subgraphs get their
+   * own independent budget.
+   */
+  nodeBudget?: number
+}
+
 export interface WfSdkConfig<TDeps = unknown> {
   /**
    * Resolve a node `modelId` to an AI SDK model (host's provider). Receives the
@@ -301,6 +323,11 @@ export interface WfSdkConfig<TDeps = unknown> {
    * best-effort, durable-step semantics as {@link onRunComplete}.
    */
   onRunFailed?: (ctx: RunContext, failure: RunFailure) => void | Promise<void>
+  /**
+   * Optional host-tunable runtime limits (currently just the per-run node
+   * budget). Omit to use the defaults. See {@link WfRunLimits}.
+   */
+  limits?: WfRunLimits
 }
 
 /**

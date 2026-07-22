@@ -79,8 +79,10 @@ export type ReportResult = {
 }
 
 // Soft safety bound — graphs that loop or stall hit this rather than the CF
-// Workflows runtime ceiling. 256 is well above any realistic graph.
-const HARD_NODE_BUDGET = 256
+// Workflows runtime ceiling. 256 is well above any realistic graph. A host that
+// genuinely needs a bigger fan-out can raise it via `WfSdkConfig.limits.nodeBudget`
+// (threaded into the Scheduler constructor); this is the default.
+export const DEFAULT_NODE_BUDGET = 256
 
 export class WorkflowStalledError extends Error {
   constructor() {
@@ -116,8 +118,12 @@ export class Scheduler {
   private readonly branchResults = new Map<string, string>()
   private readonly nodeOutputs = new Map<string, unknown>()
   private nodesFired = 0
+  // The runaway-loop backstop for THIS run (host-tunable; defaults to
+  // DEFAULT_NODE_BUDGET). Nested subgraph schedulers get their own budget.
+  private readonly nodeBudget: number
 
-  constructor(rawGraph: unknown) {
+  constructor(rawGraph: unknown, nodeBudget: number = DEFAULT_NODE_BUDGET) {
+    this.nodeBudget = nodeBudget
     this.graph = workflowGraphSchema.parse(rawGraph)
     const trigger = this.graph.nodes.find((n) => n.kind === 'trigger')
     if (!trigger) {
@@ -285,8 +291,8 @@ export class Scheduler {
     }
 
     this.nodesFired += 1
-    if (this.nodesFired > HARD_NODE_BUDGET) {
-      throw new WorkflowBudgetError(HARD_NODE_BUDGET)
+    if (this.nodesFired > this.nodeBudget) {
+      throw new WorkflowBudgetError(this.nodeBudget)
     }
 
     return { type: 'execute', node: next, input: this.resolveInput(next.id) }
@@ -323,8 +329,8 @@ export class Scheduler {
     }
 
     this.nodesFired += ready.length
-    if (this.nodesFired > HARD_NODE_BUDGET) {
-      throw new WorkflowBudgetError(HARD_NODE_BUDGET)
+    if (this.nodesFired > this.nodeBudget) {
+      throw new WorkflowBudgetError(this.nodeBudget)
     }
 
     return {
