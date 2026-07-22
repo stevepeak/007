@@ -1,4 +1,5 @@
-import { DECISION_NODE_KINDS, type WorkflowEdge, type WorkflowGraph } from './graph'
+import { DECISION_NODE_KINDS } from './graph-kinds'
+import type { WorkflowEdge, WorkflowGraph } from './graph-schema'
 import { buildAdjacency } from './graph-adjacency'
 
 // The join/cone topology analysis shared by the strict runtime gate
