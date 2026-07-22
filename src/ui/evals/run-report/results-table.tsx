@@ -13,9 +13,10 @@ import { formatDurationMs, formatTokens, formatUsd } from '../../cost'
 import { useModels } from '../../hooks'
 import { PassRate, Score } from '../shared'
 
-import { Section, StatusDot } from './atoms'
+import { StatusDot } from './atoms'
 import {
   buildResultRows,
+  cellKey,
   groupRows,
   minBy,
   pickBest,
@@ -29,7 +30,14 @@ import { ResultDetail } from './result-detail'
 
 // The results table: one row per test, with group-by, sort, filters, an
 // expandable per-check detail, and crowns on the best / fastest / cheapest tests.
-export function ResultsTable({ results }: { results: WfEvalResultDTO[] }) {
+export function ResultsTable({
+  results,
+  highlightedCell,
+}: {
+  results: WfEvalResultDTO[]
+  /** Matrix cell key to highlight — every row in that cell tints (from card hover). */
+  highlightedCell?: string | null
+}) {
   const models = useModels()
   const modelById = useMemo(
     () => new Map((models.data ?? []).map((m) => [m.id, m])),
@@ -115,6 +123,10 @@ export function ResultsTable({ results }: { results: WfEvalResultDTO[] }) {
   // One test row + its expandable detail, shared by the flat and grouped views.
   const renderRow = (r: ResultRow) => {
     const open = expanded.has(r.result.id)
+    // Does this row belong to the matrix cell a summary card is hovering?
+    const lit =
+      highlightedCell != null &&
+      cellKey(r.result.modelId, r.result.promptLabel) === highlightedCell
     return (
       <Fragment key={r.result.id}>
         <tr
@@ -122,6 +134,7 @@ export function ResultsTable({ results }: { results: WfEvalResultDTO[] }) {
           className={cn(
             'cursor-pointer align-middle transition hover:bg-neutral-50',
             open && 'bg-neutral-50',
+            lit && 'bg-emerald-50 hover:bg-emerald-50',
           )}
         >
           <td className="pl-3 text-neutral-400">
@@ -186,11 +199,15 @@ export function ResultsTable({ results }: { results: WfEvalResultDTO[] }) {
     )
   }
 
+  const subtitle = `${filtered.length}${filtered.length !== rows.length ? ` of ${rows.length}` : ''} test${rows.length === 1 ? '' : 's'}`
+
   return (
-    <Section
-      title="Results"
-      subtitle={`${filtered.length}${filtered.length !== rows.length ? ` of ${rows.length}` : ''} test${rows.length === 1 ? '' : 's'}`}
-    >
+    <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+      {/* Static header — the Results section no longer collapses. */}
+      <div className="flex w-full items-center gap-2 px-4 py-2.5">
+        <span className="text-sm font-semibold text-neutral-900">Results</span>
+        <span className="text-xs text-neutral-400">{subtitle}</span>
+      </div>
       {/* Group / sort / filter toolbar */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-neutral-100 px-4 py-2.5">
         <FilterSelect
@@ -333,7 +350,7 @@ export function ResultsTable({ results }: { results: WfEvalResultDTO[] }) {
           </table>
         </div>
       )}
-    </Section>
+    </div>
   )
 }
 

@@ -45,6 +45,16 @@ export function mean(vals: number[]): number | null {
   return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null
 }
 
+// Stable identity for a matrix cell — one {model × prompt} combination. Shared
+// by the matrix summary (which cell won a column) and the results table (which
+// rows belong to a cell), so hovering a summary card can light up its rows.
+export function cellKey(
+  modelId: string | null,
+  promptLabel: string | null,
+): string {
+  return `${modelId ?? ''} ${promptLabel ?? ''}`
+}
+
 // Build the flat rows the table renders, from results + a model-label resolver
 // (composite modelId → display label). Falls back to the run's own recorded
 // model id when the cell wasn't a matrix cell.

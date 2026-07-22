@@ -1,4 +1,5 @@
 import { Target } from 'lucide-react'
+import { useState } from 'react'
 
 import { useEvalRun } from '../hooks'
 import { WfShell } from '../shell'
@@ -22,6 +23,9 @@ export type EvalRunReportProps = {
 
 export function EvalRunReport({ evalRunId, className }: EvalRunReportProps) {
   const { data, isLoading } = useEvalRun(evalRunId)
+  // Hovering a "best of" card in the matrix summary lights up that cell's rows
+  // in the results table below. Held here so both sections can share it.
+  const [hoveredCell, setHoveredCell] = useState<string | null>(null)
 
   return (
     <WfShell
@@ -39,8 +43,8 @@ export function EvalRunReport({ evalRunId, className }: EvalRunReportProps) {
       ) : (
         <div className="mx-auto max-w-5xl space-y-4 p-6">
           <RunHeader run={data.run} results={data.results} />
-          <MatrixSummary results={data.results} />
-          <ResultsTable results={data.results} />
+          <MatrixSummary results={data.results} onHoverCell={setHoveredCell} />
+          <ResultsTable results={data.results} highlightedCell={hoveredCell} />
         </div>
       )}
     </WfShell>

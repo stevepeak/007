@@ -13,10 +13,7 @@ import {
   useNodesState,
   useReactFlow,
   type Connection,
-  type Edge,
-  type Node,
 } from '@xyflow/react'
-import Dagre from '@dagrejs/dagre'
 import { LayoutGrid } from 'lucide-react'
 import {
   useCallback,
@@ -26,12 +23,7 @@ import {
   type DragEvent as ReactDragEvent,
 } from 'react'
 
-import {
-  buildIterationSubgraph,
-  type WorkflowEdge,
-  type WorkflowGraph,
-  type WorkflowNode,
-} from '../../engine'
+import { type WorkflowGraph, type WorkflowNode } from '../../engine'
 import { useWfComponents } from '../context'
 import { Tooltip } from '../tooltip'
 import {
@@ -42,28 +34,24 @@ import {
   type EditorNodeData,
 } from './node-renderers'
 import { PALETTE_DATA_TYPE } from './node-palette'
+import {
+  BOOKEND_KINDS,
+  DEFAULT_ITER_H,
+  DEFAULT_ITER_W,
+  DEFAULT_NOTE_H,
+  DEFAULT_NOTE_W,
+  edgeToFlow,
+  engineToFlow,
+  extractEditorData,
+  flowToEngine,
+  orderParentsFirst,
+  type EditorEdge,
+  type EditorNode,
+} from './workflow-canvas-graph'
+import { layoutNodes } from './workflow-canvas-layout'
+import { defaultDataForKind, type NodeDefaults } from './workflow-canvas-palette'
 
-type EditorNode = Node<EditorNodeData>
-type EditorEdge = Edge
-
-// Trigger + output are the workflow's bookends — exactly one trigger and at
-// least one output are required and there's no palette entry to re-add one, so
-// they're non-deletable end to end. The same kinds serve as an iteration
-// container's `Item` (trigger) and `Result` (output) bookends, likewise fixed.
-const BOOKEND_KINDS = new Set(['trigger', 'output'])
-
-// Default size of a freshly-dropped iteration container (px). Persisted per node
-// on `config.width/height` once resized.
-const DEFAULT_ITER_W = 480
-const DEFAULT_ITER_H = 240
-
-// Default size of a freshly-dropped sticky Note (px). Persisted per node on
-// `config.width/height` once resized.
-const DEFAULT_NOTE_W = 240
-const DEFAULT_NOTE_H = 160
-
-/** Defaults for freshly-dragged nodes — sourced from the host's models/tools. */
-export type NodeDefaults = { toolId: string }
+export type { NodeDefaults } from './workflow-canvas-palette'
 
 // Stable empty set so the provider value doesn't change identity each render
 // when no invalid ids are passed.
@@ -71,179 +59,6 @@ const EMPTY_INVALID: ReadonlySet<string> = new Set()
 
 // Stable empty map so the run-status provider keeps identity in the editor.
 const EMPTY_STATUSES: ReadonlyMap<string, string> = new Map()
-
-function edgeToFlow(e: WorkflowEdge): EditorEdge {
-  return {
-    id: e.id,
-    source: e.source,
-    target: e.target,
-    sourceHandle: e.condition ?? undefined,
-    label: e.condition ?? undefined,
-    data: { condition: e.condition },
-  }
-}
-
-// An iteration node is a *container*: its `subgraph` nodes are flattened onto the
-// same canvas as React Flow children (`parentId` = the container) so authors drag
-// work between the `Item` (trigger) and `Result` (output) bookends. The subgraph
-// edges become edges among those children. `flowToEngine` reverses this. React
-// Flow requires a parent to appear before its children in the array, which this
-// order (container, then its children) satisfies.
-function engineToFlow(graph: WorkflowGraph): {
-  nodes: EditorNode[]
-  edges: EditorEdge[]
-} {
-  const nodes: EditorNode[] = []
-  const edges: EditorEdge[] = []
-  for (const n of graph.nodes) {
-    if (n.kind === 'iteration') {
-      nodes.push({
-        id: n.id,
-        type: editorTypeForKind('iteration'),
-        position: n.position,
-        deletable: true,
-        data: extractEditorData(n),
-        style: {
-          width: n.config.width ?? DEFAULT_ITER_W,
-          height: n.config.height ?? DEFAULT_ITER_H,
-        },
-      })
-      for (const child of n.config.subgraph.nodes) {
-        nodes.push({
-          id: child.id,
-          type: editorTypeForKind(child.kind),
-          position: child.position,
-          parentId: n.id,
-          deletable: !BOOKEND_KINDS.has(child.kind),
-          data: extractEditorData(child),
-        })
-      }
-      for (const e of n.config.subgraph.edges) edges.push(edgeToFlow(e))
-    } else if (n.kind === 'note') {
-      // A resizable sticky note — its size lives on config.width/height so it
-      // round-trips; NodeResizer reads it off the node style.
-      nodes.push({
-        id: n.id,
-        type: editorTypeForKind('note'),
-        position: n.position,
-        deletable: true,
-        data: extractEditorData(n),
-        style: {
-          width: n.config.width ?? DEFAULT_NOTE_W,
-          height: n.config.height ?? DEFAULT_NOTE_H,
-        },
-      })
-    } else {
-      nodes.push({
-        id: n.id,
-        type: editorTypeForKind(n.kind),
-        position: n.position,
-        deletable: !BOOKEND_KINDS.has(n.kind),
-        data: extractEditorData(n),
-      })
-    }
-  }
-  for (const e of graph.edges) edges.push(edgeToFlow(e))
-  return { nodes, edges }
-}
-
-function extractEditorData(n: WorkflowNode): EditorNodeData {
-  return { kind: n.kind, label: n.label, config: n.config } as EditorNodeData
-}
-
-function edgeToEngine(e: EditorEdge): WorkflowEdge {
-  return {
-    id: e.id,
-    source: e.source,
-    target: e.target,
-    // The source handle id IS the edge condition — 'yes'/'no' for a binary
-    // decision, a case key or 'default' for a switch. Non-decision edges have no
-    // handle id, so this is null.
-    condition: e.sourceHandle ?? null,
-  }
-}
-
-function engineNodeOf(n: EditorNode): WorkflowNode {
-  return {
-    id: n.id,
-    position: { x: n.position.x, y: n.position.y },
-    ...n.data,
-  } as WorkflowNode
-}
-
-// Reverse of engineToFlow: re-nest each iteration container's children back into
-// its `config.subgraph`. Top-level nodes form the main graph; a node's children
-// (by `parentId`) plus the edges wholly inside that container become its subgraph.
-function flowToEngine(nodes: EditorNode[], edges: EditorEdge[]): WorkflowGraph {
-  const parentOf = new Map(nodes.map((n) => [n.id, n.parentId]))
-  const childrenByParent = new Map<string, EditorNode[]>()
-  const topLevel: EditorNode[] = []
-  for (const n of nodes) {
-    if (n.parentId) {
-      const list = childrenByParent.get(n.parentId)
-      if (list) list.push(n)
-      else childrenByParent.set(n.parentId, [n])
-    } else {
-      topLevel.push(n)
-    }
-  }
-
-  const mainEdges: WorkflowEdge[] = []
-  const subEdges = new Map<string, WorkflowEdge[]>()
-  for (const e of edges) {
-    const ps = parentOf.get(e.source)
-    const pt = parentOf.get(e.target)
-    if (!ps && !pt) {
-      mainEdges.push(edgeToEngine(e))
-    } else if (ps && ps === pt) {
-      const list = subEdges.get(ps)
-      if (list) list.push(edgeToEngine(e))
-      else subEdges.set(ps, [edgeToEngine(e)])
-    }
-    // Cross-boundary edges are prevented by isValidConnection; ignore any stray.
-  }
-
-  const engineNodes: WorkflowNode[] = topLevel.map((n) => {
-    const data = n.data
-    if (data.kind !== 'iteration') return engineNodeOf(n)
-    const kids = childrenByParent.get(n.id) ?? []
-    return {
-      id: n.id,
-      position: { x: n.position.x, y: n.position.y },
-      kind: 'iteration',
-      label: data.label,
-      config: {
-        ...data.config,
-        subgraph: {
-          version: 1,
-          nodes: kids.map(engineNodeOf),
-          edges: subEdges.get(n.id) ?? [],
-        },
-      },
-    }
-  })
-
-  return { version: 1, nodes: engineNodes, edges: mainEdges }
-}
-
-// React Flow requires each parent node to precede its children in the array.
-// After a reparent we re-emit nodes parent-first (one level deep here).
-function orderParentsFirst(nodes: EditorNode[]): EditorNode[] {
-  const byId = new Map(nodes.map((n) => [n.id, n]))
-  const seen = new Set<string>()
-  const out: EditorNode[] = []
-  const emit = (n: EditorNode) => {
-    if (seen.has(n.id)) return
-    if (n.parentId) {
-      const p = byId.get(n.parentId)
-      if (p) emit(p)
-    }
-    seen.add(n.id)
-    out.push(n)
-  }
-  for (const n of nodes) emit(n)
-  return out
-}
 
 export interface WorkflowCanvasProps {
   graph: WorkflowGraph
@@ -651,153 +466,4 @@ function CanvasInner({
       </RunStatusProvider>
     </div>
   )
-}
-
-// Layered left-to-right auto-layout ("Tidy layout"). The graph is a near-DAG
-// (trigger → … → output). We delegate to dagre's Sugiyama pipeline (rank →
-// iterated crossing-minimisation → coordinate assignment), which produces far
-// fewer wire crossings than a single-pass barycenter sort and, because it lays
-// out from each node's real measured size, never overlaps tall nodes.
-//
-// `ranksep` is the horizontal gap between layers; `nodesep` the vertical gap
-// between stacked nodes. Fallback dimensions cover nodes React hasn't measured
-// yet (node cards are 200–260px wide, ~variable height).
-const LAYOUT_RANK_SEP = 120
-const LAYOUT_NODE_SEP = 56
-const LAYOUT_DEFAULT_W = 240
-const LAYOUT_DEFAULT_H = 120
-
-function layoutNodes(
-  nodes: EditorNode[],
-  edges: EditorEdge[],
-): Map<string, { x: number; y: number }> {
-  const g = new Dagre.graphlib.Graph({ multigraph: true })
-  g.setGraph({
-    rankdir: 'LR',
-    ranksep: LAYOUT_RANK_SEP,
-    nodesep: LAYOUT_NODE_SEP,
-    // A conditional branch is a cycle if a `no` arm loops back; break cycles
-    // greedily so layout still succeeds instead of throwing.
-    acyclicer: 'greedy',
-  })
-  g.setDefaultEdgeLabel(() => ({}))
-
-  const dims = new Map<string, { width: number; height: number }>()
-  for (const n of nodes) {
-    const width = n.measured?.width ?? n.width ?? LAYOUT_DEFAULT_W
-    const height = n.measured?.height ?? n.height ?? LAYOUT_DEFAULT_H
-    dims.set(n.id, { width, height })
-    g.setNode(n.id, { width, height })
-  }
-  // dagre seeds its within-rank order from a DFS that follows edge-insertion
-  // order, and only flips a pair when that *strictly* reduces crossings — which
-  // a symmetric branch never does. So inserting `yes` arms before `no` arms
-  // pins `yes` above `no` out of every branch node. (Stable sort keeps the
-  // original order among same-priority edges.)
-  const handlePriority = (h: EditorEdge['sourceHandle']) =>
-    h === 'yes' ? 0 : h === 'no' ? 1 : 2
-  const ordered = [...edges].sort(
-    (a, b) => handlePriority(a.sourceHandle) - handlePriority(b.sourceHandle),
-  )
-  for (const e of ordered) {
-    if (!dims.has(e.source) || !dims.has(e.target)) continue
-    g.setEdge(e.source, e.target, { weight: 1 }, e.sourceHandle ?? undefined)
-  }
-
-  Dagre.layout(g)
-
-  // dagre positions nodes by their centre; React Flow positions by top-left.
-  const positions = new Map<string, { x: number; y: number }>()
-  for (const n of nodes) {
-    const p = g.node(n.id)
-    const d = dims.get(n.id)
-    if (!p || !d) continue
-    positions.set(n.id, { x: p.x - d.width / 2, y: p.y - d.height / 2 })
-  }
-  return positions
-}
-
-// Default data for a freshly-dragged palette item. Model/tool ids come from the
-// host (first available), so no provider is hardcoded. Returns null for the
-// bookend kinds (trigger/output are template-owned, not palette-added).
-function defaultDataForKind(
-  kind: string,
-  defaults?: NodeDefaults,
-): EditorNodeData | null {
-  const toolId = defaults?.toolId || 'tool'
-  if (kind === 'agent') {
-    // A pointer node — the inspector picks which pre-developed agent to run.
-    return {
-      kind: 'agent',
-      label: 'New agent',
-      config: { agentId: '', version: null, inputs: {}, imageInputs: {} },
-    }
-  }
-  if (kind === 'tool') {
-    return { kind: 'tool', label: 'New tool', config: { toolId, args: {} } }
-  }
-  if (kind === 'branch') {
-    return {
-      kind: 'branch',
-      label: 'New branch',
-      config: { operator: 'is_not_empty' },
-    }
-  }
-  if (kind === 'switch') {
-    // Seeded with no cases — the author adds them in the inspector, which grows
-    // one outgoing handle per case plus the always-present `default`. Until a
-    // 'default' edge exists the graph flags a (non-blocking) issue.
-    return {
-      kind: 'switch',
-      label: 'New switch',
-      config: { path: '', cases: [] },
-    }
-  }
-  if (kind === 'iteration') {
-    // Seeded with a minimal Item → Result subgraph; the author drops work nodes
-    // into the block. `source` is intentionally left unset so the block reads as
-    // "no list selected" (an error) until the author picks a list to iterate.
-    return {
-      kind: 'iteration',
-      label: 'New iteration',
-      config: {
-        concurrency: 4,
-        stopOnError: false,
-        subgraph: buildIterationSubgraph(),
-      },
-    }
-  }
-  if (kind === 'workflow') {
-    // A pointer node — the inspector picks which workflow to call. Left empty so
-    // it reads as "no workflow selected" (an error) until the author picks one.
-    return {
-      kind: 'workflow',
-      label: 'Call workflow',
-      config: { workflowId: '', inputs: {} },
-    }
-  }
-  if (kind === 'feature-request') {
-    return {
-      kind: 'feature-request',
-      label: 'Feature request',
-      config: { description: '' },
-    }
-  }
-  if (kind === 'race') {
-    // A config-less first-to-finish join. The author wires several upstreams into
-    // it; the first to complete wins. It reads as a (non-blocking) "needs 2+
-    // inputs" warning until at least two feed in.
-    return { kind: 'race', label: 'Race', config: {} }
-  }
-  if (kind === 'aggregate') {
-    // A config-less wait-for-all join. The author wires several upstreams into it;
-    // once all complete it emits an ordered list (one element per producer) for a
-    // downstream sibling to iterate. Reads as a (non-blocking) "needs 2+ inputs"
-    // warning until at least two feed in.
-    return { kind: 'aggregate', label: 'Aggregate', config: {} }
-  }
-  if (kind === 'note') {
-    return { kind: 'note', label: 'Note', config: { text: '' } }
-  }
-  return null
 }

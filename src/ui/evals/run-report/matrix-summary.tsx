@@ -1,17 +1,18 @@
+import { Gauge, Target, Wallet } from 'lucide-react'
+
 import type { WfEvalResultDTO } from '../../../server/protocol'
 import { cn } from '../../cn'
-import { formatTokens, formatUsd } from '../../cost'
+import { formatUsd } from '../../cost'
 import { useModels } from '../../hooks'
-import { PassRate, Score } from '../shared'
 
-import { Section } from './atoms'
-import { mean } from './model'
+import { cellKey, mean } from './model'
 
 // The matrix roll-up: collapses every test back into one row per {model × prompt}
 // cell and reads off which cell wins on accuracy, cost, and speed. Only rendered
 // for a matrix run (a plain run leaves the cell fields null → nothing to
-// compare). Speed is the model's catalog tok/s; cost/tokens come live from each
-// result's `runStats`.
+// compare). Cost, tokens, and speed all come live from each result's `runStats`
+// — speed is measured throughput (tokens ÷ wall-clock), not the model's
+// advertised catalog rate, so it's present whenever a run produced stats.
 
 type MatrixCell = {
   modelId: string | null
@@ -20,15 +21,17 @@ type MatrixCell = {
   passed: number
   meanScore: number | null
   avgCostUsd: number | null
-  avgTokens: number | null
   tokensPerSec: number | null
 }
 
-function cellKey(modelId: string | null, promptLabel: string | null): string {
-  return `${modelId ?? ''} ${promptLabel ?? ''}`
-}
-
-export function MatrixSummary({ results }: { results: WfEvalResultDTO[] }) {
+export function MatrixSummary({
+  results,
+  onHoverCell,
+}: {
+  results: WfEvalResultDTO[]
+  /** Report the matrix cell the pointer is over (its rows highlight below). */
+  onHoverCell?: (key: string | null) => void
+}) {
   const models = useModels()
   const isMatrix = results.some((r) => r.modelId != null || r.promptLabel != null)
   if (!isMatrix) return null
@@ -47,11 +50,16 @@ export function MatrixSummary({ results }: { results: WfEvalResultDTO[] }) {
     const costs = rs
       .map((r) => r.runStats?.costUsd)
       .filter((v): v is number => v != null)
-    const tokens = rs
-      .map((r) => r.runStats?.totalTokens)
+    // Measured throughput per result: tokens ÷ wall-clock seconds. Averaged
+    // across the cell's runs — the live number the model actually delivered.
+    const speeds = rs
+      .map((r) => {
+        const t = r.runStats?.totalTokens
+        const d = r.runStats?.durationMs
+        return t != null && d != null && d > 0 ? t / (d / 1000) : null
+      })
       .filter((v): v is number => v != null)
-    const model = rs[0]?.modelId ? modelById.get(rs[0].modelId) : undefined
-    const avgTokens = mean(tokens)
+    const avgSpeed = mean(speeds)
     return {
       modelId: rs[0]?.modelId ?? null,
       promptLabel: rs[0]?.promptLabel ?? null,
@@ -59,8 +67,7 @@ export function MatrixSummary({ results }: { results: WfEvalResultDTO[] }) {
       passed: rs.filter((r) => r.status === 'pass').length,
       meanScore: mean(scores),
       avgCostUsd: mean(costs),
-      avgTokens: avgTokens != null ? Math.round(avgTokens) : null,
-      tokensPerSec: model?.tokensPerSec ?? null,
+      tokensPerSec: avgSpeed != null ? Math.round(avgSpeed) : null,
     }
   })
 
@@ -91,58 +98,91 @@ export function MatrixSummary({ results }: { results: WfEvalResultDTO[] }) {
 
   const modelLabel = (id: string | null) =>
     id ? (modelById.get(id)?.label ?? id) : 'Saved model'
-  const winCls = 'font-semibold text-emerald-700'
+  const promptLabel = (label: string | null) => label ?? 'Saved prompt'
+
+  const byKey = new Map(cells.map((c) => [cellKey(c.modelId, c.promptLabel), c]))
+
+  // The "best of" cards: one per winning column, each pointing at the cell that
+  // won it.
+  const highlights: {
+    key: string | null
+    label: string
+    value: string
+    Icon: typeof Target
+    tone: string
+  }[] = [
+    {
+      key: bestAcc,
+      label: 'Most accurate',
+      value:
+        bestAcc && byKey.get(bestAcc)
+          ? `${byKey.get(bestAcc)!.passed}/${byKey.get(bestAcc)!.total} passed`
+          : '—',
+      Icon: Target,
+      tone: 'text-emerald-600',
+    },
+    {
+      key: cheapest,
+      label: 'Cheapest',
+      value:
+        cheapest && byKey.get(cheapest)
+          ? `${formatUsd(byKey.get(cheapest)!.avgCostUsd)} / run`
+          : '—',
+      Icon: Wallet,
+      tone: 'text-sky-600',
+    },
+    {
+      key: fastest,
+      label: 'Fastest',
+      value:
+        fastest && byKey.get(fastest)?.tokensPerSec != null
+          ? `${byKey.get(fastest)!.tokensPerSec} tok/s`
+          : '—',
+      Icon: Gauge,
+      tone: 'text-violet-600',
+    },
+  ]
 
   return (
-    <Section
-      title="Matrix summary"
-      subtitle={`${cells.length} cell${cells.length === 1 ? '' : 's'} · best per column highlighted`}
-    >
-      <div className="overflow-x-auto px-4 py-3">
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-neutral-200 text-left text-[11px] uppercase tracking-wide text-neutral-400">
-              <th className="py-1.5 pr-3 font-medium">Model</th>
-              <th className="py-1.5 pr-3 font-medium">Prompt</th>
-              <th className="py-1.5 pr-3 font-medium">Accuracy</th>
-              <th className="py-1.5 pr-3 font-medium">Score</th>
-              <th className="py-1.5 pr-3 text-right font-medium">Cost / run</th>
-              <th className="py-1.5 pr-3 text-right font-medium">Tokens</th>
-              <th className="py-1.5 text-right font-medium">Speed</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-neutral-100">
-            {cells.map((c) => {
-              const key = cellKey(c.modelId, c.promptLabel)
-              return (
-                <tr key={key} className="text-neutral-700">
-                  <td className="py-1.5 pr-3 font-medium text-neutral-800">
-                    {modelLabel(c.modelId)}
-                  </td>
-                  <td className="py-1.5 pr-3 text-neutral-500">
-                    {c.promptLabel ?? 'Saved prompt'}
-                  </td>
-                  <td className={cn('py-1.5 pr-3 tabular-nums', bestAcc === key && winCls)}>
-                    <PassRate passed={c.passed} total={c.total} />
-                  </td>
-                  <td className={cn('py-1.5 pr-3 tabular-nums', bestAcc === key && winCls)}>
-                    <Score value={c.meanScore} />
-                  </td>
-                  <td className={cn('py-1.5 pr-3 text-right tabular-nums', cheapest === key && winCls)}>
-                    {formatUsd(c.avgCostUsd)}
-                  </td>
-                  <td className="py-1.5 pr-3 text-right tabular-nums text-neutral-500">
-                    {c.avgTokens != null ? formatTokens(c.avgTokens) : '—'}
-                  </td>
-                  <td className={cn('py-1.5 text-right tabular-nums', fastest === key && winCls)}>
-                    {c.tokensPerSec != null ? `${c.tokensPerSec} tok/s` : '—'}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-    </Section>
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {highlights.map((h) => {
+        const cell = h.key ? byKey.get(h.key) : undefined
+        return (
+          <div
+            key={h.label}
+            onMouseEnter={() => cell && onHoverCell?.(h.key)}
+            onMouseLeave={() => onHoverCell?.(null)}
+            className={cn(
+              'rounded-lg border p-3 transition',
+              cell
+                ? 'border-neutral-200 bg-neutral-50/60 hover:border-emerald-300 hover:bg-emerald-50/50'
+                : 'border-dashed border-neutral-200 bg-white',
+            )}
+          >
+            <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+              <h.Icon className={cn('size-3.5', h.tone)} />
+              {h.label}
+            </div>
+            {cell ? (
+              <>
+                <div className="mt-1.5 truncate text-sm font-semibold text-neutral-900">
+                  {modelLabel(cell.modelId)}
+                </div>
+                <div className="truncate text-xs text-neutral-500">
+                  {promptLabel(cell.promptLabel)}
+                </div>
+                <div className={cn('mt-1 text-sm font-semibold tabular-nums', h.tone)}>
+                  {h.value}
+                </div>
+              </>
+            ) : (
+              <div className="mt-1.5 text-sm text-neutral-400">
+                Not enough data
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
   )
 }

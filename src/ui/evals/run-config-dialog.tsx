@@ -1,10 +1,8 @@
 import {
   ArrowLeft,
   ArrowRight,
-  Check,
   ChevronDown,
   ChevronRight,
-  Minus,
   Play,
   Plus,
   ShieldCheck,
@@ -13,8 +11,6 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import type { ModelOption } from '../../engine/config'
-import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { groupModelsByProvider } from '../editor/model-grouping'
 import { PromptBodyEditor } from '../editor/prompt-body-editor'
@@ -22,7 +18,8 @@ import { useAgents, useEvalSets, useModels, useProviders, useRunEval } from '../
 import { Modal } from '../modal'
 import { useWfNav } from '../nav'
 import { IdeaSpark } from '../idea-spark'
-import { BrandMark, inferModelBrand } from './shared'
+import { ConfirmStep } from './run-config-dialog-confirm'
+import { ModelMatrixRow } from './run-config-dialog-model-row'
 
 // The "Run" confirm, shared by the catalog / Goal / Sample / Test Run buttons.
 // A run always executes in SIMULATION (write tools no-op, read tools return the
@@ -466,233 +463,5 @@ export function RunConfigDialog({
         )}
 
     </Modal>
-  )
-}
-
-// The confirmation screen: the model × prompt matrix laid out as a grid, the
-// total test count, and a (blurred, not-yet-real) cost estimate. This is the
-// deliberate "here's what you're about to spend" gate before launch.
-function ConfirmStep({
-  selectedModels,
-  counts,
-  promptCount,
-  totalTests,
-  matrixBlocked,
-  runError,
-}: {
-  selectedModels: ModelOption[]
-  counts: Record<string, number>
-  promptCount: number
-  totalTests: number
-  matrixBlocked: boolean
-  runError: boolean
-}) {
-  // Row per prompt variation: the baseline plus each extra prompt.
-  const promptRows = [
-    'Agent’s saved prompt',
-    ...Array.from({ length: promptCount }, (_, i) => `Test prompt ${i + 1}`),
-  ]
-
-  return (
-    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
-      <div className="grid grid-cols-2 gap-3">
-        <Stat label="Models" value={String(selectedModels.length)} />
-        <Stat label="Prompts" value={String(promptRows.length)} />
-      </div>
-
-      <div>
-        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-          Test matrix
-        </h3>
-        <div className="overflow-x-auto rounded-lg border border-neutral-200">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="bg-neutral-50">
-                <th className="px-3 py-2 text-left text-xs font-medium text-neutral-400" />
-                {selectedModels.map((m) => (
-                  <th
-                    key={m.id}
-                    className="px-3 py-2 text-center text-xs font-medium text-neutral-600"
-                  >
-                    <div className="flex items-center justify-center gap-1">
-                      <BrandMark
-                        brand={inferModelBrand(`${m.id} ${m.label}`)}
-                        fallback={m.label}
-                      />
-                      <span className="max-w-[6rem] truncate">{m.label}</span>
-                    </div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {promptRows.map((label) => (
-                <tr
-                  key={label}
-                  className="border-t border-neutral-100"
-                >
-                  <td className="px-3 py-2 text-xs text-neutral-500">{label}</td>
-                  {selectedModels.map((m) => (
-                    <td
-                      key={m.id}
-                      className="px-3 py-2 text-center tabular-nums text-neutral-800"
-                    >
-                      {counts[m.id] ?? 0}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="mt-1.5 text-xs text-neutral-400">
-          {selectedModels.length} model
-          {selectedModels.length === 1 ? '' : 's'} × {promptRows.length} prompt
-          {promptRows.length === 1 ? '' : 's'} ={' '}
-          <span className="font-medium text-neutral-600">
-            {totalTests} test{totalTests === 1 ? '' : 's'}
-          </span>{' '}
-          per sample
-        </p>
-      </div>
-
-      {/* Estimated cost — no pricing data yet, so blur it out as a placeholder. */}
-      <div className="flex items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-            Estimated cost
-          </div>
-          <div className="text-[11px] text-neutral-400">
-            Pricing estimate coming soon.
-          </div>
-        </div>
-        <span
-          aria-hidden
-          className="select-none text-xl font-semibold text-neutral-800 blur-sm"
-        >
-          $12.34
-        </span>
-      </div>
-
-      {matrixBlocked ? (
-        <p className="text-xs text-amber-600">
-          Running a full matrix (multiple models, higher run counts, or extra
-          prompts) isn&apos;t supported by the engine yet — select a single
-          model with one run and no extra prompts to launch. Matrix runs are
-          coming.
-        </p>
-      ) : null}
-      {runError ? (
-        <p className="text-xs text-red-600">
-          Couldn&apos;t launch the run. Check that eval runs are configured for
-          this host, then try again.
-        </p>
-      ) : null}
-    </div>
-  )
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-neutral-200 px-4 py-3">
-      <div className="text-xs font-medium uppercase tracking-wide text-neutral-400">
-        {label}
-      </div>
-      <div className="mt-0.5 text-lg font-semibold tabular-nums text-neutral-900">
-        {value}
-      </div>
-    </div>
-  )
-}
-
-function ModelMatrixRow({
-  model,
-  count,
-  onChange,
-}: {
-  model: ModelOption
-  count: number
-  onChange: (next: number) => void
-}) {
-  const brand = inferModelBrand(`${model.id} ${model.label}`)
-  const selected = count > 0
-  return (
-    <div
-      className={cn(
-        'flex items-center gap-2 px-3 py-1.5 text-sm transition',
-        selected ? 'bg-neutral-50/80' : 'hover:bg-neutral-50',
-      )}
-    >
-      {/* Checkbox — mirrors the count (0 = unchecked); toggles 0↔1. */}
-      <button
-        type="button"
-        role="checkbox"
-        aria-checked={selected}
-        aria-label={`Run ${model.label}`}
-        onClick={() => onChange(selected ? 0 : 1)}
-        className={cn(
-          'flex size-5 shrink-0 items-center justify-center rounded border transition',
-          selected
-            ? 'border-neutral-900 bg-neutral-900 text-white'
-            : 'border-neutral-300 hover:border-neutral-500',
-        )}
-      >
-        {selected ? <Check className="size-3.5" /> : null}
-      </button>
-
-      {/* icon + name */}
-      <BrandMark brand={brand} fallback={model.label} />
-      <span className="min-w-0 flex-1 truncate font-medium text-neutral-800">
-        {model.label}
-      </span>
-
-      {/* cost */}
-      <span className="w-16 shrink-0 text-right text-xs tabular-nums text-neutral-400">
-        {model.costPerMTok != null ? (
-          <>
-            ${model.costPerMTok.toFixed(2)}
-            <span className="text-neutral-300">/M</span>
-          </>
-        ) : (
-          <span className="text-neutral-300">—</span>
-        )}
-      </span>
-
-      {/* speed */}
-      <span className="w-16 shrink-0 text-right text-xs tabular-nums text-neutral-400">
-        {model.tokensPerSec != null ? (
-          <>
-            {model.tokensPerSec}
-            <span className="text-neutral-300"> tok/s</span>
-          </>
-        ) : (
-          <span className="text-neutral-300">—</span>
-        )}
-      </span>
-
-      {/* -/+ stepper (default 0) */}
-      <div className="flex shrink-0 items-center gap-0.5">
-        <button
-          type="button"
-          aria-label="One fewer run"
-          disabled={count === 0}
-          onClick={() => onChange(count - 1)}
-          className="flex size-5 items-center justify-center rounded text-neutral-500 transition hover:bg-neutral-200 hover:text-neutral-800 disabled:opacity-30 disabled:hover:bg-transparent"
-        >
-          <Minus className="size-3" />
-        </button>
-        <span className="min-w-4 text-center text-xs font-medium tabular-nums text-neutral-800">
-          {count}
-        </span>
-        <button
-          type="button"
-          aria-label="One more run"
-          onClick={() => onChange(count + 1)}
-          className="flex size-5 items-center justify-center rounded text-neutral-500 transition hover:bg-neutral-200 hover:text-neutral-800"
-        >
-          <Plus className="size-3" />
-        </button>
-      </div>
-    </div>
   )
 }
