@@ -60,7 +60,7 @@
     "react-dom": "^19"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260721.1",
+    "@cloudflare/workers-types": "^5.20260722.1",
     "@dexaai/config": "^0.0.10",
     "@ocavue/eslint-config": "^4.12.1",
     "@types/node": "^26.1.1",
