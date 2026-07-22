@@ -13,7 +13,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import type { JsonSchema } from '../../engine'
-import type { EvalCheck, WfEvalTargetKind } from '../../server/protocol'
+import {
+  BINARY_CHECK_TYPES,
+  type EvalCheck,
+  type WfEvalTargetKind,
+} from '../../server/protocol'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { ModelSelect } from '../editor/model-select'
@@ -29,13 +33,9 @@ import { PickerCards, StepFlow, type Step } from './step-flow'
 
 export type TestFamily = 'binary' | 'scored'
 
-const BINARY_TYPES = [
-  'tool_called',
-  'tool_args_match',
-  'node_visited',
-  'node_input_match',
-  'output_match',
-] as const
+// The deterministic (non-judge) check type ids, derived from the check schema in
+// `checks.ts` so a new binary check kind surfaces in this picker automatically.
+const BINARY_TYPES = BINARY_CHECK_TYPES
 type BinaryType = (typeof BINARY_TYPES)[number]
 
 // Human-readable label, blurb, and icon for each binary assertion — drives the

@@ -18,14 +18,14 @@ export type SwitchNodeResult = {
   reasoning: string
 }
 
-export type ExecuteSwitchNodeDeps = {
+export type ExecuteSwitchNodeArgs = {
   node: SwitchNode
   /** The prior node's output — the value the cases are matched against. */
   input: unknown
 }
 
 export function executeSwitchNode(
-  deps: ExecuteSwitchNodeDeps,
+  deps: ExecuteSwitchNodeArgs,
 ): SwitchNodeResult {
   const { node, input } = deps
   const { path, cases } = node.config

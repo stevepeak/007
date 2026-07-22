@@ -6,6 +6,7 @@ import {
   getWorkflow,
   listVersions,
   listWorkflows,
+  parseStoredGraph,
   saveVersion,
   setVersionAiSummary,
   updateDraft,
@@ -19,6 +20,7 @@ import type {
 import { summarizeWorkflowChanges } from '../summarize-changes'
 
 import {
+  NotFoundError,
   parseGraph,
   requireExists,
   str,
@@ -153,13 +155,13 @@ export function buildWorkflowHandlers<TDeps>(
       const detail: WfWorkflowDetail = {
         workflow: workflowSummary(result.workflow),
         draft: result.draft
-          ? { graph: result.draft.graph as WorkflowGraph }
+          ? { graph: parseStoredGraph(result.draft.graph) }
           : null,
         currentVersion: result.currentVersion
           ? {
               id: result.currentVersion.id,
               versionNumber: result.currentVersion.versionNumber,
-              graph: result.currentVersion.graph as WorkflowGraph,
+              graph: parseStoredGraph(result.currentVersion.graph),
             }
           : null,
       }
@@ -198,10 +200,11 @@ export function buildWorkflowHandlers<TDeps>(
       // pointer.
       const owner = await getWorkflow(c.db, workflowId)
       if (!owner) {
-        throw new Error('Workflow not found')
+        throw new NotFoundError('Workflow not found')
       }
-      const previousGraph =
-        (owner.currentVersion?.graph as WorkflowGraph) ?? null
+      const previousGraph = owner.currentVersion
+        ? parseStoredGraph(owner.currentVersion.graph)
+        : null
       const out = await saveVersion(c.db, {
         workflowId,
         graph,
@@ -247,10 +250,11 @@ export function buildWorkflowHandlers<TDeps>(
       const nextGraph = parseGraph(c.params)
       const owner = await getWorkflow(c.db, workflowId)
       if (!owner) {
-        throw new Error('Workflow not found')
+        throw new NotFoundError('Workflow not found')
       }
-      const previousGraph =
-        (owner.currentVersion?.graph as WorkflowGraph) ?? null
+      const previousGraph = owner.currentVersion
+        ? parseStoredGraph(owner.currentVersion.graph)
+        : null
       return await computeChangeSummary(opts, {
         previousGraph,
         nextGraph,
@@ -306,7 +310,7 @@ export function buildWorkflowHandlers<TDeps>(
         return null
       }
       return {
-        graph: v.graph as WorkflowGraph,
+        graph: v.graph,
         versionNumber: v.versionNumber,
       }
     },

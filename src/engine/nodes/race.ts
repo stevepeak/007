@@ -4,7 +4,7 @@ export type RaceNodeResult = {
   output: unknown
 }
 
-export type ExecuteRaceNodeDeps = {
+export type ExecuteRaceNodeArgs = {
   node: RaceNode
   input: unknown
 }
@@ -15,6 +15,6 @@ export type ExecuteRaceNodeDeps = {
 // single value, first-alive in declaration order). By the time execution reaches
 // here the winner is decided, so the node is a pure pass-through — it forwards
 // that value on unchanged, exactly like the Output bookend but non-terminal.
-export function executeRaceNode(deps: ExecuteRaceNodeDeps): Promise<RaceNodeResult> {
+export function executeRaceNode(deps: ExecuteRaceNodeArgs): Promise<RaceNodeResult> {
   return Promise.resolve({ output: deps.input })
 }

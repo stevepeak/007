@@ -65,7 +65,7 @@ function RunHeader({ run }: { run: NonNullable<ReturnType<typeof useEvalRun>['da
     <div className="rounded-lg border border-neutral-200 bg-white p-4">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-base font-semibold text-neutral-900">Eval run</h1>
-        <RunStatusBadge status={run.status} />
+        <VerdictBadge status={run.status} />
         {running && (
           <span className="text-xs text-neutral-400">updating live…</span>
         )}
@@ -181,7 +181,7 @@ function ResultCard({
     <div className="rounded-lg border border-neutral-200 bg-white">
       <div className="flex items-center justify-between gap-3 border-b border-neutral-100 px-3 py-2">
         <div className="flex items-center gap-2">
-          <RunStatusBadge status={result.status} />
+          <VerdictBadge status={result.status} />
           <span className="text-sm font-medium text-neutral-800">{name}</span>
         </div>
         <div className="flex items-center gap-3">
@@ -239,7 +239,7 @@ function CheckRow({
   )
 }
 
-function RunStatusBadge({ status }: { status: string }) {
+function VerdictBadge({ status }: { status: string }) {
   const tone =
     status === 'pass' || status === 'completed'
       ? 'bg-emerald-50 text-emerald-700'

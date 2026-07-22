@@ -91,12 +91,14 @@ export function createTavilyTool<TDeps>(
           'Search the public web for current information. Returns ranked results with extracted page content and a synthesized answer. Use for facts that may be recent or outside the client’s own documents; cite the result URLs.',
         inputSchema: TAVILY_INPUT_SCHEMA,
         execute: async (
-          args,
+          rawArgs,
         ): Promise<{ answer: string | null; results: TavilyResult[] }> => {
-          const { query, maxResults } = args as {
-            query: string
-            maxResults: number
-          }
+          // The AI SDK types `execute`'s arg loosely; recover the real shape from
+          // the same schema declared as `inputSchema` (no hand-written duplicate).
+          const { query, maxResults } = rawArgs as z.infer<
+            typeof TAVILY_INPUT_SCHEMA
+          >
+
           if (!apiKey) {
             throw new Error(
               'Tavily search is not configured — set the Tavily API key.',

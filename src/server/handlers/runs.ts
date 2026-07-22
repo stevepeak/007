@@ -1,4 +1,3 @@
-import type { WorkflowGraph } from '../../engine/graph'
 import {
   getLatestVersionId,
   getRun,
@@ -14,6 +13,7 @@ import type {
 } from '../protocol'
 
 import {
+  NotFoundError,
   requireHook,
   str,
   toEpoch,
@@ -146,7 +146,7 @@ export function buildRunHandlers<TDeps>(
         },
         steps,
         logs,
-        graph: (result.graph as WorkflowGraph | null) ?? null,
+        graph: result.graph,
         versionNumber: result.versionNumber,
       }
       return detail
@@ -162,7 +162,7 @@ export function buildRunHandlers<TDeps>(
         (c.params as { mode?: string }).mode === 'resume' ? 'resume' : 'restart'
       const result = await getRun(c.db, runId)
       if (!result) {
-        throw new Error('Run not found.')
+        throw new NotFoundError('Run not found.')
       }
       // Reconstruct the trigger input from the recorded trigger step — the
       // run row doesn't persist it. The trigger "executes" instantly with

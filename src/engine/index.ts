@@ -24,7 +24,6 @@ export {
   BRANCH_OPERATORS,
   DECISION_NODE_KINDS,
   isDecisionKind,
-  isBinaryDecisionKind,
   SWITCH_DEFAULT_CASE,
   type SwitchNode,
   type FeatureRequestNode,
@@ -159,7 +158,11 @@ export {
   type BranchNodeResult,
 } from './nodes/branch'
 export { executeSwitchNode, type SwitchNodeResult } from './nodes/switch'
-export { executeToolNode, type ToolNodeResult } from './nodes/tool'
+export {
+  executeToolNode,
+  type ToolNodeMeta,
+  type ToolNodeResult,
+} from './nodes/tool'
 export {
   executeFeatureRequestNode,
   type FeatureRequestNodeResult,

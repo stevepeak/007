@@ -24,7 +24,7 @@ import {
   wfWorkflowVersion,
 } from '../schema'
 
-import { latestVersion } from './authoring'
+import { latestVersion, parseStoredGraph } from './authoring'
 import { clampLimit } from './shared'
 
 // Data-access for runs: run rows + steps, the structured run-log feed, the
@@ -483,7 +483,7 @@ export async function getRun(db: WfDb, runId: string) {
     run,
     steps,
     logs,
-    graph: version?.graph ?? null,
+    graph: version?.graph != null ? parseStoredGraph(version.graph) : null,
     versionNumber: version?.versionNumber ?? null,
     workflowId: workflow?.id ?? null,
     workflowName: workflow?.name ?? null,

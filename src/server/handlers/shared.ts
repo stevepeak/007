@@ -8,7 +8,7 @@ import {
   type WorkflowGraph,
 } from '../../engine/graph'
 import type { WfDb } from '../../storage/client'
-import { getAgent, getWorkflow } from '../../storage/data'
+import { agentExists, workflowExists } from '../../storage/data'
 import type {
   AgentPreviewResult,
   JsonSchema,
@@ -234,6 +234,11 @@ export function parseGraph(params: unknown): WorkflowGraph {
 // server fault so the dispatcher can answer 400 rather than 500.
 export class BadRequestError extends Error {}
 
+// A referenced entity doesn't exist — the dispatcher answers 404 (not a logged
+// 500 fault). Distinct from `BadRequestError` so "you asked for something gone"
+// reads differently from "your params were malformed."
+export class NotFoundError extends Error {}
+
 export function str(params: unknown, key: string): string {
   const v = (params as Record<string, unknown>)[key]
   if (typeof v !== 'string' || !v) {
@@ -298,14 +303,15 @@ export function requireHook<T>(hook: T | undefined, message: string): T {
   return hook
 }
 
-// Guard a mutation against a missing target before writing.
+// Guard a mutation against a missing target before writing. Uses the cheap
+// existence check (indexed `SELECT id`) rather than a full entity load, and
+// throws `NotFoundError` so the caller sees a 404, not a 500.
 export async function requireExists(
   db: WfDb,
   workflowId: string,
 ): Promise<void> {
-  const result = await getWorkflow(db, workflowId)
-  if (!result) {
-    throw new Error('Workflow not found')
+  if (!(await workflowExists(db, workflowId))) {
+    throw new NotFoundError('Workflow not found')
   }
 }
 
@@ -313,8 +319,7 @@ export async function requireAgentExists(
   db: WfDb,
   agentId: string,
 ): Promise<void> {
-  const result = await getAgent(db, agentId)
-  if (!result) {
-    throw new Error('Agent not found')
+  if (!(await agentExists(db, agentId))) {
+    throw new NotFoundError('Agent not found')
   }
 }

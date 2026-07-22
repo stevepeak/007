@@ -33,6 +33,7 @@ import type {
 } from '../protocol'
 
 import {
+  NotFoundError,
   requireHook,
   str,
   toEpoch,
@@ -296,11 +297,11 @@ export function buildEvalHandlers<TDeps>(
       const rowId = str(c.params, 'rowId')
       const run = await getEvalRun(c.db, evalRunId)
       if (!run) {
-        throw new Error('Eval run not found.')
+        throw new NotFoundError('Eval run not found.')
       }
       const found = await getEvalRow(c.db, rowId)
       if (!found) {
-        throw new Error('Eval sample not found.')
+        throw new NotFoundError('Eval sample not found.')
       }
       const { row, set } = found
       // Resolve the target to a concrete version (agent → hidden wrapper) and
@@ -340,11 +341,11 @@ export function buildEvalHandlers<TDeps>(
       const wfRunId = str(c.params, 'wfRunId')
       const found = await getEvalRow(c.db, rowId)
       if (!found) {
-        throw new Error('Eval sample not found.')
+        throw new NotFoundError('Eval sample not found.')
       }
       const runResult = await getRun(c.db, wfRunId)
       if (!runResult) {
-        throw new Error('Run not found.')
+        throw new NotFoundError('Run not found.')
       }
       const steps = toGradeSteps(runResult.steps)
       const env = await c.env()
@@ -397,7 +398,7 @@ export function buildEvalHandlers<TDeps>(
       const evalRunId = str(c.params, 'evalRunId')
       const found = await getEvalRun(c.db, evalRunId)
       if (!found) {
-        throw new Error('Eval run not found.')
+        throw new NotFoundError('Eval run not found.')
       }
       const summary = rollup(
         found.results.map((r) => ({ status: r.status, score: r.score })),

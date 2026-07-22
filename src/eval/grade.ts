@@ -2,6 +2,7 @@ import { generateObject, type LanguageModel } from 'ai'
 import { z } from 'zod'
 
 import type { AgentNodeMeta } from '../engine/nodes/agent'
+import type { ToolNodeMeta } from '../engine/nodes/tool'
 
 import type { CheckResult, CheckTree, EvalCheck, EvalMatch } from './checks'
 
@@ -59,7 +60,7 @@ function collectToolCalls(steps: GradeStep[]): ToolInvocation[] {
   const calls: ToolInvocation[] = []
   for (const s of steps) {
     if (s.nodeKind === 'tool') {
-      const m = s.meta as { toolId?: string; args?: unknown } | undefined
+      const m = s.meta as Partial<ToolNodeMeta> | undefined
       if (m?.toolId) calls.push({ toolId: m.toolId, args: m.args, output: s.output })
     } else if (s.nodeKind === 'agent') {
       const m = s.meta as AgentNodeMeta | undefined

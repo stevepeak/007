@@ -86,6 +86,8 @@ export {
   updateWorkflow,
   upsertEvalRow,
   upsertModels,
+  agentExists,
+  workflowExists,
   type EvalResultStatus,
   type EvalRowRecord,
   type EvalTargetKind,

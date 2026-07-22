@@ -6,7 +6,7 @@ export type AggregateNodeResult = {
   meta: { count: number }
 }
 
-export type ExecuteAggregateNodeDeps = {
+export type ExecuteAggregateNodeArgs = {
   node: AggregateNode
   input: unknown
 }
@@ -21,7 +21,7 @@ export type ExecuteAggregateNodeDeps = {
 // case (the scheduler never schedules a node with no live edges, but keeping the
 // contract total means downstream `list` consumers never see a non-array).
 export function executeAggregateNode(
-  deps: ExecuteAggregateNodeDeps,
+  deps: ExecuteAggregateNodeArgs,
 ): Promise<AggregateNodeResult> {
   const list = Array.isArray(deps.input) ? deps.input : []
   return Promise.resolve({ output: list, meta: { count: list.length } })

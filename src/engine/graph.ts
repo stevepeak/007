@@ -464,7 +464,7 @@ export type WfNodeKind = (typeof WF_NODE_KINDS)[number]
 // validation treat both uniformly for routing.
 export const DECISION_NODE_KINDS = ['branch', 'switch'] as const
 export function isDecisionKind(kind: string): boolean {
-  return kind === 'branch' || kind === 'switch'
+  return (DECISION_NODE_KINDS as readonly string[]).includes(kind)
 }
 
 // Engine-managed bookend kinds — never an executable instruction. Trigger and
@@ -481,13 +481,6 @@ export function isBookendKind<T extends { kind: string }>(
   return (
     node.kind === 'trigger' || node.kind === 'output' || node.kind === 'note'
   )
-}
-
-// The binary decision kinds specifically — those whose only valid outgoing
-// conditions are exactly 'yes' and 'no' (Switch is multi-way, so it is
-// excluded and validated separately).
-export function isBinaryDecisionKind(kind: string): boolean {
-  return kind === 'branch'
 }
 
 // Edges connect node outputs to node inputs. `condition` is only meaningful
@@ -852,7 +845,7 @@ export function buildIterationSubgraph(): WorkflowGraph {
 
 // `${token}` interpolation contract, shared by prompt variable inference and the
 // agent node's runtime substitution. A variable name is `\w+`.
-const PROMPT_VARIABLE_RE = /\$\{(\w+)\}/g
+export const PROMPT_VARIABLE_RE = /\$\{(\w+)\}/g
 
 /** Distinct `${token}` variable names referenced in a prompt body, in order. */
 export function inferPromptVariables(body: string): string[] {
@@ -861,6 +854,21 @@ export function inferPromptVariables(body: string): string[] {
     seen.add(m[1])
   }
   return [...seen]
+}
+
+/**
+ * Substitute `${token}` variables in a prompt body against `vars`. Unknown
+ * tokens are left intact so the author sees them at runtime rather than
+ * silently producing empty strings. Shares `PROMPT_VARIABLE_RE` with
+ * `inferPromptVariables` so inference and substitution can never drift.
+ */
+export function substitutePromptVariables(
+  body: string,
+  vars: Record<string, string | undefined>,
+): string {
+  return body.replaceAll(PROMPT_VARIABLE_RE, (match, key: string) => {
+    return vars[key] ?? match
+  })
 }
 
 // Frozen-at-run-start resolution of every floating reference in a workflow to

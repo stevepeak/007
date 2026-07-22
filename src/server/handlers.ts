@@ -9,6 +9,7 @@ import { buildRunHandlers } from './handlers/runs'
 import {
   BadRequestError,
   json,
+  NotFoundError,
   type CreateWfSdkHandlersOptions,
   type HandlerFn,
   type WfHandlers,
@@ -152,6 +153,10 @@ export function createWfSdkHandlers<TDeps>(
       // 400, not a server fault — don't log it as a 500.
       if (err instanceof BadRequestError || err instanceof z.ZodError) {
         return json({ error: errorMessage(err) }, 400)
+      }
+      // A referenced entity is gone — a 404, not a server fault to log.
+      if (err instanceof NotFoundError) {
+        return json({ error: errorMessage(err) }, 404)
       }
       // Surface the failure in the server log — otherwise a 500 from any
       // handler is invisible (the client only sees a generic error string).

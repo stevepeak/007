@@ -6,15 +6,18 @@ import {
   type ToolRegistryEntry,
 } from '../tool-registry'
 
-export type ToolNodeResult = {
-  output: unknown
-  meta: {
-    toolId: string
-    args: Record<string, unknown>
-  }
+/** The step `meta` a Tool node records — the invoked tool id and bound args. */
+export type ToolNodeMeta = {
+  toolId: string
+  args: Record<string, unknown>
 }
 
-export type ExecuteToolNodeDeps<TDeps> = {
+export type ToolNodeResult = {
+  output: unknown
+  meta: ToolNodeMeta
+}
+
+export type ExecuteToolNodeArgs<TDeps> = {
   node: ToolNode
   /** Per-node output cache. Keys are node ids, values are the node's `output`. */
   nodeOutputs: Map<string, unknown>
@@ -33,7 +36,7 @@ export type ExecuteToolNodeDeps<TDeps> = {
 }
 
 export async function executeToolNode<TDeps>(
-  deps: ExecuteToolNodeDeps<TDeps>,
+  deps: ExecuteToolNodeArgs<TDeps>,
 ): Promise<ToolNodeResult> {
   const { node, nodeOutputs, toolRegistry, toolDeps, rehydrate } = deps
   const entry: ToolRegistryEntry<TDeps> | undefined = toolRegistry.get(

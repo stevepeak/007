@@ -85,6 +85,26 @@ export const evalCheckSchema = z.discriminatedUnion('type', [
 ])
 export type EvalCheck = z.infer<typeof evalCheckSchema>
 
+/** A check `type` discriminator id. */
+export type EvalCheckType = EvalCheck['type']
+
+/**
+ * Every check `type` id, derived from the discriminated union in declaration
+ * order — the single source the UI pickers derive from so a new check kind can't
+ * be forgotten in the editor.
+ */
+export const EVAL_CHECK_TYPES: EvalCheckType[] = evalCheckSchema.options.map(
+  (o) => o.shape.type.value,
+)
+
+/**
+ * The deterministic (non-judge) check type ids — graded straight off the run
+ * trace. Everything except `llm_judge`.
+ */
+export const BINARY_CHECK_TYPES = EVAL_CHECK_TYPES.filter(
+  (t): t is Exclude<EvalCheckType, 'llm_judge'> => t !== 'llm_judge',
+)
+
 /** The AND/OR reducer over a row's checks. */
 export const checkTreeSchema = z.object({
   op: z.enum(['and', 'or']),

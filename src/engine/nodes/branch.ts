@@ -11,7 +11,7 @@ export type BranchNodeResult = {
   reasoning: string
 }
 
-export type ExecuteBranchNodeDeps = {
+export type ExecuteBranchNodeArgs = {
   node: BranchNode
   /** The prior node's output — tested when the node has no `source` ref. */
   input: unknown
@@ -118,7 +118,7 @@ function evaluate(
 }
 
 export function executeBranchNode(
-  deps: ExecuteBranchNodeDeps,
+  deps: ExecuteBranchNodeArgs,
 ): BranchNodeResult {
   const { node, input, nodeOutputs } = deps
   const { source, operator, value } = node.config

@@ -17,6 +17,7 @@ import {
   agentFromManifest,
   type AgentConfig,
   type AgentNode,
+  substitutePromptVariables,
   type WfRunManifestEntry,
 } from '../graph'
 import type { StreamSink } from '../stream-sink'
@@ -77,18 +78,6 @@ function coerceToMessages(input: unknown): UIMessage[] {
       parts: [{ type: 'text', text }],
     } satisfies UIMessage,
   ]
-}
-
-// Variable substitution for the system prompt. Unknown `${...}` patterns are
-// left intact so the prompt author sees them at runtime rather than silently
-// producing empty strings.
-function substituteVariables(
-  template: string,
-  vars: Record<string, string | undefined>,
-): string {
-  return template.replaceAll(/\$\{(\w+)\}/g, (match, key: string) => {
-    return vars[key] ?? match
-  })
 }
 
 // Resolves the node's per-variable input bindings against the live node-output
@@ -194,7 +183,7 @@ function attachImages(
   ]
 }
 
-export type ExecuteAgentNodeDeps<TDeps> = {
+export type ExecuteAgentNodeArgs<TDeps> = {
   node: AgentNode
   input: unknown
   getModel: ModelFactory
@@ -254,7 +243,7 @@ function resolveAgentConfig(
 }
 
 export async function executeAgentNode<TDeps>(
-  deps: ExecuteAgentNodeDeps<TDeps>,
+  deps: ExecuteAgentNodeArgs<TDeps>,
 ): Promise<AgentNodeResult> {
   const {
     node,
@@ -282,7 +271,7 @@ export async function executeAgentNode<TDeps>(
     ...promptVariables,
     ...(await resolveNodeInputs(node, nodeOutputs, rehydrate)),
   }
-  const systemPrompt = substituteVariables(config.prompt, vars)
+  const systemPrompt = substitutePromptVariables(config.prompt, vars)
   // Any bound image inputs ride along as vision parts on the user turn.
   const imageParts = await resolveImageInputs(node, nodeOutputs, resolveImage)
   const messages = attachImages(coerceToMessages(input), imageParts)

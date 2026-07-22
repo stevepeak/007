@@ -2,6 +2,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm'
 
 import {
   agentConfigSchema,
+  workflowGraphShapeSchema,
   type AgentConfig,
   type WfRunManifestEntry,
   type WorkflowGraph,
@@ -148,6 +149,25 @@ export function latestVersion(db: WfDb, workflowId: string) {
 }
 
 /** The editor's load shape: the workflow, its draft (if any), latest version. */
+/**
+ * Cheap existence check — a single indexed `SELECT id LIMIT 1`, for guards that
+ * only need a boolean and would otherwise pay `getWorkflow`'s 3-query entity
+ * load (workflow + draft + latest version).
+ */
+export async function workflowExists(
+  db: WfDb,
+  workflowId: string,
+): Promise<boolean> {
+  const row = (
+    await db
+      .select({ id: wfWorkflow.id })
+      .from(wfWorkflow)
+      .where(eq(wfWorkflow.id, workflowId))
+      .limit(1)
+  )[0]
+  return row !== undefined
+}
+
 export async function getWorkflow(db: WfDb, workflowId: string) {
   const workflow = (
     await db
@@ -225,11 +245,20 @@ export async function setVersionAiSummary(
     .where(eq(wfWorkflowVersion.id, input.versionId))
 }
 
+// The single boundary where a stored graph JSON column becomes a typed
+// `WorkflowGraph`. Uses the lenient *shape* schema (the same one `saveVersion` /
+// `updateDraft` validate against) — the strict runtime gate still runs when a
+// run actually starts — so drafts-with-issues round-trip, but a structurally
+// broken column is caught here instead of silently blind-cast at each read site.
+export function parseStoredGraph(value: unknown): WorkflowGraph {
+  return workflowGraphShapeSchema.parse(value)
+}
+
 export async function getVersionGraph(
   db: WfDb,
   versionId: string,
 ): Promise<{
-  graph: unknown
+  graph: WorkflowGraph
   versionNumber: number
   workflowId: string
 } | null> {
@@ -242,7 +271,7 @@ export async function getVersionGraph(
   )[0]
   return row
     ? {
-        graph: row.graph,
+        graph: parseStoredGraph(row.graph),
         versionNumber: row.versionNumber,
         workflowId: row.workflowId,
       }
@@ -309,15 +338,25 @@ function* allNodes(
   }
 }
 
-// Distinct agent ids referenced by agent nodes in a graph (incl. subgraphs).
-function agentIdsInGraph(graph: WorkflowGraph): string[] {
+// Distinct non-empty values a per-node `pick` yields across the graph (incl.
+// iteration subgraphs) — the shared walk behind the id collectors below.
+function distinctFromNodes(
+  graph: WorkflowGraph,
+  pick: (node: WorkflowGraph['nodes'][number]) => string | undefined,
+): string[] {
   const ids = new Set<string>()
   for (const node of allNodes(graph)) {
-    if (node.kind === 'agent' && node.config.agentId) {
-      ids.add(node.config.agentId)
-    }
+    const value = pick(node)
+    if (value) ids.add(value)
   }
   return [...ids]
+}
+
+// Distinct agent ids referenced by agent nodes in a graph (incl. subgraphs).
+function agentIdsInGraph(graph: WorkflowGraph): string[] {
+  return distinctFromNodes(graph, (node) =>
+    node.kind === 'agent' ? node.config.agentId : undefined,
+  )
 }
 
 // Distinct (agentId, version-pin) pairs referenced by agent nodes (incl. those
@@ -341,13 +380,9 @@ function agentPinsInGraph(
 
 // Distinct workflow ids called by workflow nodes in a graph (incl. subgraphs).
 function workflowIdsInGraph(graph: WorkflowGraph): string[] {
-  const ids = new Set<string>()
-  for (const node of allNodes(graph)) {
-    if (node.kind === 'workflow' && node.config.workflowId) {
-      ids.add(node.config.workflowId)
-    }
-  }
-  return [...ids]
+  return distinctFromNodes(graph, (node) =>
+    node.kind === 'workflow' ? node.config.workflowId : undefined,
+  )
 }
 
 // Hard cap on nested-workflow depth. A guard against pathological chains; real
@@ -641,6 +676,18 @@ async function agentVersionByNumber(
     )
     .limit(1)
   return rows[0]
+}
+
+/** Cheap existence check (see `workflowExists`) — one indexed `SELECT id`. */
+export async function agentExists(db: WfDb, agentId: string): Promise<boolean> {
+  const row = (
+    await db
+      .select({ id: wfAgent.id })
+      .from(wfAgent)
+      .where(eq(wfAgent.id, agentId))
+      .limit(1)
+  )[0]
+  return row !== undefined
 }
 
 /** The editor's load shape: the agent, its draft (if any), latest version. */

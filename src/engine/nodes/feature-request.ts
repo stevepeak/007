@@ -7,7 +7,7 @@ export type FeatureRequestNodeResult = {
   }
 }
 
-export type ExecuteFeatureRequestNodeDeps = {
+export type ExecuteFeatureRequestNodeArgs = {
   node: FeatureRequestNode
   input: unknown
 }
@@ -18,7 +18,7 @@ export type ExecuteFeatureRequestNodeDeps = {
 // of a capability they'd like here in the future, captured so the idea isn't
 // lost. Swap this body out when the requested behavior is actually built.
 export function executeFeatureRequestNode(
-  deps: ExecuteFeatureRequestNodeDeps,
+  deps: ExecuteFeatureRequestNodeArgs,
 ): Promise<FeatureRequestNodeResult> {
   return Promise.resolve({
     output: deps.input,

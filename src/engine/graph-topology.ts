@@ -1,4 +1,4 @@
-import type { WorkflowEdge, WorkflowGraph } from './graph'
+import { DECISION_NODE_KINDS, type WorkflowEdge, type WorkflowGraph } from './graph'
 import { buildAdjacency } from './graph-adjacency'
 
 // The join/cone topology analysis shared by the strict runtime gate
@@ -6,14 +6,15 @@ import { buildAdjacency } from './graph-adjacency'
 // (`collectGraphIssues`). Both must agree on which fan-ins are illegal — a graph
 // the editor reports clean must run, and one it flags must be the one the schema
 // rejects — so the graph-walk reasoning lives here ONCE and each caller supplies
-// only its own severity/message. (Type-only import of graph.ts keeps this a leaf
-// module with no import cycle; the decision-kind test is inlined for the same
-// reason — it mirrors `isDecisionKind`.)
+// only its own severity/message. (graph.ts imports this module at runtime, so the
+// back-import of `DECISION_NODE_KINDS` forms a value cycle — safe here because the
+// const is only read inside `isDecisionNodeKind` at call time, never at module
+// init, so its binding is initialized by the time any graph is validated.)
 
-// Decision *kinds* — nodes that route via a conditional outgoing edge. Mirrors
-// `isDecisionKind` in graph.ts (kept inline to avoid a runtime import cycle).
+// Decision *kinds* — nodes that route via a conditional outgoing edge. Derived
+// from the single `DECISION_NODE_KINDS` source in graph.ts so it can't drift.
 function isDecisionNodeKind(kind: string): boolean {
-  return kind === 'branch' || kind === 'switch'
+  return (DECISION_NODE_KINDS as readonly string[]).includes(kind)
 }
 
 export type JoinTopology = {

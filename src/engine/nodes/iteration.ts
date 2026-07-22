@@ -1,6 +1,11 @@
 import { resolveBinding } from '../binding'
 import type { IterationNode, WorkflowGraph } from '../graph'
-import { runNode, type NodeRunResult, type RunNodeContext } from '../run-node'
+import {
+  errorMessage,
+  runNode,
+  type NodeRunResult,
+  type RunNodeContext,
+} from '../run-node'
 import { recordedBranchResult, type RunRecorder } from '../run-recorder'
 import { Scheduler, WorkflowStalledError } from '../scheduler'
 
@@ -42,10 +47,6 @@ export type IterationResult = {
     stopOnError: boolean
     items: IterationItemStatus[]
   }
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
 }
 
 /**
@@ -144,7 +145,7 @@ export async function executeSubgraph<TDeps>(
           nodeKind: node.kind,
           input,
           status: 'failed',
-          error: messageOf(err),
+          error: errorMessage(err),
         })
       }
       throw err
@@ -242,8 +243,8 @@ export async function runIteration(args: {
         results[index] = await runItem(arr[index], index)
         statuses[index] = { index, status: 'completed' }
       } catch (err) {
-        statuses[index] = { index, status: 'failed', error: messageOf(err) }
-        results[index] = { __iterationError: messageOf(err) }
+        statuses[index] = { index, status: 'failed', error: errorMessage(err) }
+        results[index] = { __iterationError: errorMessage(err) }
         if (stopOnError) {
           aborted = true
           if (firstError === null) firstError = err
@@ -266,7 +267,7 @@ export async function runIteration(args: {
     }
     throw firstError instanceof Error
       ? firstError
-      : new Error(messageOf(firstError))
+      : new Error(errorMessage(firstError))
   }
 
   const items = statuses.filter(

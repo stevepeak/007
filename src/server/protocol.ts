@@ -339,16 +339,33 @@ export type {
   CheckResult,
   CheckTree,
   EvalCheck,
+  EvalCheckType,
   EvalFixtures,
   EvalInitialCondition,
   EvalMatch,
   EvalRowSnapshot,
 } from '../eval/checks'
+// Runtime re-exports of the lightweight (zod-only) eval vocabulary so UI pickers
+// derive their options from the schema instead of re-hardcoding it. `checks.ts`
+// pulls in only zod, so this stays safe for the browser bundle.
+export {
+  BINARY_CHECK_TYPES,
+  EVAL_CHECK_TYPES,
+  evalMatchSchema,
+} from '../eval/checks'
+
+// Wire enums for eval targets/verdicts, derived from the DB-schema `as const`
+// arrays (their canonical home) so the wire and storage vocabularies can't
+// drift. `import type` keeps this erased — no drizzle in the UI bundle.
+import type {
+  WF_EVAL_RESULT_STATUSES,
+  WF_EVAL_TARGET_KINDS,
+} from '../storage/schema'
 
 /** What an eval set targets — an agent or a workflow, resolved float-to-latest. */
-export type WfEvalTargetKind = 'agent' | 'workflow'
+export type WfEvalTargetKind = (typeof WF_EVAL_TARGET_KINDS)[number]
 /** A row's verdict after grading its run's trace. */
-export type WfEvalResultStatus = 'pass' | 'fail' | 'error'
+export type WfEvalResultStatus = (typeof WF_EVAL_RESULT_STATUSES)[number]
 
 // A "Goal" — a named set of samples run against one target (agent/workflow).
 export type WfEvalSetSummary = {

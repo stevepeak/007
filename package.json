@@ -41,17 +41,17 @@
     "@cloudflare/puppeteer": "1.1.0",
     "@dagrejs/dagre": "^3.0.0",
     "@hookform/resolvers": "^5.4.0",
-    "@sentry/cloudflare": "^10.65.0",
+    "@sentry/cloudflare": "^10.67.0",
     "@tanstack/react-query": "^5.101.4",
-    "@tiptap/extension-placeholder": "^3.27.4",
+    "@tiptap/extension-placeholder": "^3.28.0",
     "@tiptap/pm": "^3.26.1",
-    "@tiptap/react": "^3.27.4",
-    "@tiptap/starter-kit": "^3.27.4",
+    "@tiptap/react": "^3.28.0",
+    "@tiptap/starter-kit": "^3.28.0",
     "@xyflow/react": "^12.11.2",
-    "ai": "^7.0.33",
+    "ai": "^7.0.34",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
-    "lucide-react": "^1.24.0",
+    "lucide-react": "^1.25.0",
     "react-hook-form": "^7.82.0",
     "zod": "^4.4.3"
   },
@@ -62,15 +62,15 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260721.1",
     "@dexaai/config": "^0.0.10",
-    "@ocavue/eslint-config": "^4.11.0",
+    "@ocavue/eslint-config": "^4.12.1",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.2",
     "drizzle-kit": "^0.31.8",
     "eslint": "^10.7.0",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "typescript": "^5.9.3",
-    "wrangler": "^4.111.0"
+    "wrangler": "^4.113.0"
   }
 }

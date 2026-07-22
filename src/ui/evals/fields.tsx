@@ -2,7 +2,7 @@ import { ChevronDown } from 'lucide-react'
 import { useRef, useState } from 'react'
 
 import type { JsonSchema } from '../../engine'
-import type { EvalMatch } from '../../server/protocol'
+import { evalMatchSchema, type EvalMatch } from '../../server/protocol'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { useTools } from '../hooks'
@@ -10,7 +10,7 @@ import { ToolIcon } from '../tool-icon'
 import { useCommittedField } from '../use-committed-field'
 import { useDismiss } from '../use-dismiss'
 
-const MATCH_OPTIONS: EvalMatch[] = ['equals', 'contains', 'jsonpath', 'regex']
+const MATCH_OPTIONS = evalMatchSchema.options
 
 /** Render a stored check value back into an editable string. */
 function valueToStr(v: unknown): string {
