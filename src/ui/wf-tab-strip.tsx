@@ -1,5 +1,6 @@
 import {
   Activity,
+  BrushCleaning,
   FlaskConical,
   Goal,
   Microscope,
@@ -26,28 +27,42 @@ import { HOME_TAB_ID, useWfTabs, type WfTab } from './wf-tabs'
 // resolved per tab from live query data (name/icon fill in once loaded).
 
 export function WfTabStrip() {
-  const { tabs, activeId, activateTab, closeTab } = useWfTabs()
+  const { tabs, activeId, activateTab, closeTab, closeAllTabs } = useWfTabs()
 
   return (
     // Note: no `overflow` clipping here — an overflow container would clip the
     // hover tooltips (clipping ignores z-index). Tabs wrap instead of scrolling.
-    <div className="flex flex-wrap items-stretch gap-1 border-b border-neutral-200 bg-neutral-50 px-2 py-1">
-      <TabChrome
-        icon={<VenetianMask className="size-4 text-neutral-500" />}
-        label="007"
-        trail={['007']}
-        active={activeId === HOME_TAB_ID}
-        onSelect={() => activateTab(HOME_TAB_ID)}
-      />
-      {tabs.map((tab) => (
-        <TabItem
-          key={tab.id}
-          tab={tab}
-          active={activeId === tab.id}
-          onSelect={() => activateTab(tab.id)}
-          onClose={() => closeTab(tab.id)}
+    <div className="flex items-start gap-1 border-b border-neutral-200 bg-neutral-50 px-2 py-1">
+      <div className="flex flex-1 flex-wrap items-stretch gap-1">
+        <TabChrome
+          icon={<VenetianMask className="size-4 text-neutral-500" />}
+          label="007"
+          trail={['007']}
+          active={activeId === HOME_TAB_ID}
+          onSelect={() => activateTab(HOME_TAB_ID)}
         />
-      ))}
+        {tabs.map((tab) => (
+          <TabItem
+            key={tab.id}
+            tab={tab}
+            active={activeId === tab.id}
+            onSelect={() => activateTab(tab.id)}
+            onClose={() => closeTab(tab.id)}
+          />
+        ))}
+      </div>
+      {tabs.length > 0 ? (
+        <Tooltip content="Close all tabs" side="bottom">
+          <button
+            type="button"
+            aria-label="Close all tabs"
+            onClick={closeAllTabs}
+            className="flex shrink-0 items-center justify-center rounded-md border border-transparent px-2 py-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800"
+          >
+            <BrushCleaning className="size-4" />
+          </button>
+        </Tooltip>
+      ) : null}
     </div>
   )
 }

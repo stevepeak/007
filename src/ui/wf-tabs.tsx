@@ -45,6 +45,8 @@ export type WfTabsState = {
   openAsset: (to: string, opts?: { newTab?: boolean }) => void
   /** Close an asset tab; if it was active, focus falls back to a neighbor/Home. */
   closeTab: (id: string) => void
+  /** Close every asset tab and return focus to Home. */
+  closeAllTabs: () => void
   /** Focus an existing tab. Focusing Home always returns to the hub root. */
   activateTab: (id: string) => void
 }
@@ -266,9 +268,17 @@ export function WfTabsProvider({ path, navigate, children }: WfTabsProviderProps
     [tabs, activeId, homePath, navigate],
   )
 
+  const closeAllTabs = useCallback(() => {
+    if (tabs.length === 0) return
+    setTabs([])
+    expectedPath.current = homePath
+    setActiveId(HOME_TAB_ID)
+    navigate(homePath)
+  }, [tabs, homePath, navigate])
+
   const value = useMemo<WfTabsState>(
-    () => ({ tabs, activeId, homePath, openAsset, closeTab, activateTab }),
-    [tabs, activeId, homePath, openAsset, closeTab, activateTab],
+    () => ({ tabs, activeId, homePath, openAsset, closeTab, closeAllTabs, activateTab }),
+    [tabs, activeId, homePath, openAsset, closeTab, closeAllTabs, activateTab],
   )
 
   return <WfTabsContext.Provider value={value}>{children}</WfTabsContext.Provider>
