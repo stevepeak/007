@@ -30,9 +30,14 @@ export function WfTabStrip() {
   const { tabs, activeId, activateTab, closeTab, closeAllTabs } = useWfTabs()
 
   return (
-    // Note: no `overflow` clipping here — an overflow container would clip the
-    // hover tooltips (clipping ignores z-index). Tabs wrap instead of scrolling.
-    <div className="flex items-start gap-1 border-b border-neutral-200 bg-neutral-50 px-2 py-1">
+    // Tabs wrap (never scroll) so the strip stays a fixed height. Each tab's
+    // hover tooltip is an always-mounted, absolutely-positioned bubble (hidden
+    // via opacity, not display) — so it still counts toward scroll width even
+    // when idle, and a right-edge tab's bubble would push the whole page into
+    // horizontal scroll. `overflow-x-clip` contains that horizontal bleed while
+    // leaving overflow-y visible, so the tooltips (which drop *below* the strip)
+    // still render in full.
+    <div className="flex items-start gap-1 overflow-x-clip border-b border-neutral-200 bg-neutral-50 px-2 py-1">
       <div className="flex flex-1 flex-wrap items-stretch gap-1">
         <TabChrome
           icon={<VenetianMask className="size-4 text-neutral-500" />}

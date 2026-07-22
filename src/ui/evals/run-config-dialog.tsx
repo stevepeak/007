@@ -152,7 +152,7 @@ export function RunConfigDialog({
   const canConfigure = setIds.length > 0 && selectedIds.length > 0
   const canRun = canConfigure && !matrixBlocked && !runEval.isPending
 
-  const launch = async () => {
+  const launch = () => {
     if (!canRun) return
     // Build the model × prompt sweep. Baseline (the agent's saved prompt) is
     // always the first prompt column and carries no `body` so the engine falls
@@ -167,9 +167,17 @@ export function RunConfigDialog({
         ...prompts.map((p, i) => ({ label: `Test prompt ${i + 1}`, body: p.body })),
       ],
     }
-    const { evalRunId } = await runEval.mutateAsync({ setIds, matrix })
-    onClose()
-    navigate(`evals/runs/${evalRunId}`)
+    // Don't await the whole matrix — as soon as the run row exists (`onStart`),
+    // close and redirect to the live report. The fan-out keeps running in the
+    // background mutation and the report polls it.
+    runEval.mutate({
+      setIds,
+      matrix,
+      onStart: (evalRunId) => {
+        onClose()
+        navigate(`evals/runs/${evalRunId}`)
+      },
+    })
   }
 
   return (

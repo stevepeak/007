@@ -47,12 +47,18 @@ export function MatrixSummary({
 
   const cells: MatrixCell[] = [...groups.values()].map((rs) => {
     const scores = rs.map((r) => r.score).filter((v): v is number => v != null)
-    const costs = rs
+    // Cost and speed only count runs that actually passed — a test that failed
+    // (or errored) can't win "Cheapest" or "Fastest" on cost/throughput it
+    // never earned. Cells with no passing runs leave both null → they can't
+    // win those columns.
+    const passedRs = rs.filter((r) => r.status === 'pass')
+    const costs = passedRs
       .map((r) => r.runStats?.costUsd)
       .filter((v): v is number => v != null)
     // Measured throughput per result: tokens ÷ wall-clock seconds. Averaged
-    // across the cell's runs — the live number the model actually delivered.
-    const speeds = rs
+    // across the cell's passing runs — the live number the model actually
+    // delivered.
+    const speeds = passedRs
       .map((r) => {
         const t = r.runStats?.totalTokens
         const d = r.runStats?.durationMs
@@ -64,7 +70,7 @@ export function MatrixSummary({
       modelId: rs[0]?.modelId ?? null,
       promptLabel: rs[0]?.promptLabel ?? null,
       total: rs.length,
-      passed: rs.filter((r) => r.status === 'pass').length,
+      passed: passedRs.length,
       meanScore: mean(scores),
       avgCostUsd: mean(costs),
       tokensPerSec: avgSpeed != null ? Math.round(avgSpeed) : null,

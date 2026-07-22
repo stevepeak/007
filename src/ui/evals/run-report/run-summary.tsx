@@ -27,6 +27,13 @@ export function RunHeader({
 }) {
   const running = run.status === 'queued' || run.status === 'running'
   const agent = agentAverages(results)
+  // While the matrix is still fanning out, `run.passed`/`run.score` are 0 (they
+  // only roll up in `finalizeEvalRun`), so derive live figures from the results
+  // landing one-by-one. Once completed, fall back to the authoritative run row.
+  const live = liveTotals(results)
+  const passed = running ? live.passed : run.passed
+  const score = running ? live.score : run.score
+  const completed = live.completed
   return (
     <div className="rounded-lg border border-neutral-200 bg-white p-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -37,11 +44,16 @@ export function RunHeader({
         )}
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+        {running && (
+          <Metric label="Progress">
+            <RunProgress completed={completed} total={run.total} />
+          </Metric>
+        )}
         <Metric label="Pass rate">
-          <PassRate passed={run.passed} total={run.total} />
+          <PassRate passed={passed} total={run.total} />
         </Metric>
         <Metric label="Mean score">
-          <Score value={run.score} />
+          <Score value={score} />
         </Metric>
         <Metric label="Tests">
           <span className="tabular-nums text-neutral-700">{run.total}</span>
@@ -72,6 +84,39 @@ export function RunHeader({
         </Metric>
       </div>
     </div>
+  )
+}
+
+// Live tallies over the results that have landed so far — used to keep the
+// header meaningful mid-run, before `finalizeEvalRun` rolls the figures into the
+// run row. `passed` counts `status === 'pass'` (fail + error both count against);
+// `score` is the mean of the scored results.
+function liveTotals(results: WfEvalResultDTO[]) {
+  const scores = results
+    .map((r) => r.score)
+    .filter((v): v is number => v != null)
+  return {
+    completed: results.length,
+    passed: results.filter((r) => r.status === 'pass').length,
+    score: scores.length ? mean(scores) : null,
+  }
+}
+
+// A thin "N of M complete" progress bar shown while the run is still executing.
+function RunProgress({ completed, total }: { completed: number; total: number }) {
+  const pct = total > 0 ? Math.round((completed / total) * 100) : 0
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span className="h-1.5 w-20 overflow-hidden rounded-full bg-neutral-200">
+        <span
+          className="block h-full rounded-full bg-sky-500 transition-all"
+          style={{ width: `${pct}%` }}
+        />
+      </span>
+      <span className="tabular-nums text-neutral-600">
+        {completed}/{total}
+      </span>
+    </span>
   )
 }
 

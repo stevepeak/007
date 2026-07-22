@@ -188,6 +188,12 @@ export type RunEvalInput = {
   pollIntervalMs?: number
   timeoutMs?: number
   onProgress?: (p: { done: number; total: number }) => void
+  /**
+   * Fired the moment the umbrella run row exists (before any cell runs), so the
+   * caller can close its dialog and navigate to the live report while the matrix
+   * keeps fanning out in the background.
+   */
+  onStart?: (evalRunId: string) => void
 }
 
 // The per-run unit of work: a sample crossed with one matrix cell. `modelId` /
@@ -235,6 +241,9 @@ export async function runEval(
     setIds: input.setIds,
     total: jobs.length,
   })
+  // Run row exists — let the caller navigate to the live report now. The fan-out
+  // below keeps running in this (still-pending) mutation; the report polls it.
+  input.onStart?.(evalRunId)
 
   const wait = {
     pollIntervalMs: input.pollIntervalMs ?? 1500,
