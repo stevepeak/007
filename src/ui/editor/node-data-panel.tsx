@@ -65,6 +65,27 @@ export function useIoMaps() {
   )
 }
 
+// Shared hook: resolve the metadata maps (folding in the enclosing loop's `Item`
+// schema) and, from them, the tree of upstream data a node can map from. Every
+// data-mapping panel needs this same trio; some also read `maps` directly (e.g.
+// to derive the node's own required inputs or provided output shape).
+function useAccessibleData(
+  node: WorkflowNode,
+  graph: WorkflowGraph,
+  itemSchema?: JsonSchema,
+) {
+  const baseMaps = useIoMaps()
+  const maps = useMemo(
+    () => withIterationItemSchema(baseMaps, itemSchema),
+    [baseMaps, itemSchema],
+  )
+  const accessible = useMemo(
+    () => accessibleData(graph, node.id, maps),
+    [graph, node.id, maps],
+  )
+  return { accessible, maps }
+}
+
 export type NodeInputsPanelProps = {
   node: WorkflowNode
   graph: WorkflowGraph
@@ -83,16 +104,8 @@ export function NodeInputsPanel({
   onChange,
   itemSchema,
 }: NodeInputsPanelProps) {
-  const baseMaps = useIoMaps()
-  const maps = useMemo(
-    () => withIterationItemSchema(baseMaps, itemSchema),
-    [baseMaps, itemSchema],
-  )
+  const { accessible, maps } = useAccessibleData(node, graph, itemSchema)
   const requires = useMemo(() => nodeRequires(node, maps), [node, maps])
-  const accessible = useMemo(
-    () => accessibleData(graph, node.id, maps),
-    [graph, node.id, maps],
-  )
   const bindings = bindingsOf(node)
   if (node.kind !== 'agent' && node.kind !== 'tool') return null
 
@@ -149,15 +162,7 @@ export function DataRefField({
   onChange,
   itemSchema,
 }: DataRefFieldProps) {
-  const baseMaps = useIoMaps()
-  const maps = useMemo(
-    () => withIterationItemSchema(baseMaps, itemSchema),
-    [baseMaps, itemSchema],
-  )
-  const accessible = useMemo(
-    () => accessibleData(graph, node.id, maps),
-    [graph, node.id, maps],
-  )
+  const { accessible } = useAccessibleData(node, graph, itemSchema)
   const [open, setOpen] = useState(false)
   const src = value
     ? accessible.find((n) => n.nodeId === value.nodeId)
@@ -254,15 +259,7 @@ export function IterationListField({
   itemSchema,
   onSelect,
 }: IterationListFieldProps) {
-  const baseMaps = useIoMaps()
-  const maps = useMemo(
-    () => withIterationItemSchema(baseMaps, itemSchema),
-    [baseMaps, itemSchema],
-  )
-  const accessible = useMemo(
-    () => accessibleData(graph, node.id, maps),
-    [graph, node.id, maps],
-  )
+  const { accessible } = useAccessibleData(node, graph, itemSchema)
   const [open, setOpen] = useState(false)
   const src = value
     ? accessible.find((n) => n.nodeId === value.nodeId)
@@ -461,15 +458,7 @@ export function AccessibleDataView({
   graph,
   itemSchema,
 }: AccessibleDataViewProps) {
-  const baseMaps = useIoMaps()
-  const maps = useMemo(
-    () => withIterationItemSchema(baseMaps, itemSchema),
-    [baseMaps, itemSchema],
-  )
-  const accessible = useMemo(
-    () => accessibleData(graph, node.id, maps),
-    [graph, node.id, maps],
-  )
+  const { accessible, maps } = useAccessibleData(node, graph, itemSchema)
   const provides = useMemo(
     () => nodeProvides(graph, node.id, maps),
     [graph, node.id, maps],

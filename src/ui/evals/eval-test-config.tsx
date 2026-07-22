@@ -17,6 +17,7 @@ import type { EvalCheck, WfEvalTargetKind } from '../../server/protocol'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { ModelSelect } from '../editor/model-select'
+import { useCommittedField } from '../use-committed-field'
 import {
   BoolPicker,
   MatchRow,
@@ -438,14 +439,9 @@ function JudgeConfig({
   persist: (next: EvalCheck) => void
 }) {
   const { Input, Label, Textarea } = useWfComponents()
-  const [rubric, setRubric] = useState(check.rubric)
-  const rubricRef = useRef(check.rubric)
-  useEffect(() => {
-    if (check.rubric !== rubricRef.current) {
-      setRubric(check.rubric)
-      rubricRef.current = check.rubric
-    }
-  }, [check.rubric])
+  const rubricField = useCommittedField(check.rubric, (rubric) =>
+    persist({ ...check, rubric }),
+  )
 
   return (
     <div className="space-y-3">
@@ -465,15 +461,10 @@ function JudgeConfig({
         <Label>Rubric</Label>
         <Textarea
           rows={3}
-          value={rubric}
+          value={rubricField.value}
           placeholder="What should the judge reward or penalize?"
-          onChange={(e) => setRubric(e.target.value)}
-          onBlur={() => {
-            if (rubric !== check.rubric) {
-              rubricRef.current = rubric
-              persist({ ...check, rubric })
-            }
-          }}
+          onChange={(e) => rubricField.onChange(e.target.value)}
+          onBlur={rubricField.onBlur}
         />
       </div>
       <div className="grid grid-cols-2 gap-3">

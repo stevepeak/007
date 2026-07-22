@@ -1,3 +1,4 @@
+import { buildAdjacency } from './graph-adjacency'
 import {
   isBookendKind,
   workflowGraphSchema,
@@ -101,7 +102,7 @@ export class Scheduler {
   readonly graph: WorkflowGraph
   readonly trigger: Extract<WorkflowNode, { kind: 'trigger' }>
 
-  private readonly incoming = new Map<string, WorkflowEdge[]>()
+  private readonly incoming: Map<string, WorkflowEdge[]>
   // Ids of `race` nodes — the first-to-finish join. They flip readiness from the
   // default all-predecessors (`every`) rule to any-predecessor (`some`), so we
   // only need the id set, not the full node map.
@@ -132,14 +133,7 @@ export class Scheduler {
         this.aggregateIds.add(n.id)
       }
     }
-    for (const e of this.graph.edges) {
-      const list = this.incoming.get(e.target)
-      if (list) {
-        list.push(e)
-      } else {
-        this.incoming.set(e.target, [e])
-      }
-    }
+    this.incoming = buildAdjacency(this.graph).incoming
   }
 
   /**

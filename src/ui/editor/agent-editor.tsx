@@ -1,4 +1,4 @@
-import { AlertTriangle, Archive, Loader2, Play, Wrench, X } from 'lucide-react'
+import { AlertTriangle, Archive, Loader2, Play, Wrench } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { inferPromptVariables, type AgentConfig } from '../../engine'
@@ -14,6 +14,7 @@ import {
 import { cn } from '../cn'
 import { useWfClient, useWfComponents } from '../context'
 import { HoldButton } from '../hold-button'
+import { Modal } from '../modal'
 import {
   useAgent,
   useAgentReferences,
@@ -26,6 +27,7 @@ import {
   useUpdateAgentMeta,
 } from '../hooks'
 import { useOpenAsset, useWfNav } from '../nav'
+import { QueryState } from '../query-state'
 import { WfShell } from '../shell'
 import { SaveStateBadge } from '../save-state-badge'
 import { Tooltip } from '../tooltip'
@@ -50,41 +52,43 @@ export function AgentEditor({
   className,
   onPublished,
 }: AgentEditorProps) {
-  const { data, isLoading, error } = useAgent(agentId)
-
-  if (isLoading) {
-    return (
-      <div className={cn('p-4 text-sm text-neutral-500', className)}>
-        Loading…
-      </div>
-    )
-  }
-  if (error) {
-    return (
-      <div className={cn('p-4 text-sm text-red-600', className)}>
-        {(error as Error).message}
-      </div>
-    )
-  }
-  const initialConfig = data?.draft?.config ?? data?.currentVersion?.config
-  if (!data || !initialConfig) {
-    return (
-      <div className={cn('p-4 text-sm text-neutral-500', className)}>
-        Agent has no configuration yet.
-      </div>
-    )
-  }
+  const query = useAgent(agentId)
 
   return (
-    <AgentEditorInner
-      agentId={agentId}
-      initialConfig={initialConfig}
-      initialName={data.agent.name}
-      initialIcon={data.agent.icon ?? AGENT_ICONS[0].name}
-      initialColor={data.agent.color ?? DEFAULT_AGENT_COLOR}
-      className={className}
-      onPublished={onPublished}
-    />
+    <QueryState
+      query={query}
+      loading={
+        <div className={cn('p-4 text-sm text-neutral-500', className)}>
+          Loading…
+        </div>
+      }
+      error={(error) => (
+        <div className={cn('p-4 text-sm text-red-600', className)}>
+          {error.message}
+        </div>
+      )}
+      isEmpty={(data) => !(data?.draft?.config ?? data?.currentVersion?.config)}
+      empty={
+        <div className={cn('p-4 text-sm text-neutral-500', className)}>
+          Agent has no configuration yet.
+        </div>
+      }
+    >
+      {(data) => {
+        const initialConfig = data.draft?.config ?? data.currentVersion?.config
+        return initialConfig ? (
+          <AgentEditorInner
+            agentId={agentId}
+            initialConfig={initialConfig}
+            initialName={data.agent.name}
+            initialIcon={data.agent.icon ?? AGENT_ICONS[0].name}
+            initialColor={data.agent.color ?? DEFAULT_AGENT_COLOR}
+            className={className}
+            onPublished={onPublished}
+          />
+        ) : null
+      }}
+    </QueryState>
   )
 }
 
@@ -446,113 +450,93 @@ function ArchiveAgentDialog({
   const refs = useAgentReferences(agentId, true)
   const archive = useArchiveAgent()
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-
   const workflows = refs.data?.workflows ?? []
   const blocked = workflows.length > 0
   const archiveError = (archive.error as Error | null)?.message ?? null
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
+    <Modal
+      open
+      onClose={onClose}
+      title={
+        <span className="flex items-center gap-1.5">
+          <Archive className="size-4 text-neutral-500" />
+          Archive agent
+        </span>
+      }
+      panelClassName="w-full max-w-md rounded-lg border border-neutral-200 bg-white shadow-xl"
     >
-      <div
-        className="w-full max-w-md rounded-lg border border-neutral-200 bg-white shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-3">
-          <h2 className="flex items-center gap-1.5 text-sm font-semibold">
-            <Archive className="size-4 text-neutral-500" />
-            Archive agent
-          </h2>
-          <button
-            aria-label="Close"
-            onClick={onClose}
-            className="text-neutral-400 transition hover:text-neutral-700"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-
-        <div className="px-5 py-4 text-sm leading-relaxed text-neutral-600">
-          {refs.isLoading ? (
-            <span className="flex items-center gap-2 text-neutral-500">
-              <Loader2 className="size-4 animate-spin" />
-              Checking for workflows using this agent…
-            </span>
-          ) : refs.error ? (
-            <span className="text-red-600">
-              {(refs.error as Error).message}
-            </span>
-          ) : blocked ? (
-            <div className="space-y-3">
-              <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">
-                <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-                <span>
-                  <strong>{agentName || 'This agent'}</strong> is used by{' '}
-                  <strong>
-                    {workflows.length} workflow
-                    {workflows.length === 1 ? '' : 's'}
-                  </strong>
-                  . Disconnect it from each before archiving.
-                </span>
-              </div>
-              <ul className="divide-y divide-neutral-100 rounded-md border border-neutral-200">
-                {workflows.map((wf) => (
-                  <li key={wf.id}>
-                    <button
-                      type="button"
-                      onClick={() => openAsset(`${wf.id}/edit`)}
-                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition hover:bg-neutral-50"
-                    >
-                      <span className="min-w-0 truncate text-neutral-800">
-                        {wf.name || 'Untitled workflow'}
-                      </span>
-                      <span className="shrink-0 text-xs text-neutral-400">
-                        Open →
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+      <div className="px-5 py-4 text-sm leading-relaxed text-neutral-600">
+        {refs.isLoading ? (
+          <span className="flex items-center gap-2 text-neutral-500">
+            <Loader2 className="size-4 animate-spin" />
+            Checking for workflows using this agent…
+          </span>
+        ) : refs.error ? (
+          <span className="text-red-600">
+            {(refs.error as Error).message}
+          </span>
+        ) : blocked ? (
+          <div className="space-y-3">
+            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <span>
+                <strong>{agentName || 'This agent'}</strong> is used by{' '}
+                <strong>
+                  {workflows.length} workflow
+                  {workflows.length === 1 ? '' : 's'}
+                </strong>
+                . Disconnect it from each before archiving.
+              </span>
             </div>
-          ) : (
-            <span>
-              Archive <strong>{agentName || 'this agent'}</strong>? It'll be
-              removed from your agents list and can no longer be added to
-              workflows. Existing runs are unaffected.
-            </span>
-          )}
-          {archiveError ? (
-            <p className="mt-2 text-xs text-red-600">{archiveError}</p>
-          ) : null}
-        </div>
-
-        <div className="flex items-center justify-end gap-2 border-t border-neutral-200 px-5 py-3">
-          <Button variant="outline" size="sm" onClick={onClose}>
-            {blocked ? 'Close' : 'Cancel'}
-          </Button>
-          {!refs.isLoading && !refs.error && !blocked ? (
-            <HoldButton
-              size="md"
-              tone="danger"
-              title="Hold to archive"
-              onHold={() => archive.mutate(agentId, { onSuccess: onArchived })}
-            >
-              <Archive className="size-4" />
-              Hold to archive
-            </HoldButton>
-          ) : null}
-        </div>
+            <ul className="divide-y divide-neutral-100 rounded-md border border-neutral-200">
+              {workflows.map((wf) => (
+                <li key={wf.id}>
+                  <button
+                    type="button"
+                    onClick={() => openAsset(`${wf.id}/edit`)}
+                    className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition hover:bg-neutral-50"
+                  >
+                    <span className="min-w-0 truncate text-neutral-800">
+                      {wf.name || 'Untitled workflow'}
+                    </span>
+                    <span className="shrink-0 text-xs text-neutral-400">
+                      Open →
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <span>
+            Archive <strong>{agentName || 'this agent'}</strong>? It'll be
+            removed from your agents list and can no longer be added to
+            workflows. Existing runs are unaffected.
+          </span>
+        )}
+        {archiveError ? (
+          <p className="mt-2 text-xs text-red-600">{archiveError}</p>
+        ) : null}
       </div>
-    </div>
+
+      <div className="flex items-center justify-end gap-2 border-t border-neutral-200 px-5 py-3">
+        <Button variant="outline" size="sm" onClick={onClose}>
+          {blocked ? 'Close' : 'Cancel'}
+        </Button>
+        {!refs.isLoading && !refs.error && !blocked ? (
+          <HoldButton
+            size="md"
+            tone="danger"
+            title="Hold to archive"
+            onHold={() => archive.mutate(agentId, { onSuccess: onArchived })}
+          >
+            <Archive className="size-4" />
+            Hold to archive
+          </HoldButton>
+        ) : null}
+      </div>
+    </Modal>
   )
 }
 
@@ -751,51 +735,53 @@ function PublishAgentDialog({
   }, [client, agentId])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-lg border border-neutral-200 bg-white p-5 shadow-xl">
-        <h2 className="mb-1 text-base font-semibold text-neutral-900">
-          Publish new version
-        </h2>
-        <p className="mb-3 text-sm text-neutral-500">
-          Publishing makes this the live version. Add an optional note
-          describing the change — it's saved with the version.
-        </p>
+    <Modal
+      open
+      onClose={onCancel}
+      panelClassName="w-full max-w-md rounded-lg border border-neutral-200 bg-white p-5 shadow-xl"
+    >
+      <h2 className="mb-1 text-base font-semibold text-neutral-900">
+        Publish new version
+      </h2>
+      <p className="mb-3 text-sm text-neutral-500">
+        Publishing makes this the live version. Add an optional note
+        describing the change — it's saved with the version.
+      </p>
 
-        {refCount != null && refCount > 0 ? (
-          <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-            <span>
-              <strong>
-                {refCount} workflow{refCount === 1 ? '' : 's'}
-              </strong>{' '}
-              reference this agent and will use the new version immediately.
-            </span>
-          </div>
-        ) : null}
-
-        <Textarea
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          rows={3}
-          placeholder="Describe the changes in this version…"
-          className="w-full"
-        />
-
-        {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
-
-        <div className="mt-4 flex justify-end gap-2">
-          <Button variant="ghost" size="sm" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => onConfirm(note)}
-            disabled={publishing}
-          >
-            {publishing ? 'Publishing…' : 'Publish version'}
-          </Button>
+      {refCount != null && refCount > 0 ? (
+        <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <span>
+            <strong>
+              {refCount} workflow{refCount === 1 ? '' : 's'}
+            </strong>{' '}
+            reference this agent and will use the new version immediately.
+          </span>
         </div>
+      ) : null}
+
+      <Textarea
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        rows={3}
+        placeholder="Describe the changes in this version…"
+        className="w-full"
+      />
+
+      {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
+
+      <div className="mt-4 flex justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button
+          size="sm"
+          onClick={() => onConfirm(note)}
+          disabled={publishing}
+        >
+          {publishing ? 'Publishing…' : 'Publish version'}
+        </Button>
       </div>
-    </div>
+    </Modal>
   )
 }

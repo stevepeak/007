@@ -33,6 +33,7 @@ import { useOpenAsset, useWfNav } from '../nav'
 import { ArchiveButton } from '../archive-button'
 import { WfShell } from '../shell'
 import { ToolIcon } from '../tool-icon'
+import { useCommittedField } from '../use-committed-field'
 import { sectionCrumb } from '../wf-crumbs'
 import { RunConfigDialog } from './run-config-dialog'
 import { describeCheck, EmptyState, EvalRunsTable, Tabs } from './shared'
@@ -325,23 +326,7 @@ function GivenEditor({
   const fields = agent?.inputVariables ?? []
 
   // Local mirror so typing is smooth; commit up on blur.
-  const [local, setLocal] = useState(value)
-  const syncedRef = useRef(JSON.stringify(value))
-  useEffect(() => {
-    const key = JSON.stringify(value)
-    if (key !== syncedRef.current) {
-      setLocal(value)
-      syncedRef.current = key
-    }
-  }, [value])
-
-  const commit = () => {
-    const key = JSON.stringify(local)
-    if (key !== syncedRef.current) {
-      syncedRef.current = key
-      onChange(local)
-    }
-  }
+  const field = useCommittedField(value, onChange, JSON.stringify)
 
   // Schema-driven: one value input per declared variable.
   if (fields.length > 0) {
@@ -363,10 +348,12 @@ function GivenEditor({
               {f}
             </span>
             <Input
-              value={local[f] ?? ''}
+              value={field.value[f] ?? ''}
               placeholder="value"
-              onChange={(e) => setLocal({ ...local, [f]: e.target.value })}
-              onBlur={commit}
+              onChange={(e) =>
+                field.onChange({ ...field.value, [f]: e.target.value })
+              }
+              onBlur={field.onBlur}
               className="h-8 flex-1 font-mono text-xs"
             />
           </div>
@@ -376,18 +363,17 @@ function GivenEditor({
   }
 
   // Fallback: no target, or the agent has no declared inputs — free-form pairs.
-  const entries = Object.entries(local)
+  const entries = Object.entries(field.value)
   const setKey = (oldKey: string, newKey: string) => {
     const next: Record<string, string> = {}
-    for (const [k, v] of Object.entries(local)) next[k === oldKey ? newKey : k] = v
-    setLocal(next)
+    for (const [k, v] of Object.entries(field.value))
+      next[k === oldKey ? newKey : k] = v
+    field.onChange(next)
   }
   const remove = (k: string) => {
-    const next = { ...local }
+    const next = { ...field.value }
     delete next[k]
-    setLocal(next)
-    syncedRef.current = JSON.stringify(next)
-    onChange(next)
+    field.commit(next)
   }
   return (
     <div className="space-y-2">
@@ -402,14 +388,16 @@ function GivenEditor({
             value={k}
             placeholder="field"
             onChange={(e) => setKey(k, e.target.value)}
-            onBlur={commit}
+            onBlur={field.onBlur}
             className="h-8 w-40 font-mono text-xs"
           />
           <Input
             value={v}
             placeholder="value"
-            onChange={(e) => setLocal({ ...local, [k]: e.target.value })}
-            onBlur={commit}
+            onChange={(e) =>
+              field.onChange({ ...field.value, [k]: e.target.value })
+            }
+            onBlur={field.onBlur}
             className="h-8 flex-1 font-mono text-xs"
           />
           <button
@@ -425,7 +413,7 @@ function GivenEditor({
       <Button
         size="sm"
         variant="ghost"
-        onClick={() => setLocal({ ...local, '': '' })}
+        onClick={() => field.onChange({ ...field.value, '': '' })}
       >
         <Plus className="size-4" />
         Add field

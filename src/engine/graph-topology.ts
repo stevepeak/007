@@ -1,3 +1,4 @@
+import { buildAdjacency } from './graph-adjacency'
 import type { WorkflowEdge, WorkflowGraph } from './graph'
 
 // The join/cone topology analysis shared by the strict runtime gate
@@ -41,16 +42,7 @@ export type JoinTopology = {
 }
 
 export function analyzeJoinTopology(graph: WorkflowGraph): JoinTopology {
-  const incoming = new Map<string, WorkflowEdge[]>()
-  const outgoing = new Map<string, WorkflowEdge[]>()
-  for (const e of graph.edges) {
-    const inc = incoming.get(e.target)
-    if (inc) inc.push(e)
-    else incoming.set(e.target, [e])
-    const out = outgoing.get(e.source)
-    if (out) out.push(e)
-    else outgoing.set(e.source, [e])
-  }
+  const { incoming, outgoing } = buildAdjacency(graph)
 
   const decisionIds = new Set(
     graph.nodes.filter((n) => isDecisionNodeKind(n.kind)).map((n) => n.id),

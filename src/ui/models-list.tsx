@@ -27,6 +27,7 @@ import {
 } from './evals/shared'
 import { useModelCatalog, useRefreshModels, useSetModelEnabled } from './hooks'
 import { WfLink } from './nav'
+import { QueryState } from './query-state'
 import { Tooltip } from './tooltip'
 
 type UsageMap = Record<string, AgentUsageRef[]>
@@ -142,18 +143,19 @@ export function ModelsList({ className }: ModelsListProps) {
         Eval runs.
       </div>
 
-      {isLoading ? (
-        <div className="text-sm text-neutral-500">Loading…</div>
-      ) : null}
-      {error ? (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {(error as Error).message} — are you signed in?
-        </div>
-      ) : null}
-
-      {data && data.providers.length === 0 ? (
-        <EmptyState message="No model providers are wired up by the host." />
-      ) : null}
+      <QueryState
+        query={{ isLoading, error, data }}
+        loading={<div className="text-sm text-neutral-500">Loading…</div>}
+        error={(error) => (
+          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {error.message} — are you signed in?
+          </div>
+        )}
+        isEmpty={(data) => data?.providers.length === 0}
+        empty={
+          <EmptyState message="No model providers are wired up by the host." />
+        }
+      />
 
       {data && data.providers.length > 0 ? (
         <div className="space-y-2">

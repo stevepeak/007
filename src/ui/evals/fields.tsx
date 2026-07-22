@@ -1,5 +1,5 @@
 import { ChevronDown } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 
 import type { JsonSchema } from '../../engine'
 import type { EvalMatch } from '../../server/protocol'
@@ -7,6 +7,7 @@ import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { useTools } from '../hooks'
 import { ToolIcon } from '../tool-icon'
+import { useCommittedField } from '../use-committed-field'
 import { useDismiss } from '../use-dismiss'
 
 const MATCH_OPTIONS: EvalMatch[] = ['equals', 'contains', 'jsonpath', 'regex']
@@ -173,27 +174,15 @@ export function TextField({
   onCommit: (v: string) => void
 }) {
   const { Input, Label } = useWfComponents()
-  const [local, setLocal] = useState(value)
-  const ref = useRef(value)
-  useEffect(() => {
-    if (value !== ref.current) {
-      setLocal(value)
-      ref.current = value
-    }
-  }, [value])
+  const field = useCommittedField(value, onCommit)
   return (
     <div className="space-y-1">
       <Label>{label}</Label>
       <Input
-        value={local}
+        value={field.value}
         placeholder={placeholder}
-        onChange={(e) => setLocal(e.target.value)}
-        onBlur={() => {
-          if (local !== ref.current) {
-            ref.current = local
-            onCommit(local)
-          }
-        }}
+        onChange={(e) => field.onChange(e.target.value)}
+        onBlur={field.onBlur}
         className="font-mono text-xs"
       />
     </div>
@@ -251,24 +240,12 @@ export function MatchRow({
   }) => void
 }) {
   const { Input, Label } = useWfComponents()
-  const [pathLocal, setPathLocal] = useState(path ?? '')
-  const [valueLocal, setValueLocal] = useState(valueToStr(value))
-  const pathRef = useRef(path ?? '')
-  const valueRef = useRef(valueToStr(value))
-  useEffect(() => {
-    const p = path ?? ''
-    if (p !== pathRef.current) {
-      setPathLocal(p)
-      pathRef.current = p
-    }
-  }, [path])
-  useEffect(() => {
-    const v = valueToStr(value)
-    if (v !== valueRef.current) {
-      setValueLocal(v)
-      valueRef.current = v
-    }
-  }, [value])
+  const pathField = useCommittedField(path ?? '', (p) =>
+    onChange({ path: p || undefined }),
+  )
+  const valueField = useCommittedField(valueToStr(value), (v) =>
+    onChange({ value: parseValue(v) }),
+  )
 
   const selectedField = pathOptions?.find((o) => o.value === (path ?? ''))
   // Preserve a stored path that isn't in the schema (nested/custom) as its own
@@ -301,15 +278,10 @@ export function MatchRow({
             </select>
           ) : (
             <Input
-              value={pathLocal}
+              value={pathField.value}
               placeholder={pathPlaceholder}
-              onChange={(e) => setPathLocal(e.target.value)}
-              onBlur={() => {
-                if (pathLocal !== pathRef.current) {
-                  pathRef.current = pathLocal
-                  onChange({ path: pathLocal || undefined })
-                }
-              }}
+              onChange={(e) => pathField.onChange(e.target.value)}
+              onBlur={pathField.onBlur}
               className="font-mono text-xs"
             />
           )}
@@ -331,15 +303,10 @@ export function MatchRow({
         <div className="space-y-1">
           <Label>Value</Label>
           <Input
-            value={valueLocal}
+            value={valueField.value}
             placeholder="expected"
-            onChange={(e) => setValueLocal(e.target.value)}
-            onBlur={() => {
-              if (valueLocal !== valueRef.current) {
-                valueRef.current = valueLocal
-                onChange({ value: parseValue(valueLocal) })
-              }
-            }}
+            onChange={(e) => valueField.onChange(e.target.value)}
+            onBlur={valueField.onBlur}
             className="font-mono text-xs"
           />
         </div>

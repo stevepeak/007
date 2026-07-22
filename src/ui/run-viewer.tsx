@@ -2,6 +2,7 @@ import { useWfComponents } from './context'
 import { cn } from './cn'
 import { DataView } from './data-view'
 import { useRun } from './hooks'
+import { QueryState } from './query-state'
 import { runStatusClass } from './run-status'
 import type { WfRunStepDTO } from '../server/protocol'
 
@@ -70,55 +71,54 @@ export type RunViewerProps = {
 
 export function RunViewer({ runId, className }: RunViewerProps) {
   const { Badge } = useWfComponents()
-  const { data, isLoading, error } = useRun(runId)
-
-  if (isLoading) {
-    return (
-      <div className={cn('p-4 text-sm text-neutral-500', className)}>
-        Loading run…
-      </div>
-    )
-  }
-  if (error) {
-    return (
-      <div className={cn('p-4 text-sm text-red-600', className)}>
-        {(error as Error).message}
-      </div>
-    )
-  }
-  if (!data) {
-    return (
-      <div className={cn('p-4 text-sm text-neutral-500', className)}>
-        Run not found.
-      </div>
-    )
-  }
+  const query = useRun(runId)
 
   return (
-    <div className={cn('space-y-3', className)}>
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-medium">{data.run.triggerKind}</span>
-        <Badge className={cn('border', statusClass[data.run.status])}>
-          {data.run.status}
-        </Badge>
-        {data.versionNumber != null ? (
-          <span className="text-xs text-neutral-400">
-            v{data.versionNumber}
-          </span>
-        ) : null}
-      </div>
-      {data.run.error ? (
-        <div className="rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700">
-          {data.run.error}
+    <QueryState
+      query={query}
+      loading={
+        <div className={cn('p-4 text-sm text-neutral-500', className)}>
+          Loading run…
         </div>
-      ) : null}
-      <div className="space-y-1.5">
-        {data.steps
-          .filter((step) => !step.parentNodeId)
-          .map((step) => (
-            <StepRow key={step.nodeId} step={step} />
-          ))}
-      </div>
-    </div>
+      }
+      error={(error) => (
+        <div className={cn('p-4 text-sm text-red-600', className)}>
+          {error.message}
+        </div>
+      )}
+      empty={
+        <div className={cn('p-4 text-sm text-neutral-500', className)}>
+          Run not found.
+        </div>
+      }
+    >
+      {(data) => (
+        <div className={cn('space-y-3', className)}>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium">{data.run.triggerKind}</span>
+            <Badge className={cn('border', statusClass[data.run.status])}>
+              {data.run.status}
+            </Badge>
+            {data.versionNumber != null ? (
+              <span className="text-xs text-neutral-400">
+                v{data.versionNumber}
+              </span>
+            ) : null}
+          </div>
+          {data.run.error ? (
+            <div className="rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+              {data.run.error}
+            </div>
+          ) : null}
+          <div className="space-y-1.5">
+            {data.steps
+              .filter((step) => !step.parentNodeId)
+              .map((step) => (
+                <StepRow key={step.nodeId} step={step} />
+              ))}
+          </div>
+        </div>
+      )}
+    </QueryState>
   )
 }

@@ -1,7 +1,7 @@
-import { X } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 
 import { cn } from './cn'
+import { Modal } from './modal'
 
 // A small ✨ marker you can drop anywhere in the UI to stash an inspirational,
 // not-yet-built idea. Clicking the sparkle opens a lightweight dialog that
@@ -21,15 +21,6 @@ export type IdeaSparkProps = {
 
 export function IdeaSpark({ title, children, hint, className }: IdeaSparkProps) {
   const [open, setOpen] = useState(false)
-
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open])
 
   return (
     <>
@@ -51,42 +42,28 @@ export function IdeaSpark({ title, children, hint, className }: IdeaSparkProps) 
         </span>
       </button>
 
-      {open ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setOpen(false)}
-        >
-          <div
-            className="w-full max-w-md rounded-lg border border-neutral-200 bg-white shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-3">
-              <h2 className="flex items-center gap-1.5 text-sm font-semibold">
-                <span aria-hidden>✨</span>
-                {title}
-              </h2>
-              <button
-                aria-label="Close"
-                onClick={() => setOpen(false)}
-                className="text-neutral-400 transition hover:text-neutral-700"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-
-            <div className="space-y-3 px-5 py-4 text-sm leading-relaxed text-neutral-600">
-              {children}
-            </div>
-
-            <div className="border-t border-neutral-200 px-5 py-2.5">
-              <p className="text-xs text-neutral-400">
-                Idea placeholder — not built yet. We’ll refine this after
-                feedback.
-              </p>
-            </div>
-          </div>
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title={
+          <span className="flex items-center gap-1.5">
+            <span aria-hidden>✨</span>
+            {title}
+          </span>
+        }
+        panelClassName="w-full max-w-md rounded-lg border border-neutral-200 bg-white shadow-xl"
+      >
+        <div className="space-y-3 px-5 py-4 text-sm leading-relaxed text-neutral-600">
+          {children}
         </div>
-      ) : null}
+
+        <div className="border-t border-neutral-200 px-5 py-2.5">
+          <p className="text-xs text-neutral-400">
+            Idea placeholder — not built yet. We’ll refine this after
+            feedback.
+          </p>
+        </div>
+      </Modal>
     </>
   )
 }

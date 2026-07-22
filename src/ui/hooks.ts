@@ -1,5 +1,6 @@
 import {
   keepPreviousData,
+  type QueryKey,
   useMutation,
   useQuery,
   useQueryClient,
@@ -54,6 +55,31 @@ const keys = {
   // Prefix key: invalidates every limit variant of the eval runs list.
   evalRunsAll: ['wf', 'eval-runs'] as const,
   evalRun: (id: string) => ['wf', 'eval-run', id] as const,
+}
+
+// Collapses the shared mutation ceremony: grab the injected client + query
+// client, run `mutationFn`, then on success invalidate the query keys returned
+// by `invalidate`. The returned promise is awaited (via onSuccess) so the
+// mutation stays pending until the refetch settles — matching the hand-written
+// `return qc.invalidateQueries(...)` shape it replaces. Mutations that instead
+// fire-and-forget (`void qc.invalidateQueries`) or run extra side effects are
+// left hand-written.
+function useWfMutation<TInput, TOut>(
+  mutationFn: (client: WfDataClient, input: TInput) => Promise<TOut>,
+  invalidate?: (input: TInput) => QueryKey[],
+) {
+  const client = useWfClient()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: TInput) => mutationFn(client, input),
+    onSuccess: (_r, input) => {
+      const queryKeys = invalidate?.(input)
+      if (!queryKeys) return
+      return Promise.all(
+        queryKeys.map((queryKey) => qc.invalidateQueries({ queryKey })),
+      )
+    },
+  })
 }
 
 export function useModels() {
@@ -135,17 +161,17 @@ export function useToolInvocations(toolId: string, limit?: number) {
 // straight off the mutation. On success the tool's invocation list is
 // invalidated so the fresh call shows up in "recent calls".
 export function useRunToolPreview(toolId: string) {
-  const client = useWfClient()
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (input: {
-      toolId: string
-      args: Record<string, unknown>
-      context?: Record<string, string>
-    }) => client.runToolPreview(input),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: keys.toolInvocationsAll(toolId) }),
-  })
+  return useWfMutation(
+    (
+      client,
+      input: {
+        toolId: string
+        args: Record<string, unknown>
+        context?: Record<string, string>
+      },
+    ) => client.runToolPreview(input),
+    () => [keys.toolInvocationsAll(toolId)],
+  )
 }
 
 export function useTriggerEvents() {
@@ -224,27 +250,25 @@ export function useRetryRun() {
 }
 
 export function useCreateWorkflow() {
-  const client = useWfClient()
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (input: {
-      name: string
-      description?: string
-      graph: WorkflowGraph
-    }) => client.createWorkflow(input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.workflows }),
-  })
+  return useWfMutation(
+    (
+      client,
+      input: {
+        name: string
+        description?: string
+        graph: WorkflowGraph
+      },
+    ) => client.createWorkflow(input),
+    () => [keys.workflows],
+  )
 }
 
 export function useSaveDraft() {
-  const client = useWfClient()
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (input: { workflowId: string; graph: WorkflowGraph }) =>
+  return useWfMutation(
+    (client, input: { workflowId: string; graph: WorkflowGraph }) =>
       client.updateDraft(input),
-    onSuccess: (_r, input) =>
-      qc.invalidateQueries({ queryKey: keys.workflow(input.workflowId) }),
-  })
+    (input) => [keys.workflow(input.workflowId)],
+  )
 }
 
 export function useSaveVersion() {
@@ -339,29 +363,27 @@ export function useAgentVersions(agentId: string) {
 }
 
 export function useCreateAgent() {
-  const client = useWfClient()
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (input: {
-      name: string
-      description?: string
-      icon?: string
-      color?: string
-      config: AgentConfig
-    }) => client.createAgent(input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.agents }),
-  })
+  return useWfMutation(
+    (
+      client,
+      input: {
+        name: string
+        description?: string
+        icon?: string
+        color?: string
+        config: AgentConfig
+      },
+    ) => client.createAgent(input),
+    () => [keys.agents],
+  )
 }
 
 export function useSaveAgentDraft() {
-  const client = useWfClient()
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (input: { agentId: string; config: AgentConfig }) =>
+  return useWfMutation(
+    (client, input: { agentId: string; config: AgentConfig }) =>
       client.updateAgentDraft(input),
-    onSuccess: (_r, input) =>
-      qc.invalidateQueries({ queryKey: keys.agent(input.agentId) }),
-  })
+    (input) => [keys.agent(input.agentId)],
+  )
 }
 
 export function usePublishAgent() {
@@ -410,12 +432,10 @@ export function useAgentReferences(agentId: string, enabled: boolean) {
 }
 
 export function useArchiveAgent() {
-  const client = useWfClient()
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (agentId: string) => client.archiveAgent(agentId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.agents }),
-  })
+  return useWfMutation(
+    (client, agentId: string) => client.archiveAgent(agentId),
+    () => [keys.agents],
+  )
 }
 
 // Playground — run the editor's live agent draft in isolation against a scratch
@@ -470,19 +490,20 @@ export function useEvalRun(evalRunId: string | null) {
 }
 
 export function useCreateEvalSet() {
-  const client = useWfClient()
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (input: {
-      name: string
-      description?: string
-      targetKind: WfEvalTargetKind
-      targetId: string
-      targetVersion?: number | null
-      triggerKind: string
-    }) => client.createEvalSet(input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.evalSetsAll }),
-  })
+  return useWfMutation(
+    (
+      client,
+      input: {
+        name: string
+        description?: string
+        targetKind: WfEvalTargetKind
+        targetId: string
+        targetVersion?: number | null
+        triggerKind: string
+      },
+    ) => client.createEvalSet(input),
+    () => [keys.evalSetsAll],
+  )
 }
 
 export function useUpdateEvalSet() {
@@ -507,40 +528,36 @@ export function useUpdateEvalSet() {
 }
 
 export function useDeleteEvalSet() {
-  const client = useWfClient()
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (setId: string) => client.deleteEvalSet(setId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.evalSetsAll }),
-  })
+  return useWfMutation(
+    (client, setId: string) => client.deleteEvalSet(setId),
+    () => [keys.evalSetsAll],
+  )
 }
 
 export function useUpsertEvalRow() {
-  const client = useWfClient()
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (input: {
-      id?: string
-      setId: string
-      name: string
-      description?: string | null
-      initialCondition?: EvalInitialCondition
-      fixtures?: EvalFixtures
-      checks?: CheckTree
-      sortOrder?: number
-    }) => client.upsertEvalRow(input),
-    onSuccess: (_r, input) =>
-      qc.invalidateQueries({ queryKey: keys.evalSet(input.setId) }),
-  })
+  return useWfMutation(
+    (
+      client,
+      input: {
+        id?: string
+        setId: string
+        name: string
+        description?: string | null
+        initialCondition?: EvalInitialCondition
+        fixtures?: EvalFixtures
+        checks?: CheckTree
+        sortOrder?: number
+      },
+    ) => client.upsertEvalRow(input),
+    (input) => [keys.evalSet(input.setId)],
+  )
 }
 
 export function useDeleteEvalRow(setId: string) {
-  const client = useWfClient()
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (rowId: string) => client.deleteEvalRow(rowId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.evalSet(setId) }),
-  })
+  return useWfMutation(
+    (client, rowId: string) => client.deleteEvalRow(rowId),
+    () => [keys.evalSet(setId)],
+  )
 }
 
 // Client-driven eval orchestration (Phase 5 v1): create the run, then for each

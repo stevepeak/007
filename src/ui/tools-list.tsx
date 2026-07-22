@@ -1,6 +1,7 @@
 import { cn } from './cn'
 import { useTools } from './hooks'
 import { WfLink } from './nav'
+import { QueryState } from './query-state'
 import { ToolIcon } from './tool-icon'
 
 // The tools registered in the host's `toolRegistry` (via the injected data
@@ -21,19 +22,21 @@ export function ToolsList({ className }: ToolsListProps) {
         called during a run.
       </div>
 
-      {isLoading ? (
-        <div className="text-sm text-neutral-500">Loading…</div>
-      ) : null}
-      {error ? (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {(error as Error).message} — are you signed in?
-        </div>
-      ) : null}
-      {data?.length === 0 ? (
-        <div className="text-sm text-neutral-500">
-          No tools registered yet.
-        </div>
-      ) : null}
+      <QueryState
+        query={{ isLoading, error, data }}
+        loading={<div className="text-sm text-neutral-500">Loading…</div>}
+        error={(error) => (
+          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {error.message} — are you signed in?
+          </div>
+        )}
+        isEmpty={(data) => data?.length === 0}
+        empty={
+          <div className="text-sm text-neutral-500">
+            No tools registered yet.
+          </div>
+        }
+      />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {data?.map((t) => (

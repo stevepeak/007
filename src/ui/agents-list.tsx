@@ -6,7 +6,9 @@ import { agentColor, agentIcon, DEFAULT_AGENT_COLOR } from './agent-appearance'
 import { cn } from './cn'
 import { useWfComponents } from './context'
 import { useAgents, useCreateAgent, useModels, useTools } from './hooks'
+import { Modal } from './modal'
 import { useWfNav } from './nav'
+import { QueryState } from './query-state'
 import { ToolIcon } from './tool-icon'
 
 // The reusable agents (wf_agent via the injected data client), shown as
@@ -103,19 +105,21 @@ export function AgentsList({ className, templates = [] }: AgentsListProps) {
         </Button>
       </div>
 
-      {isLoading ? (
-        <div className="text-sm text-neutral-500">Loading…</div>
-      ) : null}
-      {error ? (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {(error as Error).message} — are you signed in?
-        </div>
-      ) : null}
-      {data?.length === 0 ? (
-        <div className="text-sm text-neutral-500">
-          No agents yet. Create one to reuse it across workflows.
-        </div>
-      ) : null}
+      <QueryState
+        query={{ isLoading, error, data }}
+        loading={<div className="text-sm text-neutral-500">Loading…</div>}
+        error={(error) => (
+          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {error.message} — are you signed in?
+          </div>
+        )}
+        isEmpty={(data) => data?.length === 0}
+        empty={
+          <div className="text-sm text-neutral-500">
+            No agents yet. Create one to reuse it across workflows.
+          </div>
+        }
+      />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {data?.map((a) => {
@@ -253,73 +257,74 @@ function TemplatePicker({
 }) {
   const { Button } = useWfComponents()
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-2xl rounded-lg border border-neutral-200 bg-white p-5 shadow-xl">
-        <h2 className="mb-1 text-base font-semibold text-neutral-900">
-          Start a new agent
-        </h2>
-        <p className="mb-4 text-sm text-neutral-500">
-          Begin from a template or a blank agent. You can edit everything after.
-        </p>
+    <Modal
+      open
+      onClose={onClose}
+      panelClassName="w-full max-w-2xl rounded-lg border border-neutral-200 bg-white p-5 shadow-xl"
+    >
+      <h2 className="mb-1 text-base font-semibold text-neutral-900">
+        Start a new agent
+      </h2>
+      <p className="mb-4 text-sm text-neutral-500">
+        Begin from a template or a blank agent. You can edit everything after.
+      </p>
 
-        <div className="grid grid-cols-2 gap-2">
-          {templates.map((t) => {
-            const Icon = agentIcon(t.icon)
-            const color = agentColor(t.color)
-            return (
-              <button
-                key={t.key}
-                type="button"
-                disabled={creating}
-                onClick={() => onPick(t)}
-                className="flex h-full items-start gap-3 rounded-lg border border-neutral-200 p-3 text-left transition hover:border-neutral-300 hover:bg-neutral-50"
+      <div className="grid grid-cols-2 gap-2">
+        {templates.map((t) => {
+          const Icon = agentIcon(t.icon)
+          const color = agentColor(t.color)
+          return (
+            <button
+              key={t.key}
+              type="button"
+              disabled={creating}
+              onClick={() => onPick(t)}
+              className="flex h-full items-start gap-3 rounded-lg border border-neutral-200 p-3 text-left transition hover:border-neutral-300 hover:bg-neutral-50"
+            >
+              <span
+                className={cn(
+                  'flex size-9 shrink-0 items-center justify-center rounded-lg',
+                  color.chip,
+                )}
               >
-                <span
-                  className={cn(
-                    'flex size-9 shrink-0 items-center justify-center rounded-lg',
-                    color.chip,
-                  )}
-                >
-                  <Icon className="size-4" />
-                </span>
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium text-neutral-900">
-                    {t.name}
-                  </span>
-                  <span className="mt-0.5 block text-xs text-neutral-500">
-                    {t.description}
-                  </span>
-                </span>
-              </button>
-            )
-          })}
-
-          <button
-            type="button"
-            disabled={creating}
-            onClick={onBlank}
-            className="flex h-full items-start gap-3 rounded-lg border border-dashed border-neutral-300 p-3 text-left transition hover:border-neutral-400 hover:bg-neutral-50"
-          >
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-500">
-              <Sparkles className="size-4" />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-sm font-medium text-neutral-700">
-                Start from scratch
+                <Icon className="size-4" />
               </span>
-              <span className="mt-0.5 block text-xs text-neutral-500">
-                A blank agent you configure yourself.
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium text-neutral-900">
+                  {t.name}
+                </span>
+                <span className="mt-0.5 block text-xs text-neutral-500">
+                  {t.description}
+                </span>
               </span>
+            </button>
+          )
+        })}
+        <button
+          type="button"
+          disabled={creating}
+          onClick={onBlank}
+          className="flex h-full items-start gap-3 rounded-lg border border-dashed border-neutral-300 p-3 text-left transition hover:border-neutral-400 hover:bg-neutral-50"
+        >
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-500">
+            <Sparkles className="size-4" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-medium text-neutral-700">
+              Start from scratch
             </span>
-          </button>
-        </div>
-
-        <div className="mt-4 flex justify-end">
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Cancel
-          </Button>
-        </div>
+            <span className="mt-0.5 block text-xs text-neutral-500">
+              A blank agent you configure yourself.
+            </span>
+          </span>
+        </button>
       </div>
-    </div>
+
+      <div className="mt-4 flex justify-end">
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Cancel
+        </Button>
+      </div>
+    </Modal>
   )
 }

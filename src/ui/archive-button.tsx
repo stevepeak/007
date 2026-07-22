@@ -1,8 +1,9 @@
-import { Archive, X } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { Archive } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
 
 import { useWfComponents } from './context'
 import { HoldButton } from './hold-button'
+import { Modal } from './modal'
 import { Tooltip } from './tooltip'
 
 // Icon-only archive control used across 007 toolbars. Click opens a dialog that
@@ -26,15 +27,6 @@ export function ArchiveButton({
   const { Button } = useWfComponents()
   const [open, setOpen] = useState(false)
 
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open])
-
   return (
     <>
       <Tooltip content={title} side="bottom">
@@ -48,53 +40,39 @@ export function ArchiveButton({
         </button>
       </Tooltip>
 
-      {open ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setOpen(false)}
-        >
-          <div
-            className="w-full max-w-md rounded-lg border border-neutral-200 bg-white shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-3">
-              <h2 className="flex items-center gap-1.5 text-sm font-semibold">
-                <Archive className="size-4 text-neutral-500" />
-                {title}
-              </h2>
-              <button
-                aria-label="Close"
-                onClick={() => setOpen(false)}
-                className="text-neutral-400 transition hover:text-neutral-700"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-
-            <div className="px-5 py-4 text-sm leading-relaxed text-neutral-600">
-              {description}
-            </div>
-
-            <div className="flex items-center justify-end gap-2 border-t border-neutral-200 px-5 py-3">
-              <Button variant="outline" size="sm" onClick={() => setOpen(false)}>
-                Cancel
-              </Button>
-              <HoldButton
-                size="md"
-                tone="danger"
-                title={confirmLabel}
-                onHold={() => {
-                  setOpen(false)
-                  onConfirm()
-                }}
-              >
-                <Archive className="size-4" />
-                {confirmLabel}
-              </HoldButton>
-            </div>
-          </div>
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title={
+          <span className="flex items-center gap-1.5">
+            <Archive className="size-4 text-neutral-500" />
+            {title}
+          </span>
+        }
+        panelClassName="w-full max-w-md rounded-lg border border-neutral-200 bg-white shadow-xl"
+      >
+        <div className="px-5 py-4 text-sm leading-relaxed text-neutral-600">
+          {description}
         </div>
-      ) : null}
+
+        <div className="flex items-center justify-end gap-2 border-t border-neutral-200 px-5 py-3">
+          <Button variant="outline" size="sm" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <HoldButton
+            size="md"
+            tone="danger"
+            title={confirmLabel}
+            onHold={() => {
+              setOpen(false)
+              onConfirm()
+            }}
+          >
+            <Archive className="size-4" />
+            {confirmLabel}
+          </HoldButton>
+        </div>
+      </Modal>
     </>
   )
 }

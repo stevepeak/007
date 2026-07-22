@@ -9,6 +9,7 @@ import { WorkflowCanvas } from './editor/workflow-canvas'
 import { formatDuration, formatTimestamp, formatTokens, formatUsd } from './cost'
 import { useRetryRun, useRun } from './hooks'
 import { useWfNav } from './nav'
+import { QueryState } from './query-state'
 import { RunNodeDock } from './run-node-dock'
 import { runStatusClass } from './run-status'
 import { WfShell } from './shell'
@@ -110,209 +111,210 @@ export function RunPage({ runId, className }: RunPageProps) {
     [data?.steps],
   )
 
-  if (isLoading) {
-    return (
-      <div className={cn('p-6 text-sm text-neutral-500', className)}>
-        Loading run…
-      </div>
-    )
-  }
-  if (error) {
-    return (
-      <div className={cn('p-6 text-sm text-red-600', className)}>
-        {(error as Error).message}
-      </div>
-    )
-  }
-  if (!data) {
-    return (
-      <div className={cn('p-6 text-sm text-neutral-500', className)}>
-        Run not found.
-      </div>
-    )
-  }
-
-  const { run } = data
-  const start = run.startedAt ?? run.createdAt
-  const end = run.finishedAt ?? (run.status === 'running' ? Date.now() : null)
-  const live = run.status === 'running' || run.status === 'queued'
-  const canRetry = run.status === 'failed' || run.status === 'cancelled'
-  // Resume only makes sense when a specific node failed and we still have the
-  // graph (node ids must line up with the recorded steps).
-  const canResume =
-    run.status === 'failed' &&
-    !!data.graph &&
-    data.steps.some((s) => s.status === 'failed')
-
-  const found =
-    selectedId && data.graph ? findNode(data.graph, selectedId) : null
-  const selectedNode = found?.node ?? null
-  const parentIterationId = found?.parentIterationId ?? null
-
-  // How many items the relevant iteration fanned out over — for the container's
-  // own aggregate step when it's selected, or the parent container's step when
-  // an inner node is selected. Drives the per-item picker + the itemIndex clamp.
-  const iterationId =
-    parentIterationId ??
-    (selectedNode?.kind === 'iteration' ? selectedId : null)
-  const iterationStep = iterationId
-    ? (data.steps.find((s) => s.nodeId === iterationId && !s.parentNodeId) ??
-      null)
-    : null
-  const itemCount = iterationItemCount(iterationStep)
-  const itemIndex =
-    itemCount > 0 ? Math.min(selectedItemIndex, itemCount - 1) : 0
-
-  // An inner-subgraph node's step is addressed by (nodeId, container, item);
-  // a top-level node's step is the single row with no parent.
-  const selectedStep = !selectedId
-    ? null
-    : parentIterationId
-      ? (data.steps.find(
-          (s) =>
-            s.nodeId === selectedId &&
-            s.parentNodeId === parentIterationId &&
-            s.itemIndex === itemIndex,
-        ) ?? null)
-      : (data.steps.find((s) => s.nodeId === selectedId && !s.parentNodeId) ??
-        null)
-
-  // Canvas tint: top-level statuses, plus — when an iteration or one of its
-  // inner nodes is selected — that iteration's inner nodes tinted by the focused
-  // item, so stepping through items lights up the subgraph item by item.
-  const canvasStatuses = iterationId
-    ? new Map([
-        ...nodeStatuses,
-        ...data.steps
-          .filter(
-            (s) => s.parentNodeId === iterationId && s.itemIndex === itemIndex,
-          )
-          .map((s) => [s.nodeId, s.status] as const),
-      ])
-    : nodeStatuses
-
-  const handleRetry = (mode: RetryRunMode) => {
-    retry.mutate(
-      { runId, mode },
-      { onSuccess: ({ runId: newRunId }) => navigate(`runs/${newRunId}`) },
-    )
-  }
-
   return (
-    <WfShell
-      className={className}
-      titleIcon={<Activity className="size-5 shrink-0 text-sky-500" />}
-      crumbs={[
-        {
-          label: (
-            <>
-              {triggerLabel(run.triggerKind)}{' '}
-              <span className="font-normal text-neutral-400">
-                {fmtRelative(run.createdAt)}
-              </span>
-            </>
-          ),
-        },
-      ]}
-      actions={
-        <>
-          <span className="text-xs text-neutral-500">
-            {run.workflowName}
-            {data.versionNumber != null ? (
-              <span className="text-neutral-400"> v{data.versionNumber}</span>
-            ) : null}
-          </span>
-          <Badge className={cn('border', runStatusClass[run.status])}>
-            {run.status}
-          </Badge>
-          {run.sentryTraceUrl ? (
-            <a
-              href={run.sentryTraceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-violet-600 hover:text-violet-700 hover:underline"
-              title="Open this run's distributed trace in Sentry"
-            >
-              <Activity className="size-3.5" />
-              Trace
-              <ExternalLink className="size-3" />
-            </a>
-          ) : null}
-          <span className="text-xs text-neutral-500">
-            {formatTimestamp(run.createdAt)}
-          </span>
-          <span className="text-xs text-neutral-500">
-            {formatDuration(start, end)}
-          </span>
-          {run.costUsd != null ? (
-            <span
-              className="text-xs font-medium text-neutral-600 tabular-nums"
-              title={
-                run.totalTokens != null
-                  ? `${run.totalTokens.toLocaleString()} tokens`
-                  : undefined
-              }
-            >
-              {formatUsd(run.costUsd)}
-              {run.totalTokens != null ? (
-                <span className="ml-1 font-normal text-neutral-400">
-                  · {formatTokens(run.totalTokens)} tok
-                </span>
-              ) : null}
-            </span>
-          ) : null}
-          {canRetry ? (
-            <RetryMenu
-              canResume={canResume}
-              pending={retry.isPending}
-              onPick={handleRetry}
-            />
-          ) : null}
-        </>
+    <QueryState
+      query={{ isLoading, error, data }}
+      loading={
+        <div className={cn('p-6 text-sm text-neutral-500', className)}>
+          Loading run…
+        </div>
+      }
+      error={(error) => (
+        <div className={cn('p-6 text-sm text-red-600', className)}>
+          {error.message}
+        </div>
+      )}
+      empty={
+        <div className={cn('p-6 text-sm text-neutral-500', className)}>
+          Run not found.
+        </div>
       }
     >
-      <div className="flex h-full flex-col">
-        {run.error ? (
-          <div className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
-            {run.error}
-          </div>
-        ) : null}
-        {retry.error ? (
-          <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-700">
-            Retry failed: {(retry.error as Error).message}
-          </div>
-        ) : null}
+      {(data) => {
+        const { run } = data
+        const start = run.startedAt ?? run.createdAt
+        const end = run.finishedAt ?? (run.status === 'running' ? Date.now() : null)
+        const live = run.status === 'running' || run.status === 'queued'
+        const canRetry = run.status === 'failed' || run.status === 'cancelled'
+        // Resume only makes sense when a specific node failed and we still have the
+        // graph (node ids must line up with the recorded steps).
+        const canResume =
+          run.status === 'failed' &&
+          !!data.graph &&
+          data.steps.some((s) => s.status === 'failed')
 
-        {/* Body: read-only workflow graph on top, node inspector docked below. */}
-        <div className="relative min-h-0 flex-1 bg-neutral-50">
-          {data.graph ? (
-            <WorkflowCanvas
-              graph={data.graph}
-              readOnly
-              nodeStatuses={canvasStatuses}
-              onSelectionChange={setSelectedId}
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center p-6 text-sm text-neutral-400">
-              This run's workflow version is no longer available.
+        const found =
+          selectedId && data.graph ? findNode(data.graph, selectedId) : null
+        const selectedNode = found?.node ?? null
+        const parentIterationId = found?.parentIterationId ?? null
+
+        // How many items the relevant iteration fanned out over — for the container's
+        // own aggregate step when it's selected, or the parent container's step when
+        // an inner node is selected. Drives the per-item picker + the itemIndex clamp.
+        const iterationId =
+          parentIterationId ??
+          (selectedNode?.kind === 'iteration' ? selectedId : null)
+        const iterationStep = iterationId
+          ? (data.steps.find((s) => s.nodeId === iterationId && !s.parentNodeId) ??
+            null)
+          : null
+        const itemCount = iterationItemCount(iterationStep)
+        const itemIndex =
+          itemCount > 0 ? Math.min(selectedItemIndex, itemCount - 1) : 0
+
+        // An inner-subgraph node's step is addressed by (nodeId, container, item);
+        // a top-level node's step is the single row with no parent.
+        const selectedStep = !selectedId
+          ? null
+          : parentIterationId
+            ? (data.steps.find(
+                (s) =>
+                  s.nodeId === selectedId &&
+                  s.parentNodeId === parentIterationId &&
+                  s.itemIndex === itemIndex,
+              ) ?? null)
+            : (data.steps.find((s) => s.nodeId === selectedId && !s.parentNodeId) ??
+              null)
+
+        // Canvas tint: top-level statuses, plus — when an iteration or one of its
+        // inner nodes is selected — that iteration's inner nodes tinted by the focused
+        // item, so stepping through items lights up the subgraph item by item.
+        const canvasStatuses = iterationId
+          ? new Map([
+              ...nodeStatuses,
+              ...data.steps
+                .filter(
+                  (s) => s.parentNodeId === iterationId && s.itemIndex === itemIndex,
+                )
+                .map((s) => [s.nodeId, s.status] as const),
+            ])
+          : nodeStatuses
+
+        const handleRetry = (mode: RetryRunMode) => {
+          retry.mutate(
+            { runId, mode },
+            { onSuccess: ({ runId: newRunId }) => navigate(`runs/${newRunId}`) },
+          )
+        }
+
+        return (
+          <WfShell
+            className={className}
+            titleIcon={<Activity className="size-5 shrink-0 text-sky-500" />}
+            crumbs={[
+              {
+                label: (
+                  <>
+                    {triggerLabel(run.triggerKind)}{' '}
+                    <span className="font-normal text-neutral-400">
+                      {fmtRelative(run.createdAt)}
+                    </span>
+                  </>
+                ),
+              },
+            ]}
+            actions={
+              <>
+                <span className="text-xs text-neutral-500">
+                  {run.workflowName}
+                  {data.versionNumber != null ? (
+                    <span className="text-neutral-400"> v{data.versionNumber}</span>
+                  ) : null}
+                </span>
+                <Badge className={cn('border', runStatusClass[run.status])}>
+                  {run.status}
+                </Badge>
+                {run.sentryTraceUrl ? (
+                  <a
+                    href={run.sentryTraceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-violet-600 hover:text-violet-700 hover:underline"
+                    title="Open this run's distributed trace in Sentry"
+                  >
+                    <Activity className="size-3.5" />
+                    Trace
+                    <ExternalLink className="size-3" />
+                  </a>
+                ) : null}
+                <span className="text-xs text-neutral-500">
+                  {formatTimestamp(run.createdAt)}
+                </span>
+                <span className="text-xs text-neutral-500">
+                  {formatDuration(start, end)}
+                </span>
+                {run.costUsd != null ? (
+                  <span
+                    className="text-xs font-medium text-neutral-600 tabular-nums"
+                    title={
+                      run.totalTokens != null
+                        ? `${run.totalTokens.toLocaleString()} tokens`
+                        : undefined
+                    }
+                  >
+                    {formatUsd(run.costUsd)}
+                    {run.totalTokens != null ? (
+                      <span className="ml-1 font-normal text-neutral-400">
+                        · {formatTokens(run.totalTokens)} tok
+                      </span>
+                    ) : null}
+                  </span>
+                ) : null}
+                {canRetry ? (
+                  <RetryMenu
+                    canResume={canResume}
+                    pending={retry.isPending}
+                    onPick={handleRetry}
+                  />
+                ) : null}
+              </>
+            }
+          >
+            <div className="flex h-full flex-col">
+              {run.error ? (
+                <div className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+                  {run.error}
+                </div>
+              ) : null}
+              {retry.error ? (
+                <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-700">
+                  Retry failed: {(retry.error as Error).message}
+                </div>
+              ) : null}
+
+              {/* Body: read-only workflow graph on top, node inspector docked below. */}
+              <div className="relative min-h-0 flex-1 bg-neutral-50">
+                {data.graph ? (
+                  <WorkflowCanvas
+                    graph={data.graph}
+                    readOnly
+                    nodeStatuses={canvasStatuses}
+                    onSelectionChange={setSelectedId}
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center p-6 text-sm text-neutral-400">
+                    This run's workflow version is no longer available.
+                  </div>
+                )}
+              </div>
+              <RunNodeDock
+                node={selectedNode}
+                step={selectedStep}
+                logs={data.logs}
+                live={live}
+                selectedNodeId={selectedId}
+                onSelectNode={setSelectedId}
+                // Per-item picker: only meaningful when inspecting a node INSIDE an
+                // iteration, where itemIndex selects which recorded item to show.
+                itemIndex={parentIterationId ? itemIndex : null}
+                itemCount={parentIterationId ? itemCount : 0}
+                onSelectItem={setSelectedItemIndex}
+              />
             </div>
-          )}
-        </div>
-        <RunNodeDock
-          node={selectedNode}
-          step={selectedStep}
-          logs={data.logs}
-          live={live}
-          selectedNodeId={selectedId}
-          onSelectNode={setSelectedId}
-          // Per-item picker: only meaningful when inspecting a node INSIDE an
-          // iteration, where itemIndex selects which recorded item to show.
-          itemIndex={parentIterationId ? itemIndex : null}
-          itemCount={parentIterationId ? itemCount : 0}
-          onSelectItem={setSelectedItemIndex}
-        />
-      </div>
-    </WfShell>
+          </WfShell>
+        )
+      }}
+    </QueryState>
   )
 }
 
