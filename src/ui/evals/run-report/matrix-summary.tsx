@@ -1,4 +1,5 @@
-import { Gauge, Target, Wallet } from 'lucide-react'
+import { Gauge, Star, Target, Wallet } from 'lucide-react'
+import { Fragment } from 'react'
 
 import type { WfEvalResultDTO } from '../../../server/protocol'
 import { cn } from '../../cn'
@@ -6,6 +7,15 @@ import { formatUsd } from '../../cost'
 import { useModels } from '../../hooks'
 
 import { cellKey, mean } from './model'
+
+// Heatmap tint for a cell, from its pass rate: red (0) → amber (.5) → green (1).
+// A soft constant alpha keeps the dark cell text readable; the hue carries the
+// signal. Untested combinations (rate null) get no tint.
+function heatStyle(rate: number | null): React.CSSProperties {
+  if (rate == null) return {}
+  const hue = Math.round(rate * 130)
+  return { backgroundColor: `hsl(${hue} 65% 45% / 0.18)` }
+}
 
 // The matrix roll-up: collapses every test back into one row per {model × prompt}
 // cell and reads off which cell wins on accuracy, cost, and speed. Only rendered
@@ -108,6 +118,16 @@ export function MatrixSummary({
 
   const byKey = new Map(cells.map((c) => [cellKey(c.modelId, c.promptLabel), c]))
 
+  // The two axes, in first-seen order: models across the top, prompts down the
+  // side. When only one axis varies (e.g. a model sweep with a single saved
+  // prompt) the grid collapses to a single row or column and still reads.
+  const modelAxis: (string | null)[] = []
+  const promptAxis: (string | null)[] = []
+  for (const c of cells) {
+    if (!modelAxis.some((m) => m === c.modelId)) modelAxis.push(c.modelId)
+    if (!promptAxis.some((p) => p === c.promptLabel)) promptAxis.push(c.promptLabel)
+  }
+
   // The "best of" cards: one per winning column, each pointing at the cell that
   // won it.
   const highlights: {
@@ -150,45 +170,136 @@ export function MatrixSummary({
   ]
 
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-      {highlights.map((h) => {
-        const cell = h.key ? byKey.get(h.key) : undefined
-        return (
+    <div className="space-y-3">
+      {/* What was tested: the {model × prompt} grid, shaded by pass rate. */}
+      <div className="rounded-lg border border-neutral-200 bg-white p-3">
+        <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+          Tested matrix
+        </div>
+        <div className="overflow-x-auto">
           <div
-            key={h.label}
-            onMouseEnter={() => cell && onHoverCell?.(h.key)}
-            onMouseLeave={() => onHoverCell?.(null)}
-            className={cn(
-              'rounded-lg border p-3 transition',
-              cell
-                ? 'border-neutral-200 bg-neutral-50/60 hover:border-emerald-300 hover:bg-emerald-50/50'
-                : 'border-dashed border-neutral-200 bg-white',
-            )}
+            className="inline-grid gap-1 text-xs"
+            style={{
+              gridTemplateColumns: `minmax(6rem,10rem) repeat(${modelAxis.length}, minmax(4.5rem,1fr))`,
+            }}
           >
-            <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-neutral-400">
-              <h.Icon className={cn('size-3.5', h.tone)} />
-              {h.label}
-            </div>
-            {cell ? (
-              <>
-                <div className="mt-1.5 truncate text-sm font-semibold text-neutral-900">
-                  {modelLabel(cell.modelId)}
-                </div>
-                <div className="truncate text-xs text-neutral-500">
-                  {promptLabel(cell.promptLabel)}
-                </div>
-                <div className={cn('mt-1 text-sm font-semibold tabular-nums', h.tone)}>
-                  {h.value}
-                </div>
-              </>
-            ) : (
-              <div className="mt-1.5 text-sm text-neutral-400">
-                Not enough data
+            {/* Header row: empty corner + one model label per column. */}
+            <div />
+            {modelAxis.map((mid) => (
+              <div
+                key={`h-${String(mid)}`}
+                className="truncate px-2 py-1 text-center font-medium text-neutral-600"
+                title={modelLabel(mid)}
+              >
+                {modelLabel(mid)}
               </div>
-            )}
+            ))}
+            {/* One row per prompt: prompt label + a cell per model. */}
+            {promptAxis.map((pl) => (
+              <Fragment key={`r-${String(pl)}`}>
+                <div
+                  className="flex items-center truncate px-2 py-1 font-medium text-neutral-600"
+                  title={promptLabel(pl)}
+                >
+                  {promptLabel(pl)}
+                </div>
+                {modelAxis.map((mid) => {
+                  const key = cellKey(mid, pl)
+                  const cell = byKey.get(key)
+                  if (!cell) {
+                    return (
+                      <div
+                        key={key}
+                        className="flex items-center justify-center rounded border border-dashed border-neutral-200 py-2 text-neutral-300"
+                      >
+                        —
+                      </div>
+                    )
+                  }
+                  const rate = cell.total ? cell.passed / cell.total : null
+                  const isWin = key === bestAcc
+                  const detail =
+                    `${cell.passed}/${cell.total} passed` +
+                    (cell.meanScore != null
+                      ? ` · score ${Math.round(cell.meanScore)}`
+                      : '') +
+                    (cell.avgCostUsd != null
+                      ? ` · ${formatUsd(cell.avgCostUsd)}/run`
+                      : '') +
+                    (cell.tokensPerSec != null
+                      ? ` · ${cell.tokensPerSec} tok/s`
+                      : '')
+                  return (
+                    <div
+                      key={key}
+                      onMouseEnter={() => onHoverCell?.(key)}
+                      onMouseLeave={() => onHoverCell?.(null)}
+                      title={detail}
+                      style={heatStyle(rate)}
+                      className={cn(
+                        'flex cursor-default items-center justify-center gap-1 rounded border py-2 text-sm font-semibold tabular-nums text-neutral-800 transition',
+                        isWin
+                          ? 'border-emerald-400 ring-1 ring-emerald-300'
+                          : 'border-neutral-200 hover:border-neutral-300',
+                      )}
+                    >
+                      {cell.passed}/{cell.total}
+                      {isWin && (
+                        <Star className="size-3 fill-emerald-500 text-emerald-500" />
+                      )}
+                    </div>
+                  )
+                })}
+              </Fragment>
+            ))}
           </div>
-        )
-      })}
+        </div>
+        <div className="mt-2 text-[11px] text-neutral-400">
+          Shaded by pass rate · <Star className="inline size-3 -translate-y-px fill-emerald-500 text-emerald-500" /> most accurate · hover a cell to highlight its rows below
+        </div>
+      </div>
+
+      {/* Best-of roll-up: one card per winning column. */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {highlights.map((h) => {
+          const cell = h.key ? byKey.get(h.key) : undefined
+          return (
+            <div
+              key={h.label}
+              onMouseEnter={() => cell && onHoverCell?.(h.key)}
+              onMouseLeave={() => onHoverCell?.(null)}
+              className={cn(
+                'rounded-lg border p-3 transition',
+                cell
+                  ? 'border-neutral-200 bg-neutral-50/60 hover:border-emerald-300 hover:bg-emerald-50/50'
+                  : 'border-dashed border-neutral-200 bg-white',
+              )}
+            >
+              <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+                <h.Icon className={cn('size-3.5', h.tone)} />
+                {h.label}
+              </div>
+              {cell ? (
+                <>
+                  <div className="mt-1.5 truncate text-sm font-semibold text-neutral-900">
+                    {modelLabel(cell.modelId)}
+                  </div>
+                  <div className="truncate text-xs text-neutral-500">
+                    {promptLabel(cell.promptLabel)}
+                  </div>
+                  <div className={cn('mt-1 text-sm font-semibold tabular-nums', h.tone)}>
+                    {h.value}
+                  </div>
+                </>
+              ) : (
+                <div className="mt-1.5 text-sm text-neutral-400">
+                  Not enough data
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
