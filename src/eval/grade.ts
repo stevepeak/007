@@ -234,6 +234,10 @@ async function gradeJudge(
     tool: c.toolId,
     args: c.args,
   }))
+  // The judge grades the whole output, or — when the check pins a `path` — only
+  // the value at that path, so a rubric can target one known field.
+  const graded = valueAtPath(input.output, check.path)
+  const outputLabel = check.path ? `RUN OUTPUT (at \`${check.path}\`)` : 'RUN OUTPUT'
   const { object } = await generateObject({
     model: input.getModel(modelId),
     schema: judgeSchema,
@@ -244,7 +248,7 @@ async function gradeJudge(
       '',
       `RUBRIC:\n${check.rubric}`,
       '',
-      `RUN OUTPUT:\n${preview(JSON.stringify(input.output))}`,
+      `${outputLabel}:\n${JSON.stringify(graded)}`,
       '',
       `TOOL CALLS:\n${JSON.stringify(toolCalls)}`,
     ].join('\n'),

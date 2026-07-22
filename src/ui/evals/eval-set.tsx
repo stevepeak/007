@@ -1,8 +1,9 @@
-import { ArrowUpRight, Goal, Play, Plus } from 'lucide-react'
+import { ArrowUpRight, Goal, Pencil, Play, Plus } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { WfEvalRowDTO } from '../../server/protocol'
 import { agentColor, agentIcon } from '../agent-appearance'
+import { AgentSelect, type AgentSelectValue } from '../agent-select'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { useAgents, useEvalRuns, useEvalSet, useUpdateEvalSet, useUpsertEvalRow } from '../hooks'
@@ -160,7 +161,11 @@ export function EvalSet({ setId, className }: EvalSetProps) {
           <EmptyState message="This goal doesn't exist, or was archived / removed." />
         ) : (
           <>
-            <TargetRow targetId={set.targetId} targetVersion={set.targetVersion} />
+            <TargetRow
+              setId={setId}
+              targetId={set.targetId}
+              targetVersion={set.targetVersion}
+            />
 
             <RunConfigDialog
               open={runOpen}
@@ -191,21 +196,95 @@ export function EvalSet({ setId, className }: EvalSetProps) {
   )
 }
 
-// The set-level target: which agent the goal's samples run against. Fixed once
-// the goal is created — every sample's Given fields and mock fixtures reflect
-// from this agent, so swapping it would orphan them. Read-only here; to target a
-// different agent, create a new goal.
+// The set-level target: which agent the goal's samples run against. Editable in
+// place — pick a different agent or pin/float its version. Changing the target
+// keeps the goal's Samples but they were authored against the previous agent, so
+// their Given fields and mock fixtures may no longer line up (surfaced with a
+// warning while editing).
 function TargetRow({
+  setId,
   targetId,
   targetVersion,
 }: {
+  setId: string
   targetId: string
   targetVersion: number | null
 }) {
+  const { Button } = useWfComponents()
   const agentsQuery = useAgents()
+  const updateSet = useUpdateEvalSet()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState<AgentSelectValue>({
+    agentId: targetId,
+    version: targetVersion,
+  })
+
   const agent = agentsQuery.data?.find((a) => a.id === targetId)
   const Icon = agentIcon(agent?.icon)
   const color = agentColor(agent?.color)
+
+  const startEdit = () => {
+    setDraft({ agentId: targetId, version: targetVersion })
+    setEditing(true)
+  }
+
+  const changed = draft.agentId !== targetId || draft.version !== targetVersion
+  const canSave = !!draft.agentId && changed && !updateSet.isPending
+
+  const save = async () => {
+    if (!canSave) return
+    await updateSet.mutateAsync({
+      setId,
+      targetKind: 'agent',
+      targetId: draft.agentId,
+      targetVersion: draft.version,
+    })
+    setEditing(false)
+  }
+
+  if (editing) {
+    const swappingAgent = draft.agentId !== targetId
+    return (
+      <div className="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50/60 px-4 py-3">
+        <AgentSelect
+          agents={agentsQuery.data ?? []}
+          value={draft}
+          onChange={setDraft}
+          disabled={updateSet.isPending}
+          placeholder={
+            agentsQuery.isLoading ? 'Loading agents…' : 'Select an agent…'
+          }
+        />
+        {swappingAgent ? (
+          <p className="text-xs text-amber-600">
+            Heads up: this goal&apos;s samples were authored against the current
+            agent. Their Given fields and mock fixtures may not line up with the
+            new agent — review each sample after switching.
+          </p>
+        ) : (
+          <p className="text-xs text-neutral-400">
+            {draft.version == null
+              ? 'Floats to the latest published version.'
+              : `Pinned to v${draft.version}.`}
+          </p>
+        )}
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={updateSet.isPending}
+            onClick={() => setEditing(false)}
+          >
+            Cancel
+          </Button>
+          <Button size="sm" disabled={!canSave} onClick={() => void save()}>
+            {updateSet.isPending ? 'Saving…' : 'Save target'}
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50/60 px-4 py-3">
       <span
@@ -222,6 +301,14 @@ function TargetRow({
       <span className="shrink-0 rounded-full border border-neutral-200 bg-white px-2 py-0.5 text-[11px] font-medium tabular-nums text-neutral-500">
         {targetVersion == null ? 'Latest' : `v${targetVersion}`}
       </span>
+      <button
+        type="button"
+        onClick={startEdit}
+        className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-neutral-500 transition hover:text-neutral-800"
+      >
+        <Pencil className="size-3.5" />
+        Change
+      </button>
       <WfLink
         to={`agents/${targetId}/edit`}
         newTab

@@ -155,7 +155,67 @@ function judgeModel(score: number) {
   })
 }
 
+// Like judgeModel, but captures the prompt the judge was actually handed, so a
+// test can assert WHAT the judge saw (full output vs. a plucked field).
+function capturingJudge(score: number) {
+  const seen: { prompt: string } = { prompt: '' }
+  const model = new MockLanguageModelV3({
+    doGenerate: async (options) => {
+      seen.prompt = JSON.stringify(options.prompt)
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify({ score, reason: `scored ${score}` }) },
+        ],
+        finishReason: 'stop',
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        warnings: [],
+      }
+    },
+  })
+  return { model, seen }
+}
+
 describe('gradeRow — judge checks', () => {
+  test('judge sees the FULL run output (no truncation), even when large', async () => {
+    // A value far past the old 120-char cap must still reach the judge — this is
+    // the regression guard for the truncated-judge-prompt bug.
+    const tail = 'z'.repeat(500)
+    const { model, seen } = capturingJudge(0.9)
+    await gradeRow({
+      checks: { op: 'and', checks: [{ type: 'llm_judge', rubric: 'r' }] },
+      steps: workflowSteps,
+      output: { pad: tail, docMeta: { parties: ['Acme Corp'] } },
+      getModel: () => model,
+      defaultJudgeModelId: 'mock',
+    })
+    expect(seen.prompt).toContain('Acme Corp') // last field survives
+    expect(seen.prompt).toContain(tail) // not chopped at 120 chars
+  })
+
+  test('llm_judge `path` pins the judge to one output value', async () => {
+    const { model, seen } = capturingJudge(0.9)
+    const r = await gradeRow({
+      checks: {
+        op: 'and',
+        checks: [
+          { type: 'llm_judge', rubric: 'parties are present', path: 'docMeta.parties' },
+        ],
+      },
+      steps: workflowSteps,
+      output: {
+        outline: [{ headerText: 'noise'.repeat(50) }],
+        docMeta: { parties: ['Acme Corp', 'Beta LLC'] },
+      },
+      getModel: () => model,
+      defaultJudgeModelId: 'mock',
+    })
+    expect(r.status).toBe('pass')
+    expect(seen.prompt).toContain('docMeta.parties') // labeled with the path
+    expect(seen.prompt).toContain('Beta LLC') // the plucked value is present
+    expect(seen.prompt).not.toContain('outline') // unrelated fields are excluded
+  })
+
+
   test('judge score ≥ threshold passes; score comes from judge only', async () => {
     const r = await grade(
       {

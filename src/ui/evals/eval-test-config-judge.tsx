@@ -21,6 +21,10 @@ export function JudgeConfig({
   const rubricField = useCommittedField(check.rubric, (rubric) =>
     persist({ ...check, rubric }),
   )
+  // Optional JSON path pinning the judge to one output field; blank = whole output.
+  const pathField = useCommittedField(check.path ?? '', (path) =>
+    persist({ ...check, path: path.trim() || undefined }),
+  )
 
   // The judge model is required, so keep one selected: as soon as the model list
   // loads, seed an empty selection with the first available model.
@@ -48,6 +52,29 @@ export function JudgeConfig({
           placeholder="What should the judge reward or penalize?"
           onChange={(e) => rubricField.onChange(e.target.value)}
           onBlur={rubricField.onBlur}
+        />
+      </div>
+      <div className="space-y-1">
+        <div className="flex items-center gap-1">
+          <Label>Output path (optional)</Label>
+          <FieldHelp title="Output path">
+            <p>
+              Pin the judge to a single field of the run output instead of the
+              whole thing. Use a dot/bracket path like{' '}
+              <strong>docMeta.parties</strong> or <strong>items[0].name</strong>.
+            </p>
+            <p>
+              Leave it <strong>blank</strong> to grade the entire output. Set it
+              when your rubric is about one known value — the judge then sees
+              only that value, so unrelated fields can’t distract or dilute it.
+            </p>
+          </FieldHelp>
+        </div>
+        <Input
+          value={pathField.value}
+          placeholder="blank = whole output — e.g. docMeta.parties"
+          onChange={(e) => pathField.onChange(e.target.value)}
+          onBlur={pathField.onBlur}
         />
       </div>
       <div className="grid grid-cols-2 gap-3">

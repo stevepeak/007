@@ -75,6 +75,12 @@ export const evalCheckSchema = z.discriminatedUnion('type', [
     ...checkMeta,
     type: z.literal('llm_judge'),
     rubric: z.string(),
+    /**
+     * Optional JSON path into the run `output`. When set, the judge grades ONLY
+     * the value at that path (e.g. `docMeta.parties`) instead of the whole
+     * output — a way to point the rubric at one known field. Omit = whole output.
+     */
+    path: z.string().optional(),
     /** Judge model; falls back to a suite/run default when omitted. */
     modelId: z.string().optional(),
     /** 0..1 score cutoff mapping the judge's score to pass/fail. Default 0.7. */
