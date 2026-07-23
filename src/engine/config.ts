@@ -197,6 +197,20 @@ export type RunContext = {
   subjectId?: string
   correlationId?: string
   triggerKind: string
+  /**
+   * Whether this generation should use the model's reasoning / thinking. The
+   * SDK sets it per call site so the *intent* stays with the caller that knows
+   * it, not inferred by the host from `triggerKind`:
+   *   • agent runs leave it undefined → the host's normal default (reasoning on);
+   *   • the SDK's internal utility calls (e.g. the publish change summarizer) set
+   *     `false`, since they want a direct answer and reasoning is wasted latency
+   *     — and on some providers a reasoning model can spend its whole token
+   *     budget in a `<think>` pass and return empty content.
+   * The host owns the *mechanism*: its `getModel` translates this into whatever
+   * its provider needs (Venice `disableThinking`, Anthropic `thinking.disabled`,
+   * …). Undefined means "host default"; the host must not force reasoning off.
+   */
+  reasoning?: boolean
   /** Variables exposed to Agent system-prompt `${name}` interpolation. */
   promptVariables?: Record<string, string | undefined>
   /**

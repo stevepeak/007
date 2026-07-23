@@ -55,6 +55,10 @@ export async function summarizeWorkflowChanges(input: {
 }): Promise<WfChangeSummary> {
   const model = input.getModel(input.modelId, {
     triggerKind: '__summarize__',
+    // Internal utility call — a one-line changelog wants a direct answer, not a
+    // reasoning pass. `reasoning: false` is the explicit, provider-agnostic
+    // signal the host honors; it replaces the host having to sniff triggerKind.
+    reasoning: false,
     env: input.env,
     promptVariables: {},
   })
