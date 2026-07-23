@@ -1,7 +1,6 @@
 import {
   Bot,
   Brain,
-  ChevronRight,
   CircleCheck,
   CircleDot,
   Cog,
@@ -90,17 +89,8 @@ function TimelineRow({ step, last }: { step: LogStep; last: boolean }) {
         {step.icon}
       </span>
       <div className="min-w-0 flex-1">
-        {step.body ? (
-          <details className="group">
-            <summary className="flex cursor-pointer list-none items-center gap-2 py-0.5 text-xs [&::-webkit-details-marker]:hidden">
-              {header}
-              <ChevronRight className="ml-auto size-3 shrink-0 text-neutral-400 transition-transform group-open:rotate-90" />
-            </summary>
-            <div className="mt-1.5">{step.body}</div>
-          </details>
-        ) : (
-          <div className="flex items-center gap-2 py-0.5 text-xs">{header}</div>
-        )}
+        <div className="flex items-center gap-2 py-0.5 text-xs">{header}</div>
+        {step.body ? <div className="mt-1.5">{step.body}</div> : null}
       </div>
     </div>
   )

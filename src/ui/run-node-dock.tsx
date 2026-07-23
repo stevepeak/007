@@ -1,10 +1,11 @@
-import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, Sparkles } from 'lucide-react'
 import { useCallback, useRef, useState } from 'react'
 
 import type { WorkflowNode } from '../engine'
 import type { WfRunLogDTO, WfRunStepDTO } from '../server/protocol'
 import { useWfComponents } from './context'
 import { cn } from './cn'
+import { ChatView } from './editor/bottom-dock'
 import { CreateSampleFromRun } from './evals/create-sample-from-run'
 import { RunActivityLog } from './run-activity-log'
 import { RunLog } from './run-log'
@@ -71,7 +72,7 @@ export function RunNodeDock({
   const { Badge } = useWfComponents()
   const hasItemPicker = itemCount > 0 && itemIndex != null
   const [open, setOpen] = useState(true)
-  const [tab, setTab] = useState<'activity' | 'logs'>('activity')
+  const [tab, setTab] = useState<'activity' | 'logs' | 'chat'>('activity')
 
   // Drag-to-resize the body height. The top border doubles as the handle: a
   // click (no movement) toggles the panel, a drag resizes it (clamped so it
@@ -165,6 +166,22 @@ export function RunNodeDock({
         >
           Inspect
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            setTab('chat')
+            setOpen(true)
+          }}
+          className={cn(
+            'flex items-center gap-1.5 border-b-2 px-2 py-1.5 text-xs font-medium transition-colors',
+            open && tab === 'chat'
+              ? 'border-neutral-800 text-neutral-800'
+              : 'border-transparent text-neutral-500 hover:text-neutral-700',
+          )}
+        >
+          <Sparkles className="size-3.5 text-violet-500" />
+          Chat
+        </button>
         <div className="flex-1" />
         {tab === 'logs' && node ? (
           <span className="flex min-w-0 items-center gap-2">
@@ -231,7 +248,15 @@ export function RunNodeDock({
               live={live}
               selectedNodeId={selectedNodeId}
               onSelectNode={onSelectNode}
+              // Double-click a row: select its node on the graph AND flip to the
+              // Inspect view focused on it.
+              onInspectNode={(nodeId) => {
+                onSelectNode?.(nodeId)
+                setTab('logs')
+              }}
             />
+          ) : tab === 'chat' ? (
+            <ChatView subject="run" />
           ) : !node ? (
             <p className="text-xs text-neutral-500">
               Select a node on the graph to inspect its run.

@@ -67,6 +67,17 @@ export type RunActivityLogProps = {
   selectedNodeId?: string | null
   /** Click a row to select its node on the graph. */
   onSelectNode?: (nodeId: string) => void
+  /** Double-click a row to select its node AND open its Inspect view. */
+  onInspectNode?: (nodeId: string) => void
+}
+
+// Compact duration for a completed node, e.g. "820ms", "35s", "2m 3s".
+function fmtDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  const s = ms / 1000
+  if (s < 60) return `${s < 10 ? s.toFixed(1) : Math.round(s)}s`
+  const m = Math.floor(s / 60)
+  return `${m}m ${Math.round(s % 60)}s`
 }
 
 export function RunActivityLog({
@@ -74,6 +85,7 @@ export function RunActivityLog({
   live,
   selectedNodeId,
   onSelectNode,
+  onInspectNode,
 }: RunActivityLogProps) {
   const bottomRef = useRef<HTMLDivElement | null>(null)
 
@@ -86,6 +98,24 @@ export function RunActivityLog({
       ),
     [logs],
   )
+
+  // How long each node took: pair every `node-end` with its preceding
+  // `node-start` (same nodeId) and stash the elapsed time by row index, so a
+  // completed node's ✓ line can show "35s".
+  const durations = useMemo(() => {
+    const startedAt = new Map<string, number>()
+    const byIndex = new Map<number, number>()
+    ordered.forEach((entry, i) => {
+      if (!entry.nodeId) return
+      if (entry.level === 'node-start') {
+        startedAt.set(entry.nodeId, entry.ts)
+      } else if (entry.level === 'node-end') {
+        const start = startedAt.get(entry.nodeId)
+        if (start != null && entry.ts >= start) byIndex.set(i, entry.ts - start)
+      }
+    })
+    return byIndex
+  }, [ordered])
 
   // Auto-scroll to the newest line while the run is live (console behaviour).
   useEffect(() => {
@@ -110,15 +140,21 @@ export function RunActivityLog({
         const selected =
           !!entry.nodeId && !!selectedNodeId && entry.nodeId === selectedNodeId
         const clickable = !!entry.nodeId && !!onSelectNode
+        const duration = durations.get(i)
         return (
           <div
             key={`${entry.ts}-${entry.sequence ?? 0}-${i}`}
             onClick={
               clickable ? () => onSelectNode!(entry.nodeId as string) : undefined
             }
+            onDoubleClick={
+              entry.nodeId && onInspectNode
+                ? () => onInspectNode(entry.nodeId as string)
+                : undefined
+            }
             className={cn(
               'flex items-start gap-2 rounded px-1.5 py-0.5',
-              clickable && 'cursor-pointer hover:bg-neutral-100',
+              clickable && 'cursor-pointer select-none hover:bg-neutral-100',
               selected && 'bg-blue-50',
             )}
           >
@@ -129,6 +165,11 @@ export function RunActivityLog({
             <span className={cn('min-w-0 break-words whitespace-pre-wrap', s.tone)}>
               {entry.message}
             </span>
+            {duration != null ? (
+              <span className="ml-auto shrink-0 tabular-nums text-emerald-600">
+                {fmtDuration(duration)}
+              </span>
+            ) : null}
           </div>
         )
       })}

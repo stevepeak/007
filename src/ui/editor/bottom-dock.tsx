@@ -269,12 +269,12 @@ export function ChatDock({ subject }: { subject: ChatSubject }) {
   )
 }
 
-type ChatSubject = 'workflow' | 'agent' | 'tool' | 'eval'
+export type ChatSubject = 'workflow' | 'agent' | 'tool' | 'eval' | 'run'
 
 // Placeholder for the AI assistant. Once built, this will be a chat that helps
 // authors understand and optimize the asset, with tools to make changes to it
 // under the user's direction.
-function ChatView({ subject }: { subject: ChatSubject }) {
+export function ChatView({ subject }: { subject: ChatSubject }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
       <div className="flex size-10 items-center justify-center rounded-full bg-violet-100">
