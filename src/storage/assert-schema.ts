@@ -27,6 +27,9 @@ export async function assertWfSchema(db: WfDb): Promise<void> {
     // Probe the model catalog table, so a DB migrated before the models
     // migration surfaces the same actionable error.
     await db.run(sql`select 1 from wf_model limit 1`)
+    // Probe the feedback table, so a DB migrated before the feedback migration
+    // (0019) surfaces the same actionable error.
+    await db.run(sql`select 1 from wf_feedback limit 1`)
   } catch (err) {
     throw new Error(
       "@stevepeak/007: the wf_* tables are missing from the bound D1 database. " +

@@ -8,6 +8,7 @@ import type {
   WorkflowNode,
 } from '../../engine'
 import { cn } from '../cn'
+import { useWfAssistant } from '../context'
 import { AccessibleDataView } from './node-data-panel'
 
 // A DevTools-style dock pinned to the bottom of an editor/detail surface. A tab
@@ -184,6 +185,8 @@ function BottomTray({
 }
 
 export type BottomDockProps = {
+  /** The workflow being edited — scopes the Chat assistant to this workflow. */
+  workflowId: string
   /** The selected node, or null when nothing is selected. */
   node: WorkflowNode | null
   graph: WorkflowGraph
@@ -199,6 +202,7 @@ export type BottomDockProps = {
 // The workflow editor's dock: Data (selected node), Issues (graph-wide), and the
 // Chat assistant.
 export function BottomDock({
+  workflowId,
   node,
   graph,
   issues,
@@ -243,7 +247,7 @@ export function BottomDock({
       id: 'chat',
       label: 'Chat',
       icon: Sparkles,
-      body: <ChatView subject="workflow" />,
+      body: <ChatView subject="workflow" subjectId={workflowId} />,
     },
   ]
 
@@ -253,7 +257,15 @@ export function BottomDock({
 // A standalone bottom tray with only the Chat assistant — for surfaces without a
 // graph (agent editor, tool detail, evals). Starts collapsed to a tabs-only
 // strip so it doesn't crowd the page; click "✨ Chat" to expand.
-export function ChatDock({ subject }: { subject: ChatSubject }) {
+export function ChatDock({
+  subject,
+  subjectId,
+  runId,
+}: {
+  subject: ChatSubject
+  subjectId?: string
+  runId?: string
+}) {
   return (
     <BottomTray
       initialOpen={false}
@@ -262,19 +274,38 @@ export function ChatDock({ subject }: { subject: ChatSubject }) {
           id: 'chat',
           label: 'Chat',
           icon: Sparkles,
-          body: <ChatView subject={subject} />,
+          body: <ChatView subject={subject} subjectId={subjectId} runId={runId} />,
         },
       ]}
     />
   )
 }
 
-export type ChatSubject = 'workflow' | 'agent' | 'tool' | 'eval' | 'run'
+export type ChatSubject =
+  | 'workflow'
+  | 'agent'
+  | 'tool'
+  | 'eval'
+  | 'run'
+  | 'feedback'
 
-// Placeholder for the AI assistant. Once built, this will be a chat that helps
-// authors understand and optimize the asset, with tools to make changes to it
-// under the user's direction.
-export function ChatView({ subject }: { subject: ChatSubject }) {
+// The AI assistant dock. The concrete chat (model + tools + streaming) is a
+// host-injected slot (`WfSdkProvider assistant={…}`); the SDK stays generic and
+// just hands it the current subject/ids to ground its answers. Until a host
+// wires one, this shows a "Coming soon" placeholder.
+export function ChatView({
+  subject,
+  subjectId,
+  runId,
+}: {
+  subject: ChatSubject
+  subjectId?: string
+  runId?: string
+}) {
+  const Assistant = useWfAssistant()
+  if (Assistant) {
+    return <Assistant subject={subject} subjectId={subjectId} runId={runId} />
+  }
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
       <div className="flex size-10 items-center justify-center rounded-full bg-violet-100">

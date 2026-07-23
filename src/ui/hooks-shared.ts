@@ -4,7 +4,11 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 
-import type { WfDataClient, WfRunListInput } from '../server/protocol'
+import type {
+  WfDataClient,
+  WfFeedbackListInput,
+  WfRunListInput,
+} from '../server/protocol'
 import { useWfClient } from './context'
 
 // React Query hooks over the injected data client. Query keys are namespaced
@@ -43,6 +47,11 @@ export const keys = {
   // Prefix key: invalidates every limit variant of the eval runs list.
   evalRunsAll: ['wf', 'eval-runs'] as const,
   evalRun: (id: string) => ['wf', 'eval-run', id] as const,
+  feedback: (input: WfFeedbackListInput) => ['wf', 'feedback', input] as const,
+  // Prefix key: invalidates every filter variant of the feedback list.
+  feedbackAll: ['wf', 'feedback'] as const,
+  feedbackForSubjects: (subjectIds: string[]) =>
+    ['wf', 'feedback-subjects', subjectIds] as const,
 }
 
 // Collapses the shared mutation ceremony: grab the injected client + query

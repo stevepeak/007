@@ -29,6 +29,10 @@ export const WF_RUN_STEP_STATUSES = [
 export const WF_EVAL_TARGET_KINDS = ['agent', 'workflow'] as const
 export const WF_EVAL_RESULT_STATUSES = ['pass', 'fail', 'error'] as const
 
+// Thumbs feedback a human leaves on an answer — the two sentiments the widget
+// and triage view speak in. Clearing feedback deletes the row (no third state).
+export const WF_FEEDBACK_RATINGS = ['up', 'down'] as const
+
 export function createdAt() {
   return integer('created_at', { mode: 'timestamp' })
     .notNull()

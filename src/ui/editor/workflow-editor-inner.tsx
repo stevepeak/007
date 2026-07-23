@@ -338,6 +338,7 @@ export function EditorInner({
             ) : null}
           </div>
           <BottomDock
+            workflowId={workflowId}
             node={selected}
             graph={selection?.graph ?? graph}
             issues={issues}

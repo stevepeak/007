@@ -3,6 +3,7 @@ import {
   Bot,
   Boxes,
   Target,
+  ThumbsUp,
   Wrench,
   Workflow as WorkflowIcon,
   type LucideIcon,
@@ -21,6 +22,7 @@ type WfSectionKey =
   | 'runs'
   | 'evals'
   | 'models'
+  | 'feedback'
 
 const SECTIONS: Record<
   WfSectionKey,
@@ -32,6 +34,7 @@ const SECTIONS: Record<
   runs: { title: 'Runs', icon: Activity, iconClassName: 'text-sky-500', to: 'runs' },
   evals: { title: 'Evals', icon: Target, iconClassName: 'text-rose-500', to: 'evals' },
   models: { title: 'Models', icon: Boxes, iconClassName: 'text-amber-500', to: 'models' },
+  feedback: { title: 'Feedback', icon: ThumbsUp, iconClassName: 'text-teal-500', to: 'feedback' },
 }
 
 /**

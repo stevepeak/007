@@ -115,5 +115,12 @@ export function createHttpWfDataClient(
     finalizeEvalRun: bind('finalizeEvalRun'),
     listEvalRuns: bind('listEvalRuns'),
     getEvalRun: (evalRunId) => call('getEvalRun', { evalRunId }),
+
+    // Feedback.
+    submitFeedback: bind('submitFeedback'),
+    listFeedback: bind('listFeedback'),
+    setFeedbackAcknowledged: bind('setFeedbackAcknowledged'),
+    setFeedbackInternalNote: bind('setFeedbackInternalNote'),
+    getFeedbackForSubjects: bind('getFeedbackForSubjects'),
   }
 }

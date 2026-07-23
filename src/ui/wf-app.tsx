@@ -11,6 +11,8 @@ import { EvalSample } from './evals/eval-sample'
 import { EvalSet } from './evals/eval-set'
 import { EvalTest } from './evals/eval-test'
 import { EvalsList } from './evals/evals-list'
+import { FeedbackDetail } from './feedback-detail'
+import { FeedbackList } from './feedback-list'
 import { useTools } from './hooks'
 import { ModelsList } from './models-list'
 import { useWfNav, WfNavProvider } from './nav'
@@ -197,6 +199,16 @@ function HomeRoutes({
         </WfShell>
       )
     }
+    if (key === 'feedback') {
+      return (
+        <WfShell
+          crumbs={[{ home: true }, sectionCrumb('feedback', { current: true })]}
+          scroll
+        >
+          <FeedbackList />
+        </WfShell>
+      )
+    }
     const section = sections.find((s) => s.key === key)
     if (section) {
       return (
@@ -236,7 +248,7 @@ function AssetRoute({ path }: { path: string }) {
       return <RunPage runId={asset.runId} className="h-full" />
     case 'agent':
       return (
-        <WithChatDock subject="agent">
+        <WithChatDock subject="agent" subjectId={asset.agentId}>
           <AgentEditor
             agentId={asset.agentId}
             className="h-full"
@@ -246,13 +258,13 @@ function AssetRoute({ path }: { path: string }) {
       )
     case 'tool':
       return (
-        <WithChatDock subject="tool">
+        <WithChatDock subject="tool" subjectId={asset.toolId}>
           <ToolDetailPage toolId={asset.toolId} />
         </WithChatDock>
       )
     case 'evalTest':
       return (
-        <WithChatDock subject="eval">
+        <WithChatDock subject="eval" subjectId={asset.setId}>
           <EvalTest
             key={asset.testId}
             setId={asset.setId}
@@ -263,8 +275,9 @@ function AssetRoute({ path }: { path: string }) {
         </WithChatDock>
       )
     case 'evalRun':
+      // An eval run IS a wf_run, so hand the copilot its runId — get_run works.
       return (
-        <WithChatDock subject="eval">
+        <WithChatDock subject="eval" runId={asset.evalRunId}>
           <EvalRunReport
             key={asset.evalRunId}
             evalRunId={asset.evalRunId}
@@ -274,7 +287,7 @@ function AssetRoute({ path }: { path: string }) {
       )
     case 'evalSample':
       return (
-        <WithChatDock subject="eval">
+        <WithChatDock subject="eval" subjectId={asset.setId}>
           <EvalSample
             key={asset.sampleId}
             setId={asset.setId}
@@ -285,7 +298,7 @@ function AssetRoute({ path }: { path: string }) {
       )
     case 'evalSet':
       return (
-        <WithChatDock subject="eval">
+        <WithChatDock subject="eval" subjectId={asset.setId}>
           <EvalSet key={asset.setId} setId={asset.setId} className="h-full" />
         </WithChatDock>
       )
@@ -298,24 +311,32 @@ function AssetRoute({ path }: { path: string }) {
           onArchived={() => navigate('workflows')}
         />
       )
+    case 'feedbackItem':
+      // Feedback detail carries its own chat dock (scoped to the item's run).
+      return <FeedbackDetail subjectId={asset.subjectId} />
   }
 }
 
 // Wraps an asset surface so its content fills the space above a collapsible Chat
 // tray pinned to the bottom. The asset keeps its own `h-full` layout inside the
-// flexing region; the tray sits below it. Surfaces with their own dock (the
-// workflow editor) don't use this.
+// flexing region; the tray sits below it. `subjectId`/`runId` scope the injected
+// assistant to the concrete asset. Surfaces with their own dock (the workflow
+// editor) don't use this.
 function WithChatDock({
   subject,
+  subjectId,
+  runId,
   children,
 }: {
-  subject: 'agent' | 'tool' | 'eval'
+  subject: 'agent' | 'tool' | 'eval' | 'feedback'
+  subjectId?: string
+  runId?: string
   children: ReactNode
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1">{children}</div>
-      <ChatDock subject={subject} />
+      <ChatDock subject={subject} subjectId={subjectId} runId={runId} />
     </div>
   )
 }

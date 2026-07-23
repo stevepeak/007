@@ -3,6 +3,7 @@ import {
   Bot,
   Boxes,
   Target,
+  ThumbsUp,
   Wrench,
   Workflow as WorkflowIcon,
   type LucideIcon,
@@ -105,6 +106,17 @@ export const DEFAULT_WF_SECTIONS: WfHubSection[] = [
     accent: {
       card: 'hover:border-amber-300 hover:shadow-lg hover:shadow-amber-100',
       icon: 'group-hover:bg-amber-100 group-hover:text-amber-600 group-hover:shadow-md group-hover:shadow-amber-200',
+    },
+  },
+  {
+    key: 'feedback',
+    title: 'Feedback',
+    description:
+      "What people thought of the AI's answers — triage thumbs up/down and comments, and acknowledge each once your team has acted on it.",
+    icon: ThumbsUp,
+    accent: {
+      card: 'hover:border-teal-300 hover:shadow-lg hover:shadow-teal-100',
+      icon: 'group-hover:bg-teal-100 group-hover:text-teal-600 group-hover:shadow-md group-hover:shadow-teal-200',
     },
   },
 ]

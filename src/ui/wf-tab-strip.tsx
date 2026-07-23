@@ -5,6 +5,7 @@ import {
   Goal,
   Microscope,
   Target,
+  ThumbsUp,
   VenetianMask,
   Workflow as WorkflowIcon,
   X,
@@ -16,6 +17,7 @@ import { agentIcon } from './agent-appearance'
 import { cn } from './cn'
 import { describeCheck } from './evals/shared'
 import { useAgent, useEvalSet, useRun, useTools, useWorkflow } from './hooks'
+import { useFeedbackForSubjects } from './hooks-feedback'
 import { ToolIcon } from './tool-icon'
 import { Tooltip } from './tooltip'
 import { classifyAssetPath, type WfAsset } from './wf-tab-routes'
@@ -180,6 +182,8 @@ function TabItem({
       return <EvalTestTab asset={asset} {...common} />
     case 'evalRun':
       return <EvalRunTab asset={asset} {...common} />
+    case 'feedbackItem':
+      return <FeedbackTab asset={asset} {...common} />
   }
 }
 
@@ -299,6 +303,19 @@ function EvalRunTab({ asset: _asset, ...rest }: KindProps<'evalRun'>) {
       icon={sectionIcon(Target, 'text-rose-500')}
       label="Run report"
       trail={['Run report']}
+      {...rest}
+    />
+  )
+}
+
+function FeedbackTab({ asset, ...rest }: KindProps<'feedbackItem'>) {
+  const { data } = useFeedbackForSubjects([asset.subjectId])
+  const name = data?.[0]?.raterLabel || 'Feedback'
+  return (
+    <TabChrome
+      icon={sectionIcon(ThumbsUp, 'text-teal-500')}
+      label={name}
+      trail={['Feedback', name]}
       {...rest}
     />
   )

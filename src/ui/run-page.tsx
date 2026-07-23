@@ -298,6 +298,7 @@ export function RunPage({ runId, className }: RunPageProps) {
                 )}
               </div>
               <RunNodeDock
+                runId={runId}
                 node={selectedNode}
                 step={selectedStep}
                 steps={data.steps}

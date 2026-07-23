@@ -1,5 +1,11 @@
 export { WfSdkProvider, type WfSdkProviderProps } from './provider'
-export { useWfClient, useWfComponents } from './context'
+export {
+  useWfClient,
+  useWfComponents,
+  useWfAssistant,
+  type WfAssistantComponent,
+  type WfAssistantContext,
+} from './context'
 export {
   defaultComponents,
   type WfBadgeProps,
@@ -108,6 +114,14 @@ export {
   type AgentColor,
 } from './agent-appearance'
 export { ComingSoon, type ComingSoonProps } from './coming-soon'
+export { FeedbackList, type FeedbackListProps } from './feedback-list'
+export {
+  MessageFeedback,
+  MessageFeedbackView,
+  type MessageFeedbackProps,
+  type MessageFeedbackSubmit,
+  type MessageFeedbackViewProps,
+} from './message-feedback'
 export { ModelsList, type ModelsListProps } from './models-list'
 export { ToolsList, type ToolsListProps } from './tools-list'
 export { ToolDetail, type ToolDetailProps } from './tool-detail'
@@ -180,6 +194,13 @@ export type {
   WfEvalSetDetail,
   WfEvalSetSummary,
   WfEvalTargetKind,
+  WfFeedbackAckState,
+  WfFeedbackFacet,
+  WfFeedbackListInput,
+  WfFeedbackListResult,
+  WfFeedbackRating,
+  WfFeedbackRow,
+  WfFeedbackSubmitInput,
   WfRunDetail,
   WfRunListInput,
   WfRunListResult,

@@ -21,6 +21,8 @@ import { runStatusClass } from './run-status'
 // tab, the chevron, or a click on the top border.
 
 export type RunNodeDockProps = {
+  /** The run being viewed — scopes the Chat dock's copilot to this run. */
+  runId: string
   /** The node selected on the run graph, or null when nothing is selected. */
   node: WorkflowNode | null
   /** The recorded step for that node, or null if it never executed (skipped). */
@@ -58,6 +60,7 @@ function maxDockH(): number {
 }
 
 export function RunNodeDock({
+  runId,
   node,
   step,
   steps,
@@ -256,7 +259,7 @@ export function RunNodeDock({
               }}
             />
           ) : tab === 'chat' ? (
-            <ChatView subject="run" />
+            <ChatView subject="run" runId={runId} />
           ) : !node ? (
             <p className="text-xs text-neutral-500">
               Select a node on the graph to inspect its run.

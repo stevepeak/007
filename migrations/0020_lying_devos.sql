@@ -1,0 +1,1 @@
+ALTER TABLE `wf_feedback` ADD `internal_note` text;

@@ -16,6 +16,7 @@ export type WfAsset =
   | { type: 'evalSample'; setId: string; sampleId: string }
   | { type: 'evalTest'; setId: string; sampleId: string; testId: string }
   | { type: 'evalRun'; evalRunId: string }
+  | { type: 'feedbackItem'; subjectId: string }
 
 /** Strip any query/hash and split a path into non-empty segments. */
 function segments(path: string): string[] {
@@ -45,6 +46,12 @@ export function classifyAssetPath(path: string): WfAsset | null {
   // `tools/<toolId>` — tool detail / playground.
   if (parts.length === 2 && parts[0] === 'tools') {
     return { type: 'tool', toolId: parts[1] }
+  }
+
+  // `feedback/<subjectId>` — one rated item's detail (note + producing run +
+  // copilot). `feedback` alone (len 1) is the triage list, a home route.
+  if (parts.length === 2 && parts[0] === 'feedback') {
+    return { type: 'feedbackItem', subjectId: parts[1] }
   }
 
   // `evals/<setId>/samples/<sampleId>/tests/<testId>` — a single test.

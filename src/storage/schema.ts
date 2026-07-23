@@ -7,6 +7,7 @@
 export {
   WF_EVAL_RESULT_STATUSES,
   WF_EVAL_TARGET_KINDS,
+  WF_FEEDBACK_RATINGS,
   WF_RUN_STATUSES,
   WF_RUN_STEP_STATUSES,
 } from './schema-common'
@@ -15,6 +16,7 @@ export {
   wfAgentDraft,
   wfAgentVersion,
 } from './schema-agents'
+export { wfFeedback } from './schema-feedback'
 export {
   wfEvalResult,
   wfEvalRow,
@@ -37,6 +39,7 @@ import {
   wfEvalRun,
   wfEvalSet,
 } from './schema-evals'
+import { wfFeedback } from './schema-feedback'
 import { wfModel, wfModelProvider } from './schema-models'
 import { wfRun, wfRunStep } from './schema-runs'
 import {
@@ -62,4 +65,5 @@ export const wfSchema = {
   wfEvalResult,
   wfModelProvider,
   wfModel,
+  wfFeedback,
 }

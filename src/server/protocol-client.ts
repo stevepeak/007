@@ -22,6 +22,12 @@ import type {
   WfEvalTargetKind,
 } from './protocol-evals'
 import type {
+  WfFeedbackListInput,
+  WfFeedbackListResult,
+  WfFeedbackRow,
+  WfFeedbackSubmitInput,
+} from './protocol-feedback'
+import type {
   RetryRunMode,
   WfRunDetail,
   WfRunListInput,
@@ -284,6 +290,32 @@ export interface WfDataClient {
   finalizeEvalRun(input: { evalRunId: string }): Promise<WfEvalRunSummary>
   listEvalRuns(input?: { limit?: number }): Promise<WfEvalRunSummary[]>
   getEvalRun(evalRunId: string): Promise<WfEvalRunDetail | null>
+
+  // Feedback — thumbs up/down + optional note a human leaves on an answer, plus
+  // the staff-side triage view. Data is a single global set keyed by opaque host
+  // ids (like runs); the host gatekeeps the route. The rater is stamped from the
+  // authenticated context server-side, never trusted off the input.
+  /** Submit / change / clear (`rating: null`) a subject's thumb. */
+  submitFeedback(input: WfFeedbackSubmitInput): Promise<{ ok: true }>
+  /** The triage list — filtered rated subjects + facet dropdowns. */
+  listFeedback(input: WfFeedbackListInput): Promise<WfFeedbackListResult>
+  /** Toggle a subject's triage acknowledgement (staff acted on it). */
+  setFeedbackAcknowledged(input: {
+    subjectId: string
+    acknowledged: boolean
+  }): Promise<{ ok: true }>
+  /**
+   * Set (or clear, with `null`) the staff-only internal note — a resolution log
+   * kept alongside the customer's `note`, e.g. how the feedback was fixed.
+   */
+  setFeedbackInternalNote(input: {
+    subjectId: string
+    note: string | null
+  }): Promise<{ ok: true }>
+  /** Re-hydrate current rating/note for a set of subjects (host read path). */
+  getFeedbackForSubjects(input: {
+    subjectIds: string[]
+  }): Promise<WfFeedbackRow[]>
 }
 
 // The RPC envelope. One POST route, dispatched on `method`.

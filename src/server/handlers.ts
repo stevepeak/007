@@ -4,6 +4,7 @@ import { errorMessage } from '../engine/run-node'
 
 import { buildAgentHandlers } from './handlers/agents'
 import { buildEvalHandlers } from './handlers/evals'
+import { buildFeedbackHandlers } from './handlers/feedback'
 import { buildModelHandlers } from './handlers/models'
 import { buildRunHandlers } from './handlers/runs'
 import {
@@ -68,6 +69,34 @@ const wfInputSchemas: Partial<Record<keyof WfDataClient, z.ZodType>> = {
   deleteEvalSet: z.object({ setId: z.string() }),
   deleteEvalRow: z.object({ rowId: z.string() }),
   getEvalRun: z.object({ evalRunId: z.string() }),
+  submitFeedback: z.object({
+    subjectId: z.string(),
+    rating: z.enum(['up', 'down']).nullable(),
+    note: z.string().nullable().optional(),
+    correlationId: z.string().nullable().optional(),
+    runId: z.string().nullable().optional(),
+    body: z.string().nullable().optional(),
+    subjectTitle: z.string().nullable().optional(),
+    subjectUrl: z.string().nullable().optional(),
+    correlationLabel: z.string().nullable().optional(),
+    raterLabel: z.string().nullable().optional(),
+  }),
+  listFeedback: z.object({
+    ratings: z.array(z.enum(['up', 'down'])).optional(),
+    ackState: z.enum(['acknowledged', 'unacknowledged']).optional(),
+    correlationIds: z.array(z.string()).optional(),
+    raterIds: z.array(z.string()).optional(),
+    search: z.string().optional(),
+  }),
+  setFeedbackAcknowledged: z.object({
+    subjectId: z.string(),
+    acknowledged: z.boolean(),
+  }),
+  setFeedbackInternalNote: z.object({
+    subjectId: z.string(),
+    note: z.string().nullable(),
+  }),
+  getFeedbackForSubjects: z.object({ subjectIds: z.array(z.string()) }),
 }
 
 // The method table. Typed against `keyof WfDataClient` so the compiler proves
@@ -90,6 +119,7 @@ function buildHandlers<TDeps>(
     ...buildRunHandlers(opts),
     ...buildAgentHandlers(opts),
     ...buildEvalHandlers(opts),
+    ...buildFeedbackHandlers(opts),
   }
   return handlers
 }
