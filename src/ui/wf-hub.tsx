@@ -10,6 +10,14 @@ import {
 
 import { cn } from './cn'
 
+// Brand hero served from jsDelivr's GitHub CDN (source of truth: this repo's
+// committed src/ui/jumbo007.png). Hosting it off the bundle keeps it out of the
+// Worker/static-asset deploy entirely. To update: replace the file, push to
+// main, then purge the CDN:
+//   https://purge.jsdelivr.net/gh/stevepeak/007@main/src/ui/jumbo007.png
+const JUMBO_IMG_URL =
+  'https://cdn.jsdelivr.net/gh/stevepeak/007@main/src/ui/jumbo007.png'
+
 // Top-level navigation hub for the workflow tooling: a 2×N grid of descriptive
 // cards, one per section. Purely presentational — the host owns routing and
 // wires `onOpen(key)` to navigate. No data client / provider required.
@@ -119,10 +127,10 @@ export function WfHub({
   return (
     <div className={cn('mx-auto max-w-4xl p-6', className)}>
       <div className="mb-8 flex flex-col items-center">
-        {/* Placeholder brand image — swap in real artwork later. */}
-        <div
-          aria-hidden
-          className="h-[120px] w-[200px] rounded-lg border border-dashed border-neutral-300 bg-neutral-50"
+        <img
+          src={JUMBO_IMG_URL}
+          alt=""
+          className="h-auto w-full max-w-md rounded-lg"
         />
         <p className="mt-3 max-w-md text-center text-sm text-neutral-500">
           {subtitle}
