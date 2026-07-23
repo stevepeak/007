@@ -23,14 +23,15 @@ The SDK is deliberately generic. It ships **behavior**; the host supplies
 | `wf_*` D1 schema + migrations + data access                      | ✅                | the D1 binding + when to migrate          |
 | Reusable Agents (float-to-latest entities + versions)            | ✅                |                                           |
 | Cloudflare runtime (`GraphWorkflow`, `RunRoom`, `startGraphRun`) | ✅                | wrangler bindings                         |
-| RPC dispatch (`createWfSdkHandlers`)                             | ✅                | auth → `{ tenantId, userId }`, the `WfDb` |
+| RPC dispatch (`createWfSdkHandlers`)                             | ✅                | route auth + `{ userId? }`, the `WfDb`    |
 | Editor / run-viewer / hub UI (`WfApp`)                           | ✅                | router adapter, design-system primitives  |
-| Model provider (`getModel`)                                      |                   | ✅                                        |
+| Model provider (`getModel` + `listModels` + `listProviders`)     |                   | ✅                                        |
 | Tools (`toolRegistry`; `/tools` + `/cloudflare` ship a few)      |                   | ✅                                        |
 | Event catalog + input schemas (`triggers`)                       |                   | ✅ (manual/periodic built in)             |
 | Per-run deps (`buildRunDeps`)                                    |                   | ✅                                        |
 | Blob-ref resolver (`resolveBlobRef`, optional)                   | marker shape only | ✅ if a tool spills large values          |
-| Tenant / subject / correlation identity                          |                   | ✅ (opaque text)                          |
+| Run identity (`subjectId` / `correlationId` / `promptVariables`) |                   | ✅ (opaque text)                          |
+| Tenant isolation                                                 |                   | ✅ (one D1 database per tenant — no SDK column) |
 
 The one object that carries most of the injection is `WfSdkConfig<TDeps>`
 (`src/engine/config.ts`). `TDeps` is your private per-run bundle — the SDK never
@@ -120,9 +121,12 @@ export type HostEnv = {
   // …whatever your tools need
 }
 
-// (b) Your private per-run deps. Whatever your tools consume.
+// (b) Your private per-run deps. Whatever your tools consume. These come from
+//     the RunContext (subjectId / correlationId / promptVariables / env) that
+//     startGraphRun put on the run — RunContext has no tenantId of its own, so
+//     carry your org/tenant scope in `correlationId` if a tool needs it.
 export type HostDeps = {
-  tenantId: string
+  orgId: string
   userId: string
   db: ReturnType<typeof createDb>
   // …clients your tools need
@@ -151,7 +155,7 @@ const toolRegistry: ToolRegistry<HostDeps> = new Map([
       id: 'search_knowledge_base',
       kind: 'ai-tool',
       description: 'Search the corpus.',
-      build: (d) => createSearchTool({ tenantId: d.tenantId /* … */ }),
+      build: (d) => createSearchTool({ orgId: d.orgId /* … */ }),
     },
   ],
 ])
@@ -161,7 +165,10 @@ export const wfConfig: WfSdkConfig<HostDeps> = {
   // that only exist INSIDE a step.do boundary (never at module load).
   getModel: (modelId, ctx) =>
     getModel((ctx.env as HostEnv).MODEL_API_KEY, modelId),
-  listModels: () => [{ id: 'model-a', label: 'Model A' }],
+  listModels: () => [{ id: 'model-a', label: 'Model A', providerId: 'my-provider' }],
+  // The providers the editor groups models by; every listModels entry references
+  // one by `providerId`. Return a single entry for a one-provider host.
+  listProviders: () => [{ id: 'my-provider', label: 'My Provider', kind: 'openai-compatible' }],
   toolRegistry,
   // Your event catalog. Every key is an "on an event" trigger option; the
   // built-in `manual` / `periodic` modes are always available on top of these.
@@ -178,7 +185,7 @@ export const wfConfig: WfSdkConfig<HostDeps> = {
   buildRunDeps: (ctx) => {
     const env = ctx.env as HostEnv
     return {
-      tenantId: ctx.tenantId,
+      orgId: ctx.correlationId ?? '',
       userId: ctx.promptVariables?.userId ?? '',
       db: createDb(env.DB),
     }
@@ -206,10 +213,14 @@ Key rules:
   `createR2BlobResolver` (`@stevepeak/007/cloudflare/blob-resolver` — the narrow
   subpath, **not** the `/cloudflare` barrel; see §0) — point it at the same
   bucket; other storage needs your own resolver.
-- The UI needs `listModels` + `toolRegistry` (editor dropdowns) and `triggers`
-  (the create-workflow event picker + its data-field preview); the runtime needs
-  `getModel` + `toolRegistry` + `buildRunDeps` + `triggers` (and `resolveBlobRef`
-  if you use blob spilling).
+- The UI needs `listModels` + `listProviders` + `toolRegistry` (editor
+  dropdowns) and `triggers` (the create-workflow event picker + its data-field
+  preview); the runtime needs `getModel` + `toolRegistry` + `buildRunDeps` +
+  `triggers` (and `resolveBlobRef` if you use blob spilling).
+- **Optional hooks:** `fetchModelCatalog` (live provider `/models` refresh on the
+  Models admin page), `resolveImageRef` (vision inputs), and `onRunComplete` /
+  `onRunFailed` (reflect a run's terminal state back onto your own entity — the
+  one named by `subjectId`). Omit any you don't use.
 
 **Trigger modes.** A workflow declares how it starts on its trigger node
 (`config.triggerKind`). Three modes exist:
@@ -226,8 +237,9 @@ live in your config; `manual`/`periodic` are SDK constants
 
 ### Seed helper (optional but recommended)
 
-To auto-provision a tenant's first workflow, ship a seed that assigns a template
-graph to a trigger kind, using SDK storage primitives:
+To auto-provision the workspace's first workflow, ship a seed that assigns a
+template graph to a trigger kind, using SDK storage primitives. Assignment is
+one workflow per trigger kind per database — there is no tenant argument:
 
 ```ts
 import {
@@ -237,22 +249,16 @@ import {
   type WfDb,
 } from '@stevepeak/007'
 
-export async function seedChatWorkflow(
-  db: WfDb,
-  { tenantId }: { tenantId: string },
-) {
+export async function seedChatWorkflow(db: WfDb) {
   const existing = await resolveAssignedVersion(db, {
-    tenantId,
     triggerKind: 'chat_message',
   })
   if (existing) return existing
   const { workflowId, versionId } = await createWorkflow(db, {
-    tenantId,
     name: 'Chat',
     graph: CHAT_TEMPLATE, // a valid WorkflowGraph
   })
   await assignWorkflow(db, {
-    tenantId,
     triggerKind: 'chat_message',
     workflowId,
   })
@@ -261,18 +267,23 @@ export async function seedChatWorkflow(
 ```
 
 The template graph is plain JSON validated by `workflowGraphSchema`; see the
-README §3 for the node shapes (`trigger → agent → output`).
+README's **graph model** section for the node shapes (`trigger → agent → output`).
 
 ---
 
 ## 3. Step 2 — storage & D1 migrations
 
-The SDK owns nine `wf_*` tables (`src/storage/schema.ts`): `wf_workflow`,
+The SDK owns the `wf_*` tables (defined under `src/storage/schema-*.ts`, barrelled
+by `schema.ts`). The core set is the workflow/agent lifecycle — `wf_workflow`,
 `wf_workflow_version`, `wf_workflow_draft`, `wf_agent`, `wf_agent_version`,
-`wf_agent_draft`, `wf_workflow_assignment`, `wf_run`, `wf_run_step`. Workflows and
-agents share one lifecycle shape (entity + 1:1 editable draft + immutable published
-versions). They use **opaque text identity** (no foreign keys into your tables),
-so they coexist with any host schema in the same D1.
+`wf_agent_draft`, `wf_workflow_assignment` — plus the run tables `wf_run`,
+`wf_run_step`, and `wf_run_log`. Later slices add models (`wf_model`,
+`wf_model_provider`), evals (`wf_eval_set`, `wf_eval_row`, `wf_eval_run`,
+`wf_eval_result`), and feedback (`wf_feedback`). Workflows and agents share one
+lifecycle shape (entity + 1:1 editable draft + immutable published versions). All
+tables use **opaque text identity** (no foreign keys into your tables), so they
+coexist with any host schema in the same D1. The generated SQL lives in
+`migrations/` (append-only; regenerate with `bun run db:generate`).
 
 The generated SQL lives in this repo's `migrations/` dir. **Applying it is the
 host's job.** This repo's CI only validates (lint/typecheck/test) and never
@@ -488,16 +499,17 @@ Its input:
 
 ```ts
 type StartGraphRunInput = {
-  workflowVersionId: string
-  tenantId: string
+  workflowVersionId: string // already tenant-authorized when you resolved it
   triggerKind: string
   triggerInput: unknown // validated against your trigger's inputSchema
   subjectId?: string
-  correlationId?: string
+  correlationId?: string // carry your org/tenant scope here if a tool needs it
   promptVariables?: Record<string, string | undefined>
   label?: string
 }
 // returns { runId, workflowRunId, instanceId }
+// (there is no `tenantId` anywhere — tenant isolation is which D1 database this
+//  Worker is bound to; the run is keyed by workflowVersionId.)
 ```
 
 `workflowRunId` is the `wf_run.id` — poll it via `getRun`, or key the UI's
@@ -537,9 +549,10 @@ client are interchangeable at the call site.
 ## 5. Step 4 — the data API route (editor/run-viewer backend)
 
 Mount **one POST route** that the UI talks to. `createWfSdkHandlers` dispatches
-every `WfDataClient` method; you supply the D1 handle and the authenticated
-tenant scope. The SDK stays auth-free — identity is resolved server-side and
-never trusted from the client.
+every `WfDataClient` method; you supply the D1 handle (the workspace) and gate
+the route with your own auth. The SDK stays auth-free — it never trusts identity
+from the client; the only thing it reads back is an optional `{ userId }` for
+attribution (who created/published a version).
 
 This route runs **in the host web app**, against the web app's **own D1 binding**
 to the same database the workflows Worker uses (bind it in the web app's
@@ -547,9 +560,9 @@ to the same database the workflows Worker uses (bind it in the web app's
 via miniflare). Do **not** proxy this data plane to the workflows Worker: only
 run-_starting_ needs the cross-Worker service binding (§4, §7); the editor/
 run-viewer only needs D1. Tunnelling it through the Worker forces a dev-only HTTP
-endpoint with an untrusted `tenantId` header — avoid that. (If you were pushed
-toward a proxy by a `cloudflare:workers` crash when importing `wfConfig`, that's
-the barrel-import trap — fix it per §0, don't work around it.)
+endpoint you'd have to re-secure — avoid that. (If you were pushed toward a proxy
+by a `cloudflare:workers` crash when importing `wfConfig`, that's the
+barrel-import trap — fix it per §0, don't work around it.)
 
 ```ts
 // apps/web/app/api/wf/route.ts
@@ -558,15 +571,14 @@ import { createWfDb } from '@stevepeak/007/storage'
 import { wfConfig } from 'your-host'
 
 export const POST = createWfSdkHandlers({
-  // Uses listModels + toolRegistry (editor dropdowns) + triggers (the
-  // create-workflow event picker). Passing the whole wfConfig is fine.
+  // Uses listModels + listProviders + toolRegistry (editor dropdowns) + triggers
+  // (the create-workflow event picker). Passing the whole wfConfig is fine.
   config: wfConfig,
-  resolveDb: (req) => createWfDb(getEnv().DB),
+  resolveDb: (req) => createWfDb(getEnv().DB), // the tenant's workspace database
   resolveContext: async (req) => {
-    const session = await getSession(req.headers) // your auth
+    const session = await getSession(req.headers) // your auth — gate access here
     if (!session) throw new Error('Unauthorized')
-    const tenantId = await resolveTenant(req, session) // your tenancy
-    return { tenantId, userId: session.user.id }
+    return { userId: session.user.id } // attribution only; no tenant field
   },
   // Optional: AI-generated changelog for the publish dialog. Omit → heuristic
   // structural summary. Use wfConfig.getModel to stay within the injection contract.
@@ -577,9 +589,11 @@ export const POST = createWfSdkHandlers({
 })
 ```
 
-- **`resolveContext` → `{ tenantId, userId? }`** is the security boundary. Every
-  handler scopes reads and authorizes mutations by `tenantId`; a workflow owned
-  by another tenant returns `null`.
+- **The route gate is your security boundary.** The SDK is single-workspace per
+  database, so isolation is which D1 `resolveDb` returns plus whatever auth you
+  put in front of the route — not an SDK-level tenant filter. `resolveContext`
+  returns only `{ userId? }`, used to attribute edits (`created_by`/
+  `published_by`), never to scope reads.
 - **`resolveDb` → `WfDb`** per request. In dev, gate it once with
   `assertWfSchema(db)` (from `@stevepeak/007/storage`) — it throws a
   migrate-me hint if the bound D1 has no `wf_*` tables, turning an unmigrated
@@ -725,34 +739,27 @@ polls `getRun`.
 
 ## 7. Step 6 — trigger a run from a feature
 
-The end-to-end pattern (this repo's chat route): resolve the tenant's assigned
-workflow (seeding on first use), then start a run.
+The end-to-end pattern (this repo's chat route): resolve the workflow assigned to
+the trigger kind (seeding on first use), then start a run.
 
 ```ts
 import { resolveAssignedVersion } from '@stevepeak/007'
 import { createWfDb } from '@stevepeak/007/storage'
 import { seedChatWorkflow } from 'your-host'
 
-const db = createWfDb(env.DB)
-let assigned = await resolveAssignedVersion(db, {
-  tenantId,
-  triggerKind: 'chat_message',
-})
+const db = createWfDb(env.DB) // the tenant's workspace database
+let assigned = await resolveAssignedVersion(db, { triggerKind: 'chat_message' })
 if (!assigned) {
-  await seedChatWorkflow(db, { tenantId })
-  assigned = await resolveAssignedVersion(db, {
-    tenantId,
-    triggerKind: 'chat_message',
-  })
+  await seedChatWorkflow(db)
+  assigned = await resolveAssignedVersion(db, { triggerKind: 'chat_message' })
 }
 
 const run = await workflowsClient.startGraphRun({
   workflowVersionId: assigned.versionId,
-  tenantId,
   triggerKind: 'chat_message',
   triggerInput: { chatId, userText, messages }, // matches your inputSchema
   subjectId: chatId,
-  correlationId: orgId,
+  correlationId: orgId, // your org/tenant scope, read back in buildRunDeps
   promptVariables: { userId },
 })
 // run.workflowRunId → poll getRun / key RunViewer
@@ -762,19 +769,27 @@ const run = await workflowsClient.startGraphRun({
 
 ## 8. The identity model (get this right)
 
-The SDK's identity columns are **opaque text**. You choose what maps to what;
-`buildRunDeps` reads back what `startGraphRun` put in. Keep the mapping
-consistent across the two.
+**There is no tenant column.** The SDK is single-workspace per database: one D1
+holds one logical set of workflows/agents/runs. A multi-tenant host isolates
+tenants by giving each its own database (or logical D1 scope) and pointing
+`resolveDb` (§5) at the right one; the SDK never filters by a tenant field.
 
-| SDK field         | Meaning                                                              | Example in this repo        |
+What the SDK _does_ carry is **run identity** — opaque text that `startGraphRun`
+puts on the run and `buildRunDeps` reads back. You choose what maps to what; keep
+the mapping consistent across the two. Carry your org/tenant scope in
+`correlationId` if a tool needs it.
+
+| Field             | Meaning                                                              | Example in this repo        |
 | ----------------- | -------------------------------------------------------------------- | --------------------------- |
-| `tenantId`        | ownership / scope (all queries filtered by it)                       | `firmId`                    |
 | `subjectId`       | the host entity a run is about                                       | `chatId`                    |
-| `correlationId`   | free-form host reference                                             | `clientOrgId`               |
+| `correlationId`   | free-form host reference (org/tenant scope for tools)                | `clientOrgId`               |
 | `promptVariables` | `${name}` interpolation in agent system prompts + arbitrary run vars | `{ userId, clientOrgName }` |
 
-`RunContext.env` carries your live bindings through the `step.do` boundary; it is
-`unknown` to the SDK and you cast it in `getModel` / `buildRunDeps`.
+`userId` reaches the editor/API layer separately, via `resolveContext` → `{ userId }`
+(§5), where it attributes who created or published a version — it is not run
+identity. `RunContext.env` carries your live bindings through the `step.do`
+boundary; it is `unknown` to the SDK and you cast it in `getModel` /
+`buildRunDeps`.
 
 ---
 
@@ -795,6 +810,7 @@ const run = await runWorkflowUnderConditions({
     getModel: () =>
       new MockLanguageModelV3({ doGenerate: async () => ({ text: 'hi' }) }),
     listModels: () => [],
+    listProviders: () => [],
     toolRegistry: new Map(),
     triggers: {
       chat_message: { description: '', inputSchema: chatMessageInputSchema },
