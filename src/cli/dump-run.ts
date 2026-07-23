@@ -185,7 +185,7 @@ async function main(): Promise<void> {
   }
 
   const failed = steps.filter((s) => s.status === 'failed')
-  if (failed.length) {
+  if (failed.length > 0) {
     L.push(`\n─── FAILED STEP DETAIL ───`)
     for (const s of failed) {
       L.push(`\n▼ #${s.sequence} ${s.nodeKind} ${s.nodeId.slice(0, 8)}`)
@@ -200,7 +200,7 @@ async function main(): Promise<void> {
   const noteLogs = logs.filter(
     (lg) => lg.level === 'error' || lg.level === 'warn',
   )
-  if (noteLogs.length) {
+  if (noteLogs.length > 0) {
     L.push(`\n─── LOG FEED (errors/warnings) ───`)
     for (const lg of noteLogs) {
       L.push(`  [${lg.level}] ${truncate(lg.message, 400)}`)
