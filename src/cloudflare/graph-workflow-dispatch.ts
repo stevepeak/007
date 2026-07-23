@@ -84,6 +84,7 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
             resolveImageRef: config.resolveImageRef,
             simulate: p.runContext.simulate,
             fixtures: p.runContext.fixtures,
+            freezeTools: p.runContext.freezeTools,
             agentOverride: p.runContext.agentOverride,
           },
           // Record each inner node once per item. The recorder is
@@ -217,6 +218,7 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
                   resolveImageRef: config.resolveImageRef,
                   simulate: p.runContext.simulate,
                   fixtures: p.runContext.fixtures,
+                  freezeTools: p.runContext.freezeTools,
                   agentOverride: p.runContext.agentOverride,
                   // Delegation: an agent node may spawn sub-agents/workflows
                   // inline and record each as a child step. Built inside this

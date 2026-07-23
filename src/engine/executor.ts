@@ -92,6 +92,7 @@ export async function executeWorkflow<TDeps>(
           resolveImageRef: config.resolveImageRef,
           simulate: runContext.simulate,
           fixtures: runContext.fixtures,
+          freezeTools: runContext.freezeTools,
           agentOverride: runContext.agentOverride,
           // An iteration node records its inner subgraph steps (once per item)
           // through the same recorder that persists top-level steps.

@@ -118,10 +118,51 @@ export const checkTreeSchema = z.object({
 })
 export type CheckTree = z.infer<typeof checkTreeSchema>
 
+// ── Synthesis mode (seeded conversation) ────────────────────────────────────
+// One tool interaction folded into a seeded assistant turn: the call the
+// assistant "made" and the result it "saw". Both `args` and `output` are
+// optional so an author can stage just a retrieved-context blob without
+// hand-writing the query the model would have generated.
+export const seededToolCallSchema = z.object({
+  /** Registry tool id the assistant is treated as having called (e.g. `search_rag`). */
+  tool: z.string(),
+  /** The arguments the assistant called it with. Omit → `{}`. */
+  args: z.unknown().optional(),
+  /** The canned result the tool returned into the conversation. Omit → `{}`. */
+  output: z.unknown().optional(),
+})
+export type SeededToolCall = z.infer<typeof seededToolCallSchema>
+
+/**
+ * One turn of a seeded conversation. A `user` turn carries text; an `assistant`
+ * turn carries text and/or tool calls (each with its canned result) — letting an
+ * author stage "the assistant already searched and got these chunks" so the run
+ * begins mid-conversation and only the model's NEXT (final) reply is produced.
+ */
+export const seededMessageSchema = z.object({
+  role: z.enum(['user', 'assistant']),
+  text: z.string().optional(),
+  toolCalls: z.array(seededToolCallSchema).optional(),
+})
+export type SeededMessage = z.infer<typeof seededMessageSchema>
+
 /** A row's initial condition — what the target is invoked with. */
 export const evalInitialConditionSchema = z.object({
   triggerInput: z.record(z.string(), z.unknown()).optional(),
   promptVariables: z.record(z.string(), z.string()).optional(),
+  /**
+   * Synthesis mode. A pre-baked conversation the agent starts from. When set
+   * (non-empty), it REPLACES `triggerInput` as the agent's message history — the
+   * run begins with these turns already in context. Pair with `freezeTools` to
+   * grade only the model's final response, not its tool-calling trajectory.
+   */
+  seededMessages: z.array(seededMessageSchema).optional(),
+  /**
+   * Synthesis mode. Run every agent node with an EMPTY tool set, forcing the
+   * model to answer from `seededMessages` alone. Isolates response quality from
+   * retrieval / tool-selection nondeterminism. Default false.
+   */
+  freezeTools: z.boolean().optional(),
 })
 export type EvalInitialCondition = z.infer<typeof evalInitialConditionSchema>
 

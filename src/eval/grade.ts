@@ -36,6 +36,15 @@ export type GradeRowInput = {
   getModel?: GradeModelFactory
   /** Judge model used when a judge check omits its own `modelId`. */
   defaultJudgeModelId?: string
+  /**
+   * Synthesis-mode context — tool calls STAGED in the row's seeded conversation
+   * (see `collectSeededToolCalls`). Under `freezeTools` the agent calls nothing,
+   * so these never land in `steps`; they're passed here so an `llm_judge` can
+   * grade the answer's faithfulness to the context the model was shown. Binary
+   * `tool_called` / `tool_args_match` checks IGNORE these — those grade what the
+   * agent actually did, not what was pre-seeded.
+   */
+  seededToolCalls?: ToolInvocation[]
 }
 
 export type GradeRowResult = {
@@ -230,10 +239,15 @@ async function gradeJudge(
       'llm_judge check requires a getModel factory and a judge modelId (per-check or defaultJudgeModelId)',
     )
   }
-  const toolCalls = collectToolCalls(input.steps).map((c) => ({
-    tool: c.toolId,
-    args: c.args,
-  }))
+  // Tool calls the model was shown: the ones it actually made in the run, plus
+  // any STAGED in a seeded conversation (synthesis mode — under `freezeTools`
+  // the agent calls nothing, so the seeded context is the only context). Each
+  // carries its OUTPUT so the judge can grade whether the answer stayed faithful
+  // to what was retrieved, not just whether the right tool was named.
+  const toolCalls = [
+    ...(input.seededToolCalls ?? []),
+    ...collectToolCalls(input.steps),
+  ].map((c) => ({ tool: c.toolId, args: c.args, output: c.output }))
   // The judge grades the whole output, or — when the check pins a `path` — only
   // the value at that path, so a rubric can target one known field.
   const graded = valueAtPath(input.output, check.path)
@@ -244,13 +258,15 @@ async function gradeJudge(
     prompt: [
       'You are grading an AI system’s run against a rubric. Score how well',
       'the run satisfies the rubric from 0 (fails) to 1 (fully satisfies), and',
-      'explain briefly. Judge ONLY against the rubric.',
+      'explain briefly. Judge ONLY against the rubric. The TOOL CALLS & RESULTS',
+      'below are the context the model was given — use them to judge whether the',
+      'output is grounded in (and consistent with) that context.',
       '',
       `RUBRIC:\n${check.rubric}`,
       '',
       `${outputLabel}:\n${JSON.stringify(graded)}`,
       '',
-      `TOOL CALLS:\n${JSON.stringify(toolCalls)}`,
+      `TOOL CALLS & RESULTS:\n${JSON.stringify(toolCalls)}`,
     ].join('\n'),
   })
   const threshold = check.threshold ?? DEFAULT_JUDGE_THRESHOLD

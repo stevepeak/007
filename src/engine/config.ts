@@ -234,6 +234,15 @@ export type RunContext = {
    */
   fixtures?: Record<string, unknown>
   /**
+   * Eval synthesis signal. When true, EVERY agent node runs with an empty tool
+   * set — no registry tools, no synthesized delegation tools — forcing the model
+   * to answer from its seeded message history alone. Set only by the eval runner
+   * for a Sample authored with `freezeTools`, whose target is the single-agent
+   * wrapper, so "every agent node" is exactly the one node under test. Isolates
+   * response quality from tool-selection / retrieval nondeterminism.
+   */
+  freezeTools?: boolean
+  /**
    * Eval matrix override — swaps the `modelId` and/or the system prompt on
    * EVERY agent node for this run. Set only by the eval matrix runner, whose
    * target is always the single-agent eval wrapper, so "every agent node" is

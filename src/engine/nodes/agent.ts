@@ -226,6 +226,12 @@ export type ExecuteAgentNodeArgs<TDeps> = {
   /** Canned tool outputs consumed under `simulate`. */
   fixtures?: Record<string, unknown>
   /**
+   * Eval synthesis signal — run with an EMPTY tool set (no registry tools, no
+   * delegation tools), forcing the model to answer from its seeded message
+   * history. Grades the final response in isolation. See RunContext.freezeTools.
+   */
+  freezeTools?: boolean
+  /**
    * Eval matrix override. When set, `modelId` swaps the model this node runs on
    * and `prompt` REPLACES the system-prompt template (still `${var}`-interpolated
    * against the run's promptVariables). Either omitted → the agent's saved value.
@@ -278,6 +284,7 @@ export async function executeAgentNode<TDeps>(
     resolveImage,
     simulate,
     fixtures,
+    freezeTools,
     agentOverride,
     subAgentCtx,
   } = deps
@@ -288,10 +295,15 @@ export async function executeAgentNode<TDeps>(
   const modelId = agentOverride?.modelId ?? config.modelId
   const promptTemplate = agentOverride?.prompt ?? config.prompt
   const model = getModel(modelId)
-  const tools = buildAgentToolSet(toolRegistry, config.toolIds, toolDeps, {
-    simulate,
-    fixtures,
-  })
+  // Synthesis eval: an empty tool set forces the model to answer from its seeded
+  // history alone. Otherwise resolve the agent's real tools (neutralized under
+  // simulate). freezeTools also suppresses delegation-tool synthesis below.
+  const tools = freezeTools
+    ? {}
+    : buildAgentToolSet(toolRegistry, config.toolIds, toolDeps, {
+        simulate,
+        fixtures,
+      })
   // Node-level bound inputs override the run-level promptVariables.
   const vars = {
     ...promptVariables,
@@ -308,6 +320,7 @@ export async function executeAgentNode<TDeps>(
   // with a registered tool is an author error surfaced loudly here.
   let effectiveTools = tools
   if (
+    !freezeTools &&
     subAgentCtx &&
     config.output.kind === 'text' &&
     (config.subAgents?.targets.length ?? 0) > 0

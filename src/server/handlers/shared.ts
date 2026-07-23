@@ -199,6 +199,13 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
     /** Canned read-tool outputs, keyed by tool id (consumed under `simulate`). */
     fixtures: Record<string, unknown>
     /**
+     * Synthesis mode — run the agent with an empty tool set (the host passes this
+     * into `startGraphRun` as `freezeTools`). True when the Sample was authored
+     * with a seeded conversation + freeze; the `triggerInput` then already carries
+     * the seeded `{ messages }`. Undefined/false → the normal tool-calling path.
+     */
+    freezeTools?: boolean
+    /**
      * Matrix cell overrides — swap the target agent's model / system prompt for
      * this run (the host passes them into `startGraphRun` as `agentOverride`).
      * Undefined → the agent's saved value (the plain, non-matrix path).

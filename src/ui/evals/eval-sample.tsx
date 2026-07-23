@@ -5,6 +5,7 @@ import type {
   CheckTree,
   EvalCheck,
   EvalFixtures,
+  SeededMessage,
   WfEvalRowDTO,
 } from '../../server/protocol'
 import { useWfComponents } from '../context'
@@ -17,6 +18,8 @@ import { useWfNav } from '../nav'
 import { ArchiveButton } from '../archive-button'
 import { WfShell } from '../shell'
 import { sectionCrumb } from '../wf-crumbs'
+import { IdeaSpark } from '../idea-spark'
+import { ConversationEditor } from './eval-sample-conversation'
 import { GivenEditor } from './eval-sample-given'
 import { MockToolsPanel } from './eval-sample-mocks'
 import { RunsForSample, TestsList } from './eval-sample-tests'
@@ -46,6 +49,8 @@ type Draft = {
   name: string
   description: string
   promptVariables: Record<string, string>
+  seededMessages: SeededMessage[]
+  freezeTools: boolean
   fixtures: EvalFixtures
   checks: CheckTree
 }
@@ -55,6 +60,8 @@ function draftFromRow(row: WfEvalRowDTO): Draft {
     name: row.name,
     description: row.description ?? '',
     promptVariables: { ...(row.initialCondition.promptVariables ?? {}) },
+    seededMessages: row.initialCondition.seededMessages ?? [],
+    freezeTools: row.initialCondition.freezeTools ?? false,
     fixtures: { ...row.fixtures },
     checks: row.checks,
   }
@@ -101,6 +108,11 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
       initialCondition: {
         triggerInput: row.initialCondition.triggerInput,
         promptVariables: next.promptVariables,
+        // Synthesis mode — a seeded conversation + freeze flag. Omit empty
+        // arrays so a plain sample's initialCondition stays clean.
+        seededMessages:
+          next.seededMessages.length > 0 ? next.seededMessages : undefined,
+        freezeTools: next.freezeTools || undefined,
       },
       fixtures: next.fixtures,
       checks: next.checks,
@@ -227,6 +239,95 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
                           value={draft.promptVariables}
                           onChange={(promptVariables) =>
                             persist({ ...draft, promptVariables })
+                          }
+                        />
+                      ),
+                    },
+                    {
+                      key: 'conversation',
+                      title: 'Conversation',
+                      aside: (
+                        <span className="flex items-center gap-1.5">
+                          <span className="text-[11px] uppercase tracking-wide text-neutral-400">
+                            Synthesis mode
+                          </span>
+                          <IdeaSpark
+                            title="Synthesis mode — grading the final response in isolation"
+                            hint="How synthesis mode works, and what's still to come"
+                          >
+                            <p>
+                              A seeded conversation + <strong>Freeze tools</strong>{' '}
+                              runs the agent with <strong>no tools</strong>, so it
+                              answers from the transcript above and you grade only
+                              its final reply — cutting out RAG / tool-selection
+                              nondeterminism.
+                            </p>
+                            <p className="font-medium text-neutral-700">
+                              Use it as a lens, not a replacement
+                            </p>
+                            <p>
+                              For a tool-calling agent the tool calls are often the
+                              product, and fully seeding retrieval hides the most
+                              common failure (a bad query, or nothing retrieved).
+                              Layer three kinds of test:
+                            </p>
+                            <ul className="list-disc space-y-1 pl-5">
+                              <li>
+                                <strong>Trajectory</strong> — mock the tools, assert{' '}
+                                <code>tool_called</code> /{' '}
+                                <code>tool_args_match</code> on the query.
+                              </li>
+                              <li>
+                                <strong>Synthesis</strong> (this step) — seed +
+                                freeze, then judge the answer. The judge now also
+                                sees the seeded tool <em>results</em>, so a rubric
+                                can grade groundedness.
+                              </li>
+                              <li>
+                                <strong>Integration</strong> — real tools against a
+                                frozen corpus snapshot.
+                              </li>
+                            </ul>
+                            <p className="font-medium text-neutral-700">
+                              Authoring tip
+                            </p>
+                            <p>
+                              End the transcript on a <strong>user turn</strong> or
+                              an <strong>assistant turn that carries a tool
+                              result</strong>. Ending on a plain assistant message
+                              makes the model generate a second assistant turn.
+                            </p>
+                            <p className="font-medium text-neutral-700">
+                              Not built yet
+                            </p>
+                            <ul className="list-disc space-y-1 pl-5">
+                              <li>
+                                Arg-keyed fixtures — a different query returns
+                                different canned chunks (better for the trajectory
+                                layer).
+                              </li>
+                              <li>
+                                pass@k across the model × prompt matrix, so one
+                                noisy judged run isn&apos;t the whole signal.
+                              </li>
+                              <li>
+                                Split <em>faithfulness</em> vs.{' '}
+                                <em>helpfulness</em> judges (now unblocked, since the
+                                judge sees context).
+                              </li>
+                            </ul>
+                          </IdeaSpark>
+                        </span>
+                      ),
+                      content: (
+                        <ConversationEditor
+                          messages={draft.seededMessages}
+                          freezeTools={draft.freezeTools}
+                          onMessagesChange={(seededMessages) =>
+                            persist({ ...draft, seededMessages })
+                          }
+                          onFreezeToolsChange={(freezeTools) =>
+                            persist({ ...draft, freezeTools })
                           }
                         />
                       ),

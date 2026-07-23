@@ -71,6 +71,8 @@ export type RunNodeContext<TDeps> = {
   simulate?: boolean
   /** Canned tool outputs consumed under `simulate`, keyed by tool id. */
   fixtures?: Record<string, unknown>
+  /** Eval synthesis signal — run agent nodes with an empty tool set. See RunContext. */
+  freezeTools?: boolean
   /** Eval matrix override — swaps an agent node's modelId/prompt. See RunContext. */
   agentOverride?: { modelId?: string; prompt?: string }
   /**
@@ -121,6 +123,7 @@ export async function runNode<TDeps>(
         resolveImage,
         simulate: ctx.simulate,
         fixtures: ctx.fixtures,
+        freezeTools: ctx.freezeTools,
         agentOverride: ctx.agentOverride,
         // Delegation: give the node this run's full context + its own id so it
         // can synthesize spawn/await tools that launch whitelisted sub-agents

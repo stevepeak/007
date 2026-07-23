@@ -19,6 +19,8 @@ export type {
   EvalInitialCondition,
   EvalMatch,
   EvalRowSnapshot,
+  SeededMessage,
+  SeededToolCall,
 } from '../eval/checks'
 // Runtime re-exports of the lightweight (zod-only) eval vocabulary so UI pickers
 // derive their options from the schema instead of re-hardcoding it. `checks.ts`

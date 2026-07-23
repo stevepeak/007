@@ -1,7 +1,9 @@
 import {
+  collectSeededToolCalls,
   gradeRow,
   resolveEvalTarget,
   rollup,
+  seededMessagesToUiMessages,
   type GradeModelFactory,
   type GradeStep,
 } from '../../eval'
@@ -329,15 +331,26 @@ export function buildEvalHandlers<TDeps>(
         set.triggerKind,
         { createdBy: c.ctx.userId },
       )
+      // Synthesis mode: when the Sample seeds a conversation, that transcript
+      // (converted to UIMessages) BECOMES the agent's input, replacing the
+      // trigger input — the run starts mid-conversation and, with `freezeTools`,
+      // the model only produces its final reply. Absent a seed, the normal
+      // trigger input flows through.
+      const seeded = row.initialCondition.seededMessages
+      const triggerInput =
+        seeded && seeded.length > 0
+          ? { messages: seededMessagesToUiMessages(seeded) }
+          : (row.initialCondition.triggerInput ?? {})
       const started = await startEvalRun({
         evalRunId,
         rowId,
         target: { kind: set.targetKind, id: set.targetId },
         workflowVersionId: resolved.workflowVersionId,
         triggerKind: resolved.triggerKind,
-        triggerInput: row.initialCondition.triggerInput ?? {},
+        triggerInput,
         promptVariables: row.initialCondition.promptVariables ?? {},
         fixtures: row.fixtures,
+        freezeTools: row.initialCondition.freezeTools ?? false,
         modelId: cell.modelId,
         promptBody: cell.promptBody,
         ctx: c.ctx,
@@ -386,6 +399,12 @@ export function buildEvalHandlers<TDeps>(
         output: runResult.run.output,
         getModel,
         defaultJudgeModelId,
+        // Synthesis mode: the tools were frozen, so the model's context came from
+        // the Sample's seeded conversation, not the run trace. Hand those staged
+        // tool results to the judge so it can grade the answer's groundedness.
+        seededToolCalls: collectSeededToolCalls(
+          found.row.initialCondition.seededMessages,
+        ),
       })
       // Freeze the Sample + Goal target this result was graded against, so
       // the report reproduces it exactly even after the definitions change.

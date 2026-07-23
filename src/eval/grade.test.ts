@@ -216,6 +216,64 @@ describe('gradeRow — judge checks', () => {
   })
 
 
+  test('judge sees tool RESULTS (outputs), not just the calls — groundedness', async () => {
+    // The retrieved context lives in a tool's OUTPUT. A judge grading
+    // faithfulness must be shown it; this guards the fix that started passing
+    // tool outputs (previously only `{ tool, args }` reached the judge).
+    const { model, seen } = capturingJudge(0.9)
+    await gradeRow({
+      checks: { op: 'and', checks: [{ type: 'llm_judge', rubric: 'grounded' }] },
+      steps: [
+        {
+          nodeId: 'a',
+          nodeKind: 'agent',
+          output: { text: 'answer' },
+          meta: {
+            steps: [
+              {
+                stepNumber: 0,
+                toolCalls: [
+                  {
+                    toolCallId: '1',
+                    toolName: 'search_rag',
+                    input: { query: 'statute of limitations' },
+                    output: { chunks: ['SECRET_RETRIEVED_FACT'] },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+      output: { text: 'answer' },
+      getModel: () => model,
+      defaultJudgeModelId: 'mock',
+    })
+    expect(seen.prompt).toContain('SECRET_RETRIEVED_FACT') // the result reached the judge
+  })
+
+  test('synthesis mode: seeded tool calls are shown to the judge even with no run steps', async () => {
+    // Under freezeTools the agent calls nothing, so the trace has no tool step.
+    // The seeded context must still reach the judge for a groundedness rubric.
+    const { model, seen } = capturingJudge(0.8)
+    await gradeRow({
+      checks: { op: 'and', checks: [{ type: 'llm_judge', rubric: 'grounded' }] },
+      steps: [{ nodeId: 'a', nodeKind: 'agent', output: { text: 'final reply' } }],
+      output: { text: 'final reply' },
+      seededToolCalls: [
+        {
+          toolId: 'search_rag',
+          args: { query: 'filing deadline' },
+          output: { chunks: ['SEEDED_CONTEXT_CHUNK'] },
+        },
+      ],
+      getModel: () => model,
+      defaultJudgeModelId: 'mock',
+    })
+    expect(seen.prompt).toContain('SEEDED_CONTEXT_CHUNK')
+    expect(seen.prompt).toContain('filing deadline')
+  })
+
   test('judge score ≥ threshold passes; score comes from judge only', async () => {
     const r = await grade(
       {

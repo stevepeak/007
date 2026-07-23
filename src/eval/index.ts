@@ -6,13 +6,22 @@ export {
   evalInitialConditionSchema,
   evalMatchSchema,
   isJudgeCheck,
+  seededMessageSchema,
+  seededToolCallSchema,
   type CheckResult,
   type CheckTree,
   type EvalCheck,
   type EvalFixtures,
   type EvalInitialCondition,
   type EvalMatch,
+  type SeededMessage,
+  type SeededToolCall,
 } from './checks'
+export {
+  collectSeededToolCalls,
+  seededMessagesToUiMessages,
+  type SeededToolInvocation,
+} from './synthesis'
 export {
   gradeRow,
   rollup,
@@ -91,6 +100,7 @@ export async function runWorkflowUnderConditions<TDeps>(
     manifest: tc.manifest ?? tc.runContext?.manifest,
     simulate: tc.runContext?.simulate,
     fixtures: tc.runContext?.fixtures,
+    freezeTools: tc.runContext?.freezeTools,
     agentOverride: tc.runContext?.agentOverride,
     env: tc.runContext?.env,
   }

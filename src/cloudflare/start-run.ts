@@ -29,6 +29,11 @@ export type StartGraphRunInput = {
   simulate?: boolean
   /** Canned tool outputs consumed under `simulate`, keyed by tool id. */
   fixtures?: Record<string, unknown>
+  /**
+   * Eval synthesis signal — run every agent node with an empty tool set so the
+   * model answers from its seeded message history alone. See RunContext.
+   */
+  freezeTools?: boolean
   /** Marks the produced `wf_run` as eval-owned (hidden from the Runs explorer). */
   isEval?: boolean
   /**
@@ -91,6 +96,7 @@ export async function startGraphRun(
         promptVariables: input.promptVariables,
         simulate: input.simulate,
         fixtures: input.fixtures,
+        freezeTools: input.freezeTools,
         agentOverride: input.agentOverride,
         traceId,
       },

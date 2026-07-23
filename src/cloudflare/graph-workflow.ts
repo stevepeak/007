@@ -53,6 +53,8 @@ export type GraphRunContextInput = {
   simulate?: boolean
   /** Canned tool outputs consumed under `simulate`, keyed by tool id. */
   fixtures?: Record<string, unknown>
+  /** Eval synthesis signal — run every agent node with an empty tool set. See RunContext. */
+  freezeTools?: boolean
   /** Eval matrix override — swaps an agent node's modelId/prompt. See RunContext. */
   agentOverride?: { modelId?: string; prompt?: string }
   /** Stable 32-hex trace id, minted by `startGraphRun`, used to group every
