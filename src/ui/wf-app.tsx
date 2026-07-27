@@ -117,7 +117,9 @@ function HomeRoutes({
   agentTemplates?: AgentTemplate[]
 }) {
   const { navigate } = useWfNav()
-  const parts = path.split('/').filter(Boolean)
+  // Split path from any query string, then into segments.
+  const [pathname, queryString = ''] = path.split('?', 2)
+  const parts = pathname.split('/').filter(Boolean)
 
   // Hub root.
   if (parts.length === 0) {
@@ -125,17 +127,6 @@ function HomeRoutes({
       <div className="h-full overflow-y-auto">
         <WfHub sections={sections} onOpen={(key) => navigate(key)} />
       </div>
-    )
-  }
-
-  // Workflow-scoped runs list: `<id>/runs`.
-  if (parts.length === 2 && parts[1] === 'runs') {
-    return (
-      <WfShell
-        crumbs={[{ home: true }, sectionCrumb('workflows'), { label: 'Runs' }]}
-      >
-        <RunsExplorer className="h-full" workflowId={parts[0]} />
-      </WfShell>
     )
   }
 
@@ -153,9 +144,15 @@ function HomeRoutes({
       )
     }
     if (key === 'runs') {
+      // Optional `?workflow=<id>` pre-selects the workflow filter (e.g. the
+      // "View runs" button on a workflow row deep-links here).
+      const workflow = new URLSearchParams(queryString).get('workflow')
       return (
         <WfShell crumbs={[{ home: true }, sectionCrumb('runs', { current: true })]}>
-          <RunsExplorer className="h-full" />
+          <RunsExplorer
+            className="h-full"
+            initialWorkflowId={workflow ?? undefined}
+          />
         </WfShell>
       )
     }

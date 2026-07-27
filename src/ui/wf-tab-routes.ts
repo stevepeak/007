@@ -28,7 +28,7 @@ function segments(path: string): string[] {
 
 /**
  * Parse an asset location, or `null` for a home/browsing route (hub, section
- * lists, `<id>/runs`, coming-soon). Order matches `wf-app.tsx`.
+ * lists, coming-soon). Order matches `wf-app.tsx`.
  */
 export function classifyAssetPath(path: string): WfAsset | null {
   const parts = segments(path)
@@ -91,8 +91,8 @@ export function classifyAssetPath(path: string): WfAsset | null {
     return { type: 'workflow', workflowId: parts[0] }
   }
 
-  // Everything else — the hub, section lists, `<id>/runs`, coming-soon — is a
-  // home route rendered inside the Home tab.
+  // Everything else — the hub, section lists, coming-soon — is a home route
+  // rendered inside the Home tab.
   return null
 }
 

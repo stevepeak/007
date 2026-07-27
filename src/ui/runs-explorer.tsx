@@ -78,6 +78,12 @@ function Select({
 export type RunsExplorerProps = {
   /** Scope the table to a single workflow (hides the workflow filter). */
   workflowId?: string
+  /**
+   * Pre-select the workflow filter (the dropdown stays visible and adjustable).
+   * Ignored when `workflowId` locks the scope. Use this to deep-link into the
+   * runs table filtered to one workflow, e.g. `runs?workflow=<id>`.
+   */
+  initialWorkflowId?: string
   /** Rows per page (server-enforced ceiling is 200). */
   pageSize?: number
   className?: string
@@ -85,6 +91,7 @@ export type RunsExplorerProps = {
 
 export function RunsExplorer({
   workflowId,
+  initialWorkflowId,
   pageSize = 50,
   className,
 }: RunsExplorerProps) {
@@ -95,7 +102,7 @@ export function RunsExplorer({
   const search = useDebounced(searchRaw, 300)
   const [triggerKind, setTriggerKind] = useState('')
   const [status, setStatus] = useState('')
-  const [workflowFilter, setWorkflowFilter] = useState('')
+  const [workflowFilter, setWorkflowFilter] = useState(initialWorkflowId ?? '')
   const [timeframeIdx, setTimeframeIdx] = useState(0)
   const [page, setPage] = useState(0)
 

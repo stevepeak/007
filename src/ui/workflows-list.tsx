@@ -1,8 +1,10 @@
 import { Activity, Clock, GitBranch, History, Pencil, Play, Plus } from 'lucide-react'
 import { useState } from 'react'
 
+import { agentColor, agentIcon } from './agent-appearance'
 import { cn } from './cn'
 import { formatRelative, formatTimestamp, formatTokens } from './cost'
+import type { WfWorkflowAgentRef } from '../server/protocol'
 import { useWfComponents } from './context'
 import { useWorkflows } from './hooks'
 import { useWfNav, WfLink } from './nav'
