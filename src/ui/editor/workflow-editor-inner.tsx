@@ -6,6 +6,7 @@ import { ArchiveButton } from '../archive-button'
 import { useWfClient, useWfComponents } from '../context'
 import { SaveStateBadge } from '../save-state-badge'
 import { Tooltip } from '../tooltip'
+import { useModifierHold } from '../use-modifier-hold'
 import {
   useSaveDraft,
   useSaveVersion,
@@ -45,6 +46,7 @@ export function EditorInner({
 }) {
   const { Button } = useWfComponents()
   const client = useWfClient()
+  const modifierHeld = useModifierHold()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   // The workflow's description — a plain field, committed to the server on blur
   // (not part of the graph/undo history or the unsaved-draft dirty state).
@@ -233,7 +235,7 @@ export function EditorInner({
                   Unarchive
                 </Button>
               </>
-            ) : (
+            ) : modifierHeld ? (
               <ArchiveButton
                 title="Archive workflow"
                 confirmLabel="Hold to archive"
@@ -250,7 +252,7 @@ export function EditorInner({
                   onArchived?.()
                 }}
               />
-            )}
+            ) : null}
 
             <SaveStateBadge
               dirty={dirty}

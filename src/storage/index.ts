@@ -74,6 +74,7 @@ export {
   listRunTriggerKinds,
   listVersions,
   listWorkflows,
+  listWorkflowsWithStats,
   markRunRunning,
   publishAgent,
   resolveAssignedVersion,
@@ -106,4 +107,5 @@ export {
   type ListFeedbackFilters,
   type ListFeedbackResult,
   type SubmitFeedbackInput,
+  type WorkflowStats,
 } from './data'

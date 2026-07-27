@@ -5,7 +5,7 @@ import {
   getVersionGraph,
   getWorkflow,
   listVersions,
-  listWorkflows,
+  listWorkflowsWithStats,
   parseStoredGraph,
   saveVersion,
   setVersionAiSummary,
@@ -142,8 +142,14 @@ export function buildWorkflowHandlers<TDeps>(
 > {
   return {
     listWorkflows: async (c) => {
-      const rows = await listWorkflows(c.db)
-      return rows.map(workflowSummary)
+      const rows = await listWorkflowsWithStats(c.db)
+      return rows.map((w) => ({
+        ...workflowSummary(w),
+        latestVersionNumber: w.latestVersionNumber,
+        updatedAt: w.updatedAt,
+        lastRunAt: w.lastRunAt,
+        runCount: w.runCount,
+      }))
     },
 
     getWorkflow: async (c) => {

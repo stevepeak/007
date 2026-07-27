@@ -43,7 +43,7 @@ import type {
   WfChangeSummary,
   WfVersionSummary,
   WfWorkflowDetail,
-  WfWorkflowSummary,
+  WfWorkflowListItem,
 } from './protocol-workflows'
 
 // The data surface the editor + run-viewer consume. Implemented server-side by
@@ -100,7 +100,7 @@ export interface WfDataClient {
   }): Promise<WfToolPreviewResult>
   /** The host's declared events + their data — offered in the creation flow. */
   listTriggerEvents(): Promise<TriggerEventOption[]>
-  listWorkflows(): Promise<WfWorkflowSummary[]>
+  listWorkflows(): Promise<WfWorkflowListItem[]>
   getWorkflow(workflowId: string): Promise<WfWorkflowDetail | null>
   createWorkflow(input: {
     name: string

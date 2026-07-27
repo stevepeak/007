@@ -1,12 +1,14 @@
-import { Activity, Clock, Pencil, Play, Plus } from 'lucide-react'
+import { Activity, Clock, GitBranch, History, Pencil, Play, Plus } from 'lucide-react'
 import { useState } from 'react'
 
 import { cn } from './cn'
+import { formatRelative, formatTimestamp, formatTokens } from './cost'
 import { useWfComponents } from './context'
 import { useWorkflows } from './hooks'
 import { useWfNav, WfLink } from './nav'
 import { NewWorkflowDialog } from './new-workflow-dialog'
 import { Tooltip } from './tooltip'
+import { useModifierHold } from './use-modifier-hold'
 
 // The workflows (from the wf_* tables via the injected data client). Each
 // row links into the editor and the workflow-scoped runs table. Reached from the
@@ -20,6 +22,7 @@ export function WorkflowsList({ className }: WorkflowsListProps) {
   const { Button } = useWfComponents()
   const { navigate } = useWfNav()
   const [creating, setCreating] = useState(false)
+  const modifierHeld = useModifierHold()
 
   return (
     <div className={cn('mx-auto max-w-2xl space-y-4 p-6', className)}>
@@ -28,14 +31,16 @@ export function WorkflowsList({ className }: WorkflowsListProps) {
           Multi-step agent workflows, triggered manually, on a schedule, or by
           an event.
         </div>
-        <Button
-          size="sm"
-          className="shrink-0 whitespace-nowrap"
-          onClick={() => setCreating(true)}
-        >
-          <Plus className="size-4" />
-          New workflow
-        </Button>
+        {modifierHeld ? (
+          <Button
+            size="sm"
+            className="shrink-0 whitespace-nowrap"
+            onClick={() => setCreating(true)}
+          >
+            <Plus className="size-4" />
+            New workflow
+          </Button>
+        ) : null}
       </div>
 
       <NewWorkflowDialog
@@ -68,12 +73,40 @@ export function WorkflowsList({ className }: WorkflowsListProps) {
           >
             <div className="min-w-0">
               <div className="truncate font-medium">{w.name}</div>
-              <div className="mt-1 flex items-center gap-3 text-xs text-neutral-400">
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-neutral-400">
                 <span className="flex items-center gap-1">
-                  <Clock className="size-3.5" /> Last run —
+                  <GitBranch className="size-3.5" />
+                  {w.latestVersionNumber != null
+                    ? `v${w.latestVersionNumber}`
+                    : '—'}
                 </span>
+                <Tooltip
+                  content={
+                    w.updatedAt
+                      ? `Updated ${formatTimestamp(w.updatedAt)}`
+                      : 'Never updated'
+                  }
+                >
+                  <span className="flex items-center gap-1">
+                    <History className="size-3.5" /> Updated{' '}
+                    {formatRelative(w.updatedAt)}
+                  </span>
+                </Tooltip>
+                <Tooltip
+                  content={
+                    w.lastRunAt
+                      ? `Last run ${formatTimestamp(w.lastRunAt)}`
+                      : 'Never run'
+                  }
+                >
+                  <span className="flex items-center gap-1">
+                    <Clock className="size-3.5" />
+                    {w.lastRunAt ? formatRelative(w.lastRunAt) : 'No runs'}
+                  </span>
+                </Tooltip>
                 <span className="flex items-center gap-1">
-                  <Play className="size-3.5" /> 0 runs
+                  <Play className="size-3.5" /> {formatTokens(w.runCount)}{' '}
+                  {w.runCount === 1 ? 'run' : 'runs'}
                 </span>
               </div>
             </div>
@@ -89,7 +122,7 @@ export function WorkflowsList({ className }: WorkflowsListProps) {
               </Tooltip>
               <Tooltip content="View runs">
                 <WfLink
-                  to={`${w.id}/runs`}
+                  to={`runs?workflow=${w.id}`}
                   aria-label="View runs"
                   className="inline-flex size-8 items-center justify-center rounded-md border border-neutral-200 text-neutral-600 transition hover:bg-neutral-100 hover:text-neutral-900"
                 >

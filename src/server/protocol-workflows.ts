@@ -9,6 +9,21 @@ export type WfWorkflowSummary = {
   archived: boolean
 }
 
+/**
+ * A workflow row in the Workflows list — its summary plus the activity metrics
+ * the list renders (version, last edit, run activity). All epoch ms / counts.
+ */
+export type WfWorkflowListItem = WfWorkflowSummary & {
+  /** Highest published version number (a workflow always seeds v1). */
+  latestVersionNumber: number | null
+  /** Freshest of workflow/version/draft edits — "last updated". */
+  updatedAt: number | null
+  /** Newest non-eval run's start; null if the workflow has never run. */
+  lastRunAt: number | null
+  /** Total non-eval runs. */
+  runCount: number
+}
+
 export type WfWorkflowDetail = {
   workflow: WfWorkflowSummary
   draft: { graph: WorkflowGraph } | null

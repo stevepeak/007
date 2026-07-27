@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 
 import {
   workflowGraphShapeSchema,
@@ -41,6 +41,100 @@ export async function listWorkflows(
         : and(eq(wfWorkflow.hidden, false), eq(wfWorkflow.archived, false)),
     )
     .orderBy(desc(wfWorkflow.createdAt))
+}
+
+/** Per-workflow activity for the list: latest version, last edit, run activity. */
+export type WorkflowStats = {
+  /** Highest published version number (a workflow always seeds v1). */
+  latestVersionNumber: number | null
+  /** Newest of workflow/version/draft edits — "last updated", epoch ms. */
+  updatedAt: number | null
+  /** Newest non-eval run's `createdAt`, epoch ms; null if never run. */
+  lastRunAt: number | null
+  /** Non-eval run count. */
+  runCount: number
+}
+
+/**
+ * {@link listWorkflows} plus the per-workflow activity the Workflows list shows:
+ * latest version number, last-updated time, last run, and total run count. Three
+ * grouped aggregate queries (versions, drafts, runs) folded onto the rows — no
+ * per-workflow N+1. Timestamps come back from `max()` as unix SECONDS (the
+ * columns are `timestamp` mode), so they're scaled to epoch ms here.
+ */
+export async function listWorkflowsWithStats(
+  db: WfDb,
+  opts?: { includeArchived?: boolean },
+): Promise<
+  Array<Awaited<ReturnType<typeof listWorkflows>>[number] & WorkflowStats>
+> {
+  const workflows = await listWorkflows(db, opts)
+  if (workflows.length === 0) return []
+  const ids = workflows.map((w) => w.id)
+
+  const [versionRows, draftRows, runRows] = await Promise.all([
+    db
+      .select({
+        workflowId: wfWorkflowVersion.workflowId,
+        latestVersionNumber: sql<number>`max(${wfWorkflowVersion.versionNumber})`,
+        latestVersionAt: sql<
+          number | null
+        >`max(${wfWorkflowVersion.createdAt})`,
+      })
+      .from(wfWorkflowVersion)
+      .where(inArray(wfWorkflowVersion.workflowId, ids))
+      .groupBy(wfWorkflowVersion.workflowId),
+    db
+      .select({
+        workflowId: wfWorkflowDraft.workflowId,
+        updatedAt: sql<number | null>`${wfWorkflowDraft.updatedAt}`,
+      })
+      .from(wfWorkflowDraft)
+      .where(inArray(wfWorkflowDraft.workflowId, ids)),
+    db
+      .select({
+        workflowId: wfWorkflowVersion.workflowId,
+        runCount: sql<number>`count(*)`,
+        lastRunAt: sql<number | null>`max(${wfRun.createdAt})`,
+      })
+      .from(wfRun)
+      .innerJoin(
+        wfWorkflowVersion,
+        eq(wfRun.workflowVersionId, wfWorkflowVersion.id),
+      )
+      .where(
+        and(eq(wfRun.isEval, false), inArray(wfWorkflowVersion.workflowId, ids)),
+      )
+      .groupBy(wfWorkflowVersion.workflowId),
+  ])
+
+  const secondsToMs = (s: number | null | undefined) =>
+    s == null ? null : s * 1000
+  const versionByWf = new Map(versionRows.map((r) => [r.workflowId, r]))
+  const draftAtByWf = new Map(
+    draftRows.map((r) => [r.workflowId, secondsToMs(r.updatedAt)]),
+  )
+  const runByWf = new Map(runRows.map((r) => [r.workflowId, r]))
+
+  return workflows.map((w) => {
+    const version = versionByWf.get(w.id)
+    const run = runByWf.get(w.id)
+    // "Last updated" = the freshest signal across the workflow row, its latest
+    // version, and its draft — whichever the human touched most recently.
+    const updatedAt = Math.max(
+      w.updatedAt?.getTime() ?? 0,
+      w.createdAt.getTime(),
+      secondsToMs(version?.latestVersionAt) ?? 0,
+      draftAtByWf.get(w.id) ?? 0,
+    )
+    return {
+      ...w,
+      latestVersionNumber: version?.latestVersionNumber ?? null,
+      updatedAt: updatedAt || null,
+      lastRunAt: secondsToMs(run?.lastRunAt),
+      runCount: Number(run?.runCount ?? 0),
+    }
+  })
 }
 
 /**
