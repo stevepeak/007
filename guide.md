@@ -544,6 +544,34 @@ use `createHttpGraphRunClient({ baseUrl })` (from `@stevepeak/007/cloudflare`),
 which implements the `WfGraphRunClient` interface so the binding and the HTTP
 client are interchangeable at the call site.
 
+> 🔁 **Expose a generic `startGraphRun` RPC method — the editor's Retry and Eval
+> buttons need it.** Two SDK host hooks in the data-API route (§5) —
+> `retryRun` and `startEvalRun` — resolve a run to a **specific
+> `workflowVersionId`** and hand it back with the full option set (`resumeFromRunId`
+> for resume; `simulate`/`isEval`/`fixtures`/`freezeTools`/`agentOverride` for
+> evals). They can't go through a trigger-based `startRun(triggerKind, …)`, which
+> resolves the version _for_ you. So the workflows Worker should expose a thin RPC
+> method that forwards straight to the SDK helper:
+>
+> ```ts
+> class WorkflowsService extends WorkerEntrypoint<Env> implements WorkflowsRpc {
+>   // …startRun(triggerKind, input, opts) for your own feature triggers…
+>
+>   /** Start a specific version with the full option set (retry/resume/eval). */
+>   async startGraphRun(input: GraphRunInput): Promise<GraphRunResult> {
+>     return await startGraphRun(this.env, input) // @stevepeak/007/cloudflare
+>   }
+> }
+> ```
+>
+> `GraphRunInput` mirrors the SDK's `StartGraphRunInput` (redeclare it on your RPC
+> contract so the wire type stays decoupled from SDK internals). Return the
+> **`workflowRunId`** (`wf_run.id`) from the hooks — that's the id the run viewer
+> routes by and `getRun` reads; `runId` is the RunRoom address and would 404 if
+> you navigated to it. See this repo's `packages/wf-host/src/rpc.ts` +
+> `apps/workflows/src/index.ts` for the worked pair. (Add a matching HTTP route —
+> `POST /graph-runs` taking the raw `GraphRunInput` — for the `next dev` fallback.)
+
 ---
 
 ## 5. Step 4 — the data API route (editor/run-viewer backend)
@@ -607,6 +635,111 @@ export const POST = createWfSdkHandlers({
   app runs on the Workers runtime via OpenNext), or `tsc` fails with
   `Cannot find name 'D1Database'`. Keep it out of the browser bundle by scoping it
   to this app's config, not the shared base.
+
+### 5a. Run-execution hooks (Retry, Evals, the two playgrounds)
+
+The config above stands up the editor + run viewer, but four features stay
+**dark** until you wire their optional hooks — and if the UI reaches one that
+isn't wired, `createWfSdkHandlers` answers with `"… is not configured for this
+host."` (the SDK's `requireHook` guard). They split into two kinds by _what
+runtime binding they need_:
+
+| Hook                              | What it does                                  | Where it must run                                                            |
+| --------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------- |
+| `retryRun`                        | Run viewer's **Retry** (restart / resume)     | **Workflows Worker** — needs `GRAPH_WORKFLOW` / `RUN_ROOM` to start a run    |
+| `startEvalRun`                    | **Evals** — start one graded sample run       | **Workflows Worker** — same durable bindings                                |
+| `runAgentPreview`                 | Agent editor **playground** (tools simulated) | **In-process** — needs only the model seam (`config.getModel`)              |
+| `runToolPreview` + `toolContextFields` | Tool detail **playground** (real execution)   | **In-process** — needs the tools' _real per-run deps_ (`buildRunDeps`)      |
+
+> ⚠️ **The default `createWfSdkHandlers` config wires none of these.** Omitting
+> them isn't an error at mount time — the data plane (editor, lists, run viewer)
+> works fine — so it's easy to ship a host where Retry, Evals, and both
+> playgrounds silently 500 on first click. Wire all four (below), or consciously
+> decide to leave a feature off.
+
+**Run-starting hooks → delegate to the Worker's `startGraphRun` RPC (§4).** The
+SDK resolves the run to a concrete `workflowVersionId` and hands you a
+descriptor; you forward it and return the `workflowRunId`:
+
+```ts
+retryRun: async ({ mode, source }) => {
+  const resume = mode === 'resume'
+  const started = await getWorkflowsClient().startGraphRun({
+    workflowVersionId: resume
+      ? source.originalVersionId
+      : (source.latestVersionId ?? source.originalVersionId),
+    triggerKind: source.triggerKind,
+    triggerInput: source.triggerInput,
+    subjectId: source.subjectId ?? undefined,
+    correlationId: source.correlationId ?? undefined,
+    resumeFromRunId: resume ? source.runId : undefined,
+  })
+  return { runId: started.workflowRunId } // wf_run.id — NOT started.runId (RunRoom addr)
+},
+startEvalRun: async ({
+  workflowVersionId, triggerKind, triggerInput, promptVariables,
+  fixtures, freezeTools, modelId, promptBody,
+}) => {
+  const started = await getWorkflowsClient().startGraphRun({
+    workflowVersionId, triggerKind, triggerInput, promptVariables,
+    simulate: true,   // neutralize write tools
+    isEval: true,     // hide from the Runs explorer
+    fixtures,         // stub read tools
+    freezeTools,      // synthesis mode (agent answers from seeded messages)
+    label: 'Eval run',
+    agentOverride: modelId || promptBody ? { modelId, prompt: promptBody } : undefined,
+  })
+  return { wfRunId: started.workflowRunId }
+},
+```
+
+**Playground hooks → run in-process with the SDK helpers.** `executeAgentPreview`
+and `executeToolPreview` (from `@stevepeak/007/server`) reuse the exact node
+executors a real run uses. Build a `RunContext` carrying live `env` + identity;
+the agent preview simulates tools (no deps), the tool preview builds the **real**
+deps via your `buildRunDeps` and executes for real:
+
+```ts
+runAgentPreview: async ({ config, input, promptVariables }) => {
+  const { env } = getCloudflareContext()
+  return await executeAgentPreview({
+    config, input, wfConfig,
+    runContext: { triggerKind: 'playground', promptVariables, env },
+  })
+},
+// The ambient run scope the tool playground collects up front — NOT tool
+// arguments (an agent never sets these); they're what the tools read from their
+// per-run deps. Map each key into the RunContext identity buildRunDeps reads.
+toolContextFields: [
+  { key: 'organizationId', label: 'Organization',
+    description: 'Scope the tool to this org; blank = unscoped.', placeholder: 'org id' },
+],
+runToolPreview: async ({ toolId, args, context }) => {
+  const { env } = getCloudflareContext()
+  return await executeToolPreview({
+    toolId, args, wfConfig,
+    runContext: { triggerKind: 'playground', correlationId: context.organizationId || undefined, env },
+  })
+},
+```
+
+> ⚠️ **In-process previews require the web Worker to hold the tools' runtime
+> bindings.** `runToolPreview` runs `buildRunDeps(runContext)` and the tool's real
+> `execute` **inside the web Worker**, not the workflows Worker — so the web
+> Worker's `env` must carry every binding a tool reads (DB, model API keys,
+> vector store, and any Cloudflare product binding like Workers `AI`). List them
+> in the web app's `wrangler.jsonc` and secrets. In this repo the web Worker
+> already had the DB + model secrets (the main app uses them), so the only
+> addition was `"ai": { "binding": "AI" }` for the `extract_text` tool's OCR path.
+> If a host can't or won't give the web Worker a tool's binding, either that tool
+> is un-previewable there, or route `runToolPreview` through the workflows Worker
+> over RPC instead (mirroring the run-starting hooks). The agent preview is
+> unaffected — it simulates tools, so it needs only `getModel`'s key.
+
+**Optional:** `sentryTraceUrl(traceId)` builds the run viewer's "View trace in
+Sentry" deep-link (return `null` to omit it) — the host owns the URL shape since
+only it knows its Sentry org/region. `evalJudgeModelId` pins which model grades
+`llm_judge` eval checks (defaults to `listModels()[0]`).
 
 ---
 
@@ -876,16 +1009,18 @@ project is: write a `WfSdkConfig`, mount one API route, mount `WfApp`, export
 
 ## Reference: the reference implementation in this repo
 
-| Piece                       | File                                             |
-| --------------------------- | ------------------------------------------------ |
-| Host config (`WfSdkConfig`) | `packages/wf-host/src/config.ts`                 |
-| Seed helper + template      | `packages/wf-host/src/{seed,template}.ts`        |
-| Data API route              | `apps/web/app/api/wf/route.ts`                   |
-| UI provider                 | `apps/web/components/wf/provider.tsx`            |
-| UI mount (catch-all)        | `apps/web/app/(app)/wf/[[...slug]]/page.tsx`     |
-| Run viewer embed            | `apps/web/components/wf/run-sheet.tsx`           |
-| Workflows Worker            | `apps/workflows/src/index.ts` + `wrangler.jsonc` |
-| Chat consumer               | `apps/web/app/api/chat/route.ts`                 |
+| Piece                            | File                                             |
+| -------------------------------- | ------------------------------------------------ |
+| Host config (`WfSdkConfig`)      | `packages/wf-host/src/config.ts`                 |
+| Seed helper + template           | `packages/wf-host/src/{seed,template}.ts`        |
+| RPC contract (`WorkflowsRpc`)    | `packages/wf-host/src/rpc.ts`                    |
+| Data API route + run-exec hooks  | `apps/web/app/api/wf/route.ts`                   |
+| RPC client (binding + HTTP fallback) | `apps/web/lib/workflows.ts`                   |
+| UI provider                      | `apps/web/components/wf/provider.tsx`            |
+| UI mount (catch-all)             | `apps/web/app/(app)/wf/[[...slug]]/page.tsx`     |
+| Run viewer embed                 | `apps/web/components/wf/run-sheet.tsx`           |
+| Workflows Worker + `startGraphRun` RPC | `apps/workflows/src/index.ts` + `wrangler.jsonc` |
+| Chat consumer                    | `apps/web/app/api/chat/route.ts`                 |
 
 </content>
 </invoke>

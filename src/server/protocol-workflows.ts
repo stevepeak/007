@@ -9,6 +9,16 @@ export type WfWorkflowSummary = {
   archived: boolean
 }
 
+/** An agent a workflow uses, with just enough to render its icon chip. */
+export type WfWorkflowAgentRef = {
+  id: string
+  name: string
+  /** Lucide icon name (see `agentIcon`); null falls back to the default. */
+  icon: string | null
+  /** Color token (see `agentColor`); null falls back to the default. */
+  color: string | null
+}
+
 /**
  * A workflow row in the Workflows list — its summary plus the activity metrics
  * the list renders (version, last edit, run activity). All epoch ms / counts.
@@ -22,6 +32,8 @@ export type WfWorkflowListItem = WfWorkflowSummary & {
   lastRunAt: number | null
   /** Total non-eval runs. */
   runCount: number
+  /** Distinct agents referenced by the latest published version's graph. */
+  agents: WfWorkflowAgentRef[]
 }
 
 export type WfWorkflowDetail = {

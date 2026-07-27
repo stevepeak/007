@@ -107,5 +107,6 @@ export {
   type ListFeedbackFilters,
   type ListFeedbackResult,
   type SubmitFeedbackInput,
+  type WorkflowAgentRef,
   type WorkflowStats,
 } from './data'

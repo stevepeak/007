@@ -29,6 +29,26 @@ export function formatTimestamp(ms: number): string {
   })
 }
 
+/**
+ * Compact relative time from an epoch-ms mark to now, e.g. `just now` / `5m` /
+ * `2h` / `3d` / `4mo` / `2y`. Returns "never" when null. For at-a-glance recency
+ * in list rows (last run, last edit) — pair with a `formatTimestamp` tooltip for
+ * the exact time.
+ */
+export function formatRelative(ms: number | null | undefined): string {
+  if (ms == null) return 'never'
+  const secs = Math.max(0, (Date.now() - ms) / 1000)
+  if (secs < 45) return 'just now'
+  const mins = secs / 60
+  if (mins < 60) return `${Math.round(mins)}m`
+  const hrs = mins / 60
+  if (hrs < 24) return `${Math.round(hrs)}h`
+  const days = hrs / 24
+  if (days < 30) return `${Math.round(days)}d`
+  if (days < 365) return `${Math.round(days / 30)}mo`
+  return `${(days / 365).toFixed(1)}y`
+}
+
 /** Elapsed time between two epoch-ms marks as `42s` / `3m 20s` / `1h 5m`. */
 export function formatDuration(start: number, end: number | null): string {
   if (end == null) return '—'

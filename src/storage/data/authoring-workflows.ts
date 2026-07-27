@@ -6,6 +6,7 @@ import {
 } from '../../engine/graph'
 import type { WfDb } from '../client'
 import {
+  wfAgent,
   wfRun,
   wfRunStep,
   wfWorkflow,
@@ -43,6 +44,14 @@ export async function listWorkflows(
     .orderBy(desc(wfWorkflow.createdAt))
 }
 
+/** An agent used by a workflow, with just enough to render its icon chip. */
+export type WorkflowAgentRef = {
+  id: string
+  name: string
+  icon: string | null
+  color: string | null
+}
+
 /** Per-workflow activity for the list: latest version, last edit, run activity. */
 export type WorkflowStats = {
   /** Highest published version number (a workflow always seeds v1). */
@@ -53,6 +62,8 @@ export type WorkflowStats = {
   lastRunAt: number | null
   /** Non-eval run count. */
   runCount: number
+  /** Distinct agents referenced by the latest published version's graph. */
+  agents: WorkflowAgentRef[]
 }
 
 /**
@@ -66,7 +77,10 @@ export async function listWorkflowsWithStats(
   db: WfDb,
   opts?: { includeArchived?: boolean },
 ): Promise<
-  Array<Awaited<ReturnType<typeof listWorkflows>>[number] & WorkflowStats>
+  Array<
+    Omit<Awaited<ReturnType<typeof listWorkflows>>[number], 'updatedAt'> &
+      WorkflowStats
+  >
 > {
   const workflows = await listWorkflows(db, opts)
   if (workflows.length === 0) return []
@@ -108,6 +122,35 @@ export async function listWorkflowsWithStats(
       .groupBy(wfWorkflowVersion.workflowId),
   ])
 
+  // Agents each workflow uses, pulled from its latest published version graph.
+  // One `latestVersion` per workflow (the list is small), then a single lookup
+  // resolves every referenced agent's display metadata.
+  const latestGraphs = await Promise.all(
+    workflows.map((w) => latestVersion(db, w.id)),
+  )
+  const agentIdsByWf = new Map<string, string[]>()
+  const referencedAgentIds = new Set<string>()
+  workflows.forEach((w, i) => {
+    // `graph` is stored JSON (loosely typed); the walk only reads node shapes.
+    const graph = latestGraphs[i]?.graph as WorkflowGraph | undefined
+    const agentIds = graph ? agentIdsInGraph(graph) : []
+    agentIdsByWf.set(w.id, agentIds)
+    for (const id of agentIds) referencedAgentIds.add(id)
+  })
+  const agentRows =
+    referencedAgentIds.size > 0
+      ? await db
+          .select({
+            id: wfAgent.id,
+            name: wfAgent.name,
+            icon: wfAgent.icon,
+            color: wfAgent.color,
+          })
+          .from(wfAgent)
+          .where(inArray(wfAgent.id, [...referencedAgentIds]))
+      : []
+  const agentById = new Map(agentRows.map((a) => [a.id, a]))
+
   const secondsToMs = (s: number | null | undefined) =>
     s == null ? null : s * 1000
   const versionByWf = new Map(versionRows.map((r) => [r.workflowId, r]))
@@ -127,12 +170,16 @@ export async function listWorkflowsWithStats(
       secondsToMs(version?.latestVersionAt) ?? 0,
       draftAtByWf.get(w.id) ?? 0,
     )
+    const agents = (agentIdsByWf.get(w.id) ?? [])
+      .map((id) => agentById.get(id))
+      .filter((a): a is WorkflowAgentRef => a != null)
     return {
       ...w,
       latestVersionNumber: version?.latestVersionNumber ?? null,
       updatedAt: updatedAt || null,
       lastRunAt: secondsToMs(run?.lastRunAt),
       runCount: Number(run?.runCount ?? 0),
+      agents,
     }
   })
 }

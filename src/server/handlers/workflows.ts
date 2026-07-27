@@ -149,6 +149,7 @@ export function buildWorkflowHandlers<TDeps>(
         updatedAt: w.updatedAt,
         lastRunAt: w.lastRunAt,
         runCount: w.runCount,
+        agents: w.agents,
       }))
     },
 
