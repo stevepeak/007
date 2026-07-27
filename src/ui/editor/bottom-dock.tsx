@@ -9,6 +9,7 @@ import type {
 } from '../../engine'
 import { cn } from '../cn'
 import { useWfAssistant } from '../context'
+import { CopilotAssistant } from '../copilot/copilot-assistant'
 import { AccessibleDataView } from './node-data-panel'
 
 // A DevTools-style dock pinned to the bottom of an editor/detail surface. A tab
@@ -289,10 +290,10 @@ export type ChatSubject =
   | 'run'
   | 'feedback'
 
-// The AI assistant dock. The concrete chat (model + tools + streaming) is a
-// host-injected slot (`WfSdkProvider assistant={…}`); the SDK stays generic and
-// just hands it the current subject/ids to ground its answers. Until a host
-// wires one, this shows a "Coming soon" placeholder.
+// The AI assistant dock. Renders the SDK's built-in System Copilot (model +
+// tools + streaming owned server-side, model picked by the user from the enabled
+// set). A host MAY inject its own assistant via `WfSdkProvider assistant={…}` to
+// replace the built-in entirely; that override wins when present.
 export function ChatView({
   subject,
   subjectId,
@@ -302,35 +303,8 @@ export function ChatView({
   subjectId?: string
   runId?: string
 }) {
-  const Assistant = useWfAssistant()
-  if (Assistant) {
-    return <Assistant subject={subject} subjectId={subjectId} runId={runId} />
-  }
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-      <div className="flex size-10 items-center justify-center rounded-full bg-violet-100">
-        <Sparkles className="size-5 text-violet-500" />
-      </div>
-      <div className="space-y-1">
-        <p className="flex items-center justify-center gap-1.5 text-sm font-medium text-foreground">
-          Chat
-          <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-600">
-            Coming soon
-          </span>
-        </p>
-        <p className="mx-auto max-w-sm text-xs text-muted-foreground">
-          Ask the AI to help you understand and optimize this {subject}. It will
-          be able to make changes for you, under your direction.
-        </p>
-      </div>
-      <div className="w-full max-w-md">
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
-          <Sparkles className="size-3.5 shrink-0 text-muted-foreground" />
-          <span className="flex-1 text-left">Ask about this {subject}…</span>
-        </div>
-      </div>
-    </div>
-  )
+  const Assistant = useWfAssistant() ?? CopilotAssistant
+  return <Assistant subject={subject} subjectId={subjectId} runId={runId} />
 }
 
 function IssuesView({

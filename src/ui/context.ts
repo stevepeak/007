@@ -15,10 +15,11 @@ export type WfAssistantContext = {
 }
 
 /**
- * A host-supplied chat assistant. When injected via `WfSdkProvider`, the "Chat"
- * dock renders this instead of the built-in "Coming soon" placeholder. The SDK
- * stays generic — it owns no model, prompt, or tools; the host wires those into
- * this component (see the app's `WfAssistantChat` shell + `/api/copilot`).
+ * An OPTIONAL host override for the chat assistant. The SDK now ships a built-in
+ * System Copilot (see `ui/copilot`) that the "Chat" dock renders by default —
+ * streaming from {@link WfSdkContextValue.copilotEndpoint}, with the model, tools,
+ * and prompt owned server-side by `handleCopilotRequest`. Inject this only to
+ * replace that built-in entirely; most hosts leave it unset.
  */
 export type WfAssistantComponent = FC<WfAssistantContext>
 
@@ -26,6 +27,12 @@ export type WfSdkContextValue = {
   client: WfDataClient
   components: WfComponents
   assistant?: WfAssistantComponent
+  /**
+   * URL the built-in System Copilot streams from (POST). The host mounts a thin
+   * route there that hands the request to `handleCopilotRequest`. Defaults to
+   * `/api/copilot`.
+   */
+  copilotEndpoint: string
 }
 
 export const WfSdkContext = createContext<WfSdkContextValue | null>(null)
@@ -49,9 +56,14 @@ export function useWfComponents(): WfComponents {
 }
 
 /**
- * The host-injected assistant slot, or `undefined` when the host wired none (in
- * which case the Chat dock shows a "Coming soon" placeholder).
+ * The optional host assistant override, or `undefined` when the host wired none
+ * (in which case the Chat dock renders the built-in System Copilot).
  */
 export function useWfAssistant(): WfAssistantComponent | undefined {
   return useWfContext().assistant
+}
+
+/** The URL the built-in System Copilot streams from. */
+export function useCopilotEndpoint(): string {
+  return useWfContext().copilotEndpoint
 }

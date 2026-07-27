@@ -39,6 +39,7 @@
     "db:migrate": "sh -c '[ -f ../../.wf-migrate.env ] && . ../../.wf-migrate.env; wrangler d1 migrations apply ${WF_D1_NAME:-DB} --remote --config ${WF_D1_CONFIG:-./wrangler.jsonc}'"
   },
   "dependencies": {
+    "@ai-sdk/react": "^4.0.37",
     "@autoform/core": "^4.0.0",
     "@autoform/react": "^5.0.0",
     "@cloudflare/puppeteer": "1.2.0",

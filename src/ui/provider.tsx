@@ -11,11 +11,15 @@ export type WfSdkProviderProps = {
   /** Override any UI primitives with the host's design-system components. */
   components?: Partial<WfComponents>
   /**
-   * A host-supplied chat assistant. Injected here, it powers the "Chat" dock on
-   * every asset surface. Omit it and the dock shows a "Coming soon" placeholder.
-   * The SDK never bakes in a model/prompt/tools — those live in this component.
+   * OPTIONAL override for the chat assistant. The dock renders the SDK's built-in
+   * System Copilot by default; inject this only to replace it entirely.
    */
   assistant?: WfAssistantComponent
+  /**
+   * URL the built-in System Copilot streams from (POST). The host mounts a thin
+   * route there wired to `handleCopilotRequest`. Defaults to `/api/copilot`.
+   */
+  copilotEndpoint?: string
   /** Bring your own React Query client; one is created if omitted. */
   queryClient?: QueryClient
   children: ReactNode
@@ -25,6 +29,7 @@ export function WfSdkProvider({
   client,
   components,
   assistant,
+  copilotEndpoint = '/api/copilot',
   queryClient,
   children,
 }: WfSdkProviderProps) {
@@ -34,8 +39,9 @@ export function WfSdkProvider({
       client,
       components: { ...defaultComponents, ...components },
       assistant,
+      copilotEndpoint,
     }),
-    [client, components, assistant],
+    [client, components, assistant, copilotEndpoint],
   )
   return (
     <QueryClientProvider client={qc}>

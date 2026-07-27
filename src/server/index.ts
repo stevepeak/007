@@ -9,6 +9,10 @@ export {
 } from './http-client'
 export { executeAgentPreview } from './run-agent-preview'
 export { executeToolPreview } from './run-tool-preview'
+export {
+  handleCopilotRequest,
+  type HandleCopilotOptions,
+} from './copilot/handler'
 export type {
   AgentNodeMeta,
   AgentPreviewInput,
