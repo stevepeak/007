@@ -5,31 +5,9 @@ import type { ModelCapabilities, ModelOption } from '../../engine/config'
 import { cn } from '../cn'
 import { BrandMark, CapabilityBadges, inferModelBrand } from '../evals/shared'
 import { useModels, useProviders } from '../hooks'
+import { REQUIREMENT_REASON, unmetRequirements } from '../model-capabilities'
 import { useDismiss } from '../use-dismiss'
 import { groupModelsByProvider } from './model-grouping'
-
-// Short "why this model is unavailable" reason per required capability.
-const REQUIREMENT_REASON: Record<keyof ModelCapabilities, string> = {
-  tools: 'no tool calling',
-  structuredOutput: 'no structured output',
-  reasoning: 'no reasoning',
-  vision: 'no vision',
-}
-
-/**
- * Which required capabilities a model is missing. A model with NO capability
- * info at all (e.g. the pre-refresh static fallback list) is treated as unknown
- * and never gated — we only disable a model we KNOW lacks a requirement.
- */
-function unmetRequirements(
-  model: ModelOption,
-  requirements: ModelCapabilities | undefined,
-): (keyof ModelCapabilities)[] {
-  if (!requirements || !model.capabilities) return []
-  return (Object.keys(requirements) as (keyof ModelCapabilities)[]).filter(
-    (k) => requirements[k] && !model.capabilities?.[k],
-  )
-}
 
 // A single-select model picker that mirrors the Evals "Run configuration"
 // dialog: models come from the host config (config.listModels /

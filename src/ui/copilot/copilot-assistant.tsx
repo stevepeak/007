@@ -5,10 +5,19 @@ import { DefaultChatTransport } from 'ai'
 import { Check, ChevronDown, Sparkles, Wrench } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import type { ModelCapabilities, ModelOption } from '../../engine/config'
 import { cn } from '../cn'
 import { useCopilotEndpoint, type WfAssistantContext } from '../context'
 import { useModels } from '../hooks'
+import { REQUIREMENT_REASON, unmetRequirements } from '../model-capabilities'
 import { useDismiss } from '../use-dismiss'
+
+// The copilot runs an agentic tool-calling loop server-side (see
+// `handleCopilotRequest` → `runCopilot`), so a model without tool support can't
+// drive it — picking one leaves broken tool parts in the thread that later fail
+// `ModelMessage` validation. Gate the picker to tool-capable models; models with
+// unknown capabilities (the pre-refresh static list) stay selectable.
+const COPILOT_REQUIREMENTS: ModelCapabilities = { tools: true }
 
 // The SDK's built-in System Copilot — the concrete chat the "Chat" dock renders
 // by default. It streams from the host-mounted copilot endpoint (a read-only
@@ -49,17 +58,26 @@ export function CopilotAssistant({
   // rides on every request so the server resolves inference through it.
   const modelsQuery = useModels()
   const models = useMemo(() => modelsQuery.data ?? [], [modelsQuery.data])
+  // Only tool-capable (or unknown-capability) models can drive the copilot.
+  const selectable = useMemo(
+    () =>
+      models.filter(
+        (m) => unmetRequirements(m, COPILOT_REQUIREMENTS).length === 0,
+      ),
+    [models],
+  )
   const [modelId, setModelId] = useState<string | undefined>(readStoredModel)
 
-  // Default to the first enabled model once the list loads (and heal a stored id
-  // that's no longer enabled). Never overrides a still-valid explicit choice.
+  // Default to the first tool-capable model once the list loads (and heal a
+  // stored id that's gone or now known-incompatible). Never overrides a
+  // still-valid explicit choice.
   useEffect(() => {
-    if (models.length === 0) return
+    if (selectable.length === 0) return
     setModelId((current) => {
-      if (current && models.some((m) => m.id === current)) return current
-      return models[0]?.id
+      if (current && selectable.some((m) => m.id === current)) return current
+      return selectable[0]?.id
     })
-  }, [models])
+  }, [selectable])
 
   const selectModel = (id: string) => {
     setModelId(id)
@@ -177,7 +195,7 @@ function ModelPicker({
   loading,
   onSelect,
 }: {
-  models: { id: string; label: string }[]
+  models: ModelOption[]
   selectedId: string | undefined
   selectedLabel: string
   loading: boolean
@@ -211,32 +229,55 @@ function ModelPicker({
               No models enabled. Enable one on the Models page.
             </div>
           ) : (
-            models.map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                role="option"
-                aria-selected={m.id === selectedId}
-                onClick={() => {
-                  onSelect(m.id)
-                  setOpen(false)
-                }}
-                className={cn(
-                  'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition',
-                  m.id === selectedId ? 'bg-neutral-100' : 'hover:bg-neutral-50',
-                )}
-              >
-                <span className="min-w-0 flex-1 truncate text-neutral-800">
-                  {m.label}
-                </span>
-                <Check
+            models.map((m) => {
+              // A model KNOWN to lack tool calling can't drive the copilot's
+              // agentic loop — shown greyed with the reason, not selectable.
+              const unmet = unmetRequirements(m, COPILOT_REQUIREMENTS)
+              const disabledReason =
+                unmet.length > 0
+                  ? unmet.map((k) => REQUIREMENT_REASON[k]).join(', ')
+                  : undefined
+              const disabled = disabledReason != null
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  role="option"
+                  aria-selected={m.id === selectedId}
+                  aria-disabled={disabled}
+                  disabled={disabled}
+                  title={disabledReason}
+                  onClick={() => {
+                    onSelect(m.id)
+                    setOpen(false)
+                  }}
                   className={cn(
-                    'size-4 shrink-0 text-neutral-900',
-                    m.id === selectedId ? 'opacity-100' : 'opacity-0',
+                    'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition',
+                    disabled
+                      ? 'cursor-not-allowed opacity-50'
+                      : m.id === selectedId
+                        ? 'bg-neutral-100'
+                        : 'hover:bg-neutral-50',
                   )}
-                />
-              </button>
-            ))
+                >
+                  <span className="min-w-0 flex-1 truncate text-neutral-800">
+                    {m.label}
+                  </span>
+                  {disabled ? (
+                    <span className="shrink-0 text-xs text-amber-600">
+                      {disabledReason}
+                    </span>
+                  ) : (
+                    <Check
+                      className={cn(
+                        'size-4 shrink-0 text-neutral-900',
+                        m.id === selectedId ? 'opacity-100' : 'opacity-0',
+                      )}
+                    />
+                  )}
+                </button>
+              )
+            })
           )}
         </div>
       ) : null}
