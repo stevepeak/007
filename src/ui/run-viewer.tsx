@@ -4,7 +4,46 @@ import { DataView } from './data-view'
 import { useRun } from './hooks'
 import { QueryState } from './query-state'
 import { runStatusClass } from './run-status'
+import { deriveRunProgress } from '../engine/run-progress'
 import type { WfRunStepDTO } from '../server/protocol'
+
+// Coarse progress bar for the run header: the currently-active node's label plus
+// a completed/total node count. Derived from the graph + step trace, so it moves
+// as steps land during a poll refresh (and, later, live).
+function RunProgress({
+  status,
+  graph,
+  steps,
+}: {
+  status: string
+  graph: Parameters<typeof deriveRunProgress>[0]['graph']
+  steps: WfRunStepDTO[]
+}) {
+  const progress = deriveRunProgress({ status, graph, steps })
+  if (progress.total === 0) return null
+  const active = status === 'running' || status === 'queued'
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-xs text-neutral-500">
+        <span className="truncate">
+          {progress.activeLabel ?? (active ? 'Starting…' : '')}
+        </span>
+        <span className="shrink-0 tabular-nums">
+          {progress.completed}/{progress.total}
+        </span>
+      </div>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-neutral-100">
+        <div
+          className={cn(
+            'h-full rounded-full transition-all duration-500',
+            status === 'failed' ? 'bg-rose-500' : 'bg-blue-500',
+          )}
+          style={{ width: `${progress.percent}%` }}
+        />
+      </div>
+    </div>
+  )
+}
 
 // Interface #1 — view a single run and its step logs. Reads the run via the
 // injected data client; renders each node's status + input/output/branch trace.
@@ -105,6 +144,11 @@ export function RunViewer({ runId, className }: RunViewerProps) {
               </span>
             ) : null}
           </div>
+          <RunProgress
+            status={data.run.status}
+            graph={data.graph}
+            steps={data.steps}
+          />
           {data.run.error ? (
             <div className="rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700">
               {data.run.error}

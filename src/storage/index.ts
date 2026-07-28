@@ -57,6 +57,7 @@ export {
   getModelCatalog,
   getModelUsage,
   getRun,
+  getRunProgress,
   getVersionGraph,
   getWorkflow,
   hashEvalSnapshot,

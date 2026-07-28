@@ -130,6 +130,11 @@ export {
 } from './trigger-registry'
 export { createMemorySink, noopSink, type StreamSink } from './stream-sink'
 export {
+  deriveRunProgress,
+  type ProgressStep,
+  type WfRunProgress,
+} from './run-progress'
+export {
   defineWfConfig,
   type AgentUsageRef,
   type BlobRefResolver,
