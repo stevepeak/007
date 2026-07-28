@@ -64,14 +64,18 @@ export type ListFeedbackResult = {
 const LIST_LIMIT = 300
 
 /**
- * Insert-or-update a subject's rating. Upserts on `subject_id`. Changing the
- * rating or note RESETS acknowledgement (a flipped thumb is fresh signal the
- * staff hasn't acted on), mirroring the host's original behavior.
+ * Build (without executing) the upsert statement, so a host can compose it into
+ * its own `db.batch([...])` — keeping the feedback write atomic with, e.g., an
+ * audit-event insert. Upserts on `subject_id`; changing the rating or note
+ * RESETS acknowledgement (a flipped thumb is fresh signal the staff hasn't acted
+ * on). {@link upsertFeedback} is just this builder awaited. Prefer the helpers
+ * to touching {@link wfFeedback} directly — they keep the write logic (and the
+ * ack-reset) owned by the SDK as the column set evolves.
  */
-export async function upsertFeedback(
+export function buildUpsertFeedbackStatement(
   db: WfDb,
   input: SubmitFeedbackInput,
-): Promise<void> {
+) {
   const now = new Date()
   const snapshot = {
     rating: input.rating,
@@ -85,7 +89,7 @@ export async function upsertFeedback(
     raterLabel: input.raterLabel ?? null,
     correlationLabel: input.correlationLabel ?? null,
   }
-  await db
+  return db
     .insert(wfFeedback)
     .values({ subjectId: input.subjectId, ...snapshot, updatedAt: now })
     .onConflictDoUpdate({
@@ -101,12 +105,33 @@ export async function upsertFeedback(
     })
 }
 
+/**
+ * Build (without executing) the delete statement — clearing a rating removes the
+ * row entirely. Composable into a host `db.batch([...])`; {@link deleteFeedback}
+ * is this builder awaited.
+ */
+export function buildDeleteFeedbackStatement(db: WfDb, subjectId: string) {
+  return db.delete(wfFeedback).where(eq(wfFeedback.subjectId, subjectId))
+}
+
+/**
+ * Insert-or-update a subject's rating. Upserts on `subject_id`. Changing the
+ * rating or note RESETS acknowledgement (a flipped thumb is fresh signal the
+ * staff hasn't acted on), mirroring the host's original behavior.
+ */
+export async function upsertFeedback(
+  db: WfDb,
+  input: SubmitFeedbackInput,
+): Promise<void> {
+  await buildUpsertFeedbackStatement(db, input)
+}
+
 /** Clear a subject's feedback entirely (the human removed their thumb). */
 export async function deleteFeedback(
   db: WfDb,
   subjectId: string,
 ): Promise<void> {
-  await db.delete(wfFeedback).where(eq(wfFeedback.subjectId, subjectId))
+  await buildDeleteFeedbackStatement(db, subjectId)
 }
 
 /**

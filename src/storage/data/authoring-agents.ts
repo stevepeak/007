@@ -219,3 +219,18 @@ export async function archiveAgent(db: WfDb, input: { agentId: string }) {
 export async function discardAgentDraft(db: WfDb, input: { agentId: string }) {
   await agentVersions.discardDraft(db, input.agentId)
 }
+
+/**
+ * Hard-delete an agent and its whole version/draft history, children-first (the
+ * schema has no enforced FKs, but this order stays correct if any are added).
+ * The destructive counterpart to {@link archiveAgent} — intended for dev tooling
+ * (reseed) rather than the product, which archives. Callers own the reference
+ * check: unlike `archiveAgent`, this does not refuse when a workflow still
+ * points at the agent, so a full-workspace reset can drop everything in any
+ * order. Symmetric with {@link deleteWorkflow}.
+ */
+export async function deleteAgent(db: WfDb, agentId: string) {
+  await db.delete(wfAgentDraft).where(eq(wfAgentDraft.agentId, agentId))
+  await db.delete(wfAgentVersion).where(eq(wfAgentVersion.agentId, agentId))
+  await db.delete(wfAgent).where(eq(wfAgent.id, agentId))
+}
