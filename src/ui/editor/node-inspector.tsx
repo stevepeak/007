@@ -5,6 +5,7 @@ import { useWfComponents } from '../context'
 import {
   BranchInspector,
   IterationInspector,
+  PassthroughInspector,
   SwitchInspector,
 } from './node-inspector-control-flow'
 import {
@@ -41,6 +42,7 @@ const NODE_INSPECTORS: Partial<
   iteration: IterationInspector,
   workflow: WorkflowInspector,
   'feature-request': FeatureRequestInspector,
+  passthrough: PassthroughInspector,
   race: RaceInspector,
   aggregate: AggregateInspector,
   note: NoteInspector,

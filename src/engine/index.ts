@@ -31,6 +31,7 @@ export {
   SWITCH_DEFAULT_CASE,
   type SwitchNode,
   type FeatureRequestNode,
+  type PassthroughNode,
   type AggregateNode,
   type IterationNode,
   nodeExecutionSchema,
@@ -176,6 +177,10 @@ export {
   executeFeatureRequestNode,
   type FeatureRequestNodeResult,
 } from './nodes/feature-request'
+export {
+  executePassthroughNode,
+  type PassthroughNodeResult,
+} from './nodes/passthrough'
 export { executeRaceNode, type RaceNodeResult } from './nodes/race'
 export {
   executeAggregateNode,

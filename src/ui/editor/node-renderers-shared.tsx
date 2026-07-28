@@ -2,6 +2,7 @@ import { Handle, Position, type NodeProps } from '@xyflow/react'
 import {
   AlertTriangle,
   Flag,
+  Forward,
   GitBranch,
   Layers,
   Lightbulb,
@@ -142,6 +143,11 @@ export const KIND_STYLE: Record<
     icon: Lightbulb,
     accent: 'border-l-yellow-400',
     label: 'Feature Request',
+  },
+  passthrough: {
+    icon: Forward,
+    accent: 'border-l-lime-400',
+    label: 'Passthrough',
   },
   race: { icon: Flag, accent: 'border-l-teal-400', label: 'Race' },
   aggregate: {

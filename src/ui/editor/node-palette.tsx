@@ -1,5 +1,6 @@
 import {
   Flag,
+  Forward,
   GitBranch,
   Layers,
   Lightbulb,
@@ -27,6 +28,7 @@ type PaletteItem = {
     | 'iteration'
     | 'workflow'
     | 'feature-request'
+    | 'passthrough'
     | 'race'
     | 'aggregate'
     | 'note'
@@ -97,6 +99,14 @@ const PALETTE: PaletteItem[] = [
     description:
       'Wait-for-all join — collects every upstream result into one list.',
     icon: Layers,
+  },
+  {
+    kind: 'passthrough',
+    category: 'Logic',
+    label: 'Passthrough',
+    description:
+      'Re-shape a value so a branch arm can feed a Race the same shape as its sibling.',
+    icon: Forward,
   },
   {
     kind: 'feature-request',

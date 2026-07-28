@@ -320,6 +320,44 @@ const featureRequestNodeSchema = baseNode.extend({
   }),
 })
 
+// A Passthrough is an identity/reshape node: it produces a value in a shape the
+// author controls, without an LLM or a tool. Its whole reason to exist is
+// converging branch arms — a Branch does NOT forward its input (it emits
+// `{ result, reasoning }`), and a Race blindly forwards whichever arm won, so an
+// arm that merely "already has the data" needs a node that re-surfaces that data
+// in the SAME shape the sibling arm produces. Drop a Passthrough on that arm,
+// point it at the upstream value, and both arms feed the Race an identical shape.
+//
+// Three deterministic modes, checked in this order:
+//   • `value` set    → output is that single binding resolved, UNWRAPPED (use
+//                      when the sibling arm emits a bare value — string, array).
+//   • `fields` set   → output is an object, one key per binding resolved (use to
+//                      match a `{ name }` / `{ kind }` shape: `fields.name` = a
+//                      ref into the upstream that holds the name).
+//   • neither        → output is the incoming input, untouched (pure identity,
+//                      like feature-request).
+// `value` and `fields` are mutually exclusive — setting both is an authoring
+// error, not a silent precedence pick.
+const passthroughNodeSchema = baseNode.extend({
+  kind: z.literal('passthrough'),
+  config: z
+    .object({
+      // Single-value mode. A `ref` into an upstream node's output (the same data
+      // picker agent/tool/branch inputs use) or a `literal`; resolved and emitted
+      // as-is, with no object wrapper.
+      value: argBindingSchema.optional(),
+      // Object-build mode. Each key becomes one field of the emitted object, its
+      // value the resolved binding — so `{ name: <ref producer.name> }` yields
+      // `{ name: "…" }`, letting this arm match a sibling agent's `{ name }`.
+      fields: z.record(z.string(), argBindingSchema).optional(),
+    })
+    .default({})
+    .refine(
+      (c) => !(c.value && c.fields && Object.keys(c.fields).length > 0),
+      'A passthrough node sets either `value` or `fields`, not both.',
+    ),
+})
+
 // A Race is a first-to-finish join. Where every other work node fires only once
 // ALL its predecessors complete (the scheduler's `every` rule), a Race fires as
 // soon as the FIRST of its upstream nodes completes (an `any`/`some` rule — the
@@ -437,6 +475,7 @@ export const workflowNodeSchema = z.discriminatedUnion('kind', [
   switchNodeSchema,
   workflowCallNodeSchema,
   featureRequestNodeSchema,
+  passthroughNodeSchema,
   raceNodeSchema,
   aggregateNodeSchema,
   iterationNodeSchema,
@@ -458,6 +497,7 @@ export type BranchNode = z.infer<typeof branchNodeSchema>
 export type SwitchNode = z.infer<typeof switchNodeSchema>
 export type WorkflowCallNode = z.infer<typeof workflowCallNodeSchema>
 export type FeatureRequestNode = z.infer<typeof featureRequestNodeSchema>
+export type PassthroughNode = z.infer<typeof passthroughNodeSchema>
 export type RaceNode = z.infer<typeof raceNodeSchema>
 export type AggregateNode = z.infer<typeof aggregateNodeSchema>
 export type NoteNode = z.infer<typeof noteNodeSchema>
@@ -487,6 +527,7 @@ export type WorkflowNode =
   | SwitchNode
   | WorkflowCallNode
   | FeatureRequestNode
+  | PassthroughNode
   | RaceNode
   | AggregateNode
   | IterationNode

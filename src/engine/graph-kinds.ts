@@ -11,6 +11,7 @@ export const WF_NODE_KINDS = [
   'switch',
   'workflow',
   'feature-request',
+  'passthrough',
   'race',
   'aggregate',
   'iteration',

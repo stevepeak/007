@@ -1,4 +1,6 @@
-import { BRANCH_OPERATORS } from '../../engine'
+import { useState } from 'react'
+
+import { BRANCH_OPERATORS, type ArgBinding } from '../../engine'
 import { useWfComponents } from '../context'
 import { DataRefField, IterationListField } from './node-data-panel'
 import { field, type NodeInspectorProps } from './node-inspector-shared'
@@ -241,6 +243,186 @@ export function IterationInspector({
         <strong>Item</strong> node is the current element; the{' '}
         <strong>Result</strong> node is that item's output.
       </p>
+    </>
+  )
+}
+
+type PassthroughMode = 'identity' | 'value' | 'fields'
+
+// The Passthrough inspector. A Passthrough re-shapes data so a converging branch
+// arm can hand a Race the SAME shape as its sibling. Three modes:
+//   • identity — forward the input untouched (no config).
+//   • value    — emit ONE binding, unwrapped (match a sibling that emits a bare
+//                value, e.g. a string).
+//   • fields   — build an object, one key per binding (match `{ name }`/`{ kind }`).
+export function PassthroughInspector({
+  node,
+  graph,
+  onChange,
+  itemSchema,
+}: NodeInspectorProps) {
+  const { Input, Label, Select } = useWfComponents()
+  const isPassthrough = node.kind === 'passthrough'
+  const cfg = isPassthrough ? node.config : undefined
+  const initialMode: PassthroughMode = cfg?.value
+    ? 'value'
+    : cfg?.fields && Object.keys(cfg.fields).length > 0
+      ? 'fields'
+      : 'identity'
+  const [mode, setMode] = useState<PassthroughMode>(initialMode)
+  if (node.kind !== 'passthrough') return null
+
+  const value = node.config.value
+  const fields = node.config.fields ?? {}
+  const entries = Object.entries(fields)
+
+  // Switching mode clears the other slot so the schema's "value XOR fields" rule
+  // always holds and stale config never lingers.
+  const changeMode = (next: PassthroughMode) => {
+    setMode(next)
+    if (next === 'identity') onChange({ ...node, config: {} })
+    else if (next === 'value')
+      onChange({ ...node, config: { value: node.config.value } })
+    else onChange({ ...node, config: { fields: node.config.fields ?? {} } })
+  }
+
+  const setFields = (nextFields: Record<string, ArgBinding>) =>
+    onChange({ ...node, config: { fields: nextFields } })
+
+  // Rename a field key by index, preserving order and the bound value.
+  const renameField = (index: number, nextKey: string) => {
+    const next: Record<string, ArgBinding> = {}
+    entries.forEach(([k, v], i) => {
+      next[i === index ? nextKey : k] = v
+    })
+    setFields(next)
+  }
+
+  // Set a field's binding. Clearing the ref reverts it to an empty literal so the
+  // row stays a valid ArgBinding (a field can't exist unbound).
+  const setFieldBinding = (key: string, binding: ArgBinding) => {
+    setFields({ ...fields, [key]: binding })
+  }
+
+  const removeField = (index: number) =>
+    setFields(
+      Object.fromEntries(entries.filter((_, i) => i !== index)),
+    )
+
+  const addField = () =>
+    setFields({ ...fields, '': { kind: 'literal', value: '' } })
+
+  return (
+    <>
+      <div className={field}>
+        <Label>Mode</Label>
+        <Select
+          value={mode}
+          onChange={(e) => changeMode(e.target.value as PassthroughMode)}
+        >
+          <option value="identity">Pass input through</option>
+          <option value="value">Single value</option>
+          <option value="fields">Build an object</option>
+        </Select>
+      </div>
+
+      {mode === 'identity' ? (
+        <p className="text-muted-foreground text-xs">
+          Forwards the incoming input unchanged — a plain identity step.
+        </p>
+      ) : null}
+
+      {mode === 'value' ? (
+        <div className={field}>
+          <Label>Value</Label>
+          <DataRefField
+            node={node}
+            graph={graph}
+            value={value?.kind === 'ref' ? value : undefined}
+            itemSchema={itemSchema}
+            onChange={(ref) =>
+              onChange({ ...node, config: { value: ref } })
+            }
+          />
+          {value?.kind !== 'ref' ? (
+            <Input
+              value={value?.kind === 'literal' ? String(value.value ?? '') : ''}
+              placeholder="or a literal value…"
+              onChange={(e) =>
+                onChange({
+                  ...node,
+                  config: { value: { kind: 'literal', value: e.target.value } },
+                })
+              }
+            />
+          ) : null}
+          <p className="text-muted-foreground text-xs">
+            Emitted <strong>unwrapped</strong> — use when the sibling arm
+            produces a bare value (a string, a number, an array).
+          </p>
+        </div>
+      ) : null}
+
+      {mode === 'fields' ? (
+        <div className={field}>
+          <Label>Fields</Label>
+          {entries.map(([key, binding], i) => (
+            <div
+              key={i}
+              className="space-y-1.5 rounded-md border border-input p-2"
+            >
+              <div className="flex items-center gap-1.5">
+                <Input
+                  value={key}
+                  placeholder="field name"
+                  onChange={(e) => renameField(i, e.target.value)}
+                />
+                <button
+                  type="button"
+                  aria-label="Remove field"
+                  className="text-muted-foreground hover:text-foreground shrink-0 rounded px-1.5 py-1 text-xs"
+                  onClick={() => removeField(i)}
+                >
+                  ✕
+                </button>
+              </div>
+              <DataRefField
+                node={node}
+                graph={graph}
+                value={binding.kind === 'ref' ? binding : undefined}
+                itemSchema={itemSchema}
+                onChange={(ref) =>
+                  setFieldBinding(key, ref ?? { kind: 'literal', value: '' })
+                }
+              />
+              {binding.kind === 'literal' ? (
+                <Input
+                  value={String(binding.value ?? '')}
+                  placeholder="or a literal value…"
+                  onChange={(e) =>
+                    setFieldBinding(key, {
+                      kind: 'literal',
+                      value: e.target.value,
+                    })
+                  }
+                />
+              ) : null}
+            </div>
+          ))}
+          <button
+            type="button"
+            className="border-input hover:bg-accent self-start rounded-md border px-2 py-1 text-xs"
+            onClick={addField}
+          >
+            + Add field
+          </button>
+          <p className="text-muted-foreground text-xs">
+            Builds an object — one key per field. Point each at the upstream
+            value that holds it, so this arm matches a sibling like an agent that
+            emits <code>{'{ name }'}</code>.
+          </p>
+        </div>
+      ) : null}
     </>
   )
 }

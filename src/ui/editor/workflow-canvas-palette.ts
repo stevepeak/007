@@ -70,6 +70,12 @@ export function defaultDataForKind(
       config: { description: '' },
     }
   }
+  if (kind === 'passthrough') {
+    // Starts as a pure identity (forwards its input). The author opens the
+    // inspector to switch it to `value` (one binding, unwrapped) or `fields`
+    // (build an object) — the shape a converging branch arm needs.
+    return { kind: 'passthrough', label: 'Passthrough', config: {} }
+  }
   if (kind === 'race') {
     // A config-less first-to-finish join. The author wires several upstreams into
     // it; the first to complete wins. It reads as a (non-blocking) "needs 2+

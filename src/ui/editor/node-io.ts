@@ -4,6 +4,7 @@ import {
   ITERATION_ITEM_TRIGGER_KIND,
   predecessorIds,
   SWITCH_DEFAULT_CASE,
+  type ArgBinding,
   type JsonSchema,
   type WorkflowGraph,
   type WorkflowNode,
@@ -85,6 +86,35 @@ export function buildIoMaps(
 
 function schemaType(schema: JsonSchema | undefined): string {
   return typeof schema?.type === 'string' ? schema.type : 'unknown'
+}
+
+// The JSON-ish type of a literal binding's value — for a Passthrough's authored
+// field tree. Nullish is opaque ('unknown'); everything else maps to its JSON
+// container type so a `{ name: "…" }` literal reports `string`, matching a
+// sibling agent that emits `{ name: string }`.
+function jsonTypeOf(v: unknown): string {
+  if (Array.isArray(v)) return 'array'
+  if (v === null || v === undefined) return 'unknown'
+  const t = typeof v
+  return t === 'object' ? 'object' : t
+}
+
+// Find a field's declared type by its dotted `path` within a resolved field
+// tree (depth-first). Used to type a Passthrough `ref` binding from the shape of
+// the node it points at. Returns undefined when the path isn't a known field
+// (e.g. an array-index path), so the caller falls back to 'unknown'.
+function fieldTypeAtPath(
+  fields: DataField[],
+  path: string,
+): string | undefined {
+  for (const f of fields) {
+    if (f.path === path) return f.type
+    if (f.children) {
+      const t = fieldTypeAtPath(f.children, path)
+      if (t) return t
+    }
+  }
+  return undefined
 }
 
 // The element shape of an array schema, as display-only `items` fields. Objects
@@ -320,9 +350,42 @@ function nodeOutput(
     // Routing nodes emit their decision, not a forwarded input.
     return { fields: decisionOutputFields(node), type: 'object' }
   }
+  if (node.kind === 'passthrough') {
+    // A Passthrough emits an AUTHORED shape, not its predecessor's: `value`
+    // forwards one binding UNWRAPPED, `fields` builds an object keyed by the
+    // author's names. Resolve each binding's type from the node it points at so
+    // downstream pickers can bind into it and the race shape-match check
+    // (`raceInputShapeCount`) sees the shape this arm really contributes. With
+    // neither set it's a pure identity — fall through to the shared pass-through
+    // resolution below so it reports its predecessor's shape.
+    const bindingType = (binding: ArgBinding): string => {
+      if (binding.kind === 'literal') return jsonTypeOf(binding.value)
+      const src = byId.get(binding.nodeId)
+      if (!src) return 'unknown'
+      const out = nodeOutput(src, maps, graph, byId, new Set(seen))
+      return binding.path
+        ? (fieldTypeAtPath(out.fields, binding.path) ?? 'unknown')
+        : out.type
+    }
+    const { value, fields } = node.config
+    if (value) return { fields: [], type: bindingType(value) }
+    const entries = Object.entries(fields ?? {})
+    if (entries.length > 0) {
+      return {
+        fields: entries.map(([key, binding]) => ({
+          key,
+          label: key,
+          path: key,
+          type: bindingType(binding),
+        })),
+        type: 'object',
+      }
+    }
+    // identity → fall through to the pass-through resolution below.
+  }
 
-  // Pass-through: feature-request (an unbuilt placeholder) emits exactly what it
-  // received.
+  // Pass-through: feature-request (an unbuilt placeholder) and an unconfigured
+  // Passthrough emit exactly what they received.
   const preds = predecessorIds(graph, node.id)
     .map((id) => byId.get(id))
     .filter((n): n is WorkflowNode => Boolean(n))

@@ -14,6 +14,7 @@ import {
   resolveIterationList,
   runIteration,
 } from './nodes/iteration'
+import { executePassthroughNode } from './nodes/passthrough'
 import { executeRaceNode } from './nodes/race'
 import { executeSwitchNode } from './nodes/switch'
 import { executeToolNode } from './nodes/tool'
@@ -203,6 +204,22 @@ export async function runNode<TDeps>(
         schedulerOutput: r.output,
         recordedOutput: r.output,
         meta: r.meta,
+      }
+    }
+    case 'passthrough': {
+      // Identity/reshape node: emits an author-controlled value (a single
+      // binding, an object built from bindings, or the forwarded input) so a
+      // "data already exists" branch arm can feed a Race the same shape its
+      // sibling arm produces. Resolves refs against the global output cache.
+      const r = await executePassthroughNode({
+        node,
+        input,
+        nodeOutputs: ctx.nodeOutputs,
+        rehydrate,
+      })
+      return {
+        schedulerOutput: r.output,
+        recordedOutput: r.output,
       }
     }
     case 'race': {

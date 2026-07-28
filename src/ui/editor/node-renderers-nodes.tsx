@@ -324,6 +324,36 @@ function FeatureRequestNodeRenderer(props: NodeProps) {
   )
 }
 
+// A Passthrough node: an identity/reshape step. One or many upstreams wire into
+// its target handle; it emits an author-controlled value (a single binding, an
+// object built from bindings, or the forwarded input) out the source handle —
+// used to give a converging branch arm the same shape as its sibling.
+function PassthroughNodeRenderer(props: NodeProps) {
+  const r = useNodeRenderer(props, 'passthrough')
+  if (!r) return null
+  const { data, invalid, status } = r
+  const { value, fields } = data.config
+  const subtitle = value
+    ? `Value · ${value.kind === 'ref' ? value.path || 'whole output' : 'literal'}`
+    : fields && Object.keys(fields).length > 0
+      ? `Builds { ${Object.keys(fields).join(', ')} }`
+      : 'Forwards input unchanged'
+  return (
+    <>
+      <Handle type="target" position={Position.Left} />
+      <NodeCard
+        kind="passthrough"
+        label={data.label}
+        selected={props.selected}
+        invalid={invalid}
+        status={status}
+        subtitle={subtitle}
+      />
+      <Handle type="source" position={Position.Right} />
+    </>
+  )
+}
+
 // A Race node: a first-to-finish join. Many upstreams wire into its single
 // target handle; whichever finishes first wins and flows out the source handle.
 function RaceNodeRenderer(props: NodeProps) {
@@ -476,6 +506,7 @@ export {
   IterationNodeRenderer,
   NoteNodeRenderer,
   OutputNodeRenderer,
+  PassthroughNodeRenderer,
   RaceNodeRenderer,
   SwitchNodeRenderer,
   WorkflowNodeRenderer,
