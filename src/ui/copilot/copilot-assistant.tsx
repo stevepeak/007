@@ -2,7 +2,7 @@
 
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
-import { Check, ChevronDown, Sparkles, Wrench } from 'lucide-react'
+import { Check, ChevronDown, Sparkles, SquarePen, Wrench } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { ModelCapabilities, ModelOption } from '../../engine/config'
@@ -57,6 +57,7 @@ export function CopilotAssistant({
   const endpoint = useCopilotEndpoint()
   const [input, setInput] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
   // Enabled models (the Models page set). The picker offers these; the chosen id
   // rides on every request so the server resolves inference through it.
@@ -111,12 +112,20 @@ export function CopilotAssistant({
   // session key — NOT scoped to the asset — so changing the focused view (or the
   // model) rebuilds the transport WITHOUT dropping the conversation; the new
   // view context simply rides on subsequent turns via the transport body.
-  const { messages, sendMessage, status } = useChat({
+  const { messages, sendMessage, status, setMessages } = useChat({
     id: 'copilot:session',
     transport,
   })
 
   const busy = status === 'submitted' || status === 'streaming'
+
+  // Auto-grow the composer to fit its content, up to a cap (then it scrolls).
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+  }, [input])
 
   const submit = () => {
     const text = input.trim()
@@ -127,6 +136,13 @@ export function CopilotAssistant({
     requestAnimationFrame(() => {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
     })
+  }
+
+  // Start a fresh thread — clear the one continuous conversation's context. We
+  // keep a single thread (no history of past chats), so this just empties it.
+  const clearChat = () => {
+    setMessages([])
+    setInput('')
   }
 
   const selectedLabel =
@@ -156,15 +172,9 @@ export function CopilotAssistant({
         ) : null}
       </div>
 
-      <div className="flex items-end gap-2 border-t border-neutral-200 p-2">
-        <ModelPicker
-          models={models}
-          selectedId={modelId}
-          selectedLabel={selectedLabel}
-          loading={modelsQuery.isLoading}
-          onSelect={selectModel}
-        />
+      <div className="space-y-2 border-t border-neutral-200 p-2">
         <textarea
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -175,17 +185,37 @@ export function CopilotAssistant({
           }}
           rows={1}
           placeholder="Ask about this agent, tool, run, or the platform…"
-          className="max-h-32 min-h-[36px] flex-1 resize-none rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:border-neutral-500"
+          className="max-h-40 min-h-[36px] w-full resize-none overflow-y-auto rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:border-neutral-500"
         />
-        <button
-          type="button"
-          onClick={submit}
-          disabled={busy || !input.trim() || !modelId}
-          className="inline-flex h-9 items-center gap-1.5 rounded-md bg-neutral-900 px-3 text-sm font-medium text-white transition-colors hover:bg-neutral-800 disabled:pointer-events-none disabled:opacity-50"
-        >
-          <Sparkles className="size-3.5" />
-          Ask
-        </button>
+        <div className="flex items-center gap-2">
+          <ModelPicker
+            models={models}
+            selectedId={modelId}
+            selectedLabel={selectedLabel}
+            loading={modelsQuery.isLoading}
+            onSelect={selectModel}
+          />
+          <div className="flex-1" />
+          <button
+            type="button"
+            onClick={clearChat}
+            disabled={busy || (messages.length === 0 && !input.trim())}
+            title="Clear the conversation and start a new chat"
+            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-2.5 text-sm font-medium text-neutral-600 transition-colors hover:bg-neutral-50 disabled:pointer-events-none disabled:opacity-50"
+          >
+            <SquarePen className="size-3.5" />
+            New
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={busy || !input.trim() || !modelId}
+            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-neutral-900 px-3 text-sm font-medium text-white transition-colors hover:bg-neutral-800 disabled:pointer-events-none disabled:opacity-50"
+          >
+            <Sparkles className="size-3.5" />
+            Ask
+          </button>
+        </div>
       </div>
     </div>
   )
