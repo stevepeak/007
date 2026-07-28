@@ -1,40 +1,36 @@
-import {
-  Bot,
-  Brain,
-  Briefcase,
-  BookText,
-  FileSearch,
-  Gavel,
-  MessageSquare,
-  Scale,
-  ShieldCheck,
-  Sparkles,
-  type LucideIcon,
-} from 'lucide-react'
+import { Bot, icons, type LucideIcon } from 'lucide-react'
 
-// The palette an agent card / editor draws from. Icons are stored by name and
-// colors by key on `wf_agent`, so the set stays small and serializable. Full
-// literal Tailwind class strings so v4's scanner keeps them.
+// The palette an agent card / editor draws from. Icons are stored by their
+// PascalCase lucide name and colors by key on `wf_agent`, so both stay small and
+// serializable. Any of lucide's ~1750 icons is a valid stored value (resolved
+// through `agentIcon`); `AGENT_ICONS` is just the curated quick-pick row shown
+// before the user opens the full searchable picker. Full literal Tailwind class
+// strings below so v4's scanner keeps them.
 
+// Every lucide icon, keyed by its PascalCase name (e.g. `Bot`, `FileSearch`).
+export const ALL_AGENT_ICONS = icons as Record<string, LucideIcon>
+
+// All icon names, sorted for stable ordering in the picker.
+export const ALL_AGENT_ICON_NAMES: string[] = Object.keys(ALL_AGENT_ICONS).sort()
+
+// A curated shortlist surfaced as quick picks in the editor's appearance row.
 export const AGENT_ICONS: { name: string; Icon: LucideIcon }[] = [
-  { name: 'Bot', Icon: Bot },
-  { name: 'Scale', Icon: Scale },
-  { name: 'Gavel', Icon: Gavel },
-  { name: 'BookText', Icon: BookText },
-  { name: 'FileSearch', Icon: FileSearch },
-  { name: 'ShieldCheck', Icon: ShieldCheck },
-  { name: 'Briefcase', Icon: Briefcase },
-  { name: 'Brain', Icon: Brain },
-  { name: 'MessageSquare', Icon: MessageSquare },
-  { name: 'Sparkles', Icon: Sparkles },
-]
-
-const ICON_BY_NAME = new Map(AGENT_ICONS.map((i) => [i.name, i.Icon]))
+  'Bot',
+  'Scale',
+  'Gavel',
+  'BookText',
+  'FileSearch',
+  'ShieldCheck',
+  'Briefcase',
+  'Brain',
+  'MessageSquare',
+  'Sparkles',
+].map((name) => ({ name, Icon: ALL_AGENT_ICONS[name] }))
 
 export const DEFAULT_AGENT_ICON = 'Bot'
 
 export function agentIcon(name: string | null | undefined): LucideIcon {
-  return (name && ICON_BY_NAME.get(name)) || Bot
+  return (name && ALL_AGENT_ICONS[name]) || Bot
 }
 
 export type AgentColor = {

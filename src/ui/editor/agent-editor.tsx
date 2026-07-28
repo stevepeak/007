@@ -1,4 +1,4 @@
-import { Archive } from 'lucide-react'
+import { Archive, Plus } from 'lucide-react'
 import { useState } from 'react'
 
 import { type AgentConfig } from '../../engine'
@@ -26,6 +26,7 @@ import { SaveStateBadge } from '../save-state-badge'
 import { Tooltip } from '../tooltip'
 import { AgentOutputEditor } from './agent-output-editor'
 import { ArchiveAgentDialog } from './agent-editor-archive'
+import { IconPicker } from './icon-picker'
 import { PlaygroundPanel } from './agent-editor-playground'
 import { PublishAgentDialog } from './agent-editor-publish'
 import { ModelSelect } from './model-select'
@@ -124,6 +125,7 @@ function AgentEditorInner({
   const [savedName, setSavedName] = useState(initialName)
   const [showPublish, setShowPublish] = useState(false)
   const [showArchive, setShowArchive] = useState(false)
+  const [showIconPicker, setShowIconPicker] = useState(false)
 
   const saveDraft = useSaveAgentDraft()
   const publish = usePublishAgent()
@@ -264,7 +266,12 @@ function AgentEditorInner({
               <Label>Appearance</Label>
               <div className="flex flex-wrap items-center gap-3">
                 <div className="flex flex-wrap gap-1.5">
-                  {AGENT_ICONS.map(({ name: iconName, Icon }) => (
+                  {/* Curated quick picks, plus the selected icon if it isn't
+                      one of them (e.g. chosen from the full picker). */}
+                  {(AGENT_ICONS.some((i) => i.name === icon)
+                    ? AGENT_ICONS
+                    : [{ name: icon, Icon: agentIcon(icon) }, ...AGENT_ICONS]
+                  ).map(({ name: iconName, Icon }) => (
                     <button
                       key={iconName}
                       type="button"
@@ -280,6 +287,16 @@ function AgentEditorInner({
                       <Icon className="size-4" />
                     </button>
                   ))}
+                  <Tooltip content="Browse all icons" side="bottom">
+                    <button
+                      type="button"
+                      aria-label="Browse all icons"
+                      onClick={() => setShowIconPicker(true)}
+                      className="flex size-9 items-center justify-center rounded-md border border-dashed border-neutral-300 text-neutral-400 transition hover:border-neutral-400 hover:text-neutral-700"
+                    >
+                      <Plus className="size-4" />
+                    </button>
+                  </Tooltip>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {AGENT_COLORS.map((c) => (
@@ -426,6 +443,14 @@ function AgentEditorInner({
           onConfirm={onPublish}
         />
       ) : null}
+
+      <IconPicker
+        open={showIconPicker}
+        value={icon}
+        color={color}
+        onSelect={selectIcon}
+        onClose={() => setShowIconPicker(false)}
+      />
 
       {showArchive ? (
         <ArchiveAgentDialog
