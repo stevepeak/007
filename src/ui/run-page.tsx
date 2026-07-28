@@ -302,6 +302,7 @@ export function RunPage({ runId, className }: RunPageProps) {
                 step={selectedStep}
                 steps={data.steps}
                 logs={data.logs}
+                graph={data.graph}
                 live={live}
                 selectedNodeId={selectedId}
                 onSelectNode={setSelectedId}

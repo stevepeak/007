@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useCallback, useRef, useState } from 'react'
 
-import type { WorkflowNode } from '../engine'
+import type { WorkflowGraph, WorkflowNode } from '../engine'
 import type { WfRunLogDTO, WfRunStepDTO } from '../server/protocol'
 import { useWfComponents } from './context'
 import { cn } from './cn'
@@ -29,6 +29,8 @@ export type RunNodeDockProps = {
   steps: WfRunStepDTO[]
   /** The whole run's structured progress feed (drives the Activity tab). */
   logs: WfRunLogDTO[]
+  /** The run's graph at the version that ran — the Activity tree's skeleton. */
+  graph: WorkflowGraph | null
   /** True while the run is still executing — enables the live/auto-scroll UI. */
   live?: boolean
   /** The selected node's id, for highlighting its rows in the Activity feed. */
@@ -61,6 +63,7 @@ export function RunNodeDock({
   step,
   steps,
   logs,
+  graph,
   live,
   selectedNodeId,
   onSelectNode,
@@ -228,9 +231,13 @@ export function RunNodeDock({
           {tab === 'activity' ? (
             <RunActivityLog
               logs={logs}
+              steps={steps}
+              graph={graph}
               live={live}
               selectedNodeId={selectedNodeId}
+              selectedItemIndex={itemIndex}
               onSelectNode={onSelectNode}
+              onSelectItem={onSelectItem}
               // Double-click a row: select its node on the graph AND flip to the
               // Inspect view focused on it.
               onInspectNode={(nodeId) => {

@@ -13,10 +13,15 @@ import type { WorkflowGraph } from './graph'
 // Structural bookends / annotations that never execute as a run step, so they
 // don't count toward the progress denominator (see graph-schema baseNode: the
 // trigger/output/note nodes "never run as steps").
-const NON_STEP_KINDS = new Set(['trigger', 'note', 'output', 'feature-request'])
+export const NON_STEP_KINDS = new Set([
+  'trigger',
+  'note',
+  'output',
+  'feature-request',
+])
 
 // Step statuses that mean a node is done (any which way).
-const TERMINAL_STEP_STATUSES = new Set(['completed', 'failed', 'skipped'])
+export const TERMINAL_STEP_STATUSES = new Set(['completed', 'failed', 'skipped'])
 
 // Run statuses that mean the whole run has settled — progress pins to 100%.
 const TERMINAL_RUN_STATUSES = new Set(['completed', 'failed', 'cancelled'])
