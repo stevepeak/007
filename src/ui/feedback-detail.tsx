@@ -12,7 +12,6 @@ import type { WfFeedbackRow } from '../server/protocol'
 
 import { useWfComponents } from './context'
 import { formatTimestamp } from './cost'
-import { ChatDock } from './editor/bottom-dock'
 import {
   useFeedbackForSubjects,
   useSetFeedbackInternalNote,
@@ -23,36 +22,27 @@ import { sectionCrumb } from './wf-crumbs'
 
 // One rated item, opened as its own tab from the Feedback triage list. Shows the
 // customer's rating/note, an excerpt of the answer they reacted to, and a link
-// to the producing run — then pins the AI copilot dock at the bottom, scoped to
-// this item's `runId` so staff can ask how to improve the output.
+// to the producing run. The AI copilot — grounded on this item via the active
+// tab — lives in the persistent right-rail `CopilotPanel`, not here.
 export function FeedbackDetail({ subjectId }: { subjectId: string }) {
   const query = useFeedbackForSubjects([subjectId])
   const row = query.data?.[0]
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="min-h-0 flex-1">
-        <WfShell
-          crumbs={[
-            { home: true },
-            sectionCrumb('feedback'),
-            { label: 'Item' },
-          ]}
-          scroll
-        >
-          {query.isLoading ? (
-            <p className="p-6 text-sm text-neutral-500">Loading feedback…</p>
-          ) : !row ? (
-            <p className="p-6 text-sm text-neutral-500">
-              This feedback item no longer exists — it may have been cleared.
-            </p>
-          ) : (
-            <FeedbackDetailBody row={row} />
-          )}
-        </WfShell>
-      </div>
-      <ChatDock subject="feedback" subjectId={subjectId} runId={row?.runId ?? undefined} />
-    </div>
+    <WfShell
+      crumbs={[{ home: true }, sectionCrumb('feedback'), { label: 'Item' }]}
+      scroll
+    >
+      {query.isLoading ? (
+        <p className="p-6 text-sm text-neutral-500">Loading feedback…</p>
+      ) : !row ? (
+        <p className="p-6 text-sm text-neutral-500">
+          This feedback item no longer exists — it may have been cleared.
+        </p>
+      ) : (
+        <FeedbackDetailBody row={row} />
+      )}
+    </WfShell>
   )
 }
 

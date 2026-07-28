@@ -24,7 +24,17 @@ import { createCopilotTools } from './tools'
 // itself stays auth-free; the host gatekeeps who may reach the mounted route.
 
 const bodySchema = z.object({
-  subject: z.enum(['workflow', 'agent', 'tool', 'eval', 'run', 'feedback']),
+  subject: z.enum([
+    'workflow',
+    'agent',
+    'tool',
+    'eval',
+    'run',
+    'feedback',
+    // Browsing the hub / section lists — no single asset in focus. The copilot
+    // answers platform-wide (see `buildCopilotSystemPrompt`).
+    'system',
+  ]),
   subjectId: z.string().optional(),
   runId: z.string().optional(),
   feedbackSubjectId: z.string().optional(),

@@ -19,14 +19,16 @@ import { useDismiss } from '../use-dismiss'
 // unknown capabilities (the pre-refresh static list) stay selectable.
 const COPILOT_REQUIREMENTS: ModelCapabilities = { tools: true }
 
-// The SDK's built-in System Copilot — the concrete chat the "Chat" dock renders
-// by default. It streams from the host-mounted copilot endpoint (a read-only
-// agentic loop, see `handleCopilotRequest`) and is fully ephemeral: the
-// conversation lives only in this component's state. The model, prompt, and
-// tools are owned server-side; the ONE thing the user steers from here is WHICH
-// model runs inference — picked from the platform's enabled models (the Models
-// page set) and carried on every request, so switching mid-conversation just
-// moves the existing messages onto the new model.
+// The SDK's built-in System Copilot — the concrete chat the persistent
+// right-rail panel (`CopilotPanel`) mounts once for the whole workflow app. It
+// streams from the host-mounted copilot endpoint (a read-only agentic loop, see
+// `handleCopilotRequest`) as ONE continuous conversation that survives
+// navigation: the conversation lives in this single component's state, and the
+// `context` prop (what the user is currently viewing, derived from the active
+// tab) rides on every request so each turn is grounded in the current frame.
+// The model, prompt, and tools are owned server-side; the ONE thing the user
+// steers here is WHICH model runs inference — picked from the platform's enabled
+// (tool-capable) models and carried on every request.
 
 const GREETINGS: Record<string, string> = {
   agent: 'Ask how to improve this agent — its prompt, tools, or model.',
@@ -35,6 +37,8 @@ const GREETINGS: Record<string, string> = {
   run: 'Ask why this run produced its output, or what went wrong.',
   feedback:
     'Ask why this answer fell short and how to improve the agents, tools, or prompts behind it.',
+  system:
+    'Ask about the agents, tools, workflows, runs, and feedback behind this platform.',
 }
 
 // Remember the last-picked model across dock opens / page loads.
@@ -102,11 +106,13 @@ export function CopilotAssistant({
     [endpoint, subject, subjectId, runId, modelId],
   )
 
-  // Stable `id` (subject/asset scoped) so switching the model rebuilds the
-  // transport WITHOUT dropping the messages already in this thread — they simply
-  // continue on the newly-picked model.
+  // ONE continuous thread that follows the user as they navigate the workflow
+  // app (the persistent right-rail panel mounts this once). The `id` is a fixed
+  // session key — NOT scoped to the asset — so changing the focused view (or the
+  // model) rebuilds the transport WITHOUT dropping the conversation; the new
+  // view context simply rides on subsequent turns via the transport body.
   const { messages, sendMessage, status } = useChat({
-    id: `copilot:${subject}:${subjectId ?? runId ?? 'root'}`,
+    id: 'copilot:session',
     transport,
   })
 
@@ -168,7 +174,7 @@ export function CopilotAssistant({
             }
           }}
           rows={1}
-          placeholder="Ask about this run / agent / feedback…"
+          placeholder="Ask about this agent, tool, run, or the platform…"
           className="max-h-32 min-h-[36px] flex-1 resize-none rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:border-neutral-500"
         />
         <button

@@ -8,15 +8,14 @@ import type {
   WorkflowNode,
 } from '../../engine'
 import { cn } from '../cn'
-import { useWfAssistant } from '../context'
-import { CopilotAssistant } from '../copilot/copilot-assistant'
 import { AccessibleDataView } from './node-data-panel'
 
 // A DevTools-style dock pinned to the bottom of an editor/detail surface. A tab
 // strip is always visible; clicking the active tab (or the chevron) collapses
 // the body. The chrome (resize handle + collapse + tab strip) lives in the
-// generic `BottomTray`; the workflow editor's `BottomDock` and the standalone
-// `ChatDock` (used by the agent/tool/eval surfaces) are thin compositions of it.
+// generic `BottomTray`; the workflow editor's `BottomDock` (Data/Issues) is a
+// thin composition of it. (The Chat assistant now lives in the persistent
+// right-rail `CopilotPanel`, not here.)
 
 // A lucide icon component, e.g. `Sparkles`.
 type TrayIcon = typeof Sparkles
@@ -186,8 +185,6 @@ function BottomTray({
 }
 
 export type BottomDockProps = {
-  /** The workflow being edited — scopes the Chat assistant to this workflow. */
-  workflowId: string
   /** The selected node, or null when nothing is selected. */
   node: WorkflowNode | null
   graph: WorkflowGraph
@@ -200,10 +197,9 @@ export type BottomDockProps = {
   onSelectNode?: (nodeId: string) => void
 }
 
-// The workflow editor's dock: Data (selected node), Issues (graph-wide), and the
-// Chat assistant.
+// The workflow editor's dock: Data (selected node) and Issues (graph-wide). The
+// Chat assistant now lives in the persistent right-rail `CopilotPanel`.
 export function BottomDock({
-  workflowId,
   node,
   graph,
   issues,
@@ -244,67 +240,9 @@ export function BottomDock({
         />
       ),
     },
-    {
-      id: 'chat',
-      label: 'Chat',
-      icon: Sparkles,
-      body: <ChatView subject="workflow" subjectId={workflowId} />,
-    },
   ]
 
   return <BottomTray tabs={tabs} />
-}
-
-// A standalone bottom tray with only the Chat assistant — for surfaces without a
-// graph (agent editor, tool detail, evals). Starts collapsed to a tabs-only
-// strip so it doesn't crowd the page; click "✨ Chat" to expand.
-export function ChatDock({
-  subject,
-  subjectId,
-  runId,
-}: {
-  subject: ChatSubject
-  subjectId?: string
-  runId?: string
-}) {
-  return (
-    <BottomTray
-      initialOpen={false}
-      tabs={[
-        {
-          id: 'chat',
-          label: 'Chat',
-          icon: Sparkles,
-          body: <ChatView subject={subject} subjectId={subjectId} runId={runId} />,
-        },
-      ]}
-    />
-  )
-}
-
-export type ChatSubject =
-  | 'workflow'
-  | 'agent'
-  | 'tool'
-  | 'eval'
-  | 'run'
-  | 'feedback'
-
-// The AI assistant dock. Renders the SDK's built-in System Copilot (model +
-// tools + streaming owned server-side, model picked by the user from the enabled
-// set). A host MAY inject its own assistant via `WfSdkProvider assistant={…}` to
-// replace the built-in entirely; that override wins when present.
-export function ChatView({
-  subject,
-  subjectId,
-  runId,
-}: {
-  subject: ChatSubject
-  subjectId?: string
-  runId?: string
-}) {
-  const Assistant = useWfAssistant() ?? CopilotAssistant
-  return <Assistant subject={subject} subjectId={subjectId} runId={runId} />
 }
 
 function IssuesView({

@@ -28,7 +28,12 @@ How to work:
 
 export function buildCopilotSystemPrompt(ctx: CopilotContext): string {
   const pointer = buildPointer(ctx)
-  return pointer ? `${SYSTEM_OVERVIEW}\n\n${pointer}` : SYSTEM_OVERVIEW
+  // The conversation is one continuous thread that follows the user as they
+  // navigate, so the focus below reflects where they are NOW — earlier turns may
+  // have concerned other assets. Treat it as the current context, not a reset.
+  return pointer
+    ? `${SYSTEM_OVERVIEW}\n\nCurrent focus (may have changed since earlier in this conversation): ${pointer}`
+    : SYSTEM_OVERVIEW
 }
 
 function buildPointer(ctx: CopilotContext): string {
@@ -74,6 +79,8 @@ function buildPointer(ctx: CopilotContext): string {
       }
       return parts.join(' ') || 'The user is on the feedback surface.'
     }
+    case 'system':
+      return 'The user is browsing the platform (no single asset in focus). Answer platform-wide questions, and use your tools to look up specific agents, tools, workflows, runs, or feedback as needed.'
     default:
       return ''
   }

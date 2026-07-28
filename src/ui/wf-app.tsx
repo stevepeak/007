@@ -1,10 +1,11 @@
-import { type ReactNode } from 'react'
+import { useMemo, type ReactNode } from 'react'
 
 import { AgentsList, type AgentTemplate } from './agents-list'
 import { cn } from './cn'
 import { ComingSoon } from './coming-soon'
+import { CopilotPanel } from './copilot/copilot-panel'
+import { deriveCopilotContext } from './copilot/view-context'
 import { AgentEditor } from './editor/agent-editor'
-import { ChatDock } from './editor/bottom-dock'
 import { WorkflowEditor } from './editor/workflow-editor'
 import { EvalRunReport } from './evals/eval-run-report'
 import { EvalSample } from './evals/eval-sample'
@@ -79,23 +80,39 @@ function WfTabbedShell({
 }) {
   const { tabs, activeId, homePath } = useWfTabs()
 
+  // The path of whatever tab is active — the Home tab's browse path, or the
+  // focused asset tab's path. This is what grounds the persistent Copilot: only
+  // the ACTIVE surface defines context (hidden keep-alive tabs never leak in).
+  const activePath =
+    activeId === HOME_TAB_ID
+      ? homePath
+      : (tabs.find((t) => t.id === activeId)?.path ?? homePath)
+  const copilotContext = useMemo(
+    () => deriveCopilotContext(activePath),
+    [activePath],
+  )
+
   return (
-    <div className="flex h-full flex-col">
-      <WfTabStrip />
-      <div className="relative min-h-0 flex-1">
-        <TabPane active={activeId === HOME_TAB_ID}>
-          <HomeRoutes
-            path={homePath}
-            sections={sections}
-            agentTemplates={agentTemplates}
-          />
-        </TabPane>
-        {tabs.map((tab) => (
-          <TabPane key={tab.id} active={activeId === tab.id}>
-            <AssetRoutes path={tab.path} />
+    <div className="flex h-full">
+      <div className="flex h-full min-w-0 flex-1 flex-col">
+        <WfTabStrip />
+        <div className="relative min-h-0 flex-1">
+          <TabPane active={activeId === HOME_TAB_ID}>
+            <HomeRoutes
+              path={homePath}
+              sections={sections}
+              agentTemplates={agentTemplates}
+            />
           </TabPane>
-        ))}
+          {tabs.map((tab) => (
+            <TabPane key={tab.id} active={activeId === tab.id}>
+              <AssetRoutes path={tab.path} />
+            </TabPane>
+          ))}
+        </div>
       </div>
+      {/* Persistent right rail — mounted once, survives all navigation above. */}
+      <CopilotPanel context={copilotContext} />
     </div>
   )
 }
@@ -240,67 +257,53 @@ function AssetRoute({ path }: { path: string }) {
   const asset = classifyAssetPath(path)
   if (!asset) return null
 
+  // The copilot for each surface now lives in the persistent right rail (see
+  // `CopilotPanel` in `WfTabbedShell`), grounded on the active tab — so these
+  // surfaces render plainly, with no per-asset chat dock.
   switch (asset.type) {
     case 'run':
       return <RunPage runId={asset.runId} className="h-full" />
     case 'agent':
       return (
-        <WithChatDock subject="agent" subjectId={asset.agentId}>
-          <AgentEditor
-            agentId={asset.agentId}
-            className="h-full"
-            onPublished={() => navigate('agents')}
-          />
-        </WithChatDock>
+        <AgentEditor
+          agentId={asset.agentId}
+          className="h-full"
+          onPublished={() => navigate('agents')}
+        />
       )
     case 'tool':
-      return (
-        <WithChatDock subject="tool" subjectId={asset.toolId}>
-          <ToolDetailPage toolId={asset.toolId} />
-        </WithChatDock>
-      )
+      return <ToolDetailPage toolId={asset.toolId} />
     case 'evalTest':
       return (
-        <WithChatDock subject="eval" subjectId={asset.setId}>
-          <EvalTest
-            key={asset.testId}
-            setId={asset.setId}
-            sampleId={asset.sampleId}
-            testId={asset.testId}
-            className="h-full"
-          />
-        </WithChatDock>
+        <EvalTest
+          key={asset.testId}
+          setId={asset.setId}
+          sampleId={asset.sampleId}
+          testId={asset.testId}
+          className="h-full"
+        />
       )
     case 'evalRun':
-      // An eval run IS a wf_run, so hand the copilot its runId — get_run works.
       return (
-        <WithChatDock subject="eval" runId={asset.evalRunId}>
-          <EvalRunReport
-            key={asset.evalRunId}
-            evalRunId={asset.evalRunId}
-            className="h-full"
-          />
-        </WithChatDock>
+        <EvalRunReport
+          key={asset.evalRunId}
+          evalRunId={asset.evalRunId}
+          className="h-full"
+        />
       )
     case 'evalSample':
       return (
-        <WithChatDock subject="eval" subjectId={asset.setId}>
-          <EvalSample
-            key={asset.sampleId}
-            setId={asset.setId}
-            sampleId={asset.sampleId}
-            className="h-full"
-          />
-        </WithChatDock>
+        <EvalSample
+          key={asset.sampleId}
+          setId={asset.setId}
+          sampleId={asset.sampleId}
+          className="h-full"
+        />
       )
     case 'evalSet':
-      return (
-        <WithChatDock subject="eval" subjectId={asset.setId}>
-          <EvalSet key={asset.setId} setId={asset.setId} className="h-full" />
-        </WithChatDock>
-      )
+      return <EvalSet key={asset.setId} setId={asset.setId} className="h-full" />
     case 'workflow':
-      // The workflow editor has its own richer dock (Data/Issues/Chat).
+      // The workflow editor keeps its own richer bottom dock (Data/Issues).
       return (
         <WorkflowEditor
           workflowId={asset.workflowId}
@@ -309,33 +312,8 @@ function AssetRoute({ path }: { path: string }) {
         />
       )
     case 'feedbackItem':
-      // Feedback detail carries its own chat dock (scoped to the item's run).
       return <FeedbackDetail subjectId={asset.subjectId} />
   }
-}
-
-// Wraps an asset surface so its content fills the space above a collapsible Chat
-// tray pinned to the bottom. The asset keeps its own `h-full` layout inside the
-// flexing region; the tray sits below it. `subjectId`/`runId` scope the injected
-// assistant to the concrete asset. Surfaces with their own dock (the workflow
-// editor) don't use this.
-function WithChatDock({
-  subject,
-  subjectId,
-  runId,
-  children,
-}: {
-  subject: 'agent' | 'tool' | 'eval' | 'feedback'
-  subjectId?: string
-  runId?: string
-  children: ReactNode
-}) {
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="min-h-0 flex-1">{children}</div>
-      <ChatDock subject={subject} subjectId={subjectId} runId={runId} />
-    </div>
-  )
 }
 
 // Tool detail wrapped in its own breadcrumb shell, with the real tool name as
