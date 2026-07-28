@@ -1,7 +1,11 @@
 import { AlertTriangle, Check } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
-import { compileZodSource, type AgentOutput } from '../../engine'
+import {
+  compileZodSource,
+  zodSourceFromJsonSchema,
+  type AgentOutput,
+} from '../../engine'
 import { cn } from '../cn'
 import { ZodCodeEditor } from './zod-code-editor'
 
@@ -16,7 +20,10 @@ import { ZodCodeEditor } from './zod-code-editor'
 // compile, the compiled schema holds at its last-good value and the error is
 // shown, so a draft is always saveable.
 
-const STRUCTURED_TEMPLATE = `z.object({
+// Ghost/example text only — shown as a placeholder when the author hasn't typed
+// a source yet. It must NEVER be seeded into `source` state or written back via
+// `onChange`, or it becomes the persisted schema for every untouched agent.
+const STRUCTURED_PLACEHOLDER = `z.object({
   summary: z.string(),
   isUrgent: z.boolean(),
 })`
@@ -48,13 +55,23 @@ export function AgentOutputEditor({
   structuredDisabledReason,
 }: AgentOutputEditorProps) {
   // Local source state for the structured editor so keystrokes stay smooth even
-  // when a given keystroke doesn't compile.
-  const [source, setSource] = useState(
-    value.kind === 'object' ? value.source || STRUCTURED_TEMPLATE : '',
+  // when a given keystroke doesn't compile. Initialised from the stored source,
+  // or — when a schema was authored in code and has no round-trip source —
+  // reconstructed from the compiled schema so the author sees the real shape.
+  // Never the placeholder, so an untouched agent's schema is never overwritten
+  // by example text.
+  const [source, setSource] = useState(() =>
+    value.kind === 'object'
+      ? value.source || zodSourceFromJsonSchema(value.schema)
+      : '',
   )
 
+  // Only compile once there's actually a source to compile. When the source is
+  // empty (e.g. a schema authored in code, with no round-trip source), stay
+  // neutral rather than flagging the untouched agent as "invalid".
   const compiled = useMemo(
-    () => (value.kind === 'object' ? compileZodSource(source) : null),
+    () =>
+      value.kind === 'object' && source.trim() ? compileZodSource(source) : null,
     [value.kind, source],
   )
 
@@ -63,13 +80,14 @@ export function AgentOutputEditor({
     if (kind === 'text') onChange({ kind: 'text' })
     else if (kind === 'boolean') onChange({ kind: 'boolean' })
     else {
-      const seed = source || STRUCTURED_TEMPLATE
-      setSource(seed)
-      const c = compileZodSource(seed)
+      // Carry over any existing source; do NOT seed the placeholder. A fresh
+      // structured output starts empty (an object with no fields) and the author
+      // types the schema, guided by the placeholder ghost text.
+      const c = source.trim() ? compileZodSource(source) : null
       onChange({
         kind: 'object',
-        source: seed,
-        schema: c.ok ? c.schema : EMPTY_SCHEMA,
+        source,
+        schema: c?.ok ? c.schema : EMPTY_SCHEMA,
       })
     }
   }
@@ -169,8 +187,10 @@ export function AgentOutputEditor({
             <code className="rounded bg-neutral-100 px-1">
               z.object({'{…}'})
             </code>
-            , and the{' '}
+, and the{' '}
             <code className="rounded bg-neutral-100 px-1">.optional()</code> /{' '}
+            <code className="rounded bg-neutral-100 px-1">.nullable()</code> /{' '}
+            <code className="rounded bg-neutral-100 px-1">.int()</code> /{' '}
             <code className="rounded bg-neutral-100 px-1">.describe("…")</code>{' '}
             chains. The schema is parsed, never executed. Type{' '}
             <code className="rounded bg-neutral-100 px-1">z.</code> for
@@ -179,6 +199,7 @@ export function AgentOutputEditor({
           <ZodCodeEditor
             value={source}
             onChange={onSourceChange}
+            placeholder={STRUCTURED_PLACEHOLDER}
             invalid={!!compiled && !compiled.ok}
           />
           {compiled && !compiled.ok ? (

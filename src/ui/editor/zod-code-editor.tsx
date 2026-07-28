@@ -43,6 +43,8 @@ const COMPLETIONS: Completion[] = [
     caretBack: 1,
   },
   { label: '.optional()', trigger: '.optional', insert: '.optional()' },
+  { label: '.nullable()', trigger: '.nullable', insert: '.nullable()' },
+  { label: '.int()', trigger: '.int', insert: '.int()' },
   { label: '.array()', trigger: '.array', insert: '.array()' },
   {
     label: '.describe("…")',
@@ -168,6 +170,8 @@ export type ZodCodeEditorProps = {
   onChange: (next: string) => void
   invalid?: boolean
   rows?: number
+  /** Ghost/example text shown under the (empty) textarea. Never becomes value. */
+  placeholder?: string
 }
 
 export function ZodCodeEditor({
@@ -175,6 +179,7 @@ export function ZodCodeEditor({
   onChange,
   invalid,
   rows = 9,
+  placeholder,
 }: ZodCodeEditorProps) {
   const ref = useRef<HTMLTextAreaElement>(null)
   const preRef = useRef<HTMLPreElement>(null)
@@ -248,15 +253,19 @@ export function ZodCodeEditor({
             'pointer-events-none absolute inset-0 m-0 overflow-hidden whitespace-pre-wrap break-words rounded-md border border-transparent bg-neutral-50 px-3 py-2 font-mono text-xs leading-relaxed text-neutral-800',
           )}
         >
-          {tokenize(value).map((t, i) =>
-            t.cls ? (
-              <span key={i} className={t.cls}>
-                {t.text}
-              </span>
-            ) : (
-              t.text
-            ),
-          )}
+          {value ? (
+            tokenize(value).map((t, i) =>
+              t.cls ? (
+                <span key={i} className={t.cls}>
+                  {t.text}
+                </span>
+              ) : (
+                t.text
+              ),
+            )
+          ) : placeholder ? (
+            <span className="text-neutral-400">{placeholder}</span>
+          ) : null}
           {'\n'}
         </pre>
         <textarea
