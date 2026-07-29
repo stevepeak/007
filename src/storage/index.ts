@@ -31,6 +31,25 @@ export {
 export { assertWfSchema } from './assert-schema'
 export { createDurableRunRecorder } from './run-recorder'
 export {
+  exportBundle,
+  importBundle,
+  slugify,
+  uniqueSlug,
+  agentSpecSchema,
+  evalSpecSchema,
+  specBundleSchema,
+  workflowSpecSchema,
+  SPEC_FORMAT_VERSION,
+  type AgentSpec,
+  type ChangeAction,
+  type ChangeReport,
+  type EntityChange,
+  type EvalSpec,
+  type ImportOptions,
+  type SpecBundle,
+  type WorkflowSpec,
+} from './spec'
+export {
   archiveAgent,
   assignWorkflow,
   buildDeleteFeedbackStatement,

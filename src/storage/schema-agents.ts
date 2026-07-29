@@ -17,6 +17,14 @@ export const wfAgent = sqliteTable('wf_agent', {
   id: text('id')
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
+  // Stable, human-authored identity that survives across environments (local /
+  // prod / other host projects) and is invariant under renames — unlike `id`
+  // (a per-DB random UUID) and `name` (editable display metadata). It is the key
+  // the import/export spec matches on, and what graph agent-refs carry in the
+  // portable spec (translated to/from `id` only at the export/import boundary).
+  // Nullable so existing rows migrate cleanly; `exportSpec` backfills any missing
+  // slug (slugified from `name`) and persists it.
+  slug: text('slug'),
   name: text('name').notNull(),
   description: text('description'),
   // Lucide icon name + a color token — purely for the agent cards.
@@ -29,7 +37,11 @@ export const wfAgent = sqliteTable('wf_agent', {
   createdBy: text('created_by'),
   createdAt: createdAt(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }),
-})
+}, (t) => [
+  // Unique when present; SQLite permits many NULLs, so un-slugged legacy rows
+  // don't collide until `exportSpec` backfills them.
+  uniqueIndex('wf_agent_slug_idx').on(t.slug),
+])
 
 // Immutable published agent snapshots. `config` is the full AgentConfig JSON
 // (model, prompt, toolIds, maxTurns, exposeThinking, output contract).

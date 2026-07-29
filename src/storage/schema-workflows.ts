@@ -13,6 +13,11 @@ export const wfWorkflow = sqliteTable('wf_workflow', {
   id: text('id')
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
+  // Stable, cross-environment identity — see the note on `wfAgent.slug`. The key
+  // the import/export spec matches a workflow on, and the target a spec eval and
+  // a portable graph's sub-workflow refs point at (translated to/from `id` only
+  // at the export/import boundary). Nullable so existing rows migrate cleanly.
+  slug: text('slug'),
   name: text('name').notNull(),
   description: text('description'),
   // Hidden workflows are machinery, not authored content — kept out of the
@@ -28,7 +33,10 @@ export const wfWorkflow = sqliteTable('wf_workflow', {
   createdBy: text('created_by'),
   createdAt: createdAt(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }),
-})
+}, (t) => [
+  // Unique when present; NULLs allowed for un-slugged legacy rows until backfill.
+  uniqueIndex('wf_workflow_slug_idx').on(t.slug),
+])
 
 // Immutable published graph snapshots.
 export const wfWorkflowVersion = sqliteTable(

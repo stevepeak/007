@@ -221,6 +221,14 @@ export async function createWorkflow(
   db: WfDb,
   input: {
     name: string
+    /** Stable cross-environment identity (see `wfWorkflow.slug`); import sets it. */
+    slug?: string
+    /**
+     * Explicit row id. Import pre-assigns ids so a graph's sub-workflow refs can
+     * be resolved to slugs→ids before any row is written (breaking the create
+     * order cycle when workflows reference each other). Defaults to a fresh UUID.
+     */
+    id?: string
     description?: string
     createdBy?: string
     graph: WorkflowGraph
@@ -228,9 +236,10 @@ export async function createWorkflow(
     hidden?: boolean
   },
 ) {
-  const workflowId = crypto.randomUUID()
+  const workflowId = input.id ?? crypto.randomUUID()
   await db.insert(wfWorkflow).values({
     id: workflowId,
+    slug: input.slug ?? null,
     name: input.name,
     description: input.description ?? null,
     hidden: input.hidden ?? false,

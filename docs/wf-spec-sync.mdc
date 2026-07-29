@@ -1,0 +1,62 @@
+---
+alwaysApply: false
+description: How agents/workflows/evals are stored and how to sync them between the DB, git (specs/), localhost, and production via the wf-spec CLI
+---
+
+# Workflows, agents & evals — editing and syncing (`wf-spec`)
+
+Agents, workflows and evals are **not** defined by seed files. They live in the
+D1 database (`wf_*` tables), are edited in the app UI, and are checked into git
+as JSON **spec files** under `specs/` at the repo root. The `@stevepeak/007`
+`wf-spec` CLI moves state between the DB and `specs/`, and between environments.
+
+Full reference: `packages/007/docs/sync.md`.
+
+## Where things live
+- **Source of truth in git:** `specs/{agents,workflows,evals}/<slug>.json` (+ `specs/_meta.json`).
+- **Identity is the `slug`**, not the row id (ids are random per-DB). Graph agent/sub-workflow refs use `agentSlug`/`workflowSlug`; the CLI translates to/from the target DB's ids.
+- Do **not** hand-edit `specs/*.json` to change behavior — edit in the UI, then export. Hand-authoring is fine only for review.
+
+## Running the CLI
+The `wf-spec` bin is not linked; invoke the file, **from the repo root** (where
+`.wrangler/state` lives, so the local D1 is found):
+
+```bash
+bun packages/007/src/cli/spec.ts <export|import|diff> --dir=./specs [--remote] [--dry-run] [--prune] [--note="…"]
+```
+
+## How to update a workflow/agent and sync to localhost
+1. Edit it in the app UI (this saves to the local DB only).
+2. Pull the change into git:
+   ```bash
+   bun packages/007/src/cli/spec.ts export --dir=./specs
+   git diff specs/         # review, then commit
+   ```
+3. To apply committed `specs/` back onto the local DB (e.g. after `git pull`, or
+   after an AI edited the files):
+   ```bash
+   bun packages/007/src/cli/spec.ts import --dir=./specs        # reconcile; --dry-run to preview
+   ```
+Import is idempotent: unchanged specs are a no-op; changed payloads publish a new
+immutable version. `diff` exits non-zero on drift (use as a check).
+
+## Production — ONLY when explicitly asked
+Never touch prod unless the user explicitly requests it. Then add `--remote`
+(needs `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, and a D1 id via
+`D1_DATABASE_ID`/`CF_D1_DATABASE_ID` or `--db-id`):
+
+```bash
+bun packages/007/src/cli/spec.ts import --dir=./specs --remote --dry-run   # ALWAYS preview first
+bun packages/007/src/cli/spec.ts import --dir=./specs --remote --note="…"  # apply
+```
+Pull a prod hotfix back down with `export --remote`, review the diff, commit,
+then `import` to local.
+
+## Gotchas
+- The `slug` column (007 migration `0021`) must be applied to a DB before
+  `wf-spec` works against it — local via `apps/workflows` → `db:migrate:local`
+  (or apply the SQL directly if the miniflare runtime won't start), prod via
+  `db:migrate`.
+- `--prune` archives entities absent from `specs/`; off by default. Omit unless
+  the user wants removals mirrored.
+- Model catalog, drafts and run history are **not** synced.

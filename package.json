@@ -11,7 +11,8 @@
   },
   "main": "src/index.ts",
   "bin": {
-    "wf-dump-run": "./src/cli/dump-run.ts"
+    "wf-dump-run": "./src/cli/dump-run.ts",
+    "wf-spec": "./src/cli/spec.ts"
   },
   "exports": {
     ".": "./src/index.ts",

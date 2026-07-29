@@ -235,7 +235,20 @@ and, for events, lists the fields reflected from each `inputSchema`. Only events
 live in your config; `manual`/`periodic` are SDK constants
 (`MANUAL_TRIGGER_KIND`, `PERIODIC_TRIGGER_KIND`).
 
-### Seed helper (optional but recommended)
+### Managing agents/workflows: the spec CLI (recommended over seed files)
+
+Agents, workflows and evals are edited in the UI and live in D1. To move that
+state into version control and between environments (local ↔ prod, or another
+host project) — instead of hand-writing seed files — the SDK ships `wf-spec`, an
+import/export CLI over slug-keyed JSON **spec files** (`specs/*.json`). Export
+pulls the DB into `specs/`, import reconciles `specs/` back into any DB, diff is
+a drift guard. See **`docs/sync.md`** for the full reference.
+
+For AI/agent workflows, drop **`docs/wf-spec-sync.mdc`** into the host repo's
+`.claude/rules/` (adjust the host-specific paths) so agents know to edit in the
+UI, `export` into `specs/`, and only touch production when explicitly asked.
+
+### Seed helper (legacy — prefer the spec CLI above)
 
 To auto-provision the workspace's first workflow, ship a seed that assigns a
 template graph to a trigger kind, using SDK storage primitives. Assignment is
@@ -1012,7 +1025,8 @@ project is: write a `WfSdkConfig`, mount one API route, mount `WfApp`, export
 | Piece                            | File                                             |
 | -------------------------------- | ------------------------------------------------ |
 | Host config (`WfSdkConfig`)      | `packages/wf-host/src/config.ts`                 |
-| Seed helper + template           | `packages/wf-host/src/{seed,template}.ts`        |
+| Sync agents/workflows (spec CLI) | `docs/sync.md` + agent rule `docs/wf-spec-sync.mdc` |
+| Seed helper + template (legacy)  | `packages/wf-host/src/{seed,template}.ts`        |
 | RPC contract (`WorkflowsRpc`)    | `packages/wf-host/src/rpc.ts`                    |
 | Data API route + run-exec hooks  | `apps/web/app/api/wf/route.ts`                   |
 | RPC client (binding + HTTP fallback) | `apps/web/lib/workflows.ts`                   |

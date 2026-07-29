@@ -69,6 +69,8 @@ export async function createAgent(
   db: WfDb,
   input: {
     name: string
+    /** Stable cross-environment identity (see `wfAgent.slug`); import sets it. */
+    slug?: string
     description?: string
     icon?: string
     color?: string
@@ -79,6 +81,7 @@ export async function createAgent(
   const agentId = crypto.randomUUID()
   await db.insert(wfAgent).values({
     id: agentId,
+    slug: input.slug ?? null,
     name: input.name,
     description: input.description ?? null,
     icon: input.icon ?? null,
