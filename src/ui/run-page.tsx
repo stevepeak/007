@@ -135,7 +135,10 @@ export function RunPage({ runId, className }: RunPageProps) {
         const start = run.startedAt ?? run.createdAt
         const end = run.finishedAt ?? (run.status === 'running' ? Date.now() : null)
         const live = run.status === 'running' || run.status === 'queued'
-        const canRetry = run.status === 'failed' || run.status === 'cancelled'
+        // Any terminal run can be re-run from scratch on the latest version — including
+        // ones that completed successfully. "Resume from failed step" (canResume below)
+        // stays gated on an actual failure.
+        const canRetry = !live
         // Resume only makes sense when a specific node failed and we still have the
         // graph (node ids must line up with the recorded steps).
         const canResume =
