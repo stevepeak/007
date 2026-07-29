@@ -187,7 +187,7 @@ export function SubAgentPicker({
           className="pl-8"
         />
         {open ? (
-          <div className="absolute z-10 mt-1 max-h-64 w-full overflow-auto rounded-md border border-neutral-200 bg-white p-1 shadow-lg">
+          <div className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-md border border-neutral-200 bg-white p-1 shadow-lg">
             {results.length === 0 ? (
               <div className="p-2 text-xs text-neutral-400">
                 {options.length === 0

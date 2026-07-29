@@ -65,8 +65,8 @@ function EditorSection({
   children: ReactNode
 }) {
   return (
-    <section className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
-      <header className="flex items-start gap-3 border-b border-neutral-100 bg-neutral-50/60 px-4 py-3">
+    <section className="rounded-lg border border-neutral-200 bg-white">
+      <header className="flex items-start gap-3 rounded-t-lg border-b border-neutral-100 bg-neutral-50/60 px-4 py-3">
         <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-white text-neutral-500 ring-1 ring-neutral-200">
           <Icon className="size-4" />
         </span>
