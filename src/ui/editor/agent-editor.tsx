@@ -1,5 +1,15 @@
-import { Archive, Plus } from 'lucide-react'
-import { useState } from 'react'
+import {
+  Archive,
+  Braces,
+  Cpu,
+  type LucideIcon,
+  MessageSquareText,
+  Plus,
+  Settings2,
+  Users,
+  Wrench,
+} from 'lucide-react'
+import { type ReactNode, useState } from 'react'
 
 import { type AgentConfig } from '../../engine'
 import {
@@ -38,6 +48,39 @@ import { ToolPicker } from './tool-picker'
 // over the whole AgentConfig (model, prompt, tools, expected output, advanced),
 // plus the entity's appearance (icon + color) which saves immediately. A
 // disabled Playground panel previews where isolated test runs will live.
+
+// A titled card wrapping one part of the config. Each concern (Prompt, Tools,
+// Sub-agents, Output, Settings) gets its own bordered section with an icon,
+// heading, and one-line description so the form reads as distinct steps rather
+// than a flat stack of labels.
+function EditorSection({
+  icon: Icon,
+  title,
+  description,
+  children,
+}: {
+  icon: LucideIcon
+  title: string
+  description?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+      <header className="flex items-start gap-3 border-b border-neutral-100 bg-neutral-50/60 px-4 py-3">
+        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-white text-neutral-500 ring-1 ring-neutral-200">
+          <Icon className="size-4" />
+        </span>
+        <div className="min-w-0 space-y-0.5">
+          <h3 className="text-sm font-medium text-neutral-800">{title}</h3>
+          {description ? (
+            <p className="text-xs text-neutral-400">{description}</p>
+          ) : null}
+        </div>
+      </header>
+      <div className="space-y-4 p-4">{children}</div>
+    </section>
+  )
+}
 
 export type AgentEditorProps = {
   agentId: string
@@ -319,8 +362,11 @@ function AgentEditorInner({
             </section>
 
             {/* Model */}
-            <section className="space-y-1">
-              <Label>Model</Label>
+            <EditorSection
+              icon={Cpu}
+              title="Model"
+              description="The LLM that powers this agent."
+            >
               <ModelSelect
                 value={config.modelId}
                 onChange={(modelId) => patch({ modelId })}
@@ -334,20 +380,26 @@ function AgentEditorInner({
                     config.output.kind === 'boolean',
                 }}
               />
-            </section>
+            </EditorSection>
 
             {/* Prompt */}
-            <section className="space-y-1">
-              <Label>Prompt</Label>
+            <EditorSection
+              icon={MessageSquareText}
+              title="Prompt"
+              description="The system instructions that define what this agent does."
+            >
               <PromptBodyEditor
                 initialBody={initialConfig.prompt}
                 onChange={(body) => patch({ prompt: body })}
               />
-            </section>
+            </EditorSection>
 
             {/* Tools */}
-            <section className="space-y-1">
-              <Label>Tools</Label>
+            <EditorSection
+              icon={Wrench}
+              title="Tools"
+              description="Tools the agent may call while it works."
+            >
               <ToolPicker
                 tools={aiTools}
                 selectedIds={config.toolIds}
@@ -355,78 +407,86 @@ function AgentEditorInner({
                 disabled={modelLacksTools}
                 disabledReason={`${selectedModel?.label ?? 'The selected model'} can’t call tools — pick a tool-calling model to attach tools.`}
               />
-            </section>
+            </EditorSection>
 
             {/* Sub-agents (delegation) */}
-            <section className="space-y-1">
-              <Label>Sub-agents</Label>
-              <p className="text-xs text-neutral-400">
-                Agents or workflows this agent may spawn as sub-agents. It gets a
-                tool to launch each in the background and an{' '}
-                <code className="text-[11px]">await_subagents</code> tool to
-                gather their results — like Claude Code's sub-agents.
-              </p>
+            <EditorSection
+              icon={Users}
+              title="Sub-agents"
+              description={
+                <>
+                  Agents or workflows this agent may spawn as sub-agents. It gets
+                  a tool to launch each in the background and an{' '}
+                  <code className="text-[11px]">await_subagents</code> tool to
+                  gather their results — like Claude Code's sub-agents.
+                </>
+              }
+            >
               <SubAgentPicker
                 value={config.subAgents}
                 onChange={(subAgents) => patch({ subAgents })}
                 currentAgentId={agentId}
               />
-            </section>
+            </EditorSection>
 
             {/* Expected output */}
-            <section className="space-y-1">
-              <Label>Expected output</Label>
+            <EditorSection
+              icon={Braces}
+              title="Expected output"
+              description="The shape of the result the agent must return."
+            >
               <AgentOutputEditor
                 value={config.output}
                 onChange={(output) => patch({ output })}
                 structuredDisabled={modelLacksStructuredOutput}
                 structuredDisabledReason={`${selectedModel?.label ?? 'The selected model'} doesn’t support structured output — only a Text result is available.`}
               />
-            </section>
+            </EditorSection>
 
             {/* Settings */}
-            <section className="space-y-4">
-              <Label>Settings</Label>
-              <div className="space-y-4 border-l-2 border-neutral-100 pl-4">
-                <div className="space-y-1">
-                  <Label>Max turns</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={20}
-                    className="max-w-[8rem]"
-                    value={config.maxTurns}
+            <EditorSection
+              icon={Settings2}
+              title="Settings"
+              description="Runtime limits and behavior for the agent."
+            >
+              <div className="space-y-1">
+                <Label>Max turns</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={20}
+                  className="max-w-[8rem]"
+                  value={config.maxTurns}
+                  onChange={(e) =>
+                    patch({
+                      maxTurns: Number.parseInt(e.target.value, 10) || 1,
+                    })
+                  }
+                />
+                <p className="text-xs text-neutral-400">
+                  How many turns the agent may take before it must give a final
+                  answer. Each turn is one round of calling tools and reading
+                  their results; a higher limit lets the agent do more research
+                  but costs more and runs longer. Defaults to 5.
+                </p>
+              </div>
+              <div className="space-y-1">
+                <label className="flex items-center gap-2 text-sm font-medium text-neutral-800">
+                  <Checkbox
+                    checked={config.exposeThinking}
                     onChange={(e) =>
-                      patch({
-                        maxTurns: Number.parseInt(e.target.value, 10) || 1,
-                      })
+                      patch({ exposeThinking: e.target.checked })
                     }
                   />
-                  <p className="text-xs text-neutral-400">
-                    How many turns the agent may take before it must give a
-                    final answer. Each turn is one round of calling tools and
-                    reading their results; a higher limit lets the agent do more
-                    research but costs more and runs longer. Defaults to 5.
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <label className="flex items-center gap-2 text-sm font-medium text-neutral-800">
-                    <Checkbox
-                      checked={config.exposeThinking}
-                      onChange={(e) =>
-                        patch({ exposeThinking: e.target.checked })
-                      }
-                    />
-                    Expose thinking to user
-                  </label>
-                  <p className="text-xs text-neutral-400">
-                    Stream the agent's step-by-step reasoning to the user as it
-                    works, instead of only showing the final answer. Useful for
-                    transparency, but exposes intermediate notes.
-                  </p>
-                </div>
+                  Expose thinking to user
+                </label>
+                <p className="text-xs text-neutral-400">
+                  Stream the agent's step-by-step reasoning to the user as it
+                  works, instead of only showing the final answer. Useful for
+                  transparency, but exposes intermediate notes.
+                </p>
               </div>
-            </section>
+            </EditorSection>
           </div>
 
           {/* Right: playground — runs the live draft config in isolation */}
