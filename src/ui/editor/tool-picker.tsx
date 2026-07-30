@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from 'react'
 import type { ToolOption } from '../../server/protocol'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
+import { toolChip } from '../tool-appearance'
 import { ToolIcon } from '../tool-icon'
 
 // Tool selection for the agent/tool-node editors. Replaces the old checkbox
@@ -117,7 +118,18 @@ export function ToolPicker({
                 key={t.id}
                 className="flex items-center gap-2.5 rounded-md border border-border bg-muted p-2"
               >
-                <ToolIcon icon={t.icon} className="size-6 shrink-0" />
+                <span
+                  className={cn(
+                    'flex size-7 shrink-0 items-center justify-center overflow-hidden rounded',
+                    toolChip(t.color),
+                  )}
+                >
+                  <ToolIcon
+                    icon={t.icon}
+                    iconName={t.iconName}
+                    className="size-4"
+                  />
+                </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium text-foreground">
                     {t.name}
@@ -224,7 +236,18 @@ export function ToolPicker({
                     'flex w-full items-center gap-2.5 rounded-md p-2 text-left transition-colors hover:bg-accent',
                   )}
                 >
-                  <ToolIcon icon={t.icon} className="size-6 shrink-0" />
+                  <span
+                  className={cn(
+                    'flex size-7 shrink-0 items-center justify-center overflow-hidden rounded',
+                    toolChip(t.color),
+                  )}
+                >
+                  <ToolIcon
+                    icon={t.icon}
+                    iconName={t.iconName}
+                    className="size-4"
+                  />
+                </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium text-foreground">
                       {t.name}

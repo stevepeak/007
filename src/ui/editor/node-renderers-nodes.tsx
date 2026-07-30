@@ -16,6 +16,7 @@ import {
 import { agentColor, agentIcon } from '../agent-appearance'
 import { cn } from '../cn'
 import { useAgents, useTools, useTriggerEvents, useWorkflows } from '../hooks'
+import { toolChip } from '../tool-appearance'
 import { ToolIcon } from '../tool-icon'
 import { NoteMarkdown } from './note-markdown'
 import {
@@ -132,7 +133,18 @@ export function ToolNodeRenderer(props: NodeProps) {
         subtitle={tool ? tool.name : data.config.toolId || 'No tool selected'}
         iconSlot={
           tool ? (
-            <ToolIcon icon={tool.icon} className="mt-0.5 size-5" />
+            <span
+              className={cn(
+                'mt-0.5 flex size-5 shrink-0 items-center justify-center overflow-hidden rounded',
+                toolChip(tool.color),
+              )}
+            >
+              <ToolIcon
+                icon={tool.icon}
+                iconName={tool.iconName}
+                className="size-3.5"
+              />
+            </span>
           ) : undefined
         }
       />

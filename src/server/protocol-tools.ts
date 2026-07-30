@@ -10,6 +10,10 @@ export type ToolOption = {
   description: string
   /** Optional inline SVG brand/icon markup (trusted, SDK/host-defined). */
   icon?: string
+  /** Optional lucide icon name (PascalCase) for a first-party tool; tinted by `color`. */
+  iconName?: string
+  /** Optional appearance-palette color key that tints the tool's icon chip. */
+  color?: string
   kind: 'ai-tool' | 'function'
   /**
    * JSON Schema of the tool's input arguments (converted from the tool's Zod

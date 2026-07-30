@@ -2,6 +2,7 @@ import { cn } from './cn'
 import { useTools } from './hooks'
 import { WfLink } from './nav'
 import { QueryState } from './query-state'
+import { toolChip } from './tool-appearance'
 import { ToolIcon } from './tool-icon'
 
 // The tools registered in the host's `toolRegistry` (via the injected data
@@ -46,8 +47,13 @@ export function ToolsList({ className }: ToolsListProps) {
             className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-white p-4 text-left transition-colors hover:border-neutral-300 hover:bg-neutral-50"
           >
             <div className="flex w-full items-center gap-3">
-              <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-neutral-100">
-                <ToolIcon icon={t.icon} className="size-6" />
+              <span
+                className={cn(
+                  'flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg',
+                  toolChip(t.color),
+                )}
+              >
+                <ToolIcon icon={t.icon} iconName={t.iconName} className="size-6" />
               </span>
               <span className="min-w-0 flex-1 truncate text-base font-medium text-neutral-900">
                 {t.name}

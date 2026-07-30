@@ -188,6 +188,8 @@ export function buildModelHandlers<TDeps>(
         name: entry.name,
         description: entry.description,
         icon: entry.icon,
+        iconName: entry.iconName,
+        color: entry.color,
         kind: entry.kind,
         inputSchema: toJsonSchema(entry.inputSchema, 'input'),
         outputSchema: toJsonSchema(entry.outputSchema, 'output'),

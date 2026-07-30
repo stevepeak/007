@@ -19,9 +19,24 @@ export type ToolMeta = {
   description: string
   /**
    * Optional inline SVG markup for the tool's brand/icon, rendered in the tool
-   * picker. Trusted content (SDK- or host-defined), not user input.
+   * picker. Trusted content (SDK- or host-defined), not user input. Use this for
+   * third-party brand marks (e.g. Tavily); for first-party tools prefer
+   * `iconName` + `color` below, which draw from the shared appearance palette.
+   * When both are set the SVG `icon` wins.
    */
   icon?: string
+  /**
+   * Optional lucide icon name (PascalCase, e.g. `Calculator`, `BookOpen`) for a
+   * first-party tool — the same convention agents use. Resolved through the UI's
+   * appearance helpers and tinted by `color`. Ignored when `icon` (SVG) is set.
+   */
+  iconName?: string
+  /**
+   * Optional appearance-palette color key (e.g. `emerald`, `rose`) that tints the
+   * tool's icon chip. Shares the agent palette so tools and agents read as one
+   * design language. Falls back to a neutral chip when unset.
+   */
+  color?: string
   /**
    * Zod schema of the tool's input arguments. Surfaced to the workflow editor
    * (converted to JSON Schema) so authors see what a tool *requires* and can map

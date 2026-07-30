@@ -19,6 +19,7 @@ import {
 } from './hooks'
 import { useWfNav } from './nav'
 import { runStatusClass } from './run-status'
+import { toolChip } from './tool-appearance'
 import { ToolIcon } from './tool-icon'
 
 // The tool detail page: one tool's identity, a real-execution playground, and
@@ -72,8 +73,13 @@ function ToolHeader({ tool }: { tool: ToolOption }) {
   const { Badge } = useWfComponents()
   return (
     <div className="flex items-start gap-4">
-      <span className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-neutral-100">
-        <ToolIcon icon={tool.icon} className="size-7" />
+      <span
+        className={cn(
+          'flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg',
+          toolChip(tool.color),
+        )}
+      >
+        <ToolIcon icon={tool.icon} iconName={tool.iconName} className="size-7" />
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
