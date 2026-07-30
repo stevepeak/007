@@ -578,7 +578,11 @@ export async function assignWorkflow(
 export async function resolveAssignedVersion(
   db: WfDb,
   input: { triggerKind: string },
-): Promise<{ workflowId: string; versionId: string } | null> {
+): Promise<{
+  workflowId: string
+  versionId: string
+  versionNumber: number
+} | null> {
   const assignment = (
     await db
       .select()
@@ -605,5 +609,9 @@ export async function resolveAssignedVersion(
   if (!version) {
     return null
   }
-  return { workflowId: assignment.workflowId, versionId: version.id }
+  return {
+    workflowId: assignment.workflowId,
+    versionId: version.id,
+    versionNumber: version.versionNumber,
+  }
 }
