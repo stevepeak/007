@@ -319,7 +319,7 @@ function quote(text: string): string {
 }
 
 function renderKey(key: string): string {
-  return /^[A-Za-z_$][\w$]*$/.test(key) ? key : quote(key)
+  return /^[A-Z_$][\w$]*$/i.test(key) ? key : quote(key)
 }
 
 function renderNode(node: JsonSchema, depth: number): string {

@@ -1,4 +1,4 @@
-import { Archive, Workflow as WorkflowIcon } from 'lucide-react'
+import { Archive, Redo2, Undo2, Workflow as WorkflowIcon } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 
 import type { WorkflowGraph } from '../../engine'
@@ -259,6 +259,43 @@ export function EditorInner({
               dirtyTooltip="You have unsaved changes (kept locally until you save)"
               savedTooltip="All changes saved"
             />
+
+            <Tooltip
+              side="bottom"
+              content={
+                history.canUndo
+                  ? `Undo "${history.undoLabel}"`
+                  : 'Nothing to undo'
+              }
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!history.canUndo}
+                onClick={() => history.undo()}
+                aria-label="Undo"
+              >
+                <Undo2 className="size-4" />
+              </Button>
+            </Tooltip>
+            <Tooltip
+              side="bottom"
+              content={
+                history.canRedo
+                  ? `Redo "${history.redoLabel}"`
+                  : 'Nothing to redo'
+              }
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!history.canRedo}
+                onClick={() => history.redo()}
+                aria-label="Redo"
+              >
+                <Redo2 className="size-4" />
+              </Button>
+            </Tooltip>
 
             <HistoryMenu
               open={showHistory}
