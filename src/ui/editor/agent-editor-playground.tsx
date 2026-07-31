@@ -4,7 +4,10 @@ import { useMemo } from 'react'
 import { inferPromptVariables, type AgentConfig } from '../../engine'
 import type { AgentPreviewResult, JsonSchema } from '../../server/protocol'
 import { WfAutoForm } from '../autoform/wf-auto-form'
-import { useRunAgentPreview } from '../hooks'
+import { cn } from '../cn'
+import { highlightJson } from '../data-view'
+import { useModels, useRunAgentPreview } from '../hooks'
+import { NoteMarkdown } from './note-markdown'
 
 // Playground — runs the editor's live draft config in isolation (no graph, no
 // persistence) and shows the final answer plus the per-step thinking/tool-call
@@ -105,16 +108,45 @@ export function PlaygroundPanel({ config }: { config: AgentConfig }) {
   )
 }
 
-// Renders one completed playground run: the final answer, an optional
-// step-by-step trace (thinking text + tool calls), and total token usage.
+// A short boolean-ish answer (what a yes/no classifier emits) — `yes`/`no`/
+// `true`/`false`, ignoring case and trailing punctuation. Rendered as a coloured
+// token, not markdown, so a verdict reads at a glance.
+const VERDICTS: Record<string, boolean> = {
+  yes: true,
+  no: false,
+  true: true,
+  false: false,
+}
+function asVerdict(text: string): { label: string; truthy: boolean } | null {
+  const t = text.trim().toLowerCase().replace(/[.!]+$/, '')
+  return t in VERDICTS ? { label: text.trim(), truthy: VERDICTS[t] } : null
+}
+
+// Blended-price cost of a run, USD. Tiny for a single preview, so keep enough
+// precision to be non-zero — 4 decimals under a dollar, a floor below that.
+function formatCost(usd: number): string {
+  if (usd <= 0) return '$0'
+  if (usd < 0.0001) return '<$0.0001'
+  if (usd < 1) return `$${usd.toFixed(4)}`
+  return `$${usd.toFixed(2)}`
+}
+
+// Renders one completed playground run's final answer: structured output and
+// yes/no verdicts are syntax-highlighted (JSON tokens / a coloured verdict),
+// while free-form prose is parsed as markdown. Plus an optional step-by-step
+// trace and total token usage/cost.
 function PlaygroundResult({ result }: { result: AgentPreviewResult }) {
   const { output, meta } = result
-  const finalText =
-    'text' in output && typeof output.text === 'string'
-      ? output.text
-      : JSON.stringify(output, null, 2)
+  const models = useModels().data
+  const textOutput =
+    'text' in output && typeof output.text === 'string' ? output.text : null
+  const verdict = textOutput != null ? asVerdict(textOutput) : null
   const steps = meta.steps.filter((s) => s.text || s.toolCalls.length > 0)
   const totalTokens = meta.totalUsage.inputTokens + meta.totalUsage.outputTokens
+
+  const costPerMTok = models?.find((m) => m.id === meta.model)?.costPerMTok
+  const cost =
+    costPerMTok != null ? (totalTokens / 1_000_000) * costPerMTok : null
 
   return (
     <div className="space-y-2">
@@ -122,9 +154,27 @@ function PlaygroundResult({ result }: { result: AgentPreviewResult }) {
         <div className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">
           Output
         </div>
-        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-800">
-          {finalText}
-        </pre>
+        <div className="max-h-64 overflow-auto rounded-md border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-800">
+          {textOutput == null ? (
+            // Structured output → syntax-highlighted JSON.
+            <pre className="whitespace-pre-wrap break-words font-mono">
+              {highlightJson(JSON.stringify(output, null, 2))}
+            </pre>
+          ) : verdict != null ? (
+            // Yes/no verdict → a coloured token (green truthy, rose falsy).
+            <span
+              className={cn(
+                'font-mono font-semibold',
+                verdict.truthy ? 'text-green-700' : 'text-rose-700',
+              )}
+            >
+              {verdict.label}
+            </span>
+          ) : (
+            // Free-form text → markdown.
+            <NoteMarkdown text={textOutput} />
+          )}
+        </div>
       </div>
 
       {steps.length > 0 ? (
@@ -165,6 +215,7 @@ function PlaygroundResult({ result }: { result: AgentPreviewResult }) {
 
       <div className="text-[11px] text-neutral-400">
         {meta.model} · {totalTokens.toLocaleString()} tokens
+        {cost != null ? ` · ${formatCost(cost)}` : null}
       </div>
     </div>
   )

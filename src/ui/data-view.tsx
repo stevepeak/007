@@ -96,7 +96,7 @@ function TextBlock({ label, text }: { label: string; text: string }) {
 const JSON_TOKEN_RE =
   /("(?:\\.|[^"\\])*"(\s*:)?)|(\b-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)|(\btrue\b|\bfalse\b)|(\bnull\b)/g
 
-function highlightJson(json: string): ReactNode[] {
+export function highlightJson(json: string): ReactNode[] {
   const out: ReactNode[] = []
   let last = 0
   let key = 0
