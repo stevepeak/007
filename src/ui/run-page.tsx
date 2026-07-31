@@ -7,7 +7,9 @@ import { useWfComponents } from './context'
 import { cn } from './cn'
 import { WorkflowCanvas } from './editor/workflow-canvas'
 import { formatDuration, formatTimestamp, formatTokens, formatUsd } from './cost'
+import { useFeedbackForSubjects } from './hooks-feedback'
 import { useRetryRun, useRun } from './hooks'
+import { MessageFeedback } from './message-feedback'
 import { useWfNav } from './nav'
 import { QueryState } from './query-state'
 import { RunNodeDock } from './run-node-dock'
@@ -92,6 +94,11 @@ export function RunPage({ runId, className }: RunPageProps) {
   const { navigate } = useWfNav()
   const { data, isLoading, error } = useRun(runId)
   const retry = useRetryRun()
+  // Run-level thumbs feedback. Namespaced so a run's rating never collides with a
+  // message/document sharing the same host id in the globally-unique subject key.
+  const feedbackSubjectId = `run:${runId}`
+  const { data: feedbackRows } = useFeedbackForSubjects([feedbackSubjectId])
+  const feedback = feedbackRows?.[0] ?? null
   const [selectedId, setSelectedId] = useState<string | null>(null)
   // Which iteration item the dock is focused on when an inner-subgraph node is
   // selected. Clamped to the node's item count at read time, so it survives
@@ -263,6 +270,16 @@ export function RunPage({ runId, className }: RunPageProps) {
                     ) : null}
                   </span>
                 ) : null}
+                <MessageFeedback
+                  alwaysVisible
+                  subjectId={feedbackSubjectId}
+                  rating={feedback?.rating ?? null}
+                  note={feedback?.note ?? null}
+                  runId={run.id}
+                  correlationId={run.correlationId}
+                  subjectTitle={run.workflowName}
+                  body={run.error ?? null}
+                />
                 {canRetry ? (
                   <RetryMenu
                     canResume={canResume}

@@ -84,7 +84,7 @@ const DefaultInput: FC<WfInputProps> = ({ className, ...props }) => (
 
 const DefaultLabel: FC<WfLabelProps> = ({ className, ...props }) => (
   <label
-    className={cn('text-sm font-medium text-neutral-700', className)}
+    className={cn('block text-sm font-medium text-neutral-700', className)}
     {...props}
   />
 )
