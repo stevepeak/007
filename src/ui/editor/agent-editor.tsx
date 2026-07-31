@@ -449,7 +449,7 @@ function AgentEditorInner({
               title="Settings"
               description="Runtime limits and behavior for the agent."
             >
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <Label>Max turns</Label>
                 <Input
                   type="number"
