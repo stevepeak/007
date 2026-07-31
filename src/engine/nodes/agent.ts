@@ -341,7 +341,10 @@ export async function executeAgentNode<TDeps>(
     modelId,
     output: config.output,
     maxTurns: config.maxTurns,
-    exposeThinking: config.exposeThinking,
+    // Streaming the agent's thinking is a per-placement choice, set on the node
+    // in the workflow inspector. OR'd with the agent config's legacy flag so any
+    // agent that opted in before the control moved still streams.
+    exposeThinking: node.config.exposeThinking || config.exposeThinking,
     systemPrompt,
     messages,
     tools: effectiveTools,

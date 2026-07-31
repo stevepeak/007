@@ -221,6 +221,11 @@ const agentNodeSchema = baseNode.extend({
     // `resolveImageRef`) or an already-formed `{ url, mediaType }`. The binding
     // key is a label only. Empty for text-only agents.
     imageInputs: z.record(z.string(), argBindingSchema).default({}),
+    // When true, this node forwards the agent's per-step thinking text to the
+    // run's StreamSink so the user can watch it work. A per-placement choice —
+    // the same agent can stream its reasoning in one workflow and stay quiet in
+    // another — so it lives on the node, not the reusable agent's config.
+    exposeThinking: z.boolean().default(false),
   }),
 })
 

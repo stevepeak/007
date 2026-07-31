@@ -62,7 +62,7 @@ export function buildAgentWrapperGraph(
         kind: 'agent',
         label: 'Agent',
         position: { x: 280, y: 0 },
-        config: { agentId, version, inputs: {}, imageInputs: {} },
+        config: { agentId, version, inputs: {}, imageInputs: {}, exposeThinking: false },
       },
       {
         id: outputId,

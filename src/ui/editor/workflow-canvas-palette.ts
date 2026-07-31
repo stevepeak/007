@@ -17,7 +17,13 @@ export function defaultDataForKind(
     return {
       kind: 'agent',
       label: 'New agent',
-      config: { agentId: '', version: null, inputs: {}, imageInputs: {} },
+      config: {
+        agentId: '',
+        version: null,
+        inputs: {},
+        imageInputs: {},
+        exposeThinking: false,
+      },
     }
   }
   if (kind === 'tool') {

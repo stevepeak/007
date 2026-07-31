@@ -64,7 +64,7 @@ export function AgentInspector({
   onChange,
   itemSchema,
 }: NodeInspectorProps) {
-  const { Label } = useWfComponents()
+  const { Label, Checkbox } = useWfComponents()
   const agents = useAgents()
   const agentOptions = agents.data ?? []
   if (node.kind !== 'agent') return null
@@ -85,6 +85,24 @@ export function AgentInspector({
             })
           }
         />
+      </div>
+      <div className={field}>
+        <label className="flex items-center gap-2 text-sm font-medium">
+          <Checkbox
+            checked={node.config.exposeThinking}
+            onChange={(e) =>
+              onChange({
+                ...node,
+                config: { ...node.config, exposeThinking: e.target.checked },
+              })
+            }
+          />
+          Expose thinking to user
+        </label>
+        <p className="text-muted-foreground text-xs">
+          Stream this agent's step-by-step reasoning to the user as it works,
+          instead of only showing the final answer.
+        </p>
       </div>
       <div className="border-t border-border" />
       <NodeInputsPanel

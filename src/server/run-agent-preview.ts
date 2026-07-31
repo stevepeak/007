@@ -74,6 +74,7 @@ export async function executeAgentPreview<TDeps>(opts: {
       version: null,
       inputs: {},
       imageInputs: {},
+      exposeThinking: false,
     },
   }
 
