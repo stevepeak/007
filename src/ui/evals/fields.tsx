@@ -1,14 +1,13 @@
 import { ChevronDown } from 'lucide-react'
-import { useRef, useState } from 'react'
 
 import type { JsonSchema } from '../../engine'
 import { evalMatchSchema, type EvalMatch } from '../../server/protocol'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { useTools } from '../hooks'
+import { Popover } from '../popover'
 import { ToolIcon } from '../tool-icon'
 import { useCommittedField } from '../use-committed-field'
-import { useDismiss } from '../use-dismiss'
 
 const MATCH_OPTIONS = evalMatchSchema.options
 
@@ -56,89 +55,88 @@ export function ToolPicker({
     : all
   const selected = tools.find((t) => t.id === value)
 
-  const [open, setOpen] = useState(false)
-  const rootRef = useRef<HTMLDivElement>(null)
-
-  useDismiss(rootRef, open, () => setOpen(false))
-
   return (
     <div className="space-y-1">
       <Label>Tool</Label>
-      <div ref={rootRef} className="space-y-2">
-        <button
-          type="button"
-          aria-haspopup="listbox"
-          aria-expanded={open}
-          onClick={() => setOpen((o) => !o)}
-          className="flex h-9 w-full items-center gap-2 rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none transition focus:border-neutral-500"
-        >
-          <ToolIcon icon={selected?.icon} className="size-5" />
-          <span
-            className={cn(
-              'min-w-0 flex-1 truncate text-left',
-              selected ? 'text-neutral-800' : 'text-neutral-400',
-            )}
+      {/* Inline (non-absolute) panel so it can't be clipped by the StepFlow
+          card's `overflow-hidden`. */}
+      <Popover
+        className="space-y-2"
+        panelClassName="max-h-72 overflow-y-auto rounded-md border border-neutral-200 py-1"
+        trigger={({ open, toggle }) => (
+          <button
+            type="button"
+            aria-haspopup="listbox"
+            aria-expanded={open}
+            onClick={toggle}
+            className="flex h-9 w-full items-center gap-2 rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none transition focus:border-neutral-500"
           >
-            {selected?.name ??
-              (toolsQuery.isLoading ? 'Loading tools…' : 'Select a tool…')}
-            {value && !selected && !toolsQuery.isLoading ? (
-              <span className="ml-1 text-xs text-amber-600">(not found)</span>
-            ) : null}
-          </span>
-          <ChevronDown
-            className={cn(
-              'size-4 shrink-0 text-neutral-400 transition',
-              open && 'rotate-180',
-            )}
-          />
-        </button>
-
-        {open ? (
-          <div className="max-h-72 overflow-y-auto rounded-md border border-neutral-200 py-1">
-            {toolsQuery.isLoading ? (
-              <div className="px-3 py-6 text-center text-sm text-neutral-400">
-                Loading tools…
-              </div>
-            ) : tools.length === 0 ? (
-              <div className="px-3 py-6 text-center text-sm text-neutral-500">
-                No tools available.
-              </div>
-            ) : (
-              tools.map((t) => {
-                const isSel = t.id === value
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    role="option"
-                    aria-selected={isSel}
-                    onClick={() => {
-                      onChange(t.id)
-                      setOpen(false)
-                    }}
-                    className={cn(
-                      'flex w-full items-center gap-2 px-2 py-1.5 text-left transition',
-                      isSel ? 'bg-neutral-100' : 'hover:bg-neutral-50',
-                    )}
-                  >
-                    <ToolIcon icon={t.icon} className="size-5" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-neutral-800">
-                        {t.name}
-                      </span>
-                      {t.description ? (
-                        <span className="block truncate text-xs text-neutral-400">
-                          {t.description}
-                        </span>
-                      ) : null}
+            <ToolIcon icon={selected?.icon} className="size-5" />
+            <span
+              className={cn(
+                'min-w-0 flex-1 truncate text-left',
+                selected ? 'text-neutral-800' : 'text-neutral-400',
+              )}
+            >
+              {selected?.name ??
+                (toolsQuery.isLoading ? 'Loading tools…' : 'Select a tool…')}
+              {value && !selected && !toolsQuery.isLoading ? (
+                <span className="ml-1 text-xs text-amber-600">(not found)</span>
+              ) : null}
+            </span>
+            <ChevronDown
+              className={cn(
+                'size-4 shrink-0 text-neutral-400 transition',
+                open && 'rotate-180',
+              )}
+            />
+          </button>
+        )}
+      >
+        {({ close }) =>
+          toolsQuery.isLoading ? (
+            <div className="px-3 py-6 text-center text-sm text-neutral-400">
+              Loading tools…
+            </div>
+          ) : tools.length === 0 ? (
+            <div className="px-3 py-6 text-center text-sm text-neutral-500">
+              No tools available.
+            </div>
+          ) : (
+            tools.map((t) => {
+              const isSel = t.id === value
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="option"
+                  aria-selected={isSel}
+                  onClick={() => {
+                    onChange(t.id)
+                    close()
+                  }}
+                  className={cn(
+                    'flex w-full items-center gap-2 px-2 py-1.5 text-left transition',
+                    isSel ? 'bg-neutral-100' : 'hover:bg-neutral-50',
+                  )}
+                >
+                  <ToolIcon icon={t.icon} className="size-5" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-neutral-800">
+                      {t.name}
                     </span>
-                  </button>
-                )
-              })
-            )}
-          </div>
-        ) : null}
-      </div>
+                    {t.description ? (
+                      <span className="block truncate text-xs text-neutral-400">
+                        {t.description}
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
+              )
+            })
+          )
+        }
+      </Popover>
     </div>
   )
 }

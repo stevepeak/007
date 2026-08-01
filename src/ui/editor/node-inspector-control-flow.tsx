@@ -249,6 +249,42 @@ export function IterationInspector({
 
 type PassthroughMode = 'identity' | 'value' | 'fields'
 
+// A ref-picker with a literal-text fallback: pick an upstream value, or type a
+// literal when no ref is bound. Both Passthrough modes (single value, object
+// field) share this exact control. Deliberately NOT the richer `BindingField`
+// from node-data-panel-inputs — that one adds type coercion, enum selects, and a
+// "Set" button, which the Passthrough editor doesn't want.
+function RefOrLiteralField({
+  node,
+  graph,
+  itemSchema,
+  binding,
+  onChange,
+}: Pick<NodeInspectorProps, 'node' | 'graph' | 'itemSchema'> & {
+  binding: ArgBinding | undefined
+  onChange: (binding: ArgBinding | undefined) => void
+}) {
+  const { Input } = useWfComponents()
+  return (
+    <>
+      <DataRefField
+        node={node}
+        graph={graph}
+        value={binding?.kind === 'ref' ? binding : undefined}
+        itemSchema={itemSchema}
+        onChange={onChange}
+      />
+      {binding?.kind !== 'ref' ? (
+        <Input
+          value={binding?.kind === 'literal' ? String(binding.value ?? '') : ''}
+          placeholder="or a literal value…"
+          onChange={(e) => onChange({ kind: 'literal', value: e.target.value })}
+        />
+      ) : null}
+    </>
+  )
+}
+
 // The Passthrough inspector. A Passthrough re-shapes data so a converging branch
 // arm can hand a Race the SAME shape as its sibling. Three modes:
 //   • identity — forward the input untouched (no config).
@@ -335,27 +371,13 @@ export function PassthroughInspector({
       {mode === 'value' ? (
         <div className={field}>
           <Label>Value</Label>
-          <DataRefField
+          <RefOrLiteralField
             node={node}
             graph={graph}
-            value={value?.kind === 'ref' ? value : undefined}
             itemSchema={itemSchema}
-            onChange={(ref) =>
-              onChange({ ...node, config: { value: ref } })
-            }
+            binding={value}
+            onChange={(next) => onChange({ ...node, config: { value: next } })}
           />
-          {value?.kind !== 'ref' ? (
-            <Input
-              value={value?.kind === 'literal' ? String(value.value ?? '') : ''}
-              placeholder="or a literal value…"
-              onChange={(e) =>
-                onChange({
-                  ...node,
-                  config: { value: { kind: 'literal', value: e.target.value } },
-                })
-              }
-            />
-          ) : null}
           <p className="text-muted-foreground text-xs">
             Emitted <strong>unwrapped</strong> — use when the sibling arm
             produces a bare value (a string, a number, an array).
@@ -386,27 +408,15 @@ export function PassthroughInspector({
                   ✕
                 </button>
               </div>
-              <DataRefField
+              <RefOrLiteralField
                 node={node}
                 graph={graph}
-                value={binding.kind === 'ref' ? binding : undefined}
                 itemSchema={itemSchema}
-                onChange={(ref) =>
-                  setFieldBinding(key, ref ?? { kind: 'literal', value: '' })
+                binding={binding}
+                onChange={(next) =>
+                  setFieldBinding(key, next ?? { kind: 'literal', value: '' })
                 }
               />
-              {binding.kind === 'literal' ? (
-                <Input
-                  value={String(binding.value ?? '')}
-                  placeholder="or a literal value…"
-                  onChange={(e) =>
-                    setFieldBinding(key, {
-                      kind: 'literal',
-                      value: e.target.value,
-                    })
-                  }
-                />
-              ) : null}
             </div>
           ))}
           <button

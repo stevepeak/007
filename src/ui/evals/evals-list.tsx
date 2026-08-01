@@ -6,7 +6,7 @@ import {
   Plus,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import type {
   WfAgentSummary,
@@ -19,7 +19,7 @@ import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { useAgents, useEvalRuns, useEvalSets, useWorkflows } from '../hooks'
 import { useWfNav } from '../nav'
-import { useDismiss } from '../use-dismiss'
+import { Popover } from '../popover'
 import { EvalsHelpDialog } from './evals-help-dialog'
 import { NewGoalDialog } from './new-goal-dialog'
 import { RunConfigDialog } from './run-config-dialog'
@@ -221,84 +221,84 @@ function TargetFilter({
   agents: WfAgentSummary[]
   workflows: WfWorkflowSummary[]
 }) {
-  const [open, setOpen] = useState(false)
-  const rootRef = useRef<HTMLDivElement>(null)
-
-  useDismiss(rootRef, open, () => setOpen(false))
-
   const selectedAgent = agents.find((a) => a.id === value)
   const selectedWorkflow = workflows.find((w) => w.id === value)
-
-  const select = (id: string) => {
-    onChange(id)
-    setOpen(false)
-  }
 
   return (
     <div className="flex items-center gap-2">
       <span className="text-xs text-neutral-400">Filter by target</span>
-      <div ref={rootRef} className="relative">
-        <button
-          type="button"
-          aria-haspopup="listbox"
-          aria-expanded={open}
-          onClick={() => setOpen((o) => !o)}
-          className="flex h-8 min-w-52 items-center gap-2 rounded-md border border-neutral-300 bg-white px-2 text-sm outline-none transition hover:border-neutral-400"
-        >
-          {selectedAgent ? (
-            <AgentGlyph agent={selectedAgent} />
-          ) : selectedWorkflow ? (
-            <WorkflowChip />
-          ) : null}
-          <span
-            className={cn(
-              'min-w-0 flex-1 truncate text-left',
-              value ? 'text-neutral-800' : 'text-neutral-500',
-            )}
+      <Popover
+        className="relative"
+        panelClassName="absolute z-50 mt-1 max-h-80 w-64 overflow-y-auto rounded-md border border-neutral-200 bg-white py-1 shadow-lg"
+        trigger={({ open, toggle }) => (
+          <button
+            type="button"
+            aria-haspopup="listbox"
+            aria-expanded={open}
+            onClick={toggle}
+            className="flex h-8 min-w-52 items-center gap-2 rounded-md border border-neutral-300 bg-white px-2 text-sm outline-none transition hover:border-neutral-400"
           >
-            {selectedAgent?.name ?? selectedWorkflow?.name ?? 'All targets'}
-          </span>
-          <ChevronDown className="size-4 shrink-0 text-neutral-400" />
-        </button>
-
-        {open ? (
-          <div className="absolute z-50 mt-1 max-h-80 w-64 overflow-y-auto rounded-md border border-neutral-200 bg-white py-1 shadow-lg">
-            <FilterOption
-              label="All targets"
-              selected={!value}
-              onClick={() => select('')}
-            />
-            {agents.length > 0 ? (
-              <div className="mt-1 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
-                Agents
-              </div>
+            {selectedAgent ? (
+              <AgentGlyph agent={selectedAgent} />
+            ) : selectedWorkflow ? (
+              <WorkflowChip />
             ) : null}
-            {agents.map((a) => (
+            <span
+              className={cn(
+                'min-w-0 flex-1 truncate text-left',
+                value ? 'text-neutral-800' : 'text-neutral-500',
+              )}
+            >
+              {selectedAgent?.name ?? selectedWorkflow?.name ?? 'All targets'}
+            </span>
+            <ChevronDown className="size-4 shrink-0 text-neutral-400" />
+          </button>
+        )}
+      >
+        {({ close }) => {
+          const select = (id: string) => {
+            onChange(id)
+            close()
+          }
+          return (
+            <>
               <FilterOption
-                key={a.id}
-                label={a.name}
-                icon={<AgentGlyph agent={a} />}
-                selected={a.id === value}
-                onClick={() => select(a.id)}
+                label="All targets"
+                selected={!value}
+                onClick={() => select('')}
               />
-            ))}
-            {workflows.length > 0 ? (
-              <div className="mt-1 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
-                Workflows
-              </div>
-            ) : null}
-            {workflows.map((w) => (
-              <FilterOption
-                key={w.id}
-                label={w.name}
-                icon={<WorkflowChip />}
-                selected={w.id === value}
-                onClick={() => select(w.id)}
-              />
-            ))}
-          </div>
-        ) : null}
-      </div>
+              {agents.length > 0 ? (
+                <div className="mt-1 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
+                  Agents
+                </div>
+              ) : null}
+              {agents.map((a) => (
+                <FilterOption
+                  key={a.id}
+                  label={a.name}
+                  icon={<AgentGlyph agent={a} />}
+                  selected={a.id === value}
+                  onClick={() => select(a.id)}
+                />
+              ))}
+              {workflows.length > 0 ? (
+                <div className="mt-1 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
+                  Workflows
+                </div>
+              ) : null}
+              {workflows.map((w) => (
+                <FilterOption
+                  key={w.id}
+                  label={w.name}
+                  icon={<WorkflowChip />}
+                  selected={w.id === value}
+                  onClick={() => select(w.id)}
+                />
+              ))}
+            </>
+          )
+        }}
+      </Popover>
     </div>
   )
 }

@@ -10,6 +10,7 @@ import { Fragment, useMemo, useState } from 'react'
 import type { WfEvalResultDTO } from '../../../server/protocol'
 import { cn } from '../../cn'
 import { formatDurationMs, formatTokens, formatUsd } from '../../cost'
+import { FilterSelect } from '../../filters'
 import { useModels } from '../../hooks'
 import { PassRate, Score } from '../shared'
 
@@ -395,31 +396,3 @@ function Th({
   )
 }
 
-function FilterSelect({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string
-  value: string
-  onChange: (v: string) => void
-  options: { value: string; label: string }[]
-}) {
-  return (
-    <label className="inline-flex items-center gap-1.5 text-xs text-neutral-400">
-      {label}
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs text-neutral-700 outline-none transition focus:border-neutral-400"
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  )
-}

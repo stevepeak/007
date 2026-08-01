@@ -22,6 +22,7 @@ import {
   type IterationMeta,
   readIterationMeta,
 } from './run-activity-tree'
+import { firstLine, previewLine } from './text-preview'
 
 // The Logs view renders a step's execution as an AI-style vertical timeline:
 //   Input → thinking → tool call → … → Output.
@@ -154,7 +155,7 @@ function userStep(value: unknown): LogStep {
   return {
     tone: 'user',
     icon: <User className="size-3.5" />,
-    title: previewText(value) || 'Message',
+    title: previewLine(value) || 'Message',
     body: <DataView value={value} />,
   }
 }
@@ -163,33 +164,9 @@ function responseStep(value: unknown): LogStep {
   return {
     tone: 'response',
     icon: <Bot className="size-3.5" />,
-    title: previewText(value) || 'Response',
+    title: previewLine(value) || 'Response',
     body: <DataView value={value} />,
   }
-}
-
-// Best-effort one-line preview of a message/response payload. Handles chat
-// triggers (`{messages: [...]}`), agent output (`{text}`), plain strings, and
-// falls back to a compact JSON glimpse for anything else.
-function previewText(value: unknown): string {
-  if (value == null) return ''
-  if (typeof value === 'string') return firstLine(value)
-  if (typeof value === 'object') {
-    const obj = value as Record<string, unknown>
-    if (typeof obj.text === 'string') return firstLine(obj.text)
-    if (Array.isArray(obj.messages) && obj.messages.length) {
-      const last = obj.messages[obj.messages.length - 1] as {
-        parts?: Array<{ type?: string; text?: string }>
-        content?: unknown
-      }
-      const partText = last.parts?.find(
-        (p) => p.type === 'text' && typeof p.text === 'string',
-      )?.text
-      if (partText) return firstLine(partText)
-      if (typeof last.content === 'string') return firstLine(last.content)
-    }
-  }
-  return firstLine(JSON.stringify(value))
 }
 
 // A tool call is itself a mini run: Input → (any logs) → Output. Nesting a
@@ -207,16 +184,6 @@ function toolStep(tc: {
     subtitle: 'tool call',
     body: <Timeline steps={[inputStep(tc.input), outputStep(tc.output)]} />,
   }
-}
-
-// One-line summary of a thinking block: its first non-empty line, trimmed.
-function firstLine(text: string): string {
-  const line =
-    text
-      .split('\n')
-      .map((l) => l.trim())
-      .find(Boolean) ?? ''
-  return line.length > 100 ? `${line.slice(0, 100)}…` : line
 }
 
 function thinkingStep(text: string): LogStep {

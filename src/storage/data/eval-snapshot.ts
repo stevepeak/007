@@ -44,6 +44,14 @@ export function buildEvalSnapshot(
 
 // Deterministic JSON with recursively sorted object keys, so the same logical
 // snapshot always produces the same hash regardless of property insertion order.
+//
+// DO NOT replace this with `stableStringify` from `storage/spec/util.ts`. That
+// one collapses a nested `undefined` to `"null"` (via `value ?? null`); this one
+// emits the literal text `undefined`. This output is SHA-256'd into a PERSISTED
+// snapshot hash that is compared across runs (see hashEvalSnapshot), so changing
+// the `undefined` handling would silently re-classify unchanged Samples as
+// "changed" and break dedup against already-stored hashes. The wire format is
+// frozen; `eval-snapshot.test.ts` locks a known digest to catch any drift.
 function stableStringify(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value)
   if (Array.isArray(value)) {

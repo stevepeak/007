@@ -10,7 +10,7 @@ import { cn } from '../cn'
 import { useCopilotEndpoint, type WfAssistantContext } from '../context'
 import { useModels } from '../hooks'
 import { REQUIREMENT_REASON, unmetRequirements } from '../model-capabilities'
-import { useDismiss } from '../use-dismiss'
+import { Popover } from '../popover'
 
 // The copilot runs an agentic tool-calling loop server-side (see
 // `handleCopilotRequest` → `runCopilot`), so a model without tool support can't
@@ -237,87 +237,85 @@ function ModelPicker({
   loading: boolean
   onSelect: (id: string) => void
 }) {
-  const [open, setOpen] = useState(false)
-  const rootRef = useRef<HTMLDivElement>(null)
-  useDismiss(rootRef, open, () => setOpen(false))
-
   return (
-    <div ref={rootRef} className="relative">
-      <button
-        type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        title="Model used for inference"
-        onClick={() => setOpen((o) => !o)}
-        className="inline-flex h-9 max-w-[9rem] items-center gap-1 rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-600 outline-none transition hover:bg-neutral-50 focus:border-neutral-500"
-      >
-        <Sparkles className="size-3 shrink-0 text-violet-500" />
-        <span className="min-w-0 flex-1 truncate text-left">
-          {loading && models.length === 0 ? 'Loading…' : selectedLabel}
-        </span>
-        <ChevronDown className="size-3.5 shrink-0 text-neutral-400" />
-      </button>
-
-      {open ? (
-        <div className="absolute bottom-full left-0 z-50 mb-1 max-h-72 w-64 overflow-y-auto rounded-md border border-neutral-200 bg-white py-1 shadow-lg">
-          {models.length === 0 ? (
-            <div className="px-3 py-6 text-center text-xs text-neutral-500">
-              No models enabled. Enable one on the Models page.
-            </div>
-          ) : (
-            models.map((m) => {
-              // A model KNOWN to lack tool calling can't drive the copilot's
-              // agentic loop — shown greyed with the reason, not selectable.
-              const unmet = unmetRequirements(m, COPILOT_REQUIREMENTS)
-              const disabledReason =
-                unmet.length > 0
-                  ? unmet.map((k) => REQUIREMENT_REASON[k]).join(', ')
-                  : undefined
-              const disabled = disabledReason != null
-              return (
-                <button
-                  key={m.id}
-                  type="button"
-                  role="option"
-                  aria-selected={m.id === selectedId}
-                  aria-disabled={disabled}
-                  disabled={disabled}
-                  title={disabledReason}
-                  onClick={() => {
-                    onSelect(m.id)
-                    setOpen(false)
-                  }}
-                  className={cn(
-                    'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition',
-                    disabled
-                      ? 'cursor-not-allowed opacity-50'
-                      : m.id === selectedId
-                        ? 'bg-neutral-100'
-                        : 'hover:bg-neutral-50',
-                  )}
-                >
-                  <span className="min-w-0 flex-1 truncate text-neutral-800">
-                    {m.label}
+    <Popover
+      className="relative"
+      panelClassName="absolute bottom-full left-0 z-50 mb-1 max-h-72 w-64 overflow-y-auto rounded-md border border-neutral-200 bg-white py-1 shadow-lg"
+      trigger={({ open, toggle }) => (
+        <button
+          type="button"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          title="Model used for inference"
+          onClick={toggle}
+          className="inline-flex h-9 max-w-[9rem] items-center gap-1 rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-600 outline-none transition hover:bg-neutral-50 focus:border-neutral-500"
+        >
+          <Sparkles className="size-3 shrink-0 text-violet-500" />
+          <span className="min-w-0 flex-1 truncate text-left">
+            {loading && models.length === 0 ? 'Loading…' : selectedLabel}
+          </span>
+          <ChevronDown className="size-3.5 shrink-0 text-neutral-400" />
+        </button>
+      )}
+    >
+      {({ close }) =>
+        models.length === 0 ? (
+          <div className="px-3 py-6 text-center text-xs text-neutral-500">
+            No models enabled. Enable one on the Models page.
+          </div>
+        ) : (
+          models.map((m) => {
+            // A model KNOWN to lack tool calling can't drive the copilot's
+            // agentic loop — shown greyed with the reason, not selectable.
+            const unmet = unmetRequirements(m, COPILOT_REQUIREMENTS)
+            const disabledReason =
+              unmet.length > 0
+                ? unmet.map((k) => REQUIREMENT_REASON[k]).join(', ')
+                : undefined
+            const disabled = disabledReason != null
+            return (
+              <button
+                key={m.id}
+                type="button"
+                role="option"
+                aria-selected={m.id === selectedId}
+                aria-disabled={disabled}
+                disabled={disabled}
+                title={disabledReason}
+                onClick={() => {
+                  onSelect(m.id)
+                  close()
+                }}
+                className={cn(
+                  'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition',
+                  disabled
+                    ? 'cursor-not-allowed opacity-50'
+                    : m.id === selectedId
+                      ? 'bg-neutral-100'
+                      : 'hover:bg-neutral-50',
+                )}
+              >
+                <span className="min-w-0 flex-1 truncate text-neutral-800">
+                  {m.label}
+                </span>
+                {disabled ? (
+                  <span className="shrink-0 text-xs text-amber-600">
+                    {disabledReason}
                   </span>
-                  {disabled ? (
-                    <span className="shrink-0 text-xs text-amber-600">
-                      {disabledReason}
-                    </span>
-                  ) : (
-                    <Check
-                      className={cn(
-                        'size-4 shrink-0 text-neutral-900',
-                        m.id === selectedId ? 'opacity-100' : 'opacity-0',
-                      )}
-                    />
-                  )}
-                </button>
-              )
-            })
-          )}
-        </div>
-      ) : null}
-    </div>
+                ) : (
+                  <Check
+                    className={cn(
+                      'size-4 shrink-0 text-neutral-900',
+                      m.id === selectedId ? 'opacity-100' : 'opacity-0',
+                    )}
+                  />
+                )}
+              </button>
+            )
+          })
+        )
+      }
+    </Popover>
   )
 }
 

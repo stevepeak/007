@@ -168,54 +168,9 @@ export function EmptyState({ message }: { message: string }) {
   )
 }
 
-// ── Tabs ─────────────────────────────────────────────────────────────────────
-
-export type TabDef = { key: string; label: string; count?: number }
-
-export function Tabs({
-  tabs,
-  active,
-  onChange,
-}: {
-  tabs: TabDef[]
-  active: string
-  onChange: (key: string) => void
-}) {
-  return (
-    <div className="flex items-center gap-1 border-b border-neutral-200">
-      {tabs.map((t) => {
-        const on = t.key === active
-        return (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => onChange(t.key)}
-            className={cn(
-              '-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors',
-              on
-                ? 'border-neutral-900 text-neutral-900'
-                : 'border-transparent text-neutral-500 hover:text-neutral-800',
-            )}
-          >
-            {t.label}
-            {t.count != null ? (
-              <span
-                className={cn(
-                  'rounded-full px-1.5 py-0.5 text-[11px] font-medium',
-                  on
-                    ? 'bg-neutral-900 text-white'
-                    : 'bg-neutral-100 text-neutral-500',
-                )}
-              >
-                {t.count}
-              </span>
-            ) : null}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
+// `Tabs`/`TabDef` now live with the shared filter-control family in
+// `../filters`; re-exported here so the eval views keep importing from `./shared`.
+export { Tabs, type TabDef } from '../filters'
 
 // Absolute timestamp + the canonical run-status badge live in the shared UI
 // modules; re-exported here so the Evals surfaces keep importing them from one

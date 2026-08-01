@@ -14,6 +14,7 @@ import {
 import { IdeaSpark } from '../idea-spark'
 import { Modal } from '../modal'
 import { useOpenAsset } from '../nav'
+import { firstLine, previewText } from '../text-preview'
 
 // "Create Sample" — turn a completed agent node's execution into an eval Sample
 // (wf_eval_row) under a Goal (wf_eval_set) that targets that agent. Lives in the
@@ -399,31 +400,9 @@ function deriveTitle(
   const firstGiven = Object.values(given.promptVariables ?? {})[0]
   const raw =
     (typeof firstGiven === 'string' && firstGiven) ||
-    previewInput(step.input) ||
+    previewText(step.input) ||
     ''
-  const line = raw.split('\n').map((l) => l.trim()).find(Boolean) ?? ''
+  const line = firstLine(raw, 60)
   if (!line) return `${agentName} sample`
-  return line.length > 60 ? `${line.slice(0, 60)}…` : line
-}
-
-// Best-effort one-line glimpse of a routed input for the default title.
-function previewInput(value: unknown): string {
-  if (value == null) return ''
-  if (typeof value === 'string') return value
-  if (isPlainRecord(value)) {
-    if (typeof value.text === 'string') return value.text
-    const messages = value.messages
-    if (Array.isArray(messages) && messages.length > 0) {
-      const last = messages[messages.length - 1] as {
-        content?: unknown
-        parts?: Array<{ type?: string; text?: string }>
-      }
-      const part = last.parts?.find(
-        (p) => p.type === 'text' && typeof p.text === 'string',
-      )
-      if (part?.text) return part.text
-      if (typeof last.content === 'string') return last.content
-    }
-  }
-  return JSON.stringify(value)
+  return line
 }

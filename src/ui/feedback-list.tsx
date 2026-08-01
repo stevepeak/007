@@ -13,6 +13,7 @@ import type { WfFeedbackRow } from '../server/protocol'
 import { cn } from './cn'
 import { useWfComponents } from './context'
 import { formatTimestamp } from './cost'
+import { Segmented } from './filters'
 import { useFeedback, useSetFeedbackAck } from './hooks-feedback'
 import { useWfNav } from './nav'
 
@@ -394,42 +395,6 @@ function groupRows(rows: WfFeedbackRow[], groupBy: GroupBy): Group[] {
   return groups
 }
 
-function Segmented<T extends string>({
-  label,
-  options,
-  value,
-  onChange,
-}: {
-  label: string
-  options: { value: T; label: string }[]
-  value: T
-  onChange: (value: T) => void
-}) {
-  return (
-    <div
-      role="group"
-      aria-label={label}
-      className="inline-flex items-center rounded-md bg-neutral-100 p-0.5"
-    >
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          aria-pressed={value === opt.value}
-          onClick={() => onChange(opt.value)}
-          className={cn(
-            'rounded px-2.5 py-1 text-xs font-medium transition-colors',
-            value === opt.value
-              ? 'bg-white text-neutral-900 shadow-sm'
-              : 'text-neutral-500 hover:text-neutral-900',
-          )}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  )
-}
 
 // Lightweight multi-select filter — a native <details> disclosure holding a
 // checkbox list. No popover primitive needed; closes on outside interaction via

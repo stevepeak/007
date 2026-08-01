@@ -7,6 +7,7 @@ import type {
 } from '../server/protocol'
 import { cn } from './cn'
 import { EmptyState } from './evals/shared'
+import { FilterSelect } from './filters'
 import { useModelCatalog } from './hooks'
 import { ProviderCard } from './models-list-provider-card'
 import {
@@ -162,9 +163,9 @@ export function ModelsList({ className }: ModelsListProps) {
               value={chosen}
               onChange={(v) => setChosen(v as ChosenFilter)}
               options={[
-                ['all', 'All'],
-                ['enabled', 'Enabled'],
-                ['disabled', 'Disabled'],
+                { value: 'all', label: 'All' },
+                { value: 'enabled', label: 'Enabled' },
+                { value: 'disabled', label: 'Disabled' },
               ]}
             />
             <FilterSelect
@@ -172,10 +173,10 @@ export function ModelsList({ className }: ModelsListProps) {
               value={age}
               onChange={(v) => setAge(v as AgeFilter)}
               options={[
-                ['any', 'Any'],
-                ['new', 'New (≤30d)'],
-                ['recent', 'Recent (≤90d)'],
-                ['older', 'Older (>90d)'],
+                { value: 'any', label: 'Any' },
+                { value: 'new', label: 'New (≤30d)' },
+                { value: 'recent', label: 'Recent (≤90d)' },
+                { value: 'older', label: 'Older (>90d)' },
               ]}
             />
 
@@ -206,31 +207,3 @@ export function ModelsList({ className }: ModelsListProps) {
   )
 }
 
-function FilterSelect({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string
-  value: string
-  onChange: (value: string) => void
-  options: [string, string][]
-}) {
-  return (
-    <label className="inline-flex items-center gap-1.5">
-      <span className="text-xs text-neutral-400">{label}</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="rounded-md border border-neutral-200 bg-white px-2 py-0.5 text-xs text-neutral-700 outline-none focus:border-neutral-400"
-      >
-        {options.map(([v, l]) => (
-          <option key={v} value={v}>
-            {l}
-          </option>
-        ))}
-      </select>
-    </label>
-  )
-}

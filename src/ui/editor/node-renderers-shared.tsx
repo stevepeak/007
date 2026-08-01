@@ -329,3 +329,112 @@ export function branchConditionLabel(config: {
   }
   return `${subject} ${config.operator} ${JSON.stringify(config.value ?? null)}`
 }
+
+// ── defineNode ────────────────────────────────────────────────────────────────
+// Most node renderers are the same shape: an optional target handle, a NodeCard
+// (or a tight NodePill for the iteration bookends), and a source handle (single,
+// yes/no decision, or none). `defineNode` builds that renderer from a small spec
+// so those nodes become one-line table rows instead of ~18-line copies. Nodes
+// with genuinely custom canvas JSX (Iteration/Note containers, Switch's dynamic
+// per-case handles) stay hand-written — folding them in would need render-prop
+// escape hatches that read worse than the explicit component.
+
+export type NodeSourceKind = 'single' | 'decision' | 'none'
+
+export type NodeAppearance = {
+  /** Overrides the kind icon (an agent shows its own icon). */
+  icon?: LucideIcon
+  /** Color-chip classes wrapping the override icon. */
+  iconChip?: string
+  /** Fully custom icon element (a tool's inline-SVG brand icon). */
+  iconSlot?: ReactNode
+}
+
+type NarrowedNodeData<K extends EditorNodeData['kind']> = Extract<
+  EditorNodeData,
+  { kind: K }
+>
+
+export type NodeSpec<K extends EditorNodeData['kind'], E = undefined> = {
+  kind: K
+  /** Left-side input handle. Default true; a Trigger sets false. */
+  hasTarget?: boolean
+  /** Right-side output handle(s). Default 'single'; may depend on data/extra. */
+  source?:
+    | NodeSourceKind
+    | ((data: NarrowedNodeData<K>, extra: E) => NodeSourceKind)
+  /** Card subtitle — static, or derived from the node's data (+ extra lookup). */
+  subtitle?:
+    | string
+    | ((data: NarrowedNodeData<K>, extra: E) => string | undefined)
+  /** An unconditional hook for async lookups (agents/tools/workflows/events). */
+  useExtra?: () => E
+  /** Icon override for the card (an agent's icon, a tool's brand mark). */
+  appearance?: (
+    data: NarrowedNodeData<K>,
+    extra: E,
+  ) => NodeAppearance | undefined
+  /** Render a tight pill instead of the card when non-null (iteration bookends).
+   *  Handles still follow hasTarget/source. */
+  pill?: (
+    data: NarrowedNodeData<K>,
+    props: NodeProps,
+  ) => { label: string; subtitle?: string } | null
+}
+
+export function defineNode<K extends EditorNodeData['kind'], E = undefined>(
+  spec: NodeSpec<K, E>,
+): (props: NodeProps) => ReactNode {
+  return function NodeRenderer(props: NodeProps) {
+    const r = useNodeRenderer(props, spec.kind)
+    // Called unconditionally — `spec.useExtra` is stable for a given component,
+    // so this stays hook-safe even though `r` may be null for a mismatched kind.
+    const extra = spec.useExtra?.() as E
+    if (!r) return null
+    const { data, invalid, status } = r
+    const source =
+      typeof spec.source === 'function'
+        ? spec.source(data, extra)
+        : (spec.source ?? 'single')
+    const subtitle =
+      typeof spec.subtitle === 'function'
+        ? spec.subtitle(data, extra)
+        : spec.subtitle
+    const pill = spec.pill?.(data, props) ?? null
+    const appear = spec.appearance?.(data, extra)
+    return (
+      <>
+        {(spec.hasTarget ?? true) ? (
+          <Handle type="target" position={Position.Left} />
+        ) : null}
+        {pill ? (
+          <NodePill
+            kind={spec.kind}
+            label={pill.label}
+            selected={props.selected}
+            invalid={invalid}
+            status={status}
+            subtitle={pill.subtitle}
+          />
+        ) : (
+          <NodeCard
+            kind={spec.kind}
+            label={data.label}
+            selected={props.selected}
+            invalid={invalid}
+            status={status}
+            subtitle={subtitle}
+            icon={appear?.icon}
+            iconChip={appear?.iconChip}
+            iconSlot={appear?.iconSlot}
+          />
+        )}
+        {source === 'decision' ? (
+          <DecisionHandles />
+        ) : source === 'single' ? (
+          <Handle type="source" position={Position.Right} />
+        ) : null}
+      </>
+    )
+  }
+}

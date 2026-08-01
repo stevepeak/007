@@ -21,118 +21,90 @@ import { ToolIcon } from '../tool-icon'
 import { NoteMarkdown } from './note-markdown'
 import {
   branchConditionLabel,
-  DecisionHandles,
+  defineNode,
   KIND_STYLE,
   NodeCard,
-  NodePill,
   RunStatusDot,
   useNodeRenderer,
 } from './node-renderers-shared'
 
-export function TriggerNodeRenderer(props: NodeProps) {
-  const r = useNodeRenderer(props, 'trigger')
-  const events = useTriggerEvents()
-  if (!r) return null
-  const { data, invalid, status } = r
-  const { triggerKind, cron } = data.config
-  // Events show their human description, never the internal event kind. Until
-  // the catalog loads (or for an unknown kind) we fall back to a bare 'Event'.
-  const eventLabel = events.data?.find(
-    (e) => e.kind === triggerKind,
-  )?.description
-  // The iteration `Item` bookend renders as a tiny pill so the loop container
-  // stays tight; every other trigger keeps the full card.
-  if (triggerKind === ITERATION_ITEM_TRIGGER_KIND) {
-    return (
-      <>
-        <NodePill
-          kind="trigger"
-          label="Current item"
-          selected={props.selected}
-          invalid={invalid}
-          status={status}
-        />
-        <Handle type="source" position={Position.Right} />
-      </>
-    )
-  }
-  const subtitle =
-    triggerKind === MANUAL_TRIGGER_KIND
-      ? 'Manual'
-      : triggerKind === PERIODIC_TRIGGER_KIND
-        ? `Schedule · ${cron ?? '—'}`
-        : eventLabel
-          ? `Event · ${eventLabel}`
-          : 'Event'
-  return (
-    <>
-      <NodeCard
-        kind="trigger"
-        label={data.label}
-        selected={props.selected}
-        invalid={invalid}
-        status={status}
-        subtitle={subtitle}
-      />
-      <Handle type="source" position={Position.Right} />
-    </>
-  )
+// Most nodes are a card with target/source handles — see `defineNode`. Only the
+// three canvas-container / dynamic-handle nodes (Switch, Iteration, Note) below
+// keep hand-written JSX. Look up the selected agent/tool/workflow off the live
+// catalog so the card reflects renames without re-saving the graph.
+function resolveAgent(
+  config: { agentId?: string | null },
+  agents: ReturnType<typeof useAgents>,
+) {
+  return config.agentId
+    ? (agents.data ?? []).find((a) => a.id === config.agentId)
+    : undefined
 }
 
-export function AgentNodeRenderer(props: NodeProps) {
-  const r = useNodeRenderer(props, 'agent')
-  const agents = useAgents()
-  if (!r) return null
-  const { data, invalid, status } = r
-  const agent = data.config.agentId
-    ? (agents.data ?? []).find((a) => a.id === data.config.agentId)
+function resolveTool(
+  config: { toolId?: string | null },
+  tools: ReturnType<typeof useTools>,
+) {
+  return config.toolId
+    ? (tools.data ?? []).find((t) => t.id === config.toolId)
     : undefined
-  // A YES/NO (boolean) output agent doubles as a branch: it exposes yes/no
-  // source handles and routes its outgoing edges by the answer, so the author
-  // wires the two arms directly instead of dropping a separate Branch node.
-  const isDecision = agent?.output?.kind === 'boolean'
-  return (
-    <>
-      <Handle type="target" position={Position.Left} />
-      <NodeCard
-        kind="agent"
-        label={data.label}
-        selected={props.selected}
-        invalid={invalid}
-        status={status}
-        subtitle={agent ? agent.name : 'No agent selected'}
-        icon={agent ? agentIcon(agent.icon) : undefined}
-        iconChip={agent ? agentColor(agent.color).chip : undefined}
-      />
-      {isDecision ? (
-        <DecisionHandles />
-      ) : (
-        <Handle type="source" position={Position.Right} />
-      )}
-    </>
-  )
 }
 
-export function ToolNodeRenderer(props: NodeProps) {
-  const r = useNodeRenderer(props, 'tool')
-  const tools = useTools()
-  if (!r) return null
-  const { data, invalid, status } = r
-  const tool = data.config.toolId
-    ? (tools.data ?? []).find((t) => t.id === data.config.toolId)
-    : undefined
-  return (
-    <>
-      <Handle type="target" position={Position.Left} />
-      <NodeCard
-        kind="tool"
-        label={data.label}
-        selected={props.selected}
-        invalid={invalid}
-        status={status}
-        subtitle={tool ? tool.name : data.config.toolId || 'No tool selected'}
-        iconSlot={
-          tool ? (
+export const TriggerNodeRenderer = defineNode({
+  kind: 'trigger',
+  // A trigger starts the graph, so it has no input; the iteration `Item` bookend
+  // renders as a tight pill so the loop container stays compact.
+  hasTarget: false,
+  useExtra: useTriggerEvents,
+  pill: (data) =>
+    data.config.triggerKind === ITERATION_ITEM_TRIGGER_KIND
+      ? { label: 'Current item' }
+      : null,
+  subtitle: (data, events) => {
+    const { triggerKind, cron } = data.config
+    if (triggerKind === MANUAL_TRIGGER_KIND) return 'Manual'
+    if (triggerKind === PERIODIC_TRIGGER_KIND) return `Schedule · ${cron ?? '—'}`
+    // Events show their human description, never the internal event kind. Until
+    // the catalog loads (or for an unknown kind) we fall back to a bare 'Event'.
+    const eventLabel = events.data?.find(
+      (e) => e.kind === triggerKind,
+    )?.description
+    return eventLabel ? `Event · ${eventLabel}` : 'Event'
+  },
+})
+
+export const AgentNodeRenderer = defineNode({
+  kind: 'agent',
+  useExtra: useAgents,
+  // A YES/NO (boolean) output agent doubles as a branch: it exposes yes/no source
+  // handles and routes its outgoing edges by the answer, so the author wires the
+  // two arms directly instead of dropping a separate Branch node.
+  source: (data, agents) =>
+    resolveAgent(data.config, agents)?.output?.kind === 'boolean'
+      ? 'decision'
+      : 'single',
+  subtitle: (data, agents) =>
+    resolveAgent(data.config, agents)?.name ?? 'No agent selected',
+  appearance: (data, agents) => {
+    const agent = resolveAgent(data.config, agents)
+    return agent
+      ? { icon: agentIcon(agent.icon), iconChip: agentColor(agent.color).chip }
+      : undefined
+  },
+})
+
+export const ToolNodeRenderer = defineNode({
+  kind: 'tool',
+  useExtra: useTools,
+  subtitle: (data, tools) => {
+    const tool = resolveTool(data.config, tools)
+    return tool ? tool.name : data.config.toolId || 'No tool selected'
+  },
+  appearance: (data, tools) => {
+    const tool = resolveTool(data.config, tools)
+    return tool
+      ? {
+          iconSlot: (
             <span
               className={cn(
                 'mt-0.5 flex size-5 shrink-0 items-center justify-center overflow-hidden rounded',
@@ -145,39 +117,83 @@ export function ToolNodeRenderer(props: NodeProps) {
                 className="size-3.5"
               />
             </span>
-          ) : undefined
+          ),
         }
-      />
-      <Handle type="source" position={Position.Right} />
-    </>
-  )
-}
+      : undefined
+  },
+})
 
-function BranchNodeRenderer(props: NodeProps) {
-  const r = useNodeRenderer(props, 'branch')
-  if (!r) return null
-  const { data, invalid, status } = r
-  return (
-    <>
-      <Handle type="target" position={Position.Left} />
-      <NodeCard
-        kind="branch"
-        label={data.label}
-        selected={props.selected}
-        invalid={invalid}
-        status={status}
-        subtitle={branchConditionLabel(data.config)}
-      />
-      <DecisionHandles />
-    </>
-  )
-}
+export const BranchNodeRenderer = defineNode({
+  kind: 'branch',
+  source: 'decision',
+  subtitle: (data) => branchConditionLabel(data.config),
+})
 
-// Multi-way routing: one source handle per case key plus the `default`
-// fallback, stacked down the right edge. Each handle's `id` is the case key, so
-// xyflow lands an edge's `sourceHandle` on the arm whose `edge.condition`
-// matches — the same id↔condition contract the yes/no DecisionHandles use.
-function SwitchNodeRenderer(props: NodeProps) {
+export const WorkflowNodeRenderer = defineNode({
+  kind: 'workflow',
+  useExtra: useWorkflows,
+  subtitle: (data, workflows) => {
+    const called = data.config.workflowId
+      ? (workflows.data ?? []).find((w) => w.id === data.config.workflowId)
+      : undefined
+    return called ? called.name : 'No workflow selected'
+  },
+})
+
+export const FeatureRequestNodeRenderer = defineNode({
+  kind: 'feature-request',
+  subtitle: (data) => data.config.description || 'Placeholder — passes through',
+})
+
+// A Passthrough node: an identity/reshape step. One or many upstreams wire into
+// its target handle; it emits an author-controlled value (a single binding, an
+// object built from bindings, or the forwarded input) out the source handle —
+// used to give a converging branch arm the same shape as its sibling.
+export const PassthroughNodeRenderer = defineNode({
+  kind: 'passthrough',
+  subtitle: (data) => {
+    const { value, fields } = data.config
+    return value
+      ? `Value · ${value.kind === 'ref' ? value.path || 'whole output' : 'literal'}`
+      : fields && Object.keys(fields).length > 0
+        ? `Builds { ${Object.keys(fields).join(', ')} }`
+        : 'Forwards input unchanged'
+  },
+})
+
+// A Race node: a first-to-finish join. Many upstreams wire into its single target
+// handle; whichever finishes first wins and flows out the source handle.
+export const RaceNodeRenderer = defineNode({
+  kind: 'race',
+  subtitle: 'First upstream to finish wins',
+})
+
+// An Aggregate node: a wait-for-all fan-in join. Many upstreams wire into its
+// single target handle; once all complete it emits an ordered list (one element
+// per producer) out the source handle for a sibling to iterate.
+export const AggregateNodeRenderer = defineNode({
+  kind: 'aggregate',
+  subtitle: 'Collects all upstreams into a list',
+})
+
+export const OutputNodeRenderer = defineNode({
+  kind: 'output',
+  // Terminal: it forwards the live upstream result, so it has no source handle.
+  source: 'none',
+  subtitle: 'Forwards the live upstream result',
+  // The `Result` bookend inside an iteration (a nested child has a `parentId`)
+  // renders as a tiny pill; a top-level output keeps the full card.
+  pill: (data, props) =>
+    props.parentId != null
+      ? { label: data.label, subtitle: 'Forwards the live upstream result' }
+      : null,
+})
+
+// Multi-way routing: one source handle per case key plus the `default` fallback,
+// stacked down the right edge. Each handle's `id` is the case key, so xyflow
+// lands an edge's `sourceHandle` on the arm whose `edge.condition` matches — the
+// same id↔condition contract the yes/no DecisionHandles use.
+export function SwitchNodeRenderer(props: NodeProps) {
   const r = useNodeRenderer(props, 'switch')
   if (!r) return null
   const { data, invalid, status } = r
@@ -217,7 +233,7 @@ function SwitchNodeRenderer(props: NodeProps) {
 // Flow children inside this box. The box itself carries the outer handles — the
 // list flows into the left, the collected results leave the right — while the
 // inner `Item`/`Result` bookend child nodes carry data across the boundary.
-function IterationNodeRenderer(props: NodeProps) {
+export function IterationNodeRenderer(props: NodeProps) {
   const r = useNodeRenderer(props, 'iteration')
   const { setNodes } = useReactFlow()
   if (!r) return null
@@ -292,129 +308,10 @@ function IterationNodeRenderer(props: NodeProps) {
   )
 }
 
-function WorkflowNodeRenderer(props: NodeProps) {
-  const r = useNodeRenderer(props, 'workflow')
-  const workflows = useWorkflows()
-  if (!r) return null
-  const { data, invalid, status } = r
-  const called = data.config.workflowId
-    ? (workflows.data ?? []).find((w) => w.id === data.config.workflowId)
-    : undefined
-  return (
-    <>
-      <Handle type="target" position={Position.Left} />
-      <NodeCard
-        kind="workflow"
-        label={data.label}
-        selected={props.selected}
-        invalid={invalid}
-        status={status}
-        subtitle={called ? called.name : 'No workflow selected'}
-      />
-      <Handle type="source" position={Position.Right} />
-    </>
-  )
-}
-
-function FeatureRequestNodeRenderer(props: NodeProps) {
-  const r = useNodeRenderer(props, 'feature-request')
-  if (!r) return null
-  const { data, invalid, status } = r
-  return (
-    <>
-      <Handle type="target" position={Position.Left} />
-      <NodeCard
-        kind="feature-request"
-        label={data.label}
-        selected={props.selected}
-        invalid={invalid}
-        status={status}
-        subtitle={data.config.description || 'Placeholder — passes through'}
-      />
-      <Handle type="source" position={Position.Right} />
-    </>
-  )
-}
-
-// A Passthrough node: an identity/reshape step. One or many upstreams wire into
-// its target handle; it emits an author-controlled value (a single binding, an
-// object built from bindings, or the forwarded input) out the source handle —
-// used to give a converging branch arm the same shape as its sibling.
-function PassthroughNodeRenderer(props: NodeProps) {
-  const r = useNodeRenderer(props, 'passthrough')
-  if (!r) return null
-  const { data, invalid, status } = r
-  const { value, fields } = data.config
-  const subtitle = value
-    ? `Value · ${value.kind === 'ref' ? value.path || 'whole output' : 'literal'}`
-    : fields && Object.keys(fields).length > 0
-      ? `Builds { ${Object.keys(fields).join(', ')} }`
-      : 'Forwards input unchanged'
-  return (
-    <>
-      <Handle type="target" position={Position.Left} />
-      <NodeCard
-        kind="passthrough"
-        label={data.label}
-        selected={props.selected}
-        invalid={invalid}
-        status={status}
-        subtitle={subtitle}
-      />
-      <Handle type="source" position={Position.Right} />
-    </>
-  )
-}
-
-// A Race node: a first-to-finish join. Many upstreams wire into its single
-// target handle; whichever finishes first wins and flows out the source handle.
-function RaceNodeRenderer(props: NodeProps) {
-  const r = useNodeRenderer(props, 'race')
-  if (!r) return null
-  const { data, invalid, status } = r
-  return (
-    <>
-      <Handle type="target" position={Position.Left} />
-      <NodeCard
-        kind="race"
-        label={data.label}
-        selected={props.selected}
-        invalid={invalid}
-        status={status}
-        subtitle="First upstream to finish wins"
-      />
-      <Handle type="source" position={Position.Right} />
-    </>
-  )
-}
-
-// An Aggregate node: a wait-for-all fan-in join. Many upstreams wire into its
-// single target handle; once all complete it emits an ordered list (one element
-// per producer) out the source handle for a sibling to iterate.
-function AggregateNodeRenderer(props: NodeProps) {
-  const r = useNodeRenderer(props, 'aggregate')
-  if (!r) return null
-  const { data, invalid, status } = r
-  return (
-    <>
-      <Handle type="target" position={Position.Left} />
-      <NodeCard
-        kind="aggregate"
-        label={data.label}
-        selected={props.selected}
-        invalid={invalid}
-        status={status}
-        subtitle="Collects all upstreams into a list"
-      />
-      <Handle type="source" position={Position.Right} />
-    </>
-  )
-}
-
 // A sticky note: a resizable, portless canvas annotation that renders its
 // Markdown body. It has no Handles, so it can never be wired into the graph, and
 // the engine never executes it. Purely a place to jot notes on the canvas.
-function NoteNodeRenderer(props: NodeProps) {
+export function NoteNodeRenderer(props: NodeProps) {
   const r = useNodeRenderer(props, 'note')
   const { setNodes } = useReactFlow()
   if (!r) return null
@@ -473,53 +370,4 @@ function NoteNodeRenderer(props: NodeProps) {
       </div>
     </>
   )
-}
-
-function OutputNodeRenderer(props: NodeProps) {
-  const r = useNodeRenderer(props, 'output')
-  if (!r) return null
-  const { data, invalid, status } = r
-  // The `Result` bookend inside an iteration (a nested child has a `parentId`)
-  // renders as a tiny pill; a top-level output keeps the full card.
-  if (props.parentId != null) {
-    return (
-      <>
-        <Handle type="target" position={Position.Left} />
-        <NodePill
-          kind="output"
-          label={data.label}
-          selected={props.selected}
-          invalid={invalid}
-          status={status}
-          subtitle="Forwards the live upstream result"
-        />
-      </>
-    )
-  }
-  return (
-    <>
-      <Handle type="target" position={Position.Left} />
-      <NodeCard
-        kind="output"
-        label={data.label}
-        selected={props.selected}
-        invalid={invalid}
-        status={status}
-        subtitle="Forwards the live upstream result"
-      />
-    </>
-  )
-}
-
-export {
-  AggregateNodeRenderer,
-  BranchNodeRenderer,
-  FeatureRequestNodeRenderer,
-  IterationNodeRenderer,
-  NoteNodeRenderer,
-  OutputNodeRenderer,
-  PassthroughNodeRenderer,
-  RaceNodeRenderer,
-  SwitchNodeRenderer,
-  WorkflowNodeRenderer,
 }

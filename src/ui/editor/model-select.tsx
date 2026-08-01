@@ -1,12 +1,12 @@
 import { AlertTriangle, Check, ChevronDown, ChevronRight } from 'lucide-react'
-import { useMemo, useRef, useState } from 'react'
+import { useMemo } from 'react'
 
 import type { ModelCapabilities, ModelOption } from '../../engine/config'
 import { cn } from '../cn'
 import { BrandMark, CapabilityBadges, inferModelBrand } from '../evals/shared'
 import { useModels, useProviders } from '../hooks'
 import { REQUIREMENT_REASON, unmetRequirements } from '../model-capabilities'
-import { useDismiss } from '../use-dismiss'
+import { Popover } from '../popover'
 import { groupModelsByProvider } from './model-grouping'
 
 // A single-select model picker that mirrors the Evals "Run configuration"
@@ -33,9 +33,6 @@ export function ModelSelect({
    */
   requirements?: ModelCapabilities
 }) {
-  const [open, setOpen] = useState(false)
-  const rootRef = useRef<HTMLDivElement>(null)
-
   const modelsQuery = useModels()
   const providersQuery = useProviders()
   const loading = modelsQuery.isLoading || providersQuery.isLoading
@@ -52,101 +49,102 @@ export function ModelSelect({
     ? unmetRequirements(selected, requirements)
     : []
 
-  // Close on outside-click or Escape.
-  useDismiss(rootRef, open, () => setOpen(false))
-
   const brand = selected
     ? inferModelBrand(`${selected.id} ${selected.label}`)
     : inferModelBrand(value)
 
   return (
-    <div ref={rootRef} className={cn('relative', className)}>
-      <button
-        type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        className="flex h-9 w-full items-center gap-2 rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none transition focus:border-neutral-500"
-      >
-        <BrandMark brand={brand} fallback={selected?.label ?? value} />
-        <span className="min-w-0 flex-1 truncate text-left text-neutral-800">
-          {selected?.label ?? value ?? 'Select a model'}
-        </span>
-        <ChevronDown className="size-4 shrink-0 text-neutral-400" />
-      </button>
-
-      {/* Selected model's cost + speed, so the Model field surfaces them
-          without opening the dropdown. Each is shown only when reported. */}
-      {selected != null &&
-      (selected.costPerMTok != null || selected.tokensPerSec != null) ? (
-        <div className="mt-1 flex items-center gap-3 px-1 text-xs tabular-nums text-neutral-400">
-          {selected.costPerMTok != null ? (
-            <span>
-              ${selected.costPerMTok.toFixed(2)}
-              <span className="text-neutral-300">/M</span>
+    <Popover
+      className={cn('relative', className)}
+      panelClassName="absolute z-50 mt-1 max-h-80 w-full overflow-y-auto rounded-md border border-neutral-200 bg-white py-1 shadow-lg"
+      trigger={({ open, toggle }) => (
+        <>
+          <button
+            type="button"
+            aria-haspopup="listbox"
+            aria-expanded={open}
+            onClick={toggle}
+            className="flex h-9 w-full items-center gap-2 rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none transition focus:border-neutral-500"
+          >
+            <BrandMark brand={brand} fallback={selected?.label ?? value} />
+            <span className="min-w-0 flex-1 truncate text-left text-neutral-800">
+              {selected?.label ?? value ?? 'Select a model'}
             </span>
-          ) : null}
-          {selected.tokensPerSec != null ? (
-            <span>
-              {Math.round(selected.tokensPerSec)}
-              <span className="text-neutral-300"> tok/s</span>
-            </span>
-          ) : null}
-        </div>
-      ) : null}
+            <ChevronDown className="size-4 shrink-0 text-neutral-400" />
+          </button>
 
-      {selectedUnmet.length > 0 ? (
-        <div className="mt-1 flex items-center gap-1 text-xs text-amber-600">
-          <AlertTriangle className="size-3 shrink-0" />
-          <span>
-            This model has {selectedUnmet.map((k) => REQUIREMENT_REASON[k]).join(', ')}
-            {' '}— pick one that meets the agent's needs.
-          </span>
-        </div>
-      ) : null}
+          {/* Selected model's cost + speed, so the Model field surfaces them
+              without opening the dropdown. Each is shown only when reported. */}
+          {selected != null &&
+          (selected.costPerMTok != null || selected.tokensPerSec != null) ? (
+            <div className="mt-1 flex items-center gap-3 px-1 text-xs tabular-nums text-neutral-400">
+              {selected.costPerMTok != null ? (
+                <span>
+                  ${selected.costPerMTok.toFixed(2)}
+                  <span className="text-neutral-300">/M</span>
+                </span>
+              ) : null}
+              {selected.tokensPerSec != null ? (
+                <span>
+                  {Math.round(selected.tokensPerSec)}
+                  <span className="text-neutral-300"> tok/s</span>
+                </span>
+              ) : null}
+            </div>
+          ) : null}
 
-      {open ? (
-        <div className="absolute z-50 mt-1 max-h-80 w-full overflow-y-auto rounded-md border border-neutral-200 bg-white py-1 shadow-lg">
-          {loading ? (
-            <div className="px-3 py-6 text-center text-sm text-neutral-400">
-              Loading models…
+          {selectedUnmet.length > 0 ? (
+            <div className="mt-1 flex items-center gap-1 text-xs text-amber-600">
+              <AlertTriangle className="size-3 shrink-0" />
+              <span>
+                This model has {selectedUnmet.map((k) => REQUIREMENT_REASON[k]).join(', ')}
+                {' '}— pick one that meets the agent's needs.
+              </span>
             </div>
-          ) : groups.length === 0 ? (
-            <div className="px-3 py-6 text-center text-sm text-neutral-500">
-              No models available. Wire a provider into the host config.
-            </div>
-          ) : (
-            groups.map(({ provider, models: groupModels }) => (
-              <div key={provider.id} className="mb-1 last:mb-0">
-                <div className="flex items-center gap-1 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
-                  <ChevronRight className="size-3" />
-                  {provider.label}
-                </div>
-                {groupModels.map((m) => {
-                  const unmet = unmetRequirements(m, requirements)
-                  return (
-                    <ModelOptionRow
-                      key={m.id}
-                      model={m}
-                      selected={m.id === value}
-                      disabledReason={
-                        unmet.length > 0
-                          ? unmet.map((k) => REQUIREMENT_REASON[k]).join(', ')
-                          : undefined
-                      }
-                      onSelect={() => {
-                        onChange(m.id)
-                        setOpen(false)
-                      }}
-                    />
-                  )
-                })}
+          ) : null}
+        </>
+      )}
+    >
+      {({ close }) =>
+        loading ? (
+          <div className="px-3 py-6 text-center text-sm text-neutral-400">
+            Loading models…
+          </div>
+        ) : groups.length === 0 ? (
+          <div className="px-3 py-6 text-center text-sm text-neutral-500">
+            No models available. Wire a provider into the host config.
+          </div>
+        ) : (
+          groups.map(({ provider, models: groupModels }) => (
+            <div key={provider.id} className="mb-1 last:mb-0">
+              <div className="flex items-center gap-1 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
+                <ChevronRight className="size-3" />
+                {provider.label}
               </div>
-            ))
-          )}
-        </div>
-      ) : null}
-    </div>
+              {groupModels.map((m) => {
+                const unmet = unmetRequirements(m, requirements)
+                return (
+                  <ModelOptionRow
+                    key={m.id}
+                    model={m}
+                    selected={m.id === value}
+                    disabledReason={
+                      unmet.length > 0
+                        ? unmet.map((k) => REQUIREMENT_REASON[k]).join(', ')
+                        : undefined
+                    }
+                    onSelect={() => {
+                      onChange(m.id)
+                      close()
+                    }}
+                  />
+                )
+              })}
+            </div>
+          ))
+        )
+      }
+    </Popover>
   )
 }
 
