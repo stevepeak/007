@@ -1,5 +1,13 @@
-import { AlertTriangle, Brain, Loader2, Play, Wrench } from 'lucide-react'
-import { useMemo } from 'react'
+import {
+  AlertTriangle,
+  Brain,
+  Check,
+  Copy,
+  Loader2,
+  Play,
+  Wrench,
+} from 'lucide-react'
+import { useMemo, useState } from 'react'
 
 import { inferPromptVariables, type AgentConfig } from '../../engine'
 import type { AgentPreviewResult, JsonSchema } from '../../server/protocol'
@@ -144,6 +152,18 @@ function PlaygroundResult({ result }: { result: AgentPreviewResult }) {
   const textOutput =
     'text' in output && typeof output.text === 'string' ? output.text : null
   const verdict = textOutput != null ? asVerdict(textOutput) : null
+  const [copied, setCopied] = useState(false)
+
+  // Copy the raw output — the prose/verdict text as-is, or the pretty-printed
+  // JSON for structured output (mirrors what's rendered above).
+  const copyText =
+    textOutput != null ? textOutput : JSON.stringify(output, null, 2)
+  const copy = () => {
+    void navigator.clipboard?.writeText(copyText).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }
   const steps = meta.steps.filter(
     (s) => s.text || s.reasoning || s.toolCalls.length > 0,
   )
@@ -156,8 +176,24 @@ function PlaygroundResult({ result }: { result: AgentPreviewResult }) {
   return (
     <div className="space-y-2">
       <div className="space-y-1">
-        <div className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">
-          Output
+        <div className="flex items-center gap-2">
+          <div className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+            Output
+          </div>
+          <div className="flex-1" />
+          <button
+            type="button"
+            onClick={copy}
+            aria-label="Copy output to clipboard"
+            className="inline-flex items-center gap-1 rounded p-1 text-[11px] text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"
+          >
+            {copied ? (
+              <Check className="size-3.5 text-green-600" />
+            ) : (
+              <Copy className="size-3.5" />
+            )}
+            {copied ? 'Copied' : 'Copy'}
+          </button>
         </div>
         <div className="max-h-64 overflow-auto rounded-md border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-800">
           {textOutput == null ? (
