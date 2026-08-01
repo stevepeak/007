@@ -17,13 +17,12 @@ import type { LucideIcon } from 'lucide-react'
 import type { WorkflowGraph } from '../engine'
 import type { WfRunLogDTO, WfRunStepDTO } from '../server/protocol'
 import { cn } from './cn'
-import { formatClock, formatUsd } from './cost'
+import { formatClock, formatDurationMs, formatUsd } from './cost'
 import { KIND_STYLE } from './editor/node-renderers-shared'
 import { runStatusDotClass } from './run-status'
 import {
   buildActivityTree,
   flattenTree,
-  fmtDuration,
   type ActivityStatus,
   type FlatRow,
 } from './run-activity-tree'
@@ -344,7 +343,9 @@ function ActivityRowView({
             <span className="text-neutral-500">{formatUsd(row.costUsd)}</span>
           ) : null}
           {row.durationMs != null ? (
-            <span className="text-emerald-600">{fmtDuration(row.durationMs)}</span>
+            <span className="text-emerald-600">
+              {formatDurationMs(row.durationMs)}
+            </span>
           ) : null}
         </span>
       )}

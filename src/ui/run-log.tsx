@@ -14,10 +14,14 @@ import type { ReactNode } from 'react'
 
 import type { AgentNodeMeta, WfRunStepDTO } from '../server/protocol'
 import { cn } from './cn'
-import { formatTokens, formatUsd } from './cost'
+import { formatDurationMs, formatTokens, formatUsd } from './cost'
 import { DataView } from './data-view'
 import { NoteMarkdown } from './editor/note-markdown'
 import { BrandMark, inferModelBrand } from './evals/shared'
+import {
+  type IterationMeta,
+  readIterationMeta,
+} from './run-activity-tree'
 
 // The Logs view renders a step's execution as an AI-style vertical timeline:
 //   Input → thinking → tool call → … → Output.
@@ -233,14 +237,6 @@ function thinkingStep(text: string): LogStep {
 // Cost comes from the server (token usage × catalog price); speed is derived from
 // the step's recorded start/finish window.
 
-function fmtMs(ms: number): string {
-  if (ms < 1000) return `${ms}ms`
-  const s = ms / 1000
-  if (s < 60) return `${s.toFixed(s < 10 ? 1 : 0)}s`
-  const m = Math.floor(s / 60)
-  return `${m}m ${Math.round(s % 60)}s`
-}
-
 function StatCard({
   label,
   value,
@@ -317,7 +313,7 @@ function AgentMetaBar({
       />
       <StatCard
         label="Speed"
-        value={durationMs != null ? fmtMs(durationMs) : '—'}
+        value={formatDurationMs(durationMs)}
         sub={tps != null ? `${tps.toLocaleString()} tok/s` : undefined}
       />
       <StatCard label="Cost" value={formatUsd(step.costUsd)} />
@@ -327,7 +323,7 @@ function AgentMetaBar({
 
 export function RunLog({ step }: { step: WfRunStepDTO }) {
   const agentMeta = asAgentMeta(step.meta)
-  const iterMeta = asIterationMeta(step.meta)
+  const iterMeta = readIterationMeta(step.meta)
   const branch = step.branchResult as {
     result?: string
     reasoning?: string
@@ -420,13 +416,6 @@ export function RunLog({ step }: { step: WfRunStepDTO }) {
 
 // ── Iteration ─────────────────────────────────────────────────────────────────
 
-type IterationMeta = {
-  total: number
-  concurrency: number
-  stopOnError: boolean
-  items: Array<{ index: number; status: string; error?: string }>
-}
-
 function IterationTrace({ meta }: { meta: IterationMeta }) {
   const failed = meta.items.filter((i) => i.status === 'failed')
   return (
@@ -471,14 +460,3 @@ function asAgentMeta(meta: unknown): AgentNodeMeta | null {
   return null
 }
 
-function asIterationMeta(meta: unknown): IterationMeta | null {
-  if (
-    meta &&
-    typeof meta === 'object' &&
-    Array.isArray((meta as { items?: unknown }).items) &&
-    typeof (meta as { total?: unknown }).total === 'number'
-  ) {
-    return meta as IterationMeta
-  }
-  return null
-}

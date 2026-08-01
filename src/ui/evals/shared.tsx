@@ -1,4 +1,4 @@
-import { Braces, CircleDashed, Eye, Sparkles, Wrench } from 'lucide-react'
+import { Braces, Eye, Sparkles, Wrench } from 'lucide-react'
 import type { MouseEvent, ReactNode } from 'react'
 
 import type {
@@ -7,6 +7,8 @@ import type {
   WfEvalRunSummary,
 } from '../../server/protocol'
 import { cn } from '../cn'
+import { formatTimestamp } from '../cost'
+import { RunStatusBadge } from '../run-status'
 import { Tooltip } from '../tooltip'
 import { getProvider, ProviderLogo } from './provider-logos'
 
@@ -215,14 +217,10 @@ export function Tabs({
   )
 }
 
-export function formatTimestamp(ts: number): string {
-  return new Date(ts).toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
-}
+// Absolute timestamp + the canonical run-status badge live in the shared UI
+// modules; re-exported here so the Evals surfaces keep importing them from one
+// place and can't drift from the rest of the app.
+export { formatTimestamp, RunStatusBadge }
 
 // A short human phrasing of what a check asserts — the label shown for a Test in
 // the sample's test list and in the run report. Kept here so both surfaces agree.
@@ -245,29 +243,6 @@ export function describeCheck(check: EvalCheck | undefined): string {
         ? `judge: ${check.rubric.slice(0, 60)}${check.rubric.length > 60 ? '…' : ''}`
         : 'judge'
   }
-}
-
-export function RunStatusBadge({ status }: { status: string }) {
-  if (status === 'running' || status === 'queued') {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700">
-        <CircleDashed className="size-3 animate-spin" />
-        {status}
-      </span>
-    )
-  }
-  return (
-    <span
-      className={cn(
-        'rounded-full px-2 py-0.5 text-[11px] font-medium',
-        status === 'failed' || status === 'cancelled'
-          ? 'bg-red-50 text-red-700'
-          : 'bg-neutral-100 text-neutral-500',
-      )}
-    >
-      {status}
-    </span>
-  )
 }
 
 // Shared "test runs" table: When / Pass / Score columns over a list of eval

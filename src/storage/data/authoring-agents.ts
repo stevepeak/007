@@ -54,8 +54,12 @@ export async function listAgents(db: WfDb) {
 // entity row (name/icon/color) is created here; versions go through the factory.
 const agentVersions = createVersionedEntity<
   AgentConfig,
-  typeof wfAgentVersion.$inferSelect
+  typeof wfAgentVersion.$inferSelect,
+  typeof wfAgent.$inferSelect,
+  typeof wfAgentDraft.$inferSelect
 >({
+  entityTable: wfAgent,
+  entityIdCol: wfAgent.id,
   versionTable: wfAgentVersion,
   draftTable: wfAgentDraft,
   versionOwnerCol: wfAgentVersion.agentId,
@@ -102,37 +106,18 @@ export function latestAgentVersion(db: WfDb, agentId: string) {
 }
 
 /** Cheap existence check (see `workflowExists`) — one indexed `SELECT id`. */
-export async function agentExists(db: WfDb, agentId: string): Promise<boolean> {
-  const row = (
-    await db
-      .select({ id: wfAgent.id })
-      .from(wfAgent)
-      .where(eq(wfAgent.id, agentId))
-      .limit(1)
-  )[0]
-  return row !== undefined
+export function agentExists(db: WfDb, agentId: string): Promise<boolean> {
+  return agentVersions.exists(db, agentId)
 }
 
 /** The editor's load shape: the agent, its draft (if any), latest version. */
 export async function getAgent(db: WfDb, agentId: string) {
-  const agent = (
-    await db.select().from(wfAgent).where(eq(wfAgent.id, agentId)).limit(1)
-  )[0]
-  if (!agent) {
-    return null
-  }
-  const draft = (
-    await db
-      .select()
-      .from(wfAgentDraft)
-      .where(eq(wfAgentDraft.agentId, agentId))
-      .limit(1)
-  )[0]
-  const currentVersion = await latestAgentVersion(db, agentId)
+  const loaded = await agentVersions.load(db, agentId)
+  if (!loaded) return null
   return {
-    agent,
-    draft: draft ?? null,
-    currentVersion: currentVersion ?? null,
+    agent: loaded.entity,
+    draft: loaded.draft,
+    currentVersion: loaded.currentVersion,
   }
 }
 
@@ -190,13 +175,11 @@ export async function updateAgentMeta(
     color?: string
   },
 ) {
-  await db
-    .update(wfAgent)
-    .set({
-      ...pickDefined(input, ['name', 'description', 'icon', 'color']),
-      updatedAt: new Date(),
-    })
-    .where(eq(wfAgent.id, input.agentId))
+  await agentVersions.updateMeta(
+    db,
+    input.agentId,
+    pickDefined(input, ['name', 'description', 'icon', 'color']),
+  )
 }
 
 /**

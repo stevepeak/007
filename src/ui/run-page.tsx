@@ -12,6 +12,7 @@ import { useRetryRun, useRun } from './hooks'
 import { MessageFeedback } from './message-feedback'
 import { useWfNav } from './nav'
 import { QueryState } from './query-state'
+import { readIterationTotal } from './run-activity-tree'
 import { RunNodeDock } from './run-node-dock'
 import { runStatusClass } from './run-status'
 import { WfShell } from './shell'
@@ -78,10 +79,9 @@ function findNode(
 }
 
 // The number of items an iteration node fanned out over, read from its recorded
-// step meta (`{ total }`). 0 when the node never ran or isn't an iteration.
+// step meta. 0 when the node never ran or isn't an iteration.
 function iterationItemCount(step: WfRunStepDTO | null | undefined): number {
-  const total = (step?.meta as { total?: unknown } | null)?.total
-  return typeof total === 'number' ? total : 0
+  return readIterationTotal(step?.meta) ?? 0
 }
 
 export type RunPageProps = {

@@ -32,9 +32,14 @@ type VersionRowBase = {
 }
 
 export interface VersionedEntityConfig<
+  ETable extends SQLiteTable,
   VTable extends SQLiteTable,
   DTable extends SQLiteTable,
 > {
+  /** The entity row table (e.g. `wfWorkflow` / `wfAgent`). */
+  entityTable: ETable
+  /** Primary-key column on the entity table (e.g. `wfWorkflow.id`). */
+  entityIdCol: SQLiteColumn
   versionTable: VTable
   draftTable: DTable
   /** Owner FK column on the version table (e.g. `wfWorkflowVersion.workflowId`). */
@@ -66,11 +71,36 @@ export interface PublishInput<Payload> {
   versionExtra?: Record<string, unknown>
 }
 
-export interface VersionedEntity<Payload, VRow extends VersionRowBase> {
+export interface VersionedEntity<
+  Payload,
+  VRow extends VersionRowBase,
+  ERow,
+  DRow,
+> {
   /** The latest immutable version row, or undefined when none exist yet. */
   latest(db: WfDb, ownerId: string): Promise<VRow | undefined>
+  /** Cheap existence check — one indexed `SELECT id LIMIT 1`. */
+  exists(db: WfDb, ownerId: string): Promise<boolean>
+  /**
+   * The editor's load shape: the entity row, its draft (if any), and the latest
+   * version. `null` when the entity doesn't exist. Callers rename `entity` to
+   * their domain noun (`workflow` / `agent`).
+   */
+  load(
+    db: WfDb,
+    ownerId: string,
+  ): Promise<{ entity: ERow; draft: DRow | null; currentVersion: VRow | null } | null>
   /** Insert version 1 + a matching draft. Returns the new version id. */
   seed(db: WfDb, input: SeedInput<Payload>): Promise<{ versionId: string }>
+  /**
+   * Patch the entity row's display metadata (the caller supplies the already
+   * whitelisted fields) and bump `updatedAt`.
+   */
+  updateMeta(
+    db: WfDb,
+    ownerId: string,
+    patch: Record<string, unknown>,
+  ): Promise<void>
   /** Insert/replace the draft (the editor's autosave). */
   updateDraft(
     db: WfDb,
@@ -88,11 +118,17 @@ export interface VersionedEntity<Payload, VRow extends VersionRowBase> {
 export function createVersionedEntity<
   Payload,
   VRow extends VersionRowBase,
+  ERow = Record<string, unknown>,
+  DRow = Record<string, unknown>,
+  ETable extends SQLiteTable = SQLiteTable,
   VTable extends SQLiteTable = SQLiteTable,
   DTable extends SQLiteTable = SQLiteTable,
->(cfg: VersionedEntityConfig<VTable, DTable>): VersionedEntity<Payload, VRow> {
+>(
+  cfg: VersionedEntityConfig<ETable, VTable, DTable>,
+): VersionedEntity<Payload, VRow, ERow, DRow> {
   type VInsert = VTable['$inferInsert']
   type DInsert = DTable['$inferInsert']
+  type EInsert = ETable['$inferInsert']
 
   const versionValues = (
     ownerId: string,
@@ -138,6 +174,48 @@ export function createVersionedEntity<
 
   return {
     latest,
+
+    async exists(db, ownerId) {
+      const row = (
+        await db
+          .select({ id: cfg.entityIdCol })
+          .from(cfg.entityTable)
+          .where(eq(cfg.entityIdCol, ownerId))
+          .limit(1)
+      )[0]
+      return row !== undefined
+    },
+
+    async load(db, ownerId) {
+      const entity = (
+        await db
+          .select()
+          .from(cfg.entityTable)
+          .where(eq(cfg.entityIdCol, ownerId))
+          .limit(1)
+      )[0] as ERow | undefined
+      if (!entity) return null
+      const draft = (
+        await db
+          .select()
+          .from(cfg.draftTable)
+          .where(eq(cfg.draftOwnerCol, ownerId))
+          .limit(1)
+      )[0] as DRow | undefined
+      const currentVersion = await latest(db, ownerId)
+      return {
+        entity,
+        draft: draft ?? null,
+        currentVersion: currentVersion ?? null,
+      }
+    },
+
+    async updateMeta(db, ownerId, patch) {
+      await db
+        .update(cfg.entityTable)
+        .set({ ...patch, updatedAt: new Date() } as EInsert)
+        .where(eq(cfg.entityIdCol, ownerId))
+    },
 
     async seed(db, input) {
       const versionId = crypto.randomUUID()

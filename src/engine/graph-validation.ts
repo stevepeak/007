@@ -1,7 +1,8 @@
 import type { z } from 'zod'
 
+import { graphShapeFacts, joinViolation, switchCoverage } from './graph-rules'
 import { SWITCH_DEFAULT_CASE, workflowGraphShapeSchema } from './graph-schema'
-import { analyzeJoinTopology, bothArmsJoinDecision } from './graph-topology'
+import { analyzeJoinTopology } from './graph-topology'
 import { ITERATION_ITEM_TRIGGER_KIND } from './trigger-registry'
 
 // The strict runtime gate is a sequence of independent structural checks. Each
@@ -18,39 +19,33 @@ type GraphCheckCtx = {
 // Exactly one trigger, at least one output, unique ids, edges pointing at real
 // nodes, and every Output reachable (it has an incoming edge, else it stalls).
 function checkGraphShape(g: GraphShape, ctx: GraphCheckCtx): void {
-  const triggers = g.nodes.filter((n) => n.kind === 'trigger')
-  if (triggers.length !== 1) {
+  const facts = graphShapeFacts(g)
+  if (facts.triggerCount !== 1) {
     ctx.addIssue({
       code: 'custom',
-      message: `Graph must have exactly one trigger node (found ${triggers.length}).`,
+      message: `Graph must have exactly one trigger node (found ${facts.triggerCount}).`,
     })
   }
-  const outputs = g.nodes.filter((n) => n.kind === 'output')
-  if (outputs.length === 0) {
+  if (!facts.hasOutput) {
     ctx.addIssue({
       code: 'custom',
       message: 'Graph must have at least one output node.',
     })
   }
-  const ids = new Set(g.nodes.map((n) => n.id))
-  if (ids.size !== g.nodes.length) {
+  if (facts.hasDuplicateIds) {
     ctx.addIssue({ code: 'custom', message: 'Node ids must be unique.' })
   }
-  for (const e of g.edges) {
-    if (!ids.has(e.source) || !ids.has(e.target)) {
-      ctx.addIssue({
-        code: 'custom',
-        message: `Edge ${e.id} references missing node (${e.source} → ${e.target}).`,
-      })
-    }
+  for (const e of facts.danglingEdges) {
+    ctx.addIssue({
+      code: 'custom',
+      message: `Edge ${e.id} references missing node (${e.source} → ${e.target}).`,
+    })
   }
-  for (const o of outputs) {
-    if (!g.edges.some((e) => e.target === o.id)) {
-      ctx.addIssue({
-        code: 'custom',
-        message: `Output node ${o.id} has no incoming edges.`,
-      })
-    }
+  for (const id of facts.outputIdsMissingIncoming) {
+    ctx.addIssue({
+      code: 'custom',
+      message: `Output node ${id} has no incoming edges.`,
+    })
   }
 }
 
@@ -111,16 +106,14 @@ function checkSwitchNodes(g: GraphShape, ctx: GraphCheckCtx): void {
       })
     }
     const outs = g.edges.filter((e) => e.source === n.id)
-    const conds = new Set(outs.map((e) => e.condition))
-    for (const k of keySet) {
-      if (!conds.has(k)) {
-        ctx.addIssue({
-          code: 'custom',
-          message: `Switch node ${n.id} case '${k}' has no outgoing edge.`,
-        })
-      }
+    const { missingCases, hasDefault } = switchCoverage(n, outs)
+    for (const k of new Set(missingCases)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Switch node ${n.id} case '${k}' has no outgoing edge.`,
+      })
     }
-    if (!conds.has(SWITCH_DEFAULT_CASE)) {
+    if (!hasDefault) {
       ctx.addIssue({
         code: 'custom',
         message: `Switch node ${n.id} must have a '${SWITCH_DEFAULT_CASE}' (fallback) outgoing edge.`,
@@ -176,40 +169,23 @@ function checkIterationSubgraphs(g: GraphShape, ctx: GraphCheckCtx): void {
 function checkJoinTopology(g: GraphShape, ctx: GraphCheckCtx): void {
   const topo = analyzeJoinTopology(g)
   for (const n of g.nodes) {
-    const incoming = topo.incoming.get(n.id) ?? []
-    if (incoming.length < 2) continue
-
-    // A Race is a first-to-finish join (`some` readiness): every fan-in shape is
-    // legal — parallel paths and both branch arms alike.
-    if (n.kind === 'race') continue
-
-    if (n.kind === 'output') {
+    const v = joinViolation(n, topo, g.edges)
+    if (v?.kind === 'parallel-output-merge') {
       // Only mutually-exclusive branch arms may converge on one Output; two or
       // more always-live (unconditional) incoming edges are parallel paths, one
       // of which would be silently dropped.
-      const unconditional = incoming.filter((e) => !topo.isConditional(e.source))
-      if (unconditional.length >= 2) {
-        ctx.addIssue({
-          code: 'custom',
-          message: `Output node ${n.id} merges ${unconditional.length} parallel paths; only mutually-exclusive branch arms may converge on one Output. Give each parallel path its own Output node.`,
-        })
-      }
-    } else {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Output node ${n.id} merges ${v.count} parallel paths; only mutually-exclusive branch arms may converge on one Output. Give each parallel path its own Output node.`,
+      })
+    } else if (v?.kind === 'both-arms-join') {
       // A work node fires only when ALL its incoming edges are alive; it stalls
       // when a single branch feeds BOTH its arms into this node (mutually
       // exclusive, so one arm's edge stays dead forever).
-      const d = bothArmsJoinDecision(
-        n.id,
-        topo.ancestorCone(n.id),
-        topo.decisionIds,
-        g.edges,
-      )
-      if (d) {
-        ctx.addIssue({
-          code: 'custom',
-          message: `Node ${n.id} joins both arms of branch ${d}; those paths are mutually exclusive and can never all complete, so the join would stall. Route each arm to its own Output, or converge only paths on the same branch arm.`,
-        })
-      }
+      ctx.addIssue({
+        code: 'custom',
+        message: `Node ${n.id} joins both arms of branch ${v.decisionId}; those paths are mutually exclusive and can never all complete, so the join would stall. Route each arm to its own Output, or converge only paths on the same branch arm.`,
+      })
     }
   }
 }

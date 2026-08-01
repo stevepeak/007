@@ -412,7 +412,9 @@ export function buildEvalHandlers<TDeps>(
       // wf_run.manifest, so it isn't duplicated in the snapshot.
       const snapshot = buildEvalSnapshot(found.row, found.set)
       const snapshotHash = await hashEvalSnapshot(snapshot)
-      const resultId = await insertEvalResult(c.db, {
+      // Build the persisted columns once, then reuse them for the returned DTO so
+      // the two can't drift when a column is added.
+      const record = {
         evalRunId,
         rowId,
         wfRunId,
@@ -425,28 +427,14 @@ export function buildEvalHandlers<TDeps>(
         promptLabel: cell.promptLabel,
         promptBody: cell.promptBody,
         attempt: cell.attempt,
-      })
+      }
+      const resultId = await insertEvalResult(c.db, record)
       // Reuse the shared mapper so this result's shape can't drift from the one
       // `getEvalRun` returns. `createdAt` is the response's best-effort now (the
       // row isn't re-read); the mapper takes a Date and emits epoch ms.
       const stats = await loadRunStats(c.db, [wfRunId])
       return evalResultDTO(
-        {
-          id: resultId,
-          evalRunId,
-          rowId,
-          wfRunId,
-          status: graded.status,
-          score: graded.score,
-          checkResults: graded.checkResults,
-          snapshot,
-          snapshotHash,
-          modelId: cell.modelId,
-          promptLabel: cell.promptLabel,
-          promptBody: cell.promptBody,
-          attempt: cell.attempt,
-          createdAt: new Date(),
-        },
+        { ...record, id: resultId, createdAt: new Date() },
         stats.get(wfRunId),
       )
     },

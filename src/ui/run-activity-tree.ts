@@ -91,15 +91,6 @@ const MANY_ITEMS = 4
 
 const BOOKEND_LEVELS = new Set(['node-start', 'node-end'])
 
-// Compact duration for a completed row, e.g. "820ms", "35s", "2m 3s".
-export function fmtDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`
-  const s = ms / 1000
-  if (s < 60) return `${s < 10 ? s.toFixed(1) : Math.round(s)}s`
-  const m = Math.floor(s / 60)
-  return `${m}m ${Math.round(s % 60)}s`
-}
-
 function deriveStatus(step?: WfRunStepDTO | null): ActivityStatus {
   if (!step) return 'pending'
   if (step.status === 'running') return 'running'
@@ -138,9 +129,42 @@ function rollUp(children: ActivityRow[]): ActivityStatus {
   return 'pending'
 }
 
-function iterationTotal(step: WfRunStepDTO | null | undefined): number | null {
-  const total = (step?.meta as { total?: unknown } | null)?.total
+// The recorded meta on an iteration node's step: how many items it fanned out
+// over, each item's terminal status, and the loop's concurrency / stop-on-error
+// settings. The untyped `meta` JSON column is narrowed through the two guards
+// below — shared by every reader (activity tree, run page, run log) so the shape
+// knowledge lives in one place.
+export type IterationMeta = {
+  total: number
+  concurrency: number
+  stopOnError: boolean
+  items: Array<{ index: number; status: string; error?: string }>
+}
+
+// Loose read: just the item count. A still-running loop reports `total` before
+// its `items` array is populated, so this only requires `total`. null when
+// absent or the step isn't an iteration.
+export function readIterationTotal(meta: unknown): number | null {
+  const total = (meta as { total?: unknown } | null)?.total
   return typeof total === 'number' ? total : null
+}
+
+// Strict read: the full per-item meta, available once the engine has recorded
+// the `items` array — used to render the per-item trace. null until then.
+export function readIterationMeta(meta: unknown): IterationMeta | null {
+  if (
+    meta &&
+    typeof meta === 'object' &&
+    Array.isArray((meta as { items?: unknown }).items) &&
+    typeof (meta as { total?: unknown }).total === 'number'
+  ) {
+    return meta as IterationMeta
+  }
+  return null
+}
+
+function iterationTotal(step: WfRunStepDTO | null | undefined): number | null {
+  return readIterationTotal(step?.meta)
 }
 
 export function buildActivityTree(input: {

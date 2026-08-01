@@ -131,12 +131,7 @@ export function WorkflowsList({ className }: WorkflowsListProps) {
 
             <div className="mt-3 border-t border-neutral-100 pt-3">
               {w.agents.length > 0 ? (
-                <div className="flex items-center gap-2">
-                  <AgentIcons agents={w.agents} />
-                  <span className="text-xs text-neutral-400">
-                    {w.agents.length} agent{w.agents.length === 1 ? '' : 's'}
-                  </span>
-                </div>
+                <AgentIcons agents={w.agents} />
               ) : (
                 <span className="text-xs text-neutral-300">No agents used</span>
               )}
@@ -149,15 +144,11 @@ export function WorkflowsList({ className }: WorkflowsListProps) {
 }
 
 // The distinct agents a workflow uses, drawn as overlapping icon chips (their
-// own icon + color, native-title tooltip). Overflow past `MAX` collapses to a
-// "+N" tally so a fan-heavy workflow doesn't blow out the row.
+// own icon + color, native-title tooltip). Every agent gets its own icon.
 function AgentIcons({ agents }: { agents: WfWorkflowAgentRef[] }) {
-  const MAX = 6
-  const shown = agents.slice(0, MAX)
-  const extra = agents.length - shown.length
   return (
     <div className="flex items-center">
-      {shown.map((a) => {
+      {agents.map((a) => {
         const Icon = agentIcon(a.icon)
         const color = agentColor(a.color)
         return (
@@ -173,11 +164,6 @@ function AgentIcons({ agents }: { agents: WfWorkflowAgentRef[] }) {
           </span>
         )
       })}
-      {extra > 0 ? (
-        <span className="ml-1.5 text-xs font-medium text-neutral-400">
-          +{extra}
-        </span>
-      ) : null}
     </div>
   )
 }

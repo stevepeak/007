@@ -206,8 +206,12 @@ export async function findWorkflowByName(
 // the factory so workflows and agents can't drift. See `versioned-entity.ts`.
 const workflowVersions = createVersionedEntity<
   WorkflowGraph,
-  typeof wfWorkflowVersion.$inferSelect
+  typeof wfWorkflowVersion.$inferSelect,
+  typeof wfWorkflow.$inferSelect,
+  typeof wfWorkflowDraft.$inferSelect
 >({
+  entityTable: wfWorkflow,
+  entityIdCol: wfWorkflow.id,
   versionTable: wfWorkflowVersion,
   draftTable: wfWorkflowDraft,
   versionOwnerCol: wfWorkflowVersion.workflowId,
@@ -299,43 +303,17 @@ export function latestVersion(db: WfDb, workflowId: string) {
  * only need a boolean and would otherwise pay `getWorkflow`'s 3-query entity
  * load (workflow + draft + latest version).
  */
-export async function workflowExists(
-  db: WfDb,
-  workflowId: string,
-): Promise<boolean> {
-  const row = (
-    await db
-      .select({ id: wfWorkflow.id })
-      .from(wfWorkflow)
-      .where(eq(wfWorkflow.id, workflowId))
-      .limit(1)
-  )[0]
-  return row !== undefined
+export function workflowExists(db: WfDb, workflowId: string): Promise<boolean> {
+  return workflowVersions.exists(db, workflowId)
 }
 
 export async function getWorkflow(db: WfDb, workflowId: string) {
-  const workflow = (
-    await db
-      .select()
-      .from(wfWorkflow)
-      .where(eq(wfWorkflow.id, workflowId))
-      .limit(1)
-  )[0]
-  if (!workflow) {
-    return null
-  }
-  const draft = (
-    await db
-      .select()
-      .from(wfWorkflowDraft)
-      .where(eq(wfWorkflowDraft.workflowId, workflowId))
-      .limit(1)
-  )[0]
-  const currentVersion = await latestVersion(db, workflowId)
+  const loaded = await workflowVersions.load(db, workflowId)
+  if (!loaded) return null
   return {
-    workflow,
-    draft: draft ?? null,
-    currentVersion: currentVersion ?? null,
+    workflow: loaded.entity,
+    draft: loaded.draft,
+    currentVersion: loaded.currentVersion,
   }
 }
 
@@ -448,13 +426,11 @@ export async function updateWorkflow(
     archived?: boolean
   },
 ) {
-  await db
-    .update(wfWorkflow)
-    .set({
-      ...pickDefined(input, ['name', 'description', 'archived']),
-      updatedAt: new Date(),
-    })
-    .where(eq(wfWorkflow.id, input.workflowId))
+  await workflowVersions.updateMeta(
+    db,
+    input.workflowId,
+    pickDefined(input, ['name', 'description', 'archived']),
+  )
 }
 
 /** Reset the draft back to the latest published version's graph. */

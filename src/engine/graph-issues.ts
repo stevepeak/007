@@ -3,7 +3,8 @@ import {
   type WorkflowGraph,
   type WorkflowNode,
 } from './graph'
-import { analyzeJoinTopology, bothArmsJoinDecision } from './graph-topology'
+import { graphShapeFacts, joinViolation, switchCoverage } from './graph-rules'
+import { analyzeJoinTopology } from './graph-topology'
 
 // Author-time graph diagnostics. Where `workflowGraphSchema`'s superRefine is
 // the strict *runtime* gate (a failing graph can't run), this collects the same
@@ -107,25 +108,23 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
   const { incoming, outgoing } = topo
 
   // ── Graph-wide shape ──────────────────────────────────────────────────────
-  const triggers = graph.nodes.filter((n) => n.kind === 'trigger')
-  if (triggers.length === 0) {
+  const shape = graphShapeFacts(graph)
+  if (shape.triggerCount === 0) {
     issues.push({ severity: 'error', message: 'Graph has no trigger node.' })
-  } else if (triggers.length > 1) {
+  } else if (shape.triggerCount > 1) {
     issues.push({
       severity: 'error',
-      message: `Graph has ${triggers.length} trigger nodes; exactly one is allowed.`,
+      message: `Graph has ${shape.triggerCount} trigger nodes; exactly one is allowed.`,
     })
   }
-  if (!graph.nodes.some((n) => n.kind === 'output')) {
+  if (!shape.hasOutput) {
     issues.push({ severity: 'error', message: 'Graph has no output node.' })
   }
-  for (const e of graph.edges) {
-    if (!byId.has(e.source) || !byId.has(e.target)) {
-      issues.push({
-        severity: 'error',
-        message: `Connection references a missing node (${e.source} → ${e.target}).`,
-      })
-    }
+  for (const e of shape.danglingEdges) {
+    issues.push({
+      severity: 'error',
+      message: `Connection references a missing node (${e.source} → ${e.target}).`,
+    })
   }
 
   // ── Per-node ──────────────────────────────────────────────────────────────
@@ -184,10 +183,7 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
 
     // A switch needs an outgoing edge per case plus a 'default' fallback.
     if (node.kind === 'switch') {
-      const conds = new Set(out.map((e) => e.condition))
-      const missingCases = node.config.cases
-        .map((c) => c.key)
-        .filter((k) => !conds.has(k))
+      const { missingCases, hasDefault } = switchCoverage(node, out)
       if (missingCases.length > 0) {
         const many = missingCases.length > 1
         issues.push({
@@ -198,7 +194,7 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
             .join(', ')} ${many ? 'have' : 'has'} no outgoing edge.`,
         })
       }
-      if (!conds.has(SWITCH_DEFAULT_CASE)) {
+      if (!hasDefault) {
         issues.push({
           ...base,
           severity: 'error',
@@ -207,42 +203,24 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
       }
     }
 
-    // Join legality (mirrors the strict schema).
-    if (inc.length >= 2) {
-      if (node.kind === 'race') {
-        // A Race fires on the first live incoming edge (`some` readiness), so
-        // every fan-in shape is valid — parallel paths and both branch arms
-        // alike. Exempt it from the Output/work-node join rules below.
-      } else if (node.kind === 'output') {
-        // Two always-live (unconditional) paths into one Output silently drop
-        // one. Only mutually-exclusive branch arms may converge here.
-        const unconditional = inc.filter(
-          (e) => !topo.isConditional(e.source),
-        ).length
-        if (unconditional >= 2) {
-          issues.push({
-            ...base,
-            severity: 'error',
-            message:
-              'Merges parallel paths — only mutually-exclusive branch arms may share one Output. Give each path its own Output.',
-          })
-        }
-      } else {
-        const d = bothArmsJoinDecision(
-          node.id,
-          topo.ancestorCone(node.id),
-          topo.decisionIds,
-          graph.edges,
-        )
-        if (d) {
-          const branch = byId.get(d)
-          issues.push({
-            ...base,
-            severity: 'error',
-            message: `Joins both arms of branch "${branch?.label ?? d}" — those paths never run together, so this node would stall. Route each arm to its own Output.`,
-          })
-        }
-      }
+    // Join legality (shares the fact-producer with the strict schema, formats a
+    // softer message here). A Race accepts any fan-in; an Output must not merge
+    // parallel paths; a work node must not join both arms of one decision.
+    const join = joinViolation(node, topo, graph.edges)
+    if (join?.kind === 'parallel-output-merge') {
+      issues.push({
+        ...base,
+        severity: 'error',
+        message:
+          'Merges parallel paths — only mutually-exclusive branch arms may share one Output. Give each path its own Output.',
+      })
+    } else if (join?.kind === 'both-arms-join') {
+      const branch = byId.get(join.decisionId)
+      issues.push({
+        ...base,
+        severity: 'error',
+        message: `Joins both arms of branch "${branch?.label ?? join.decisionId}" — those paths never run together, so this node would stall. Route each arm to its own Output.`,
+      })
     }
   }
 

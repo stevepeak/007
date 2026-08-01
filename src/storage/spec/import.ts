@@ -101,6 +101,69 @@ export async function importBundle(
   return { changes, clean }
 }
 
+// ── Shared reconcile helpers ─────────────────────────────────────────────────
+//
+// The agent / workflow / eval passes each have their own control flow (versions
+// vs wholesale row replacement, one-pass vs two-pass id assignment), so they are
+// NOT collapsed into one generic driver — that would trade three readable passes
+// for one callback maze. These are only the genuinely identical mechanics.
+
+/** Index a table's slugged rows by slug; rows without a slug are dropped. */
+function bySlug<T extends { slug: string | null }>(rows: T[]): Map<string, T> {
+  return new Map(rows.filter((r) => r.slug).map((r) => [r.slug!, r]))
+}
+
+/**
+ * Two payloads are equal once both are normalized through `schema` — so a stored
+ * value missing a field the schema now defaults reads as identical, not drift.
+ */
+function normalizedEqual<T>(
+  schema: { parse: (v: unknown) => T },
+  a: unknown,
+  b: unknown,
+): boolean {
+  return payloadEqual(schema.parse(a), schema.parse(b))
+}
+
+/** Patch the archived flag onto a freshly-created row (create() makes it active). */
+function markArchived(
+  db: WfDb,
+  table: typeof wfAgent | typeof wfWorkflow,
+  id: string,
+): Promise<unknown> {
+  return db
+    .update(table)
+    .set({ archived: true, updatedAt: new Date() })
+    .where(eq(table.id, id))
+}
+
+/**
+ * Archive every slugged, non-archived row of `table` that the bundle no longer
+ * contains (the `prune` path). `skip` lets a caller exempt rows (e.g. hidden
+ * eval-wrapper workflows).
+ */
+async function archiveAbsent(
+  db: WfDb,
+  table: typeof wfAgent | typeof wfWorkflow,
+  kind: 'agent' | 'workflow',
+  bundleSlugs: Set<string>,
+  opts: ImportOptions,
+  changes: EntityChange[],
+  skip: (row: { hidden?: boolean }) => boolean = () => false,
+): Promise<void> {
+  const rows = (await db.select().from(table)) as Array<{
+    id: string
+    slug: string | null
+    archived: boolean
+    hidden?: boolean
+  }>
+  for (const r of rows) {
+    if (!r.slug || r.archived || bundleSlugs.has(r.slug) || skip(r)) continue
+    changes.push({ kind, slug: r.slug, action: 'archive' })
+    if (!opts.dryRun) await markArchived(db, table, r.id)
+  }
+}
+
 // ── Agents ───────────────────────────────────────────────────────────────────
 
 async function reconcileAgents(
@@ -109,10 +172,7 @@ async function reconcileAgents(
   opts: ImportOptions,
   changes: EntityChange[],
 ): Promise<Map<string, string>> {
-  const existing = await db
-    .select()
-    .from(wfAgent)
-    .then((rows) => new Map(rows.filter((r) => r.slug).map((r) => [r.slug!, r])))
+  const existing = bySlug(await db.select().from(wfAgent))
   const idBySlug = new Map<string, string>()
 
   for (const spec of bundle.agents) {
@@ -132,12 +192,7 @@ async function reconcileAgents(
         createdBy: opts.actor,
         config: spec.config,
       })
-      if (spec.archived) {
-        await db
-          .update(wfAgent)
-          .set({ archived: true, updatedAt: new Date() })
-          .where(eq(wfAgent.id, agentId))
-      }
+      if (spec.archived) await markArchived(db, wfAgent, agentId)
       idBySlug.set(spec.slug, agentId)
       continue
     }
@@ -147,11 +202,9 @@ async function reconcileAgents(
     const current = await latestAgentVersion(db, row.id)
     // Compare *normalized* configs: a stored config missing a field the schema
     // now defaults (e.g. `subAgents`) is behaviorally identical to the spec's,
-    // so it must not read as drift. spec.config is already schema-normalized
-    // (the bundle was parsed through `agentConfigSchema`).
+    // so it must not read as drift.
     const configChanged =
-      !current ||
-      !payloadEqual(agentConfigSchema.parse(current.config), spec.config)
+      !current || !normalizedEqual(agentConfigSchema, current.config, spec.config)
 
     if (!metaChanged && !configChanged) {
       changes.push({ kind: 'agent', slug: spec.slug, action: 'unchanged' })
@@ -207,10 +260,7 @@ async function reconcileWorkflows(
   changes: EntityChange[],
   note: string,
 ): Promise<Map<string, string>> {
-  const existing = await db
-    .select()
-    .from(wfWorkflow)
-    .then((rows) => new Map(rows.filter((r) => r.slug).map((r) => [r.slug!, r])))
+  const existing = bySlug(await db.select().from(wfWorkflow))
 
   // Pass A — assign every bundle workflow an id (existing row's, or a fresh one
   // for a new workflow) so a graph's sub-workflow slug refs resolve in pass B.
@@ -242,12 +292,7 @@ async function reconcileWorkflows(
           createdBy: opts.actor,
           graph,
         })
-        if (spec.archived) {
-          await db
-            .update(wfWorkflow)
-            .set({ archived: true, updatedAt: new Date() })
-            .where(eq(wfWorkflow.id, id))
-        }
+        if (spec.archived) await markArchived(db, wfWorkflow, id)
         await assignTriggers(db, spec.triggers, id, opts)
       }
       continue
@@ -264,10 +309,7 @@ async function reconcileWorkflows(
     // historical version.
     const graphChanged =
       !current ||
-      !payloadEqual(
-        workflowGraphShapeSchema.parse(current.graph),
-        workflowGraphShapeSchema.parse(graph),
-      )
+      !normalizedEqual(workflowGraphShapeSchema, current.graph, graph)
 
     if (!metaChanged && !graphChanged) {
       changes.push({ kind: 'workflow', slug: spec.slug, action: 'unchanged' })
@@ -453,26 +495,15 @@ async function pruneMissing(
   const bundleAgents = new Set(bundle.agents.map((a) => a.slug))
   const bundleWorkflows = new Set(bundle.workflows.map((w) => w.slug))
 
-  const agents = await db.select().from(wfAgent)
-  for (const a of agents) {
-    if (!a.slug || bundleAgents.has(a.slug) || a.archived) continue
-    changes.push({ kind: 'agent', slug: a.slug, action: 'archive' })
-    if (!opts.dryRun) {
-      await db
-        .update(wfAgent)
-        .set({ archived: true, updatedAt: new Date() })
-        .where(eq(wfAgent.id, a.id))
-    }
-  }
-  const workflows = await db.select().from(wfWorkflow)
-  for (const w of workflows) {
-    if (!w.slug || w.hidden || bundleWorkflows.has(w.slug) || w.archived) continue
-    changes.push({ kind: 'workflow', slug: w.slug, action: 'archive' })
-    if (!opts.dryRun) {
-      await db
-        .update(wfWorkflow)
-        .set({ archived: true, updatedAt: new Date() })
-        .where(eq(wfWorkflow.id, w.id))
-    }
-  }
+  await archiveAbsent(db, wfAgent, 'agent', bundleAgents, opts, changes)
+  // Hidden workflows are eval-wrapper machinery, never authored content — exempt.
+  await archiveAbsent(
+    db,
+    wfWorkflow,
+    'workflow',
+    bundleWorkflows,
+    opts,
+    changes,
+    (w) => !!w.hidden,
+  )
 }
