@@ -5,7 +5,7 @@ import type { WfDb } from '../client'
 import { wfAgent, wfAgentDraft, wfAgentVersion } from '../schema'
 import { createVersionedEntity } from '../versioned-entity'
 
-import { listWorkflowsReferencingAgent } from './authoring-workflows'
+import { listWorkflowsReferencingAgent } from './authoring-workflows-references'
 import { pickDefined } from './shared'
 
 // ---------------------------------------------------------------------------

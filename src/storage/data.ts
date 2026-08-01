@@ -10,5 +10,6 @@
 export * from './data/authoring'
 export * from './data/runs'
 export * from './data/evals'
+export * from './data/eval-snapshot'
 export * from './data/models'
 export * from './data/feedback'
