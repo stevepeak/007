@@ -126,6 +126,9 @@ export async function executeSubgraph<TDeps>(
     }
     const { node, input } = instruction
     let result: NodeRunResult
+    // Bracket the real execution so each per-item step's Speed reflects actual
+    // work. These run inline (no step.do), so wall-clock here is exact.
+    const startedAt = new Date()
     try {
       result = await runNode(instruction, {
         ...ctx,
@@ -146,6 +149,8 @@ export async function executeSubgraph<TDeps>(
           input,
           status: 'failed',
           error: errorMessage(err),
+          startedAt,
+          finishedAt: new Date(),
         })
       }
       throw err
@@ -159,6 +164,8 @@ export async function executeSubgraph<TDeps>(
         output: result.recordedOutput,
         meta: result.meta,
         branchResult: recordedBranchResult(result),
+        startedAt,
+        finishedAt: new Date(),
       })
     }
     scheduler.report(node.id, {

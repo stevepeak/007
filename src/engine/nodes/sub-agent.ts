@@ -113,6 +113,9 @@ async function runAgentTarget<TDeps>(
   const systemPrompt = substitutePromptVariables(config.prompt, vars)
   const messages = coerceToMessages(message)
 
+  // Bracket the sub-agent generation so the child step's Speed reflects real
+  // work. Runs inline within the primary node's step, so wall-clock is exact.
+  const startedAt = new Date()
   const result = await runAgentGeneration({
     model,
     modelId: config.modelId,
@@ -149,6 +152,8 @@ async function runAgentTarget<TDeps>(
       status: 'completed',
       output: result.output,
       meta: { ...result.meta, subAgentName: entry.name },
+      startedAt,
+      finishedAt: new Date(),
     })
   }
 

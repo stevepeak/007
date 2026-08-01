@@ -99,6 +99,12 @@ export async function recordTerminal<TDeps, E extends GraphWorkflowEnv>(
         meta: unknown
         branchResult: RecordStepArgs['branchResult']
         bodyLogs: RunLogEntry[]
+        // Actual execution window measured around runNode. Overwrites the
+        // enter-time start so the persisted Speed reflects real work, not the
+        // dispatch envelope. Absent (e.g. iteration container) → start is left
+        // as stamped at enter and finish defaults to record time.
+        startedAt?: Date
+        finishedAt?: Date
       },
 ): Promise<void> {
   await stepDo(ctx.step, `record:${node.id}`, DEFAULT_STEP_OPTS, async () => {
@@ -129,6 +135,8 @@ export async function recordTerminal<TDeps, E extends GraphWorkflowEnv>(
         output: outcome.output,
         meta: outcome.meta,
         branchResult: outcome.branchResult,
+        startedAt: outcome.startedAt,
+        finishedAt: outcome.finishedAt,
       })
       await persistLogs(
         ctx,

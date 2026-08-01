@@ -23,6 +23,12 @@ export function createDurableRunRecorder(deps: {
     async record(args) {
       const finishedAt =
         args.finishedAt ?? (isTerminal(args.status) ? new Date() : null)
+      // Only overwrite `started_at` when the caller supplies a measured
+      // execution start (the terminal record does; the enter record does too).
+      // Absent — e.g. an iteration container whose start was stamped at enter
+      // time — leave the existing value untouched instead of nulling it.
+      const startedAtSet =
+        args.startedAt != null ? { startedAt: args.startedAt } : {}
       await deps.db
         .insert(wfRunStep)
         .values({
@@ -51,6 +57,7 @@ export function createDurableRunRecorder(deps: {
             output: args.output ?? {},
             branchResult: args.branchResult ?? null,
             meta: args.meta ?? {},
+            ...startedAtSet,
             finishedAt,
             error: args.error ?? null,
           },

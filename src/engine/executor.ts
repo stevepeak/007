@@ -77,6 +77,8 @@ export async function executeWorkflow<TDeps>(
     input: unknown,
     seq: number,
   ): Promise<{ nodeId: string; report: ReportResult }> => {
+    // Bracket the real execution — runs inline here, so wall-clock is exact.
+    const startedAt = new Date()
     try {
       const result = await runNode(
         { type: 'execute', node, input },
@@ -108,6 +110,8 @@ export async function executeWorkflow<TDeps>(
         output: result.recordedOutput,
         meta: result.meta,
         branchResult: recordedBranchResult(result),
+        startedAt,
+        finishedAt: new Date(),
       })
       return {
         nodeId: node.id,
@@ -124,6 +128,8 @@ export async function executeWorkflow<TDeps>(
         input,
         status: 'failed',
         error: errorMessage(err),
+        startedAt,
+        finishedAt: new Date(),
       })
       // Best-effort node: continue the run with a `null` output rather than
       // aborting. Mirrors the Cloudflare backend; never for decision nodes.

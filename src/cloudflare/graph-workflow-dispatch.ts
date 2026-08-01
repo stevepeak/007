@@ -46,7 +46,15 @@ export type { RunCtx } from './graph-workflow-dispatch-run-ctx'
 // The run: step returns the engine's NodeRunResult plus the structured
 // log entries the node emitted during its own step (captured by a per-node
 // sink), so they survive `step.do` replay via the workflow journal.
-type RunStepResult = NodeRunResult & { logs?: RunLogEntry[] }
+// `execStartedAt`/`execFinishedAt` bracket the actual `runNode` call (measured
+// inside the run: step, so they're journaled) — this is the true execution
+// window the Speed stat reads, as opposed to the wider dispatch envelope that
+// spans the enter:/run:/record: durable-step boundaries.
+type RunStepResult = NodeRunResult & {
+  logs?: RunLogEntry[]
+  execStartedAt?: Date
+  execFinishedAt?: Date
+}
 
 // Run one iteration node. Iteration orchestrates its own per-item durable
 // steps, so it is NOT wrapped in a single `run:` step — `step.do` calls can't
@@ -196,6 +204,11 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
               return sink.log?.(e)
             },
           }
+          // Bracket the real execution here — inside the run: step, right
+          // around runNode — so the persisted Speed reflects actual work, not
+          // the durable-step envelope. Journaled with the return value, so it
+          // replays deterministically.
+          const execStartedAt = new Date()
           const r = await withNodeSpan(
             {
               traceId,
@@ -237,7 +250,12 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
                 },
               ),
           )
-          return { ...r, logs: bodyLogs }
+          return {
+            ...r,
+            logs: bodyLogs,
+            execStartedAt,
+            execFinishedAt: new Date(),
+          }
         },
       )
     }
@@ -263,6 +281,8 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
     meta: result.meta,
     branchResult: recordedBranchResult(result),
     bodyLogs: result.logs ?? [],
+    startedAt: result.execStartedAt,
+    finishedAt: result.execFinishedAt,
   })
 
   return {
