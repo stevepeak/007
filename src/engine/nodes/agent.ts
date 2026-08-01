@@ -327,7 +327,7 @@ export async function executeAgentNode<TDeps>(
   ) {
     const delegation = synthesizeDelegationTools(config.subAgents, subAgentCtx)
     for (const name of Object.keys(delegation)) {
-      if (name in tools) {
+      if (Object.hasOwn(tools, name)) {
         throw new Error(
           `Agent ${node.id}: delegation tool '${name}' collides with a registered tool. Rename the sub-agent target's tool name.`,
         )

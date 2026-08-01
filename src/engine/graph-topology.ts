@@ -1,6 +1,6 @@
+import { buildAdjacency } from './graph-adjacency'
 import { DECISION_NODE_KINDS } from './graph-kinds'
 import type { WorkflowEdge, WorkflowGraph } from './graph-schema'
-import { buildAdjacency } from './graph-adjacency'
 
 // The join/cone topology analysis shared by the strict runtime gate
 // (`workflowGraphSchema.superRefine`) and the author-time diagnostics

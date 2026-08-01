@@ -182,7 +182,6 @@ export function ZodCodeEditor({
   placeholder,
 }: ZodCodeEditorProps) {
   const ref = useRef<HTMLTextAreaElement>(null)
-  const preRef = useRef<HTMLPreElement>(null)
   const pendingCaret = useRef<number | null>(null)
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<Completion[]>([])
@@ -233,24 +232,20 @@ export function ZodCodeEditor({
     onChange(next)
   }
 
-  // Keep the highlight layer aligned with the textarea's scroll offset.
-  function syncScroll(el: HTMLTextAreaElement) {
-    if (!preRef.current) return
-    preRef.current.scrollTop = el.scrollTop
-    preRef.current.scrollLeft = el.scrollLeft
-  }
-
   return (
     <div className="relative">
       <div className="relative">
-        {/* Highlight layer, painted directly under the transparent textarea. It
-            shares the textarea's box model (font, padding, wrapping) so tokens
-            sit exactly on top of the characters the author types. */}
+        {/* Highlight layer doubles as the sizer: it sits in normal flow so its
+            height grows with the content (it holds the same wrapped text), and
+            the transparent textarea is floated on top of it. It shares the
+            textarea's box model (font, padding, wrapping) so tokens sit exactly
+            on top of the characters the author types. `min-h` keeps `rows` worth
+            of space when empty; the trailing newline keeps the last line clear. */}
         <pre
-          ref={preRef}
           aria-hidden
+          style={{ minHeight: `calc(${rows} * 1.625em + 1rem + 2px)` }}
           className={cn(
-            'pointer-events-none absolute inset-0 m-0 overflow-hidden whitespace-pre-wrap break-words rounded-md border border-transparent bg-neutral-50 px-3 py-2 font-mono text-xs leading-relaxed text-neutral-800',
+            'pointer-events-none m-0 whitespace-pre-wrap break-words rounded-md border border-transparent bg-neutral-50 px-3 py-2 font-mono text-xs leading-relaxed text-neutral-800',
           )}
         >
           {value ? (
@@ -272,12 +267,9 @@ export function ZodCodeEditor({
           ref={ref}
           value={value}
           spellCheck={false}
-          rows={rows}
-          onScroll={(e) => syncScroll(e.currentTarget)}
           onChange={(e) => {
             onChange(e.target.value)
             refresh(e.target)
-            syncScroll(e.target)
           }}
           onKeyDown={(e) => {
             if (!open || items.length === 0) return
@@ -298,7 +290,7 @@ export function ZodCodeEditor({
           // Delay so a click on a suggestion (mousedown) still registers.
           onBlur={() => window.setTimeout(() => setOpen(false), 120)}
           className={cn(
-            'relative w-full resize-y whitespace-pre-wrap break-words rounded-md border bg-transparent px-3 py-2 font-mono text-xs leading-relaxed text-transparent caret-neutral-800 outline-none',
+            'absolute inset-0 h-full w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded-md border bg-transparent px-3 py-2 font-mono text-xs leading-relaxed text-transparent caret-neutral-800 outline-none',
             invalid
               ? 'border-amber-400 focus:border-amber-500'
               : 'border-neutral-300 focus:border-neutral-500',

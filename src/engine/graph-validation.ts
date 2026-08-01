@@ -1,7 +1,7 @@
-import { z } from 'zod'
+import type { z } from 'zod'
 
-import { analyzeJoinTopology, bothArmsJoinDecision } from './graph-topology'
 import { SWITCH_DEFAULT_CASE, workflowGraphShapeSchema } from './graph-schema'
+import { analyzeJoinTopology, bothArmsJoinDecision } from './graph-topology'
 import { ITERATION_ITEM_TRIGGER_KIND } from './trigger-registry'
 
 // The strict runtime gate is a sequence of independent structural checks. Each

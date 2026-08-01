@@ -130,13 +130,13 @@ export async function listWorkflowsWithStats(
   )
   const agentIdsByWf = new Map<string, string[]>()
   const referencedAgentIds = new Set<string>()
-  workflows.forEach((w, i) => {
+  for (const [i, w] of workflows.entries()) {
     // `graph` is stored JSON (loosely typed); the walk only reads node shapes.
     const graph = latestGraphs[i]?.graph as WorkflowGraph | undefined
     const agentIds = graph ? agentIdsInGraph(graph) : []
     agentIdsByWf.set(w.id, agentIds)
     for (const id of agentIds) referencedAgentIds.add(id)
-  })
+  }
   const agentRows =
     referencedAgentIds.size > 0
       ? await db

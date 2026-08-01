@@ -10,10 +10,6 @@
     "url": "git+https://github.com/stevepeak/007.git"
   },
   "main": "src/index.ts",
-  "bin": {
-    "wf-dump-run": "./src/cli/dump-run.ts",
-    "wf-spec": "./src/cli/spec.ts"
-  },
   "exports": {
     ".": "./src/index.ts",
     "./cloudflare": "./src/cloudflare/index.ts",
@@ -28,6 +24,10 @@
     "./tools": "./src/tools/index.ts",
     "./ui": "./src/ui/index.ts",
     "./ui/styles.css": "./src/ui/styles.css"
+  },
+  "bin": {
+    "wf-dump-run": "./src/cli/dump-run.ts",
+    "wf-spec": "./src/cli/spec.ts"
   },
   "scripts": {
     "clean": "rm -rf node_modules dist .turbo",
