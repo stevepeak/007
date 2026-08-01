@@ -122,6 +122,7 @@ export function AgentEditor({
             agentId={agentId}
             initialConfig={initialConfig}
             initialName={data.agent.name}
+            initialDescription={data.agent.description ?? ''}
             initialIcon={data.agent.icon ?? AGENT_ICONS[0].name}
             initialColor={data.agent.color ?? DEFAULT_AGENT_COLOR}
             className={className}
@@ -137,6 +138,7 @@ function AgentEditorInner({
   agentId,
   initialConfig,
   initialName,
+  initialDescription,
   initialIcon,
   initialColor,
   className,
@@ -145,6 +147,7 @@ function AgentEditorInner({
   agentId: string
   initialConfig: AgentConfig
   initialName: string
+  initialDescription: string
   initialIcon: string
   initialColor: string
   className?: string
@@ -162,10 +165,12 @@ function AgentEditorInner({
   // capability info (e.g. the pre-refresh static list) is treated as capable.
   const models = useModels()
   const [name, setName] = useState(initialName)
+  const [description, setDescription] = useState(initialDescription)
   const [icon, setIcon] = useState(initialIcon)
   const [color, setColor] = useState(initialColor)
   const [savedConfig, setSavedConfig] = useState<AgentConfig>(initialConfig)
   const [savedName, setSavedName] = useState(initialName)
+  const [savedDescription, setSavedDescription] = useState(initialDescription)
   const [showPublish, setShowPublish] = useState(false)
   const [showArchive, setShowArchive] = useState(false)
   const [showIconPicker, setShowIconPicker] = useState(false)
@@ -202,6 +207,19 @@ function AgentEditorInner({
     setName(trimmed)
     setSavedName(trimmed)
     updateMeta.mutate({ agentId, name: trimmed })
+  }
+
+  // Description is entity metadata (not versioned) — commit on blur, like the
+  // name. Empty is allowed, so no restore-on-empty guard.
+  function commitDescription() {
+    const trimmed = description.trim()
+    if (trimmed === savedDescription) {
+      setDescription(savedDescription)
+      return
+    }
+    setDescription(trimmed)
+    setSavedDescription(trimmed)
+    updateMeta.mutate({ agentId, description: trimmed })
   }
 
   // Appearance saves immediately (it's entity metadata, not versioned).
@@ -263,6 +281,13 @@ function AgentEditorInner({
             },
           },
         ]}
+        descriptionEditable={{
+          value: description,
+          onChange: setDescription,
+          onCommit: commitDescription,
+          ariaLabel: 'Agent description',
+          placeholder: 'Add a description…',
+        }}
         actions={
           <>
             <SaveStateBadge

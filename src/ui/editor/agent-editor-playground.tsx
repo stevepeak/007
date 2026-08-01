@@ -1,4 +1,4 @@
-import { AlertTriangle, Loader2, Play, Wrench } from 'lucide-react'
+import { AlertTriangle, Brain, Loader2, Play, Wrench } from 'lucide-react'
 import { useMemo } from 'react'
 
 import { inferPromptVariables, type AgentConfig } from '../../engine'
@@ -87,23 +87,26 @@ export function PlaygroundPanel({ config }: { config: AgentConfig }) {
         onSubmit={onRun}
       />
 
-      {error ? (
-        <div className="flex items-start gap-1.5 rounded-md border border-red-200 bg-red-50 p-2.5 text-xs text-red-700">
-          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-          <span>{error}</span>
-        </div>
-      ) : null}
+      {/* Breathing room between the Run button and the run output below it. */}
+      <div className="space-y-3 pt-2">
+        {error ? (
+          <div className="flex items-start gap-1.5 rounded-md border border-red-200 bg-red-50 p-2.5 text-xs text-red-700">
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        ) : null}
 
-      {run.isPending && !result ? (
-        <div className="flex items-center gap-1.5 rounded-md border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-400">
-          <Loader2 className="size-3.5 animate-spin" />
-          Waiting for the agent…
-        </div>
-      ) : null}
+        {run.isPending && !result ? (
+          <div className="flex items-center gap-1.5 rounded-md border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-400">
+            <Loader2 className="size-3.5 animate-spin" />
+            Waiting for the agent…
+          </div>
+        ) : null}
 
-      {result && !run.isPending && !error ? (
-        <PlaygroundResult result={result} />
-      ) : null}
+        {result && !run.isPending && !error ? (
+          <PlaygroundResult result={result} />
+        ) : null}
+      </div>
     </aside>
   )
 }
@@ -141,7 +144,9 @@ function PlaygroundResult({ result }: { result: AgentPreviewResult }) {
   const textOutput =
     'text' in output && typeof output.text === 'string' ? output.text : null
   const verdict = textOutput != null ? asVerdict(textOutput) : null
-  const steps = meta.steps.filter((s) => s.text || s.toolCalls.length > 0)
+  const steps = meta.steps.filter(
+    (s) => s.text || s.reasoning || s.toolCalls.length > 0,
+  )
   const totalTokens = meta.totalUsage.inputTokens + meta.totalUsage.outputTokens
 
   const costPerMTok = models?.find((m) => m.id === meta.model)?.costPerMTok
@@ -185,6 +190,17 @@ function PlaygroundResult({ result }: { result: AgentPreviewResult }) {
           <div className="space-y-2 border-t border-neutral-100 p-2.5">
             {steps.map((step) => (
               <div key={step.stepNumber} className="space-y-1">
+                {step.reasoning?.trim() ? (
+                  <div className="border-l-2 border-violet-200 pl-2">
+                    <div className="mb-0.5 flex items-center gap-1 text-[9px] font-medium uppercase tracking-wide text-violet-400">
+                      <Brain className="size-2.5" />
+                      Reasoning
+                    </div>
+                    <p className="whitespace-pre-wrap break-words text-[11px] italic text-neutral-500">
+                      {step.reasoning.trim()}
+                    </p>
+                  </div>
+                ) : null}
                 {step.text ? (
                   <p className="whitespace-pre-wrap break-words text-xs text-neutral-600">
                     {step.text}

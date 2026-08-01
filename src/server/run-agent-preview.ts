@@ -47,7 +47,12 @@ export async function executeAgentPreview<TDeps>(opts: {
    */
   runContext: RunContext
 }): Promise<AgentPreviewResult> {
-  const { config, wfConfig, runContext } = opts
+  const { config, wfConfig } = opts
+  // Playground explicitly asks for reasoning so the author can inspect the
+  // model's thinking per step (rendered in the trace). This is the provider-
+  // agnostic signal the host's `getModel` honors; scoped to the preview so a
+  // real run keeps its own default. A model that can't reason simply emits none.
+  const runContext: RunContext = { ...opts.runContext, reasoning: true }
   const sink = createMemorySink()
   // Tools are simulated by the agent's own model — no real deps are built.
   const simulator = wfConfig.getModel(config.modelId, runContext)
