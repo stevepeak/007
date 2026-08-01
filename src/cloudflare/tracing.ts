@@ -40,6 +40,12 @@ export type NodeSpanInfo = {
   nodeId: string
   nodeKind: string
   sequence: number
+  /**
+   * Human span title, e.g. `Agent: Legal Researcher - Draft the memo` or
+   * `Branch: Has prior rulings?`. Falls back to the terse kind + id form when
+   * absent.
+   */
+  label?: string
 }
 
 /**
@@ -57,6 +63,7 @@ export async function withNodeSpan<T>(
     'wf.sequence': info.sequence,
   }
   if (info.traceId) attributes['wf.trace_id'] = info.traceId
+  if (info.label) attributes['wf.node_label'] = info.label
 
   // Capture a node failure as a Sentry issue from *inside* the span, so it is
   // attached to this node's span on the run's pinned trace (auto-instrumented
@@ -89,7 +96,7 @@ export async function withNodeSpan<T>(
   const runSpan = async (): Promise<T> =>
     await Sentry.startSpan(
       {
-        name: `wf.node ${info.nodeKind} · ${info.nodeId.slice(0, 8)}`,
+        name: info.label ?? `wf.node ${info.nodeKind} · ${info.nodeId.slice(0, 8)}`,
         op: 'wf.node',
         attributes,
       },

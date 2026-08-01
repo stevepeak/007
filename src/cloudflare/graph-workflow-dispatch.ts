@@ -8,6 +8,7 @@ import {
   runIteration,
 } from '../engine/nodes/iteration'
 import { errorFeedLine, errorStored } from '../engine/error-detail'
+import { nodeSpanLabel } from '../engine/node-label'
 import { runNode, type NodeRunResult } from '../engine/run-node'
 import { recordedBranchResult } from '../engine/run-recorder'
 import type { ExecutableNode, ReportResult } from '../engine/scheduler'
@@ -202,6 +203,7 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
               nodeId: node.id,
               nodeKind: node.kind,
               sequence: seq,
+              label: nodeSpanLabel(node, manifest),
             },
             () =>
               runNode(
