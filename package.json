@@ -54,7 +54,7 @@
     "@tiptap/react": "^3.29.2",
     "@tiptap/starter-kit": "^3.29.2",
     "@xyflow/react": "^12.11.2",
-    "ai": "^7.0.46",
+    "ai": "^7.0.47",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.28.0",
