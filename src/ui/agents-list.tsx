@@ -1,7 +1,6 @@
-import { Cpu, Goal, Plus, Sparkles, Wrench, Workflow } from 'lucide-react'
-import { type ReactNode, useMemo, useState } from 'react'
+import { Cpu, Goal, Plus, Wrench, Workflow } from 'lucide-react'
+import { type ReactNode, useMemo } from 'react'
 
-import type { AgentTemplate } from '../engine'
 import { agentColor, agentIcon, DEFAULT_AGENT_COLOR } from './agent-appearance'
 import { cn } from './cn'
 import { useWfComponents } from './context'
@@ -12,7 +11,6 @@ import {
   useModels,
   useTools,
 } from './hooks'
-import { Modal } from './modal'
 import { useWfNav } from './nav'
 import { QueryState } from './query-state'
 
@@ -20,21 +18,15 @@ import { QueryState } from './query-state'
 // cards so richer metadata (last run, referencing workflows…) can layer in.
 // Each card links into the agent editor. Reached from the hub's Agents card.
 //
-// "New agent" starts blank, or from a host-injected **template** (a named,
-// pre-configured AgentConfig — e.g. a web-search or RAG agent) when the host
-// supplies `templates`.
+// "New agent" always starts from a blank agent the author configures.
 
 const STARTER_PROMPT = 'You are a helpful assistant.'
 
-export type { AgentTemplate }
-
 export type AgentsListProps = {
   className?: string
-  /** Host-injected starting points offered in the "New agent" flow. */
-  templates?: AgentTemplate[]
 }
 
-export function AgentsList({ className, templates = [] }: AgentsListProps) {
+export function AgentsList({ className }: AgentsListProps) {
   const { data, isLoading, error } = useAgents()
   const models = useModels()
   const tools = useTools()
@@ -42,7 +34,6 @@ export function AgentsList({ className, templates = [] }: AgentsListProps) {
   const { Button } = useWfComponents()
   const { navigate } = useWfNav()
   const create = useCreateAgent()
-  const [picking, setPicking] = useState(false)
 
   const defaultModelId = models.data?.[0]?.id ?? 'default'
 
@@ -91,24 +82,6 @@ export function AgentsList({ className, templates = [] }: AgentsListProps) {
     )
   }
 
-  function createFromTemplate(t: AgentTemplate) {
-    create.mutate(
-      {
-        name: t.name,
-        description: t.description,
-        icon: t.icon,
-        color: t.color ?? DEFAULT_AGENT_COLOR,
-        config: { modelId: defaultModelId, ...t.config },
-      },
-      { onSuccess: (r) => navigate(`agents/${r.agentId}/edit`) },
-    )
-  }
-
-  function onNew() {
-    if (templates.length > 0) setPicking(true)
-    else createBlank()
-  }
-
   return (
     <div className={cn('mx-auto max-w-3xl space-y-4 p-6', className)}>
       <div className="flex items-center justify-between">
@@ -119,7 +92,7 @@ export function AgentsList({ className, templates = [] }: AgentsListProps) {
         <Button
           size="sm"
           className="shrink-0 whitespace-nowrap"
-          onClick={onNew}
+          onClick={createBlank}
           disabled={create.isPending}
         >
           <Plus className="size-4" />
@@ -231,22 +204,6 @@ export function AgentsList({ className, templates = [] }: AgentsListProps) {
           )
         })}
       </div>
-
-      {picking ? (
-        <TemplatePicker
-          templates={templates}
-          creating={create.isPending}
-          onBlank={() => {
-            setPicking(false)
-            createBlank()
-          }}
-          onPick={(t) => {
-            setPicking(false)
-            createFromTemplate(t)
-          }}
-          onClose={() => setPicking(false)}
-        />
-      ) : null}
     </div>
   )
 }
@@ -271,92 +228,5 @@ function Pill({
     >
       {children}
     </span>
-  )
-}
-
-function TemplatePicker({
-  templates,
-  creating,
-  onBlank,
-  onPick,
-  onClose,
-}: {
-  templates: AgentTemplate[]
-  creating: boolean
-  onBlank: () => void
-  onPick: (t: AgentTemplate) => void
-  onClose: () => void
-}) {
-  const { Button } = useWfComponents()
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      panelClassName="w-full max-w-2xl rounded-lg border border-neutral-200 bg-white p-5 shadow-xl"
-    >
-      <h2 className="mb-1 text-base font-semibold text-neutral-900">
-        Start a new agent
-      </h2>
-      <p className="mb-4 text-sm text-neutral-500">
-        Begin from a template or a blank agent. You can edit everything after.
-      </p>
-
-      <div className="grid grid-cols-2 gap-2">
-        {templates.map((t) => {
-          const Icon = agentIcon(t.icon)
-          const color = agentColor(t.color)
-          return (
-            <button
-              key={t.key}
-              type="button"
-              disabled={creating}
-              onClick={() => onPick(t)}
-              className="flex h-full items-start gap-3 rounded-lg border border-neutral-200 p-3 text-left transition hover:border-neutral-300 hover:bg-neutral-50"
-            >
-              <span
-                className={cn(
-                  'flex size-9 shrink-0 items-center justify-center rounded-lg',
-                  color.chip,
-                )}
-              >
-                <Icon className="size-4" />
-              </span>
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-medium text-neutral-900">
-                  {t.name}
-                </span>
-                <span className="mt-0.5 block text-xs text-neutral-500">
-                  {t.description}
-                </span>
-              </span>
-            </button>
-          )
-        })}
-        <button
-          type="button"
-          disabled={creating}
-          onClick={onBlank}
-          className="flex h-full items-start gap-3 rounded-lg border border-dashed border-neutral-300 p-3 text-left transition hover:border-neutral-400 hover:bg-neutral-50"
-        >
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-500">
-            <Sparkles className="size-4" />
-          </span>
-          <span className="min-w-0">
-            <span className="block text-sm font-medium text-neutral-700">
-              Start from scratch
-            </span>
-            <span className="mt-0.5 block text-xs text-neutral-500">
-              A blank agent you configure yourself.
-            </span>
-          </span>
-        </button>
-      </div>
-
-      <div className="mt-4 flex justify-end">
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          Cancel
-        </Button>
-      </div>
-    </Modal>
   )
 }

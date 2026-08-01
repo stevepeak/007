@@ -21,7 +21,6 @@ export {
   type AgentConfig,
   type AgentNode,
   type AgentOutput,
-  type AgentTemplate,
   type NewWorkflowTrigger,
   type BranchNode,
   type BranchOperator,

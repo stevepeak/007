@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from 'react'
 
-import { AgentsList, type AgentTemplate } from './agents-list'
+import { AgentsList } from './agents-list'
 import { cn } from './cn'
 import { ComingSoon } from './coming-soon'
 import { CopilotPanel } from './copilot/copilot-panel'
@@ -48,8 +48,6 @@ export type WfAppProps = {
   navigate: (to: string) => void
   /** Override the hub's section cards. */
   sections?: WfHubSection[]
-  /** Host-injected starting points for the "New agent" flow. */
-  agentTemplates?: AgentTemplate[]
 }
 
 export function WfApp({
@@ -57,12 +55,11 @@ export function WfApp({
   path,
   navigate,
   sections = DEFAULT_WF_SECTIONS,
-  agentTemplates,
 }: WfAppProps) {
   return (
     <WfNavProvider basePath={basePath} path={path} navigate={navigate}>
       <WfTabsProvider path={path} navigate={navigate}>
-        <WfTabbedShell sections={sections} agentTemplates={agentTemplates} />
+        <WfTabbedShell sections={sections} />
       </WfTabsProvider>
     </WfNavProvider>
   )
@@ -71,13 +68,7 @@ export function WfApp({
 // Renders the tab strip plus a keep-alive stack: the Home surface and every open
 // asset tab are all mounted at once; inactive ones are hidden (display:none) so
 // their in-memory state persists. Only the active pane is visible.
-function WfTabbedShell({
-  sections,
-  agentTemplates,
-}: {
-  sections: WfHubSection[]
-  agentTemplates?: AgentTemplate[]
-}) {
+function WfTabbedShell({ sections }: { sections: WfHubSection[] }) {
   const { tabs, activeId, homePath } = useWfTabs()
 
   // The path of whatever tab is active — the Home tab's browse path, or the
@@ -98,11 +89,7 @@ function WfTabbedShell({
         <WfTabStrip />
         <div className="relative min-h-0 flex-1">
           <TabPane active={activeId === HOME_TAB_ID}>
-            <HomeRoutes
-              path={homePath}
-              sections={sections}
-              agentTemplates={agentTemplates}
-            />
+            <HomeRoutes path={homePath} sections={sections} />
           </TabPane>
           {tabs.map((tab) => (
             <TabPane key={tab.id} active={activeId === tab.id}>
@@ -127,11 +114,9 @@ function TabPane({ active, children }: { active: boolean; children: ReactNode })
 function HomeRoutes({
   path,
   sections,
-  agentTemplates,
 }: {
   path: string
   sections: WfHubSection[]
-  agentTemplates?: AgentTemplate[]
 }) {
   const { navigate } = useWfNav()
   // Split path from any query string, then into segments.
@@ -179,7 +164,7 @@ function HomeRoutes({
           crumbs={[{ home: true }, sectionCrumb('agents', { current: true })]}
           scroll
         >
-          <AgentsList templates={agentTemplates} />
+          <AgentsList />
         </WfShell>
       )
     }

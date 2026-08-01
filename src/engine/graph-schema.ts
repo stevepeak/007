@@ -189,19 +189,6 @@ export const agentConfigSchema = z.object({
 })
 export type AgentConfig = z.infer<typeof agentConfigSchema>
 
-// A named, pre-configured starting point for a new agent, offered in the "New
-// agent" flow. Host-defined (templates reference host tools by id) but a pure
-// data shape (no React), so it lives here where both the host and the UI can
-// import it. `modelId` is optional — the UI fills in the host's default model.
-export type AgentTemplate = {
-  key: string
-  name: string
-  description: string
-  icon?: string
-  color?: string
-  config: Omit<AgentConfig, 'modelId'> & { modelId?: string }
-}
-
 const agentNodeSchema = baseNode.extend({
   kind: z.literal('agent'),
   // An agent node is a pure pointer at a pre-developed `wf_agent`. The node

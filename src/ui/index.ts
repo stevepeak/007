@@ -99,11 +99,7 @@ export {
   NewWorkflowDialog,
   type NewWorkflowDialogProps,
 } from './new-workflow-dialog'
-export {
-  AgentsList,
-  type AgentsListProps,
-  type AgentTemplate,
-} from './agents-list'
+export { AgentsList, type AgentsListProps } from './agents-list'
 export {
   AGENT_COLORS,
   AGENT_ICONS,
