@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 
 import {
   compileZodSource,
+  formatZodSource,
   zodSourceFromJsonSchema,
   type AgentOutput,
 } from '../../engine'
@@ -102,6 +103,14 @@ export function AgentOutputEditor({
     })
   }
 
+  // Reformat on blur ("commit"), but only when the source is valid — never
+  // rearrange a half-typed, uncompilable draft. Comments are carried through.
+  function formatSource() {
+    if (!source.trim() || !compileZodSource(source).ok) return
+    const formatted = formatZodSource(source)
+    if (formatted !== source) setSource(formatted)
+  }
+
   const options: { kind: Kind; label: string; hint: string }[] = [
     { kind: 'text', label: 'Text', hint: 'Free-form answer' },
     { kind: 'boolean', label: 'Yes / No', hint: 'A single decision' },
@@ -195,6 +204,7 @@ export function AgentOutputEditor({
           <ZodCodeEditor
             value={source}
             onChange={onSourceChange}
+            onBlur={formatSource}
             placeholder={STRUCTURED_PLACEHOLDER}
             invalid={!!compiled && !compiled.ok}
           />

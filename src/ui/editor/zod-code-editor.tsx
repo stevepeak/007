@@ -96,9 +96,9 @@ function tokenize(source: string): Token[] {
   while (i < n) {
     const c = source[i]
 
-    // Line comment.
-    if (c === '/' && source[i + 1] === '/') {
-      let j = i + 2
+    // Line comment — `//` or `#` to end of line.
+    if ((c === '/' && source[i + 1] === '/') || c === '#') {
+      let j = c === '#' ? i + 1 : i + 2
       while (j < n && source[j] !== '\n') j++
       out.push({ text: source.slice(i, j), cls: 'text-neutral-400 italic' })
       i = j
@@ -172,6 +172,8 @@ export type ZodCodeEditorProps = {
   rows?: number
   /** Ghost/example text shown under the (empty) textarea. Never becomes value. */
   placeholder?: string
+  /** Fired when the field loses focus — used to auto-format the source. */
+  onBlur?: () => void
 }
 
 export function ZodCodeEditor({
@@ -180,6 +182,7 @@ export function ZodCodeEditor({
   invalid,
   rows = 9,
   placeholder,
+  onBlur,
 }: ZodCodeEditorProps) {
   const ref = useRef<HTMLTextAreaElement>(null)
   const pendingCaret = useRef<number | null>(null)
@@ -287,8 +290,14 @@ export function ZodCodeEditor({
               setOpen(false)
             }
           }}
-          // Delay so a click on a suggestion (mousedown) still registers.
-          onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+          // Delay so a click on a suggestion (mousedown) still registers, then
+          // close the popup and let the parent format the committed source.
+          onBlur={() =>
+            window.setTimeout(() => {
+              setOpen(false)
+              onBlur?.()
+            }, 120)
+          }
           className={cn(
             'absolute inset-0 h-full w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded-md border bg-transparent px-3 py-2 font-mono text-xs leading-relaxed text-transparent caret-neutral-800 outline-none',
             invalid

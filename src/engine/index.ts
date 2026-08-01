@@ -54,6 +54,7 @@ export {
   agentOutputJsonSchema,
   BOOLEAN_OUTPUT_SCHEMA,
   compileZodSource,
+  formatZodSource,
   TEXT_OUTPUT_SCHEMA,
   zodSourceFromJsonSchema,
   type CompileResult,
