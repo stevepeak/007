@@ -92,16 +92,18 @@ export type ArgBinding = z.infer<typeof argBindingSchema>
 //   • text    — the tool-calling loop's final text (`{ text }`).
 //   • boolean — a YES/NO decision (`{ answer: boolean, reason: string }` via
 //               generateObject).
-//   • object  — a structured object matching a JSON Schema the author writes as
-//               a Zod schema (`source`, compiled to `schema`).
+//   • object  — a structured object matching a JSON Schema (`schema`). The
+//               author writes it as a Zod schema in the editor, which compiles
+//               to `schema`; only `schema` is persisted.
 export const agentOutputSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('text') }),
   z.object({ kind: z.literal('boolean') }),
   z.object({
     kind: z.literal('object'),
-    // The author's raw type source — round-trips back into the editor.
-    source: z.string().default(''),
-    // Compiled JSON Schema fed to `generateObject`.
+    // The compiled JSON Schema fed to `generateObject` — the SINGLE source of
+    // truth. The editable Zod source shown in the editor is derived from this on
+    // demand (`zodSourceFromJsonSchema`) and never persisted, so the two can't
+    // drift. Legacy rows/specs may still carry a `source` key; Zod strips it.
     schema: z.record(z.string(), z.unknown()),
   }),
 ])
@@ -128,7 +130,7 @@ export const subAgentTargetSchema = z.object({
   // target's display name). Must be a valid identifier — it becomes a tool key.
   toolName: z
     .string()
-    .regex(/^\w+$/i, 'Tool name must be alphanumeric/underscore.')
+    .regex(/^\w+$/, 'Tool name must be alphanumeric/underscore.')
     .optional(),
   // Optional human label used in the synthesized tool's description (else the
   // target's display name / description).

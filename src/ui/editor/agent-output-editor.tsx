@@ -15,10 +15,11 @@ import { ZodCodeEditor } from './zod-code-editor'
 //   • Structured — an object the author writes as a Zod schema, compiled to a
 //     JSON Schema for `generateObject`.
 //
-// The structured editor keeps the raw Zod source in the value (round-trips) and
-// a compiled JSON Schema (what the engine runs). While the source doesn't
-// compile, the compiled schema holds at its last-good value and the error is
-// shown, so a draft is always saveable.
+// The persisted value is ONLY the compiled JSON Schema (what the engine runs).
+// The editable Zod source is local editor state, seeded by decompiling that
+// schema; it is never stored, so source and schema can't drift. While the
+// source doesn't compile, the stored schema holds at its last-good value and
+// the error is shown, so a draft is always saveable.
 
 // Ghost/example text only — shown as a placeholder when the author hasn't typed
 // a source yet. It must NEVER be seeded into `source` state or written back via
@@ -55,15 +56,12 @@ export function AgentOutputEditor({
   structuredDisabledReason,
 }: AgentOutputEditorProps) {
   // Local source state for the structured editor so keystrokes stay smooth even
-  // when a given keystroke doesn't compile. Initialised from the stored source,
-  // or — when a schema was authored in code and has no round-trip source —
-  // reconstructed from the compiled schema so the author sees the real shape.
-  // Never the placeholder, so an untouched agent's schema is never overwritten
-  // by example text.
+  // when a given keystroke doesn't compile. Reconstructed from the stored schema
+  // (the single source of truth) so the author always sees the real shape; never
+  // the placeholder, so an untouched agent's schema is never overwritten by
+  // example text.
   const [source, setSource] = useState(() =>
-    value.kind === 'object'
-      ? value.source || zodSourceFromJsonSchema(value.schema)
-      : '',
+    value.kind === 'object' ? zodSourceFromJsonSchema(value.schema) : '',
   )
 
   // Only compile once there's actually a source to compile. When the source is
@@ -86,7 +84,6 @@ export function AgentOutputEditor({
       const c = source.trim() ? compileZodSource(source) : null
       onChange({
         kind: 'object',
-        source,
         schema: c?.ok ? c.schema : EMPTY_SCHEMA,
       })
     }
@@ -97,7 +94,6 @@ export function AgentOutputEditor({
     const c = compileZodSource(next)
     onChange({
       kind: 'object',
-      source: next,
       schema: c.ok
         ? c.schema
         : value.kind === 'object'
