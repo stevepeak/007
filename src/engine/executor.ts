@@ -83,7 +83,11 @@ export async function executeWorkflow<TDeps>(
       const result = await runNode(
         { type: 'execute', node, input },
         {
-          getModel: (modelId) => config.getModel(modelId, runContext),
+          getModel: (modelId, opts) =>
+            config.getModel(modelId, {
+              ...runContext,
+              reasoning: opts?.reasoning ?? runContext.reasoning,
+            }),
           toolRegistry: config.toolRegistry,
           toolDeps,
           nodeOutputs: scheduler.getOutputs(),

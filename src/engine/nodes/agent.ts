@@ -142,7 +142,9 @@ export async function executeAgentNode<TDeps>(
   // meta below (so run cost prices against the model actually used).
   const modelId = agentOverride?.modelId ?? config.modelId
   const promptTemplate = agentOverride?.prompt ?? config.prompt
-  const model = getModel(modelId)
+  // Per-agent reasoning intent overrides the run default; the host's `getModel`
+  // turns `false` into its provider's "no thinking" flag.
+  const model = getModel(modelId, { reasoning: config.enableReasoning })
   // Synthesis eval: an empty tool set forces the model to answer from its seeded
   // history alone. Otherwise resolve the agent's real tools (neutralized under
   // simulate). freezeTools also suppresses delegation-tool synthesis below.
@@ -152,6 +154,14 @@ export async function executeAgentNode<TDeps>(
         simulate,
         fixtures,
       })
+  // Human-readable status templates, keyed by tool id (the ToolSet's own key, so
+  // it matches `toolName` at call time). Only tools that declare a `statusLabel`
+  // appear here; the emission is further gated on `exposeThinking` downstream.
+  const toolStatusLabels: Record<string, string> = {}
+  for (const id of config.toolIds) {
+    const label = toolRegistry.get(id)?.statusLabel
+    if (label) toolStatusLabels[id] = label
+  }
   // Node-level bound inputs override the run-level promptVariables.
   const vars = {
     ...promptVariables,
@@ -203,6 +213,7 @@ export async function executeAgentNode<TDeps>(
     systemPrompt,
     messages,
     tools: effectiveTools,
+    toolStatusLabels,
     sink,
   })
 }

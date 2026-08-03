@@ -69,6 +69,7 @@ export function AgentsList({ className }: AgentsListProps) {
           toolIds: [],
           maxTurns: 5,
           exposeThinking: false,
+          enableReasoning: false,
           output: { kind: 'text' },
           subAgents: {
             targets: [],

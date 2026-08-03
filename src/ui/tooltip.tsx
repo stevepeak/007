@@ -1,11 +1,14 @@
-import type { ReactNode } from 'react'
+import { type ReactNode, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { cn } from './cn'
 
 // Lightweight, dependency-free hover tooltip. Replaces native `title=` tooltips
 // so the SDK renders a consistent, styled bubble instead of the browser default.
-// Pure CSS group-hover — no radix/portal, keeping the SDK's dep surface thin (see
-// primitives.tsx). The host's Tailwind runtime supplies the utilities.
+// The bubble is PORTALED to `document.body` and positioned with `fixed` coords
+// off the trigger's rect — a CSS-only `absolute` bubble gets trapped inside (and
+// painted under) ancestor stacking contexts like the ReactFlow graph canvas, so
+// no z-index on an in-flow bubble can lift it out. The portal escapes that.
 export type WfTooltipProps = {
   content: ReactNode
   children: ReactNode
@@ -14,11 +17,32 @@ export type WfTooltipProps = {
   className?: string
 }
 
-const sideClasses: Record<NonNullable<WfTooltipProps['side']>, string> = {
-  top: 'bottom-full left-1/2 mb-1.5 -translate-x-1/2',
-  bottom: 'top-full left-1/2 mt-1.5 -translate-x-1/2',
-  left: 'right-full top-1/2 mr-1.5 -translate-y-1/2',
-  right: 'left-full top-1/2 ml-1.5 -translate-y-1/2',
+// Gap between the trigger and the bubble, in px.
+const GAP = 6
+
+// The bubble is a `fixed` element; we anchor it to a point on the trigger's rect
+// (viewport coords) and shift it into place with a transform per side.
+function anchor(
+  side: NonNullable<WfTooltipProps['side']>,
+  r: DOMRect,
+): { top: number; left: number } {
+  switch (side) {
+    case 'bottom':
+      return { top: r.bottom, left: r.left + r.width / 2 }
+    case 'left':
+      return { top: r.top + r.height / 2, left: r.left }
+    case 'right':
+      return { top: r.top + r.height / 2, left: r.right }
+    default:
+      return { top: r.top, left: r.left + r.width / 2 }
+  }
+}
+
+const transformFor: Record<NonNullable<WfTooltipProps['side']>, string> = {
+  top: `translate(-50%, calc(-100% - ${GAP}px))`,
+  bottom: `translate(-50%, ${GAP}px)`,
+  left: `translate(calc(-100% - ${GAP}px), -50%)`,
+  right: `translate(${GAP}px, -50%)`,
 }
 
 export function Tooltip({
@@ -27,22 +51,44 @@ export function Tooltip({
   side = 'top',
   className,
 }: WfTooltipProps) {
+  const ref = useRef<HTMLSpanElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+
   // Nothing to show — render the trigger untouched.
   if (content == null || content === '') return <>{children}</>
 
+  function show() {
+    const el = ref.current
+    if (el) setPos(anchor(side, el.getBoundingClientRect()))
+  }
+
   return (
-    <span className={cn('group/tooltip relative inline-flex', className)}>
+    <span
+      ref={ref}
+      className={cn('relative inline-flex', className)}
+      onMouseEnter={show}
+      onMouseLeave={() => setPos(null)}
+    >
       {children}
-      <span
-        role="tooltip"
-        className={cn(
-          'pointer-events-none absolute z-[100] w-max max-w-xs whitespace-normal break-words rounded-md bg-neutral-900 px-2 py-1 text-left text-xs font-normal text-white shadow-md',
-          'opacity-0 transition-opacity duration-100 group-hover/tooltip:opacity-100',
-          sideClasses[side],
-        )}
-      >
-        {content}
-      </span>
+      {pos && typeof document !== 'undefined'
+        ? createPortal(
+            <span
+              role="tooltip"
+              style={{
+                position: 'fixed',
+                top: pos.top,
+                left: pos.left,
+                transform: transformFor[side],
+              }}
+              className={cn(
+                'pointer-events-none z-[1000] w-max max-w-xs whitespace-normal break-words rounded-md bg-neutral-900 px-2 py-1 text-left text-xs font-normal text-white shadow-md',
+              )}
+            >
+              {content}
+            </span>,
+            document.body,
+          )
+        : null}
     </span>
   )
 }

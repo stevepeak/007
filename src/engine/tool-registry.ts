@@ -57,6 +57,14 @@ export type ToolMeta = {
    * simulate — reserve that for pure/compute tools with no external effect.
    */
   sideEffect?: ToolSideEffect
+  /**
+   * Optional human-readable status shown to the end user each time this tool is
+   * called — but only when the calling agent's node has "expose thinking" on. A
+   * `${arg}` template interpolated from the tool call's input args (e.g.
+   * "Searching knowledge base for ${query}"). Omitted → the tool exposes nothing
+   * when called; the raw call is still recorded in the run viewer's dev log.
+   */
+  statusLabel?: string
 }
 
 /** How a tool behaves under the eval `simulate` signal. See {@link ToolMeta}. */

@@ -39,8 +39,16 @@ export type RunFailure = { error: string }
  * Node-facing model factory — resolves a `modelId` to an AI SDK model. The
  * backend binds the run context in (so the host's `getModel` can read live
  * bindings like an API key), leaving nodes a simple `(modelId) => model` call.
+ *
+ * `opts.reasoning` is a per-call override of the run-level reasoning intent
+ * ({@link RunContext.reasoning}): an agent node passes its own `enableReasoning`
+ * here so a per-agent choice wins over the run default. Undefined → fall back to
+ * the run-level intent.
  */
-export type ModelFactory = (modelId: string) => LanguageModel
+export type ModelFactory = (
+  modelId: string,
+  opts?: { reasoning?: boolean },
+) => LanguageModel
 
 /**
  * Reads a {@link WfBlobRef} back to its real (text) value, using the run's deps

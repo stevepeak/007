@@ -44,7 +44,8 @@ export const wfAgent = sqliteTable('wf_agent', {
 ])
 
 // Immutable published agent snapshots. `config` is the full AgentConfig JSON
-// (model, prompt, toolIds, maxTurns, exposeThinking, output contract).
+// (model, prompt, toolIds, maxTurns, exposeThinking, enableReasoning, output
+// contract).
 export const wfAgentVersion = sqliteTable(
   'wf_agent_version',
   {

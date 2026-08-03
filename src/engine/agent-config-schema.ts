@@ -99,6 +99,12 @@ export const agentConfigSchema = z.object({
   // When true, per-step thinking text is forwarded to the run's StreamSink (the
   // RunRoom DO) so the user can watch the agent work.
   exposeThinking: z.boolean().default(false),
+  // When true, the model is asked to reason/think for this agent. Opt-in: an
+  // undefined reasoning intent falls back to the host default, so making it
+  // explicit here (default off) means an agent reasons only when the author asks
+  // for it. Pairs with `exposeThinking` (which streams the reasoning to the user)
+  // and is gated in the editor to models whose `capabilities.reasoning` is true.
+  enableReasoning: z.boolean().default(false),
   // What the agent is expected to produce.
   output: agentOutputSchema.default({ kind: 'text' }),
   // Delegation whitelist + guardrails. Non-empty `targets` makes the engine

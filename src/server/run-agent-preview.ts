@@ -86,7 +86,11 @@ export async function executeAgentPreview<TDeps>(opts: {
   const result = await executeAgentNode<unknown>({
     node,
     input: message,
-    getModel: (modelId) => wfConfig.getModel(modelId, runContext),
+    getModel: (modelId, opts) =>
+      wfConfig.getModel(modelId, {
+        ...runContext,
+        reasoning: opts?.reasoning ?? runContext.reasoning,
+      }),
     toolRegistry,
     toolDeps: {},
     sink,

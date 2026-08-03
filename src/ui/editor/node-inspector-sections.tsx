@@ -1,10 +1,11 @@
-import { ExternalLink } from 'lucide-react'
+import { ExternalLink, HelpCircle } from 'lucide-react'
 
 import { MANUAL_TRIGGER_KIND, PERIODIC_TRIGGER_KIND } from '../../engine'
 import { AgentSelect } from '../agent-select'
 import { useWfComponents } from '../context'
 import { useAgents, useTools, useTriggerEvents, useWorkflows } from '../hooks'
 import { WfLink } from '../nav'
+import { Tooltip } from '../tooltip'
 import { NodeInputsPanel } from './node-data-panel'
 import {
   field,
@@ -99,22 +100,35 @@ export function AgentInspector({
         ) : null}
       </div>
       <div className={field}>
-        <label className="flex items-center gap-2 text-sm font-medium">
-          <Checkbox
-            checked={node.config.exposeThinking}
-            onChange={(e) =>
-              onChange({
-                ...node,
-                config: { ...node.config, exposeThinking: e.target.checked },
-              })
+        <div className="flex items-center gap-1.5">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <Checkbox
+              checked={node.config.exposeThinking}
+              onChange={(e) =>
+                onChange({
+                  ...node,
+                  config: { ...node.config, exposeThinking: e.target.checked },
+                })
+              }
+            />
+            Expose thinking to user
+          </label>
+          <Tooltip
+            side="left"
+            content={
+              <>
+                Stream this agent's work to the user as it happens — both its
+                step-by-step reasoning and a short note each time it calls a tool
+                (e.g. “Searching knowledge base…”) — instead of showing only the
+                final answer. Reasoning is only shown when the agent has{' '}
+                <span className="font-medium">Enable reasoning</span> turned on;
+                tool notes appear only for tools that provide one.
+              </>
             }
-          />
-          Expose thinking to user
-        </label>
-        <p className="text-muted-foreground text-xs">
-          Stream this agent's step-by-step reasoning to the user as it works,
-          instead of only showing the final answer.
-        </p>
+          >
+            <HelpCircle className="text-muted-foreground size-3.5 cursor-help" />
+          </Tooltip>
+        </div>
       </div>
       <div className="border-t border-border" />
       <NodeInputsPanel

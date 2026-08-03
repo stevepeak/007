@@ -12,7 +12,28 @@ import {
 
 import { BOOLEAN_OUTPUT_SCHEMA } from '../agent-output'
 import type { AgentOutput } from '../graph'
+import { PROMPT_VARIABLE_RE } from '../prompt-variables'
 import type { StreamSink } from '../stream-sink'
+
+/**
+ * Fill a tool's `statusLabel` template (`Searching for ${query}`) from the tool
+ * call's input args. Shares the `${token}` grammar with prompt variables. A
+ * token whose arg is missing/null resolves to empty string (a user-facing line
+ * should never show a raw `${…}`), and values are coerced to strings.
+ */
+export function interpolateStatus(template: string, input: unknown): string {
+  const vars =
+    input && typeof input === 'object'
+      ? (input as Record<string, unknown>)
+      : {}
+  return template.replaceAll(PROMPT_VARIABLE_RE, (_match, key: string) => {
+    const v = vars[key]
+    if (v == null) return ''
+    if (typeof v === 'string') return v
+    if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+    return JSON.stringify(v)
+  })
+}
 
 // The shared model-loop core, factored out of `executeAgentNode` so a spawned
 // sub-agent (see `nodes/sub-agent.ts`) runs the IDENTICAL generation logic — one
@@ -67,6 +88,13 @@ export type RunAgentGenerationArgs = {
   systemPrompt: string
   messages: UIMessage[]
   tools: ToolSet
+  /**
+   * Per-tool human-readable status templates, keyed by tool id (== the tool name
+   * the model calls). When `exposeThinking` is on, a matching template is
+   * interpolated with the call's input and streamed to the user; tools without a
+   * template expose nothing.
+   */
+  toolStatusLabels?: Record<string, string>
   sink?: StreamSink
 }
 
@@ -127,8 +155,17 @@ async function runStructuredGeneration(
 async function runToolLoop(
   args: RunAgentGenerationArgs,
 ): Promise<AgentNodeResult> {
-  const { model, modelId, maxTurns, exposeThinking, systemPrompt, messages, tools, sink } =
-    args
+  const {
+    model,
+    modelId,
+    maxTurns,
+    exposeThinking,
+    systemPrompt,
+    messages,
+    tools,
+    toolStatusLabels,
+    sink,
+  } = args
   const stepTraces: AgentNodeMeta['steps'] = []
   const totalUsage = { inputTokens: 0, outputTokens: 0 }
 
@@ -181,6 +218,18 @@ async function runToolLoop(
             message: `Called ${tc.toolName}`,
             meta: { tool: tc.toolName, input: tc.input },
           })
+          // User-facing tool-call update: when the placement exposes thinking and
+          // the tool ships a human-readable `statusLabel`, stream the filled-in
+          // statement to the 'progress' channel (chat) + a mirrored structured
+          // line. A tool without a template exposes nothing.
+          if (exposeThinking) {
+            const template = toolStatusLabels?.[tc.toolName]
+            const message = template && interpolateStatus(template, tc.input).trim()
+            if (message) {
+              void sink.append('progress', message)
+              void sink.log?.({ level: 'info', message })
+            }
+          }
         }
         // The legacy free-text 'progress' channel (chat toasts) + a mirrored
         // structured line, gated by the agent's exposeThinking flag.

@@ -83,7 +83,7 @@ async function runAgentTarget<TDeps>(
     )
   }
   const config = entry.config
-  const model = ctx.getModel(config.modelId)
+  const model = ctx.getModel(config.modelId, { reasoning: config.enableReasoning })
 
   // The sub-agent's own registry tools, plus the injected stop signal. A sub-
   // agent does NOT itself get delegation tools (spawning is one level deep per
@@ -92,6 +92,11 @@ async function runAgentTarget<TDeps>(
     simulate: ctx.simulate,
     fixtures: ctx.fixtures,
   })
+  const toolStatusLabels: Record<string, string> = {}
+  for (const id of config.toolIds) {
+    const label = ctx.toolRegistry.get(id)?.statusLabel
+    if (label) toolStatusLabels[id] = label
+  }
   let stopSignalled = false
   let reason: string | undefined
   const toolSet: Record<string, Tool> = { ...tools }
@@ -125,6 +130,7 @@ async function runAgentTarget<TDeps>(
     systemPrompt,
     messages,
     tools: toolSet,
+    toolStatusLabels,
     sink: ctx.sink,
   })
 
