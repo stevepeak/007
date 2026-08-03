@@ -214,9 +214,17 @@ export function WfTabsProvider({ path, navigate, children }: WfTabsProviderProps
         return
       }
       if (opts?.newTab || activeId === HOME_TAB_ID) {
-        const id = genId()
-        setTabs((prev) => [...prev, { id, path: to }])
-        setActiveId(id)
+        // Reuse an already-open tab for this asset rather than duplicating it:
+        // focus the existing one, else open a fresh tab. Mirrors how the URL
+        // reconcile effect above resolves an asset path to a tab.
+        const existing = tabsRef.current.find((t) => t.path === to)
+        if (existing) {
+          setActiveId(existing.id)
+        } else {
+          const id = genId()
+          setTabs((prev) => [...prev, { id, path: to }])
+          setActiveId(id)
+        }
       } else {
         // Replace the active tab's asset in place.
         setTabs((prev) =>
