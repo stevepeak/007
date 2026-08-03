@@ -119,7 +119,7 @@ const graph = {
   version: 1,
   nodes: [
     { id: 't', kind: 'trigger', label: 'Chat', position: { x: 0, y: 0 }, config: { triggerKind: 'chat' } },
-    { id: 'a', kind: 'agent', label: 'Assistant', position: { x: 200, y: 0 }, config: { agentId: 'assistant' } },
+    { id: 'a', kind: 'agent', label: 'Assistant', position: { x: 200, y: 0 }, config: { agentId: 'assistant', conversation: { kind: 'ref', nodeId: 't', path: 'messages' } } },
     { id: 'o', kind: 'output', label: 'Out', position: { x: 400, y: 0 }, config: {} },
   ],
   edges: [

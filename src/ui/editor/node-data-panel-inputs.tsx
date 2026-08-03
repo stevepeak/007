@@ -1,5 +1,5 @@
-import { Link2, Pencil, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { AlertTriangle, Link2, Pencil, X } from 'lucide-react'
+import { type ReactNode, useMemo, useState } from 'react'
 
 import type {
   ArgBinding,
@@ -9,8 +9,18 @@ import type {
 } from '../../engine'
 import { useWfComponents } from '../context'
 import { cn } from '../cn'
-import { nodeRequires, type AccessibleNode } from './node-io'
-import { bindingsOf, useAccessibleData, withBinding } from './node-data-panel-shared'
+import {
+  agentThreadSource,
+  nodeRequires,
+  type AccessibleNode,
+  type ThreadStatus,
+} from './node-io'
+import {
+  bindingsOf,
+  useAccessibleData,
+  withBinding,
+  withConversation,
+} from './node-data-panel-shared'
 import { BindingSourceNode } from './node-data-panel-picker'
 
 export type NodeInputsPanelProps = {
@@ -33,21 +43,57 @@ export function NodeInputsPanel({
 }: NodeInputsPanelProps) {
   const { accessible, maps } = useAccessibleData(node, graph, itemSchema)
   const requires = useMemo(() => nodeRequires(node, maps), [node, maps])
+  // How the prior conversation reaches this agent — an explicit `conversation`
+  // link if set, otherwise the implicit primary-edge thread (`coerceToMessages`).
+  // Drives the editable "conversation" field below. See `agentThreadSource`.
+  const thread = useMemo(
+    () =>
+      node.kind === 'agent'
+        ? agentThreadSource(graph, node.id, maps)
+        : ({ status: 'none' } as ThreadStatus),
+    [node, graph, maps],
+  )
   const bindings = bindingsOf(node)
   if (node.kind !== 'agent' && node.kind !== 'tool') return null
+
+  const conversation =
+    node.kind === 'agent' ? (node.config.conversation ?? null) : null
+  // Offer the conversation link when a message source is reachable (implicitly or
+  // already linked) — hidden for agents with no thread anywhere upstream.
+  const showConversation = node.kind === 'agent' && thread.status !== 'none'
+  const empty = conversationEmptyState(thread)
+  const nothingToShow = requires.length === 0 && !showConversation
 
   return (
     <section className="space-y-1.5">
       <div className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
         Inputs
       </div>
-      {requires.length === 0 ? (
+      {showConversation ? (
+        <BindingField
+          label="conversation"
+          required={false}
+          description="The prior chat thread passed to this agent as its message history. Link it to the message source (e.g. the chat trigger's messages). Left unlinked, it's inherited automatically from the incoming edge."
+          icon={
+            empty?.tone === 'warn' ? (
+              <AlertTriangle className="size-3.5 shrink-0 text-rose-500" />
+            ) : undefined
+          }
+          emptyText={empty?.text}
+          emptyTone={empty?.tone}
+          binding={conversation}
+          accessible={accessible}
+          onSet={(b) => onChange(withConversation(node, b))}
+        />
+      ) : null}
+      {nothingToShow ? (
         <p className="text-muted-foreground text-xs">
           {node.kind === 'agent'
             ? 'This agent needs no variables.'
             : 'This tool takes no arguments.'}
         </p>
-      ) : (
+      ) : null}
+      {requires.length > 0 ? (
         <div className="space-y-1.5">
           {requires.map((input) => (
             <BindingField
@@ -63,9 +109,24 @@ export function NodeInputsPanel({
             />
           ))}
         </div>
-      )}
+      ) : null}
     </section>
   )
+}
+
+// The label shown in the conversation field when it has no explicit binding.
+// `unlinked` = a message source is reachable but not linked, so the agent will
+// run with no prior context (warn, and point at the source to link).
+function conversationEmptyState(
+  thread: ThreadStatus,
+): { text: string; tone: 'muted' | 'warn' } | undefined {
+  if (thread.status === 'unlinked') {
+    return {
+      text: `Not linked — no prior messages · link to ${thread.sourceLabel}`,
+      tone: 'warn',
+    }
+  }
+  return undefined
 }
 
 // The literal is typed into a single text box, but a tool arg / prompt variable
@@ -122,6 +183,9 @@ function BindingField({
   binding,
   accessible,
   onSet,
+  icon,
+  emptyText,
+  emptyTone,
 }: {
   label: string
   required: boolean
@@ -134,6 +198,13 @@ function BindingField({
   binding: ArgBinding | null
   accessible: AccessibleNode[]
   onSet: (binding: ArgBinding | null) => void
+  /** Optional leading glyph (e.g. a chat icon for the conversation field). */
+  icon?: ReactNode
+  /** Text shown in place of "Not mapped" when unbound — used to describe an
+   * implicit/inherited value that applies until the input is linked. */
+  emptyText?: string
+  /** Tone for `emptyText`: a neutral hint or a warning. */
+  emptyTone?: 'muted' | 'warn'
 }) {
   const { Input, Select } = useWfComponents()
   const [open, setOpen] = useState(false)
@@ -145,6 +216,7 @@ function BindingField({
   return (
     <div className="rounded-md border border-input">
       <div className="flex items-center gap-2 px-2 py-1.5">
+        {icon}
         <code className="shrink-0 rounded bg-muted px-1 py-0.5 text-xs font-medium text-foreground">
           {label}
         </code>
@@ -152,11 +224,13 @@ function BindingField({
         <span
           className={cn(
             'min-w-0 flex-1 truncate text-xs',
-            mapped ? 'text-muted-foreground' : 'text-muted-foreground',
+            !mapped && emptyTone === 'warn'
+              ? 'text-rose-600'
+              : 'text-muted-foreground',
           )}
           title={description}
         >
-          {describeBinding(binding, accessible)}
+          {!mapped && emptyText ? emptyText : describeBinding(binding, accessible)}
         </span>
         {mapped ? (
           <button

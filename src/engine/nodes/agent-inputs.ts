@@ -11,19 +11,24 @@ import type { AgentNode } from '../graph'
 // Kept apart from the orchestration (`agent.ts`) and the model loop
 // (`agent-generation.ts`) so each stays a single, testable concern.
 
-// Extracts UIMessage[] from the incoming node input:
-//   - If the input already looks like a chat trigger (`{messages: [...]}`),
-//     use those messages directly.
-//   - Otherwise wrap the stringified input as a single user message so a
-//     downstream agent can run on a tool node's output.
-export function coerceToMessages(input: unknown): UIMessage[] {
-  if (
+// True when a value looks like a chat/trigger payload carrying a message thread
+// (`{ messages: [...] }`). The agent node uses this to keep history EXPLICIT: a
+// payload is never auto-expanded into the thread — it must be linked via the
+// node's `conversation` binding — so an unlinked chat agent starts fresh instead
+// of implicitly inheriting the conversation.
+export function isMessagesPayload(input: unknown): input is { messages: UIMessage[] } {
+  return (
     input !== null &&
     typeof input === 'object' &&
     Array.isArray((input as { messages?: unknown }).messages)
-  ) {
-    return (input as { messages: UIMessage[] }).messages
-  }
+  )
+}
+
+// Wraps a single upstream value as one user message — how a tool/iteration-fed
+// agent runs on its predecessor's output. It intentionally does NOT expand a
+// `{ messages: [...] }` payload into a thread; multi-message history comes only
+// from the agent node's explicit `conversation` binding (see `resolveConversation`).
+export function coerceToMessages(input: unknown): UIMessage[] {
   const text =
     typeof input === 'string' ? input : JSON.stringify(input ?? '', null, 2)
   return [
@@ -33,6 +38,41 @@ export function coerceToMessages(input: unknown): UIMessage[] {
       parts: [{ type: 'text', text }],
     } satisfies UIMessage,
   ]
+}
+
+// The messages an agent runs on when NO conversation is linked. Prior history is
+// explicit (the `conversation` binding), so a chat/trigger payload contributes
+// only its CURRENT (last) turn — the agent answers the latest message with no
+// prior context, rather than implicitly inheriting the whole thread. A non-payload
+// upstream value becomes the single working user message (tool/iteration input).
+export function unlinkedMessages(input: unknown): UIMessage[] {
+  if (isMessagesPayload(input)) {
+    const last = input.messages[input.messages.length - 1]
+    return last ? [last] : []
+  }
+  return coerceToMessages(input)
+}
+
+// Resolves the agent node's optional `conversation` binding to a message list.
+// When the node declares one (typically a `ref` into the chat trigger's
+// `messages`), that binding is the explicit source of the agent's history; the
+// resolved value is returned only when it's actually an array, so a mis-bound
+// non-array falls back to the implicit primary-input path in the caller. As with
+// prompt vars, a `rehydrate` reads back a value spilled to blob storage upstream.
+// Returns undefined when no binding is set (legacy implicit behavior applies).
+export async function resolveConversation(
+  node: AgentNode,
+  nodeOutputs: Map<string, unknown>,
+  rehydrate?: (value: unknown) => Promise<unknown>,
+): Promise<UIMessage[] | undefined> {
+  const binding = node.config.conversation
+  if (!binding) return undefined
+  let value = resolveBinding(binding, nodeOutputs, {
+    nodeId: node.id,
+    name: 'conversation',
+  })
+  if (rehydrate) value = await rehydrate(value)
+  return Array.isArray(value) ? (value as UIMessage[]) : undefined
 }
 
 // Resolves the node's per-variable input bindings against the live node-output

@@ -117,6 +117,14 @@ const agentNodeSchema = baseNode.extend({
     // `resolveImageRef`) or an already-formed `{ url, mediaType }`. The binding
     // key is a label only. Empty for text-only agents.
     imageInputs: z.record(z.string(), argBindingSchema).default({}),
+    // The prior conversation fed to the agent as its message history — a binding
+    // (typically a `ref` into the chat trigger's `messages`) that resolves to a
+    // UIMessage[]. This is the ONLY source of message history: when omitted the
+    // agent runs with no prior messages (a chat/trigger payload on the primary
+    // edge is NOT implicitly expanded into the thread). The primary incoming edge
+    // governs ordering; a non-conversation upstream value still becomes the
+    // agent's single working user message.
+    conversation: argBindingSchema.optional(),
     // When true, this node forwards the agent's per-step thinking text to the
     // run's StreamSink so the user can watch it work. A per-placement choice —
     // the same agent can stream its reasoning in one workflow and stay quiet in

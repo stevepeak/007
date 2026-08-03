@@ -462,6 +462,86 @@ export function raceInputShapeCount(
   return signatures.size
 }
 
+// Whether a node's resolved output would satisfy runtime `coerceToMessages` —
+// i.e. it carries a top-level `messages` array (the chat trigger's payload, or
+// anything that forwards it unchanged). Detected the same way `nodeOutput`
+// surfaces a trigger's `messages: array` field.
+function carriesThread(out: { fields: DataField[] }): boolean {
+  return out.fields.some((f) => f.key === 'messages' && f.type === 'array')
+}
+
+/**
+ * How the prior conversation reaches an agent node. History is EXPLICIT: it comes
+ * only from the node's `conversation` binding (see `engine/nodes/agent.ts`).
+ *  - `linked`: the node links a message source (the binding) — its history.
+ *  - `unlinked`: no link, but a message source (a chat trigger's `messages`) is
+ *    reachable on the primary path — the author almost certainly means to link it,
+ *    so this drives an editor warning. Unlinked at run time, the agent answers
+ *    only the current turn with no prior context.
+ *  - `none`: no message source in play (e.g. a tool-fed agent) — nothing to link.
+ */
+export type ThreadStatus =
+  | { status: 'linked'; sourceId: string; sourceLabel: string }
+  | { status: 'unlinked'; sourceId: string; sourceLabel: string }
+  | { status: 'none' }
+
+export function agentThreadSource(
+  graph: WorkflowGraph,
+  nodeId: string,
+  maps: IoMaps,
+): ThreadStatus {
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]))
+  const node = byId.get(nodeId)
+  if (!node || node.kind !== 'agent') return { status: 'none' }
+
+  // An explicit `conversation` binding is the linked message source.
+  const bound = node.config.conversation
+  if (bound) {
+    const src = bound.kind === 'ref' ? byId.get(bound.nodeId) : undefined
+    return {
+      status: 'linked',
+      sourceId: src?.id ?? '',
+      sourceLabel: src?.label ?? (bound.kind === 'literal' ? 'literal' : '—'),
+    }
+  }
+
+  // No link — is a message source reachable on the primary path? If so, the author
+  // almost certainly wants it linked; surface it (→ warning) with that source so
+  // the fix ("link to <source>") is obvious.
+  const src = reachableMessageSource(graph, node.id, byId, maps)
+  return src
+    ? { status: 'unlinked', sourceId: src.id, sourceLabel: src.label }
+    : { status: 'none' }
+}
+
+// The nearest message-carrying node on an agent's single-predecessor path: the
+// direct predecessor if it carries `{ messages }` (resolving through race/
+// passthrough transparency via `nodeOutput`), else one hop up when a reshaping
+// node sits between the source and the agent. Undefined for a fan-in (a join
+// hides `messages` behind a source-keyed object) or when no source is near.
+function reachableMessageSource(
+  graph: WorkflowGraph,
+  nodeId: string,
+  byId: Map<string, WorkflowNode>,
+  maps: IoMaps,
+): { id: string; label: string } | undefined {
+  const preds = predecessorIds(graph, nodeId)
+  if (preds.length !== 1) return undefined
+  const pred = byId.get(preds[0])
+  if (!pred) return undefined
+  if (carriesThread(nodeOutput(pred, maps, graph, byId, new Set()))) {
+    return { id: pred.id, label: pred.label }
+  }
+  const grandIds = predecessorIds(graph, pred.id)
+  if (grandIds.length === 1) {
+    const grand = byId.get(grandIds[0])
+    if (grand && carriesThread(nodeOutput(grand, maps, graph, byId, new Set()))) {
+      return { id: grand.id, label: grand.label }
+    }
+  }
+  return undefined
+}
+
 // The output shape the node itself produces — what it makes available to nodes
 // downstream of it. Mirrors one entry of `accessibleData`, but for the node in
 // hand (e.g. a Trigger, which has no upstream but still *provides* its payload).

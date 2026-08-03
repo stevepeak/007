@@ -17,8 +17,10 @@ import {
 import {
   attachImages,
   coerceToMessages,
+  resolveConversation,
   resolveImageInputs,
   resolveNodeInputs,
+  unlinkedMessages,
 } from './agent-inputs'
 import { type SubAgentCtx, synthesizeDelegationTools } from './sub-agent'
 
@@ -158,7 +160,14 @@ export async function executeAgentNode<TDeps>(
   const systemPrompt = substitutePromptVariables(promptTemplate, vars)
   // Any bound image inputs ride along as vision parts on the user turn.
   const imageParts = await resolveImageInputs(node, nodeOutputs, resolveImage)
-  const messages = attachImages(coerceToMessages(input), imageParts)
+  // History is EXPLICIT: it comes only from the node's `conversation` binding (a
+  // linked message source, typically the chat trigger's `messages`). Without a
+  // link, a chat/trigger payload does NOT implicitly become the thread — the agent
+  // answers only the current turn with no prior context (surfaced as an editor
+  // warning). See `unlinkedMessages`.
+  const linked = await resolveConversation(node, nodeOutputs, rehydrate)
+  const history = linked ?? unlinkedMessages(input)
+  const messages = attachImages(history, imageParts)
 
   // Delegation: when this agent whitelists sub-agents/workflows, merge the
   // synthesized spawn/await tools into its tool set (text agents only — the

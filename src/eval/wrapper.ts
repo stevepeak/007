@@ -62,7 +62,18 @@ export function buildAgentWrapperGraph(
         kind: 'agent',
         label: 'Agent',
         position: { x: 280, y: 0 },
-        config: { agentId, version, inputs: {}, imageInputs: {}, exposeThinking: false },
+        config: {
+          agentId,
+          version,
+          inputs: {},
+          imageInputs: {},
+          exposeThinking: false,
+          // Synthesis mode seeds a conversation via `triggerInput.messages`; link
+          // it explicitly so the seeded thread reaches the agent (history is no
+          // longer implicitly expanded from the trigger payload). Absent messages
+          // (non-synthesis evals) resolve to nothing and are ignored.
+          conversation: { kind: 'ref', nodeId: triggerId, path: 'messages' },
+        },
       },
       {
         id: outputId,

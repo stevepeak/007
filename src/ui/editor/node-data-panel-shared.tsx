@@ -40,6 +40,21 @@ export function withBinding(
   return node
 }
 
+// The agent node's `conversation` binding lives outside the `inputs`/`args` map
+// (it resolves to a message list, not a stringified prompt var), so it has its
+// own setter. Passing null clears the link — the node then falls back to the
+// implicit primary-edge behavior.
+export function withConversation(
+  node: WorkflowNode,
+  binding: ArgBinding | null,
+): WorkflowNode {
+  if (node.kind !== 'agent') return node
+  const config = { ...node.config }
+  if (binding == null) delete config.conversation
+  else config.conversation = binding
+  return { ...node, config }
+}
+
 // Shared hook: resolve the tool/agent/trigger metadata maps once from the data
 // client (react-query caches, so calling it in more than one panel is cheap).
 export function useIoMaps() {

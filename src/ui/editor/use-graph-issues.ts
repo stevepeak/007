@@ -7,7 +7,11 @@ import {
   type WorkflowNode,
 } from '../../engine'
 import { useIoMaps } from './node-data-panel'
-import { missingRequiredInputs, raceInputShapeCount } from './node-io'
+import {
+  agentThreadSource,
+  missingRequiredInputs,
+  raceInputShapeCount,
+} from './node-io'
 
 // The editor's full issue list: the engine's metadata-free structural + config
 // checks (`collectGraphIssues`), plus binding-completeness — which needs the
@@ -49,6 +53,20 @@ export function useGraphIssues(graph: WorkflowGraph): GraphIssue[] {
           message:
             'Inputs have different shapes — a race must join producers of the same shape so its consumer sees one consistent result.',
         })
+      }
+      // Message history is explicit: an agent gets prior context only via its
+      // `conversation` link. Warn when a message source is reachable but unlinked —
+      // the agent would run with no prior conversation until it's wired up.
+      if (node.kind === 'agent') {
+        const thread = agentThreadSource(graph, node.id, maps)
+        if (thread.status === 'unlinked') {
+          bindingIssues.push({
+            nodeId: node.id,
+            nodeLabel: node.label,
+            severity: 'warning',
+            message: `This agent has no conversation link, so it will run with no prior messages. Link its conversation input to “${thread.sourceLabel}” (the chat trigger’s messages) to pass the full conversation.`,
+          })
+        }
       }
     }
 
