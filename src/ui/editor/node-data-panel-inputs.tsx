@@ -13,6 +13,7 @@ import {
   agentThreadSource,
   nodeRequires,
   type AccessibleNode,
+  type NodeInput,
   type ThreadStatus,
 } from './node-io'
 import {
@@ -22,6 +23,7 @@ import {
   withConversation,
 } from './node-data-panel-shared'
 import { BindingSourceNode } from './node-data-panel-picker'
+import { useHoverHighlightSetter } from './node-renderers-shared'
 
 export type NodeInputsPanelProps = {
   node: WorkflowNode
@@ -64,28 +66,31 @@ export function NodeInputsPanel({
   const empty = conversationEmptyState(thread)
   const nothingToShow = requires.length === 0 && !showConversation
 
+  // Group by required vs optional. The conversation link is optional and lives at
+  // the top of the optional group.
+  const requiredInputs = requires.filter((i) => i.required)
+  const optionalInputs = requires.filter((i) => !i.required)
+  const hasOptional = showConversation || optionalInputs.length > 0
+
+  const renderInput = (input: NodeInput) => (
+    <BindingField
+      key={input.key}
+      label={input.label}
+      required={input.required}
+      description={input.description}
+      type={input.type}
+      enumValues={input.enum}
+      binding={bindings[input.key] ?? null}
+      accessible={accessible}
+      onSet={(b) => onChange(withBinding(node, input.key, b))}
+    />
+  )
+
   return (
-    <section className="space-y-1.5">
+    <section className="space-y-3">
       <div className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
-        Inputs
+        Needs
       </div>
-      {showConversation ? (
-        <BindingField
-          label="conversation"
-          required={false}
-          description="The prior chat thread passed to this agent as its message history. Link it to the message source (e.g. the chat trigger's messages). Left unlinked, it's inherited automatically from the incoming edge."
-          icon={
-            empty?.tone === 'warn' ? (
-              <AlertTriangle className="size-3.5 shrink-0 text-rose-500" />
-            ) : undefined
-          }
-          emptyText={empty?.text}
-          emptyTone={empty?.tone}
-          binding={conversation}
-          accessible={accessible}
-          onSet={(b) => onChange(withConversation(node, b))}
-        />
-      ) : null}
       {nothingToShow ? (
         <p className="text-muted-foreground text-xs">
           {node.kind === 'agent'
@@ -93,24 +98,47 @@ export function NodeInputsPanel({
             : 'This tool takes no arguments.'}
         </p>
       ) : null}
-      {requires.length > 0 ? (
+      {requiredInputs.length > 0 ? (
         <div className="space-y-1.5">
-          {requires.map((input) => (
-            <BindingField
-              key={input.key}
-              label={input.label}
-              required={input.required}
-              description={input.description}
-              type={input.type}
-              enumValues={input.enum}
-              binding={bindings[input.key] ?? null}
-              accessible={accessible}
-              onSet={(b) => onChange(withBinding(node, input.key, b))}
-            />
-          ))}
+          <InputGroupLabel>Required</InputGroupLabel>
+          <div className="space-y-1.5">{requiredInputs.map(renderInput)}</div>
+        </div>
+      ) : null}
+      {hasOptional ? (
+        <div className="space-y-1.5">
+          <InputGroupLabel>Optional</InputGroupLabel>
+          <div className="space-y-1.5">
+            {showConversation ? (
+              <BindingField
+                label="conversation"
+                required={false}
+                description="The prior chat thread passed to this agent as its message history. Link it to the message source (e.g. the chat trigger's messages). Left unlinked, the agent runs with no prior conversation."
+                icon={
+                  empty?.tone === 'warn' ? (
+                    <AlertTriangle className="size-3.5 shrink-0 text-rose-500" />
+                  ) : undefined
+                }
+                emptyText={empty?.text}
+                emptyTone={empty?.tone}
+                binding={conversation}
+                accessible={accessible}
+                onSet={(b) => onChange(withConversation(node, b))}
+              />
+            ) : null}
+            {optionalInputs.map(renderInput)}
+          </div>
         </div>
       ) : null}
     </section>
+  )
+}
+
+// A subordinate group heading ("Required" / "Optional") under the "Needs" header.
+function InputGroupLabel({ children }: { children: ReactNode }) {
+  return (
+    <div className="text-muted-foreground/70 text-[10px] font-semibold tracking-wide uppercase">
+      {children}
+    </div>
   )
 }
 
@@ -207,11 +235,18 @@ function BindingField({
   emptyTone?: 'muted' | 'warn'
 }) {
   const { Input, Select } = useWfComponents()
+  const setHovered = useHoverHighlightSetter()
   const [open, setOpen] = useState(false)
   const [literal, setLiteral] = useState(
     binding?.kind === 'literal' ? String(binding.value ?? '') : '',
   )
   const mapped = Boolean(binding)
+  // The full (untruncated) text shown in the row — surfaced as the hover title so
+  // a long ref like "Chat message · clientOrgName" is fully readable.
+  const shown =
+    !mapped && emptyText ? emptyText : describeBinding(binding, accessible)
+  // The upstream node this binding refs, if any — hovering illuminates it on canvas.
+  const refNodeId = binding?.kind === 'ref' ? binding.nodeId : null
 
   return (
     <div className="rounded-md border border-input">
@@ -228,9 +263,11 @@ function BindingField({
               ? 'text-rose-600'
               : 'text-muted-foreground',
           )}
-          title={description}
+          title={description ? `${shown} — ${description}` : shown}
+          onMouseEnter={refNodeId ? () => setHovered(refNodeId) : undefined}
+          onMouseLeave={refNodeId ? () => setHovered(null) : undefined}
         >
-          {!mapped && emptyText ? emptyText : describeBinding(binding, accessible)}
+          {shown}
         </span>
         {mapped ? (
           <button

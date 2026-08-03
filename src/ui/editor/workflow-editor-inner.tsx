@@ -18,6 +18,7 @@ import { WfShell } from '../shell'
 import { BottomDock } from './bottom-dock'
 import { HistoryMenu, VersionsMenu } from './editor-menus'
 import { NodeInspector } from './node-inspector'
+import { HoverHighlightProvider } from './node-renderers-shared'
 import { NodePalette } from './node-palette'
 import { useEditHistory } from './use-edit-history'
 import { useStoredEdit } from './use-stored-edit'
@@ -346,6 +347,9 @@ export function EditorInner({
         }
       >
         <div className="flex h-full min-h-0 flex-col">
+          {/* One hover-highlight scope over both canvas and inspector: hovering a
+              binding's source in the inspector illuminates that node on the canvas. */}
+          <HoverHighlightProvider>
           <div className="flex min-h-0 flex-1">
             <NodePalette />
             <div className="relative flex-1">
@@ -376,6 +380,7 @@ export function EditorInner({
               />
             ) : null}
           </div>
+          </HoverHighlightProvider>
           <BottomDock
             node={selected}
             graph={selection?.graph ?? graph}

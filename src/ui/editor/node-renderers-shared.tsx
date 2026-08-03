@@ -16,7 +16,13 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react'
-import { createContext, useContext, type ReactNode } from 'react'
+import {
+  createContext,
+  useContext,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react'
 
 import { type WorkflowNode } from '../../engine'
 import { cn } from '../cn'
@@ -78,6 +84,35 @@ function useNodeRunStatus(id: string): string | undefined {
   return useContext(RunStatusContext).get(id)
 }
 
+// The node id currently highlighted from OUTSIDE the canvas — e.g. hovering a
+// binding's source in the inspector illuminates that node in the graph. Provided
+// around BOTH the canvas and the inspector so one side sets it and the other
+// reads it. Defaults to a no-op so components work in preview/read-only trees.
+const HoverHighlightContext = createContext<{
+  id: string | null
+  setHovered: (id: string | null) => void
+}>({ id: null, setHovered: () => {} })
+
+export function HoverHighlightProvider({ children }: { children: ReactNode }) {
+  const [id, setHovered] = useState<string | null>(null)
+  const value = useMemo(() => ({ id, setHovered }), [id])
+  return (
+    <HoverHighlightContext.Provider value={value}>
+      {children}
+    </HoverHighlightContext.Provider>
+  )
+}
+
+// Setter for the highlighted node — call on mouse enter/leave of a source ref so
+// the referenced node lights up on the canvas.
+export function useHoverHighlightSetter(): (id: string | null) => void {
+  return useContext(HoverHighlightContext).setHovered
+}
+
+function useIsNodeHovered(id: string): boolean {
+  return useContext(HoverHighlightContext).id === id
+}
+
 // Shared renderer preamble. Casts the xyflow node data once (the single
 // `props.data` cast in this file), subscribes to the invalid + run-status
 // contexts unconditionally — React forbids conditional hooks, so these always
@@ -93,15 +128,18 @@ export function useNodeRenderer<K extends EditorNodeData['kind']>(
   data: Extract<EditorNodeData, { kind: K }>
   invalid: boolean
   status: string | undefined
+  highlighted: boolean
 } | null {
   const data = props.data as unknown as EditorNodeData
   const invalid = useIsNodeInvalid(props.id)
   const status = useNodeRunStatus(props.id)
+  const highlighted = useIsNodeHovered(props.id)
   if (data.kind !== kind) return null
   return {
     data: data as Extract<EditorNodeData, { kind: K }>,
     invalid,
     status,
+    highlighted,
   }
 }
 
@@ -165,6 +203,7 @@ export function NodeCard({
   selected,
   invalid,
   status,
+  highlighted,
   subtitle,
   icon: IconOverride,
   iconChip,
@@ -177,6 +216,8 @@ export function NodeCard({
   invalid?: boolean
   /** Run status in the run viewer — tints the card + shows a corner dot. */
   status?: string
+  /** Illuminated from outside (e.g. hovering a binding that refs this node). */
+  highlighted?: boolean
   subtitle?: string
   /** Overrides the kind icon (e.g. an agent node shows its agent's icon). */
   icon?: LucideIcon
@@ -203,6 +244,7 @@ export function NodeCard({
             : style.accent,
         status === 'skipped' && 'opacity-60',
         selected && 'ring-ring ring-2 ring-offset-1',
+        highlighted && !selected && 'ring-2 ring-sky-400 ring-offset-1 wf-node-glow',
       )}
       style={{ minWidth: 200, maxWidth: 260 }}
     >
@@ -253,6 +295,7 @@ export function NodePill({
   selected,
   invalid,
   status,
+  highlighted,
   subtitle,
 }: {
   kind: WorkflowNode['kind']
@@ -260,6 +303,8 @@ export function NodePill({
   selected?: boolean
   invalid?: boolean
   status?: string
+  /** Illuminated from outside (e.g. hovering a binding that refs this node). */
+  highlighted?: boolean
   /** Shown only as a hover title so the pill stays a single line. */
   subtitle?: string
 }) {
@@ -279,6 +324,7 @@ export function NodePill({
             : style.accent,
         status === 'skipped' && 'opacity-60',
         selected && 'ring-ring ring-2 ring-offset-1',
+        highlighted && !selected && 'ring-2 ring-sky-400 ring-offset-1 wf-node-glow',
       )}
     >
       {status ? <RunStatusDot status={status} /> : null}
@@ -391,7 +437,7 @@ export function defineNode<K extends EditorNodeData['kind'], E = undefined>(
     // so this stays hook-safe even though `r` may be null for a mismatched kind.
     const extra = spec.useExtra?.() as E
     if (!r) return null
-    const { data, invalid, status } = r
+    const { data, invalid, status, highlighted } = r
     const source =
       typeof spec.source === 'function'
         ? spec.source(data, extra)
@@ -414,6 +460,7 @@ export function defineNode<K extends EditorNodeData['kind'], E = undefined>(
             selected={props.selected}
             invalid={invalid}
             status={status}
+            highlighted={highlighted}
             subtitle={pill.subtitle}
           />
         ) : (
@@ -423,6 +470,7 @@ export function defineNode<K extends EditorNodeData['kind'], E = undefined>(
             selected={props.selected}
             invalid={invalid}
             status={status}
+            highlighted={highlighted}
             subtitle={subtitle}
             icon={appear?.icon}
             iconChip={appear?.iconChip}
