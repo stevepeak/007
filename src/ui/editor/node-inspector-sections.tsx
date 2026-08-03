@@ -1,7 +1,10 @@
+import { ExternalLink } from 'lucide-react'
+
 import { MANUAL_TRIGGER_KIND, PERIODIC_TRIGGER_KIND } from '../../engine'
 import { AgentSelect } from '../agent-select'
 import { useWfComponents } from '../context'
 import { useAgents, useTools, useTriggerEvents, useWorkflows } from '../hooks'
+import { WfLink } from '../nav'
 import { NodeInputsPanel } from './node-data-panel'
 import {
   field,
@@ -85,6 +88,15 @@ export function AgentInspector({
             })
           }
         />
+        {node.config.agentId ? (
+          <WfLink
+            to={`agents/${node.config.agentId}/edit`}
+            newTab
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs hover:underline"
+          >
+            <ExternalLink className="size-3" /> Open agent in new tab
+          </WfLink>
+        ) : null}
       </div>
       <div className={field}>
         <label className="flex items-center gap-2 text-sm font-medium">
