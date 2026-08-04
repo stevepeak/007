@@ -111,7 +111,7 @@ export function chainGraph(boomExecution?: Record<string, unknown>) {
         kind: 'output',
         label: 'Out',
         position: { x: 600, y: 0 },
-        config: {},
+        config: { source: { kind: 'ref', nodeId: 'after', path: '' } },
       },
     ],
     edges: [

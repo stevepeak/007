@@ -10,7 +10,7 @@ import {
   type ReportResult,
 } from './scheduler'
 import type { StreamSink } from './stream-sink'
-import { resolveTriggerInput } from './trigger-registry'
+import { enforceOutputContract, resolveTriggerInput } from './trigger-registry'
 
 export type ExecuteWorkflowDeps<TDeps> = {
   /** Raw graph JSON from a workflow_version row. Validated here. */
@@ -181,16 +181,25 @@ export async function executeWorkflow<TDeps>(
       }
 
       if (instruction.type === 'output') {
+        // The bound Output value must satisfy the trigger's output contract
+        // (e.g. a chat run must produce `{ text }`); this throws — failing the
+        // run via the surrounding catch — rather than letting the host read an
+        // empty result. Contract-less triggers pass through untouched.
+        const output = enforceOutputContract(
+          config.triggers,
+          trigger.config.triggerKind,
+          instruction.output,
+        )
         await recorder.record({
           nodeId: instruction.nodeId,
           nodeKind: 'output',
           sequence: sequence++,
           input: instruction.output,
           status: 'completed',
-          output: instruction.output,
+          output,
         })
         const result = {
-          output: instruction.output,
+          output,
           outputNodeId: instruction.nodeId,
         }
         if (config.onRunComplete) {

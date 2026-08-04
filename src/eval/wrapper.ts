@@ -80,7 +80,10 @@ export function buildAgentWrapperGraph(
         kind: 'output',
         label: 'Output',
         position: { x: 560, y: 0 },
-        config: {},
+        // The run's result is the agent's whole output — bound explicitly (the
+        // Output no longer implicitly forwards the live edge). The manual trigger
+        // declares no output contract, so any shape the agent produces is fine.
+        config: { source: { kind: 'ref', nodeId: agentNodeId, path: '' } },
       },
     ],
     edges: [

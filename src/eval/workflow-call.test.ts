@@ -38,7 +38,7 @@ const parentGraph = {
       kind: 'output',
       label: 'Out',
       position: { x: 400, y: 0 },
-      config: {},
+      config: { source: { kind: 'ref', nodeId: 'w', path: '' } },
     },
   ],
   edges: [
@@ -107,7 +107,7 @@ describe('eval harness — workflow-calls-workflow (tool callee)', () => {
         kind: 'output',
         label: 'Out',
         position: { x: 400, y: 0 },
-        config: {},
+        config: { source: { kind: 'ref', nodeId: 'shout', path: '' } },
       },
     ],
     edges: [
@@ -193,7 +193,7 @@ describe('eval harness — workflow-calls-workflow (agent callee, nested manifes
         kind: 'output',
         label: 'Out',
         position: { x: 400, y: 0 },
-        config: {},
+        config: { source: { kind: 'ref', nodeId: 'a', path: '' } },
       },
     ],
     edges: [

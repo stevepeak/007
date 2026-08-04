@@ -81,6 +81,34 @@ export function BranchInspector({
   )
 }
 
+export function OutputInspector({
+  node,
+  graph,
+  onChange,
+  itemSchema,
+}: NodeInspectorProps) {
+  if (node.kind !== 'output') return null
+  return (
+    <div className={field}>
+      <DataRefField
+        node={node}
+        graph={graph}
+        value={node.config.source}
+        itemSchema={itemSchema}
+        onChange={(source) =>
+          onChange({
+            ...node,
+            config: { ...node.config, source },
+          })
+        }
+      />
+      <p className="text-muted-foreground text-xs">
+        Pick the upstream value the user receives.
+      </p>
+    </div>
+  )
+}
+
 export function SwitchInspector({ node, onChange }: NodeInspectorProps) {
   const { Input, Label } = useWfComponents()
   if (node.kind !== 'switch') return null

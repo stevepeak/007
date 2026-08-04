@@ -97,6 +97,31 @@ export function resolveTriggerInput(
   }
 }
 
+/**
+ * Enforce a trigger's output contract on a finished run's output. When the
+ * trigger declares an `outputContractSchema` (e.g. a chat trigger's `{ text }`),
+ * the run's final output is parsed against it and the parsed value returned —
+ * so a run whose Output was bound to the wrong shape fails loudly here instead
+ * of the host silently rendering an empty result. Triggers with no contract
+ * (manual/periodic, or events that declare none) pass their output through
+ * untouched.
+ */
+export function enforceOutputContract(
+  triggers: TriggerRegistry,
+  triggerKind: string,
+  output: unknown,
+): unknown {
+  const schema = triggers[triggerKind]?.outputContractSchema
+  if (!schema) return output
+  const parsed = schema.safeParse(output)
+  if (!parsed.success) {
+    throw new Error(
+      `Workflow output does not satisfy the '${triggerKind}' trigger contract: ${parsed.error.message}`,
+    )
+  }
+  return parsed.data
+}
+
 // --- Serializable event catalog for the UI --------------------------------
 // The creation flow ("trigger by event") needs to show which events exist and
 // what data each provides. Zod schemas can't cross the RPC wire, so the server
@@ -119,6 +144,14 @@ export type TriggerEventOption = {
    * represented as JSON Schema.
    */
   inputSchema?: JsonSchema
+  /**
+   * The output the workflow is expected to produce, as JSON Schema — the shape
+   * the trigger contracts its caller to receive (e.g. a chat trigger expects
+   * `{ text }`). The editor validates the Output node's bound value against this
+   * and the runtime enforces it. Absent when the trigger declares no contract or
+   * the schema can't be represented as JSON Schema.
+   */
+  outputContract?: JsonSchema
 }
 
 // Best-effort reflection of a Zod v4 schema's coarse type, unwrapping the
@@ -159,11 +192,12 @@ function reflectFields(schema: z.ZodType): TriggerEventField[] {
   }))
 }
 
-// Convert an event's Zod input schema to JSON Schema for the data-mapping tree.
-// `unrepresentable: 'any'` keeps a lone transform/pipe anywhere in the payload
-// from throwing (which would omit the whole shape); it degrades to `{}` instead.
-// Best-effort: a still-unrepresentable schema simply omits the shape.
-function eventInputSchema(schema: z.ZodType): JsonSchema | undefined {
+// Convert an event's Zod schema (input payload or output contract) to JSON
+// Schema for the data-mapping tree / contract check. `unrepresentable: 'any'`
+// keeps a lone transform/pipe anywhere in the schema from throwing (which would
+// omit the whole shape); it degrades to `{}` instead. Best-effort: a still-
+// unrepresentable schema simply omits the shape.
+function toJsonSchema(schema: z.ZodType): JsonSchema | undefined {
   try {
     return z.toJSONSchema(schema, { unrepresentable: 'any' })
   } catch {
@@ -179,6 +213,9 @@ export function describeTriggerEvents(
     kind,
     description: entry.description,
     fields: reflectFields(entry.inputSchema),
-    inputSchema: eventInputSchema(entry.inputSchema),
+    inputSchema: toJsonSchema(entry.inputSchema),
+    outputContract: entry.outputContractSchema
+      ? toJsonSchema(entry.outputContractSchema)
+      : undefined,
   }))
 }

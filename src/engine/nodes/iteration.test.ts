@@ -161,11 +161,17 @@ describe('runIteration', () => {
 
 describe('executeSubgraph', () => {
   test('identity subgraph returns the item unchanged', async () => {
-    const out = await executeSubgraph(
-      buildIterationSubgraph(),
-      { hello: 'world' },
-      dummyCtx,
-    )
+    // The identity subgraph is trigger → output; the iteration_item trigger's
+    // output IS the current element, so bind the Output to that trigger.
+    const sub = buildIterationSubgraph()
+    const trigNode = sub.nodes.find((n) => n.kind === 'trigger')!
+    const outNode = sub.nodes.find((n) => n.kind === 'output')!
+    ;(outNode.config as { source?: unknown }).source = {
+      kind: 'ref',
+      nodeId: trigNode.id,
+      path: '',
+    }
+    const out = await executeSubgraph(sub, { hello: 'world' }, dummyCtx)
     expect(out).toEqual({ hello: 'world' })
   })
 
@@ -193,14 +199,14 @@ describe('executeSubgraph', () => {
           kind: 'output',
           label: 'Yes',
           position: { x: 200, y: 0 },
-          config: {},
+          config: { source: { kind: 'ref', nodeId: 'b', path: '' } },
         },
         {
           id: 'no',
           kind: 'output',
           label: 'No',
           position: { x: 200, y: 100 },
-          config: {},
+          config: { source: { kind: 'ref', nodeId: 'b', path: '' } },
         },
       ],
       edges: [

@@ -178,14 +178,14 @@ export const AggregateNodeRenderer = defineNode({
 
 export const OutputNodeRenderer = defineNode({
   kind: 'output',
-  // Terminal: it forwards the live upstream result, so it has no source handle.
+  // Terminal: it returns its bound upstream value, so it has no source handle.
   source: 'none',
-  subtitle: 'Forwards the live upstream result',
+  subtitle: 'Returns the bound value to the caller',
   // The `Result` bookend inside an iteration (a nested child has a `parentId`)
   // renders as a tiny pill; a top-level output keeps the full card.
   pill: (data, props) =>
     props.parentId != null
-      ? { label: data.label, subtitle: 'Forwards the live upstream result' }
+      ? { label: data.label, subtitle: 'Returns the bound value' }
       : null,
 })
 

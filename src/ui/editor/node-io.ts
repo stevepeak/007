@@ -542,6 +542,119 @@ function reachableMessageSource(
   return undefined
 }
 
+// Coarse type compatibility, matching the granularity the field model produces
+// (string/number/object/array). A text agent's WHOLE output is typed 'text' but
+// is structurally a string, so it satisfies a `string` contract; JSON integers
+// satisfy a `number` contract.
+function coarseCompatible(want: string, got: string): boolean {
+  if (want === got) return true
+  if (want === 'string') return got === 'text'
+  if (want === 'number') return got === 'integer'
+  return false
+}
+
+// Depth-first lookup of a field by its dotted `path` (returns the field itself,
+// not just its type — so callers can descend into its children).
+function findField(fields: DataField[], path: string): DataField | undefined {
+  for (const f of fields) {
+    if (f.path === path) return f
+    if (f.children) {
+      const g = findField(f.children, path)
+      if (g) return g
+    }
+  }
+  return undefined
+}
+
+// The active trigger's declared output contract (JSON Schema), or undefined when
+// the graph's trigger declares none. Exactly one trigger is expected; the first
+// is used if a malformed graph has more.
+function triggerOutputContract(
+  graph: WorkflowGraph,
+  maps: IoMaps,
+): JsonSchema | undefined {
+  const trigger = graph.nodes.find((n) => n.kind === 'trigger')
+  if (trigger?.kind !== 'trigger') return undefined
+  return maps.triggersByKind.get(trigger.config.triggerKind)?.outputContract
+}
+
+// A bound value, resolved for the contract check: its coarse type and (for an
+// object) its top-level fields.
+type BoundValue = { type: string; fields: DataField[] }
+
+// Does a bound value satisfy one JSON-Schema contract? Coarse (string/object/
+// array/number) — not a deep structural equivalence. A `{ text }` object
+// contract accepts a value carrying a `text` field; a `string` contract accepts
+// a bare string. An `anyOf` (union) is satisfied when ANY branch is — so a
+// contract of "string OR { text }" accepts both binding the `text` field
+// directly and binding the whole `{ text }` output.
+function satisfiesContract(contract: JsonSchema, bound: BoundValue): boolean {
+  const anyOf = (contract as { anyOf?: JsonSchema[] }).anyOf
+  if (Array.isArray(anyOf)) {
+    return anyOf.some((c) => satisfiesContract(c, bound))
+  }
+  const t = typeof contract.type === 'string' ? contract.type : 'unknown'
+  if (t === 'object') {
+    const props = (contract.properties ?? {}) as Record<string, JsonSchema>
+    const required = new Set<string>(
+      Array.isArray(contract.required)
+        ? (contract.required as string[])
+        : Object.keys(props),
+    )
+    return Object.entries(props).every(([key, sub]) => {
+      if (!required.has(key)) return true
+      const want = typeof sub.type === 'string' ? sub.type : 'unknown'
+      const field = bound.fields.find((f) => f.key === key)
+      return field ? coarseCompatible(want, field.type) : false
+    })
+  }
+  return coarseCompatible(t, bound.type)
+}
+
+// A short human description of what a contract accepts, for the error message.
+function describeContract(contract: JsonSchema): string {
+  const anyOf = (contract as { anyOf?: JsonSchema[] }).anyOf
+  if (Array.isArray(anyOf)) {
+    return [...new Set(anyOf.map(describeContract))].join(' or ')
+  }
+  const t = typeof contract.type === 'string' ? contract.type : 'a value'
+  if (t === 'object') {
+    const keys = Object.keys((contract.properties ?? {}) as object)
+    return keys.length ? `a { ${keys.join(', ')} } value` : 'an object'
+  }
+  return t === 'string' ? 'text' : t
+}
+
+// Author-time check that an Output node's bound value satisfies the active
+// trigger's output contract. Returns a human message when it doesn't, or
+// undefined when it does (or there's nothing to check: no contract declared, no
+// source bound yet — the unbound case is a distinct, more pointed error raised in
+// `collectGraphIssues`).
+export function outputContractIssue(
+  graph: WorkflowGraph,
+  output: Extract<WorkflowNode, { kind: 'output' }>,
+  maps: IoMaps,
+): string | undefined {
+  const contract = triggerOutputContract(graph, maps)
+  if (!contract) return undefined
+  const source = output.config.source
+  if (!source) return undefined // unbound → handled by collectGraphIssues
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]))
+  const src = byId.get(source.nodeId)
+  if (!src) return undefined // dangling ref → handled by the strict schema gate
+  const out = nodeOutput(src, maps, graph, byId, new Set())
+  // Narrow to the value AT the bound path: the whole output, or the sub-field.
+  const bound: BoundValue = source.path
+    ? (() => {
+        const f = findField(out.fields, source.path)
+        return { fields: f?.children ?? [], type: f?.type ?? 'unknown' }
+      })()
+    : out
+  if (satisfiesContract(contract, bound)) return undefined
+  const where = `${src.label} · ${source.path || 'whole output'}`
+  return `The Output must send ${describeContract(contract)}, but “${where}” is ${bound.type}.`
+}
+
 // The output shape the node itself produces — what it makes available to nodes
 // downstream of it. Mirrors one entry of `accessibleData`, but for the node in
 // hand (e.g. a Trigger, which has no upstream but still *provides* its payload).

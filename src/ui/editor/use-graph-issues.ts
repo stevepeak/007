@@ -10,6 +10,7 @@ import { useIoMaps } from './node-data-panel'
 import {
   agentThreadSource,
   missingRequiredInputs,
+  outputContractIssue,
   raceInputShapeCount,
 } from './node-io'
 
@@ -65,6 +66,21 @@ export function useGraphIssues(graph: WorkflowGraph): GraphIssue[] {
             nodeLabel: node.label,
             severity: 'warning',
             message: `This agent has no conversation link, so it will run with no prior messages. Link its conversation input to “${thread.sourceLabel}” (the chat trigger’s messages) to pass the full conversation.`,
+          })
+        }
+      }
+      // The Output's bound value must satisfy the trigger's output contract (e.g.
+      // a chat trigger expects `{ text }`). Needs the trigger catalog to know the
+      // contract, so it lives here rather than in the engine's metadata-free
+      // `collectGraphIssues` (which raises the distinct unbound-output error).
+      if (node.kind === 'output') {
+        const msg = outputContractIssue(graph, node, maps)
+        if (msg) {
+          bindingIssues.push({
+            nodeId: node.id,
+            nodeLabel: node.label,
+            severity: 'error',
+            message: msg,
           })
         }
       }

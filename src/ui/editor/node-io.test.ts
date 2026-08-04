@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 
 import type { WorkflowGraph } from '../../engine'
-import { agentThreadSource, type IoMaps } from './node-io'
+import {
+  agentThreadSource,
+  outputContractIssue,
+  type IoMaps,
+} from './node-io'
 
 // Minimal builders — the helper only reads node id/kind/label/config and edge
 // source/target, and pulls output shapes from the maps below, so we cast past the
@@ -47,6 +51,17 @@ const maps = {
             messages: { type: 'array' },
             userText: { type: 'string' },
           },
+        },
+        // The chat trigger accepts a bare string OR a `{ text }` object.
+        outputContract: {
+          anyOf: [
+            { type: 'string' },
+            {
+              type: 'object',
+              properties: { text: { type: 'string' } },
+              required: ['text'],
+            },
+          ],
         },
       },
     ],
@@ -141,5 +156,69 @@ describe('agentThreadSource', () => {
   test('none: the node is not an agent', () => {
     const g = graph([chatTrigger, agent], [edge('e', 't', 'a')])
     expect(agentThreadSource(g, 't', maps)).toEqual({ status: 'none' })
+  })
+})
+
+describe('outputContractIssue', () => {
+  // An Output bound to a text agent's whole output satisfies the chat trigger's
+  // `{ text }` contract — no issue.
+  test('clean: output bound to a text agent satisfies the { text } contract', () => {
+    const out = node('o', 'output', 'Output', {
+      source: { kind: 'ref', nodeId: 'a', path: '' },
+    })
+    const g = graph(
+      [chatTrigger, agent, out],
+      [edge('e1', 't', 'a'), edge('e2', 'a', 'o')],
+    )
+    expect(outputContractIssue(g, out as never, maps)).toBeUndefined()
+  })
+
+  // Binding the agent's `text` FIELD directly (a bare string) is a natural author
+  // choice and satisfies the string branch of the contract — no issue.
+  test('clean: output bound to the agent text field (a string) satisfies it', () => {
+    const out = node('o', 'output', 'Output', {
+      source: { kind: 'ref', nodeId: 'a', path: 'text' },
+    })
+    const g = graph(
+      [chatTrigger, agent, out],
+      [edge('e1', 't', 'a'), edge('e2', 'a', 'o')],
+    )
+    expect(outputContractIssue(g, out as never, maps)).toBeUndefined()
+  })
+
+  // An Output bound to a reshaping tool that emits `{ result }` (no `text`) fails
+  // the contract — a clear error mentioning what text the Output must send.
+  test('mismatch: output bound to a non-text value flags a contract error', () => {
+    const tool = node('tl', 'tool', 'Reshape', { toolId: 'reshape', args: {} })
+    const out = node('o', 'output', 'Output', {
+      source: { kind: 'ref', nodeId: 'tl', path: '' },
+    })
+    const g = graph(
+      [chatTrigger, tool, out],
+      [edge('e1', 't', 'tl'), edge('e2', 'tl', 'o')],
+    )
+    const msg = outputContractIssue(g, out as never, maps)
+    expect(msg).toBeString()
+    expect(msg).toContain('text')
+  })
+
+  // No contract declared (manual trigger) → nothing to enforce.
+  test('no contract: a contract-less trigger yields no issue', () => {
+    const manual = node('m', 'trigger', 'Manual', { triggerKind: 'manual' })
+    const out = node('o', 'output', 'Output', {
+      source: { kind: 'ref', nodeId: 'a', path: '' },
+    })
+    const g = graph(
+      [manual, agent, out],
+      [edge('e1', 'm', 'a'), edge('e2', 'a', 'o')],
+    )
+    expect(outputContractIssue(g, out as never, maps)).toBeUndefined()
+  })
+
+  // Unbound is handled by the engine's collectGraphIssues, not here.
+  test('unbound: no source yields no contract issue (handled elsewhere)', () => {
+    const out = node('o', 'output', 'Output', {})
+    const g = graph([chatTrigger, agent, out], [edge('e', 'a', 'o')])
+    expect(outputContractIssue(g, out as never, maps)).toBeUndefined()
   })
 })

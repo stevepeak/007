@@ -45,7 +45,7 @@ describe('agent override — matrix eval seam', () => {
     nodes: [
       { id: 't', kind: 'trigger', label: 'Chat', position: { x: 0, y: 0 }, config: { triggerKind: 'chat' } },
       { id: 'a', kind: 'agent', label: 'Assistant', position: { x: 200, y: 0 }, config: { agentId: 'assistant' } },
-      { id: 'o', kind: 'output', label: 'Out', position: { x: 400, y: 0 }, config: {} },
+      { id: 'o', kind: 'output', label: 'Out', position: { x: 400, y: 0 }, config: { source: { kind: 'ref', nodeId: 'a', path: '' } } },
     ],
     edges: [
       { id: 'e1', source: 't', target: 'a', condition: null },

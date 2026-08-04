@@ -9,6 +9,7 @@ import { NodeInputsPanel } from './node-data-panel'
 import {
   BranchInspector,
   IterationInspector,
+  OutputInspector,
   PassthroughInspector,
   SwitchInspector,
 } from './node-inspector-control-flow'
@@ -37,7 +38,7 @@ export type { NodeInspectorProps } from './node-inspector-shared'
 
 // Per-kind inspector dispatch, mirroring `NODE_TYPES` in node-renderers.tsx:
 // each `node.kind` maps to the component that edits it. Kinds with no editable
-// config (e.g. `output`) are absent, so the dispatcher renders just the shared
+// config (e.g. `note`) are absent, so the dispatcher renders just the shared
 // header for them — the same no-op the old inlined conditional produced.
 const NODE_INSPECTORS: Partial<
   Record<WorkflowNode['kind'], ComponentType<NodeInspectorProps>>
@@ -47,6 +48,7 @@ const NODE_INSPECTORS: Partial<
   tool: ToolInspector,
   branch: BranchInspector,
   switch: SwitchInspector,
+  output: OutputInspector,
   iteration: IterationInspector,
   workflow: WorkflowInspector,
   'feature-request': FeatureRequestInspector,

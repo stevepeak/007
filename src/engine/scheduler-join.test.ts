@@ -49,7 +49,7 @@ describe('Scheduler', () => {
         branch('bn'),
         agent('c'),
         race('r'),
-        output('o'),
+        output('o', 'r'),
       ],
       edges: [
         edge('t', 'a'),
@@ -74,7 +74,7 @@ describe('Scheduler', () => {
     // edge in declaration order (a→r before b→r), matching Output's tie-break.
     const s = new Scheduler({
       version: 1,
-      nodes: [trigger('t'), agent('a'), agent('b'), race('r'), output('o')],
+      nodes: [trigger('t'), agent('a'), agent('b'), race('r'), output('o', 'r')],
       edges: [
         edge('t', 'a'),
         edge('t', 'b'),
@@ -95,7 +95,7 @@ describe('Scheduler', () => {
     let joinInput: unknown
     const s2 = new Scheduler({
       version: 1,
-      nodes: [trigger('t'), agent('a'), agent('b'), agent('join'), output('o')],
+      nodes: [trigger('t'), agent('a'), agent('b'), agent('join'), output('o', 'join')],
       edges: [
         edge('t', 'a'),
         edge('t', 'b'),
@@ -133,7 +133,7 @@ describe('Scheduler', () => {
         agent('b'),
         agent('c'),
         aggregate('agg'),
-        output('o'),
+        output('o', 'agg'),
       ],
       edges: [
         edge('t', 'a'),
@@ -181,7 +181,7 @@ describe('Scheduler', () => {
     let aggInput: unknown
     const s = new Scheduler({
       version: 1,
-      nodes: [trigger('t'), agent('a'), aggregate('agg'), output('o')],
+      nodes: [trigger('t'), agent('a'), aggregate('agg'), output('o', 'agg')],
       edges: [edge('t', 'a'), edge('a', 'agg'), edge('agg', 'o')],
     })
     s.seedTrigger({})

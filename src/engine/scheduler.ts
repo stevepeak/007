@@ -1,3 +1,4 @@
+import { resolveBinding } from './binding'
 import {
   isBookendKind,
   workflowGraphSchema,
@@ -206,12 +207,12 @@ export class Scheduler {
     return inc.every(this.isEdgeAlive)
   }
 
-  // The Output node forwards the result of whichever upstream node actually
-  // executed and connected into it via a live edge. Multiple Output nodes are
-  // legal (one per branch arm); a single Output with multiple incoming edges
-  // (branch arms converging) also works — exactly one incoming edge will be
-  // live at any time. We stop at the first reachable Output in declaration
-  // order.
+  // An Output is reachable once one of its incoming edges is live. The edge only
+  // gates WHEN it fires — the VALUE it returns is named separately by its
+  // `source` ref (see `resolveOutputValue`). Multiple Output nodes are legal (one
+  // per branch arm); a single Output with multiple incoming edges (branch arms
+  // converging) also works — exactly one incoming edge will be live at any time.
+  // We stop at the first reachable Output in declaration order.
   private reachableOutput():
     Extract<WorkflowNode, { kind: 'output' }> | undefined {
     for (const n of this.graph.nodes) {
@@ -227,6 +228,29 @@ export class Scheduler {
       }
     }
     return undefined
+  }
+
+  // Resolve the VALUE an Output returns to the caller. The value is named
+  // explicitly by the Output's `source` ref, resolved against the run's global
+  // node-output map — the same mechanism agent/tool/branch/iteration inputs use.
+  // This makes "what the caller receives" an explicit, typed choice rather than
+  // "whatever node happened to be on the live edge". An Output with no `source`
+  // is a malformed graph (the author never bound a value), so we throw loudly
+  // rather than silently return `undefined` — the strict runtime gate and the
+  // author-time diagnostics both flag this before a run reaches here.
+  private resolveOutputValue(
+    out: Extract<WorkflowNode, { kind: 'output' }>,
+  ): unknown {
+    const { source } = out.config
+    if (!source) {
+      throw new Error(
+        `Output node ${out.id} has no bound value — connect its source to the upstream result the caller should receive.`,
+      )
+    }
+    return resolveBinding(source, this.nodeOutputs, {
+      nodeId: out.id,
+      name: 'output',
+    })
   }
 
   // Resolve the node's "input" — for a single predecessor we pass that node's
@@ -272,12 +296,7 @@ export class Scheduler {
   next(): SchedulerInstruction {
     const out = this.reachableOutput()
     if (out) {
-      const inc = this.incoming.get(out.id) ?? []
-      const liveEdge = inc.find(this.isEdgeAlive)
-      const output = liveEdge
-        ? this.nodeOutputs.get(liveEdge.source)
-        : undefined
-      return { type: 'output', nodeId: out.id, output }
+      return { type: 'output', nodeId: out.id, output: this.resolveOutputValue(out) }
     }
 
     const next = this.graph.nodes.find((n) => this.isReady(n.id))
@@ -309,12 +328,7 @@ export class Scheduler {
   nextBatch(): BatchInstruction {
     const out = this.reachableOutput()
     if (out) {
-      const inc = this.incoming.get(out.id) ?? []
-      const liveEdge = inc.find(this.isEdgeAlive)
-      const output = liveEdge
-        ? this.nodeOutputs.get(liveEdge.source)
-        : undefined
-      return { type: 'output', nodeId: out.id, output }
+      return { type: 'output', nodeId: out.id, output: this.resolveOutputValue(out) }
     }
 
     // `filter` preserves graph declaration order, so the batch — and any

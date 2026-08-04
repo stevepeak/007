@@ -10,7 +10,7 @@ describe('Scheduler', () => {
     // are reported.
     const s = new Scheduler({
       version: 1,
-      nodes: [trigger('t'), agent('a'), agent('b'), agent('join'), output('o')],
+      nodes: [trigger('t'), agent('a'), agent('b'), agent('join'), output('o', 'join')],
       edges: [
         edge('t', 'a'),
         edge('t', 'b'),
@@ -48,7 +48,7 @@ describe('Scheduler', () => {
   test('a batch dispatches sibling nodes concurrently (they overlap)', async () => {
     const s = new Scheduler({
       version: 1,
-      nodes: [trigger('t'), agent('a'), agent('b'), agent('join'), output('o')],
+      nodes: [trigger('t'), agent('a'), agent('b'), agent('join'), output('o', 'join')],
       edges: [
         edge('t', 'a'),
         edge('t', 'b'),

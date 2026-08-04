@@ -7,7 +7,7 @@ describe('Scheduler', () => {
   test('linear graph runs trigger → agent → output and forwards output', () => {
     const s = new Scheduler({
       version: 1,
-      nodes: [trigger('t'), agent('a'), output('o')],
+      nodes: [trigger('t'), agent('a'), output('o', 'a')],
       edges: [edge('t', 'a'), edge('a', 'o')],
     })
     s.seedTrigger({ userText: 'hi' })
@@ -15,6 +15,31 @@ describe('Scheduler', () => {
     expect(r.fired).toEqual(['a'])
     expect(r.outputNodeId).toBe('o')
     expect(r.output).toEqual({ ran: 'a' })
+  })
+
+  test('output resolves its BOUND source, not the live-edge predecessor', () => {
+    // The Output is fed by `b` (the live edge) but explicitly binds `a` — so it
+    // returns `a`'s value, proving the value comes from the binding, not the edge.
+    const s = new Scheduler({
+      version: 1,
+      nodes: [trigger('t'), agent('a'), agent('b'), output('o', 'a')],
+      edges: [edge('t', 'a'), edge('a', 'b'), edge('b', 'o')],
+    })
+    s.seedTrigger({ userText: 'hi' })
+    const r = drive(s, (id) => ({ output: { ran: id } }))
+    expect(r.output).toEqual({ ran: 'a' })
+  })
+
+  test('an unbound output throws rather than returning an implicit value', () => {
+    const s = new Scheduler({
+      version: 1,
+      nodes: [trigger('t'), agent('a'), output('o')],
+      edges: [edge('t', 'a'), edge('a', 'o')],
+    })
+    s.seedTrigger({ userText: 'hi' })
+    expect(() => drive(s, (id) => ({ output: { ran: id } }))).toThrow(
+      /Output node o has no bound value/,
+    )
   })
 
   test('branch routes to the YES arm and ignores the NO arm', () => {
@@ -25,7 +50,7 @@ describe('Scheduler', () => {
         branch('b'),
         agent('yes'),
         agent('no'),
-        output('o'),
+        output('o', 'yes'),
       ],
       edges: [
         edge('t', 'b'),
@@ -53,7 +78,7 @@ describe('Scheduler', () => {
         branch('b'),
         agent('yes'),
         agent('no'),
-        output('o'),
+        output('o', 'no'),
       ],
       edges: [
         edge('t', 'b'),
@@ -81,7 +106,7 @@ describe('Scheduler', () => {
         branch('b'),
         agent('yes'),
         agent('no'),
-        output('o'),
+        output('o', 'yes'),
       ],
       edges: [
         edge('t', 'b'),
@@ -121,7 +146,7 @@ describe('Scheduler', () => {
         agent('ask'),
         agent('yes'),
         agent('no'),
-        output('o'),
+        output('o', 'no'),
       ],
       edges: [
         edge('t', 'ask'),
@@ -145,7 +170,7 @@ describe('Scheduler', () => {
   test('a YES/NO agent forwards its {answer,reason} to the taken arm', () => {
     const s = new Scheduler({
       version: 1,
-      nodes: [trigger('t'), agent('ask'), agent('yes'), output('o')],
+      nodes: [trigger('t'), agent('ask'), agent('yes'), output('o', 'yes')],
       edges: [
         edge('t', 'ask'),
         edge('ask', 'yes', 'yes'),
@@ -180,7 +205,7 @@ describe('Scheduler', () => {
         branch('b'),
         agent('yes'),
         agent('no'),
-        output('o'),
+        output('o', 'no'),
       ],
       edges: [
         edge('t', 'b'),

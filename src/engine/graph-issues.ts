@@ -90,6 +90,20 @@ function configIssue(node: WorkflowNode): GraphIssue | null {
         }
       }
       return null
+    case 'output':
+      // The value the caller receives must be named explicitly — a `ref` into an
+      // upstream node's output. Unbound is a hard error: the run would have no
+      // result to return (mirrors iteration's "no list selected"). The incoming
+      // edge only decides WHEN this Output fires, not WHAT it returns.
+      if (node.config.source === undefined) {
+        return {
+          ...base,
+          severity: 'error',
+          message:
+            'No value bound — pick the upstream result the caller should receive.',
+        }
+      }
+      return null
     default:
       return null
   }

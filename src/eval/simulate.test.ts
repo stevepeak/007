@@ -97,7 +97,7 @@ function graph(toolId: string, args: Record<string, unknown>) {
         kind: 'output',
         label: 'Out',
         position: { x: 400, y: 0 },
-        config: {},
+        config: { source: { kind: 'ref', nodeId: 'tool1', path: '' } },
       },
     ],
     edges: [

@@ -324,13 +324,18 @@ const noteNodeSchema = baseNode.extend({
 
 const outputNodeSchema = baseNode.extend({
   kind: z.literal('output'),
-  // The Output node is a pure terminator. It carries no config of its own —
-  // its value is the output of whichever upstream node actually executed and
-  // connected into it. Multiple Outputs in one graph are legal (one per branch
-  // arm); a single Output with multiple incoming edges also works (the
-  // scheduler picks the live one). An empty `{}` keeps the union shape
-  // consistent with the other node kinds.
-  config: z.object({}).default({}),
+  // The Output node terminates a run and names the value the caller receives.
+  // `source` is an explicit `ref` into ANY upstream node's output (the same data
+  // picker agent/tool/branch inputs use), resolved against the run's global
+  // node-output map — NOT read off the incoming edge. This makes "what the user
+  // sees" explicit and typed rather than "whatever node happened to be wired in".
+  // Optional so a never-picked Output (undefined → an author-time error) is
+  // distinct from a real selection; `.default({})` keeps historical `{}` configs
+  // parsing. The incoming edge is retained purely for readiness/routing: it gates
+  // WHEN the Output fires (so one Output per branch arm still works; the scheduler
+  // picks the live arm), while `source` names the VALUE. Multiple Outputs in one
+  // graph remain legal.
+  config: z.object({ source: refBindingSchema.optional() }).default({}),
 })
 
 // An Iteration node fans out over a list: it runs its embedded `subgraph` once

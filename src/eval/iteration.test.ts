@@ -68,6 +68,12 @@ describe('eval harness — iteration graph', () => {
     { id: 'se1', source: itemTriggerId, target: shoutId, condition: null },
     { id: 'se2', source: shoutId, target: itemOutputId, condition: null },
   ]
+  // The subgraph's Result output returns the shout node's per-item output.
+  ;(
+    subgraph.nodes.find((n) => n.id === itemOutputId)!.config as {
+      source?: unknown
+    }
+  ).source = { kind: 'ref', nodeId: shoutId, path: '' }
 
   const graph = {
     version: 1,
@@ -96,7 +102,7 @@ describe('eval harness — iteration graph', () => {
         kind: 'output',
         label: 'Out',
         position: { x: 400, y: 0 },
-        config: {},
+        config: { source: { kind: 'ref', nodeId: 'it', path: '' } },
       },
     ],
     edges: [
@@ -202,7 +208,7 @@ describe('eval harness — iteration graph', () => {
           kind: 'output',
           label: 'Out',
           position: { x: 480, y: 0 },
-          config: {},
+          config: { source: { kind: 'ref', nodeId: 'it', path: '' } },
         },
       ],
       edges: [

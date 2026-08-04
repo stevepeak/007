@@ -23,7 +23,14 @@ function switchGraph() {
     kind: 'output' as const,
     label: id,
     position: { x, y: 0 },
-    config: {},
+    // Each arm's Output returns its own producing tool (text-out ← text-tool …).
+    config: {
+      source: {
+        kind: 'ref' as const,
+        nodeId: id.replace('-out', '-tool'),
+        path: '',
+      },
+    },
   })
   return {
     version: 1 as const,

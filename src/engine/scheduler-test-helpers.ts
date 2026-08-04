@@ -39,13 +39,16 @@ export function branch (id: string) {
 }
 }
 
-export function output (id: string) {
+// `source` names the upstream node whose output this Output returns (the new
+// explicit binding). Omit it only to build an intentionally-unbound Output (the
+// scheduler now throws on one, so most tests must pass the producing node id).
+export function output (id: string, source?: string) {
   return {
   id,
   kind: 'output' as const,
   position: pos(),
   label: id,
-  config: {},
+  config: source ? { source: { kind: 'ref' as const, nodeId: source, path: '' } } : {},
 }
 }
 

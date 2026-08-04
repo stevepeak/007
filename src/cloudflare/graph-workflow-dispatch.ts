@@ -14,6 +14,7 @@ import { runNode, type NodeRunResult } from '../engine/run-node'
 import { recordedBranchResult } from '../engine/run-recorder'
 import type { ExecutableNode, ReportResult } from '../engine/scheduler'
 import type { RunLogEntry, StreamSink } from '../engine/stream-sink'
+import { enforceOutputContract } from '../engine/trigger-registry'
 import { createWfDb } from '../storage/client'
 import { finalizeRun, replaceNodeLogs, type WfRunLogRow } from '../storage/data'
 import { createDurableRunRecorder } from '../storage/run-recorder'
@@ -309,10 +310,21 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
 // out (output `undefined`, no node id).
 export async function finishRun<TDeps, E extends GraphWorkflowEnv>(
   ctx: RunCtx<TDeps, E>,
-  output: unknown,
+  rawOutput: unknown,
   outputNodeId: string | null,
 ): Promise<GraphWorkflowResult> {
-  const { step, env, config, p, room } = ctx
+  const { step, env, config, p, room, scheduler } = ctx
+  // Enforce the trigger's output contract (e.g. chat's `{ text }`) before we
+  // persist anything: a run whose Output was bound to the wrong shape — or that
+  // fizzled out with no result under a contract that requires one — fails here
+  // (the caller's catch records the failure) rather than the host reading an
+  // empty result. Pure, deterministic Zod on an in-hand value, so it's safe in
+  // the orchestrator (no step.do needed). Contract-less triggers pass through.
+  const output = enforceOutputContract(
+    config.triggers,
+    scheduler.trigger.config.triggerKind,
+    rawOutput,
+  )
   await stepDo(step, 'finalize', () =>
     finalizeRun(createWfDb(env.DB), { runId: p.workflowRunId, output }),
   )

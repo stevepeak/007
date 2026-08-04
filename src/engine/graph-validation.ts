@@ -49,10 +49,11 @@ function checkGraphShape(g: GraphShape, ctx: GraphCheckCtx): void {
   }
 }
 
-// Ref bindings must point at real nodes. Tool `args`, Workflow `inputs`, and a
-// Branch's single `source` all share the ArgBinding shape. A binary decision
+// Ref bindings must point at real nodes. Tool `args`, Workflow `inputs`, and the
+// Branch/Output `source` all share the ArgBinding shape. A binary decision
 // (branch) may still leave one arm unconnected — it "fizzles out" at run time —
-// so a missing yes/no edge is deliberately not flagged here.
+// so a missing yes/no edge is deliberately not flagged here. (An Output with no
+// `source` at all is a distinct, softer author-time concern handled elsewhere.)
 function checkRefBindings(g: GraphShape, ctx: GraphCheckCtx): void {
   const ids = new Set(g.nodes.map((n) => n.id))
   for (const n of g.nodes) {
@@ -73,12 +74,13 @@ function checkRefBindings(g: GraphShape, ctx: GraphCheckCtx): void {
         }
       }
     }
-    if (n.kind === 'branch') {
+    if (n.kind === 'branch' || n.kind === 'output') {
       const src = n.config.source
       if (src && !ids.has(src.nodeId)) {
+        const label = n.kind === 'branch' ? 'Branch' : 'Output'
         ctx.addIssue({
           code: 'custom',
-          message: `Branch node ${n.id} source references missing node ${src.nodeId}.`,
+          message: `${label} node ${n.id} source references missing node ${src.nodeId}.`,
         })
       }
     }

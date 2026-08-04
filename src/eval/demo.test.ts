@@ -78,7 +78,7 @@ describe('eval harness — tool graph', () => {
         kind: 'output',
         label: 'Out',
         position: { x: 400, y: 0 },
-        config: {},
+        config: { source: { kind: 'ref', nodeId: 'tool1', path: '' } },
       },
     ],
     edges: [
@@ -167,7 +167,7 @@ describe('eval harness — agent graph', () => {
         kind: 'output',
         label: 'Out',
         position: { x: 400, y: 0 },
-        config: {},
+        config: { source: { kind: 'ref', nodeId: 'a', path: '' } },
       },
     ],
     edges: [
@@ -209,13 +209,13 @@ describe('eval harness — agent graph', () => {
       'agent',
       'output',
     ])
-    // The agent node emits a coarse user-facing `progress` line at start
-    // (derived from its manifest name). The final answer is the node OUTPUT, not
-    // a progress line — so it must NOT leak into the progress feed.
+    // A node surfaces a user-facing `progress` line only when the author set a
+    // `progressNote` — there is no derived-title fallback — so this note-less
+    // agent stays silent. Crucially the final answer is the node OUTPUT, not a
+    // progress line, so it must NEVER leak into the progress feed.
     const progressLines = run.logs
       .filter((l) => l.level === 'progress')
       .map((l) => l.message)
-    expect(progressLines).toContainEqual('Agent: Assistant - Assistant')
     expect(progressLines).not.toContain('Hello there')
   })
 })
@@ -346,7 +346,7 @@ describe('eval harness — blob-ref rehydration', () => {
         kind: 'output',
         label: 'Out',
         position: { x: 800, y: 0 },
-        config: {},
+        config: { source: { kind: 'ref', nodeId: 'measure', path: '' } },
       },
     ],
     edges: [

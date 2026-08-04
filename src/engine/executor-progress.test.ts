@@ -18,12 +18,12 @@ const trigger = {
   position: { x: 0, y: 0 },
   config: { triggerKind: 'go' },
 }
-const output = (id: string, x: number) => ({
+const output = (id: string, x: number, source: string) => ({
   id,
   kind: 'output' as const,
   label: 'Out',
   position: { x, y: 0 },
-  config: {},
+  config: { source: { kind: 'ref' as const, nodeId: source, path: '' } },
 })
 
 function progressLines(sink: ReturnType<typeof createMemorySink>): string[] {
@@ -46,7 +46,7 @@ describe('executor — user-facing progress', () => {
             progressNote: 'Looking up record ${n}',
             config: { toolId: 'after', args: {} },
           },
-          output('o', 400),
+          output('o', 400, 'lookup'),
         ],
         edges: [
           { id: 'e1', source: 't', target: 'lookup', condition: null },
@@ -79,7 +79,7 @@ describe('executor — user-facing progress', () => {
             position: { x: 200, y: 0 },
             config: { toolId: 'after', args: {} },
           },
-          output('o', 400),
+          output('o', 400, 'lookup'),
         ],
         edges: [
           { id: 'e1', source: 't', target: 'lookup', condition: null },
@@ -135,7 +135,7 @@ describe('executor — user-facing progress', () => {
                     kind: 'output' as const,
                     label: 'ItemOut',
                     position: { x: 200, y: 0 },
-                    config: {},
+                    config: { source: { kind: 'ref', nodeId: 'it', path: '' } },
                   },
                 ],
                 edges: [
@@ -144,7 +144,7 @@ describe('executor — user-facing progress', () => {
               },
             },
           },
-          output('o', 600),
+          output('o', 600, 'loop'),
         ],
         edges: [
           { id: 'e1', source: 't', target: 'src', condition: null },

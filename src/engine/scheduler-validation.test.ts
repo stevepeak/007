@@ -75,7 +75,7 @@ describe('Scheduler', () => {
           agent('y'),
           race('r'),
           agent('join'),
-          output('o'),
+          output('o', 'join'),
         ],
         edges: [
           edge('t', 'b'),
@@ -116,7 +116,7 @@ describe('Scheduler', () => {
           agent('c2'),
           race('r2'),
           agent('save'),
-          output('o'),
+          output('o', 'save'),
         ],
         edges: [
           edge('t', 'p'),
@@ -184,8 +184,8 @@ describe('Scheduler', () => {
         agent('p'),
         agent('q'),
         agent('join'),
-        output('o'),
-        output('oyes'),
+        output('o', 'join'),
+        output('oyes', 'b'),
       ],
       edges: [
         edge('t', 'b'),

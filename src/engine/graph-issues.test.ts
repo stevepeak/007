@@ -11,12 +11,14 @@ const trigger = {
   label: 'Start',
   config: { triggerKind: 'chat_message' },
 }
-const output = (id = 'o') => ({
+const output = (id = 'o', source?: string) => ({
   id,
   kind: 'output' as const,
   position: pos,
   label: id,
-  config: {},
+  config: source
+    ? { source: { kind: 'ref' as const, nodeId: source, path: '' } }
+    : {},
 })
 const agent = (id: string, agentId = 'a1') => ({
   id,
@@ -55,7 +57,7 @@ function graph(
 describe('collectGraphIssues', () => {
   test('a clean linear graph has no issues', () => {
     const g = graph(
-      [trigger, agent('x'), output()],
+      [trigger, agent('x'), output('o', 'x')],
       [edge('t', 'x'), edge('x', 'o')],
     )
     expect(collectGraphIssues(g)).toEqual([])
