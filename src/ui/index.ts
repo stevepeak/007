@@ -134,6 +134,14 @@ export {
   type RunSurfaceFeedback,
 } from './run-progress-view'
 export {
+  WorkflowProgressProvider,
+  useRunProgress,
+  createRunProgressToast,
+  type RunProgressSnapshot,
+  type RunProgressFetcher,
+  type RunProgressToaster,
+} from './run-progress-source'
+export {
   WfHub,
   DEFAULT_WF_SECTIONS,
   type WfHubProps,

@@ -1,7 +1,7 @@
-import { and, asc, desc, eq } from 'drizzle-orm'
+import { and, asc, eq } from 'drizzle-orm'
 
 import type { WfDb } from '../client'
-import { wfRunLog } from '../schema'
+import { wfRun, wfRunLog } from '../schema'
 
 // ---------------------------------------------------------------------------
 // Run logs — the structured progress feed (wf_run_log)
@@ -77,21 +77,38 @@ export async function getRunLogs(
   return rows
 }
 
-// The most recent USER-FACING progress line for a run, read from the persisted
-// feed. Keyed by the same `runId` the logs are stored under (the wf_run.id).
-// Lets a poll-based surface (e.g. a document's "Processing…"/"Generating
-// summary…") show "what's happening" without a live RunRoom subscription — the
-// progress lines are persisted as each node runs. Null when the run has emitted
-// none yet.
-export async function getLatestProgressMessage(
+/** A run's persisted user-facing progress, for a poll-based consumer. */
+export type RunProgressFeed = {
+  status: string
+  /** `wf_run.correlation_id` — the owning org, for host-side authorization. */
+  correlationId: string | null
+  /** Every user-facing `progress` line in emit order. */
+  lines: string[]
+}
+
+// The full USER-FACING progress feed for a run, read from the PERSISTED tables
+// (keyed by `wf_run.id` = `workflowRunId`). This is the single source a client
+// polls to show "what's happening" — during the run and after, with no live
+// RunRoom subscription or token. Null when the run row is absent. `status`
+// (from `wf_run`) lets the poller stop; `correlationId` lets the host authorize.
+export async function getRunProgressFeed(
   db: WfDb,
   runId: string,
-): Promise<string | null> {
-  const [row] = await db
+): Promise<RunProgressFeed | null> {
+  const [run] = await db
+    .select({ status: wfRun.status, correlationId: wfRun.correlationId })
+    .from(wfRun)
+    .where(eq(wfRun.id, runId))
+    .limit(1)
+  if (!run) return null
+  const rows = await db
     .select({ message: wfRunLog.message })
     .from(wfRunLog)
     .where(and(eq(wfRunLog.runId, runId), eq(wfRunLog.level, 'progress')))
-    .orderBy(desc(wfRunLog.ts))
-    .limit(1)
-  return row?.message ?? null
+    .orderBy(asc(wfRunLog.ts))
+  return {
+    status: run.status,
+    correlationId: run.correlationId,
+    lines: rows.map((r) => r.message),
+  }
 }
