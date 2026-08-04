@@ -23,6 +23,7 @@ import {
   withConversation,
 } from './node-data-panel-shared'
 import { BindingSourceNode } from './node-data-panel-picker'
+import { InspectorSection, SectionHeader } from './node-inspector-shared'
 import { useHoverHighlightSetter } from './node-renderers-shared'
 
 export type NodeInputsPanelProps = {
@@ -87,10 +88,8 @@ export function NodeInputsPanel({
   )
 
   return (
-    <section className="space-y-3">
-      <div className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
-        Needs
-      </div>
+    <InspectorSection>
+      <SectionHeader>Needs</SectionHeader>
       {nothingToShow ? (
         <p className="text-muted-foreground text-xs">
           {node.kind === 'agent'
@@ -129,7 +128,7 @@ export function NodeInputsPanel({
           </div>
         </div>
       ) : null}
-    </section>
+    </InspectorSection>
   )
 }
 

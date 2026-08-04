@@ -1,4 +1,5 @@
-import { Workflow } from 'lucide-react'
+import { Workflow, type LucideIcon } from 'lucide-react'
+import type { ReactNode } from 'react'
 
 import type {
   JsonSchema,
@@ -6,6 +7,7 @@ import type {
   WorkflowNode,
 } from '../../engine'
 import type { ToolOption, WfWorkflowSummary } from '../../server/protocol'
+import { cn } from '../cn'
 import { RichSelect } from '../rich-select'
 import { ToolIcon } from '../tool-icon'
 
@@ -23,6 +25,56 @@ export type NodeInspectorProps = {
 
 // Shared field className used across the per-kind inspectors.
 export const field = 'space-y-1'
+
+// A uniform section heading for the inspector rail: a small uppercase label with
+// an optional leading icon. Every top-level section (Inform user, Agent, Needs,
+// …) uses this so the rail reads as one system instead of ad-hoc per-section
+// styles.
+export function SectionHeader({
+  icon: Icon,
+  children,
+  className,
+}: {
+  icon?: LucideIcon
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <div
+      className={cn(
+        'text-muted-foreground flex items-center gap-1.5 text-[11px] font-medium tracking-wide uppercase',
+        className,
+      )}
+    >
+      {Icon ? <Icon className="size-3.5 shrink-0" /> : null}
+      {children}
+    </div>
+  )
+}
+
+// Wrapper that gives every inspector section the same flat rhythm: a top divider
+// and consistent inner spacing. The first section omits the divider.
+export function InspectorSection({
+  children,
+  className,
+  divided = true,
+}: {
+  children: ReactNode
+  className?: string
+  divided?: boolean
+}) {
+  return (
+    <section
+      className={cn(
+        'space-y-2.5',
+        divided && 'border-border border-t pt-4',
+        className,
+      )}
+    >
+      {children}
+    </section>
+  )
+}
 
 // Workflow picker for a Workflow (call-another-workflow) node. Lists each
 // callable workflow's name and description; the current workflow is filtered

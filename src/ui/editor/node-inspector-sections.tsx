@@ -1,11 +1,7 @@
-import { ExternalLink } from 'lucide-react'
-
 import { MANUAL_TRIGGER_KIND, PERIODIC_TRIGGER_KIND } from '../../engine'
 import { AgentSelect } from '../agent-select'
 import { useWfComponents } from '../context'
 import { useAgents, useTools, useTriggerEvents, useWorkflows } from '../hooks'
-import { WfLink } from '../nav'
-import { NodeInputsPanel } from './node-data-panel'
 import {
   field,
   ToolSelect,
@@ -61,94 +57,51 @@ export function TriggerInspector({ node, onChange }: NodeInspectorProps) {
   )
 }
 
-export function AgentInspector({
-  node,
-  graph,
-  onChange,
-  itemSchema,
-}: NodeInspectorProps) {
-  const { Label } = useWfComponents()
+export function AgentInspector({ node, onChange }: NodeInspectorProps) {
   const agents = useAgents()
   const agentOptions = agents.data ?? []
   if (node.kind !== 'agent') return null
+  // Just the agent picker, headed directly by the panel title. The shared
+  // inspector renders the "Inform user" and "Needs" sections around it (and the
+  // "Open in new tab" shortcut in the title row); the "Expose thinking" toggle
+  // lives with the Progress note it supersedes.
   return (
-    <>
-      <div className={field}>
-        <div className="flex items-center justify-between">
-          <Label>Agent</Label>
-          {node.config.agentId ? (
-            <WfLink
-              to={`agents/${node.config.agentId}/edit`}
-              newTab
-              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs hover:underline"
-            >
-              <ExternalLink className="size-3" /> Open in new tab
-            </WfLink>
-          ) : null}
-        </div>
-        <AgentSelect
-          agents={agentOptions}
-          value={{
-            agentId: node.config.agentId,
-            version: node.config.version ?? null,
-          }}
-          onChange={({ agentId, version }) =>
-            onChange({
-              ...node,
-              config: { ...node.config, agentId, version },
-            })
-          }
-        />
-      </div>
-      {/* The "Expose thinking" toggle now lives in the shared inspector, grouped
-          with the Progress note it supersedes. */}
-      <div className="border-t border-border" />
-      <NodeInputsPanel
-        node={node}
-        graph={graph}
-        onChange={onChange}
-        itemSchema={itemSchema}
-      />
-    </>
+    <AgentSelect
+      agents={agentOptions}
+      value={{
+        agentId: node.config.agentId,
+        version: node.config.version ?? null,
+      }}
+      onChange={({ agentId, version }) =>
+        onChange({
+          ...node,
+          config: { ...node.config, agentId, version },
+        })
+      }
+    />
   )
 }
 
-export function ToolInspector({
-  node,
-  graph,
-  onChange,
-  itemSchema,
-}: NodeInspectorProps) {
-  const { Label } = useWfComponents()
+export function ToolInspector({ node, onChange }: NodeInspectorProps) {
   const tools = useTools()
   // A tool node runs a tool deterministically with bound args, so it offers
   // every registered tool — both `function` tools (built for tool nodes, e.g.
   // update_document / extract_text) and the `ai-tool` tools an agent can call.
   const toolOptions = tools.data ?? []
   if (node.kind !== 'tool') return null
+  // Just the tool picker, headed directly by the panel title. The shared
+  // inspector renders the surrounding "Inform user" and "Needs" sections.
   return (
-    <>
-      <div className={field}>
-        <Label>Tool</Label>
-        <ToolSelect
-          tools={toolOptions}
-          value={node.config.toolId}
-          onChange={(toolId) =>
-            onChange({
-              ...node,
-              config: { ...node.config, toolId },
-            })
-          }
-        />
-      </div>
-      <div className="border-t border-border" />
-      <NodeInputsPanel
-        node={node}
-        graph={graph}
-        onChange={onChange}
-        itemSchema={itemSchema}
-      />
-    </>
+    <ToolSelect
+      tools={toolOptions}
+      value={node.config.toolId}
+      onChange={(toolId) =>
+        onChange({
+          ...node,
+          config: { ...node.config, toolId },
+        })
+      }
+    />
   )
 }
 
@@ -157,7 +110,6 @@ export function WorkflowInspector({
   onChange,
   currentWorkflowId,
 }: NodeInspectorProps) {
-  const { Label } = useWfComponents()
   const workflows = useWorkflows()
   // A workflow can call any OTHER workflow. Exclude itself — a direct self-call
   // is always a reference cycle (deeper cycles are caught at run start).
@@ -165,27 +117,25 @@ export function WorkflowInspector({
     (w) => w.id !== currentWorkflowId,
   )
   if (node.kind !== 'workflow') return null
+  // Just the workflow picker, headed directly by the panel title.
   return (
-    <>
-      <div className={field}>
-        <Label>Workflow</Label>
-        <WorkflowSelect
-          workflows={workflowOptions}
-          value={node.config.workflowId}
-          onChange={(workflowId) =>
-            onChange({
-              ...node,
-              config: { ...node.config, workflowId },
-            })
-          }
-        />
-      </div>
+    <div className={field}>
+      <WorkflowSelect
+        workflows={workflowOptions}
+        value={node.config.workflowId}
+        onChange={(workflowId) =>
+          onChange({
+            ...node,
+            config: { ...node.config, workflowId },
+          })
+        }
+      />
       <p className="text-muted-foreground text-xs">
-        Runs the selected workflow's latest published version and waits for
-        its result, which becomes this node's output. The upstream input is
-        passed straight through as the called workflow's trigger input.
+        Runs the selected workflow's latest published version and waits for its
+        result, which becomes this node's output. The upstream input is passed
+        straight through as the called workflow's trigger input.
       </p>
-    </>
+    </div>
   )
 }
 
@@ -215,8 +165,8 @@ export function RaceInspector({ node }: NodeInspectorProps) {
     <p className="text-muted-foreground text-xs">
       A first-to-finish join. Wire several upstream nodes into it — whichever
       completes first wins, and its output flows through unchanged. The other
-      upstreams keep running, but their results are ignored. Connect inputs
-      that produce the same shape of result.
+      upstreams keep running, but their results are ignored. Connect inputs that
+      produce the same shape of result.
     </p>
   )
 }
@@ -252,8 +202,8 @@ export function NoteInspector({ node, onChange }: NodeInspectorProps) {
         }
       />
       <p className="text-muted-foreground text-xs">
-        A sticky note for the canvas — it never affects the workflow. The
-        label above is the note’s title.
+        A sticky note for the canvas — it never affects the workflow. The Label
+        field is the note’s title.
       </p>
     </div>
   )

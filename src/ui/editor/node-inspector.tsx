@@ -1,9 +1,11 @@
-import { MessageSquareText, type LucideIcon } from 'lucide-react'
+import { ExternalLink, MessageSquareText, type LucideIcon } from 'lucide-react'
 import type { ComponentType } from 'react'
 
 import { isBookendKind, type WorkflowNode } from '../../engine'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
+import { WfLink } from '../nav'
+import { NodeInputsPanel } from './node-data-panel'
 import {
   BranchInspector,
   IterationInspector,
@@ -20,7 +22,11 @@ import {
   TriggerInspector,
   WorkflowInspector,
 } from './node-inspector-sections'
-import { field, type NodeInspectorProps } from './node-inspector-shared'
+import {
+  InspectorSection,
+  SectionHeader,
+  type NodeInspectorProps,
+} from './node-inspector-shared'
 
 export type { NodeInspectorProps } from './node-inspector-shared'
 
@@ -94,8 +100,8 @@ function SegmentedToggle<T extends string>({
 }
 
 export function NodeInspector(props: NodeInspectorProps) {
-  const { node, onChange } = props
-  const { Input, Label } = useWfComponents()
+  const { node, onChange, graph, itemSchema } = props
+  const { Input } = useWfComponents()
 
   const Inspector = NODE_INSPECTORS[node.kind]
   // The step's "inform user" mode, decoded from the node: dynamic ⇢ an agent
@@ -136,29 +142,42 @@ export function NodeInspector(props: NodeInspectorProps) {
 
   return (
     <div className="flex h-full w-80 flex-col gap-4 overflow-y-auto border-l border-border p-4">
-      <div>
-        <div className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
-          {node.kind}
-        </div>
-        <div className={field}>
-          <Label>Label</Label>
-          <Input
-            value={node.label}
-            onChange={(e) => onChange({ ...node, label: e.target.value })}
-          />
-        </div>
+      {/* Panel title: the node's type. It heads the primary config directly —
+          no divider, no repeated kind name below it. An agent shows a shortcut
+          to open its definition on the right. */}
+      <div className="flex items-center justify-between gap-2">
+        <SectionHeader>{node.kind}</SectionHeader>
+        {node.kind === 'agent' && node.config.agentId ? (
+          <WfLink
+            to={`agents/${node.config.agentId}/edit`}
+            newTab
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs hover:underline"
+          >
+            <ExternalLink className="size-3" /> Open in new tab
+          </WfLink>
+        ) : null}
       </div>
+
+      {/* Primary config for this kind — which agent / tool / workflow, the
+          branch condition, etc. Comes first, headed directly by the title. */}
+      {Inspector ? <Inspector {...props} /> : null}
+
+      {/* The step's display name on the canvas. */}
+      <InspectorSection>
+        <SectionHeader>Internal label</SectionHeader>
+        <Input
+          value={node.label}
+          onChange={(e) => onChange({ ...node, label: e.target.value })}
+        />
+      </InspectorSection>
 
       {/* What the USER sees while this step runs — off / static / dynamic.
           Agents get all three (dynamic streams the model's live thinking); other
           node kinds get off / static only. Bookends (trigger/output/note) never
           run, so they don't get this section. */}
       {isBookendKind(node) ? null : (
-        <section className="border-border bg-muted/20 space-y-2.5 rounded-lg border p-3">
-          <div className="text-muted-foreground flex items-center gap-1.5 text-[11px] font-medium tracking-wide uppercase">
-            <MessageSquareText className="size-3.5" />
-            Inform user
-          </div>
+        <InspectorSection>
+          <SectionHeader icon={MessageSquareText}>Inform user</SectionHeader>
 
           <SegmentedToggle
             value={informMode}
@@ -190,10 +209,17 @@ export function NodeInspector(props: NodeInspectorProps) {
               This step reports nothing to the user.
             </p>
           )}
-        </section>
+        </InspectorSection>
       )}
 
-      {Inspector ? <Inspector {...props} /> : null}
+      {/* What this step consumes — renders its own "Needs" section, and is a
+          no-op for every kind but agent/tool. */}
+      <NodeInputsPanel
+        node={node}
+        graph={graph}
+        onChange={onChange}
+        itemSchema={itemSchema}
+      />
     </div>
   )
 }
