@@ -77,7 +77,6 @@ export function NodeInputsPanel({
     <BindingField
       key={input.key}
       label={input.label}
-      required={input.required}
       description={input.description}
       type={input.type}
       enumValues={input.enum}
@@ -110,7 +109,6 @@ export function NodeInputsPanel({
             {showConversation ? (
               <BindingField
                 label="conversation"
-                required={false}
                 description="The prior chat thread passed to this agent as its message history. Link it to the message source (e.g. the chat trigger's messages). Left unlinked, the agent runs with no prior conversation."
                 icon={
                   empty?.tone === 'warn' ? (
@@ -203,7 +201,6 @@ function describeBinding(
 
 function BindingField({
   label,
-  required,
   description,
   type,
   enumValues,
@@ -215,7 +212,6 @@ function BindingField({
   emptyTone,
 }: {
   label: string
-  required: boolean
   description?: string
   /** JSON Schema type of the input, used to coerce a typed literal. */
   type?: string
@@ -254,7 +250,6 @@ function BindingField({
         <code className="shrink-0 rounded bg-muted px-1 py-0.5 text-xs font-medium text-foreground">
           {label}
         </code>
-        {required ? <span className="text-xs text-rose-500">*</span> : null}
         <span
           className={cn(
             'min-w-0 flex-1 truncate text-xs',
