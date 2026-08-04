@@ -48,7 +48,11 @@ import {
   type RecordStepArgs,
 } from '../engine/run-recorder'
 import { Scheduler } from '../engine/scheduler'
-import { createMemorySink, type StreamSink } from '../engine/stream-sink'
+import {
+  createMemorySink,
+  type RunLogEntry,
+  type StreamSink,
+} from '../engine/stream-sink'
 
 // Eval / testing seam (WS-F). Runs a graph through the in-process executor with
 // a host-supplied config — typically one whose `getModel` returns a mock model
@@ -77,7 +81,10 @@ export type WorkflowTestRun = {
   /** `null` when the run ended on a decision arm that fizzled out (no Output). */
   outputNodeId: string | null
   steps: RecordStepArgs[]
+  /** Legacy free-text `append` channel events. */
   progress: { channel: string; text: string }[]
+  /** Structured run-log entries — including the user-facing `progress` level. */
+  logs: RunLogEntry[]
 }
 
 function triggerKindOf(graph: unknown): string {
@@ -89,8 +96,10 @@ export async function runWorkflowUnderConditions<TDeps>(
   tc: WorkflowTestCase<TDeps>,
 ): Promise<WorkflowTestRun> {
   const recorder = createMemoryRunRecorder()
-  const sink: StreamSink & { events: { channel: string; text: string }[] } =
-    createMemorySink()
+  const sink: StreamSink & {
+    events: { channel: string; text: string }[]
+    logs: RunLogEntry[]
+  } = createMemorySink()
 
   const runContext: RunContext = {
     subjectId: tc.runContext?.subjectId,
@@ -119,5 +128,6 @@ export async function runWorkflowUnderConditions<TDeps>(
     outputNodeId: result.outputNodeId,
     steps: recorder.steps,
     progress: sink.events,
+    logs: sink.logs,
   }
 }

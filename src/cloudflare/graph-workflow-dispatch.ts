@@ -4,6 +4,7 @@ import {
   type IterationNode,
 } from '../engine/graph'
 import { nodeSpanLabel } from '../engine/node-label'
+import { emitNodeStartProgress } from '../engine/node-progress'
 import {
   executeSubgraph,
   resolveIterationList,
@@ -73,6 +74,7 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
     // List is a ref into an upstream output, resolved against the
     // scheduler's global outputs — not the forwarded input.
     list: resolveIterationList(node, scheduler.getOutputs()),
+    sink,
     runItem: (item, index) =>
       stepDo(step, `iter:${node.id}:${index}`, AI_STEP_OPTS, async () => {
         const rc = { ...p.runContext, env }
@@ -175,6 +177,15 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
   let result: RunStepResult
   try {
     if (node.kind === 'iteration') {
+      // Iteration runs its own per-item durable steps (no `run:` step to host a
+      // per-node sink), so emit its coarse progress line straight to the run
+      // sink; per-item lines follow from `runIteration`.
+      emitNodeStartProgress(
+        sink,
+        node,
+        p.runContext.promptVariables,
+        manifest,
+      )
       result = await dispatchIteration(ctx, node)
     } else {
       result = await stepDo(
@@ -204,6 +215,15 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
               return sink.log?.(e)
             },
           }
+          // First-class user-facing line, first in the node's body feed (so the
+          // terminal rewrite persists it): the author's progress note, else a
+          // derived title.
+          emitNodeStartProgress(
+            nodeSink,
+            node,
+            p.runContext.promptVariables,
+            manifest,
+          )
           // Bracket the real execution here — inside the run: step, right
           // around runNode — so the persisted Speed reflects actual work, not
           // the durable-step envelope. Journaled with the return value, so it

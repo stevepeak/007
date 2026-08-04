@@ -25,3 +25,28 @@ export function substitutePromptVariables(
     return vars[key] ?? match
   })
 }
+
+/**
+ * Fill a `${token}` template for USER-FACING text (a tool's `statusLabel`, a
+ * node's `progressNote`) from an arbitrary value bag. Differs from
+ * `substitutePromptVariables` in two deliberate ways suited to end-user copy:
+ * a missing/nullish token resolves to '' (never a raw `${…}` leaking to the
+ * user), and non-string values are coerced (objects JSON-stringified). Shares
+ * `PROMPT_VARIABLE_RE` so the token grammar can't drift.
+ */
+export function interpolateUserText(
+  template: string,
+  vars: unknown,
+): string {
+  const bag =
+    vars && typeof vars === 'object'
+      ? (vars as Record<string, unknown>)
+      : {}
+  return template.replaceAll(PROMPT_VARIABLE_RE, (_match, key: string) => {
+    const v = bag[key]
+    if (v == null) return ''
+    if (typeof v === 'string') return v
+    if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+    return JSON.stringify(v)
+  })
+}

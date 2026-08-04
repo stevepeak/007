@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm'
+import { and, asc, desc, eq } from 'drizzle-orm'
 
 import type { WfDb } from '../client'
 import { wfRunLog } from '../schema'
@@ -75,4 +75,23 @@ export async function getRunLogs(
     .where(eq(wfRunLog.runId, runId))
     .orderBy(asc(wfRunLog.ts))
   return rows
+}
+
+// The most recent USER-FACING progress line for a run, read from the persisted
+// feed. Keyed by the same `runId` the logs are stored under (the wf_run.id).
+// Lets a poll-based surface (e.g. a document's "Processing…"/"Generating
+// summary…") show "what's happening" without a live RunRoom subscription — the
+// progress lines are persisted as each node runs. Null when the run has emitted
+// none yet.
+export async function getLatestProgressMessage(
+  db: WfDb,
+  runId: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ message: wfRunLog.message })
+    .from(wfRunLog)
+    .where(and(eq(wfRunLog.runId, runId), eq(wfRunLog.level, 'progress')))
+    .orderBy(desc(wfRunLog.ts))
+    .limit(1)
+  return row?.message ?? null
 }

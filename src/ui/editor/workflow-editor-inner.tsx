@@ -1,11 +1,20 @@
-import { Archive, Redo2, Undo2, Workflow as WorkflowIcon } from 'lucide-react'
+import {
+  Archive,
+  Play,
+  Redo2,
+  Undo2,
+  Workflow as WorkflowIcon,
+  X,
+} from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 
 import type { WorkflowGraph } from '../../engine'
 import { ArchiveButton } from '../archive-button'
 import { useWfClient, useWfComponents } from '../context'
+import { WorkflowRunProgress } from '../run-progress-view'
 import { SaveStateBadge } from '../save-state-badge'
 import { Tooltip } from '../tooltip'
+import { useWorkflowSimulation } from './use-workflow-simulation'
 import { useModifierHold } from '../use-modifier-hold'
 import {
   useSaveDraft,
@@ -69,6 +78,9 @@ export function EditorInner({
     applyGraphRef.current?.(g),
   )
   const { graph, name } = history
+
+  // Offline preview of the user-facing progress UX (no run, no model spend).
+  const sim = useWorkflowSimulation(graph)
   const dirty = history.dirty
 
   const tools = useTools()
@@ -323,6 +335,21 @@ export function EditorInner({
               onSelect={(id) => void loadVersion(id)}
             />
 
+            <Tooltip
+              side="bottom"
+              content="Preview the progress your users will see as this workflow runs — no run, no cost."
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={sim.start}
+                aria-label="Simulate progress"
+              >
+                <Play className="size-4" />
+                Simulate
+              </Button>
+            </Tooltip>
+
             <Button
               variant="outline"
               size="sm"
@@ -400,6 +427,31 @@ export function EditorInner({
           onCancel={() => setShowPublish(false)}
           onConfirm={publishVersion}
         />
+      ) : null}
+
+      {/* Floating, toast-like preview of the simulated progress — this is the
+          same WorkflowRunProgress component clients embed for real runs. */}
+      {sim.active || sim.items.length > 0 ? (
+        <div className="fixed bottom-4 right-4 z-50 w-80 rounded-lg border border-border bg-background shadow-lg">
+          <div className="flex items-center justify-between px-3 pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span>Progress preview</span>
+            <button
+              type="button"
+              aria-label="Close preview"
+              onClick={sim.dismiss}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+          <div className="p-2">
+            <WorkflowRunProgress
+              items={sim.items}
+              progress={sim.progress}
+              status={sim.status}
+            />
+          </div>
+        </div>
       ) : null}
     </>
   )

@@ -1,5 +1,6 @@
 import type { RunContext, WfSdkConfig } from './config'
 import { isDecisionKind } from './graph'
+import { emitNodeStartProgress } from './node-progress'
 import { errorMessage, runNode } from './run-node'
 import { recordedBranchResult, type RunRecorder } from './run-recorder'
 import {
@@ -79,6 +80,15 @@ export async function executeWorkflow<TDeps>(
   ): Promise<{ nodeId: string; report: ReportResult }> => {
     // Bracket the real execution — runs inline here, so wall-clock is exact.
     const startedAt = new Date()
+    // First-class user-facing line: the node's progress note (or a derived
+    // title). Emitted at the top-level dispatch so inner subgraph nodes (which
+    // run through `runNode` directly) stay quiet in the user feed.
+    emitNodeStartProgress(
+      sink,
+      node,
+      runContext.promptVariables,
+      runContext.manifest,
+    )
     try {
       const result = await runNode(
         { type: 'execute', node, input },

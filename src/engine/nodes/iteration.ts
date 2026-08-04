@@ -8,6 +8,7 @@ import {
 } from '../run-node'
 import { recordedBranchResult, type RunRecorder } from '../run-recorder'
 import { Scheduler, WorkflowStalledError } from '../scheduler'
+import type { StreamSink } from '../stream-sink'
 
 // The iteration node fans a list out over an embedded subgraph: the subgraph
 // runs once per element, the runs proceed in parallel up to a concurrency bound,
@@ -222,8 +223,12 @@ export async function runIteration(args: {
   node: IterationNode
   list: unknown[]
   runItem: (item: unknown, index: number) => Promise<unknown>
+  /** When present, emit a user-facing `Processing item i of n` progress line as
+   * each item starts. Live signal only — the durable per-item trace is the
+   * recorder's job. */
+  sink?: StreamSink
 }): Promise<IterationResult> {
-  const { node, list: arr, runItem } = args
+  const { node, list: arr, runItem, sink } = args
   const { concurrency, stopOnError } = node.config
 
   const total = arr.length
@@ -246,6 +251,12 @@ export async function runIteration(args: {
       const index = cursor
       if (index >= total) return
       cursor = index + 1
+      void sink?.log?.({
+        level: 'progress',
+        message: `Processing item ${index + 1} of ${total}`,
+        nodeId: node.id,
+        nodeKind: 'iteration',
+      })
       try {
         results[index] = await runItem(arr[index], index)
         statuses[index] = { index, status: 'completed' }

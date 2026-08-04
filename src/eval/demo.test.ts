@@ -209,11 +209,14 @@ describe('eval harness — agent graph', () => {
       'agent',
       'output',
     ])
-    // stream:true forwards step text to the progress sink.
-    expect(run.progress).toContainEqual({
-      channel: 'progress',
-      text: 'Hello there',
-    })
+    // The agent node emits a coarse user-facing `progress` line at start
+    // (derived from its manifest name). The final answer is the node OUTPUT, not
+    // a progress line — so it must NOT leak into the progress feed.
+    const progressLines = run.logs
+      .filter((l) => l.level === 'progress')
+      .map((l) => l.message)
+    expect(progressLines).toContainEqual('Agent: Assistant - Assistant')
+    expect(progressLines).not.toContain('Hello there')
   })
 })
 

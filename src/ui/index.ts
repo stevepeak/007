@@ -127,6 +127,13 @@ export { WfAutoForm, type WfAutoFormProps } from './autoform/wf-auto-form'
 export { ToolIcon, type ToolIconProps } from './tool-icon'
 export { Tooltip, type WfTooltipProps } from './tooltip'
 export {
+  WorkflowRunProgress,
+  type WorkflowRunProgressProps,
+  type RunSurfaceItem,
+  type RunSurfaceStatus,
+  type RunSurfaceFeedback,
+} from './run-progress-view'
+export {
   WfHub,
   DEFAULT_WF_SECTIONS,
   type WfHubProps,

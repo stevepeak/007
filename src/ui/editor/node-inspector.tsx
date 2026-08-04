@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react'
 
-import type { WorkflowNode } from '../../engine'
+import { isBookendKind, type WorkflowNode } from '../../engine'
 import { useWfComponents } from '../context'
 import {
   BranchInspector,
@@ -67,6 +67,28 @@ export function NodeInspector(props: NodeInspectorProps) {
             onChange={(e) => onChange({ ...node, label: e.target.value })}
           />
         </div>
+        {/* Every executable node can carry a user-facing progress line. Bookends
+            (trigger/output/note) never run, so they don't offer it. */}
+        {isBookendKind(node) ? null : (
+          <div className={field}>
+            <Label>Progress note</Label>
+            <Input
+              value={node.progressNote ?? ''}
+              placeholder="Searching client documents…"
+              onChange={(e) =>
+                onChange({
+                  ...node,
+                  progressNote: e.target.value || undefined,
+                })
+              }
+            />
+            <p className="text-muted-foreground text-xs">
+              Shown to the user while this step runs. Use{' '}
+              <code>{'${var}'}</code> for run variables. Leave blank to show a
+              default title.
+            </p>
+          </div>
+        )}
       </div>
 
       {Inspector ? <Inspector {...props} /> : null}

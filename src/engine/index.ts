@@ -26,6 +26,7 @@ export {
   type BranchOperator,
   BRANCH_OPERATORS,
   DECISION_NODE_KINDS,
+  isBookendKind,
   isDecisionKind,
   SWITCH_DEFAULT_CASE,
   type SwitchNode,
@@ -69,6 +70,8 @@ export {
   type WfBlobRef,
 } from './blob-ref'
 export { ancestorIds, predecessorIds } from './graph-traverse'
+export { nodeSpanLabel } from './node-label'
+export { nodeProgressMessage } from './node-progress'
 export {
   collectGraphIssues,
   type GraphIssue,

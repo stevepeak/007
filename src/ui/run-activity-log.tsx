@@ -8,6 +8,7 @@ import {
   CircleDashed,
   Info,
   Minus,
+  Radio,
   Wrench,
   X,
 } from 'lucide-react'
@@ -39,6 +40,8 @@ import {
 
 // Icon + colour for a log leaf line, keyed by its level.
 const LEVEL_STYLE: Record<string, { icon: LucideIcon; tone: string; iconTone: string }> = {
+  // The curated user-facing line (also shown here in the dev feed).
+  progress: { icon: Radio, tone: 'text-emerald-700', iconTone: 'text-emerald-500' },
   thinking: { icon: Brain, tone: 'text-violet-700', iconTone: 'text-violet-400' },
   tool: { icon: Wrench, tone: 'text-sky-700', iconTone: 'text-sky-400' },
   info: { icon: Info, tone: 'text-neutral-600', iconTone: 'text-neutral-400' },

@@ -43,6 +43,11 @@ const baseNode = z.object({
   // Editor-only — does not affect execution.
   position: positionSchema,
   label: z.string().min(1),
+  // Optional, author-set, USER-FACING line shown while this step runs (the
+  // first-class progress feed). Supports `${var}` tokens filled from the run's
+  // variables. When unset, the run derives a title from `nodeSpanLabel`. Every
+  // node kind inherits it, though bookends (trigger/output/note) never run.
+  progressNote: z.string().optional(),
   // Optional per-node retry/timeout/best-effort policy. Provider-agnostic; the
   // runtime backend maps it to its own step config. Meaningless on the trigger/
   // output/note bookends, but harmless there (they never run as steps).
@@ -415,6 +420,7 @@ export interface IterationNode {
   id: string
   position: { x: number; y: number }
   label: string
+  progressNote?: string
   execution?: NodeExecution
   kind: 'iteration'
   config: {

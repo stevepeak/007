@@ -12,28 +12,8 @@ import {
 
 import { BOOLEAN_OUTPUT_SCHEMA } from '../agent-output'
 import type { AgentOutput } from '../graph'
-import { PROMPT_VARIABLE_RE } from '../prompt-variables'
+import { interpolateUserText } from '../prompt-variables'
 import type { StreamSink } from '../stream-sink'
-
-/**
- * Fill a tool's `statusLabel` template (`Searching for ${query}`) from the tool
- * call's input args. Shares the `${token}` grammar with prompt variables. A
- * token whose arg is missing/null resolves to empty string (a user-facing line
- * should never show a raw `${…}`), and values are coerced to strings.
- */
-export function interpolateStatus(template: string, input: unknown): string {
-  const vars =
-    input && typeof input === 'object'
-      ? (input as Record<string, unknown>)
-      : {}
-  return template.replaceAll(PROMPT_VARIABLE_RE, (_match, key: string) => {
-    const v = vars[key]
-    if (v == null) return ''
-    if (typeof v === 'string') return v
-    if (typeof v === 'number' || typeof v === 'boolean') return String(v)
-    return JSON.stringify(v)
-  })
-}
 
 // The shared model-loop core, factored out of `executeAgentNode` so a spawned
 // sub-agent (see `nodes/sub-agent.ts`) runs the IDENTICAL generation logic — one
@@ -203,14 +183,11 @@ async function runToolLoop(
       totalUsage.inputTokens += step.usage?.inputTokens ?? 0
       totalUsage.outputTokens += step.usage?.outputTokens ?? 0
       if (sink) {
-        // Structured feed for the run viewer's Logs panel: the model's internal
-        // reasoning, then a line per tool call. These make "what is it doing
-        // right now" legible without waiting for the node to finish.
-        if (step.reasoningText?.trim()) {
-          void sink.log?.({
-            level: 'thinking',
-            message: step.reasoningText.trim(),
-          })
+        // DEV feed (always): the model's reasoning + a raw line per tool call.
+        // These power the run viewer's Logs panel and never reach the end user.
+        const reasoning = step.reasoningText?.trim()
+        if (reasoning) {
+          void sink.log?.({ level: 'thinking', message: reasoning })
         }
         for (const tc of toolCalls) {
           void sink.log?.({
@@ -218,24 +195,23 @@ async function runToolLoop(
             message: `Called ${tc.toolName}`,
             meta: { tool: tc.toolName, input: tc.input },
           })
-          // User-facing tool-call update: when the placement exposes thinking and
-          // the tool ships a human-readable `statusLabel`, stream the filled-in
-          // statement to the 'progress' channel (chat) + a mirrored structured
-          // line. A tool without a template exposes nothing.
-          if (exposeThinking) {
+        }
+        // USER-FACING feed (gated by exposeThinking): mirror the agent's internals
+        // into the curated `progress` level so the end-user progress surface can
+        // show reasoning interleaved with human-readable tool statements. A tool
+        // without a `statusLabel` template contributes nothing.
+        if (exposeThinking) {
+          if (reasoning) {
+            void sink.log?.({ level: 'progress', message: reasoning })
+          }
+          for (const tc of toolCalls) {
             const template = toolStatusLabels?.[tc.toolName]
-            const message = template && interpolateStatus(template, tc.input).trim()
+            const message =
+              template && interpolateUserText(template, tc.input).trim()
             if (message) {
-              void sink.append('progress', message)
-              void sink.log?.({ level: 'info', message })
+              void sink.log?.({ level: 'progress', message })
             }
           }
-        }
-        // The legacy free-text 'progress' channel (chat toasts) + a mirrored
-        // structured line, gated by the agent's exposeThinking flag.
-        if (exposeThinking && step.text?.trim()) {
-          void sink.append('progress', step.text)
-          void sink.log?.({ level: 'info', message: step.text.trim() })
         }
       }
     },

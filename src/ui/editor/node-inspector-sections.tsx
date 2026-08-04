@@ -117,12 +117,12 @@ export function AgentInspector({
             side="left"
             content={
               <>
-                Stream this agent's work to the user as it happens — both its
-                step-by-step reasoning and a short note each time it calls a tool
-                (e.g. “Searching knowledge base…”) — instead of showing only the
-                final answer. Reasoning is only shown when the agent has{' '}
-                <span className="font-medium">Enable reasoning</span> turned on;
-                tool notes appear only for tools that provide one.
+                The user always sees each step's progress note. Turn this on to
+                also stream this agent's <span className="font-medium">reasoning</span>{' '}
+                and a short note each time it calls a tool (e.g. “Searching
+                knowledge base…”) into that progress. Reasoning only appears when
+                the agent has <span className="font-medium">Enable reasoning</span>{' '}
+                on; tool notes appear only for tools that provide one.
               </>
             }
           >

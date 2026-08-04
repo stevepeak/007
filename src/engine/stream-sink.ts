@@ -7,13 +7,19 @@
 // Logs panel renders, and lets the run viewer derive the currently-active node
 // (`node-start` with no matching `node-end`).
 //   - node-start / node-end : a node was entered / finished (carries nodeId)
+//   - progress              : a curated, USER-FACING "what's happening" line —
+//                             the only level an end-user progress surface shows.
+//                             Every node emits one at start; agents add more when
+//                             `exposeThinking` is on. Distinct from the dev-only
+//                             levels below so the two audiences never conflate.
 //   - info                  : a human-readable progress line we emit ourselves
-//   - thinking              : an agent's internal reasoning for a step
-//   - tool                  : an agent invoked a tool
+//   - thinking              : an agent's internal reasoning for a step (dev feed)
+//   - tool                  : an agent invoked a tool (dev feed)
 //   - warn / error          : something went wrong (error carries the message)
 export type RunLogLevel =
   | 'node-start'
   | 'node-end'
+  | 'progress'
   | 'info'
   | 'thinking'
   | 'tool'

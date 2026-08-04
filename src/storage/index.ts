@@ -76,6 +76,7 @@ export {
   getEvalRun,
   getEvalSet,
   getFeedbackForSubjects,
+  getLatestProgressMessage,
   getModelCatalog,
   getModelUsage,
   getRun,

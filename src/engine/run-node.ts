@@ -255,6 +255,7 @@ export async function runNode<TDeps>(
         // The list is a ref into an upstream node's output, resolved against the
         // run's global outputs — not read out of the forwarded input.
         list: resolveIterationList(node, ctx.nodeOutputs),
+        sink: ctx.sink,
         runItem: (item, index) =>
           executeSubgraph(
             node.config.subgraph,

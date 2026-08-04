@@ -102,7 +102,11 @@ export function engineToFlow(graph: WorkflowGraph): {
 }
 
 export function extractEditorData(n: WorkflowNode): EditorNodeData {
-  return { kind: n.kind, label: n.label, config: n.config } as EditorNodeData
+  // Everything except id/position (xyflow owns those) — so top-level node fields
+  // like `progressNote` and `execution` survive the graph→flow→graph round-trip,
+  // not just kind/label/config.
+  const { id: _id, position: _position, ...data } = n
+  return data as EditorNodeData
 }
 
 function edgeToEngine(e: EditorEdge): WorkflowEdge {
@@ -161,11 +165,11 @@ export function flowToEngine(nodes: EditorNode[], edges: EditorEdge[]): Workflow
     const data = n.data
     if (data.kind !== 'iteration') return engineNodeOf(n)
     const kids = childrenByParent.get(n.id) ?? []
+    // Start from the full node (carries label, progressNote, execution, config)
+    // and only re-nest the container's children into its subgraph.
     return {
-      id: n.id,
-      position: { x: n.position.x, y: n.position.y },
+      ...engineNodeOf(n),
       kind: 'iteration',
-      label: data.label,
       config: {
         ...data.config,
         subgraph: {
