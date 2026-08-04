@@ -46,8 +46,6 @@ export type WfCrumb = {
   label?: ReactNode
   /** Path relative to `basePath`; omit for the current (non-link) page. */
   to?: string
-  /** Legacy flag: the root Home crumb. Dropped now that Home is a tab. */
-  home?: boolean
   /** Render this crumb as the asset's inline-editable title. */
   editable?: WfCrumbEditable
   /** Asset-type label shown in gray before the icon, e.g. "Goal". */
@@ -117,7 +115,7 @@ export function WfShell({
   //   [ icon ] Title                                          [ actions ]
   //   [ description ]
   // The leaf crumb is the asset itself (its editable name doubles as the title).
-  const items = crumbs.filter((c) => !c.home)
+  const items = crumbs
   const leaf = items[items.length - 1]
   const ancestors = items.slice(0, -1)
   const editable = leaf?.editable

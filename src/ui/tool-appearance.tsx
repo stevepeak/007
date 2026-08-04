@@ -1,17 +1,12 @@
-import { AGENT_COLORS, type AgentColor, agentColor } from './agent-appearance'
+import { agentColor } from './agent-appearance'
 
 // Tools reuse the shared appearance palette (see `agent-appearance`): icons are
 // stored as lucide PascalCase names and colors as palette keys, so a tool card
-// and an agent card read as one design language. These thin re-exports give the
+// and an agent card read as one design language. This thin re-export gives the
 // tool call-sites a domain-appropriate name instead of reaching for `agent*`.
 
-export type ToolColor = AgentColor
-
-/** The palette a tool's icon chip draws from — the same 8 keys agents use. */
-export const TOOL_COLORS = AGENT_COLORS
-
-/** Resolve a tool's stored color key to its chip/swatch classes. */
-export const toolColor = agentColor
+// Resolve a tool's stored color key to its chip/swatch classes.
+const toolColor = agentColor
 
 /**
  * The chip classes wrapping a tool's icon: the tool's tinted palette color when

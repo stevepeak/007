@@ -142,7 +142,6 @@ export function EvalTest({
       titleIcon={<FlaskConical className="size-5 shrink-0 text-rose-500" />}
       assetLabel="Test"
       crumbs={[
-        { home: true },
         sectionCrumb('evals'),
         {
           assetLabel: 'Goal',

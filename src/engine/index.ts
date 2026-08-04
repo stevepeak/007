@@ -121,11 +121,9 @@ export {
 } from './tool-registry'
 export {
   describeTriggerEvents,
-  getTriggerEntry,
   ITERATION_ITEM_TRIGGER_KIND,
   MANUAL_TRIGGER_KIND,
   PERIODIC_TRIGGER_KIND,
-  RESERVED_TRIGGER_KINDS,
   resolveTriggerInput,
   triggerModeOf,
   type TriggerEntry,
@@ -134,7 +132,7 @@ export {
   type TriggerMode,
   type TriggerRegistry,
 } from './trigger-registry'
-export { createMemorySink, noopSink, type StreamSink } from './stream-sink'
+export { createMemorySink, type StreamSink } from './stream-sink'
 export {
   deriveRunProgress,
   type ProgressStep,

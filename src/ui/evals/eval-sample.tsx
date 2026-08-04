@@ -140,7 +140,6 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
       titleIcon={<Microscope className="size-5 shrink-0 text-rose-500" />}
       assetLabel="Sample"
       crumbs={[
-        { home: true },
         sectionCrumb('evals'),
         {
           assetLabel: 'Goal',

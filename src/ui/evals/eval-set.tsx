@@ -71,7 +71,6 @@ export function EvalSet({ setId, className }: EvalSetProps) {
       titleIcon={<Goal className="size-5 shrink-0 text-rose-500" />}
       assetLabel="Goal"
       crumbs={[
-        { home: true },
         sectionCrumb('evals'),
         set
           ? {

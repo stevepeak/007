@@ -138,7 +138,7 @@ function HomeRoutes({
     if (key === 'workflows') {
       return (
         <WfShell
-          crumbs={[{ home: true }, sectionCrumb('workflows', { current: true })]}
+          crumbs={[sectionCrumb('workflows', { current: true })]}
           scroll
         >
           <WorkflowsList />
@@ -150,7 +150,7 @@ function HomeRoutes({
       // "View runs" button on a workflow row deep-links here).
       const workflow = new URLSearchParams(queryString).get('workflow')
       return (
-        <WfShell crumbs={[{ home: true }, sectionCrumb('runs', { current: true })]}>
+        <WfShell crumbs={[sectionCrumb('runs', { current: true })]}>
           <RunsExplorer
             className="h-full"
             initialWorkflowId={workflow ?? undefined}
@@ -161,7 +161,7 @@ function HomeRoutes({
     if (key === 'agents') {
       return (
         <WfShell
-          crumbs={[{ home: true }, sectionCrumb('agents', { current: true })]}
+          crumbs={[sectionCrumb('agents', { current: true })]}
           scroll
         >
           <AgentsList />
@@ -171,7 +171,7 @@ function HomeRoutes({
     if (key === 'tools') {
       return (
         <WfShell
-          crumbs={[{ home: true }, sectionCrumb('tools', { current: true })]}
+          crumbs={[sectionCrumb('tools', { current: true })]}
           scroll
         >
           <ToolsList />
@@ -181,7 +181,7 @@ function HomeRoutes({
     if (key === 'evals') {
       return (
         <WfShell
-          crumbs={[{ home: true }, sectionCrumb('evals', { current: true })]}
+          crumbs={[sectionCrumb('evals', { current: true })]}
           scroll
         >
           <EvalsList />
@@ -191,7 +191,7 @@ function HomeRoutes({
     if (key === 'models') {
       return (
         <WfShell
-          crumbs={[{ home: true }, sectionCrumb('models', { current: true })]}
+          crumbs={[sectionCrumb('models', { current: true })]}
           scroll
         >
           <ModelsList />
@@ -201,7 +201,7 @@ function HomeRoutes({
     if (key === 'feedback') {
       return (
         <WfShell
-          crumbs={[{ home: true }, sectionCrumb('feedback', { current: true })]}
+          crumbs={[sectionCrumb('feedback', { current: true })]}
           scroll
         >
           <FeedbackList />
@@ -211,7 +211,7 @@ function HomeRoutes({
     const section = sections.find((s) => s.key === key)
     if (section) {
       return (
-        <WfShell crumbs={[{ home: true }, { label: section.title }]} scroll>
+        <WfShell crumbs={[{ label: section.title }]} scroll>
           <ComingSoon title={section.title} description={section.description} />
         </WfShell>
       )

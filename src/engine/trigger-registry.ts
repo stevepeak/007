@@ -24,13 +24,6 @@ export const PERIODIC_TRIGGER_KIND = 'periodic'
 // Reserved so the editor's event catalog never offers it as a startable trigger.
 export const ITERATION_ITEM_TRIGGER_KIND = 'iteration_item'
 
-/** The built-in kinds every workflow can use without a host registry entry. */
-export const RESERVED_TRIGGER_KINDS = [
-  MANUAL_TRIGGER_KIND,
-  PERIODIC_TRIGGER_KIND,
-  ITERATION_ITEM_TRIGGER_KIND,
-] as const
-
 export type TriggerMode = 'manual' | 'periodic' | 'event' | 'iteration_item'
 
 /** Classify a trigger kind into its mode (events are anything non-reserved). */
@@ -58,13 +51,6 @@ export type TriggerEntry = {
 }
 
 export type TriggerRegistry = Record<string, TriggerEntry>
-
-export function getTriggerEntry(
-  triggers: TriggerRegistry,
-  kind: string,
-): TriggerEntry | undefined {
-  return triggers[kind]
-}
 
 /**
  * Validate/normalize a run's `triggerInput` for the given trigger kind:

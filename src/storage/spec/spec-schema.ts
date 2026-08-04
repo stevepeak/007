@@ -73,7 +73,6 @@ export const evalRowSpecSchema = z.object({
   checks: z.unknown().optional(),
   sortOrder: z.number().int().optional(),
 })
-export type EvalRowSpec = z.infer<typeof evalRowSpecSchema>
 
 // One eval set (Goal). `target` is the slug of the agent/workflow it grades,
 // paired with `targetKind` — the id is resolved on import.

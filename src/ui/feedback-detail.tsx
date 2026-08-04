@@ -30,7 +30,7 @@ export function FeedbackDetail({ subjectId }: { subjectId: string }) {
 
   return (
     <WfShell
-      crumbs={[{ home: true }, sectionCrumb('feedback'), { label: 'Item' }]}
+      crumbs={[sectionCrumb('feedback'), { label: 'Item' }]}
       scroll
     >
       {query.isLoading ? (

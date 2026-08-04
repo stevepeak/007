@@ -367,20 +367,3 @@ export async function insertEvalResult(
   return id
 }
 
-/** Write a graded verdict onto an existing result. */
-export async function updateEvalResult(
-  db: WfDb,
-  input: {
-    resultId: string
-    wfRunId?: string
-    status?: EvalResultStatus
-    score?: number | null
-    checkResults?: CheckResult[]
-  },
-) {
-  await db
-    .update(wfEvalResult)
-    .set(pickDefined(input, ['wfRunId', 'status', 'score', 'checkResults']))
-    .where(eq(wfEvalResult.id, input.resultId))
-}
-

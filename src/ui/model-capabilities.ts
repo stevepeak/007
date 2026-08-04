@@ -27,11 +27,3 @@ export function unmetRequirements(
     (k) => requirements[k] && !model.capabilities?.[k],
   )
 }
-
-/** True when the model meets every required capability (unknown caps pass). */
-export function meetsRequirements(
-  model: ModelOption,
-  requirements: ModelCapabilities | undefined,
-): boolean {
-  return unmetRequirements(model, requirements).length === 0
-}

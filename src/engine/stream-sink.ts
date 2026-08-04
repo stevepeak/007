@@ -54,17 +54,6 @@ export interface StreamSink {
   log?: (entry: RunLogEntry) => Promise<void> | void
 }
 
-// A no-op sink for executions that don't need progress (e.g. unit tests for a
-// graph that has no streaming Agent node).
-export const noopSink: StreamSink = {
-  append: () => {
-    /* discard */
-  },
-  log: () => {
-    /* discard */
-  },
-}
-
 // In-memory sink useful for tests / debugging. Captures every (channel, text)
 // pair and every structured entry in order so assertions can inspect what would
 // have been streamed.

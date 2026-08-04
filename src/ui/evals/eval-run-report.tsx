@@ -30,7 +30,6 @@ export function EvalRunReport({ evalRunId, className }: EvalRunReportProps) {
   return (
     <WfShell
       crumbs={[
-        { home: true },
         { label: 'Run report', icon: Target, iconClassName: 'text-rose-500' },
       ]}
       scroll

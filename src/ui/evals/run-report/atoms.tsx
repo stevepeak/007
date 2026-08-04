@@ -1,45 +1,6 @@
-import { ChevronDown, ChevronRight } from 'lucide-react'
-import { useState } from 'react'
-
 import { cn } from '../../cn'
 
 // Small, shared presentational atoms for the run report.
-
-// A collapsible bordered card: a clickable header (chevron + title + optional
-// subtitle) over content that folds away. Each section owns its open state.
-export function Section({
-  title,
-  subtitle,
-  defaultOpen = true,
-  children,
-}: {
-  title: string
-  subtitle?: React.ReactNode
-  defaultOpen?: boolean
-  children: React.ReactNode
-}) {
-  const [open, setOpen] = useState(defaultOpen)
-  return (
-    <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition hover:bg-neutral-50"
-      >
-        {open ? (
-          <ChevronDown className="size-4 shrink-0 text-neutral-400" />
-        ) : (
-          <ChevronRight className="size-4 shrink-0 text-neutral-400" />
-        )}
-        <span className="text-sm font-semibold text-neutral-900">{title}</span>
-        {subtitle != null && (
-          <span className="text-xs text-neutral-400">{subtitle}</span>
-        )}
-      </button>
-      {open && <div className="border-t border-neutral-100">{children}</div>}
-    </div>
-  )
-}
 
 // A single small dot + word — the calm, scannable status marker for a table row
 // (the full colored badge stays on the run-level summary only).
