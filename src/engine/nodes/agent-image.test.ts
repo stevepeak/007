@@ -58,6 +58,7 @@ function visionNode(imageInputs: AgentNode['config']['imageInputs']): AgentNode 
     kind: 'agent',
     label: 'Vision',
     position: { x: 0, y: 0 },
+    informUser: { mode: 'off' },
     config: { agentId: 'vision', version: null, inputs: {}, imageInputs },
   }
 }

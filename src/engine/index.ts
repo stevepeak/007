@@ -26,6 +26,7 @@ export {
   type BranchOperator,
   BRANCH_OPERATORS,
   DECISION_NODE_KINDS,
+  type InformUser,
   isBookendKind,
   isDecisionKind,
   SWITCH_DEFAULT_CASE,

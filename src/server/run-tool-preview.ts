@@ -50,6 +50,7 @@ export async function executeToolPreview<TDeps>(opts: {
     kind: 'tool',
     label: 'Playground',
     position: { x: 0, y: 0 },
+    informUser: { mode: 'off' },
     config: {
       toolId,
       args: Object.fromEntries(

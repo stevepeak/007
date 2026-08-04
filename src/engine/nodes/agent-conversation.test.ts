@@ -65,6 +65,7 @@ function botNode(conversation?: AgentNode['config']['conversation']): AgentNode 
     kind: 'agent',
     label: 'Chat Bot',
     position: { x: 0, y: 0 },
+    informUser: { mode: 'off' },
     config: { agentId: 'bot', version: null, inputs: {}, imageInputs: {}, conversation },
   }
 }

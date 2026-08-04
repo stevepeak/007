@@ -18,6 +18,7 @@ const node = (
   kind,
   label,
   position: { x: 0, y: 0 },
+  informUser: { mode: 'off' },
   ...extra,
 })
 
@@ -28,7 +29,7 @@ describe('buildSimulatedItems', () => {
       nodes: [
         node('t', 'trigger', 'Go', { config: { triggerKind: 'manual' } }),
         node('a', 'tool', 'Fetch', {
-          progressNote: 'Fetching records',
+          informUser: { mode: 'static', note: 'Fetching records' },
           config: { toolId: 'x', args: {} },
         }),
         node('b', 'tool', 'Summarize', { config: { toolId: 'y', args: {} } }),
@@ -54,7 +55,7 @@ describe('buildSimulatedItems', () => {
       nodes: [
         node('t', 'trigger', 'Go', { config: { triggerKind: 'manual' } }),
         node('loop', 'iteration', 'Each doc', {
-          progressNote: 'Reviewing documents',
+          informUser: { mode: 'static', note: 'Reviewing documents' },
           config: {
             source: { kind: 'ref', nodeId: 't', path: '' },
             concurrency: 1,

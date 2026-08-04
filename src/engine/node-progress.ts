@@ -1,3 +1,4 @@
+import type { InformUser } from './graph-schema'
 import { interpolateUserText } from './prompt-variables'
 import type { StreamSink } from './stream-sink'
 
@@ -10,27 +11,25 @@ import type { StreamSink } from './stream-sink'
 type ProgressNode = {
   id: string
   kind: string
-  progressNote?: string
-  config?: Record<string, unknown>
+  informUser: InformUser
 }
 
 /**
- * The node's user-facing progress message: the author's `progressNote`
- * (interpolated from run variables), or an empty string when none is set.
+ * The node's user-facing progress message: the author's static note
+ * (interpolated from run variables), or an empty string for any other mode.
  * Nodes are silent in the user feed by DEFAULT — there is no derived-title
- * fallback ("Agent: …"), so a step only surfaces a line when the author gave it
- * one. An agent with `exposeThinking` on streams its reasoning/tool notes
- * instead, which SUPERSEDES the static note (mirroring the disabled note input
- * in the editor), so it too returns empty. Pure — shared by the live emitter
- * below and the editor's simulate preview.
+ * fallback ("Agent: …"), so a step only surfaces a line in `static` mode.
+ * `dynamic` streams reasoning/tool notes instead (and, being a distinct mode,
+ * carries no static note to emit); `off` says nothing. Pure — shared by the live
+ * emitter below and the editor's simulate preview.
  */
 export function nodeProgressMessage(
   node: ProgressNode,
   promptVariables: Record<string, string | undefined> | undefined,
 ): string {
-  const note = node.progressNote?.trim()
+  if (node.informUser.mode !== 'static') return ''
+  const note = node.informUser.note.trim()
   if (!note) return ''
-  if (node.kind === 'agent' && node.config?.exposeThinking === true) return ''
   return interpolateUserText(note, promptVariables ?? {}).trim()
 }
 

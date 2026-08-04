@@ -74,27 +74,26 @@ export async function executeAgentPreview<TDeps>(opts: {
     kind: 'agent',
     label: 'Playground',
     position: { x: 0, y: 0 },
+    // No user-facing stream (not a real placement). Reasoning is forced on at the
+    // model layer below (getModel) so the trace still shows the thinking.
+    informUser: { mode: 'off' },
     config: {
       agentId: PREVIEW_AGENT_ID,
       version: null,
       inputs: {},
       imageInputs: {},
-      exposeThinking: false,
-      // Playground always reasons so the author can inspect the model's thinking
-      // per step. `enableTools` is display-only (unused here since exposeThinking
-      // is off — the trace renders tool calls directly).
-      enableTools: true,
-      enableReasoning: true,
     },
   }
 
   const result = await executeAgentNode<unknown>({
     node,
     input: message,
+    // Playground always reasons (runContext.reasoning) so the trace shows the
+    // model's thinking, regardless of the synthetic node's inform-user flags.
     getModel: (modelId, opts) =>
       wfConfig.getModel(modelId, {
         ...runContext,
-        reasoning: opts?.reasoning ?? runContext.reasoning,
+        reasoning: runContext.reasoning ?? opts?.reasoning,
       }),
     toolRegistry,
     toolDeps: {},

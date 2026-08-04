@@ -11,6 +11,18 @@ export function defaultDataForKind(
   kind: string,
   defaults?: NodeDefaults,
 ): EditorNodeData | null {
+  const data = nodeConfigForKind(kind, defaults)
+  // Every fresh node starts silent; the inspector's "Inform user" control edits
+  // it. Attached once here so each kind's shape below need not repeat it.
+  return data
+    ? ({ ...data, informUser: { mode: 'off' } } as EditorNodeData)
+    : null
+}
+
+function nodeConfigForKind(
+  kind: string,
+  defaults?: NodeDefaults,
+): Omit<EditorNodeData, 'informUser'> | null {
   const toolId = defaults?.toolId || 'tool'
   if (kind === 'agent') {
     // A pointer node — the inspector picks which pre-developed agent to run.
@@ -22,10 +34,6 @@ export function defaultDataForKind(
         version: null,
         inputs: {},
         imageInputs: {},
-        exposeThinking: false,
-        // New placements let the agent use its tools; reasoning is opt-in.
-        enableTools: true,
-        enableReasoning: false,
       },
     }
   }

@@ -44,6 +44,7 @@ export function buildStarterGraph(trigger: NewWorkflowTrigger): WorkflowGraph {
         kind: 'trigger',
         label,
         position: { x: 0, y: 0 },
+        informUser: { mode: 'off' },
         config,
       },
       {
@@ -51,6 +52,7 @@ export function buildStarterGraph(trigger: NewWorkflowTrigger): WorkflowGraph {
         kind: 'output',
         label: 'Output',
         position: { x: 320, y: 0 },
+        informUser: { mode: 'off' },
         config: {},
       },
     ],
@@ -84,6 +86,7 @@ export function buildIterationSubgraph(): WorkflowGraph {
         kind: 'trigger',
         label: 'Item',
         position: { x: 24, y: 72 },
+        informUser: { mode: 'off' },
         config: { triggerKind: ITERATION_ITEM_TRIGGER_KIND },
       },
       {
@@ -91,6 +94,7 @@ export function buildIterationSubgraph(): WorkflowGraph {
         kind: 'output',
         label: 'Result',
         position: { x: 300, y: 72 },
+        informUser: { mode: 'off' },
         config: {},
       },
     ],

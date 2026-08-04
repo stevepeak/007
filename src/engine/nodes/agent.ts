@@ -142,19 +142,17 @@ export async function executeAgentNode<TDeps>(
   // meta below (so run cost prices against the model actually used).
   const modelId = agentOverride?.modelId ?? config.modelId
   const promptTemplate = agentOverride?.prompt ?? config.prompt
-  // "Inform user → Dynamic" streams the agent's live activity to the user. It's
-  // a per-placement choice, set on the node; OR'd with the agent config's legacy
-  // flag so any agent that opted in before the control moved still streams. Its
-  // two sub-toggles pick WHAT streams — reasoning and/or tool-call announcements
-  // — each display-only. Neither affects which tools the agent may call.
-  const dynamic = node.config.exposeThinking || config.exposeThinking
-  const streamReasoning = dynamic && node.config.enableReasoning
-  const streamToolCalls = dynamic && (node.config.enableTools ?? true)
-  // Reasoning is a per-placement choice, set on the node's dynamic sub-toggle;
-  // the host's `getModel` turns `false` into its provider's "no thinking" flag.
-  const model = getModel(modelId, {
-    reasoning: node.config.enableReasoning,
-  })
+  // "Inform user → Dynamic" streams the agent's live activity to the user. The
+  // node's `informUser` field is the single source of truth; its two sub-toggles
+  // pick WHAT streams — reasoning and/or tool-call announcements — each
+  // display-only. Neither affects which tools the agent may call.
+  const inform = node.informUser
+  const streamReasoning = inform.mode === 'dynamic' && inform.reasoning
+  const streamToolCalls = inform.mode === 'dynamic' && inform.tools
+  // The model actually reasons exactly when we stream that reasoning — reasoning
+  // is a dynamic-mode concern only. `getModel` turns `false` into the provider's
+  // "no thinking" flag; when reasoning is off, there's nothing to stream anyway.
+  const model = getModel(modelId, { reasoning: streamReasoning })
   // Synthesis eval: an empty tool set forces the model to answer from its seeded
   // history alone. Otherwise resolve the agent's real tools (neutralized under
   // simulate). freezeTools also suppresses delegation-tool synthesis below.

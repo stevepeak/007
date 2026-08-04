@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import type { ComponentType } from 'react'
 
-import { isBookendKind, type WorkflowNode } from '../../engine'
+import { isBookendKind, type InformUser, type WorkflowNode } from '../../engine'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { WfLink } from '../nav'
@@ -149,48 +149,32 @@ export function NodeInspector(props: NodeInspectorProps) {
   const { Input } = useWfComponents()
 
   const Inspector = NODE_INSPECTORS[node.kind]
-  // The step's "inform user" mode, decoded from the node: dynamic ⇢ an agent
-  // with `config.exposeThinking`; static ⇢ a defined `progressNote` (possibly
-  // ""); off ⇢ neither. Only agents offer the dynamic (live-reasoning) mode.
+  // The step's "inform user" mode IS the node's `informUser` field — no decoding.
+  // Only agents offer the dynamic (live-streaming) mode.
   const isAgent = node.kind === 'agent'
-  const informMode: InformMode =
-    isAgent && node.config.exposeThinking
-      ? 'dynamic'
-      : node.progressNote != null
-        ? 'static'
-        : 'off'
+  const inform = node.informUser
+  const informMode: InformMode = inform.mode
   const informOptions: { value: InformMode; label: string }[] = [
     { value: 'off', label: 'Off' },
     { value: 'static', label: 'Static' },
     ...(isAgent ? [{ value: 'dynamic' as const, label: 'Dynamic' }] : []),
   ]
+  // Switching modes replaces the whole `informUser` value. We preserve the prior
+  // mode's settings (the static note, the dynamic sub-toggles) so flipping away
+  // and back restores the author's choice — the union makes leaked/stale fields
+  // structurally impossible, so there's nothing to reset.
   const setInformMode = (mode: InformMode) => {
-    if (node.kind === 'agent') {
-      // Dynamic keeps any stored static note (runtime ignores it while dynamic)
-      // so it returns if the author switches back.
-      if (mode === 'dynamic') {
-        onChange({ ...node, config: { ...node.config, exposeThinking: true } })
-        return
-      }
-      // Leaving dynamic: the tool-calling / reasoning sub-toggles only exist in
-      // dynamic mode, so reset them to their defaults — otherwise a hidden
-      // non-default (e.g. reasoning on) would still affect the run unseen.
-      onChange({
-        ...node,
-        progressNote: mode === 'static' ? (node.progressNote ?? '') : undefined,
-        config: {
-          ...node.config,
-          exposeThinking: false,
-          enableTools: true,
-          enableReasoning: false,
-        },
-      })
-      return
-    }
-    onChange({
-      ...node,
-      progressNote: mode === 'static' ? (node.progressNote ?? '') : undefined,
-    })
+    const next: InformUser =
+      mode === 'static'
+        ? { mode: 'static', note: inform.mode === 'static' ? inform.note : '' }
+        : mode === 'dynamic'
+          ? {
+              mode: 'dynamic',
+              reasoning: inform.mode === 'dynamic' ? inform.reasoning : false,
+              tools: inform.mode === 'dynamic' ? inform.tools : true,
+            }
+          : { mode: 'off' }
+    onChange({ ...node, informUser: next })
   }
 
   return (
@@ -238,7 +222,7 @@ export function NodeInspector(props: NodeInspectorProps) {
             options={informOptions}
           />
 
-          {informMode === 'dynamic' && node.kind === 'agent' ? (
+          {inform.mode === 'dynamic' ? (
             <div className="space-y-3">
               <p className="text-muted-foreground text-xs">
                 The agent streams its live activity to the user as it works.
@@ -248,11 +232,11 @@ export function NodeInspector(props: NodeInspectorProps) {
                 icon={Wrench}
                 title="Tool calling"
                 description="Announce which tool the agent is calling as it works."
-                checked={node.config.enableTools ?? true}
-                onChange={(enableTools) =>
+                checked={inform.tools}
+                onChange={(tools) =>
                   onChange({
                     ...node,
-                    config: { ...node.config, enableTools },
+                    informUser: { ...inform, tools },
                   })
                 }
               />
@@ -260,22 +244,25 @@ export function NodeInspector(props: NodeInspectorProps) {
                 icon={Brain}
                 title="Reasoning"
                 description="Stream the model's thinking as it reasons toward the answer."
-                checked={node.config.enableReasoning ?? false}
-                onChange={(enableReasoning) =>
+                checked={inform.reasoning}
+                onChange={(reasoning) =>
                   onChange({
                     ...node,
-                    config: { ...node.config, enableReasoning },
+                    informUser: { ...inform, reasoning },
                   })
                 }
               />
             </div>
-          ) : informMode === 'static' ? (
+          ) : inform.mode === 'static' ? (
             <div className="space-y-1">
               <Input
-                value={node.progressNote ?? ''}
+                value={inform.note}
                 placeholder="Searching client documents…"
                 onChange={(e) =>
-                  onChange({ ...node, progressNote: e.target.value })
+                  onChange({
+                    ...node,
+                    informUser: { mode: 'static', note: e.target.value },
+                  })
                 }
               />
               <p className="text-muted-foreground text-xs">

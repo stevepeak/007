@@ -55,6 +55,7 @@ export function buildAgentWrapperGraph(
         kind: 'trigger',
         label: 'Manual start',
         position: { x: 0, y: 0 },
+        informUser: { mode: 'off' },
         config: { triggerKind: MANUAL_TRIGGER_KIND },
       },
       {
@@ -62,14 +63,12 @@ export function buildAgentWrapperGraph(
         kind: 'agent',
         label: 'Agent',
         position: { x: 280, y: 0 },
+        informUser: { mode: 'off' },
         config: {
           agentId,
           version,
           inputs: {},
           imageInputs: {},
-          exposeThinking: false,
-          enableTools: true,
-          enableReasoning: false,
           // Synthesis mode seeds a conversation via `triggerInput.messages`; link
           // it explicitly so the seeded thread reaches the agent (history is no
           // longer implicitly expanded from the trigger payload). Absent messages
@@ -82,6 +81,7 @@ export function buildAgentWrapperGraph(
         kind: 'output',
         label: 'Output',
         position: { x: 560, y: 0 },
+        informUser: { mode: 'off' },
         // The run's result is the agent's whole output — bound explicitly (the
         // Output no longer implicitly forwards the live edge). The manual trigger
         // declares no output contract, so any shape the agent produces is fine.

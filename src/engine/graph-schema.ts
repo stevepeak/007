@@ -38,16 +38,36 @@ export const nodeExecutionSchema = z.object({
 })
 export type NodeExecution = z.infer<typeof nodeExecutionSchema>
 
+// What the USER sees while a step runs — a single, mutually-exclusive choice, so
+// the modes can't be held at once and there are no cross-field invariants to
+// enforce by hand:
+//   - off     — the step reports nothing.
+//   - static  — a fixed author line (supports `${var}` tokens from run vars),
+//               shown at step start.
+//   - dynamic — AGENT ONLY: stream the agent's live activity. `reasoning` streams
+//               the model's thinking; `tools` announces each tool it calls. Both
+//               are display-only (they never change what the agent may call).
+// The editor only offers `dynamic` for agents; other kinds get off / static.
+export const informUserSchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('off') }),
+  z.object({ mode: z.literal('static'), note: z.string().default('') }),
+  z.object({
+    mode: z.literal('dynamic'),
+    reasoning: z.boolean().default(false),
+    tools: z.boolean().default(true),
+  }),
+])
+export type InformUser = z.infer<typeof informUserSchema>
+
 const baseNode = z.object({
   id: z.string().min(1),
   // Editor-only — does not affect execution.
   position: positionSchema,
   label: z.string().min(1),
-  // Optional, author-set, USER-FACING line shown while this step runs (the
-  // first-class progress feed). Supports `${var}` tokens filled from the run's
-  // variables. When unset, the run derives a title from `nodeSpanLabel`. Every
-  // node kind inherits it, though bookends (trigger/output/note) never run.
-  progressNote: z.string().optional(),
+  // What the user sees while this step runs — off / static / dynamic (see
+  // `informUserSchema`). Every node kind inherits it, though bookends
+  // (trigger/output/note) never run, and only agents offer `dynamic`.
+  informUser: informUserSchema.default({ mode: 'off' }),
   // Optional per-node retry/timeout/best-effort policy. Provider-agnostic; the
   // runtime backend maps it to its own step config. Meaningless on the trigger/
   // output/note bookends, but harmless there (they never run as steps).
@@ -130,21 +150,9 @@ const agentNodeSchema = baseNode.extend({
     // governs ordering; a non-conversation upstream value still becomes the
     // agent's single working user message.
     conversation: argBindingSchema.optional(),
-    // When true, this node forwards the agent's per-step thinking text to the
-    // run's StreamSink so the user can watch it work. A per-placement choice —
-    // the same agent can stream its reasoning in one workflow and stay quiet in
-    // another — so it lives on the node, not the reusable agent's config.
-    exposeThinking: z.boolean().default(false),
-    // Dynamic "Inform user" sub-toggle: announce each tool the agent calls on
-    // the user's progress stream. Display only — it never changes which tools
-    // the agent may call (only matters while `exposeThinking` is on). Defaults on.
-    enableTools: z.boolean().default(true),
-    // Dynamic "Inform user" sub-toggle: whether the model reasons before
-    // answering AND streams that reasoning to the user. The single source of
-    // truth for reasoning — it replaced the reusable agent's own flag, so
-    // reasoning is controlled entirely by the workflow (only matters while
-    // `exposeThinking` is on).
-    enableReasoning: z.boolean().default(false),
+    // Whether/what this placement streams to the user (dynamic mode) lives on the
+    // node's `informUser` field (see `informUserSchema`), NOT in this config, so
+    // the same agent can stream in one workflow and stay quiet in another.
   }),
 })
 
@@ -435,7 +443,7 @@ export interface IterationNode {
   id: string
   position: { x: number; y: number }
   label: string
-  progressNote?: string
+  informUser: InformUser
   execution?: NodeExecution
   kind: 'iteration'
   config: {
@@ -483,9 +491,35 @@ export type WorkflowEdge = z.infer<typeof workflowEdgeSchema>
 // The editor persists drafts and versions through THIS so a work-in-progress
 // with issues can still be saved — integrity problems surface non-blockingly via
 // `collectGraphIssues` and the "Issues" panel instead of rejecting the save.
+// Back-compat: map a stored node's LEGACY inform-user fields (`progressNote` +
+// the agent node's `exposeThinking`/`enableReasoning`/`enableTools`) onto the new
+// single `informUser` field before the schema parse strips them. A node that
+// already carries `informUser` is left untouched; a fresh graph never hits any
+// branch but the last. Runs per node (nested iteration subgraphs recurse through
+// this same schema), so one mapper covers the whole tree.
+function migrateInformUser(raw: unknown): unknown {
+  if (raw == null || typeof raw !== 'object') return raw
+  const node = raw as Record<string, unknown>
+  if (node.informUser != null) return node
+  const config = (node.config ?? {}) as Record<string, unknown>
+  let informUser: InformUser
+  if (node.kind === 'agent' && config.exposeThinking === true) {
+    informUser = {
+      mode: 'dynamic',
+      reasoning: config.enableReasoning === true,
+      tools: config.enableTools !== false, // legacy default was on
+    }
+  } else if (typeof node.progressNote === 'string') {
+    informUser = { mode: 'static', note: node.progressNote }
+  } else {
+    informUser = { mode: 'off' }
+  }
+  return { ...node, informUser }
+}
+
 export const workflowGraphShapeSchema = z.object({
   version: z.literal(1),
-  nodes: z.array(workflowNodeSchema).min(2),
+  nodes: z.array(z.preprocess(migrateInformUser, workflowNodeSchema)).min(2),
   edges: z.array(workflowEdgeSchema),
 })
 

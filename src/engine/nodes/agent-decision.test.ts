@@ -37,6 +37,7 @@ const gateNode: AgentNode = {
   kind: 'agent',
   label: 'Gate',
   position: { x: 0, y: 0 },
+  informUser: { mode: 'off' },
   config: { agentId: 'gate', version: null, inputs: {}, imageInputs: {} },
 }
 
