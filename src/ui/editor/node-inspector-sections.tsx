@@ -74,7 +74,18 @@ export function AgentInspector({
   return (
     <>
       <div className={field}>
-        <Label>Agent</Label>
+        <div className="flex items-center justify-between">
+          <Label>Agent</Label>
+          {node.config.agentId ? (
+            <WfLink
+              to={`agents/${node.config.agentId}/edit`}
+              newTab
+              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs hover:underline"
+            >
+              <ExternalLink className="size-3" /> Open in new tab
+            </WfLink>
+          ) : null}
+        </div>
         <AgentSelect
           agents={agentOptions}
           value={{
@@ -88,15 +99,6 @@ export function AgentInspector({
             })
           }
         />
-        {node.config.agentId ? (
-          <WfLink
-            to={`agents/${node.config.agentId}/edit`}
-            newTab
-            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs hover:underline"
-          >
-            <ExternalLink className="size-3" /> Open agent in new tab
-          </WfLink>
-        ) : null}
       </div>
       {/* The "Expose thinking" toggle now lives in the shared inspector, grouped
           with the Progress note it supersedes. */}
