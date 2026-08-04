@@ -68,6 +68,8 @@ export function buildAgentWrapperGraph(
           inputs: {},
           imageInputs: {},
           exposeThinking: false,
+          enableTools: true,
+          enableReasoning: false,
           // Synthesis mode seeds a conversation via `triggerInput.messages`; link
           // it explicitly so the seeded thread reaches the agent (history is no
           // longer implicitly expanded from the trigger payload). Absent messages

@@ -1,4 +1,10 @@
-import { ExternalLink, MessageSquareText, type LucideIcon } from 'lucide-react'
+import {
+  Brain,
+  ExternalLink,
+  MessageSquareText,
+  Wrench,
+  type LucideIcon,
+} from 'lucide-react'
 import type { ComponentType } from 'react'
 
 import { isBookendKind, type WorkflowNode } from '../../engine'
@@ -101,6 +107,43 @@ function SegmentedToggle<T extends string>({
   )
 }
 
+// A labeled on/off row: a leading icon + title over a short description, with a
+// checkbox at the trailing edge. Used for the dynamic "Inform user" sub-toggles
+// that pick what the agent surfaces to the user (tool activity, reasoning).
+function ToggleRow({
+  icon: Icon,
+  title,
+  description,
+  checked,
+  onChange,
+}: {
+  icon: LucideIcon
+  title: string
+  description: string
+  checked: boolean
+  onChange: (checked: boolean) => void
+}) {
+  const { Checkbox } = useWfComponents()
+  return (
+    <label className="flex cursor-pointer items-start gap-2.5">
+      <Icon className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+      <span className="min-w-0 flex-1">
+        <span className="text-foreground block text-sm font-medium">
+          {title}
+        </span>
+        <span className="text-muted-foreground mt-0.5 block text-xs">
+          {description}
+        </span>
+      </span>
+      <Checkbox
+        className="mt-0.5"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+    </label>
+  )
+}
+
 export function NodeInspector(props: NodeInspectorProps) {
   const { node, onChange, graph, itemSchema } = props
   const { Input } = useWfComponents()
@@ -129,10 +172,18 @@ export function NodeInspector(props: NodeInspectorProps) {
         onChange({ ...node, config: { ...node.config, exposeThinking: true } })
         return
       }
+      // Leaving dynamic: the tool-calling / reasoning sub-toggles only exist in
+      // dynamic mode, so reset them to their defaults — otherwise a hidden
+      // non-default (e.g. reasoning on) would still affect the run unseen.
       onChange({
         ...node,
         progressNote: mode === 'static' ? (node.progressNote ?? '') : undefined,
-        config: { ...node.config, exposeThinking: false },
+        config: {
+          ...node.config,
+          exposeThinking: false,
+          enableTools: true,
+          enableReasoning: false,
+        },
       })
       return
     }
@@ -187,11 +238,37 @@ export function NodeInspector(props: NodeInspectorProps) {
             options={informOptions}
           />
 
-          {informMode === 'dynamic' ? (
-            <p className="text-muted-foreground text-xs">
-              The agent streams its live reasoning and tool activity to the user
-              as it works.
-            </p>
+          {informMode === 'dynamic' && node.kind === 'agent' ? (
+            <div className="space-y-3">
+              <p className="text-muted-foreground text-xs">
+                The agent streams its live activity to the user as it works.
+                Choose what to surface:
+              </p>
+              <ToggleRow
+                icon={Wrench}
+                title="Tool calling"
+                description="Announce which tool the agent is calling as it works."
+                checked={node.config.enableTools ?? true}
+                onChange={(enableTools) =>
+                  onChange({
+                    ...node,
+                    config: { ...node.config, enableTools },
+                  })
+                }
+              />
+              <ToggleRow
+                icon={Brain}
+                title="Reasoning"
+                description="Stream the model's thinking as it reasons toward the answer."
+                checked={node.config.enableReasoning ?? false}
+                onChange={(enableReasoning) =>
+                  onChange({
+                    ...node,
+                    config: { ...node.config, enableReasoning },
+                  })
+                }
+              />
+            </div>
           ) : informMode === 'static' ? (
             <div className="space-y-1">
               <Input

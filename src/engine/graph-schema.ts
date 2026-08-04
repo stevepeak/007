@@ -135,6 +135,16 @@ const agentNodeSchema = baseNode.extend({
     // the same agent can stream its reasoning in one workflow and stay quiet in
     // another — so it lives on the node, not the reusable agent's config.
     exposeThinking: z.boolean().default(false),
+    // Dynamic "Inform user" sub-toggle: announce each tool the agent calls on
+    // the user's progress stream. Display only — it never changes which tools
+    // the agent may call (only matters while `exposeThinking` is on). Defaults on.
+    enableTools: z.boolean().default(true),
+    // Dynamic "Inform user" sub-toggle: whether the model reasons before
+    // answering AND streams that reasoning to the user. The single source of
+    // truth for reasoning — it replaced the reusable agent's own flag, so
+    // reasoning is controlled entirely by the workflow (only matters while
+    // `exposeThinking` is on).
+    enableReasoning: z.boolean().default(false),
   }),
 })
 

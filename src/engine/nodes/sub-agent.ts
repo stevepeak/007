@@ -126,7 +126,10 @@ async function runAgentTarget<TDeps>(
     modelId: config.modelId,
     output: config.output,
     maxTurns: config.maxTurns,
-    exposeThinking: config.exposeThinking,
+    // A sub-agent has no node placement, so its own `exposeThinking` gates both
+    // streams together (its historical behavior).
+    streamReasoning: config.exposeThinking,
+    streamToolCalls: config.exposeThinking,
     systemPrompt,
     messages,
     tools: toolSet,

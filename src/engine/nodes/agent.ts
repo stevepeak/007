@@ -142,17 +142,18 @@ export async function executeAgentNode<TDeps>(
   // meta below (so run cost prices against the model actually used).
   const modelId = agentOverride?.modelId ?? config.modelId
   const promptTemplate = agentOverride?.prompt ?? config.prompt
-  // Streaming the agent's thinking is a per-placement choice, set on the node in
-  // the workflow inspector ("Inform user → Dynamic"). OR'd with the agent
-  // config's legacy flag so any agent that opted in before the control moved
-  // still streams.
-  const exposeThinking = node.config.exposeThinking || config.exposeThinking
-  // Per-agent reasoning intent overrides the run default; the host's `getModel`
-  // turns `false` into its provider's "no thinking" flag. Dynamic mode
-  // (exposeThinking) needs the model to actually PRODUCE reasoning to stream, so
-  // it forces reasoning on regardless of the agent's own flag.
+  // "Inform user → Dynamic" streams the agent's live activity to the user. It's
+  // a per-placement choice, set on the node; OR'd with the agent config's legacy
+  // flag so any agent that opted in before the control moved still streams. Its
+  // two sub-toggles pick WHAT streams — reasoning and/or tool-call announcements
+  // — each display-only. Neither affects which tools the agent may call.
+  const dynamic = node.config.exposeThinking || config.exposeThinking
+  const streamReasoning = dynamic && node.config.enableReasoning
+  const streamToolCalls = dynamic && (node.config.enableTools ?? true)
+  // Reasoning is a per-placement choice, set on the node's dynamic sub-toggle;
+  // the host's `getModel` turns `false` into its provider's "no thinking" flag.
   const model = getModel(modelId, {
-    reasoning: config.enableReasoning || exposeThinking,
+    reasoning: node.config.enableReasoning,
   })
   // Synthesis eval: an empty tool set forces the model to answer from its seeded
   // history alone. Otherwise resolve the agent's real tools (neutralized under
@@ -165,7 +166,7 @@ export async function executeAgentNode<TDeps>(
       })
   // Human-readable status templates, keyed by tool id (the ToolSet's own key, so
   // it matches `toolName` at call time). Only tools that declare a `statusLabel`
-  // appear here; the emission is further gated on `exposeThinking` downstream.
+  // appear here; the emission is further gated on `streamToolCalls` downstream.
   const toolStatusLabels: Record<string, string> = {}
   for (const id of config.toolIds) {
     const label = toolRegistry.get(id)?.statusLabel
@@ -215,7 +216,8 @@ export async function executeAgentNode<TDeps>(
     modelId,
     output: config.output,
     maxTurns: config.maxTurns,
-    exposeThinking,
+    streamReasoning,
+    streamToolCalls,
     systemPrompt,
     messages,
     tools: effectiveTools,

@@ -153,7 +153,7 @@ function AgentEditorInner({
   className?: string
   onPublished?: (result: { versionId: string; versionNumber: number }) => void
 }) {
-  const { Button, Label, Input, Checkbox } = useWfComponents()
+  const { Button, Label, Input } = useWfComponents()
   const tools = useTools()
   const aiTools = (tools.data ?? []).filter((t) => t.kind === 'ai-tool')
 
@@ -187,7 +187,6 @@ function AgentEditorInner({
   const modelLacksTools = modelCaps != null && !modelCaps.tools
   const modelLacksStructuredOutput =
     modelCaps != null && !modelCaps.structuredOutput
-  const modelLacksReasoning = modelCaps != null && !modelCaps.reasoning
 
   const dirty = JSON.stringify(config) !== JSON.stringify(savedConfig)
   const saveError =
@@ -494,23 +493,6 @@ function AgentEditorInner({
                   answer. Each turn is one round of calling tools and reading
                   their results; a higher limit lets the agent do more research
                   but costs more and runs longer. Defaults to 5.
-                </p>
-              </div>
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 text-sm font-medium">
-                  <Checkbox
-                    checked={config.enableReasoning}
-                    disabled={modelLacksReasoning}
-                    onChange={(e) =>
-                      patch({ enableReasoning: e.target.checked })
-                    }
-                  />
-                  Enable reasoning
-                </label>
-                <p className="text-xs text-neutral-400">
-                  {modelLacksReasoning
-                    ? 'The selected model does not support reasoning.'
-                    : 'Ask the model to think through its answer before responding. A workflow node set to “Inform user → Dynamic” turns this on automatically and streams the reasoning to the user as it works.'}
                 </p>
               </div>
             </EditorSection>

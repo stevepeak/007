@@ -23,6 +23,7 @@
     "./storage/schema": "./src/storage/schema.ts",
     "./tools": "./src/tools/index.ts",
     "./ui": "./src/ui/index.ts",
+    "./ui/run-progress": "./src/ui/run-progress.ts",
     "./ui/styles.css": "./src/ui/styles.css"
   },
   "bin": {

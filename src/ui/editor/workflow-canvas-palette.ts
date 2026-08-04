@@ -23,6 +23,9 @@ export function defaultDataForKind(
         inputs: {},
         imageInputs: {},
         exposeThinking: false,
+        // New placements let the agent use its tools; reasoning is opt-in.
+        enableTools: true,
+        enableReasoning: false,
       },
     }
   }

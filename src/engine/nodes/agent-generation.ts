@@ -63,14 +63,17 @@ export type RunAgentGenerationArgs = {
   output: AgentOutput
   /** Max rounds of tool-calling before a final answer (text agents only). */
   maxTurns: number
-  /** Forward per-step text to the sink's 'progress' channel when true. */
-  exposeThinking: boolean
+  /** Stream the model's reasoning to the user's 'progress' channel when true. */
+  streamReasoning: boolean
+  /** Announce each tool the model calls on the user's 'progress' channel when
+   * true. Display only — it never affects which tools the agent may call. */
+  streamToolCalls: boolean
   systemPrompt: string
   messages: UIMessage[]
   tools: ToolSet
   /**
    * Per-tool human-readable status templates, keyed by tool id (== the tool name
-   * the model calls). When `exposeThinking` is on, a matching template is
+   * the model calls). When `streamToolCalls` is on, a matching template is
    * interpolated with the call's input and streamed to the user; tools without a
    * template expose nothing.
    */
@@ -139,7 +142,8 @@ async function runToolLoop(
     model,
     modelId,
     maxTurns,
-    exposeThinking,
+    streamReasoning,
+    streamToolCalls,
     systemPrompt,
     messages,
     tools,
@@ -196,14 +200,16 @@ async function runToolLoop(
             meta: { tool: tc.toolName, input: tc.input },
           })
         }
-        // USER-FACING feed (gated by exposeThinking): mirror the agent's internals
-        // into the curated `progress` level so the end-user progress surface can
-        // show reasoning interleaved with human-readable tool statements. A tool
+        // USER-FACING feed: mirror the agent's internals into the curated
+        // `progress` level so the end-user progress surface can show reasoning
+        // interleaved with human-readable tool statements. Each stream is gated
+        // independently (the node's dynamic "Inform user" sub-toggles): reasoning
+        // by `streamReasoning`, tool announcements by `streamToolCalls`. A tool
         // without a `statusLabel` template contributes nothing.
-        if (exposeThinking) {
-          if (reasoning) {
-            void sink.log?.({ level: 'progress', message: reasoning })
-          }
+        if (streamReasoning && reasoning) {
+          void sink.log?.({ level: 'progress', message: reasoning })
+        }
+        if (streamToolCalls) {
           for (const tc of toolCalls) {
             const template = toolStatusLabels?.[tc.toolName]
             const message =

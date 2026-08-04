@@ -80,6 +80,11 @@ export async function executeAgentPreview<TDeps>(opts: {
       inputs: {},
       imageInputs: {},
       exposeThinking: false,
+      // Playground always reasons so the author can inspect the model's thinking
+      // per step. `enableTools` is display-only (unused here since exposeThinking
+      // is off — the trace renders tool calls directly).
+      enableTools: true,
+      enableReasoning: true,
     },
   }
 
