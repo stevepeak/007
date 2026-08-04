@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   isBookendKind,
   nodeProgressMessage,
-  type WfRunManifestEntry,
   type WorkflowGraph,
   type WorkflowNode,
 } from '../../engine'
@@ -50,14 +49,13 @@ function orderedExecutableNodes(graph: WorkflowGraph): WorkflowNode[] {
   return order.filter((n) => !isBookendKind(n))
 }
 
-// The full synthetic item list a simulated run would produce, in order.
-export function buildSimulatedItems(
-  graph: WorkflowGraph,
-  manifest: readonly WfRunManifestEntry[],
-): RunSurfaceItem[] {
+// The full synthetic item list a simulated run would produce, in order. Only
+// nodes with an author-provided progress note surface a line — note-less nodes
+// stay silent, mirroring the real engine.
+export function buildSimulatedItems(graph: WorkflowGraph): RunSurfaceItem[] {
   const items: RunSurfaceItem[] = []
   for (const node of orderedExecutableNodes(graph)) {
-    const message = nodeProgressMessage(node, undefined, manifest)
+    const message = nodeProgressMessage(node, undefined)
     if (message) items.push({ kind: 'progress', message, nodeId: node.id })
     if (node.kind === 'iteration') {
       for (let i = 1; i <= SAMPLE_ITERATION_ITEMS; i++) {
@@ -89,7 +87,6 @@ export type WorkflowSimulation = {
  */
 export function useWorkflowSimulation(
   graph: WorkflowGraph,
-  manifest: readonly WfRunManifestEntry[] = [],
 ): WorkflowSimulation {
   const [items, setItems] = useState<RunSurfaceItem[]>([])
   const [status, setStatus] = useState<RunSurfaceStatus>('completed')
@@ -107,7 +104,7 @@ export function useWorkflowSimulation(
 
   const start = useCallback(() => {
     stop()
-    const all = buildSimulatedItems(graph, manifest)
+    const all = buildSimulatedItems(graph)
     setItems([])
     setTotal(all.length)
     setStatus('running')
@@ -126,7 +123,7 @@ export function useWorkflowSimulation(
         setStatus('completed')
       }
     }, STEP_MS)
-  }, [graph, manifest, stop])
+  }, [graph, stop])
 
   const dismiss = useCallback(() => {
     stop()

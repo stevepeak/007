@@ -5,11 +5,11 @@ import { createMemoryRunRecorder } from './run-recorder'
 import { createMemorySink } from './stream-sink'
 import { makeConfig } from './executor-test-helpers'
 
-// The first-class user-facing progress feed: every executed node emits ONE
-// `level: 'progress'` line at start — the author's interpolated `progressNote`
-// when set, else a derived `nodeSpanLabel` title. Iteration additionally emits
-// a `Processing item i of n` line per item. These assert the engine contract
-// through the in-process backend (no DB / Cloudflare).
+// The first-class user-facing progress feed: a node emits a `level: 'progress'`
+// line at start ONLY when the author set a `progressNote` (interpolated from run
+// variables) — note-less nodes stay silent, there is no derived-title fallback.
+// Iteration additionally emits a `Processing item i of n` line per item. These
+// assert the engine contract through the in-process backend (no DB / Cloudflare).
 
 const trigger = {
   id: 't',
@@ -65,7 +65,7 @@ describe('executor — user-facing progress', () => {
     expect(progressLines(sink)).toContain('Looking up record 42')
   })
 
-  test('a node without a progressNote falls back to a derived title', async () => {
+  test('a node without a progressNote stays silent (no derived title)', async () => {
     const sink = createMemorySink()
     await executeWorkflow({
       graph: {
@@ -92,8 +92,8 @@ describe('executor — user-facing progress', () => {
       recorder: createMemoryRunRecorder(),
       sink,
     })
-    // nodeSpanLabel → `Tool: <label>`.
-    expect(progressLines(sink)).toContain('Tool: Fetch records')
+    // No author progressNote → the node contributes nothing to the user feed.
+    expect(progressLines(sink)).toEqual([])
   })
 
   test('an iteration emits a Processing item i of n line per item', async () => {

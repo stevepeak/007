@@ -510,7 +510,7 @@ function AgentEditorInner({
                 <p className="text-xs text-neutral-400">
                   {modelLacksReasoning
                     ? 'The selected model does not support reasoning.'
-                    : 'Ask the model to think through its answer before responding. Pair with "Expose thinking" on the workflow node to stream that reasoning to the user as it works.'}
+                    : 'Ask the model to think through its answer before responding. A workflow node set to “Inform user → Dynamic” turns this on automatically and streams the reasoning to the user as it works.'}
                 </p>
               </div>
             </EditorSection>

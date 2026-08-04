@@ -180,12 +180,7 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
       // Iteration runs its own per-item durable steps (no `run:` step to host a
       // per-node sink), so emit its coarse progress line straight to the run
       // sink; per-item lines follow from `runIteration`.
-      emitNodeStartProgress(
-        sink,
-        node,
-        p.runContext.promptVariables,
-        manifest,
-      )
+      emitNodeStartProgress(sink, node, p.runContext.promptVariables)
       result = await dispatchIteration(ctx, node)
     } else {
       result = await stepDo(
@@ -216,14 +211,8 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
             },
           }
           // First-class user-facing line, first in the node's body feed (so the
-          // terminal rewrite persists it): the author's progress note, else a
-          // derived title.
-          emitNodeStartProgress(
-            nodeSink,
-            node,
-            p.runContext.promptVariables,
-            manifest,
-          )
+          // terminal rewrite persists it): the author's progress note, if any.
+          emitNodeStartProgress(nodeSink, node, p.runContext.promptVariables)
           // Bracket the real execution here — inside the run: step, right
           // around runNode — so the persisted Speed reflects actual work, not
           // the durable-step envelope. Journaled with the return value, so it

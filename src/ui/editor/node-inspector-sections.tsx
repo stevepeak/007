@@ -1,11 +1,10 @@
-import { ExternalLink, HelpCircle } from 'lucide-react'
+import { ExternalLink } from 'lucide-react'
 
 import { MANUAL_TRIGGER_KIND, PERIODIC_TRIGGER_KIND } from '../../engine'
 import { AgentSelect } from '../agent-select'
 import { useWfComponents } from '../context'
 import { useAgents, useTools, useTriggerEvents, useWorkflows } from '../hooks'
 import { WfLink } from '../nav'
-import { Tooltip } from '../tooltip'
 import { NodeInputsPanel } from './node-data-panel'
 import {
   field,
@@ -68,7 +67,7 @@ export function AgentInspector({
   onChange,
   itemSchema,
 }: NodeInspectorProps) {
-  const { Label, Checkbox } = useWfComponents()
+  const { Label } = useWfComponents()
   const agents = useAgents()
   const agentOptions = agents.data ?? []
   if (node.kind !== 'agent') return null
@@ -99,37 +98,8 @@ export function AgentInspector({
           </WfLink>
         ) : null}
       </div>
-      <div className={field}>
-        <div className="flex items-center gap-1.5">
-          <label className="flex items-center gap-2 text-sm font-medium">
-            <Checkbox
-              checked={node.config.exposeThinking}
-              onChange={(e) =>
-                onChange({
-                  ...node,
-                  config: { ...node.config, exposeThinking: e.target.checked },
-                })
-              }
-            />
-            Expose thinking to user
-          </label>
-          <Tooltip
-            side="left"
-            content={
-              <>
-                The user always sees each step's progress note. Turn this on to
-                also stream this agent's <span className="font-medium">reasoning</span>{' '}
-                and a short note each time it calls a tool (e.g. “Searching
-                knowledge base…”) into that progress. Reasoning only appears when
-                the agent has <span className="font-medium">Enable reasoning</span>{' '}
-                on; tool notes appear only for tools that provide one.
-              </>
-            }
-          >
-            <HelpCircle className="text-muted-foreground size-3.5 cursor-help" />
-          </Tooltip>
-        </div>
-      </div>
+      {/* The "Expose thinking" toggle now lives in the shared inspector, grouped
+          with the Progress note it supersedes. */}
       <div className="border-t border-border" />
       <NodeInputsPanel
         node={node}

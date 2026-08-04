@@ -142,9 +142,18 @@ export async function executeAgentNode<TDeps>(
   // meta below (so run cost prices against the model actually used).
   const modelId = agentOverride?.modelId ?? config.modelId
   const promptTemplate = agentOverride?.prompt ?? config.prompt
+  // Streaming the agent's thinking is a per-placement choice, set on the node in
+  // the workflow inspector ("Inform user → Dynamic"). OR'd with the agent
+  // config's legacy flag so any agent that opted in before the control moved
+  // still streams.
+  const exposeThinking = node.config.exposeThinking || config.exposeThinking
   // Per-agent reasoning intent overrides the run default; the host's `getModel`
-  // turns `false` into its provider's "no thinking" flag.
-  const model = getModel(modelId, { reasoning: config.enableReasoning })
+  // turns `false` into its provider's "no thinking" flag. Dynamic mode
+  // (exposeThinking) needs the model to actually PRODUCE reasoning to stream, so
+  // it forces reasoning on regardless of the agent's own flag.
+  const model = getModel(modelId, {
+    reasoning: config.enableReasoning || exposeThinking,
+  })
   // Synthesis eval: an empty tool set forces the model to answer from its seeded
   // history alone. Otherwise resolve the agent's real tools (neutralized under
   // simulate). freezeTools also suppresses delegation-tool synthesis below.
@@ -206,10 +215,7 @@ export async function executeAgentNode<TDeps>(
     modelId,
     output: config.output,
     maxTurns: config.maxTurns,
-    // Streaming the agent's thinking is a per-placement choice, set on the node
-    // in the workflow inspector. OR'd with the agent config's legacy flag so any
-    // agent that opted in before the control moved still streams.
-    exposeThinking: node.config.exposeThinking || config.exposeThinking,
+    exposeThinking,
     systemPrompt,
     messages,
     tools: effectiveTools,

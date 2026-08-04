@@ -1,6 +1,8 @@
+import { MessageSquareText, type LucideIcon } from 'lucide-react'
 import type { ComponentType } from 'react'
 
 import { isBookendKind, type WorkflowNode } from '../../engine'
+import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import {
   BranchInspector,
@@ -48,11 +50,89 @@ const NODE_INSPECTORS: Partial<
   note: NoteInspector,
 }
 
+// How a step reports progress to the user: off (nothing), static (a fixed
+// message, may embed ${run variables}), or dynamic (agent only — stream the
+// model's live reasoning/tool activity).
+type InformMode = 'off' | 'static' | 'dynamic'
+
+// A compact segmented control — a nicer multi-choice than a checkbox for
+// "this OR that" toggles. Renders a pill track with the active segment lifted.
+function SegmentedToggle<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T
+  options: { value: T; label: string; icon?: LucideIcon }[]
+  onChange: (value: T) => void
+}) {
+  return (
+    <div className="bg-muted inline-flex w-full gap-0.5 rounded-md p-0.5">
+      {options.map((opt) => {
+        const active = opt.value === value
+        const Icon = opt.icon
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(opt.value)}
+            className={cn(
+              'flex flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2.5 py-1.5 text-xs font-medium transition-colors',
+              active
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {Icon ? <Icon className="size-3.5" /> : null}
+            {opt.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 export function NodeInspector(props: NodeInspectorProps) {
   const { node, onChange } = props
   const { Input, Label } = useWfComponents()
 
   const Inspector = NODE_INSPECTORS[node.kind]
+  // The step's "inform user" mode, decoded from the node: dynamic ⇢ an agent
+  // with `config.exposeThinking`; static ⇢ a defined `progressNote` (possibly
+  // ""); off ⇢ neither. Only agents offer the dynamic (live-reasoning) mode.
+  const isAgent = node.kind === 'agent'
+  const informMode: InformMode =
+    isAgent && node.config.exposeThinking
+      ? 'dynamic'
+      : node.progressNote != null
+        ? 'static'
+        : 'off'
+  const informOptions: { value: InformMode; label: string }[] = [
+    { value: 'off', label: 'Off' },
+    { value: 'static', label: 'Static' },
+    ...(isAgent ? [{ value: 'dynamic' as const, label: 'Dynamic' }] : []),
+  ]
+  const setInformMode = (mode: InformMode) => {
+    if (node.kind === 'agent') {
+      // Dynamic keeps any stored static note (runtime ignores it while dynamic)
+      // so it returns if the author switches back.
+      if (mode === 'dynamic') {
+        onChange({ ...node, config: { ...node.config, exposeThinking: true } })
+        return
+      }
+      onChange({
+        ...node,
+        progressNote: mode === 'static' ? (node.progressNote ?? '') : undefined,
+        config: { ...node.config, exposeThinking: false },
+      })
+      return
+    }
+    onChange({
+      ...node,
+      progressNote: mode === 'static' ? (node.progressNote ?? '') : undefined,
+    })
+  }
 
   return (
     <div className="flex h-full w-80 flex-col gap-4 overflow-y-auto border-l border-border p-4">
@@ -67,29 +147,51 @@ export function NodeInspector(props: NodeInspectorProps) {
             onChange={(e) => onChange({ ...node, label: e.target.value })}
           />
         </div>
-        {/* Every executable node can carry a user-facing progress line. Bookends
-            (trigger/output/note) never run, so they don't offer it. */}
-        {isBookendKind(node) ? null : (
-          <div className={field}>
-            <Label>Progress note</Label>
-            <Input
-              value={node.progressNote ?? ''}
-              placeholder="Searching client documents…"
-              onChange={(e) =>
-                onChange({
-                  ...node,
-                  progressNote: e.target.value || undefined,
-                })
-              }
-            />
-            <p className="text-muted-foreground text-xs">
-              Shown to the user while this step runs. Use{' '}
-              <code>{'${var}'}</code> for run variables. Leave blank to show a
-              default title.
-            </p>
-          </div>
-        )}
       </div>
+
+      {/* What the USER sees while this step runs — off / static / dynamic.
+          Agents get all three (dynamic streams the model's live thinking); other
+          node kinds get off / static only. Bookends (trigger/output/note) never
+          run, so they don't get this section. */}
+      {isBookendKind(node) ? null : (
+        <section className="border-border bg-muted/20 space-y-2.5 rounded-lg border p-3">
+          <div className="text-muted-foreground flex items-center gap-1.5 text-[11px] font-medium tracking-wide uppercase">
+            <MessageSquareText className="size-3.5" />
+            Inform user
+          </div>
+
+          <SegmentedToggle
+            value={informMode}
+            onChange={setInformMode}
+            options={informOptions}
+          />
+
+          {informMode === 'dynamic' ? (
+            <p className="text-muted-foreground text-xs">
+              The agent streams its live reasoning and tool activity to the user
+              as it works.
+            </p>
+          ) : informMode === 'static' ? (
+            <div className="space-y-1">
+              <Input
+                value={node.progressNote ?? ''}
+                placeholder="Searching client documents…"
+                onChange={(e) =>
+                  onChange({ ...node, progressNote: e.target.value })
+                }
+              />
+              <p className="text-muted-foreground text-xs">
+                Shown to the user while this step runs. Use{' '}
+                <code>{'${var}'}</code> for run variables.
+              </p>
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-xs">
+              This step reports nothing to the user.
+            </p>
+          )}
+        </section>
+      )}
 
       {Inspector ? <Inspector {...props} /> : null}
     </div>

@@ -4,8 +4,9 @@ import type { WorkflowGraph } from '../../engine'
 import { buildSimulatedItems } from './use-workflow-simulation'
 
 // The simulate preview walks the graph topologically and emits one synthetic
-// progress line per executable node (author `progressNote` or a derived title),
-// plus sample `item i of n` ticks for iterations. Bookends never appear.
+// progress line per executable node THAT HAS an author `progressNote` — note-less
+// nodes stay silent (no derived-title fallback) — plus sample `item i of n` ticks
+// for iterations. Bookends never appear.
 
 const node = (
   id: string,
@@ -40,10 +41,11 @@ describe('buildSimulatedItems', () => {
       ],
     } as unknown as WorkflowGraph
 
-    const items = buildSimulatedItems(graph, [])
+    const items = buildSimulatedItems(graph)
     const messages = items.map((i) => (i.kind === 'progress' ? i.message : ''))
-    // Trigger + output (bookends) excluded; author note used, else derived title.
-    expect(messages).toEqual(['Fetching records', 'Tool: Summarize'])
+    // Trigger + output (bookends) excluded; only the node with an author note
+    // surfaces a line — the note-less "Summarize" tool stays silent.
+    expect(messages).toEqual(['Fetching records'])
   })
 
   test('an iteration expands into sample item ticks', () => {
@@ -79,7 +81,7 @@ describe('buildSimulatedItems', () => {
       ],
     } as unknown as WorkflowGraph
 
-    const messages = buildSimulatedItems(graph, []).map((i) =>
+    const messages = buildSimulatedItems(graph).map((i) =>
       i.kind === 'progress' ? i.message : '',
     )
     expect(messages[0]).toBe('Reviewing documents')
