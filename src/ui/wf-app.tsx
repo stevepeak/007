@@ -249,13 +249,10 @@ function AssetRoute({ path }: { path: string }) {
     case 'run':
       return <RunPage runId={asset.runId} className="h-full" />
     case 'agent':
-      return (
-        <AgentEditor
-          agentId={asset.agentId}
-          className="h-full"
-          onPublished={() => navigate('agents')}
-        />
-      )
+      // Stay on the editor after publishing — the editor shows an inline
+      // "Published" confirmation rather than navigating back to the list.
+      return <AgentEditor agentId={asset.agentId} className="h-full" />
+
     case 'tool':
       return <ToolDetailPage toolId={asset.toolId} />
     case 'evalTest':

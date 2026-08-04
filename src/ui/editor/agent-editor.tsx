@@ -1,6 +1,7 @@
 import {
   Archive,
   Braces,
+  Check,
   Cpu,
   type LucideIcon,
   MessageSquareText,
@@ -9,7 +10,7 @@ import {
   Users,
   Wrench,
 } from 'lucide-react'
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 
 import { type AgentConfig } from '../../engine'
 import {
@@ -174,6 +175,8 @@ function AgentEditorInner({
   const [showPublish, setShowPublish] = useState(false)
   const [showArchive, setShowArchive] = useState(false)
   const [showIconPicker, setShowIconPicker] = useState(false)
+  // Transient "Published" confirmation shown in place of navigating away.
+  const [justPublished, setJustPublished] = useState<number | null>(null)
 
   const saveDraft = useSaveAgentDraft()
   const publish = usePublishAgent()
@@ -246,11 +249,19 @@ function AgentEditorInner({
         onSuccess: (result) => {
           setSavedConfig(config)
           setShowPublish(false)
+          setJustPublished(result.versionNumber)
           onPublished?.(result)
         },
       },
     )
   }
+
+  // Auto-dismiss the "Published" confirmation after a few seconds.
+  useEffect(() => {
+    if (justPublished == null) return
+    const timer = setTimeout(() => setJustPublished(null), 4000)
+    return () => clearTimeout(timer)
+  }, [justPublished])
 
   return (
     <>
@@ -295,6 +306,12 @@ function AgentEditorInner({
               dirtyTooltip="You have unsaved changes"
               savedTooltip="All configuration changes saved"
             />
+            {justPublished != null ? (
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600">
+                <Check className="size-3.5" />
+                Published v{justPublished}
+              </span>
+            ) : null}
             {saveError ? (
               <span className="text-xs text-red-600">{saveError}</span>
             ) : null}
