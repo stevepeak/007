@@ -5,6 +5,7 @@ import type {
   ModelFactory,
 } from './config'
 import type { WfRunManifestEntry } from './graph'
+import type { ModelBudget } from './model-budget'
 import { executeAgentNode } from './nodes/agent'
 import { executeAggregateNode } from './nodes/aggregate'
 import { executeBranchNode } from './nodes/branch'
@@ -77,6 +78,14 @@ export type RunNodeContext<TDeps> = {
   /** Eval matrix override — swaps an agent node's modelId/prompt. See RunContext. */
   agentOverride?: { modelId?: string; prompt?: string }
   /**
+   * Time budget for this node's model work, derived by the backend from the
+   * node's durable step timeout. Bounds the whole agent loop, each model
+   * round-trip, and each tool call FROM INSIDE the step, so an overrun is
+   * catchable and loggable instead of the runtime killing the closure silently.
+   * Omitted → unbounded (the inline executor, tests).
+   */
+  modelBudget?: ModelBudget
+  /**
    * When set, an iteration node records each inner subgraph node once per item
    * (scoped by the container id + item index) through this recorder, so the run
    * viewer can drill into an individual item's trace. Omitted → iteration still
@@ -126,6 +135,7 @@ export async function runNode<TDeps>(
         fixtures: ctx.fixtures,
         freezeTools: ctx.freezeTools,
         agentOverride: ctx.agentOverride,
+        modelBudget: ctx.modelBudget,
         // Delegation: give the node this run's full context + its own id so it
         // can synthesize spawn/await tools that launch whitelisted sub-agents
         // inline (recording each as a child step via `ctx.subStepRecorder`).

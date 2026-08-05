@@ -83,7 +83,11 @@ async function runAgentTarget<TDeps>(
     )
   }
   const config = entry.config
-  const model = ctx.getModel(config.modelId, { reasoning: config.enableReasoning })
+  // No reasoning intent, matching the primary agent node: nothing forces the
+  // model's thinking off, so the provider default (on) always wins. Passing
+  // `config.enableReasoning` here would disable it for every sub-agent, since
+  // that field is permanently false and has no editor control.
+  const model = ctx.getModel(config.modelId)
 
   // The sub-agent's own registry tools, plus the injected stop signal. A sub-
   // agent does NOT itself get delegation tools (spawning is one level deep per
@@ -135,6 +139,9 @@ async function runAgentTarget<TDeps>(
     tools: toolSet,
     toolStatusLabels,
     sink: ctx.sink,
+    // A sub-agent runs inline inside the primary node's step, so it shares that
+    // node's budget rather than getting one of its own.
+    budget: ctx.modelBudget,
   })
 
   // Fallback stop channel for object/boolean sub-agents (no tool loop): a

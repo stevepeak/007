@@ -105,6 +105,10 @@ export async function executeWorkflow<TDeps>(
           fixtures: runContext.fixtures,
           freezeTools: runContext.freezeTools,
           agentOverride: runContext.agentOverride,
+          // No `modelBudget`: this backend runs in-process with no durable step
+          // timeout to derive one from, and its callers (evals, tests, the
+          // playground) already own the process they're blocking. The budget
+          // exists to beat Cloudflare's external kill, which doesn't apply here.
           // An iteration node records its inner subgraph steps (once per item)
           // through the same recorder that persists top-level steps.
           subStepRecorder: recorder,

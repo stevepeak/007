@@ -7,23 +7,24 @@ import type { NodeExecution } from '../engine/graph'
 //
 // The timeout is WALL CLOCK, and Cloudflare puts no ceiling on it (only CPU
 // time per step is capped, and an agent node spends its life waiting on the
-// provider, not burning CPU). So this number needs to cover the SLOWEST
-// legitimate run, not the typical one — an agent that overruns it is killed
-// mid-flight and the whole node restarts from turn 1, repeating every tool
-// call. That failure is invisible from inside the step: the runtime aborts the
-// closure externally, so no catch runs and no error is ever raised.
+// provider, not burning CPU).
 //
-// 3 minutes was far too tight — a tool-calling research agent (15 turns, each a
-// full model round-trip on a reasoning model) routinely runs 4-6 minutes and
-// was being killed and restarted every single time. 15 minutes leaves real
-// headroom; a node that needs more should say so via `execution.timeoutMs`.
+// This is now a BACKSTOP, not the primary bound. An agent node enforces its own
+// budget in-process (see `engine/model-budget.ts`), derived from this value
+// minus `STEP_TIMEOUT_SLACK_MS`, so an overrun surfaces as a catchable, logged
+// error instead of the runtime killing the closure from outside — which
+// produced no catch, no log line, and a silent restart from turn 1.
+//
+// Timeouts are expressed as a NUMBER OF MS rather than Cloudflare's duration
+// strings: `step.do` accepts both, and numbers are what `resolveStepTimeoutMs`
+// below needs in order to derive a budget without parsing '15 minutes'.
 export const AI_STEP_OPTS = {
   retries: { limit: 3, delay: '5 seconds', backoff: 'exponential' },
-  timeout: '15 minutes',
+  timeout: 20 * 60_000,
 } as const
 export const DEFAULT_STEP_OPTS = {
   retries: { limit: 2, delay: '3 seconds', backoff: 'exponential' },
-  timeout: '1 minute',
+  timeout: 60_000,
 } as const
 
 // Return type is intentionally inferred (not widened to `WorkflowStepConfig`)
@@ -64,4 +65,17 @@ export function stepOptsFor(node: {
         }
       : base.retries,
   }
+}
+
+/**
+ * The node's effective step timeout in ms — the same value `stepOptsFor` hands
+ * Cloudflare, before it becomes a `WorkflowStepConfig`. This is the input the
+ * in-process model budget derives from, so the two can never disagree about how
+ * long a node is allowed to run.
+ */
+export function resolveStepTimeoutMs(node: {
+  kind: string
+  execution?: NodeExecution
+}): number {
+  return node.execution?.timeoutMs ?? kindDefaultOpts(node.kind).timeout
 }

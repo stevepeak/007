@@ -1,5 +1,6 @@
 import type { WfBlobRef } from '../blob-ref'
 import type { ModelFactory, ResolvedImage } from '../config'
+import type { ModelBudget } from '../model-budget'
 import {
   agentFromManifest,
   type AgentConfig,
@@ -88,6 +89,12 @@ export type ExecuteAgentNodeArgs<TDeps> = {
    */
   agentOverride?: { modelId?: string; prompt?: string }
   /**
+   * Time budget for this node's model work (see `../model-budget`). Bounds the
+   * agent loop from inside the step so an overrun is catchable. Omitted →
+   * unbounded.
+   */
+  modelBudget?: ModelBudget
+  /**
    * Delegation context. When present and the agent's config whitelists
    * sub-agents/workflows, the node synthesizes `spawn_*` / `await_subagents`
    * tools (backed by a per-execution SpawnManager) into its tool set. Omitted →
@@ -149,10 +156,16 @@ export async function executeAgentNode<TDeps>(
   const inform = node.informUser
   const streamReasoning = inform.mode === 'dynamic' && inform.reasoning
   const streamToolCalls = inform.mode === 'dynamic' && inform.tools
-  // The model actually reasons exactly when we stream that reasoning — reasoning
-  // is a dynamic-mode concern only. `getModel` turns `false` into the provider's
-  // "no thinking" flag; when reasoning is off, there's nothing to stream anyway.
-  const model = getModel(modelId, { reasoning: streamReasoning })
+  // DISPLAY-ONLY, deliberately. `streamReasoning` decides whether the model's
+  // thinking is shown live to the end user; it must NOT decide whether the model
+  // thinks at all. Those are different concerns: reasoning is a real extra
+  // generation pass that materially improves multi-step analysis, so a display
+  // preference silently switching it off would degrade every answer with no
+  // signal. We therefore pass NO reasoning intent here — leaving it undefined
+  // keeps the provider's own default (thinking on). Note the model's reasoning
+  // reaches the dev feed and the post-answer reveal regardless of this toggle
+  // (see the always-on `thinking` level in `agent-generation.ts`).
+  const model = getModel(modelId)
   // Synthesis eval: an empty tool set forces the model to answer from its seeded
   // history alone. Otherwise resolve the agent's real tools (neutralized under
   // simulate). freezeTools also suppresses delegation-tool synthesis below.
@@ -221,5 +234,6 @@ export async function executeAgentNode<TDeps>(
     tools: effectiveTools,
     toolStatusLabels,
     sink,
+    budget: deps.modelBudget,
   })
 }

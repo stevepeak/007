@@ -5,11 +5,10 @@ import {
   errorFeedLine,
   errorStored,
 } from '../engine/error-detail'
-import {
-  isDecisionKind,
-  type IterationNode,
-} from '../engine/graph'
+import { isDecisionKind, type IterationNode } from '../engine/graph'
+import { modelBudgetFor } from '../engine/model-budget'
 import { nodeSpanLabel } from '../engine/node-label'
+import { TOTAL_BUDGET_OVERRUN } from '../engine/nodes/agent-generation'
 import { emitNodeStartProgress } from '../engine/node-progress'
 import {
   executeSubgraph,
@@ -31,10 +30,7 @@ import {
 } from '../storage/data'
 import { createDurableRunRecorder } from '../storage/run-recorder'
 
-import type {
-  GraphWorkflowEnv,
-  GraphWorkflowResult,
-} from './graph-workflow'
+import type { GraphWorkflowEnv, GraphWorkflowResult } from './graph-workflow'
 import {
   nodeLabel,
   startEntryOf,
@@ -45,6 +41,7 @@ import { notifyHost, stepDo } from './graph-workflow-dispatch-step'
 import {
   AI_STEP_OPTS,
   DEFAULT_STEP_OPTS,
+  resolveStepTimeoutMs,
   stepOptsFor,
 } from './graph-workflow-dispatch-step-opts'
 import { withNodeSpan } from './tracing'
@@ -97,9 +94,11 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
           node.config.subgraph,
           item,
           {
-            getModel: (modelId) => config.getModel(modelId, rc),
+            getModel: (modelId, opts) =>
+              config.getModel(modelId, { ...rc, reasoning: opts?.reasoning }),
             toolRegistry: config.toolRegistry,
             toolDeps,
+            modelBudget: modelBudgetFor(resolveStepTimeoutMs(node)),
             // Overridden per item inside executeSubgraph.
             nodeOutputs: new Map(),
             promptVariables: p.runContext.promptVariables,
@@ -139,12 +138,23 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
  * crosses the `step.do` boundary (see `runNodeBody`). */
 type CapturedFailure = { stored: string; feed: string }
 
-/** The node's configured step timeout, phrased for the run feed. `step.do`
- * takes either a duration string ('3 minutes') or a number of ms. */
+/** Did the agent burn its whole time budget? Tagged by the engine at the point
+ * the guard fired, while the error object is still ours. */
+function isTotalBudgetOverrun(err: unknown): boolean {
+  return (
+    err != null &&
+    typeof err === 'object' &&
+    (err as Record<string, unknown>)[TOTAL_BUDGET_OVERRUN] === true
+  )
+}
+
+/** The node's configured step timeout, phrased for the run feed. */
 function describeStepTimeout(node: ExecutableNode): string {
-  const t = stepOptsFor(node).timeout
-  if (typeof t === 'number') return `${Math.round(t / 1000)}s`
-  return typeof t === 'string' ? t : 'unset'
+  const ms = resolveStepTimeoutMs(node)
+  const minutes = ms / 60_000
+  return minutes >= 1
+    ? `${Number(minutes.toFixed(1))} min`
+    : `${Math.round(ms / 1000)}s`
 }
 
 // Run a node's body, capturing what went wrong while the real error object is
@@ -179,6 +189,14 @@ async function runNodeBody<T>(
     const feed = errorFeedLine(err)
     onFailure({ stored: errorStored(err), feed })
     const detail = apiErrorDetail(err)
+    // A node that burned its ENTIRE budget is not worth retrying: the retry
+    // repeats the same work against the same budget and hits the same wall,
+    // costing another full window of wall-clock to reach the same answer. A
+    // single stalled round-trip or tool call is the opposite — transient, and
+    // it falls through to the retry path below.
+    if (isTotalBudgetOverrun(err)) {
+      throw new NonRetryableError(feed)
+    }
     if (detail?.isRetryable === false) {
       // Fatal: the node's closing `✕ … failed: <feed>` line already reports
       // this, so don't also log it inline — one failure, one line.
@@ -270,6 +288,12 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
         async () => {
           const rc = { ...p.runContext, env }
           const toolDeps = await config.buildRunDeps(rc)
+          // Bound the node's model work from INSIDE the step, derived from the
+          // very timeout Cloudflare would otherwise enforce from outside. The
+          // in-process budget is strictly shorter, so it always wins the race —
+          // turning a silent external kill into a caught, logged, attributable
+          // failure.
+          const modelBudget = modelBudgetFor(resolveStepTimeoutMs(node))
           // Every `step.do` ATTEMPT replays this closure from the top, so reset
           // the shared buffer and the emit counter here: a retry then rewrites
           // the same deterministic rows rather than appending a second copy of
@@ -367,9 +391,22 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
                   runNode(
                     { type: 'execute', node, input },
                     {
-                      getModel: (modelId) => config.getModel(modelId, rc),
+                      // Bridge the per-call reasoning intent through to the
+                      // host. Dropping `opts` here made `ModelFactory`'s
+                      // contract a lie on the production path — nothing passes
+                      // an intent today (so this stays undefined and the
+                      // provider default wins), but a future caller must not
+                      // silently have it ignored. There is no run-level
+                      // reasoning on this path to fall back to: `start-run.ts`
+                      // never sets one.
+                      getModel: (modelId, opts) =>
+                        config.getModel(modelId, {
+                          ...rc,
+                          reasoning: opts?.reasoning,
+                        }),
                       toolRegistry: config.toolRegistry,
                       toolDeps,
+                      modelBudget,
                       nodeOutputs: scheduler.getOutputs(),
                       promptVariables: p.runContext.promptVariables,
                       manifest,

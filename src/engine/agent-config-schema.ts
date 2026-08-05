@@ -99,11 +99,15 @@ export const agentConfigSchema = z.object({
   // When true, per-step thinking text is forwarded to the run's StreamSink (the
   // RunRoom DO) so the user can watch the agent work.
   exposeThinking: z.boolean().default(false),
-  // When true, the model is asked to reason/think for this agent. Opt-in: an
-  // undefined reasoning intent falls back to the host default, so making it
-  // explicit here (default off) means an agent reasons only when the author asks
-  // for it. Pairs with `exposeThinking` (which streams the reasoning to the user)
-  // and is gated in the editor to models whose `capabilities.reasoning` is true.
+  // UNUSED — kept only so stored configs still parse. Nothing reads it and no
+  // editor writes it (agents are created with `false` and it never changes).
+  //
+  // It used to gate whether the model reasons. That's deliberately gone: model
+  // reasoning is a real extra generation pass that materially improves
+  // multi-step analysis, and a field permanently stuck at `false` would disable
+  // it everywhere. Nothing now passes a reasoning intent at all, so the
+  // provider default (thinking on) always wins. Whether that thinking is SHOWN
+  // is a separate, display-only concern owned by the node's `informUser`.
   enableReasoning: z.boolean().default(false),
   // What the agent is expected to produce.
   output: agentOutputSchema.default({ kind: 'text' }),
