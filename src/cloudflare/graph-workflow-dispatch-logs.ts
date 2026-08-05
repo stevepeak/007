@@ -11,7 +11,7 @@ import { DEFAULT_STEP_OPTS } from './graph-workflow-dispatch-step-opts'
 
 // Human label for a node in the log feed ("Structure the document",
 // "Embed section"), falling back to the kind when a node has no label.
-function nodeLabel(node: ExecutableNode): string {
+export function nodeLabel(node: ExecutableNode): string {
   return (node as { label?: string }).label?.trim() || node.kind
 }
 

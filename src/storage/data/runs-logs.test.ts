@@ -9,7 +9,7 @@ import type { WfDb } from '../client'
 import { wfSchema } from '../schema'
 import {
   appendRunLog,
-  clearNodeBodyLogs,
+  countNodeBodyLogs,
   getRunLogs,
   getRunProgressFeed,
   replaceNodeLogs,
@@ -54,15 +54,11 @@ function entry(
   }
 }
 
-// Emit a node's feed the way the per-node sink does: an ordinal per entry,
-// counting from 0 at the top of each `run:` attempt.
-async function emit(
-  db: WfDb,
-  entries: WfRunLogRow[],
-  opts: { clearFirst?: boolean } = {},
-): Promise<void> {
-  if (opts.clearFirst) await clearNodeBodyLogs(db, { runId: RUN, nodeId: NODE })
-  let ordinal = 0
+// Emit a node's feed the way the per-node sink does: one `run:` ATTEMPT, whose
+// ordinals start at however many body rows the node has already written (0 on a
+// first attempt, N on a retry — so the attempts don't overwrite each other).
+async function attempt(db: WfDb, entries: WfRunLogRow[]): Promise<void> {
+  let ordinal = await countNodeBodyLogs(db, { runId: RUN, nodeId: NODE })
   for (const e of entries) {
     await appendRunLog(db, {
       runId: RUN,
@@ -81,57 +77,51 @@ describe('live run-log appends', () => {
   })
 
   test('an appended entry is readable before the node finishes', async () => {
-    await emit(db, [entry('info', '→ model', 10)])
+    await attempt(db, [entry('info', '→ model', 10)])
 
     const logs = await getRunLogs(db, RUN)
     expect(logs.map((l) => l.message)).toEqual(['→ model'])
   })
 
-  test('a replayed attempt rewrites its rows instead of duplicating them', async () => {
-    const attempt = [
+  test('a retry keeps the abandoned attempt instead of overwriting it', async () => {
+    // Attempt 1 gets killed (e.g. the step timeout) partway through…
+    await attempt(db, [
       entry('info', '→ model', 10),
       entry('tool', 'Called search', 20),
-    ]
-    await emit(db, attempt, { clearFirst: true })
-    // `step.do` retry: the whole closure runs again, emitting the same feed.
-    await emit(db, attempt, { clearFirst: true })
+    ])
+    // …and the whole closure runs again. Its rows must land alongside, not on
+    // top of, attempt 1's — that record is the only evidence of what the node
+    // was doing when it died.
+    await attempt(db, [
+      entry('warn', '⟲ Restarting Chat Bot', 30),
+      entry('info', '→ model', 40),
+    ])
 
     const logs = await getRunLogs(db, RUN)
-    expect(logs.map((l) => l.message)).toEqual(['→ model', 'Called search'])
+    expect(logs.map((l) => l.message)).toEqual([
+      '→ model',
+      'Called search',
+      '⟲ Restarting Chat Bot',
+      '→ model',
+    ])
   })
 
-  test('a shorter retry leaves no tail from the longer attempt', async () => {
-    await emit(
-      db,
-      [
-        entry('info', '→ model', 10),
-        entry('tool', 'Called search', 20),
-        entry('tool', 'Called fetch', 30),
-      ],
-      { clearFirst: true },
-    )
-    await emit(db, [entry('info', '→ model', 40)], { clearFirst: true })
-
-    const logs = await getRunLogs(db, RUN)
-    expect(logs.map((l) => l.message)).toEqual(['→ model'])
-  })
-
-  test('clearNodeBodyLogs keeps the node-start bookend', async () => {
-    // The `enter:` step writes node-start before the body ever runs.
+  test('countNodeBodyLogs ignores the node-start bookend', async () => {
+    // The `enter:` step writes node-start before the body ever runs; a first
+    // attempt must still see a base of 0 (and so report itself as no retry).
     await replaceNodeLogs(db, {
       runId: RUN,
       nodeId: NODE,
       entries: [entry('node-start', '▶ Chat Bot', 5)],
     })
-    await emit(db, [entry('info', '→ model', 10)])
-    await clearNodeBodyLogs(db, { runId: RUN, nodeId: NODE })
+    expect(await countNodeBodyLogs(db, { runId: RUN, nodeId: NODE })).toBe(0)
 
-    const logs = await getRunLogs(db, RUN)
-    expect(logs.map((l) => l.level)).toEqual(['node-start'])
+    await attempt(db, [entry('info', '→ model', 10)])
+    expect(await countNodeBodyLogs(db, { runId: RUN, nodeId: NODE })).toBe(1)
   })
 
   test('the terminal rewrite supersedes whatever the live path wrote', async () => {
-    await emit(db, [
+    await attempt(db, [
       entry('info', '→ model', 10),
       entry('tool', 'Called search', 20),
     ])
@@ -164,7 +154,7 @@ describe('live run-log appends', () => {
       status: 'running',
       correlationId: 'org-1',
     })
-    await emit(db, [
+    await attempt(db, [
       entry('info', '→ model', 10),
       entry('progress', 'Searching knowledge base', 20),
     ])

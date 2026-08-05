@@ -1,4 +1,4 @@
-import { and, asc, eq, ne } from 'drizzle-orm'
+import { and, asc, count, eq, ne } from 'drizzle-orm'
 
 import type { WfDb } from '../client'
 import { wfRun, wfRunLog } from '../schema'
@@ -121,17 +121,25 @@ export async function appendRunLog(
 }
 
 /**
- * Drop a node's live-appended body rows, keeping the `node-start` bookend the
- * `enter:` step wrote. Called at the top of each `run:` attempt so a retry that
- * emits FEWER entries than the attempt before it can't leave the previous
- * attempt's tail stranded in the feed.
+ * How many body rows a node has already live-appended, excluding the
+ * `node-start` bookend the `enter:` step wrote.
+ *
+ * Serves two purposes at the top of each `run:` attempt, and it is deliberately
+ * NOT a "clear": an earlier attempt's lines are the record of what the node was
+ * doing when it died, which is exactly what you need when a step times out and
+ * silently starts over.
+ *   1. It is the ordinal base for this attempt, so the attempt's rows occupy a
+ *      fresh id range and can't overwrite the previous attempt's.
+ *   2. Non-zero means "a previous attempt already ran" — the signal the
+ *      dispatch uses to mark a visible restart boundary in the feed.
  */
-export async function clearNodeBodyLogs(
+export async function countNodeBodyLogs(
   db: WfDb,
   input: { runId: string; nodeId: string },
-): Promise<void> {
-  await db
-    .delete(wfRunLog)
+): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(wfRunLog)
     .where(
       and(
         eq(wfRunLog.runId, input.runId),
@@ -139,6 +147,7 @@ export async function clearNodeBodyLogs(
         ne(wfRunLog.level, 'node-start'),
       ),
     )
+  return row?.n ?? 0
 }
 
 // The whole run's log feed in emit order, for the run viewer (loaded once, then

@@ -4,9 +4,22 @@ import type { NodeExecution } from '../engine/graph'
 
 // Per-kind step.do retry/timeout policy defaults. LLM nodes get longer, retried
 // steps. A node's optional `execution` policy overrides these field-by-field.
+//
+// The timeout is WALL CLOCK, and Cloudflare puts no ceiling on it (only CPU
+// time per step is capped, and an agent node spends its life waiting on the
+// provider, not burning CPU). So this number needs to cover the SLOWEST
+// legitimate run, not the typical one — an agent that overruns it is killed
+// mid-flight and the whole node restarts from turn 1, repeating every tool
+// call. That failure is invisible from inside the step: the runtime aborts the
+// closure externally, so no catch runs and no error is ever raised.
+//
+// 3 minutes was far too tight — a tool-calling research agent (15 turns, each a
+// full model round-trip on a reasoning model) routinely runs 4-6 minutes and
+// was being killed and restarted every single time. 15 minutes leaves real
+// headroom; a node that needs more should say so via `execution.timeoutMs`.
 export const AI_STEP_OPTS = {
   retries: { limit: 3, delay: '5 seconds', backoff: 'exponential' },
-  timeout: '3 minutes',
+  timeout: '15 minutes',
 } as const
 export const DEFAULT_STEP_OPTS = {
   retries: { limit: 2, delay: '3 seconds', backoff: 'exponential' },

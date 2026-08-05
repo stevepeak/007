@@ -24,7 +24,7 @@ import { enforceOutputContract } from '../engine/trigger-registry'
 import { createWfDb } from '../storage/client'
 import {
   appendRunLog,
-  clearNodeBodyLogs,
+  countNodeBodyLogs,
   finalizeRun,
   replaceNodeLogs,
   type WfRunLogRow,
@@ -36,6 +36,7 @@ import type {
   GraphWorkflowResult,
 } from './graph-workflow'
 import {
+  nodeLabel,
   startEntryOf,
   recordTerminal,
 } from './graph-workflow-dispatch-logs'
@@ -137,6 +138,14 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
 /** What a failed attempt knew about its error, captured before the error
  * crosses the `step.do` boundary (see `runNodeBody`). */
 type CapturedFailure = { stored: string; feed: string }
+
+/** The node's configured step timeout, phrased for the run feed. `step.do`
+ * takes either a duration string ('3 minutes') or a number of ms. */
+function describeStepTimeout(node: ExecutableNode): string {
+  const t = stepOptsFor(node).timeout
+  if (typeof t === 'number') return `${Math.round(t / 1000)}s`
+  return typeof t === 'string' ? t : 'unset'
+}
 
 // Run a node's body, capturing what went wrong while the real error object is
 // still in hand and cutting the retry loop short when retrying is pointless.
@@ -268,12 +277,16 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
           // keeps a shorter retry from stranding the last attempt's tail.
           bodyLogs.length = 0
           captured = null
-          let ordinal = 0
           const logDb = createWfDb(env.DB)
-          await clearNodeBodyLogs(logDb, {
+          // Rows this node already appended — from an EARLIER ATTEMPT, since
+          // `step.do` replays the whole closure. Used as this attempt's ordinal
+          // base so its rows land in a fresh id range instead of overwriting
+          // the previous attempt's account of what it was doing when it died.
+          let ordinal = await countNodeBodyLogs(logDb, {
             runId: p.workflowRunId,
             nodeId: node.id,
           })
+          const isRetry = ordinal > 0
           // Per-node sink: every structured entry a node handler emits (agent
           // reasoning, tool calls, our own info lines) is (a) persisted to
           // `wf_run_log` IMMEDIATELY, (b) forwarded to the live RunRoom, and
@@ -313,6 +326,19 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
               })
               return sink.log?.(e)
             },
+          }
+          // A restart is the single most confusing thing a run can do: the node
+          // silently begins again and repeats work already in the feed. Mark
+          // the boundary explicitly, and name the most likely cause — the step
+          // timeout, which kills the closure from OUTSIDE, so `runNodeBody`'s
+          // catch never runs and no error line is ever emitted for it.
+          if (isRetry) {
+            void nodeSink.log?.({
+              level: 'warn',
+              message:
+                `⟲ Restarting ${nodeLabel(node)} — the previous attempt ended without finishing ` +
+                `(step timeout: ${describeStepTimeout(node)}). Everything above this line is from the abandoned attempt.`,
+            })
           }
           // First-class user-facing line, first in the node's body feed (so the
           // terminal rewrite persists it): the author's progress note, if any.
