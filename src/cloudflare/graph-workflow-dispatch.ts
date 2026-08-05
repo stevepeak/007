@@ -8,7 +8,7 @@ import {
 import { isDecisionKind, type IterationNode } from '../engine/graph'
 import { modelBudgetFor } from '../engine/model-budget'
 import { nodeSpanLabel } from '../engine/node-label'
-import { TOTAL_BUDGET_OVERRUN } from '../engine/nodes/agent-generation'
+import { isFatalAgentError } from '../engine/nodes/agent-generation'
 import { emitNodeStartProgress } from '../engine/node-progress'
 import {
   executeSubgraph,
@@ -138,16 +138,6 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
  * crosses the `step.do` boundary (see `runNodeBody`). */
 type CapturedFailure = { stored: string; feed: string }
 
-/** Did the agent burn its whole time budget? Tagged by the engine at the point
- * the guard fired, while the error object is still ours. */
-function isTotalBudgetOverrun(err: unknown): boolean {
-  return (
-    err != null &&
-    typeof err === 'object' &&
-    (err as Record<string, unknown>)[TOTAL_BUDGET_OVERRUN] === true
-  )
-}
-
 /** The node's configured step timeout, phrased for the run feed. */
 function describeStepTimeout(node: ExecutableNode): string {
   const ms = resolveStepTimeoutMs(node)
@@ -189,12 +179,12 @@ async function runNodeBody<T>(
     const feed = errorFeedLine(err)
     onFailure({ stored: errorStored(err), feed })
     const detail = apiErrorDetail(err)
-    // A node that burned its ENTIRE budget is not worth retrying: the retry
-    // repeats the same work against the same budget and hits the same wall,
-    // costing another full window of wall-clock to reach the same answer. A
-    // single stalled round-trip or tool call is the opposite — transient, and
-    // it falls through to the retry path below.
-    if (isTotalBudgetOverrun(err)) {
+    // A node that burned its ENTIRE budget — or ran its whole loop without
+    // writing an answer — is not worth retrying: the retry repeats the same
+    // work against the same wall, costing another full window of wall-clock to
+    // reach the same non-answer. A single stalled round-trip or tool call is
+    // the opposite — transient, and it falls through to the retry path below.
+    if (isFatalAgentError(err)) {
       throw new NonRetryableError(feed)
     }
     if (detail?.isRetryable === false) {

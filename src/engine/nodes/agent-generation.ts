@@ -64,6 +64,12 @@ export type RunAgentGenerationArgs = {
   output: AgentOutput
   /** Max rounds of tool-calling before a final answer (text agents only). */
   maxTurns: number
+  /**
+   * Force turn 1 to call a tool rather than letting the model answer straight
+   * away. Inert where it can't hold — no tools, `maxTurns: 1`, or a structured
+   * output kind (no tool loop). See `requireToolFirstTurn` on `AgentConfig`.
+   */
+  requireToolFirstTurn?: boolean
   /** Stream the model's reasoning to the user's 'progress' channel when true. */
   streamReasoning: boolean
   /** Announce each tool the model calls on the user's 'progress' channel when
@@ -126,11 +132,28 @@ function armTotalBudget(budget: ModelBudget | undefined): {
  * retry it. Set on the error as it leaves this module. */
 export const TOTAL_BUDGET_OVERRUN = 'wfTotalBudgetOverrun'
 
+/** Marks an agent that finished its loop without writing any answer text. Like
+ * a budget overrun, retrying it just repeats the same expensive dead end. */
+export const AGENT_NO_OUTPUT = 'wfAgentNoOutput'
+
 function markOverrun(err: unknown): unknown {
   if (err != null && typeof err === 'object') {
     ;(err as Record<string, unknown>)[TOTAL_BUDGET_OVERRUN] = true
   }
   return err
+}
+
+function markNoOutput(err: Error): Error {
+  ;(err as unknown as Record<string, unknown>)[AGENT_NO_OUTPUT] = true
+  return err
+}
+
+/** True for an error the engine should fail outright instead of retrying — the
+ * second attempt would deterministically reach the same wall. */
+export function isFatalAgentError(err: unknown): boolean {
+  if (err == null || typeof err !== 'object') return false
+  const e = err as Record<string, unknown>
+  return e[TOTAL_BUDGET_OVERRUN] === true || e[AGENT_NO_OUTPUT] === true
 }
 
 // A model call is the longest thing a run does with nothing to say about
@@ -286,6 +309,7 @@ async function runToolLoop(
     model,
     modelId,
     maxTurns,
+    requireToolFirstTurn,
     streamReasoning,
     streamToolCalls,
     systemPrompt,
@@ -295,6 +319,15 @@ async function runToolLoop(
     sink,
     budget,
   } = args
+  // Turn 1 can only be forced to call a tool when there IS a tool to call and a
+  // later turn survives to answer with the result. `maxTurns: 1` makes turn 1 the
+  // final answering turn, which denies tools below — forcing here would produce a
+  // tool call the loop has no room to answer with, i.e. the empty-`text` run the
+  // final-turn rule exists to prevent.
+  const forceFirstTool =
+    (requireToolFirstTurn ?? false) &&
+    maxTurns > 1 &&
+    Object.keys(tools).length > 0
   const stepTraces: AgentNodeMeta['steps'] = []
   const totalUsage = { inputTokens: 0, outputTokens: 0 }
   const guard = armTotalBudget(budget)
@@ -315,6 +348,33 @@ async function runToolLoop(
       messages: messagesForModel,
       tools,
       stopWhen: stepCountIs(maxTurns),
+      // The last turn is for answering, not for opening another line of
+      // research the loop has no room to follow up on. Without this, a model
+      // that spends every turn calling tools stops mid-investigation and
+      // `result.text` is the empty string — a completed run with nothing in it,
+      // which is how a $0.64 chat turn rendered as a blank message. Denying
+      // tools on the final turn forces the model to commit what it has to
+      // prose, caveats and all, which is what the reader needed anyway.
+      prepareStep: ({ stepNumber }) => {
+        if (stepNumber >= maxTurns - 1) {
+          void sink?.log?.({
+            level: 'info',
+            message: `→ ${modelId} (turn ${stepNumber + 1}/${maxTurns}, answering — no more tools)`,
+          })
+          return { toolChoice: 'none' }
+        }
+        // Opt-in: deny the model the option of answering turn 1 from what it
+        // already "knows". Only turn 1 — every later turn is free to answer, so
+        // this buys a first look at the tools without trapping the loop.
+        if (stepNumber === 0 && forceFirstTool) {
+          void sink?.log?.({
+            level: 'info',
+            message: `→ ${modelId} (turn 1/${maxTurns}, tool call required)`,
+          })
+          return { toolChoice: 'required' }
+        }
+        return {}
+      },
       // Per-round-trip and per-tool watchdogs, native to the AI SDK: each is
       // armed and cleared around its own call, so a single stalled request or
       // hung tool fails fast instead of silently consuming the node's whole
@@ -368,8 +428,17 @@ async function runToolLoop(
           // independently (the node's dynamic "Inform user" sub-toggles): reasoning
           // by `streamReasoning`, tool announcements by `streamToolCalls`. A tool
           // without a `statusLabel` template contributes nothing.
+          //
+          // `meta.progress` tags WHICH of the two a line is, so a progress
+          // surface can render them distinctly (a thinking vs a tool icon)
+          // instead of one undifferentiated list. An untagged progress line is
+          // a plain node step (see `emitNodeStartProgress`).
           if (streamReasoning && reasoning) {
-            void sink.log?.({ level: 'progress', message: reasoning })
+            void sink.log?.({
+              level: 'progress',
+              message: reasoning,
+              meta: { progress: 'reasoning' },
+            })
           }
           if (streamToolCalls) {
             for (const tc of toolCalls) {
@@ -377,7 +446,11 @@ async function runToolLoop(
               const message =
                 template && interpolateUserText(template, tc.input).trim()
               if (message) {
-                void sink.log?.({ level: 'progress', message })
+                void sink.log?.({
+                  level: 'progress',
+                  message,
+                  meta: { progress: 'tool', tool: tc.toolName },
+                })
               }
             }
           }
@@ -399,6 +472,22 @@ async function runToolLoop(
     steps: stepTraces.length,
     ...totalUsage,
   })
+
+  // A text agent that returns nothing has failed, and must say so here. The
+  // node itself is happy to hand an empty string downstream, and everything
+  // after it — the Output node, the chat message — faithfully carries the
+  // emptiness all the way to a blank bubble the reader can only read as "it
+  // broke, silently". `prepareStep` above removes the ordinary cause; anything
+  // still landing here is a genuine fault, so name it and fail the run.
+  if (result.text.trim() === '') {
+    throw markNoOutput(
+      new Error(
+        `Agent produced no answer after ${stepTraces.length} of ${maxTurns} turns ` +
+          `(finish reason: ${result.finishReason}). It called ` +
+          `${stepTraces.reduce((n, s) => n + s.toolCalls.length, 0)} tools and wrote no text.`,
+      ),
+    )
+  }
 
   return {
     output: { text: result.text },
