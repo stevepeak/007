@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { Fragment, type ReactNode } from 'react'
 
-import { agentIcon } from './agent-appearance'
+import { agentColor, agentIcon } from './agent-appearance'
 import { cn } from './cn'
 import { describeCheck } from './evals/shared'
 import { useAgent, useEvalSet, useRun, useTools, useWorkflow } from './hooks'
@@ -213,7 +213,7 @@ function AgentTab({ asset, ...rest }: KindProps<'agent'>) {
   const Icon = agentIcon(data?.agent.icon)
   return (
     <TabChrome
-      icon={<Icon className="size-4 text-violet-500" />}
+      icon={<Icon className={cn('size-4', agentColor(data?.agent.color).text)} />}
       label={name}
       trail={[name]}
       {...rest}

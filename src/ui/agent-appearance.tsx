@@ -37,6 +37,8 @@ export type AgentColor = {
   key: string
   /** Icon-chip classes: soft tinted background + saturated foreground. */
   chip: string
+  /** Foreground only, for a bare icon drawn without a chip background. */
+  text: string
   /** A single dot color (swatch) for the picker. */
   swatch: string
 }
@@ -45,23 +47,51 @@ export const AGENT_COLORS: AgentColor[] = [
   {
     key: 'violet',
     chip: 'bg-violet-100 text-violet-600',
+    text: 'text-violet-600',
     swatch: 'bg-violet-500',
   },
   {
     key: 'emerald',
     chip: 'bg-emerald-100 text-emerald-600',
+    text: 'text-emerald-600',
     swatch: 'bg-emerald-500',
   },
-  { key: 'sky', chip: 'bg-sky-100 text-sky-600', swatch: 'bg-sky-500' },
-  { key: 'amber', chip: 'bg-amber-100 text-amber-600', swatch: 'bg-amber-500' },
-  { key: 'rose', chip: 'bg-rose-100 text-rose-600', swatch: 'bg-rose-500' },
+  {
+    key: 'sky',
+    chip: 'bg-sky-100 text-sky-600',
+    text: 'text-sky-600',
+    swatch: 'bg-sky-500',
+  },
+  {
+    key: 'amber',
+    chip: 'bg-amber-100 text-amber-600',
+    text: 'text-amber-600',
+    swatch: 'bg-amber-500',
+  },
+  {
+    key: 'rose',
+    chip: 'bg-rose-100 text-rose-600',
+    text: 'text-rose-600',
+    swatch: 'bg-rose-500',
+  },
   {
     key: 'indigo',
     chip: 'bg-indigo-100 text-indigo-600',
+    text: 'text-indigo-600',
     swatch: 'bg-indigo-500',
   },
-  { key: 'teal', chip: 'bg-teal-100 text-teal-600', swatch: 'bg-teal-500' },
-  { key: 'slate', chip: 'bg-slate-100 text-slate-600', swatch: 'bg-slate-500' },
+  {
+    key: 'teal',
+    chip: 'bg-teal-100 text-teal-600',
+    text: 'text-teal-600',
+    swatch: 'bg-teal-500',
+  },
+  {
+    key: 'slate',
+    chip: 'bg-slate-100 text-slate-600',
+    text: 'text-slate-600',
+    swatch: 'bg-slate-500',
+  },
 ]
 
 const COLOR_BY_KEY = new Map(AGENT_COLORS.map((c) => [c.key, c]))
