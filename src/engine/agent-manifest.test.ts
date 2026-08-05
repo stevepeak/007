@@ -12,7 +12,6 @@ const agentConfig = (prompt: string) => ({
   prompt,
   toolIds: [],
   maxTurns: 1,
-  exposeThinking: false,
   output: { kind: 'text' as const },
 })
 

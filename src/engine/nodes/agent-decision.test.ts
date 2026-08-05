@@ -25,7 +25,6 @@ function manifest(output: {
         prompt: 'Is this urgent?',
         toolIds: [],
         maxTurns: 1,
-        exposeThinking: false,
         output,
       },
     },

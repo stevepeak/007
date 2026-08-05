@@ -12,7 +12,7 @@ import type { RunLogEntry } from '../engine/stream-sink'
 //   replay. Generic — carries no domain/workflow-name coupling.
 //
 // Two progress surfaces coexist: the legacy free-text `progress` channel (a
-// flat string[], still fed by agent `exposeThinking`) and the structured `logs`
+// flat string[], fed per the node's `informUser`) and the structured `logs`
 // feed (RunLogEntry[]) that powers the run viewer's Logs panel. The durable
 // wf_run_log table is the source of truth for a completed run; this buffer is
 // just the live/reconnect window, so it's bounded.

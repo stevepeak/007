@@ -23,7 +23,6 @@ const MANIFEST: WfRunManifestEntry[] = [
       prompt: 'Answer.',
       toolIds: [],
       maxTurns: 1,
-      exposeThinking: false,
       output: { kind: 'text' },
     },
   },

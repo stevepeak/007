@@ -222,7 +222,6 @@ describe('eval harness — workflow-calls-workflow (agent callee, nested manifes
         prompt: 'Be helpful.',
         toolIds: [],
         maxTurns: 1,
-        exposeThinking: false,
         output: { kind: 'text' },
       },
     },

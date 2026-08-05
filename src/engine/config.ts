@@ -41,9 +41,11 @@ export type RunFailure = { error: string }
  * bindings like an API key), leaving nodes a simple `(modelId) => model` call.
  *
  * `opts.reasoning` is a per-call override of the run-level reasoning intent
- * ({@link RunContext.reasoning}): an agent node passes its own `enableReasoning`
- * here so a per-agent choice wins over the run default. Undefined → fall back to
- * the run-level intent.
+ * ({@link RunContext.reasoning}). Agent nodes deliberately pass NOTHING here, so
+ * the provider's default (reasoning on) wins — see `agent-config-schema.ts`. It
+ * exists for short internal utility calls (e.g. `summarize-changes.ts`) that want
+ * a direct answer and would otherwise burn their token budget in a thinking pass
+ * and return empty content. Undefined → fall back to the run-level intent.
  */
 export type ModelFactory = (
   modelId: string,

@@ -497,6 +497,9 @@ export type WorkflowEdge = z.infer<typeof workflowEdgeSchema>
 // already carries `informUser` is left untouched; a fresh graph never hits any
 // branch but the last. Runs per node (nested iteration subgraphs recurse through
 // this same schema), so one mapper covers the whole tree.
+// Those legacy names no longer exist in any current schema — don't go looking for
+// them in `agentConfigSchema`. This reads RAW stored JSON before the parse, which
+// is exactly why it still works after they were deleted from the schema.
 function migrateInformUser(raw: unknown): unknown {
   if (raw == null || typeof raw !== 'object') return raw
   const node = raw as Record<string, unknown>

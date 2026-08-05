@@ -23,7 +23,7 @@ import {
   resolveNodeInputs,
   unlinkedMessages,
 } from './agent-inputs'
-import { type SubAgentCtx, synthesizeDelegationTools } from './sub-agent'
+import { type SubAgentRunCtx, synthesizeDelegationTools } from './sub-agent'
 
 // `./agent` is the single entry point for the agent node: the input helpers live
 // in `agent-inputs.ts` and the model loop (+ its result/meta types) in
@@ -100,7 +100,7 @@ export type ExecuteAgentNodeArgs<TDeps> = {
    * tools (backed by a per-execution SpawnManager) into its tool set. Omitted →
    * no delegation tools (e.g. a preview run, or an agent with no whitelist).
    */
-  subAgentCtx?: SubAgentCtx<TDeps>
+  subAgentCtx?: SubAgentRunCtx<TDeps>
 }
 
 // Resolve the agent an agent node points at from the frozen run manifest. The
@@ -211,7 +211,14 @@ export async function executeAgentNode<TDeps>(
     config.output.kind === 'text' &&
     (config.subAgents?.targets.length ?? 0) > 0
   ) {
-    const delegation = synthesizeDelegationTools(config.subAgents, subAgentCtx)
+    // Sub-agents inherit THIS node's display intent — they have no `informUser`
+    // of their own. The executor builds the context without these (it can't know
+    // them); the node that owns the `informUser` field fills them in.
+    const delegation = synthesizeDelegationTools(config.subAgents, {
+      ...subAgentCtx,
+      streamReasoning,
+      streamToolCalls,
+    })
     for (const name of Object.keys(delegation)) {
       if (Object.hasOwn(tools, name)) {
         throw new Error(

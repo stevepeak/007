@@ -24,7 +24,6 @@ const MANIFEST: WfRunManifestEntry[] = [
       prompt: 'Describe the image.',
       toolIds: [],
       maxTurns: 1,
-      exposeThinking: false,
       output: { kind: 'text' },
     },
   },

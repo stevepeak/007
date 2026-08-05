@@ -44,8 +44,9 @@ export const wfAgent = sqliteTable('wf_agent', {
 ])
 
 // Immutable published agent snapshots. `config` is the full AgentConfig JSON
-// (model, prompt, toolIds, maxTurns, exposeThinking, enableReasoning, output
-// contract).
+// (model, prompt, toolIds, maxTurns, output contract, sub-agent whitelist). Rows
+// written before the legacy `exposeThinking`/`enableReasoning` fields were
+// removed still carry them in JSON; zod strips them on read.
 export const wfAgentVersion = sqliteTable(
   'wf_agent_version',
   {

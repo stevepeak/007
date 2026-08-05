@@ -49,7 +49,6 @@ function sampleBundle(prompt = 'Say hello to ${name}.'): SpecBundle {
           prompt,
           toolIds: [],
           maxTurns: 5,
-          exposeThinking: false,
           output: { kind: 'text' },
           subAgents: {
             targets: [],

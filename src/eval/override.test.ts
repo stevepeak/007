@@ -65,7 +65,6 @@ describe('agent override — matrix eval seam', () => {
         prompt: 'Saved prompt.',
         toolIds: [],
         maxTurns: 5,
-        exposeThinking: true,
         output: { kind: 'text' as const },
       },
     },

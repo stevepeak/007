@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 
 import type { AgentConfig, SubAgentsConfig, WfRunManifestEntry } from '../graph'
 import { createMemoryRunRecorder } from '../run-recorder'
+import { createMemorySink } from '../stream-sink'
 import type { RunNodeContext } from '../run-node'
 import type { ToolRegistry } from '../tool-registry'
 
@@ -22,7 +23,6 @@ const baseConfig = (over: Partial<AgentConfig>): AgentConfig => ({
   prompt: '',
   toolIds: [],
   maxTurns: 3,
-  exposeThinking: false,
   output: { kind: 'text' },
   subAgents: {
     targets: [],
@@ -143,6 +143,8 @@ describe('sub-agent delegation — end to end', () => {
     const tools = synthesizeDelegationTools(PRIMARY_SUBAGENTS, {
       ctx,
       primaryNodeId: 'p',
+      streamReasoning: false,
+      streamToolCalls: false,
     })
 
     await call(tools.spawn_researcher, { message: 'research topic' })
@@ -217,6 +219,8 @@ describe('sub-agent delegation — end to end', () => {
     const tools = synthesizeDelegationTools(PRIMARY_SUBAGENTS, {
       ctx,
       primaryNodeId: 'p',
+      streamReasoning: false,
+      streamToolCalls: false,
     })
 
     await call(tools.spawn_researcher, { message: 'dig' }) // spawn-0, hangs
@@ -234,4 +238,58 @@ describe('sub-agent delegation — end to end', () => {
     expect(children).toHaveLength(1)
     expect(children[0]?.itemIndex).toBe(1)
   })
+
+  // A sub-agent has no node, so it has no `informUser` of its own. It must take
+  // the PRIMARY node's choice — it used to read its own stored `exposeThinking`,
+  // a field the editor never writes, which could stream raw model reasoning to an
+  // end user whose workflow author had explicitly switched reasoning off.
+  test.each([
+    { streamReasoning: false, expected: [] as string[] },
+    { streamReasoning: true, expected: ['weighing the angle'] },
+  ])(
+    'sub-agent inherits the primary node reasoning intent (%o)',
+    async ({ streamReasoning, expected }) => {
+      const manifest = [
+        agentEntry('p', 'Primary', baseConfig({ subAgents: PRIMARY_SUBAGENTS })),
+        agentEntry(
+          'researcher',
+          'Researcher',
+          baseConfig({ prompt: 'RESEARCH thoroughly.' }),
+        ),
+        agentEntry('critic', 'Critic', baseConfig({ prompt: 'CRITIC.' })),
+      ]
+      const getModel = () =>
+        new MockLanguageModelV3({
+          doGenerate: async () => ({
+            content: [
+              { type: 'reasoning' as const, text: 'weighing the angle' },
+              { type: 'text' as const, text: 'done' },
+            ],
+            finishReason: 'stop' as const,
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            warnings: [],
+          }),
+        })
+      const { ctx } = makeCtx(getModel, manifest)
+      const sink = createMemorySink()
+      ctx.sink = sink
+
+      const tools = synthesizeDelegationTools(PRIMARY_SUBAGENTS, {
+        ctx,
+        primaryNodeId: 'p',
+        streamReasoning,
+        streamToolCalls: false,
+      })
+      await call(tools.spawn_researcher, { message: 'dig' })
+      await call(tools.await_subagents, {})
+
+      // `progress` is the only user-facing level.
+      expect(
+        sink.logs.filter((l) => l.level === 'progress').map((l) => l.message),
+      ).toEqual(expected)
+      // The dev feed records reasoning either way — that's the whole point of
+      // the split, and why the run viewer showed thinking with the toggle off.
+      expect(sink.logs.filter((l) => l.level === 'thinking')).toHaveLength(1)
+    },
+  )
 })

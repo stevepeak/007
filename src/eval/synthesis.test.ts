@@ -141,7 +141,6 @@ const manifest = [
       prompt: 'Answer from the conversation.',
       toolIds: ['search_rag'],
       maxTurns: 5,
-      exposeThinking: false,
       output: { kind: 'text' as const },
     },
   },

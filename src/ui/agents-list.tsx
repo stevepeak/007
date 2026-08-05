@@ -68,8 +68,6 @@ export function AgentsList({ className }: AgentsListProps) {
           prompt: STARTER_PROMPT,
           toolIds: [],
           maxTurns: 5,
-          exposeThinking: false,
-          enableReasoning: false,
           output: { kind: 'text' },
           subAgents: {
             targets: [],

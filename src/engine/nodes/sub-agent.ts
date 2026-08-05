@@ -41,10 +41,31 @@ import {
 // is recorded as a child run-step under the primary node so the run viewer can
 // drill into it (the iteration per-item precedent).
 
-/** What the agent node hands here: its full run context + its own node id. */
-export type SubAgentCtx<TDeps> = {
+/**
+ * What the EXECUTOR can supply: the run context plus the primary node's id. It
+ * deliberately stops there — the executor doesn't resolve `informUser`, so it
+ * can't know what the step surfaces.
+ */
+export type SubAgentRunCtx<TDeps> = {
   ctx: RunNodeContext<TDeps>
   primaryNodeId: string
+}
+
+/**
+ * The full context this module consumes: {@link SubAgentRunCtx} plus the display
+ * intent resolved from the primary node's `informUser`. The agent node fills the
+ * two stream flags in, which is why they're required here and absent above — the
+ * split makes "forgot to pass the author's choice down" a type error.
+ *
+ * A sub-agent has no node of its own, so it has no `informUser` to read. It
+ * INHERITS the primary node's choice: delegation is an implementation detail of
+ * the parent step, and the author picked what that step surfaces. Reading the
+ * sub-agent's own stored config here would let a field the editor never writes
+ * override an explicit authoring decision.
+ */
+export type SubAgentCtx<TDeps> = SubAgentRunCtx<TDeps> & {
+  streamReasoning: boolean
+  streamToolCalls: boolean
 }
 
 // The `spawn_*` input for an agent target is `{ message, ...promptVars }`; for a
@@ -84,9 +105,8 @@ async function runAgentTarget<TDeps>(
   }
   const config = entry.config
   // No reasoning intent, matching the primary agent node: nothing forces the
-  // model's thinking off, so the provider default (on) always wins. Passing
-  // `config.enableReasoning` here would disable it for every sub-agent, since
-  // that field is permanently false and has no editor control.
+  // model's thinking off, so the provider default (on) always wins. Whether that
+  // thinking is SHOWN is the separate, display-only `streamReasoning` below.
   const model = ctx.getModel(config.modelId)
 
   // The sub-agent's own registry tools, plus the injected stop signal. A sub-
@@ -130,10 +150,9 @@ async function runAgentTarget<TDeps>(
     modelId: config.modelId,
     output: config.output,
     maxTurns: config.maxTurns,
-    // A sub-agent has no node placement, so its own `exposeThinking` gates both
-    // streams together (its historical behavior).
-    streamReasoning: config.exposeThinking,
-    streamToolCalls: config.exposeThinking,
+    // Inherited from the primary node's `informUser` — see {@link SubAgentCtx}.
+    streamReasoning: sub.streamReasoning,
+    streamToolCalls: sub.streamToolCalls,
     systemPrompt,
     messages,
     tools: toolSet,

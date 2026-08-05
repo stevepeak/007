@@ -96,19 +96,24 @@ export const agentConfigSchema = z.object({
   // How many turns (rounds of tool-calling) the agent may take before it must
   // give a final answer.
   maxTurns: z.number().int().min(1).max(20).default(5),
-  // When true, per-step thinking text is forwarded to the run's StreamSink (the
-  // RunRoom DO) so the user can watch the agent work.
-  exposeThinking: z.boolean().default(false),
-  // UNUSED — kept only so stored configs still parse. Nothing reads it and no
-  // editor writes it (agents are created with `false` and it never changes).
+  // NOTE: `exposeThinking` and `enableReasoning` used to live here and are gone.
+  // Zod strips them from stored configs, so old rows still parse.
   //
-  // It used to gate whether the model reasons. That's deliberately gone: model
-  // reasoning is a real extra generation pass that materially improves
-  // multi-step analysis, and a field permanently stuck at `false` would disable
-  // it everywhere. Nothing now passes a reasoning intent at all, so the
-  // provider default (thinking on) always wins. Whether that thinking is SHOWN
-  // is a separate, display-only concern owned by the node's `informUser`.
-  enableReasoning: z.boolean().default(false),
+  // Both were display/behavior switches an agent should never have owned:
+  //   - What a step surfaces to the user is a per-PLACEMENT choice, so it lives
+  //     on the workflow node (`informUser`) — the same agent can stream its work
+  //     in one workflow and stay quiet in another. Sub-agents, which have no node
+  //     of their own, inherit the primary node's choice (see `sub-agent.ts`).
+  //   - Whether the model reasons at all is deliberately NOT configurable.
+  //     Reasoning is a real extra generation pass that materially improves
+  //     multi-step analysis; a display preference must not silently switch it
+  //     off. Nothing passes a reasoning intent for agents, so the provider
+  //     default (on) always wins. The one place it IS disabled is short internal
+  //     utility calls (`summarize-changes.ts`), in code, per call.
+  //
+  // Keeping them as dead-but-parsed fields cost real debugging time: they show
+  // up in run dumps reading exactly like live switches.
+  //
   // What the agent is expected to produce.
   output: agentOutputSchema.default({ kind: 'text' }),
   // Delegation whitelist + guardrails. Non-empty `targets` makes the engine
