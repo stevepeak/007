@@ -61,6 +61,8 @@ export {
   createEvalSet,
   createRun,
   createWorkflow,
+  deleteAllRuns,
+  type DeleteAllRunsResult,
   deleteEvalRow,
   deleteEvalSet,
   deleteFeedback,

@@ -50,6 +50,18 @@ export type WfRunListResult = {
   offset: number
 }
 
+// What a "delete all runs" purge removed, so the UI can report it. Every count
+// is rows actually deleted, except `feedbackUnlinked` — those rows are KEPT,
+// with their dangling `runId` cleared. See `deleteAllRuns` in storage.
+export type WfRunPurgeResult = {
+  runs: number
+  steps: number
+  logs: number
+  evalResults: number
+  evalRuns: number
+  feedbackUnlinked: number
+}
+
 // How the run viewer's Retry re-dispatches a finished run.
 // `restart` = fresh, from the start, on the latest version; `resume` = reuse the
 // original version and pick up at the failed step.

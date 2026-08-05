@@ -82,6 +82,8 @@ export function createHttpWfDataClient(
     listRunTriggerKinds: bind('listRunTriggerKinds'),
     getRun: (runId) => call('getRun', { runId }),
     retryRun: bind('retryRun'),
+    // A full purge sweeps several tables — give it room past the 20s default.
+    deleteAllRuns: bind('deleteAllRuns', 120000),
     listAgents: bind('listAgents'),
     getAgent: (agentId) => call('getAgent', { agentId }),
     createAgent: bind('createAgent'),

@@ -33,6 +33,7 @@ import type {
   WfRunDetail,
   WfRunListInput,
   WfRunListResult,
+  WfRunPurgeResult,
 } from './protocol-runs'
 import type {
   ToolContextField,
@@ -160,6 +161,14 @@ export interface WfDataClient {
     runId: string
     mode: RetryRunMode
   }): Promise<{ runId: string }>
+  /**
+   * Delete EVERY run and everything derived from it — steps, the log feed, and
+   * the eval results/runs that grade those runs. Feedback rows survive with
+   * their `runId` cleared. Definitions (workflows, agents, eval sets) are
+   * untouched. Irreversible; the UI gates it behind a modifier-hold + a
+   * press-and-hold confirm.
+   */
+  deleteAllRuns(): Promise<WfRunPurgeResult>
 
   // Agents — reusable, pre-developed agents that workflow agent nodes point at.
   // Same draft/version lifecycle as workflows; publishing floats into every

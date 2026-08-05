@@ -44,6 +44,26 @@ export function useRun(runId: string | null) {
   })
 }
 
+// Wipe ALL run history — runs, steps, logs, and the eval results/runs that
+// grade them. Every run-derived query is invalidated (and the per-run caches
+// dropped outright, since those runs no longer exist).
+export function useDeleteAllRuns() {
+  const client = useWfClient()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => client.deleteAllRuns(),
+    onSuccess: () => {
+      qc.removeQueries({ queryKey: ['wf', 'run'] })
+      return Promise.all([
+        qc.invalidateQueries({ queryKey: keys.runsAll }),
+        qc.invalidateQueries({ queryKey: keys.runTriggerKinds }),
+        qc.invalidateQueries({ queryKey: keys.evalRunsAll }),
+        qc.invalidateQueries({ queryKey: keys.feedbackAll }),
+      ])
+    },
+  })
+}
+
 // Re-dispatch a finished run. On success the runs list + this run are
 // invalidated (its status may flip) and the new run id is returned so the
 // caller can navigate to it.

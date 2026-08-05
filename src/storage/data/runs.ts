@@ -4,9 +4,11 @@
 //
 // This is a thin re-export barrel. The implementation lives in cohesive sibling
 // modules (`runs-lifecycle`, `runs-logs`, `runs-cost`, `runs-list`,
-// `runs-inspector`, `runs-resume`). Import from `./runs` as before.
+// `runs-inspector`, `runs-resume`, `runs-purge`). Import from `./runs` as
+// before.
 
 export * from './runs-lifecycle'
+export * from './runs-purge'
 export * from './runs-logs'
 export * from './runs-cost'
 export * from './runs-list'

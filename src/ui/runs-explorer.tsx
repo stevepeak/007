@@ -4,9 +4,11 @@ import type { WfRunListInput, WfRunSummary } from '../server/protocol'
 import { useWfComponents } from './context'
 import { cn } from './cn'
 import { formatDuration, formatTimestamp, formatUsd } from './cost'
+import { DeleteAllRunsButton } from './delete-all-runs-button'
 import { useRuns, useRunTriggerKinds, useWorkflows } from './hooks'
 import { useWfNav } from './nav'
 import { RunStatusBadge } from './run-status'
+import { useModifierHold } from './use-modifier-hold'
 
 // Interface #2 — the runs explorer. A dense, server-filtered, paginated table
 // built for thousands of runs: search by workflow name / trigger / reference,
@@ -113,6 +115,16 @@ export function RunsExplorer({
 
   const triggerKinds = useRunTriggerKinds()
   const workflows = useWorkflows()
+  // Cmd + Option reveals the purge control. A different combo from the everyday
+  // Cmd + Control reveals, so an irreversible action can't surface by muscle
+  // memory. Once revealed it LATCHES for the life of the page: the button (and
+  // its confirm dialog) must survive letting go of the keys to click it.
+  // Leaving the runs explorer unmounts it and hides the control again.
+  const purgeHeld = useModifierHold('meta+alt')
+  const [purgeRevealed, setPurgeRevealed] = useState(false)
+  useEffect(() => {
+    if (purgeHeld) setPurgeRevealed(true)
+  }, [purgeHeld])
 
   const input = useMemo<WfRunListInput>(() => {
     const frame = TIMEFRAMES[timeframeIdx]
@@ -224,7 +236,13 @@ export function RunsExplorer({
             Clear
           </button>
         ) : null}
-        <div className="ml-auto text-xs text-neutral-500">
+        {purgeRevealed ? <DeleteAllRunsButton className="ml-auto" /> : null}
+        <div
+          className={cn(
+            'text-xs text-neutral-500',
+            purgeRevealed ? null : 'ml-auto',
+          )}
+        >
           {runsQuery.isLoading
             ? 'Loading…'
             : total === 0

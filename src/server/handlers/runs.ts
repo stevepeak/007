@@ -1,4 +1,5 @@
 import {
+  deleteAllRuns,
   getLatestVersionId,
   getRun,
   listRunTriggerKinds,
@@ -67,7 +68,7 @@ export function buildRunHandlers<TDeps>(
   opts: CreateWfSdkHandlersOptions<TDeps>,
 ): Pick<
   WfHandlers,
-  'listRuns' | 'listRunTriggerKinds' | 'getRun' | 'retryRun'
+  'listRuns' | 'listRunTriggerKinds' | 'getRun' | 'retryRun' | 'deleteAllRuns'
 > {
   return {
     listRuns: async (c) => {
@@ -102,6 +103,12 @@ export function buildRunHandlers<TDeps>(
     },
 
     listRunTriggerKinds: async (c) => await listRunTriggerKinds(c.db),
+
+    // Wipe all run history (steps, logs, eval results/runs go with it). Takes
+    // no params on purpose — it is all-or-nothing, never a filtered delete, so
+    // there's no shape in which a mistyped filter silently deletes the wrong
+    // slice. See `deleteAllRuns` for exactly what cascades.
+    deleteAllRuns: async (c) => await deleteAllRuns(c.db),
 
     getRun: async (c) => {
       const runId = str(c.params, 'runId')
