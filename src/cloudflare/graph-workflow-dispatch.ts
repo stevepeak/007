@@ -5,7 +5,12 @@ import {
   errorFeedLine,
   errorStored,
 } from '../engine/error-detail'
-import { isDecisionKind, type IterationNode } from '../engine/graph'
+import {
+  isDecisionKind,
+  workflowFromManifest,
+  type IterationNode,
+  type WorkflowCallNode,
+} from '../engine/graph'
 import { modelBudgetFor } from '../engine/model-budget'
 import { nodeSpanLabel } from '../engine/node-label'
 import { isFatalAgentError } from '../engine/nodes/agent-generation'
@@ -15,6 +20,7 @@ import {
   resolveIterationList,
   runIteration,
 } from '../engine/nodes/iteration'
+import { buildCalleeTriggerInput } from '../engine/nodes/workflow'
 import { runNode, type NodeRunResult } from '../engine/run-node'
 import { recordedBranchResult } from '../engine/run-recorder'
 import type { ExecutableNode, ReportResult } from '../engine/scheduler'
@@ -24,12 +30,19 @@ import { createWfDb } from '../storage/client'
 import {
   appendRunLog,
   countNodeBodyLogs,
+  createRun,
   finalizeRun,
   replaceNodeLogs,
   type WfRunLogRow,
 } from '../storage/data'
 import { createDurableRunRecorder } from '../storage/run-recorder'
 
+import {
+  calleeEventType,
+  toCalleeWire,
+  type CalleeDoneEvent,
+  type CalleeDoneWire,
+} from './callee-protocol'
 import type { GraphWorkflowEnv, GraphWorkflowResult } from './graph-workflow'
 import {
   nodeLabel,
@@ -80,6 +93,15 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
   node: IterationNode,
 ): Promise<RunStepResult> {
   const { step, env, config, p, manifest, sink, scheduler } = ctx
+  if (node.config.itemExecution === 'durable') {
+    // Per-item child instances are not wired up yet. Failing loudly beats
+    // silently running inline: the author chose this setting precisely because
+    // an item repeating from the start is unacceptable to them, and a quiet
+    // downgrade would hand them exactly that with no way to notice.
+    throw new NonRetryableError(
+      `Iteration "${node.label}" is set to Durable item execution, which is not available yet. Switch it back to Inline to run this workflow.`,
+    )
+  }
   const iter = await runIteration({
     node,
     // List is a ref into an upstream output, resolved against the
@@ -131,6 +153,145 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
     schedulerOutput: iter.results,
     recordedOutput: iter.results,
     meta: iter.meta,
+  }
+}
+
+// ── Durable callees ─────────────────────────────────────────────────────────
+//
+// A workflow-call node set to `calleeExecution: 'durable'` runs its callee as a
+// CHILD workflow instance instead of inlining it into this node's single step.
+// The callee then gets what the inline path can't give it: one durable step per
+// node, per-node retries and timeouts, and a resumable run of its own.
+//
+// The handshake is spawn → park → event, not spawn → poll: an instance parked on
+// `waitForEvent` is hibernated and does NOT count against the concurrency cap,
+// so a parent waiting on a long callee costs nothing. Polling would burn a step
+// per check and keep the parent resident.
+
+/**
+ * Tell the waiting parent this callee settled. No-op for an ordinary run.
+ *
+ * Runs in its own durable step: the parent is parked indefinitely (up to the
+ * node's timeout) and this is the only thing that will ever wake it, so it has
+ * to survive the same retries every other write does.
+ */
+export async function reportToParent<TDeps, E extends GraphWorkflowEnv>(
+  ctx: RunCtx<TDeps, E>,
+  payload: CalleeDoneEvent,
+): Promise<void> {
+  const sub = ctx.p.subRun
+  if (!sub) {
+    return
+  }
+  const wire = toCalleeWire(payload)
+  await stepDo(ctx.step, 'report-to-parent', DEFAULT_STEP_OPTS, async () => {
+    const parent = await ctx.env.GRAPH_WORKFLOW.get(sub.parentInstanceId)
+    await parent.sendEvent({ type: sub.eventType, payload: wire })
+    return null
+  })
+}
+
+/**
+ * Run a workflow-call node by spawning its callee as a child instance and
+ * parking until it reports back.
+ *
+ * Like `dispatchIteration` this is NOT wrapped in a `run:` step — `step.do` and
+ * `waitForEvent` can't nest inside another step, and the whole point is for the
+ * callee's nodes to own steps of their own.
+ */
+async function dispatchDurableCallee<TDeps, E extends GraphWorkflowEnv>(
+  ctx: RunCtx<TDeps, E>,
+  node: WorkflowCallNode,
+  input: unknown,
+): Promise<RunStepResult> {
+  const { step, env, p, manifest, scheduler, instanceId, traceId } = ctx
+  const entry = workflowFromManifest(manifest, node.config.workflowId)
+  if (!entry) {
+    throw new NonRetryableError(
+      `Workflow node ${node.id} references workflow ${
+        node.config.workflowId || '(none)'
+      }, which is not in the run manifest.`,
+    )
+  }
+
+  const triggerInput = buildCalleeTriggerInput(
+    node,
+    input,
+    scheduler.getOutputs(),
+  )
+  const eventType = calleeEventType(node.id)
+
+  // Create the callee's own `wf_run` and its instance in ONE journaled step, so
+  // a replay reuses both rather than minting a second run and a second instance.
+  // `crypto.randomUUID()` is safe here for exactly that reason — inside the step,
+  // never in the orchestrator.
+  const spawned = await stepDo(
+    step,
+    `spawn:${node.id}`,
+    DEFAULT_STEP_OPTS,
+    async () => {
+      const childRunId = await createRun(createWfDb(env.DB), {
+        workflowVersionId: entry.versionId,
+        triggerKind: p.runContext.triggerKind,
+        subjectId: p.runContext.subjectId,
+        correlationId: p.runContext.correlationId,
+        // Same trace as the parent, so the callee's spans land in one
+        // distributed trace instead of a detached second one.
+        sentryTraceId: traceId,
+      })
+      const childRoomId = crypto.randomUUID()
+      const instance = await env.GRAPH_WORKFLOW.create({
+        params: {
+          runId: childRoomId,
+          workflowRunId: childRunId,
+          workflowVersionId: entry.versionId,
+          triggerInput,
+          // The callee inherits the caller's context wholesale — deps, prompt
+          // variables, and the eval signals — so its tools behave exactly as
+          // they did when it ran inline.
+          runContext: p.runContext,
+          inheritedManifest: manifest,
+          subRun: { parentInstanceId: instanceId, eventType },
+        },
+      })
+      return { childRunId, instanceId: instance.id }
+    },
+  )
+
+  // Park. The timeout is the node's own declared step timeout, so the author's
+  // one knob still bounds the callee — and a child that dies without ever
+  // reporting surfaces as a legible timeout instead of a permanently stuck run.
+  const settled = await step.waitForEvent<CalleeDoneWire>(`await:${node.id}`, {
+    type: eventType,
+    timeout: resolveStepTimeoutMs(node),
+  })
+
+  const meta = {
+    workflowId: entry.id,
+    versionId: entry.versionId,
+    versionNumber: entry.versionNumber,
+    name: entry.name,
+    // The link the run viewer needs to offer a drill-down into the callee's own
+    // trace — the durable path's answer to the inline path's per-item rows.
+    childRunId: spawned.childRunId,
+    calleeExecution: 'durable' as const,
+  }
+
+  if (!settled.payload.ok) {
+    // The callee already recorded its own failure against its own run; this is
+    // the parent's copy of why its node failed. Not retryable: retrying would
+    // spawn a whole second callee run, and the first one's side effects have
+    // already happened.
+    throw new NonRetryableError(
+      `Called workflow "${entry.name}" failed: ${settled.payload.error}`,
+    )
+  }
+
+  const output: unknown = JSON.parse(settled.payload.outputJson)
+  return {
+    schedulerOutput: output,
+    recordedOutput: output,
+    meta,
   }
 }
 
@@ -270,6 +431,14 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
       // sink; per-item lines follow from `runIteration`.
       emitNodeStartProgress(sink, node, p.runContext.promptVariables)
       result = await dispatchIteration(ctx, node)
+    } else if (
+      node.kind === 'workflow' &&
+      node.config.calleeExecution === 'durable'
+    ) {
+      // Same reason as iteration: this node drives durable steps of its own
+      // (spawn + waitForEvent), which can't live inside a `run:` step.
+      emitNodeStartProgress(sink, node, p.runContext.promptVariables)
+      result = await dispatchDurableCallee(ctx, node, input)
     } else {
       result = await stepDo(
         step,
@@ -493,15 +662,22 @@ export async function finishRun<TDeps, E extends GraphWorkflowEnv>(
   // (the caller's catch records the failure) rather than the host reading an
   // empty result. Pure, deterministic Zod on an in-hand value, so it's safe in
   // the orchestrator (no step.do needed). Contract-less triggers pass through.
-  const output = enforceOutputContract(
-    config.triggers,
-    scheduler.trigger.config.triggerKind,
-    rawOutput,
-  )
+  // A spawned callee skips the contract for the same reason it skips trigger
+  // validation: the inline path it replaces enforces neither, and flipping
+  // `calleeExecution` must not change whether a workflow is allowed to finish.
+  // The PARENT's own Output still answers to its own trigger's contract.
+  const output = p.subRun
+    ? rawOutput
+    : enforceOutputContract(
+        config.triggers,
+        scheduler.trigger.config.triggerKind,
+        rawOutput,
+      )
   await stepDo(step, 'finalize', () =>
     finalizeRun(createWfDb(env.DB), { runId: p.workflowRunId, output }),
   )
   await stepDo(step, 'room-output', () => room.setOutput(output))
+  await reportToParent(ctx, { ok: true, output })
   if (config.onRunComplete) {
     await notifyHost(step, 'on-complete', () =>
       config.onRunComplete!({ ...p.runContext, env }, { output, outputNodeId }),

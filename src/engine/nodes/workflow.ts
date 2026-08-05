@@ -29,7 +29,12 @@ export type WorkflowNodeResult = {
 // Build the callee's trigger output. With no `inputs` bindings the node's
 // upstream input is passed straight through (identity, like an iteration item);
 // otherwise each key/binding builds one field of a trigger-input object.
-function buildTriggerInput(
+//
+// Exported because the durable-callee path in the Cloudflare backend must build
+// the SAME input before handing it to a child instance — sharing this is what
+// keeps `calleeExecution` a choice about where the callee runs rather than about
+// what it receives.
+export function buildCalleeTriggerInput(
   node: WorkflowCallNode,
   input: unknown,
   nodeOutputs: Map<string, unknown>,
@@ -59,7 +64,7 @@ export async function executeWorkflowNode<TDeps>(args: {
       }, which is not in the run manifest.`,
     )
   }
-  const triggerInput = buildTriggerInput(node, input, ctx.nodeOutputs)
+  const triggerInput = buildCalleeTriggerInput(node, input, ctx.nodeOutputs)
   const output = await executeSubgraph(entry.graph, triggerInput, ctx)
   return {
     output,

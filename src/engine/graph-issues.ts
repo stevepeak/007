@@ -109,6 +109,72 @@ function configIssue(node: WorkflowNode): GraphIssue | null {
   }
 }
 
+/**
+ * Above this many real work nodes, an item is "a pipeline" rather than "a step",
+ * and replaying the whole thing on any inner failure starts to hurt. Deliberately
+ * low: the point is to prompt a decision, not to police one.
+ */
+const HEAVY_SUBGRAPH_NODE_COUNT = 3
+
+// Does one item do enough work that per-node durability is worth an instance
+// start? An agent (or a nested workflow call) alone qualifies — it's the
+// expensive, retry-prone, minutes-long kind of node whose replay an author most
+// wants to avoid paying for twice.
+function subgraphWeight(node: Extract<WorkflowNode, { kind: 'iteration' }>): {
+  workNodes: number
+  hasExpensiveNode: boolean
+} {
+  const work = node.config.subgraph.nodes.filter(
+    (n) => n.kind !== 'trigger' && n.kind !== 'output' && n.kind !== 'note',
+  )
+  return {
+    workNodes: work.length,
+    hasExpensiveNode: work.some(
+      (n) => n.kind === 'agent' || n.kind === 'workflow',
+    ),
+  }
+}
+
+/**
+ * Flag an iteration whose SHAPE disagrees with its `itemExecution` choice.
+ *
+ * Both directions are only ever warnings: either setting runs correctly, and
+ * which one is right depends on list length — which isn't knowable at author
+ * time. This is the editor telling the author what it can see (how much work one
+ * item does) so they can weigh it against what only they know (how many items
+ * there usually are).
+ */
+function iterationExecutionIssue(node: WorkflowNode): GraphIssue | null {
+  if (node.kind !== 'iteration') {
+    return null
+  }
+  const base = { nodeId: node.id, nodeLabel: node.label } as const
+  const { workNodes, hasExpensiveNode } = subgraphWeight(node)
+  const heavy = hasExpensiveNode || workNodes > HEAVY_SUBGRAPH_NODE_COUNT
+
+  if (node.config.itemExecution === 'inline' && heavy) {
+    const why = hasExpensiveNode
+      ? 'runs an agent'
+      : `has ${workNodes} steps`
+    return {
+      ...base,
+      severity: 'warning',
+      message: `Each item ${why} but runs as one all-or-nothing unit — if it fails partway the whole item repeats from the start, and the inner steps' own timeout and retry settings are ignored. Consider switching item execution to Durable.`,
+    }
+  }
+
+  if (node.config.itemExecution === 'durable' && !heavy) {
+    return {
+      ...base,
+      severity: 'warning',
+      message:
+        'Each item starts its own run, which for a subgraph this small usually costs more than the durability is worth — especially over a long list. Inline is normally the better fit here.',
+    }
+  }
+
+  return null
+}
+
 // Collect every author-time issue for a graph. Pure and metadata-free — the UI
 // appends binding-completeness issues (missing required inputs) on top.
 export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
@@ -150,6 +216,13 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
     // Config completeness.
     const cfg = configIssue(node)
     if (cfg) issues.push(cfg)
+
+    // Execution-shape advice (iteration item durability). Separate from
+    // `configIssue`, which answers "is this configured enough to run?" — this one
+    // answers "will this run the way you want when something fails?", and both
+    // can legitimately fire on the same node.
+    const exec = iterationExecutionIssue(node)
+    if (exec) issues.push(exec)
 
     // Connectivity. A Note is a portless canvas annotation — it is meant to be
     // unconnected, so it's exempt from both connectivity checks.

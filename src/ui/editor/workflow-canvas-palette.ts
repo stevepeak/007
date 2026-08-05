@@ -67,6 +67,10 @@ function nodeConfigForKind(
       config: {
         concurrency: 4,
         stopOnError: false,
+        // The cheap, no-surprises default. The Issues panel nudges the author to
+        // Durable once the subgraph grows past a step or two, which is the point
+        // at which the choice actually starts to matter.
+        itemExecution: 'inline',
         subgraph: buildIterationSubgraph(),
       },
     }
@@ -77,7 +81,9 @@ function nodeConfigForKind(
     return {
       kind: 'workflow',
       label: 'Call workflow',
-      config: { workflowId: '', inputs: {} },
+      // `calleeExecution: 'inline'` is the cheap default; the Issues panel nudges
+      // toward Durable once the chosen callee turns out to be a real pipeline.
+      config: { workflowId: '', inputs: {}, calleeExecution: 'inline' },
     }
   }
   if (kind === 'feature-request') {

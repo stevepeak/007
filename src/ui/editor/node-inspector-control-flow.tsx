@@ -1,9 +1,23 @@
 import { useState } from 'react'
 
-import { BRANCH_OPERATORS, type ArgBinding } from '../../engine'
+import {
+  BRANCH_OPERATORS,
+  type ArgBinding,
+  type IterationItemExecution,
+} from '../../engine'
 import { useWfComponents } from '../context'
 import { DataRefField, IterationListField } from './node-data-panel'
 import { field, type NodeInspectorProps } from './node-inspector-shared'
+
+// What the choice means for the author, in their terms. The trade is per-item
+// startup cost against how much work is lost when one item fails partway — and
+// the right answer depends on list length, which only the author knows.
+const ITEM_EXECUTION_HELP: Record<IterationItemExecution, string> = {
+  inline:
+    'Each item runs as a single all-or-nothing unit. Cheapest per item, so it suits long lists over small subgraphs — but if an item fails partway it repeats from the start, and the inner steps’ own timeout and retry settings do not apply.',
+  durable:
+    'Each item runs as its own checkpointed run, so every inner step retries and times out on its own terms and a failure resumes instead of repeating. Costs one run start per item, so it suits shorter lists over real pipelines.',
+}
 
 export function BranchInspector({
   node,
@@ -198,7 +212,7 @@ export function IterationInspector({
   onChange,
   itemSchema,
 }: NodeInspectorProps) {
-  const { Input, Label, Checkbox } = useWfComponents()
+  const { Input, Label, Checkbox, Select } = useWfComponents()
   if (node.kind !== 'iteration') return null
   return (
     <>
@@ -248,6 +262,27 @@ export function IterationInspector({
         />
         <p className="text-muted-foreground text-xs">
           How many items run at once (1–20). 1 runs them one at a time.
+        </p>
+      </div>
+      <div className={field}>
+        <Label>Item execution</Label>
+        <Select
+          value={node.config.itemExecution}
+          onChange={(e) =>
+            onChange({
+              ...node,
+              config: {
+                ...node.config,
+                itemExecution: e.target.value as IterationItemExecution,
+              },
+            })
+          }
+        >
+          <option value="inline">Inline (whole item as one step)</option>
+          <option value="durable">Durable (one run per item)</option>
+        </Select>
+        <p className="text-muted-foreground text-xs">
+          {ITEM_EXECUTION_HELP[node.config.itemExecution]}
         </p>
       </div>
       <label className="flex items-center gap-2 text-sm">

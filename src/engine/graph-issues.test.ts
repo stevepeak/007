@@ -34,6 +34,13 @@ const branch = (id: string) => ({
   label: id,
   config: { operator: 'is_not_empty' as const },
 })
+const tool = (id: string) => ({
+  id,
+  kind: 'tool' as const,
+  position: pos,
+  label: id,
+  config: { toolId: 't1', args: {} },
+})
 const race = (id: string) => ({
   id,
   kind: 'race' as const,
@@ -293,6 +300,7 @@ describe('collectGraphIssues', () => {
         source: { kind: 'ref' as const, nodeId: 't', path: '' },
         concurrency: 1,
         stopOnError: false,
+        itemExecution: 'durable' as const,
         // Child agent has no agent selected — an error that lives inside the loop.
         subgraph: graph(
           [itemTrigger, agent('child', ''), output('res')],
@@ -308,5 +316,82 @@ describe('collectGraphIssues', () => {
     expect(
       issues.some((i) => i.nodeId === 'child' && /No agent/.test(i.message)),
     ).toBe(true)
+  })
+
+  // ── Iteration item execution ────────────────────────────────────────────────
+  // The editor can see how much work ONE item does; only the author knows how
+  // many items there will be. These warnings surface the half the editor knows.
+
+  // Build an iteration whose subgraph holds `inner` between the Item bookend and
+  // the subgraph Output, at a given item-execution setting.
+  const loop = (
+    itemExecution: 'inline' | 'durable',
+    inner: WorkflowGraph['nodes'],
+  ) => {
+    const itemTrigger = {
+      id: 'it',
+      kind: 'trigger' as const,
+      position: pos,
+      label: 'Item',
+      config: { triggerKind: 'iteration_item' },
+    }
+    const last = inner[inner.length - 1]
+    return {
+      id: 'loop',
+      kind: 'iteration' as const,
+      position: pos,
+      label: 'Loop',
+      config: {
+        source: { kind: 'ref' as const, nodeId: 't', path: '' },
+        concurrency: 1,
+        stopOnError: false,
+        itemExecution,
+        subgraph: graph(
+          [itemTrigger, ...inner, output('res', last.id)],
+          [
+            edge('it', inner[0].id),
+            ...inner.slice(1).map((n, i) => edge(inner[i].id, n.id)),
+            edge(last.id, 'res'),
+          ],
+        ),
+      },
+    }
+  }
+
+  const loopIssue = (node: WorkflowGraph['nodes'][number]) =>
+    collectGraphIssues(
+      graph([trigger, node, output('o', 'loop')], [
+        edge('t', 'loop'),
+        edge('loop', 'o'),
+      ]),
+    ).find((i) => i.nodeId === 'loop' && /item/i.test(i.message))
+
+  test('warns when an inline item runs an agent', () => {
+    const issue = loopIssue(loop('inline', [agent('a')]))
+    expect(issue?.severity).toBe('warning')
+    expect(issue?.message).toMatch(/runs an agent/)
+    expect(issue?.message).toMatch(/Durable/)
+  })
+
+  test('warns when an inline item has more than three steps', () => {
+    const issue = loopIssue(
+      loop('inline', [tool('s1'), tool('s2'), tool('s3'), tool('s4')]),
+    )
+    expect(issue?.severity).toBe('warning')
+    expect(issue?.message).toMatch(/4 steps/)
+  })
+
+  test('leaves a small inline item alone', () => {
+    expect(loopIssue(loop('inline', [tool('s1'), tool('s2')]))).toBeUndefined()
+  })
+
+  test('warns when a trivial item pays for its own run', () => {
+    const issue = loopIssue(loop('durable', [tool('s1')]))
+    expect(issue?.severity).toBe('warning')
+    expect(issue?.message).toMatch(/costs more/)
+  })
+
+  test('leaves a heavy durable item alone', () => {
+    expect(loopIssue(loop('durable', [agent('a')]))).toBeUndefined()
   })
 })

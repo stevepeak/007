@@ -31,6 +31,7 @@ import {
   dispatchNode,
   finishRun,
   notifyHost,
+  reportToParent,
   stepDo,
   type RunCtx,
 } from './graph-workflow-dispatch'
@@ -41,6 +42,13 @@ import type { RunRoom } from './run-room'
 export interface GraphWorkflowEnv {
   DB: D1Database
   RUN_ROOM: DurableObjectNamespace<RunRoom>
+  /**
+   * This same Workflow, so a run can spawn a CHILD instance for a callee marked
+   * `calleeExecution: 'durable'` — and so the child can reach back to send its
+   * completion event. Self-referential by design: parent and child run the exact
+   * same entrypoint, differing only in their params.
+   */
+  GRAPH_WORKFLOW: Workflow<GraphWorkflowParams>
 }
 
 // Serializable run context carried in the workflow params (no live `env`).
@@ -77,6 +85,36 @@ export type GraphWorkflowParams = {
    * `workflowVersionId` — the graph shape has to match for node ids to line up.
    */
   resumeFromRunId?: string
+  /**
+   * Set when this instance is a CHILD spawned by a workflow-call node whose
+   * `calleeExecution` is 'durable'. It runs the callee graph as a first-class
+   * run of its own (its own `wf_run`, its own per-node durable steps) and reports
+   * the result back to the waiting parent by event.
+   *
+   * Three things change under it, all so a spawned callee behaves exactly like an
+   * inlined one — the setting must change *where* the work runs, never *what it
+   * means*:
+   *   • the trigger input is seeded raw (the inline `executeSubgraph` path does
+   *     no trigger-registry validation, and a callee triggered by an event kind
+   *     would otherwise start failing the moment an author flipped the setting),
+   *   • the Output value skips the trigger's output contract for the same reason,
+   *   • completion/failure is reported to the parent before the instance settles.
+   */
+  subRun?: {
+    /** The parent's own instance id (`event.instanceId`), for `sendEvent`. */
+    parentInstanceId: string
+    /** Event type the parent is parked on — unique per calling node. */
+    eventType: string
+  }
+  /**
+   * The parent's frozen run manifest, passed down instead of re-resolved.
+   *
+   * Load-bearing: re-resolving in the child would float every reference to
+   * whatever is published at *that* moment, so a publish landing mid-run would
+   * split one logical run across two prompt versions — the exact failure the
+   * manifest exists to prevent.
+   */
+  inheritedManifest?: WfRunManifestEntry[]
 }
 
 export type GraphWorkflowResult = {
@@ -149,17 +187,26 @@ export function makeGraphWorkflow<
       // Resolve every floating reference (prompts) to its latest published
       // version once, freeze it onto the run, and reuse it for the whole walk —
       // so a mid-run publish can't split a run across two prompt versions.
-      const manifest: WfRunManifestEntry[] = await stepDo(
-        step,
-        'resolve-manifest',
-        async () => {
-          const db = createWfDb(env.DB)
-          const graph = workflowGraphSchema.parse(graphJson)
-          const m = await resolveRunManifest(db, graph)
-          await setRunManifest(db, { runId: p.workflowRunId, manifest: m })
-          return m
-        },
-      )
+      // A child instance INHERITS the parent's frozen manifest — it must not
+      // re-resolve (see `GraphWorkflowParams.subRun`). It still writes the
+      // inherited copy onto its own run, so the child's trace records exactly
+      // which versions it executed, same as any other run.
+      const inherited = p.inheritedManifest
+      const manifest: WfRunManifestEntry[] = inherited
+        ? await stepDo(step, 'inherit-manifest', async () => {
+            await setRunManifest(createWfDb(env.DB), {
+              runId: p.workflowRunId,
+              manifest: inherited,
+            })
+            return inherited
+          })
+        : await stepDo(step, 'resolve-manifest', async () => {
+            const db = createWfDb(env.DB)
+            const graph = workflowGraphSchema.parse(graphJson)
+            const m = await resolveRunManifest(db, graph)
+            await setRunManifest(db, { runId: p.workflowRunId, manifest: m })
+            return m
+          })
 
       await stepDo(step, 'begin-run', () =>
         markRunRunning(createWfDb(env.DB), {
@@ -171,11 +218,17 @@ export function makeGraphWorkflow<
 
       const scheduler = new Scheduler(graphJson, config.limits?.nodeBudget)
       const trigger = scheduler.trigger
-      const validatedTriggerInput = resolveTriggerInput(
-        config.triggers,
-        trigger.config.triggerKind,
-        p.triggerInput,
-      )
+      // A spawned callee is seeded raw: the inline path it replaces validates
+      // nothing (the caller's `buildTriggerInput` output is handed straight to
+      // the subgraph's identity trigger), so validating here would make flipping
+      // `calleeExecution` change whether a workflow runs at all.
+      const validatedTriggerInput = p.subRun
+        ? p.triggerInput
+        : resolveTriggerInput(
+            config.triggers,
+            trigger.config.triggerKind,
+            p.triggerInput,
+          )
 
       // Shared run-level locals threaded into the hoisted dispatch/log/finish
       // helpers (defined in ./graph-workflow-dispatch) so they can live at
@@ -191,6 +244,7 @@ export function makeGraphWorkflow<
         room,
         scheduler,
         traceId,
+        instanceId: event.instanceId,
       }
 
       // Deterministic sequence counter — lives in the orchestrator (replayed in
@@ -319,6 +373,10 @@ export function makeGraphWorkflow<
           })
           await room.setError(message)
         })
+        // Wake the parent BEFORE the host callback and before rethrowing: a
+        // spawned callee that dies silently leaves its parent parked until the
+        // node's timeout, turning a legible failure into a long stall.
+        await reportToParent(ctx, { ok: false, error: message })
         if (config.onRunFailed) {
           await notifyHost(step, 'on-failed', () =>
             config.onRunFailed!({ ...p.runContext, env }, { error: message }),

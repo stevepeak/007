@@ -23,4 +23,9 @@ export type RunCtx<TDeps, E extends GraphWorkflowEnv> = {
   room: DurableObjectStub<RunRoom>
   scheduler: Scheduler
   traceId: string | undefined
+  /**
+   * This instance's own id (`event.instanceId`). Handed to a spawned child so it
+   * can `sendEvent` back to the parent that is parked waiting for it.
+   */
+  instanceId: string
 }
