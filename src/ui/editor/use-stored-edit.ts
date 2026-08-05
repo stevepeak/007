@@ -1,22 +1,32 @@
 import { useEffect, useRef } from 'react'
 
-import type { WorkflowGraph } from '../../engine'
+import { workflowGraphShapeSchema, type WorkflowGraph } from '../../engine'
 
 // Unsaved edits are persisted to localStorage so navigating away and back
 // doesn't lose work. Keyed per workflow; cleared once the edit is saved.
 const EDIT_STORAGE_PREFIX = 'wf-sdk:edit:'
 export type StoredEdit = { graph: WorkflowGraph; name: string }
 
+// A stored edit is the ONE graph the editor loads without a server round-trip,
+// so it's also the one that never met `parseStoredGraph`. Parse it here through
+// the same shape schema: it fills defaults and runs the legacy→`informUser`
+// migration, so an edit persisted before a schema change can't hand the canvas
+// (or the inspector) a node missing fields the current UI reads. A graph that
+// can't be salvaged is dropped and its key cleared rather than crashing the
+// editor on every visit.
 function readStoredEdit(workflowId: string): StoredEdit | null {
   if (typeof window === 'undefined') return null
   try {
     const raw = window.localStorage.getItem(EDIT_STORAGE_PREFIX + workflowId)
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<StoredEdit>
-    if (parsed && parsed.graph && typeof parsed.name === 'string') {
-      return { graph: parsed.graph, name: parsed.name }
+    if (!parsed || !parsed.graph || typeof parsed.name !== 'string') return null
+    const graph = workflowGraphShapeSchema.safeParse(parsed.graph)
+    if (!graph.success) {
+      clearStoredEdit(workflowId)
+      return null
     }
-    return null
+    return { graph: graph.data, name: parsed.name }
   } catch {
     return null
   }
