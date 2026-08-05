@@ -1,4 +1,10 @@
-import { errorFeedLine, errorStored } from '../engine/error-detail'
+import { NonRetryableError } from 'cloudflare:workflows'
+
+import {
+  apiErrorDetail,
+  errorFeedLine,
+  errorStored,
+} from '../engine/error-detail'
 import {
   isDecisionKind,
   type IterationNode,
@@ -16,7 +22,13 @@ import type { ExecutableNode, ReportResult } from '../engine/scheduler'
 import type { RunLogEntry, StreamSink } from '../engine/stream-sink'
 import { enforceOutputContract } from '../engine/trigger-registry'
 import { createWfDb } from '../storage/client'
-import { finalizeRun, replaceNodeLogs, type WfRunLogRow } from '../storage/data'
+import {
+  appendRunLog,
+  clearNodeBodyLogs,
+  finalizeRun,
+  replaceNodeLogs,
+  type WfRunLogRow,
+} from '../storage/data'
 import { createDurableRunRecorder } from '../storage/run-recorder'
 
 import type {
@@ -122,6 +134,54 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
   }
 }
 
+/** What a failed attempt knew about its error, captured before the error
+ * crosses the `step.do` boundary (see `runNodeBody`). */
+type CapturedFailure = { stored: string; feed: string }
+
+// Run a node's body, capturing what went wrong while the real error object is
+// still in hand and cutting the retry loop short when retrying is pointless.
+//
+// Three problems, all of which read to a user as "it hung":
+//
+//  1. Detail loss. Cloudflare RECONSTRUCTS an error thrown out of `step.do` —
+//     the value the caller catches is a fresh Error carrying only a message and
+//     stack. `APICallError`'s status code and provider response body (the part
+//     that actually says *why*) never survive the crossing, so the outer catch
+//     could only ever store a stack. Capturing here, inside the step, is the
+//     only place that detail still exists.
+//
+//  2. Pointless retrying. `AI_STEP_OPTS` retries with exponential backoff,
+//     which is right for a 429/503 and useless for "Payment Required" or a bad
+//     model id — the same rejection just arrives minutes later. The AI SDK
+//     already classifies this (`APICallError.isRetryable`), so a non-retryable
+//     provider error is escalated to `NonRetryableError` and fails now.
+//
+//  3. Silence between attempts. A retryable failure is followed by a backoff
+//     and another attempt; without a line here, that whole window is blank and
+//     the node's closing `✕` line only ever reports the LAST attempt.
+async function runNodeBody<T>(
+  sink: StreamSink,
+  onFailure: (captured: CapturedFailure) => void,
+  body: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await body()
+  } catch (err) {
+    const feed = errorFeedLine(err)
+    onFailure({ stored: errorStored(err), feed })
+    const detail = apiErrorDetail(err)
+    if (detail?.isRetryable === false) {
+      // Fatal: the node's closing `✕ … failed: <feed>` line already reports
+      // this, so don't also log it inline — one failure, one line.
+      throw new NonRetryableError(feed)
+    }
+    // Retryable: another attempt is coming and will overwrite the capture
+    // above, so this line is the only trace this attempt ever happened.
+    void sink.log?.({ level: 'warn', message: `${feed} — retrying` })
+    throw err
+  }
+}
+
 // Execute one node in its own durable `run:`/`record:` steps and return
 // what the scheduler needs. Run and record are SEPARATE steps: fusing them
 // means a failed *record* write re-runs the entire body on retry — and
@@ -176,6 +236,16 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
   })
 
   let result: RunStepResult
+  // Hoisted OUT of the `run:` closure below so the entries a node emitted
+  // survive it THROWING. Kept inside, a failed node's trace died with the
+  // closure and the feed showed only "▶ node" … "✕ node failed" — no sign of
+  // the ten tool calls it made first. Each attempt resets it (see below), so
+  // after a throw this holds exactly the failed attempt's entries.
+  const bodyLogs: RunLogEntry[] = []
+  // Likewise hoisted: the failing attempt's error detail, captured inside the
+  // step where the real error object still exists (Cloudflare rebuilds it on
+  // the way out, dropping everything but message + stack).
+  let captured: CapturedFailure | null = null
   try {
     if (node.kind === 'iteration') {
       // Iteration runs its own per-item durable steps (no `run:` step to host a
@@ -191,12 +261,25 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
         async () => {
           const rc = { ...p.runContext, env }
           const toolDeps = await config.buildRunDeps(rc)
-          // Per-node sink: every structured entry a node handler emits
-          // (agent reasoning, tool calls, our own info lines) is captured
-          // for durable persistence AND forwarded to the live sink. Built
-          // inside the step so its pushes are journaled with the return
-          // value and never re-broadcast on a `step.do` replay.
-          const bodyLogs: RunLogEntry[] = []
+          // Every `step.do` ATTEMPT replays this closure from the top, so reset
+          // the shared buffer and the emit counter here: a retry then rewrites
+          // the same deterministic rows rather than appending a second copy of
+          // the node's feed. Clearing the previously persisted body rows too
+          // keeps a shorter retry from stranding the last attempt's tail.
+          bodyLogs.length = 0
+          captured = null
+          let ordinal = 0
+          const logDb = createWfDb(env.DB)
+          await clearNodeBodyLogs(logDb, {
+            runId: p.workflowRunId,
+            nodeId: node.id,
+          })
+          // Per-node sink: every structured entry a node handler emits (agent
+          // reasoning, tool calls, our own info lines) is (a) persisted to
+          // `wf_run_log` IMMEDIATELY, (b) forwarded to the live RunRoom, and
+          // (c) buffered for the terminal rewrite. (a) is what makes a run
+          // observable while it runs — every consumer polls the persisted feed,
+          // so without it a node is invisible until it finishes.
           const nodeSink: StreamSink = {
             append: (channel, text) => sink.append(channel, text),
             log: (entry) => {
@@ -208,6 +291,26 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
                 sequence: entry.sequence ?? seq,
               }
               bodyLogs.push(e)
+              // Best-effort: a dropped progress line must never fail the node
+              // that was merely narrating itself. The terminal rewrite in
+              // `record:` restores anything lost here.
+              const ord = ordinal++
+              void appendRunLog(logDb, {
+                runId: p.workflowRunId,
+                nodeId: node.id,
+                ordinal: ord,
+                entry: {
+                  nodeId: e.nodeId ?? node.id,
+                  nodeKind: e.nodeKind ?? node.kind,
+                  sequence: e.sequence ?? seq,
+                  level: e.level,
+                  message: e.message,
+                  meta: e.meta ?? null,
+                  ts: e.ts ?? Date.now(),
+                },
+              }).catch((err: unknown) => {
+                console.error('[wf] live log append failed:', err)
+              })
               return sink.log?.(e)
             },
           }
@@ -219,45 +322,52 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
           // the durable-step envelope. Journaled with the return value, so it
           // replays deterministically.
           const execStartedAt = new Date()
-          const r = await withNodeSpan(
-            {
-              traceId,
-              runId: p.workflowRunId,
-              nodeId: node.id,
-              nodeKind: node.kind,
-              sequence: seq,
-              label: nodeSpanLabel(node, manifest),
+          const r = await runNodeBody(
+            nodeSink,
+            (c) => {
+              captured = c
             },
             () =>
-              runNode(
-                { type: 'execute', node, input },
+              withNodeSpan(
                 {
-                  getModel: (modelId) => config.getModel(modelId, rc),
-                  toolRegistry: config.toolRegistry,
-                  toolDeps,
-                  nodeOutputs: scheduler.getOutputs(),
-                  promptVariables: p.runContext.promptVariables,
-                  manifest,
-                  sink: nodeSink,
-                  resolveBlobRef: config.resolveBlobRef,
-                  resolveImageRef: config.resolveImageRef,
-                  simulate: p.runContext.simulate,
-                  fixtures: p.runContext.fixtures,
-                  freezeTools: p.runContext.freezeTools,
-                  agentOverride: p.runContext.agentOverride,
-                  // Delegation: an agent node may spawn sub-agents/workflows
-                  // inline and record each as a child step. Built inside this
-                  // `run:` closure (a D1 binding can't cross a step boundary);
-                  // the whole closure replays on retry and the
-                  // `(run_id, node_id, item_index)` upsert makes that idempotent.
-                  subStepRecorder:
-                    node.kind === 'agent'
-                      ? createDurableRunRecorder({
-                          db: createWfDb(env.DB),
-                          runId: p.workflowRunId,
-                        })
-                      : undefined,
+                  traceId,
+                  runId: p.workflowRunId,
+                  nodeId: node.id,
+                  nodeKind: node.kind,
+                  sequence: seq,
+                  label: nodeSpanLabel(node, manifest),
                 },
+                () =>
+                  runNode(
+                    { type: 'execute', node, input },
+                    {
+                      getModel: (modelId) => config.getModel(modelId, rc),
+                      toolRegistry: config.toolRegistry,
+                      toolDeps,
+                      nodeOutputs: scheduler.getOutputs(),
+                      promptVariables: p.runContext.promptVariables,
+                      manifest,
+                      sink: nodeSink,
+                      resolveBlobRef: config.resolveBlobRef,
+                      resolveImageRef: config.resolveImageRef,
+                      simulate: p.runContext.simulate,
+                      fixtures: p.runContext.fixtures,
+                      freezeTools: p.runContext.freezeTools,
+                      agentOverride: p.runContext.agentOverride,
+                      // Delegation: an agent node may spawn sub-agents/workflows
+                      // inline and record each as a child step. Built inside this
+                      // `run:` closure (a D1 binding can't cross a step boundary);
+                      // the whole closure replays on retry and the
+                      // `(run_id, node_id, item_index)` upsert makes that idempotent.
+                      subStepRecorder:
+                        node.kind === 'agent'
+                          ? createDurableRunRecorder({
+                              db: createWfDb(env.DB),
+                              runId: p.workflowRunId,
+                            })
+                          : undefined,
+                    },
+                  ),
               ),
           )
           return {
@@ -270,10 +380,20 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
       )
     }
   } catch (err) {
+    // Prefer what the attempt captured on its way out: `err` here has been
+    // rebuilt by the workflow runtime and is a stack with no provider detail.
+    const failure: CapturedFailure = captured ?? {
+      stored: errorStored(err),
+      feed: errorFeedLine(err),
+    }
     await recordTerminal(ctx, node, seq, input, startEntry, {
       status: 'failed',
-      error: errorStored(err),
-      feed: errorFeedLine(err),
+      error: failure.stored,
+      feed: failure.feed,
+      // Whatever the failed attempt managed to emit before it threw. Without
+      // this a failed node's whole trace is discarded and the feed collapses to
+      // two lines — exactly when the trace matters most.
+      bodyLogs,
     })
     // Best-effort node: swallow the failure and let the run continue with a
     // `null` output (downstream refs resolve to null). Never for decision

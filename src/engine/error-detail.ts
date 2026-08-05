@@ -29,9 +29,25 @@ function cap(s: string): string {
     : s
 }
 
-/** Structured detail for an AI SDK API error, or `null` for anything else. */
-export function apiErrorDetail(err: unknown): ApiErrorDetail | null {
-  if (!APICallError.isInstance(err)) return null
+/**
+ * Structured detail for an AI SDK API error, or `null` for anything else.
+ *
+ * Unwraps one level of `cause`: the Cloudflare dispatch re-throws a fatal
+ * provider error as a `NonRetryableError` (so the workflow stops retrying
+ * something that will never succeed) with the original hanging off `cause`.
+ * Following it keeps the provider's status + response body — the only part that
+ * explains the failure — in `wf_run_step.error` and the run feed.
+ */
+export function apiErrorDetail(
+  err: unknown,
+  // Depth-capped so a self-referential `cause` can't spin.
+  depth = 4,
+): ApiErrorDetail | null {
+  if (!APICallError.isInstance(err)) {
+    if (depth <= 0) return null
+    const cause = (err as { cause?: unknown } | null | undefined)?.cause
+    return cause == null ? null : apiErrorDetail(cause, depth - 1)
+  }
   return {
     name: err.name,
     message: err.message,

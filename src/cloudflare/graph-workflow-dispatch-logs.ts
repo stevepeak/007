@@ -92,7 +92,14 @@ export async function recordTerminal<TDeps, E extends GraphWorkflowEnv>(
   input: unknown,
   startEntry: RunLogEntry,
   outcome:
-    | { status: 'failed'; error: string; feed?: string }
+    | {
+        status: 'failed'
+        error: string
+        feed?: string
+        /** Entries the node emitted before it threw — persisted so a failed
+         * node still shows the work it did get through. */
+        bodyLogs?: RunLogEntry[]
+      }
     | {
         status: 'completed'
         output: unknown
@@ -122,7 +129,7 @@ export async function recordTerminal<TDeps, E extends GraphWorkflowEnv>(
         node,
         seq,
         startEntry,
-        [],
+        outcome.bodyLogs ?? [],
         endEntryOf(node, seq, Date.now(), true, outcome.feed ?? outcome.error),
       )
     } else {

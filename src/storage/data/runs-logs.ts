@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm'
+import { and, asc, eq, ne } from 'drizzle-orm'
 
 import type { WfDb } from '../client'
 import { wfRun, wfRunLog } from '../schema'
@@ -53,6 +53,92 @@ export async function replaceNodeLogs(
   for (let i = 0; i < rows.length; i += MAX_LOG_ROWS_PER_INSERT) {
     await db.insert(wfRunLog).values(rows.slice(i, i + MAX_LOG_ROWS_PER_INSERT))
   }
+}
+
+// ---------------------------------------------------------------------------
+// Live (mid-node) appends
+// ---------------------------------------------------------------------------
+//
+// `replaceNodeLogs` above can only write a node's feed as a whole, at the end —
+// which is why a long agent node used to look completely dead to a polling
+// client for its entire duration. The two helpers below let the engine persist
+// each entry AS IT IS EMITTED, so the feed advances in step with the work.
+//
+// Replay safety: a `step.do` retry replays its whole closure, so the same
+// entries are emitted again. Live rows therefore carry a DETERMINISTIC id —
+// `<runId>:<nodeId>:<ordinal>`, where `ordinal` is the node's own emit counter,
+// reset at the top of every attempt — and are written as an upsert. Re-emitting
+// entry #3 rewrites row #3 instead of appending a duplicate. The terminal
+// `replaceNodeLogs` still deletes and rewrites the node's whole feed, so the
+// settled row set is authoritative regardless of what the live path did.
+
+/** Deterministic id for a live-appended entry — see the note above. */
+function liveLogId(runId: string, nodeId: string, ordinal: number): string {
+  return `${runId}:${nodeId}:${ordinal}`
+}
+
+/**
+ * Persist ONE log entry the instant a node emits it. Best-effort by contract:
+ * callers should swallow failures, since a dropped progress line must never
+ * fail the node that was merely describing itself.
+ */
+export async function appendRunLog(
+  db: WfDb,
+  input: {
+    runId: string
+    nodeId: string
+    /** The node's emit counter for this attempt (0-based). */
+    ordinal: number
+    entry: WfRunLogRow
+  },
+): Promise<void> {
+  const { runId, nodeId, ordinal, entry } = input
+  const row = {
+    id: liveLogId(runId, nodeId, ordinal),
+    runId,
+    nodeId: entry.nodeId ?? nodeId,
+    nodeKind: entry.nodeKind ?? null,
+    sequence: entry.sequence ?? null,
+    level: entry.level,
+    message: entry.message,
+    meta: entry.meta ?? null,
+    ts: entry.ts,
+  }
+  await db
+    .insert(wfRunLog)
+    .values(row)
+    .onConflictDoUpdate({
+      target: wfRunLog.id,
+      set: {
+        nodeKind: row.nodeKind,
+        sequence: row.sequence,
+        level: row.level,
+        message: row.message,
+        meta: row.meta,
+        ts: row.ts,
+      },
+    })
+}
+
+/**
+ * Drop a node's live-appended body rows, keeping the `node-start` bookend the
+ * `enter:` step wrote. Called at the top of each `run:` attempt so a retry that
+ * emits FEWER entries than the attempt before it can't leave the previous
+ * attempt's tail stranded in the feed.
+ */
+export async function clearNodeBodyLogs(
+  db: WfDb,
+  input: { runId: string; nodeId: string },
+): Promise<void> {
+  await db
+    .delete(wfRunLog)
+    .where(
+      and(
+        eq(wfRunLog.runId, input.runId),
+        eq(wfRunLog.nodeId, input.nodeId),
+        ne(wfRunLog.level, 'node-start'),
+      ),
+    )
 }
 
 // The whole run's log feed in emit order, for the run viewer (loaded once, then

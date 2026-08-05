@@ -81,20 +81,56 @@ export type RunAgentGenerationArgs = {
   sink?: StreamSink
 }
 
+// A model call is the longest thing a run does with nothing to say about
+// itself: `generateText` is non-streaming, so its per-step callback can't fire
+// until a whole round-trip (thinking included) lands — minutes, on a reasoning
+// model. Bookending the call gives the feed a heartbeat at the two moments that
+// actually exist without streaming: dispatch and outcome. `info` is the dev
+// feed; `progress` (the user-facing level) is deliberately untouched here.
+function logModelCallStart(
+  sink: StreamSink | undefined,
+  modelId: string,
+  detail: Record<string, unknown>,
+): number {
+  void sink?.log?.({
+    level: 'info',
+    message: `→ ${modelId}`,
+    meta: detail,
+  })
+  return Date.now()
+}
+
+function logModelCallEnd(
+  sink: StreamSink | undefined,
+  modelId: string,
+  startedAt: number,
+  detail: Record<string, unknown>,
+): void {
+  void sink?.log?.({
+    level: 'info',
+    message: `← ${modelId} (${Math.round((Date.now() - startedAt) / 1000)}s)`,
+    meta: detail,
+  })
+}
+
 // generateObject path — for the structured-object and YES/NO output kinds we
 // return the parsed object as the node output. No tool loop, no progress.
 async function runStructuredGeneration(
   args: RunAgentGenerationArgs,
 ): Promise<AgentNodeResult> {
-  const { model, modelId, output, systemPrompt, messages } = args
+  const { model, modelId, output, systemPrompt, messages, sink } = args
   // Only reached for the object / boolean kinds; `object` carries the schema.
   const schema =
     output.kind === 'object' ? output.schema : BOOLEAN_OUTPUT_SCHEMA
+  const startedAt = logModelCallStart(sink, modelId, { mode: output.kind })
   const result = await generateObject({
     model,
     system: systemPrompt,
     messages: await convertToModelMessages(messages),
     schema: jsonSchema(schema),
+  })
+  logModelCallEnd(sink, modelId, startedAt, {
+    finishReason: result.finishReason,
   })
   const meta: AgentNodeMeta = {
     model: modelId,
@@ -153,6 +189,13 @@ async function runToolLoop(
   const stepTraces: AgentNodeMeta['steps'] = []
   const totalUsage = { inputTokens: 0, outputTokens: 0 }
 
+  // Heartbeat before the loop opens. Until `onStepFinish` fires — a full model
+  // round-trip away — this is the only evidence the node is alive, so it names
+  // what it's about to do rather than just that it started.
+  const startedAt = logModelCallStart(sink, modelId, {
+    tools: Object.keys(tools),
+    maxTurns,
+  })
   const result = await generateText({
     model,
     system: systemPrompt,
@@ -219,8 +262,22 @@ async function runToolLoop(
             }
           }
         }
+        // A step that called tools isn't the last one: the loop is about to
+        // open another round-trip, and go quiet again for however long that
+        // takes. Mark the boundary so the gap in the feed is attributable.
+        if (toolCalls.length > 0 && step.stepNumber + 1 < maxTurns) {
+          void sink.log?.({
+            level: 'info',
+            message: `→ ${modelId} (turn ${step.stepNumber + 2}/${maxTurns})`,
+          })
+        }
       }
     },
+  })
+  logModelCallEnd(sink, modelId, startedAt, {
+    finishReason: result.finishReason,
+    steps: stepTraces.length,
+    ...totalUsage,
   })
 
   return {
