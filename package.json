@@ -41,12 +41,12 @@
     "db:migrate": "sh -c '[ -f ../../.wf-migrate.env ] && . ../../.wf-migrate.env; wrangler d1 migrations apply ${WF_D1_NAME:-DB} --remote --config ${WF_D1_CONFIG:-./wrangler.jsonc}'"
   },
   "dependencies": {
-    "@ai-sdk/react": "^4.0.50",
+    "@ai-sdk/react": "^4.0.55",
     "@autoform/core": "^4.0.0",
     "@autoform/react": "^5.0.0",
-    "@cloudflare/puppeteer": "1.2.0",
-    "@dagrejs/dagre": "^3.0.0",
-    "@hookform/resolvers": "^5.6.0",
+    "@cloudflare/puppeteer": "1.3.0",
+    "@dagrejs/dagre": "^3.1.0",
+    "@hookform/resolvers": "^5.7.1",
     "@sentry/cloudflare": "^10.69.0",
     "@tanstack/react-query": "^5.101.4",
     "@tiptap/extension-placeholder": "^3.29.2",
@@ -55,7 +55,7 @@
     "@tiptap/react": "^3.29.2",
     "@tiptap/starter-kit": "^3.29.2",
     "@xyflow/react": "^12.11.2",
-    "ai": "^7.0.47",
+    "ai": "^7.0.52",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.28.0",
@@ -67,9 +67,9 @@
     "react-dom": "^19"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260801.1",
+    "@cloudflare/workers-types": "^5.20260804.1",
     "@dexaai/config": "^0.0.10",
-    "@ocavue/eslint-config": "^4.12.1",
+    "@ocavue/eslint-config": "^4.13.1",
     "@types/node": "^26.1.2",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
@@ -78,6 +78,6 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "typescript": "^5.9.3",
-    "wrangler": "^4.118.0"
+    "wrangler": "^4.119.0"
   }
 }
