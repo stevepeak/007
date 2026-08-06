@@ -61,6 +61,7 @@ function rowToModelOption(r: WfModelRow): ModelOption {
     providerId: r.providerId,
     costPerMTok: r.costPerMTok ?? undefined,
     tokensPerSec: r.tokensPerSec ?? undefined,
+    contextLength: r.contextLength ?? undefined,
     capabilities: rowCapabilities(r),
   }
 }

@@ -1,5 +1,7 @@
+import { resolveGraphEngine } from '../engine/graph-engine'
+import type { WfEngine } from '../engine/graph-schema'
 import { createWfDb } from '../storage/client'
-import { createRun } from '../storage/data'
+import { createRun, getVersionGraph } from '../storage/data'
 
 import type { GraphWorkflowParams } from './graph-workflow'
 import type { RunRoom } from './run-room'
@@ -46,12 +48,26 @@ export type StartGraphRunInput = {
   /** Resume mode: replay a prior failed run's completed steps into this run and
    * pick up at the failed node. The prior run must use the same version. */
   resumeFromRunId?: string
+  /**
+   * Force an execution backend for THIS run, ignoring the graph's own
+   * `trigger.config.engine`. A per-run escape hatch for A/B-ing the two
+   * backends against the same published version without republishing it —
+   * leave it unset for normal runs.
+   */
+  engine?: WfEngine
 }
 
 export type StartGraphRunResult = {
   runId: string
   workflowRunId: string
-  instanceId: string
+  /**
+   * The Cloudflare Workflows instance id, or `null` on the inline engine (no
+   * instance exists — the run lives in its RunRoom). Callers poll `wf_run` by
+   * `workflowRunId` either way; this is for instance-level introspection only.
+   */
+  instanceId: string | null
+  /** Which backend actually took the run. */
+  engine: WfEngine
 }
 
 // A stable 32-hex trace id (Sentry-compatible) minted per run. Kept local to
@@ -69,6 +85,21 @@ export async function startGraphRun(
   input: StartGraphRunInput,
 ): Promise<StartGraphRunResult> {
   const db = createWfDb(env.DB)
+
+  // Which backend takes this run. An explicit `input.engine` wins (the A/B
+  // escape hatch); otherwise it comes from the graph's trigger node. Reading the
+  // graph here costs one extra D1 read on the start path — unavoidable, since
+  // the choice is *which host to hand the run to* and so has to be made before
+  // either host has loaded anything.
+  let engine = input.engine
+  if (!engine) {
+    const version = await getVersionGraph(db, input.workflowVersionId)
+    if (!version) {
+      throw new Error(`Workflow version ${input.workflowVersionId} not found.`)
+    }
+    engine = resolveGraphEngine(version.graph)
+  }
+
   const traceId = newTraceId()
   const workflowRunId = await createRun(db, {
     workflowVersionId: input.workflowVersionId,
@@ -83,26 +114,34 @@ export async function startGraphRun(
   const room = env.RUN_ROOM.get(env.RUN_ROOM.idFromName(runId))
   await room.init(input.label)
 
-  const instance = await env.GRAPH_WORKFLOW.create({
-    params: {
-      runId,
-      workflowRunId,
-      workflowVersionId: input.workflowVersionId,
-      triggerInput: input.triggerInput,
-      runContext: {
-        subjectId: input.subjectId,
-        correlationId: input.correlationId,
-        triggerKind: input.triggerKind,
-        promptVariables: input.promptVariables,
-        simulate: input.simulate,
-        fixtures: input.fixtures,
-        freezeTools: input.freezeTools,
-        agentOverride: input.agentOverride,
-        traceId,
-      },
-      resumeFromRunId: input.resumeFromRunId,
+  const params: GraphWorkflowParams = {
+    runId,
+    workflowRunId,
+    workflowVersionId: input.workflowVersionId,
+    triggerInput: input.triggerInput,
+    runContext: {
+      subjectId: input.subjectId,
+      correlationId: input.correlationId,
+      triggerKind: input.triggerKind,
+      promptVariables: input.promptVariables,
+      simulate: input.simulate,
+      fixtures: input.fixtures,
+      freezeTools: input.freezeTools,
+      agentOverride: input.agentOverride,
+      traceId,
     },
-  })
+    resumeFromRunId: input.resumeFromRunId,
+  }
 
-  return { runId, workflowRunId, instanceId: instance.id }
+  // Both branches are fire-and-forget by design: they return once the run is
+  // accepted, not once it finishes. Callers subscribe via the RunRoom (`runId`)
+  // and poll `wf_run` (`workflowRunId`) exactly the same way for either engine.
+  if (engine === 'inline') {
+    await room.startInline(params)
+    return { runId, workflowRunId, instanceId: null, engine }
+  }
+
+  const instance = await env.GRAPH_WORKFLOW.create({ params })
+
+  return { runId, workflowRunId, instanceId: instance.id, engine }
 }

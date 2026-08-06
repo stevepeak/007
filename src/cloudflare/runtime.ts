@@ -9,4 +9,9 @@
 // route never drags `cloudflare:workers` in. Import from here ONLY in your
 // Worker entry (see guide §4); never from host config, tools, or the data route.
 export { makeGraphWorkflow } from './graph-workflow'
-export { RunRoom } from './run-room'
+export {
+  makeRunRoom,
+  RunRoomBase,
+  type RunRoom,
+  type RunRoomClass,
+} from './run-room'

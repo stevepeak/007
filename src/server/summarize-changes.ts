@@ -25,6 +25,49 @@ const summarySchema = z.object({
     ),
 })
 
+// Salvage a summary from a model that answered in prose instead of JSON.
+//
+// This is a commit-message task, and a reasoning model asked for one will often
+// return exactly the right content in exactly the wrong envelope — a fenced
+// markdown block holding a subject line and a body, which is a git commit
+// message, not the `{short, long}` object the schema asked for. `generateObject`
+// throws `AI_NoObjectGeneratedError` on it and the whole summary is lost despite
+// the model having done the work correctly.
+//
+// So: peel the envelope, and if what's inside still isn't JSON, read it as what
+// it plainly is — first line as the subject, the rest as the body.
+export function repairSummaryText(text: string): string | null {
+  let body = text.trim()
+
+  // Inlined reasoning (see the Venice `<think>` handling in the host's
+  // `getModel`) sits in front of the answer. Drop it before anything else.
+  body = body.replace(/^<think>[\s\S]*?<\/think>/i, '').trim()
+
+  // Strip one wrapping code fence, with or without a language tag.
+  const fenced = /^```[a-z]*\n([\s\S]*?)\n?```$/i.exec(body)
+  if (fenced) body = fenced[1].trim()
+
+  if (!body) return null
+
+  // The envelope may have been the only problem.
+  try {
+    JSON.parse(body)
+    return body
+  } catch {
+    // Not JSON — fall through and read it as a commit message.
+  }
+
+  const lines = body.split('\n')
+  const firstIdx = lines.findIndex((l) => l.trim().length > 0)
+  if (firstIdx === -1) return null
+  const short = lines[firstIdx].trim().replace(/\.$/, '')
+  const long = lines
+    .slice(firstIdx + 1)
+    .join('\n')
+    .trim()
+  return JSON.stringify({ short, long })
+}
+
 // Positions are cosmetic (canvas layout) and would just be noise to the model —
 // strip them so the diff the model sees is purely behavioral.
 function describeGraph(graph: WorkflowGraph) {
@@ -71,6 +114,9 @@ export async function summarizeWorkflowChanges(input: {
   const { object } = await generateObject({
     model,
     schema: summarySchema,
+    // See `repairSummaryText`: models routinely return this particular task's
+    // answer as a markdown-fenced commit message rather than JSON.
+    repairText: ({ text }) => Promise.resolve(repairSummaryText(text)),
     prompt: [
       'You are writing a git-style commit message describing a change to an',
       'automation workflow — a graph of nodes (triggers, tools, agents,',

@@ -3,14 +3,14 @@ import {
   Braces,
   Check,
   Cpu,
-  type LucideIcon,
   MessageSquareText,
   Plus,
   Settings2,
   Users,
+  Wallet,
   Wrench,
 } from 'lucide-react'
-import { type ReactNode, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { type AgentConfig } from '../../engine'
 import {
@@ -36,7 +36,10 @@ import { WfShell } from '../shell'
 import { SaveStateBadge } from '../save-state-badge'
 import { Tooltip } from '../tooltip'
 import { AgentOutputEditor } from './agent-output-editor'
+import { AgentRecentCalls } from './agent-editor-calls'
 import { ArchiveAgentDialog } from './agent-editor-archive'
+import { EditorSection } from './editor-section'
+import { fmt, humanTokens, usd } from './format-tokens'
 import { IconPicker } from './icon-picker'
 import { PlaygroundPanel } from './agent-editor-playground'
 import { PublishAgentDialog } from './agent-editor-publish'
@@ -50,36 +53,310 @@ import { ToolPicker } from './tool-picker'
 // plus the entity's appearance (icon + color) which saves immediately. A
 // disabled Playground panel previews where isolated test runs will live.
 
-// A titled card wrapping one part of the config. Each concern (Prompt, Tools,
-// Sub-agents, Output, Settings) gets its own bordered section with an icon,
-// heading, and one-line description so the form reads as distinct steps rather
-// than a flat stack of labels.
-function EditorSection({
-  icon: Icon,
-  title,
-  description,
-  children,
+/**
+ * The agent's research budget: one number, in tokens.
+ *
+ * It caps RESEARCH, not the run. The final answer is generated on top of this
+ * number and nothing bounds it (no `maxOutputTokens` is passed), so the honest
+ * framing is a floor — "from $X" — not a total. An earlier draft split this into
+ * a budget plus a "reserve %" for the answer, which enforced nothing: the reserve
+ * was a subtraction shown back to the author while the only number with any
+ * effect was the ceiling. One field, stated plainly, is the whole feature.
+ *
+ * Note what is NOT here: the context-window guard. Overflowing the window is a
+ * hard provider error with no tradeoff to tune, so it's always on in the engine
+ * and deliberately has no control — see `contextLength` in `agent-generation.ts`.
+ */
+function TokenBudgetField({
+  value,
+  onChange,
+  maxTurns,
+  modelLabel,
+  contextLength,
+  costPerMTok,
+  suggestedTokens,
+  worstCaseTokens,
+  disabledReason,
 }: {
-  icon: LucideIcon
-  title: string
-  description?: ReactNode
-  children: ReactNode
+  value: number | null
+  onChange: (next: number | null) => void
+  maxTurns: number
+  modelLabel?: string
+  contextLength?: number
+  costPerMTok?: number
+  suggestedTokens: number | null
+  worstCaseTokens: number | null
+  disabledReason: string | null
 }) {
+  const { Input, Checkbox, Button } = useWfComponents()
+  const on = value != null && !disabledReason
+  const budget = value ?? suggestedTokens ?? 100_000
+  const cost = costPerMTok != null ? (budget / 1_000_000) * costPerMTok : null
+  // What this agent can cost with nothing stopping it. Shown while the budget is
+  // OFF, which is the state where the number is a risk rather than a footnote.
+  const worstCaseCost =
+    costPerMTok != null && worstCaseTokens != null
+      ? (worstCaseTokens / 1_000_000) * costPerMTok
+      : null
+
   return (
-    <section className="rounded-lg border border-neutral-200 bg-white">
-      <header className="flex items-start gap-3 rounded-t-lg border-b border-neutral-100 bg-neutral-50/60 px-4 py-3">
-        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-white text-neutral-500 ring-1 ring-neutral-200">
-          <Icon className="size-4" />
+    <div>
+      <label
+        className={cn(
+          'flex items-start gap-2.5',
+          disabledReason ? 'cursor-not-allowed' : 'cursor-pointer',
+        )}
+      >
+        <span className="min-w-0 flex-1">
+          <span className="text-foreground block text-sm font-medium">
+            Research budget
+          </span>
+          <span className="mt-0.5 block text-xs text-neutral-400">
+            Stop calling tools once the agent has spent this many tokens, and
+            make it answer with what it has. Without one, only max turns and the
+            node&rsquo;s time limit bound the agent — and running out of time
+            fails the run outright instead of producing an answer.
+          </span>
         </span>
-        <div className="min-w-0 space-y-0.5">
-          <h3 className="text-sm font-medium text-neutral-800">{title}</h3>
-          {description ? (
-            <p className="text-xs text-neutral-400">{description}</p>
-          ) : null}
+        <Checkbox
+          className="mt-0.5"
+          checked={on}
+          disabled={!!disabledReason}
+          onChange={(e) =>
+            onChange(e.target.checked ? (suggestedTokens ?? 100_000) : null)
+          }
+        />
+      </label>
+
+      {/* The unbudgeted exposure, stated while the budget is OFF. This is the
+          default state, so it's the one that has to carry the number — an author
+          who never opens this field should still have seen what the agent can
+          cost. `worstCaseTokens` is maxTurns × the model's window: every turn
+          re-sends the conversation, so a loop that fills the window each turn
+          lands near it. */}
+      {!on && !disabledReason && worstCaseTokens != null ? (
+        <p className="mt-2 text-xs text-amber-600">
+          ⚠ Unbudgeted, this agent is bounded only by Max turns:{' '}
+          {maxTurns} {maxTurns === 1 ? 'turn' : 'turns'} ×{' '}
+          {humanTokens(contextLength as number)} of context is up to{' '}
+          {humanTokens(worstCaseTokens)} tokens
+          {worstCaseCost != null ? <> — about {usd(worstCaseCost)}</> : null} per
+          run
+          {modelLabel ? ` on ${modelLabel}` : ''}.
+        </p>
+      ) : null}
+
+      {/* `disabledReason` only greys the control here — the Budget section states
+          it once at the top. */}
+      {on ? (
+        <div className="mt-3 space-y-4 rounded-md bg-neutral-50 p-3">
+          {/* What the author is budgeting AGAINST, stated before the input — a
+              budget of "500,000" means nothing until you know whether the model
+              holds 128K or 2 Million. */}
+          <div className="space-y-1.5 border-b border-neutral-200 pb-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              <span className="text-xs text-neutral-500">
+                Model token allowance
+              </span>
+              <span className="text-sm font-medium text-neutral-800">
+                {contextLength != null ? (
+                  <>
+                    {humanTokens(contextLength)}
+                    <span className="ml-1.5 font-normal text-neutral-400">
+                      per turn{modelLabel ? ` · ${modelLabel}` : ''}
+                    </span>
+                  </>
+                ) : (
+                  <span className="font-normal text-neutral-400">
+                    Not reported by {modelLabel ?? 'this model'}
+                  </span>
+                )}
+              </span>
+            </div>
+            {/* The conversion the whole field depends on. Without it "131K per
+                turn" and a budget of "328,000" look like they contradict. */}
+            {contextLength != null ? (
+              <p className="text-xs text-neutral-400">
+                That&rsquo;s the ceiling on any <em>single</em> turn. Each turn
+                re-sends the whole conversation, so turn 3 pays for turns 1 and 2
+                again — your budget below caps that running total, which is what
+                you&rsquo;re billed for.
+              </p>
+            ) : null}
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
+              <div className="space-y-1">
+                <span className="block text-xs font-medium text-neutral-600">
+                  Spend on tool calls
+                </span>
+                <Input
+                  type="number"
+                  min={1000}
+                  step={1000}
+                  className="max-w-[10rem]"
+                  value={budget}
+                  onChange={(e) =>
+                    onChange(
+                      Math.max(
+                        1000,
+                        Number.parseInt(e.target.value, 10) || 1000,
+                      ),
+                    )
+                  }
+                />
+              </div>
+              {suggestedTokens != null ? (
+                // Named for what it's derived FROM, not just the number it sets:
+                // the value moves with Max turns, and a bare "Use 5 Million"
+                // gives no clue why it changed when the author edited a field in
+                // a different section.
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onChange(suggestedTokens)}
+                >
+                  Estimate for {maxTurns} {maxTurns === 1 ? 'turn' : 'turns'}:{' '}
+                  {humanTokens(suggestedTokens)}
+                </Button>
+              ) : null}
+            </div>
+
+            <p className="text-xs text-neutral-600">
+              <span className="text-neutral-400">=</span> stops calling tools at{' '}
+              <strong className="text-neutral-800">{fmt(budget)}</strong> tokens,
+              then writes its answer
+              {cost != null ? (
+                <>
+                  {' '}
+                  ·{' '}
+                  <strong className="text-neutral-800">from {usd(cost)}</strong>{' '}
+                  per run
+                </>
+              ) : null}
+            </p>
+          </div>
+
+          <div className="space-y-1.5 border-t border-neutral-200 pt-3 text-xs text-neutral-500">
+            <p>
+              &ldquo;From&rdquo;, not &ldquo;up to&rdquo;: this budget covers the
+              research. Writing the answer costs whatever it costs on top, so a
+              run always lands somewhat above {fmt(budget)}.
+            </p>
+            {cost == null ? (
+              <p>
+                No pricing reported for {modelLabel ?? 'the selected model'}, so
+                the cost of this budget can&rsquo;t be estimated.
+              </p>
+            ) : null}
+            {suggestedTokens != null && worstCaseTokens != null ? (
+              <p>
+                The {humanTokens(suggestedTokens)} estimate assumes the
+                conversation grows steadily to fill{' '}
+                {humanTokens(contextLength as number)} over your {maxTurns}{' '}
+                {maxTurns === 1 ? 'turn' : 'turns'}, averaging half a window per
+                turn. Change Max turns and it moves with it. Unbudgeted and
+                worst-case, the same {maxTurns}{' '}
+                {maxTurns === 1 ? 'turn' : 'turns'} could reach{' '}
+                {humanTokens(worstCaseTokens)}
+                {worstCaseCost != null ? (
+                  <> — about {usd(worstCaseCost)}</>
+                ) : null}{' '}
+                per run.
+              </p>
+            ) : null}
+          </div>
         </div>
-      </header>
-      <div className="space-y-4 p-4">{children}</div>
-    </section>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * How much of the model's context window to keep free for writing the answer.
+ *
+ * Separate from the spend budget on purpose: that one is about money and is a
+ * preference, this one is about overflowing the window, which is a hard provider
+ * error. It sits outside the budget's on/off because it applies to every agent
+ * with a tool loop, budgeted or not.
+ *
+ * The deliberately-not-offered control is "stop at N% full", which is what this
+ * looks like from the outside. The engine can only read a request's size after
+ * sending it, so occupancy is always one turn stale, and an N% ceiling silently
+ * asks the author to pad for their own tool-result sizes. The engine measures
+ * that growth instead — so this field only asks for the part a human can answer:
+ * how much room your answers need.
+ */
+function AnswerReserveField({
+  value,
+  onChange,
+  contextLength,
+  modelLabel,
+  disabled,
+}: {
+  value: number
+  onChange: (next: number) => void
+  contextLength?: number
+  modelLabel?: string
+  disabled: boolean
+}) {
+  const { Input } = useWfComponents()
+  const reserveTokens =
+    contextLength != null ? Math.floor((contextLength * value) / 100) : null
+
+  return (
+    <div className="space-y-2">
+      <span className="text-foreground block text-sm font-medium">
+        Leave room for the answer
+      </span>
+      <div className="flex items-center gap-1">
+        <Input
+          type="number"
+          min={2}
+          max={50}
+          className="max-w-[5rem]"
+          disabled={disabled}
+          value={value}
+          onChange={(e) =>
+            onChange(
+              Math.min(
+                50,
+                Math.max(2, Number.parseInt(e.target.value, 10) || 10),
+              ),
+            )
+          }
+        />
+        <span className="text-sm text-neutral-400">
+          % of the context window
+        </span>
+      </div>
+      <p className="text-xs text-neutral-400">
+        The agent stops calling tools once another turn would leave less than
+        this free
+        {reserveTokens != null ? (
+          <>
+            {' '}
+            — <strong className="text-neutral-600">
+              {fmt(reserveTokens)} tokens
+            </strong>{' '}
+            of {modelLabel ?? 'this model'}&rsquo;s{' '}
+            {humanTokens(contextLength as number)} window
+          </>
+        ) : null}
+        . It measures how much this agent&rsquo;s own tool results grow the
+        conversation each turn, so agents with large results stop earlier on
+        their own — you don&rsquo;t have to pad this number for them. Raise it if
+        answers come out truncated; lower it to let the agent research longer.
+      </p>
+      {contextLength == null ? (
+        <p className="text-xs text-amber-600">
+          {modelLabel ?? 'This model'} reports no context window, so this guard
+          is inactive — nothing stops the conversation from overflowing it.
+        </p>
+      ) : null}
+    </div>
   )
 }
 
@@ -154,7 +431,7 @@ function AgentEditorInner({
   className?: string
   onPublished?: (result: { versionId: string; versionNumber: number }) => void
 }) {
-  const { Button, Label, Input } = useWfComponents()
+  const { Button, Label, Input, Checkbox } = useWfComponents()
   const tools = useTools()
   const aiTools = (tools.data ?? []).filter((t) => t.kind === 'ai-tool')
 
@@ -190,6 +467,95 @@ function AgentEditorInner({
   const modelLacksTools = modelCaps != null && !modelCaps.tools
   const modelLacksStructuredOutput =
     modelCaps != null && !modelCaps.structuredOutput
+
+  // A turn is a round of calling SOMETHING, and delegation synthesizes
+  // `spawn_*` / `await_subagents` into the tool set — so an agent with only
+  // sub-agents runs just as real a multi-turn loop as one with only tools.
+  // Everything that asks "is there a loop here?" gates on this, never on
+  // toolIds alone.
+  const hasToolsOrSubAgents =
+    config.toolIds.length > 0 || config.subAgents.targets.length > 0
+
+  // With neither, there is no loop to bound: the model answers on turn 1 and
+  // stops, whatever `maxTurns` says. Turns and the budget are both meaningless
+  // in that shape, so the fields go read-only rather than inviting the author to
+  // tune numbers that can't do anything.
+  const budgetIrrelevantReason = !hasToolsOrSubAgents
+    ? 'This agent has no tools or sub-agents, so it answers in a single turn — there is no loop to bound or spend against. Attach a tool or sub-agent to set turns and a budget.'
+    : config.output.kind !== 'text'
+      ? 'Only Text agents run a tool loop — a structured result is generated in one pass, so there is nothing to budget.'
+      : null
+
+  // Such an agent's effective turn count IS 1, regardless of what an older
+  // config stored. Show the truth rather than a stale 5 that does nothing.
+  const effectiveMaxTurns = hasToolsOrSubAgents ? config.maxTurns : 1
+
+  // The three shapes where "require a call on turn 1" is inert. It lives in
+  // Settings now, which renders unconditionally, so the no-target case has to be
+  // stated here rather than handled by not drawing the control. Mirrors the
+  // engine's `forceFirstTool` guard; keep the two in step.
+  const requireToolReason = !hasToolsOrSubAgents
+    ? 'Attach a tool or sub-agent for the agent to be required to call.'
+    : config.output.kind !== 'text'
+      ? 'Only Text agents run a tool loop — a structured result is generated in one pass, with no tools.'
+      : config.maxTurns < 2
+        ? 'Needs at least 2 max turns — with 1, that turn is also the final answering turn, which never calls tools.'
+        : null
+
+  // Model facts the budget field reasons about. Both are optional — a provider
+  // that reports neither leaves the field usable but unpriced, never blocked.
+  const contextLength = selectedModel?.contextLength
+  const costPerMTok = selectedModel?.costPerMTok
+
+  // Both numbers below turn the model's PER-TURN window into a CUMULATIVE spend,
+  // which is the conversion the whole field hinges on and the one an author has
+  // no reason to already know. A tool loop re-sends the entire conversation every
+  // turn, so turn 3 pays for turns 1 and 2 again; `contextLength` caps any single
+  // turn, while the running total is what gets billed.
+  //
+  //   worstCase — every turn already full: maxTurns × window. A true ceiling,
+  //               reached only by a loop that starts at the window and stays there.
+  //   estimate  — the conversation grows roughly linearly from near-zero to full
+  //               over maxTurns, so the average turn is half a window and the sum
+  //               is the trapezoid: maxTurns × window ÷ 2.
+  //
+  // Both scale with maxTurns because spend genuinely does: allowing 10 turns
+  // instead of 5 really is about twice the tokens.
+  const worstCaseTokens =
+    contextLength != null ? effectiveMaxTurns * contextLength : null
+  const suggestedTokens =
+    worstCaseTokens != null
+      ? Math.max(1000, Math.round(worstCaseTokens / 2 / 1000) * 1000)
+      : null
+
+  // Dropping the last tool retires the loop, so the turn count and budget that
+  // described it are retired with it — patched at the point of change rather
+  // than in an effect, which would mark an untouched agent dirty on open.
+  function patchToolsAndRetireLoop(next: Partial<AgentConfig>) {
+    const merged = { ...config, ...next }
+    const stillHasTools =
+      merged.toolIds.length > 0 || merged.subAgents.targets.length > 0
+    patch(
+      stillHasTools
+        ? next
+        : {
+            ...next,
+            maxTurns: 1,
+            requireToolFirstTurn: false,
+            toolTokenBudget: null,
+          },
+    )
+  }
+
+  // Turns are cheap to raise and expensive to run. The node's in-process budget
+  // is ~17 min by default (a 20 min step timeout less 3 min of slack), and an
+  // agent that blows through it fails FATALLY — no retry — so the warning is
+  // about the thing that actually bites, not about the turn count itself.
+  const secondsPerTurn = Math.floor((17 * 60) / config.maxTurns)
+  const turnsWarning =
+    config.maxTurns > 20
+      ? `${config.maxTurns} turns leaves about ${secondsPerTurn}s per turn against the default ~17 min node budget. Overrunning it fails the run outright with no retry — raise the node's timeout, or set a token budget below so the agent answers early instead of dying.`
+      : null
 
   const dirty = JSON.stringify(config) !== JSON.stringify(savedConfig)
   const saveError =
@@ -343,7 +709,10 @@ function AgentEditorInner({
           </>
         }
       >
-        <div className="mx-auto grid w-full max-w-5xl grid-cols-1 gap-6 p-6 lg:grid-cols-[1fr_20rem]">
+        {/* Two columns: configuration on the left, evidence (recent calls) +
+            experiment (playground) on the right. The right column is wider than
+            a plain sidebar because the call rows carry real numbers. */}
+        <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-6 p-6 lg:grid-cols-[1fr_24rem]">
           {/* Left: configuration */}
           <div className="space-y-6">
             {/* Appearance */}
@@ -445,7 +814,7 @@ function AgentEditorInner({
               <ToolPicker
                 tools={aiTools}
                 selectedIds={config.toolIds}
-                onChange={(toolIds) => patch({ toolIds })}
+                onChange={(toolIds) => patchToolsAndRetireLoop({ toolIds })}
                 disabled={modelLacksTools}
                 disabledReason={`${selectedModel?.label ?? 'The selected model'} can’t call tools — pick a tool-calling model to attach tools.`}
               />
@@ -466,7 +835,9 @@ function AgentEditorInner({
             >
               <SubAgentPicker
                 value={config.subAgents}
-                onChange={(subAgents) => patch({ subAgents })}
+                onChange={(subAgents) =>
+                  patchToolsAndRetireLoop({ subAgents })
+                }
                 currentAgentId={agentId}
               />
             </EditorSection>
@@ -485,38 +856,159 @@ function AgentEditorInner({
               />
             </EditorSection>
 
-            {/* Settings */}
+            {/* Budget — every ceiling on how much work one call may do: rounds,
+                tokens, and the room kept back for the answer. Turns belong here
+                rather than under Tools because a round may be spent on a
+                sub-agent as easily as a tool, and all three trade against each
+                other — raising turns raises what the budget has to cover. */}
             <EditorSection
-              icon={Settings2}
-              title="Settings"
-              description="Runtime limits and behavior for the agent."
+              icon={Wallet}
+              title="Budget"
+              description="How much work the agent may do, and what it may spend, before it has to answer."
             >
+              {budgetIrrelevantReason ? (
+                <p className="rounded-md bg-neutral-50 p-3 text-xs text-neutral-500">
+                  {budgetIrrelevantReason}
+                </p>
+              ) : null}
+
               <div className="space-y-2">
                 <Label>Max turns</Label>
                 <Input
                   type="number"
                   min={1}
-                  max={20}
+                  max={100}
                   className="max-w-[8rem]"
-                  value={config.maxTurns}
+                  disabled={!!budgetIrrelevantReason}
+                  value={effectiveMaxTurns}
                   onChange={(e) =>
                     patch({
-                      maxTurns: Number.parseInt(e.target.value, 10) || 1,
+                      // Clamp here rather than relying on the `max` attribute,
+                      // which doesn't stop a typed value — an out-of-range number
+                      // reaches the server and fails as a raw schema error.
+                      maxTurns: Math.min(
+                        100,
+                        Math.max(1, Number.parseInt(e.target.value, 10) || 1),
+                      ),
                     })
                   }
                 />
                 <p className="text-xs text-neutral-400">
                   How many turns the agent may take before it must give a final
-                  answer. Each turn is one round of calling tools and reading
-                  their results; a higher limit lets the agent do more research
-                  but costs more and runs longer. Defaults to 5.
+                  answer. Each turn is one round of calling tools or spawning
+                  sub-agents and reading the results; a higher limit lets the
+                  agent do more work but costs more and runs longer. Defaults
+                  to 5.
                 </p>
+                {turnsWarning && !budgetIrrelevantReason ? (
+                  <p className="text-xs text-amber-600">⚠ {turnsWarning}</p>
+                ) : null}
               </div>
+
+              <div className="border-t border-neutral-200 pt-4">
+                <TokenBudgetField
+                value={config.toolTokenBudget}
+                onChange={(toolTokenBudget) => patch({ toolTokenBudget })}
+                maxTurns={effectiveMaxTurns}
+                modelLabel={selectedModel?.label}
+                contextLength={contextLength}
+                costPerMTok={costPerMTok}
+                  suggestedTokens={suggestedTokens}
+                  worstCaseTokens={worstCaseTokens}
+                  disabledReason={budgetIrrelevantReason}
+                />
+              </div>
+
+              {/* Outside the budget's on/off: an unbudgeted agent can still
+                  overflow the window, so this applies either way. */}
+              <div className="border-t border-neutral-200 pt-4">
+                <AnswerReserveField
+                  value={config.answerReservePercent}
+                  onChange={(answerReservePercent) =>
+                    patch({ answerReservePercent })
+                  }
+                  contextLength={contextLength}
+                  modelLabel={selectedModel?.label}
+                  disabled={!!budgetIrrelevantReason}
+                />
+              </div>
+            </EditorSection>
+
+            {/* Settings — behavior switches that aren't limits: what the agent
+                is fed, and whether it must reach for a tool or sub-agent before
+                it's allowed to answer. */}
+            <EditorSection
+              icon={Settings2}
+              title="Settings"
+              description="How the agent behaves while it works."
+            >
+              <label className="flex cursor-pointer items-start gap-2.5">
+                <span className="min-w-0 flex-1">
+                  <span className="text-foreground block text-sm font-medium">
+                    Works on a conversation
+                  </span>
+                  <span className="mt-0.5 block text-xs text-neutral-400">
+                    The agent answers a chat thread rather than a single input.
+                    Every workflow node using it gains a{' '}
+                    <code className="rounded bg-muted px-1 py-0.5">
+                      conversation
+                    </code>{' '}
+                    input to link the message source (usually the chat trigger’s
+                    messages). Leave it off for step agents — a summarizer or
+                    classifier — which read only what their previous step
+                    produced.
+                  </span>
+                </span>
+                <Checkbox
+                  className="mt-0.5"
+                  checked={config.acceptsConversation}
+                  onChange={(e) =>
+                    patch({ acceptsConversation: e.target.checked })
+                  }
+                />
+              </label>
+
+              <label
+                className={cn(
+                  'flex items-start gap-2.5',
+                  requireToolReason ? 'cursor-not-allowed' : 'cursor-pointer',
+                )}
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="text-foreground block text-sm font-medium">
+                    Require a tool or agent call on the first turn
+                  </span>
+                  <span className="mt-0.5 block text-xs text-neutral-400">
+                    The agent must call a tool or spawn a sub-agent before it may
+                    answer, instead of replying from what the model already
+                    knows. Use it when an answer is only trustworthy if the agent
+                    looked something up or delegated first. Later turns are
+                    unaffected — it may answer as soon as it has read the
+                    results.
+                  </span>
+                </span>
+                <Checkbox
+                  className="mt-0.5"
+                  checked={config.requireToolFirstTurn && !requireToolReason}
+                  disabled={!!requireToolReason}
+                  onChange={(e) =>
+                    patch({ requireToolFirstTurn: e.target.checked })
+                  }
+                />
+              </label>
+              {requireToolReason ? (
+                <p className="text-xs text-amber-600">{requireToolReason}</p>
+              ) : null}
             </EditorSection>
           </div>
 
-          {/* Right: playground — runs the live draft config in isolation */}
-          <PlaygroundPanel config={config} />
+          {/* Right: what this agent DOES — its real calls (evidence) above the
+              playground (experiment). Neither is a setting, so both stay out of
+              the configuration column on the left. */}
+          <div className="space-y-6">
+            <AgentRecentCalls agentId={agentId} />
+            <PlaygroundPanel config={config} />
+          </div>
         </div>
       </WfShell>
 

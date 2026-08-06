@@ -46,9 +46,9 @@ export function NodeInputsPanel({
 }: NodeInputsPanelProps) {
   const { accessible, maps } = useAccessibleData(node, graph, itemSchema)
   const requires = useMemo(() => nodeRequires(node, maps), [node, maps])
-  // How the prior conversation reaches this agent — an explicit `conversation`
-  // link if set, otherwise the implicit primary-edge thread (`coerceToMessages`).
-  // Drives the editable "conversation" field below. See `agentThreadSource`.
+  // How the prior conversation reaches this agent: whether the AGENT declares it
+  // takes a thread at all, and — if so — where this node links it from. Drives
+  // the editable "conversation" field below. See `agentThreadSource`.
   const thread = useMemo(
     () =>
       node.kind === 'agent'
@@ -61,8 +61,11 @@ export function NodeInputsPanel({
 
   const conversation =
     node.kind === 'agent' ? (node.config.conversation ?? null) : null
-  // Offer the conversation link when a message source is reachable (implicitly or
-  // already linked) — hidden for agents with no thread anywhere upstream.
+  // The conversation input exists because the AGENT declares it takes a thread
+  // ("Works on a conversation"), not because the editor spotted a message source
+  // upstream — so the same agent shows the same inputs in every workflow. A
+  // stale link on a non-accepting agent still shows (as `unsupported`) so it can
+  // be seen and cleared.
   const showConversation = node.kind === 'agent' && thread.status !== 'none'
   const empty = conversationEmptyState(thread)
   const nothingToShow = requires.length === 0 && !showConversation
@@ -107,20 +110,29 @@ export function NodeInputsPanel({
           <InputGroupLabel>Optional</InputGroupLabel>
           <div className="space-y-1.5">
             {showConversation ? (
-              <BindingField
-                label="conversation"
-                description="The prior chat thread passed to this agent as its message history. Link it to the message source (e.g. the chat trigger's messages). Left unlinked, the agent runs with no prior conversation."
-                icon={
-                  empty?.tone === 'warn' ? (
-                    <AlertTriangle className="size-3.5 shrink-0 text-rose-500" />
-                  ) : undefined
-                }
-                emptyText={empty?.text}
-                emptyTone={empty?.tone}
-                binding={conversation}
-                accessible={accessible}
-                onSet={(b) => onChange(withConversation(node, b))}
-              />
+              <>
+                <BindingField
+                  label="conversation"
+                  description="The chat thread passed to this agent as its message history. This agent declares that it works on a conversation, so link it to the message source (e.g. the chat trigger's messages). Left unlinked, the agent runs with no prior conversation."
+                  icon={
+                    empty?.tone === 'warn' || thread.status === 'unsupported' ? (
+                      <AlertTriangle className="size-3.5 shrink-0 text-rose-500" />
+                    ) : undefined
+                  }
+                  emptyText={empty?.text}
+                  emptyTone={empty?.tone}
+                  binding={conversation}
+                  accessible={accessible}
+                  onSet={(b) => onChange(withConversation(node, b))}
+                />
+                {thread.status === 'unsupported' ? (
+                  <p className="text-xs text-rose-600">
+                    This agent doesn’t work on a conversation, so this link is
+                    ignored. Turn on “Works on a conversation” in the agent (and
+                    publish it), or clear the link.
+                  </p>
+                ) : null}
+              </>
             ) : null}
             {optionalInputs.map(renderInput)}
           </div>
@@ -141,7 +153,9 @@ function InputGroupLabel({ children }: { children: ReactNode }) {
 
 // The label shown in the conversation field when it has no explicit binding.
 // `unlinked` = a message source is reachable but not linked, so the agent will
-// run with no prior context (warn, and point at the source to link).
+// run with no prior context (warn, and point at the source to link). `idle` =
+// the agent takes a thread but nothing upstream carries one yet — a neutral
+// hint, since there's nothing to point at.
 function conversationEmptyState(
   thread: ThreadStatus,
 ): { text: string; tone: 'muted' | 'warn' } | undefined {
@@ -150,6 +164,9 @@ function conversationEmptyState(
       text: `Not linked — no prior messages · link to ${thread.sourceLabel}`,
       tone: 'warn',
     }
+  }
+  if (thread.status === 'idle') {
+    return { text: 'Not linked — no prior messages', tone: 'muted' }
   }
   return undefined
 }

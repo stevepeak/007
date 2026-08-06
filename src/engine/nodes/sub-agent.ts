@@ -150,6 +150,18 @@ async function runAgentTarget<TDeps>(
     modelId: config.modelId,
     output: config.output,
     maxTurns: config.maxTurns,
+    // A sub-agent carries its OWN config here (unlike the display-intent fields
+    // below, which it inherits from the primary node), so its author's choice
+    // applies to its own loop.
+    requireToolFirstTurn: config.requireToolFirstTurn,
+    // Each sub-agent gets its OWN budget, not a share of the primary's. A
+    // primary that fans out to five researchers can therefore spend roughly five
+    // budgets — the guard against that is the primary's `maxSpawns`, not this.
+    toolTokenBudget: config.toolTokenBudget,
+    // A sub-agent runs its own conversation against its own model, so it guards
+    // against ITS window, taken from its own frozen manifest entry.
+    contextLength: entry.contextLength,
+    answerReservePercent: config.answerReservePercent,
     // Inherited from the primary node's `informUser` — see {@link SubAgentCtx}.
     streamReasoning: sub.streamReasoning,
     streamToolCalls: sub.streamToolCalls,
@@ -186,7 +198,15 @@ async function runAgentTarget<TDeps>(
       input: message,
       status: 'completed',
       output: result.output,
-      meta: { ...result.meta, subAgentName: entry.name },
+      // Stamped with the agent it ran, like a top-level agent node — a spawned
+      // sub-agent has no graph node of its own, so this is the ONLY link from
+      // its step back to the agent (see AgentNodeMeta.agentId).
+      meta: {
+        ...result.meta,
+        agentId: target.id,
+        agentVersion: entry.versionNumber,
+        subAgentName: entry.name,
+      },
       startedAt,
       finishedAt: new Date(),
     })

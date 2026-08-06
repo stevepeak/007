@@ -10,6 +10,7 @@ import type {
 import type {
   AgentPreviewInput,
   AgentPreviewResult,
+  WfAgentCall,
   WfAgentDetail,
   WfAgentSummary,
   WfAgentVersionSummary,
@@ -214,6 +215,16 @@ export interface WfDataClient {
    * if any workflow still references it — the UI blocks first, this is a backstop.
    */
   archiveAgent(agentId: string): Promise<void>
+  /**
+   * This agent's most recent executions across all runs, newest first, each
+   * reduced to its metrics (turns, tokens, cost, per-tool call counts). Powers
+   * the agent editor's "Recent calls" section. Real runs only — an eval's
+   * simulated runs never appear.
+   */
+  listAgentCalls(input: {
+    agentId: string
+    limit?: number
+  }): Promise<WfAgentCall[]>
   /** Playground — run an agent draft in isolation against a scratch input. */
   runAgentPreview(input: AgentPreviewInput): Promise<AgentPreviewResult>
 

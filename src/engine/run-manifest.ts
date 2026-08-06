@@ -19,6 +19,17 @@ export type WfAgentManifestEntry = {
   versionNumber: number
   name: string
   config: AgentConfig
+  /**
+   * The context window of the model this agent resolved to, frozen with the rest
+   * of the entry. The engine needs it to stop a tool loop before the conversation
+   * overflows the window, and it can't ask: the host's `getModel` hands back a
+   * `LanguageModel`, not its metadata. Freezing it here rather than storing it on
+   * the agent config also means it can't go stale when the author switches model.
+   *
+   * Undefined when the provider reports no context length — the guard then does
+   * nothing rather than guessing a window.
+   */
+  contextLength?: number
 }
 
 // A called workflow resolved to the exact published version it ran against, with

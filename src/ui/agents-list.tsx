@@ -68,7 +68,11 @@ export function AgentsList({ className }: AgentsListProps) {
           prompt: STARTER_PROMPT,
           toolIds: [],
           maxTurns: 5,
+          requireToolFirstTurn: false,
+          toolTokenBudget: null,
+          answerReservePercent: 10,
           output: { kind: 'text' },
+          acceptsConversation: false,
           subAgents: {
             targets: [],
             maxConcurrent: 4,

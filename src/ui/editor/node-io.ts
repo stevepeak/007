@@ -471,19 +471,45 @@ function carriesThread(out: { fields: DataField[] }): boolean {
 }
 
 /**
- * How the prior conversation reaches an agent node. History is EXPLICIT: it comes
- * only from the node's `conversation` binding (see `engine/nodes/agent.ts`).
- *  - `linked`: the node links a message source (the binding) — its history.
- *  - `unlinked`: no link, but a message source (a chat trigger's `messages`) is
- *    reachable on the primary path — the author almost certainly means to link it,
- *    so this drives an editor warning. Unlinked at run time, the agent answers
- *    only the current turn with no prior context.
- *  - `none`: no message source in play (e.g. a tool-fed agent) — nothing to link.
+ * How the prior conversation reaches an agent node. Two things decide it, and
+ * they're deliberately separate:
+ *  1. the AGENT declares whether it works on a thread at all
+ *     (`AgentConfig.acceptsConversation`) — that's what makes the node's
+ *     `conversation` input exist;
+ *  2. the NODE says WHERE that thread comes from (`config.conversation`) — the
+ *     only thing that feeds history at run time (see `engine/nodes/agent.ts`).
+ *
+ *  - `linked`: the agent accepts a conversation and the node links a source.
+ *  - `unlinked`: accepts, not linked, but a message source (a chat trigger's
+ *    `messages`) is reachable on the primary path — the author almost certainly
+ *    means to link it, so this drives an editor warning. Unlinked at run time,
+ *    the agent answers only the current turn with no prior context.
+ *  - `idle`: accepts, not linked, and no source is reachable — the input is
+ *    offered but there's nothing obvious to point it at yet.
+ *  - `unsupported`: the node links a conversation but the agent does NOT declare
+ *    that it accepts one (e.g. the toggle was turned off after wiring, or the
+ *    agent has no published version yet) — a blocking editor issue.
+ *  - `none`: the agent takes a single input value — no conversation input.
  */
 export type ThreadStatus =
   | { status: 'linked'; sourceId: string; sourceLabel: string }
   | { status: 'unlinked'; sourceId: string; sourceLabel: string }
+  | { status: 'unsupported'; sourceId: string; sourceLabel: string }
+  | { status: 'idle' }
   | { status: 'none' }
+
+/**
+ * Whether the agent a node points at declares that it takes a chat thread. Read
+ * from the agent's LATEST PUBLISHED config (like `inputVariables`), so toggling
+ * it on an agent draft only reaches workflow editors once the agent is published.
+ */
+export function agentAcceptsConversation(
+  node: WorkflowNode,
+  maps: IoMaps,
+): boolean {
+  if (node.kind !== 'agent') return false
+  return maps.agentsById.get(node.config.agentId)?.acceptsConversation ?? false
+}
 
 export function agentThreadSource(
   graph: WorkflowGraph,
@@ -493,25 +519,31 @@ export function agentThreadSource(
   const byId = new Map(graph.nodes.map((n) => [n.id, n]))
   const node = byId.get(nodeId)
   if (!node || node.kind !== 'agent') return { status: 'none' }
+  const accepts = agentAcceptsConversation(node, maps)
 
-  // An explicit `conversation` binding is the linked message source.
+  // An explicit `conversation` binding is the linked message source — reported
+  // even when the agent doesn't declare a conversation, so a stale link is
+  // visible (and clearable) rather than silently ignored.
   const bound = node.config.conversation
   if (bound) {
     const src = bound.kind === 'ref' ? byId.get(bound.nodeId) : undefined
     return {
-      status: 'linked',
+      status: accepts ? 'linked' : 'unsupported',
       sourceId: src?.id ?? '',
       sourceLabel: src?.label ?? (bound.kind === 'literal' ? 'literal' : '—'),
     }
   }
 
-  // No link — is a message source reachable on the primary path? If so, the author
-  // almost certainly wants it linked; surface it (→ warning) with that source so
-  // the fix ("link to <source>") is obvious.
+  // The agent takes a single input value — there is no conversation to wire.
+  if (!accepts) return { status: 'none' }
+
+  // Accepts but unlinked — is a message source reachable on the primary path? If
+  // so, the author almost certainly wants it linked; surface it (→ warning) with
+  // that source so the fix ("link to <source>") is obvious.
   const src = reachableMessageSource(graph, node.id, byId, maps)
   return src
     ? { status: 'unlinked', sourceId: src.id, sourceLabel: src.label }
-    : { status: 'none' }
+    : { status: 'idle' }
 }
 
 // The nearest message-carrying node on an agent's single-predecessor path: the

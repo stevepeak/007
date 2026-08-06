@@ -8,6 +8,7 @@
 //   • run-manifest      — frozen-at-run-start manifest types & lookups
 export * from './graph-kinds'
 export * from './graph-schema'
+export * from './graph-engine'
 export * from './graph-validation'
 export * from './graph-builders'
 export * from './prompt-variables'

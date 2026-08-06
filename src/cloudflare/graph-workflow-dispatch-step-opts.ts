@@ -1,6 +1,11 @@
 import type { WorkflowStepConfig } from 'cloudflare:workers'
 
 import type { NodeExecution } from '../engine/graph'
+import {
+  AI_NODE_TIMEOUT_MS,
+  DEFAULT_NODE_TIMEOUT_MS,
+  resolveNodeTimeoutMs,
+} from '../engine/node-timeout'
 
 // Per-kind step.do retry/timeout policy defaults. LLM nodes get longer, retried
 // steps. A node's optional `execution` policy overrides these field-by-field.
@@ -18,13 +23,16 @@ import type { NodeExecution } from '../engine/graph'
 // Timeouts are expressed as a NUMBER OF MS rather than Cloudflare's duration
 // strings: `step.do` accepts both, and numbers are what `resolveStepTimeoutMs`
 // below needs in order to derive a budget without parsing '15 minutes'.
+// The timeouts come from `engine/node-timeout` so the inline backend — which has
+// no `step.do` to hand them to, and for which the derived model budget is the
+// only bound that exists — enforces the same declared numbers.
 export const AI_STEP_OPTS = {
   retries: { limit: 3, delay: '5 seconds', backoff: 'exponential' },
-  timeout: 20 * 60_000,
+  timeout: AI_NODE_TIMEOUT_MS,
 } as const
 export const DEFAULT_STEP_OPTS = {
   retries: { limit: 2, delay: '3 seconds', backoff: 'exponential' },
-  timeout: 60_000,
+  timeout: DEFAULT_NODE_TIMEOUT_MS,
 } as const
 
 // Return type is intentionally inferred (not widened to `WorkflowStepConfig`)
@@ -72,10 +80,8 @@ export function stepOptsFor(node: {
  * Cloudflare, before it becomes a `WorkflowStepConfig`. This is the input the
  * in-process model budget derives from, so the two can never disagree about how
  * long a node is allowed to run.
+ *
+ * Now just the engine's `resolveNodeTimeoutMs`, re-exported under the name the
+ * durable dispatch already used.
  */
-export function resolveStepTimeoutMs(node: {
-  kind: string
-  execution?: NodeExecution
-}): number {
-  return node.execution?.timeoutMs ?? kindDefaultOpts(node.kind).timeout
-}
+export const resolveStepTimeoutMs = resolveNodeTimeoutMs

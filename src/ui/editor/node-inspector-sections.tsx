@@ -1,4 +1,10 @@
-import { MANUAL_TRIGGER_KIND, PERIODIC_TRIGGER_KIND } from '../../engine'
+import {
+  ITERATION_ITEM_TRIGGER_KIND,
+  MANUAL_TRIGGER_KIND,
+  PERIODIC_TRIGGER_KIND,
+  type CalleeExecution,
+  type WfEngine,
+} from '../../engine'
 import { AgentSelect } from '../agent-select'
 import { useWfComponents } from '../context'
 import { useAgents, useTools, useTriggerEvents, useWorkflows } from '../hooks'
@@ -15,10 +21,26 @@ function triggerModeLabel(triggerKind: string): string {
   return 'On an event'
 }
 
+// What each engine actually means for the author, in their terms — the trade is
+// durability/resumability against latency, and picking wrong is invisible until
+// something fails halfway through.
+const ENGINE_HELP: Record<WfEngine, string> = {
+  durable:
+    'Every step is checkpointed. Survives restarts, retries failed steps, and a failed run can be resumed from where it stopped. Slower to start. Best for long background work like document processing.',
+  inline:
+    'Runs in one process with no checkpoints. Starts faster and writes far less, but there are no step retries and a failed run cannot be resumed. Best for interactive work someone is waiting on, like chat.',
+}
+
 export function TriggerInspector({ node, onChange }: NodeInspectorProps) {
-  const { Input, Label } = useWfComponents()
+  const { Input, Label, Select } = useWfComponents()
   const triggerEvents = useTriggerEvents()
   if (node.kind !== 'trigger') return null
+  // An iteration subgraph's `Item` bookend is not a startable trigger — its
+  // subgraph runs inside whatever host the parent run chose — so it gets no
+  // engine picker.
+  const isIterationItem =
+    node.config.triggerKind === ITERATION_ITEM_TRIGGER_KIND
+  const engine: WfEngine = node.config.engine ?? 'durable'
   return (
     <div className="space-y-3">
       <div className={field}>
@@ -53,6 +75,27 @@ export function TriggerInspector({ node, onChange }: NodeInspectorProps) {
           />
         </div>
       ) : null}
+      {isIterationItem ? null : (
+        <div className={field}>
+          <Label>Engine</Label>
+          <Select
+            value={engine}
+            onChange={(e) =>
+              onChange({
+                ...node,
+                config: {
+                  ...node.config,
+                  engine: e.target.value as WfEngine,
+                },
+              })
+            }
+          >
+            <option value="durable">Durable (checkpointed)</option>
+            <option value="inline">Inline (fast, no checkpoints)</option>
+          </Select>
+          <p className="text-muted-foreground text-xs">{ENGINE_HELP[engine]}</p>
+        </div>
+      )}
     </div>
   )
 }
@@ -105,11 +148,22 @@ export function ToolInspector({ node, onChange }: NodeInspectorProps) {
   )
 }
 
+// The same durability-vs-overhead trade an iteration's item execution makes, at
+// the scale of a whole called workflow — so a small helper workflow stays cheap
+// and a real pipeline stops being all-or-nothing.
+const CALLEE_EXECUTION_HELP: Record<CalleeExecution, string> = {
+  inline:
+    'The called workflow runs inside this one step. Cheapest, and right for a small helper — but it is all-or-nothing: if it fails partway it repeats from its first step, and its own steps’ timeout and retry settings do not apply.',
+  durable:
+    'The called workflow runs as its own checkpointed run, with its own trace you can open. Every one of its steps retries and times out on its own terms, and this workflow simply waits — waiting costs nothing. Right for a callee that does real work.',
+}
+
 export function WorkflowInspector({
   node,
   onChange,
   currentWorkflowId,
 }: NodeInspectorProps) {
+  const { Label, Select } = useWfComponents()
   const workflows = useWorkflows()
   // A workflow can call any OTHER workflow. Exclude itself — a direct self-call
   // is always a reference cycle (deeper cycles are caught at run start).
@@ -117,24 +171,46 @@ export function WorkflowInspector({
     (w) => w.id !== currentWorkflowId,
   )
   if (node.kind !== 'workflow') return null
-  // Just the workflow picker, headed directly by the panel title.
   return (
-    <div className={field}>
-      <WorkflowSelect
-        workflows={workflowOptions}
-        value={node.config.workflowId}
-        onChange={(workflowId) =>
-          onChange({
-            ...node,
-            config: { ...node.config, workflowId },
-          })
-        }
-      />
-      <p className="text-muted-foreground text-xs">
-        Runs the selected workflow's latest published version and waits for its
-        result, which becomes this node's output. The upstream input is passed
-        straight through as the called workflow's trigger input.
-      </p>
+    <div className="space-y-3">
+      <div className={field}>
+        <WorkflowSelect
+          workflows={workflowOptions}
+          value={node.config.workflowId}
+          onChange={(workflowId) =>
+            onChange({
+              ...node,
+              config: { ...node.config, workflowId },
+            })
+          }
+        />
+        <p className="text-muted-foreground text-xs">
+          Runs the selected workflow's latest published version and waits for its
+          result, which becomes this node's output. The upstream input is passed
+          straight through as the called workflow's trigger input.
+        </p>
+      </div>
+      <div className={field}>
+        <Label>Execution</Label>
+        <Select
+          value={node.config.calleeExecution}
+          onChange={(e) =>
+            onChange({
+              ...node,
+              config: {
+                ...node.config,
+                calleeExecution: e.target.value as CalleeExecution,
+              },
+            })
+          }
+        >
+          <option value="inline">Inline (as one step)</option>
+          <option value="durable">Durable (as its own run)</option>
+        </Select>
+        <p className="text-muted-foreground text-xs">
+          {CALLEE_EXECUTION_HELP[node.config.calleeExecution]}
+        </p>
+      </div>
     </div>
   )
 }

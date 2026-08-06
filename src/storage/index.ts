@@ -82,6 +82,8 @@ export {
   getRun,
   getRunProgressFeed,
   type RunProgressFeed,
+  type RunProgressLine,
+  type RunProgressVariant,
   getVersionGraph,
   getWorkflow,
   hashEvalSnapshot,

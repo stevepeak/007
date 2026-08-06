@@ -61,15 +61,22 @@ export const TriggerNodeRenderer = defineNode({
       ? { label: 'Current item' }
       : null,
   subtitle: (data, events) => {
-    const { triggerKind, cron } = data.config
-    if (triggerKind === MANUAL_TRIGGER_KIND) return 'Manual'
-    if (triggerKind === PERIODIC_TRIGGER_KIND) return `Schedule · ${cron ?? '—'}`
+    const { triggerKind, cron, engine } = data.config
+    // The Item bookend of an iteration subgraph isn't a startable trigger, so
+    // it never carries an engine.
+    const suffix =
+      triggerKind === ITERATION_ITEM_TRIGGER_KIND || engine !== 'inline'
+        ? ''
+        : ' · Inline'
+    if (triggerKind === MANUAL_TRIGGER_KIND) return `Manual${suffix}`
+    if (triggerKind === PERIODIC_TRIGGER_KIND)
+      return `Schedule · ${cron ?? '—'}${suffix}`
     // Events show their human description, never the internal event kind. Until
     // the catalog loads (or for an unknown kind) we fall back to a bare 'Event'.
     const eventLabel = events.data?.find(
       (e) => e.kind === triggerKind,
     )?.description
-    return eventLabel ? `Event · ${eventLabel}` : 'Event'
+    return `${eventLabel ? `Event · ${eventLabel}` : 'Event'}${suffix}`
   },
 })
 

@@ -65,6 +65,10 @@ const wfInputSchemas: Partial<Record<keyof WfDataClient, z.ZodType>> = {
   countAgentReferences: z.object({ agentId: z.string() }),
   listAgentReferences: z.object({ agentId: z.string() }),
   archiveAgent: z.object({ agentId: z.string() }),
+  listAgentCalls: z.object({
+    agentId: z.string(),
+    limit: z.number().optional(),
+  }),
   getEvalSet: z.object({ setId: z.string() }),
   deleteEvalSet: z.object({ setId: z.string() }),
   deleteEvalRow: z.object({ rowId: z.string() }),

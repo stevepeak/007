@@ -8,6 +8,7 @@ export {
   WorkflowRunProgress,
   type WorkflowRunProgressProps,
   type RunSurfaceItem,
+  type RunSurfaceProgressVariant,
   type RunSurfaceStatus,
   type RunSurfaceFeedback,
 } from './run-progress-view'

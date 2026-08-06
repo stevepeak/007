@@ -1,4 +1,12 @@
-import { AlertCircle, CheckCircle2, ChevronDown, Loader2 } from 'lucide-react'
+import {
+  AlertCircle,
+  Brain,
+  CheckCircle2,
+  ChevronDown,
+  CircleDashed,
+  Loader2,
+  Wrench,
+} from 'lucide-react'
 import { useState } from 'react'
 
 import { cn } from './cn'
@@ -14,9 +22,25 @@ import { useWfComponents } from './context'
 // the `prompt`/`action` item kinds are rendered today but only call back through
 // `onFeedback`; wiring their answers upstream is a later phase.
 
+/**
+ * What a progress line IS, so a surface can render each kind distinctly (a
+ * thinking icon vs a tool icon vs a plain step bullet). Mirrors the storage
+ * layer's `RunProgressVariant`; absent → a plain node step.
+ */
+export type RunSurfaceProgressVariant = 'step' | 'reasoning' | 'tool'
+
 /** One element of the run's user-facing surface. */
 export type RunSurfaceItem =
-  | { kind: 'progress'; message: string; nodeId?: string; ts?: number }
+  | {
+      kind: 'progress'
+      message: string
+      /** Defaults to `step` when the feed didn't say. */
+      variant?: RunSurfaceProgressVariant
+      /** The tool's registry id, on `tool` lines only. */
+      tool?: string
+      nodeId?: string
+      ts?: number
+    }
   | {
       kind: 'prompt'
       question: string
@@ -46,6 +70,13 @@ export type WorkflowRunProgressProps = {
   /** Called when the user answers a `prompt` or triggers an `action`. */
   onFeedback?: (response: RunSurfaceFeedback) => void
   className?: string
+}
+
+/** One icon per progress kind — the timeline's at-a-glance legend. */
+const PROGRESS_ICONS: Record<RunSurfaceProgressVariant, typeof CircleDashed> = {
+  step: CircleDashed,
+  reasoning: Brain,
+  tool: Wrench,
 }
 
 function latestProgress(items: RunSurfaceItem[]): string | null {
@@ -158,9 +189,12 @@ function SurfaceItemRow({
   // and they live in `FeedbackControls` — mounted (and calling the context hook)
   // solely when such an item is present.
   if (item.kind === 'progress') {
+    // The line's kind reads at a glance: the agent's own thinking, a tool it
+    // called, or a plain node step (the default, and every simulated line).
+    const Icon = PROGRESS_ICONS[item.variant ?? 'step']
     return (
       <div className="flex items-start gap-2 text-xs text-muted-foreground">
-        <span className="mt-1 size-1.5 shrink-0 rounded-full bg-emerald-400" />
+        <Icon className="mt-0.5 size-3.5 shrink-0" />
         <span className="flex-1">{item.message}</span>
       </div>
     )

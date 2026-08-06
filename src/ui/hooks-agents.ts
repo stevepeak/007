@@ -104,6 +104,18 @@ export function useAgentReferences(agentId: string, enabled: boolean) {
   })
 }
 
+// This agent's recent executions across all runs (real ones — eval runs are
+// excluded server-side), each reduced to its metrics: turns, tokens, cost, and
+// per-tool call counts. Backs the editor's "Recent calls" section.
+export function useAgentCalls(agentId: string, opts?: { limit?: number }) {
+  const client = useWfClient()
+  return useQuery({
+    queryKey: keys.agentCalls(agentId, opts?.limit),
+    queryFn: () => client.listAgentCalls({ agentId, limit: opts?.limit }),
+    enabled: !!agentId,
+  })
+}
+
 export function useArchiveAgent() {
   return useWfMutation(
     (client, agentId: string) => client.archiveAgent(agentId),

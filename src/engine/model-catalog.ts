@@ -63,6 +63,13 @@ export type ModelOption = {
   costPerMTok?: number
   /** Throughput, tokens/second. Omit when the provider doesn't report it. */
   tokensPerSec?: number
+  /**
+   * Max context window in tokens. Omit when the provider doesn't report it.
+   * Surfaced to the pickers (not just the admin page) because the agent editor
+   * sizes a token budget against it — a budget is only meaningful relative to
+   * what the chosen model can actually hold.
+   */
+  contextLength?: number
   /** Capabilities the model supports; omit when the provider reports none. */
   capabilities?: ModelCapabilities
 }

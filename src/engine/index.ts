@@ -16,6 +16,17 @@ export {
   workflowGraphSchema,
   workflowGraphShapeSchema,
   workflowNodeSchema,
+  DEFAULT_WF_ENGINE,
+  resolveGraphEngine,
+  WF_ENGINES,
+  wfEngineSchema,
+  type WfEngine,
+  ITERATION_ITEM_EXECUTIONS,
+  iterationItemExecutionSchema,
+  type IterationItemExecution,
+  CALLEE_EXECUTIONS,
+  calleeExecutionSchema,
+  type CalleeExecution,
   type ArgBinding,
   type RefBinding,
   type AgentConfig,
@@ -71,6 +82,12 @@ export {
   type WfBlobRef,
 } from './blob-ref'
 export { ancestorIds, predecessorIds } from './graph-traverse'
+export {
+  AI_NODE_TIMEOUT_MS,
+  DEFAULT_NODE_TIMEOUT_MS,
+  defaultNodeTimeoutMs,
+  resolveNodeTimeoutMs,
+} from './node-timeout'
 export { nodeSpanLabel } from './node-label'
 export { nodeProgressMessage } from './node-progress'
 export {

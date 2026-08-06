@@ -38,6 +38,8 @@ export const keys = {
   agent: (id: string) => ['wf', 'agent', id] as const,
   agentVersions: (id: string) => ['wf', 'agent-versions', id] as const,
   agentReferences: (id: string) => ['wf', 'agent-references', id] as const,
+  agentCalls: (id: string, limit?: number) =>
+    ['wf', 'agent-calls', id, limit ?? null] as const,
   evalSets: (includeArchived?: boolean) =>
     ['wf', 'eval-sets', includeArchived ?? false] as const,
   // Prefix key: invalidates both archived/active variants of the eval sets list.

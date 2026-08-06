@@ -110,7 +110,7 @@ export type ExecuteAgentNodeArgs<TDeps> = {
 function resolveAgentConfig(
   node: AgentNode,
   manifest: WfRunManifestEntry[],
-): AgentConfig {
+): { config: AgentConfig; contextLength?: number; versionNumber: number } {
   const pin = node.config.version ?? null
   const entry = agentFromManifest(manifest, node.config.agentId, pin)
   if (!entry) {
@@ -119,7 +119,11 @@ function resolveAgentConfig(
       `Agent node ${node.id} references agent ${node.config.agentId || '(none)'} (${at}), which is not in the run manifest.`,
     )
   }
-  return entry.config
+  return {
+    config: entry.config,
+    contextLength: entry.contextLength,
+    versionNumber: entry.versionNumber,
+  }
 }
 
 export async function executeAgentNode<TDeps>(
@@ -143,7 +147,10 @@ export async function executeAgentNode<TDeps>(
     agentOverride,
     subAgentCtx,
   } = deps
-  const config = resolveAgentConfig(node, manifest)
+  const { config, contextLength, versionNumber } = resolveAgentConfig(
+    node,
+    manifest,
+  )
   // Eval matrix override: swap the model and/or the system-prompt template. Left
   // undefined → the agent's saved value. `modelId` drives both `getModel` and the
   // meta below (so run cost prices against the model actually used).
@@ -196,6 +203,13 @@ export async function executeAgentNode<TDeps>(
   // link, a chat/trigger payload does NOT implicitly become the thread — the agent
   // answers only the current turn with no prior context (surfaced as an editor
   // warning). See `unlinkedMessages`.
+  //
+  // The agent's own `acceptsConversation` declaration is what makes that binding
+  // AUTHORABLE (it's the agent's contract — see `agent-config-schema.ts`), but it
+  // deliberately does not gate this read: a binding already wired reaches the
+  // model even if the flag is later turned off, so flipping a toggle can't
+  // silently strip a live workflow's history mid-run. The editor raises a
+  // blocking issue on that combination instead.
   const linked = await resolveConversation(node, nodeOutputs, rehydrate)
   const history = linked ?? unlinkedMessages(input)
   const messages = attachImages(history, imageParts)
@@ -229,11 +243,15 @@ export async function executeAgentNode<TDeps>(
     effectiveTools = { ...tools, ...delegation }
   }
 
-  return await runAgentGeneration({
+  const result = await runAgentGeneration({
     model,
     modelId,
     output: config.output,
     maxTurns: config.maxTurns,
+    requireToolFirstTurn: config.requireToolFirstTurn,
+    toolTokenBudget: config.toolTokenBudget,
+    contextLength,
+    answerReservePercent: config.answerReservePercent,
     streamReasoning,
     streamToolCalls,
     systemPrompt,
@@ -243,4 +261,16 @@ export async function executeAgentNode<TDeps>(
     sink,
     budget: deps.modelBudget,
   })
+  // Stamp WHICH agent this was onto the recorded meta. Generation only knows a
+  // prompt and a model; without this, a step can only be traced back to an agent
+  // through its workflow version's graph — which the agent editor's "recent
+  // calls" would otherwise have to reverse-engineer for every run.
+  return {
+    ...result,
+    meta: {
+      ...result.meta,
+      agentId: node.config.agentId,
+      agentVersion: versionNumber,
+    },
+  }
 }

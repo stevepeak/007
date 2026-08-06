@@ -1,4 +1,5 @@
 import type { WorkflowGraph } from '../../engine/graph'
+import { errorMessage } from '../../engine/run-node'
 import {
   createWorkflow,
   discardDraft,
@@ -114,13 +115,25 @@ async function computeChangeSummary<TDeps>(
     opts.summaryModelId ??
     (await opts.config.listModels({ env: input.env }))[0]?.id
   if (modelId) {
-    return await summarizeWorkflowChanges({
-      getModel: opts.config.getModel,
-      modelId,
-      env: input.env,
-      previousGraph: input.previousGraph,
-      nextGraph: input.nextGraph,
-    })
+    try {
+      return await summarizeWorkflowChanges({
+        getModel: opts.config.getModel,
+        modelId,
+        env: input.env,
+        previousGraph: input.previousGraph,
+        nextGraph: input.nextGraph,
+      })
+    } catch (err) {
+      // A change summary is decorative metadata on a publish. Letting the model
+      // call fail the request means an unparseable response — or a provider
+      // being down — blocks publishing, which is absurd for a feature whose
+      // whole job is to write a nicer sentence than the heuristic does. Fall
+      // through to the structural summary and log the reason.
+      console.warn(
+        '[wf] AI change summary failed; falling back to the structural summary:',
+        errorMessage(err),
+      )
+    }
   }
   return heuristicChangeSummary(input.previousGraph, input.nextGraph)
 }

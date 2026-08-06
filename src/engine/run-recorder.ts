@@ -56,17 +56,31 @@ export function recordedBranchResult(result: {
 }
 
 /**
- * In-memory recorder for eval / tests. Captures every recorded step in order
- * so assertions can inspect the run trace without a database.
+ * In-memory recorder for eval / tests. Captures the run trace without a
+ * database, mirroring the durable recorder's semantics: one row per
+ * `(nodeId, itemIndex)`, UPSERTED in place, in first-recorded order.
+ *
+ * The upsert is not a detail — a node is recorded twice (`running`, then its
+ * terminal status), and a recorder that appended would leave every assertion
+ * reading a step's `status`/`output`/`branchResult` looking at the opening row
+ * and seeing nothing. Appending would model a database this SDK doesn't have.
  */
 export function createMemoryRunRecorder(): RunRecorder & {
   steps: RecordStepArgs[]
 } {
   const steps: RecordStepArgs[] = []
+  const keyOf = (a: RecordStepArgs) => `${a.nodeId}:${a.itemIndex ?? -1}`
   return {
     steps,
     record(args) {
-      steps.push(args)
+      const at = steps.findIndex((s) => keyOf(s) === keyOf(args))
+      if (at === -1) {
+        steps.push(args)
+      } else {
+        // Merge, so a terminal record that omits `startedAt` keeps the value
+        // the opening record stamped — exactly what the D1 upsert does.
+        steps[at] = { ...steps[at], ...args }
+      }
       return Promise.resolve()
     },
   }

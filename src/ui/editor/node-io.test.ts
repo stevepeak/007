@@ -40,7 +40,12 @@ const maps = {
       },
     ],
   ]),
-  agentsById: new Map([['bot', { output: { kind: 'text' } }]]),
+  // `bot` declares it works on a conversation (so its nodes get the input);
+  // `summarizer` is a step agent that takes a single value.
+  agentsById: new Map([
+    ['bot', { output: { kind: 'text' }, acceptsConversation: true }],
+    ['summarizer', { output: { kind: 'text' }, acceptsConversation: false }],
+  ]),
   triggersByKind: new Map([
     [
       'chat_message',
@@ -136,21 +141,51 @@ describe('agentThreadSource', () => {
     })
   })
 
-  test('none: no message source anywhere upstream', () => {
+  test('idle: no message source anywhere upstream', () => {
     const manual = node('m', 'trigger', 'Manual', { triggerKind: 'manual' })
     const g = graph([manual, agent], [edge('e', 'm', 'a')])
-    expect(agentThreadSource(g, 'a', maps)).toEqual({ status: 'none' })
+    // The agent still declares a conversation, so the input exists — there's just
+    // nothing upstream to suggest linking it to.
+    expect(agentThreadSource(g, 'a', maps)).toEqual({ status: 'idle' })
   })
 
-  test('none: fan-in hides the thread behind a source-keyed object', () => {
+  test('idle: fan-in hides the thread behind a source-keyed object', () => {
     const tool = node('tl', 'tool', 'Reshape', { toolId: 'reshape', args: {} })
     const g = graph(
       [chatTrigger, tool, agent],
       [edge('e1', 't', 'a'), edge('e2', 'tl', 'a')],
     )
     // Two live predecessors → runtime input is `{ [id]: output }`, which hides the
-    // top-level `messages` array; nothing to link automatically.
+    // top-level `messages` array; nothing to suggest linking automatically.
+    expect(agentThreadSource(g, 'a', maps)).toEqual({ status: 'idle' })
+  })
+
+  test('none: the agent does not work on a conversation', () => {
+    // The declaration — not graph topology — decides whether the input exists:
+    // the chat trigger's messages are right there, and the step agent still gets
+    // no conversation input.
+    const step = node('a', 'agent', 'Summarizer', {
+      agentId: 'summarizer',
+      inputs: {},
+      imageInputs: {},
+    })
+    const g = graph([chatTrigger, step], [edge('e', 't', 'a')])
     expect(agentThreadSource(g, 'a', maps)).toEqual({ status: 'none' })
+  })
+
+  test('unsupported: a link on an agent that takes no conversation', () => {
+    const step = node('a', 'agent', 'Summarizer', {
+      agentId: 'summarizer',
+      inputs: {},
+      imageInputs: {},
+      conversation: { kind: 'ref', nodeId: 't', path: 'messages' },
+    })
+    const g = graph([chatTrigger, step], [edge('e', 't', 'a')])
+    expect(agentThreadSource(g, 'a', maps)).toEqual({
+      status: 'unsupported',
+      sourceId: 't',
+      sourceLabel: 'Chat message',
+    })
   })
 
   test('none: the node is not an agent', () => {

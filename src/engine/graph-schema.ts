@@ -38,6 +38,60 @@ export const nodeExecutionSchema = z.object({
 })
 export type NodeExecution = z.infer<typeof nodeExecutionSchema>
 
+// Which execution backend runs this workflow. A property of the WHOLE run (it
+// picks the host process), so it lives on the trigger node beside `cron` rather
+// than per-node — and being in the graph means it is versioned, exported, and
+// comparable across evals for free.
+//
+//   • 'durable' — Cloudflare Workflows. Every node is wrapped in durable
+//     `enter:`/`run:`/`record:` steps: the run survives eviction, retries replay
+//     the step body, and a failed run can be resumed from its last good node.
+//     Pay for it in journaling writes, a multi-step cold start before the first
+//     node, and an opaque step boundary that a token stream cannot cross.
+//
+//   • 'inline' — the in-process engine hosted by the run's RunRoom Durable
+//     Object. One `await` per node, no journal. Much lower latency and write
+//     amplification, and the sink can stream, but there is no step-level retry
+//     and **no resume**: a run that dies mid-walk is failed, not resumable.
+//
+// Long multi-stage batch work (document ingestion) wants 'durable'. Interactive
+// work someone is waiting on (chat) wants 'inline'.
+export const WF_ENGINES = ['durable', 'inline'] as const
+export const wfEngineSchema = z.enum(WF_ENGINES)
+export type WfEngine = z.infer<typeof wfEngineSchema>
+
+// How ONE iteration item executes — the per-node peer of the trigger's `engine`,
+// and the same vocabulary on purpose: an author who understands the run-level
+// choice already understands this one.
+//
+//   • 'inline'  — the item's whole subgraph runs as a SINGLE unit: one `step.do`
+//     on the durable engine, a plain await on the inline engine. Cheapest per
+//     item, but the item is atomic — a failure at inner node 5 replays nodes 1-4
+//     (side effects included), and the inner nodes' own `execution` policy
+//     (timeout / retries / continueOnError) is never applied, because only the
+//     orchestrator issues durable steps.
+//   • 'durable' — each item runs as its OWN child workflow instance, so every
+//     inner node gets a real durable step, its declared retry policy, and its
+//     declared timeout. Costs one instance start per item.
+//
+// The trade is fan-out width against subgraph depth: 200 items over a one-node
+// subgraph wants 'inline' (the per-item start would dominate); 10 items over an
+// agent plus five nodes wants 'durable'. `collectGraphIssues` flags a graph whose
+// shape disagrees with its choice, so the author is told rather than left to
+// discover it when something fails halfway through.
+export const ITERATION_ITEM_EXECUTIONS = ['inline', 'durable'] as const
+export const iterationItemExecutionSchema = z.enum(ITERATION_ITEM_EXECUTIONS)
+export type IterationItemExecution = z.infer<
+  typeof iterationItemExecutionSchema
+>
+
+// The same choice for a workflow-call node's callee. A separate alias rather
+// than a shared one so each node kind's values can diverge later without a
+// rename, and so the schema reads in the node's own vocabulary.
+export const CALLEE_EXECUTIONS = ['inline', 'durable'] as const
+export const calleeExecutionSchema = z.enum(CALLEE_EXECUTIONS)
+export type CalleeExecution = z.infer<typeof calleeExecutionSchema>
+
 // What the USER sees while a step runs — a single, mutually-exclusive choice, so
 // the modes can't be held at once and there are no cross-field invariants to
 // enforce by hand:
@@ -85,6 +139,12 @@ const triggerNodeSchema = baseNode.extend({
       // Cron schedule — required (and only meaningful) when the trigger kind is
       // the built-in 'periodic'.
       cron: z.string().min(1).optional(),
+      // Which backend executes this workflow — see `wfEngineSchema`. Optional
+      // rather than defaulted: absent means 'durable' (see `DEFAULT_WF_ENGINE`),
+      // so graphs authored before the choice existed keep their behaviour and
+      // don't churn their stored JSON — the field appears only once an author
+      // actually picks one.
+      engine: wfEngineSchema.optional(),
     })
     .refine(
       (c) => c.triggerKind !== PERIODIC_TRIGGER_KIND || Boolean(c.cron),
@@ -239,6 +299,21 @@ const workflowCallNodeSchema = baseNode.extend({
     // item). Non-empty → each key/binding (a literal or a `ref` into an upstream
     // node's output) builds one field of a trigger-input object.
     inputs: z.record(z.string(), argBindingSchema).default({}),
+    // How the callee executes — the workflow-node peer of an iteration's
+    // `itemExecution`, and the same trade in a different shape:
+    //
+    //   • 'inline'  — the callee's whole graph runs inside THIS node's single
+    //     durable step. Cheapest, but the callee is atomic: a failure in its
+    //     fifth node replays its first four (side effects included), and its
+    //     nodes' own `execution` policy never applies.
+    //   • 'durable' — the callee runs as its own child workflow instance with
+    //     its own `wf_run`, so every one of its nodes gets a real durable step,
+    //     its declared retries, and its declared timeout. Costs one instance
+    //     start, and the parent parks on `waitForEvent` while it runs (a waiting
+    //     instance is free — it doesn't count against the concurrency cap).
+    //
+    // A small callee stays 'inline'; a real pipeline wants 'durable'.
+    calleeExecution: calleeExecutionSchema.default('inline'),
   }),
 })
 
@@ -390,6 +465,12 @@ const iterationNodeSchema = baseNode.extend({
     source: refBindingSchema.optional(),
     concurrency: z.number().int().min(1).max(20).default(4),
     stopOnError: z.boolean().default(false),
+    // Whether each item is atomic or gets per-node durability — see
+    // `iterationItemExecutionSchema`. Defaulted (not optional) because unlike the
+    // trigger's `engine` there is no legacy shape to preserve: every existing
+    // graph already behaves as 'inline', so writing the default into stored JSON
+    // records what those graphs were always doing.
+    itemExecution: iterationItemExecutionSchema.default('inline'),
     // Editor-only container dimensions for the group box on the canvas — the
     // engine ignores them, but they must live on the schema (not be stripped) so
     // a resized block persists across save/reload.
@@ -450,6 +531,7 @@ export interface IterationNode {
     source?: RefBinding
     concurrency: number
     stopOnError: boolean
+    itemExecution: IterationItemExecution
     width?: number
     height?: number
     itemSchema?: Record<string, unknown>

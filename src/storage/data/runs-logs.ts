@@ -172,13 +172,50 @@ export async function getRunLogs(
   return rows
 }
 
+// What a user-facing progress line IS, so a surface can render each kind
+// distinctly (a thinking icon vs a tool icon vs a plain step bullet) rather than
+// as one undifferentiated list. Derived from the log row's `meta.progress`,
+// which the agent stamps when mirroring its internals into the curated feed;
+// a line with no such tag is a node's own `informUser` step note.
+export type RunProgressVariant = 'step' | 'reasoning' | 'tool'
+
+/** One user-facing progress line. */
+export type RunProgressLine = {
+  message: string
+  variant: RunProgressVariant
+  /** The tool's registry id, on `tool` lines only. */
+  tool?: string
+}
+
 /** A run's persisted user-facing progress, for a poll-based consumer. */
 export type RunProgressFeed = {
   status: string
   /** `wf_run.correlation_id` — the owning org, for host-side authorization. */
   correlationId: string | null
   /** Every user-facing `progress` line in emit order. */
-  lines: string[]
+  lines: RunProgressLine[]
+}
+
+// Read the line's kind off the stored `meta` blob. Defensive: `meta` is
+// free-form JSON written by whatever emitted the entry (and older rows predate
+// the tag), so anything unrecognized degrades to a plain step.
+function progressLine(row: {
+  message: string
+  meta: unknown
+}): RunProgressLine {
+  const meta = (row.meta ?? {}) as Record<string, unknown>
+  const variant = meta.progress
+  if (variant === 'reasoning') {
+    return { message: row.message, variant: 'reasoning' }
+  }
+  if (variant === 'tool') {
+    return {
+      message: row.message,
+      variant: 'tool',
+      ...(typeof meta.tool === 'string' ? { tool: meta.tool } : {}),
+    }
+  }
+  return { message: row.message, variant: 'step' }
 }
 
 // The full USER-FACING progress feed for a run, read from the PERSISTED tables
@@ -197,13 +234,13 @@ export async function getRunProgressFeed(
     .limit(1)
   if (!run) return null
   const rows = await db
-    .select({ message: wfRunLog.message })
+    .select({ message: wfRunLog.message, meta: wfRunLog.meta })
     .from(wfRunLog)
     .where(and(eq(wfRunLog.runId, runId), eq(wfRunLog.level, 'progress')))
     .orderBy(asc(wfRunLog.ts))
   return {
     status: run.status,
     correlationId: run.correlationId,
-    lines: rows.map((r) => r.message),
+    lines: rows.map(progressLine),
   }
 }

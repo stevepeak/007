@@ -1,6 +1,8 @@
 import type { RunContext, WfSdkConfig } from './config'
 import { isDecisionKind } from './graph'
+import type { ModelBudget } from './model-budget'
 import { emitNodeStartProgress } from './node-progress'
+import { endEntryOf, startEntryOf } from './run-log-entries'
 import { errorMessage, runNode } from './run-node'
 import { recordedBranchResult, type RunRecorder } from './run-recorder'
 import {
@@ -9,7 +11,7 @@ import {
   type ExecutableNode,
   type ReportResult,
 } from './scheduler'
-import type { StreamSink } from './stream-sink'
+import type { RunLogEntry, StreamSink } from './stream-sink'
 import { enforceOutputContract, resolveTriggerInput } from './trigger-registry'
 
 export type ExecuteWorkflowDeps<TDeps> = {
@@ -25,6 +27,18 @@ export type ExecuteWorkflowDeps<TDeps> = {
   recorder: RunRecorder
   /** Optional live progress sink. */
   sink?: StreamSink
+  /**
+   * What bounds a node's model work, per node. Optional because the original
+   * callers (evals, tests, the playground) block a process they own and can
+   * just wait.
+   *
+   * The INLINE engine must supply one. It runs unattended inside a Durable
+   * Object with no `step.do` timeout behind it, so this is the only thing that
+   * can cut a wedged provider call short — without it a stalled request hangs
+   * the run silently and forever, which is exactly the invisible-stall failure
+   * the budget was built to eliminate on the durable path.
+   */
+  resolveModelBudget?: (node: ExecutableNode) => ModelBudget | undefined
 }
 
 export type ExecuteWorkflowResult = {
@@ -46,6 +60,27 @@ export async function executeWorkflow<TDeps>(
   const { config, runContext, recorder, sink } = deps
   const scheduler = new Scheduler(deps.graph)
   const trigger = scheduler.trigger
+
+  // Per-node sink wrapper. A node handler emits entries knowing only what it
+  // has to say, not where it sits in the walk, so stamp identity on the way
+  // out — mirroring the durable backend's `nodeSink`.
+  //
+  // Without this every agent-emitted line (reasoning, tool calls) arrives with
+  // no `nodeId`, and a sink that persists per node drops the lot: the run then
+  // shows a node that opened and never said another word, which reads as a hung
+  // run even when the agent is working perfectly.
+  const sinkFor = (node: ExecutableNode, seq: number): StreamSink | undefined =>
+    sink && {
+      append: (channel, text) => sink.append(channel, text),
+      log: (entry: RunLogEntry) =>
+        sink.log?.({
+          ...entry,
+          ts: entry.ts ?? Date.now(),
+          nodeId: entry.nodeId ?? node.id,
+          nodeKind: entry.nodeKind ?? node.kind,
+          sequence: entry.sequence ?? seq,
+        }),
+    }
 
   const validatedTriggerInput = resolveTriggerInput(
     config.triggers,
@@ -80,10 +115,34 @@ export async function executeWorkflow<TDeps>(
   ): Promise<{ nodeId: string; report: ReportResult }> => {
     // Bracket the real execution — runs inline here, so wall-clock is exact.
     const startedAt = new Date()
+    const nodeSink = sinkFor(node, seq)
+    // Mark the node RUNNING before it runs, exactly as the durable backend's
+    // `enter:` step does. Two consumers need it: the run viewer's active-node
+    // highlight reads `running` step rows, and a node that never settles leaves
+    // a row saying which one it was. Recording only on completion (as this
+    // backend used to) means an in-flight node has no row at all — the run looks
+    // like it stopped after the previous node.
+    //
+    // The recorder upserts on `(run_id, node_id, item_index)`, so the terminal
+    // record below overwrites this row rather than adding one.
+    await recorder.record({
+      nodeId: node.id,
+      nodeKind: node.kind,
+      sequence: seq,
+      input,
+      status: 'running',
+      startedAt,
+    })
+    // Open the node's feed. The durable backend emits this from its `enter:`
+    // step; here there is no step to hang it off, but the entry matters just as
+    // much — the run viewer derives the *currently active* node from a
+    // `node-start` with no matching `node-end`, so a backend that skipped it
+    // would render as a run where nothing is happening.
+    await nodeSink?.log?.(startEntryOf(node, seq, startedAt.getTime()))
     // First-class user-facing line: the node's author-provided progress note,
     // if any. Emitted at the top-level dispatch so inner subgraph nodes (which
     // run through `runNode` directly) stay quiet in the user feed.
-    emitNodeStartProgress(sink, node, runContext.promptVariables)
+    emitNodeStartProgress(nodeSink, node, runContext.promptVariables)
     try {
       const result = await runNode(
         { type: 'execute', node, input },
@@ -98,17 +157,18 @@ export async function executeWorkflow<TDeps>(
           nodeOutputs: scheduler.getOutputs(),
           promptVariables: runContext.promptVariables,
           manifest: runContext.manifest,
-          sink,
+          sink: nodeSink,
           resolveBlobRef: config.resolveBlobRef,
           resolveImageRef: config.resolveImageRef,
           simulate: runContext.simulate,
           fixtures: runContext.fixtures,
           freezeTools: runContext.freezeTools,
           agentOverride: runContext.agentOverride,
-          // No `modelBudget`: this backend runs in-process with no durable step
-          // timeout to derive one from, and its callers (evals, tests, the
-          // playground) already own the process they're blocking. The budget
-          // exists to beat Cloudflare's external kill, which doesn't apply here.
+          // Supplied by callers that run unattended — the inline engine derives
+          // it from the node's declared timeout, the same number the durable
+          // backend gives `step.do`. Absent for evals/tests/the playground,
+          // which block a process they own and can simply wait.
+          modelBudget: deps.resolveModelBudget?.(node),
           // An iteration node records its inner subgraph steps (once per item)
           // through the same recorder that persists top-level steps.
           subStepRecorder: recorder,
@@ -126,6 +186,7 @@ export async function executeWorkflow<TDeps>(
         startedAt,
         finishedAt: new Date(),
       })
+      await nodeSink?.log?.(endEntryOf(node, seq, Date.now(), false))
       return {
         nodeId: node.id,
         report: {
@@ -134,16 +195,18 @@ export async function executeWorkflow<TDeps>(
         },
       }
     } catch (err) {
+      const message = errorMessage(err)
       await recorder.record({
         nodeId: node.id,
         nodeKind: node.kind,
         sequence: seq,
         input,
         status: 'failed',
-        error: errorMessage(err),
+        error: message,
         startedAt,
         finishedAt: new Date(),
       })
+      await nodeSink?.log?.(endEntryOf(node, seq, Date.now(), true, message))
       // Best-effort node: continue the run with a `null` output rather than
       // aborting. Mirrors the Cloudflare backend; never for decision nodes.
       if (node.execution?.continueOnError && !isDecisionKind(node.kind)) {

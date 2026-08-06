@@ -8,6 +8,7 @@ import {
   GitBranch,
   Repeat,
   User,
+  Users,
   Wrench,
 } from 'lucide-react'
 import type { ReactNode } from 'react'
@@ -18,11 +19,12 @@ import { formatDurationMs, formatTokens, formatUsd } from './cost'
 import { DataView } from './data-view'
 import { NoteMarkdown } from './editor/note-markdown'
 import { BrandMark, inferModelBrand } from './evals/shared'
-import {
-  type IterationMeta,
-  readIterationMeta,
-} from './run-activity-tree'
+import { useTools } from './hooks'
+import { type IterationMeta, readIterationMeta } from './run-activity-tree'
 import { firstLine, previewLine } from './text-preview'
+import { toolChip } from './tool-appearance'
+import { ToolIcon } from './tool-icon'
+import { Tooltip } from './tooltip'
 
 // The Logs view renders a step's execution as an AI-style vertical timeline:
 //   Input → thinking → tool call → … → Output.
@@ -200,9 +202,10 @@ function thinkingStep(text: string): LogStep {
 }
 
 // ── Agent stat cards ──────────────────────────────────────────────────────────
-// The header on an agent step: model, tokens, speed, and cost as compact cards.
-// Cost comes from the server (token usage × catalog price); speed is derived from
-// the step's recorded start/finish window.
+// The header on an agent step: model, tokens, speed, cost, and the tools it
+// called as compact cards. Cost comes from the server (token usage × catalog
+// price); speed is derived from the step's recorded start/finish window; the
+// tool tally is rolled up from the step's own trace.
 
 function StatCard({
   label,
@@ -240,6 +243,79 @@ function StatCard({
   )
 }
 
+// Tally this step's tool calls by tool. The recorded `toolName` IS the tool's
+// registry id, so it resolves straight against the tool catalog for the icon
+// and the human-readable name (same mapping the agent editor's call list uses).
+function countToolCalls(meta: AgentNodeMeta): { toolId: string; count: number }[] {
+  const counts = new Map<string, number>()
+  for (const s of meta.steps ?? []) {
+    for (const tc of s.toolCalls ?? []) {
+      if (!tc.toolName) continue
+      counts.set(tc.toolName, (counts.get(tc.toolName) ?? 0) + 1)
+    }
+  }
+  return [...counts]
+    .map(([toolId, count]) => ({ toolId, count }))
+    .sort((a, b) => b.count - a.count || a.toolId.localeCompare(b.toolId))
+}
+
+// The tools this step called, each as an icon + name chip with its call count.
+// A synthesized delegation tool (`spawn_*` / `await_subagents`) isn't in the
+// catalog, so it gets the sub-agent look instead of a missing-tool fallback.
+function ToolCallsCard({ meta }: { meta: AgentNodeMeta }) {
+  const { data: tools } = useTools()
+  const calls = countToolCalls(meta)
+  if (calls.length === 0) return null
+  return (
+    <div className="flex min-w-0 flex-col justify-center gap-1 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5">
+      <div className="text-[10px] font-medium tracking-wide text-neutral-400 uppercase">
+        Tools
+      </div>
+      <div className="flex flex-wrap items-center gap-1">
+        {calls.map((call) => {
+          const tool = tools?.find((t) => t.id === call.toolId)
+          const delegation =
+            !tool &&
+            (call.toolId.startsWith('spawn_') ||
+              call.toolId.endsWith('_subagents'))
+          const label = tool?.name ?? call.toolId
+          return (
+            <Tooltip
+              key={call.toolId}
+              content={`${label} · called ${call.count} ${call.count === 1 ? 'time' : 'times'}`}
+            >
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5',
+                  delegation
+                    ? 'bg-indigo-50 text-indigo-500'
+                    : toolChip(tool?.color ?? null),
+                )}
+              >
+                {delegation ? (
+                  <Users className="size-3.5 shrink-0" />
+                ) : (
+                  <ToolIcon
+                    icon={tool?.icon}
+                    iconName={tool?.iconName}
+                    className="size-3.5"
+                  />
+                )}
+                <span className="max-w-[9rem] truncate text-[11px] font-semibold">
+                  {label}
+                </span>
+                <span className="text-[11px] font-semibold tabular-nums opacity-70">
+                  ×{call.count}
+                </span>
+              </span>
+            </Tooltip>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function AgentMetaBar({
   meta,
   step,
@@ -260,6 +336,13 @@ function AgentMetaBar({
     durationMs && durationMs > 0
       ? Math.round(total / (durationMs / 1000))
       : null
+  // One "turn" is one model round-trip in the agent loop; the tool-call total
+  // across those turns is what drove the extra ones.
+  const turns = meta.steps?.length ?? 0
+  const toolCalls = (meta.steps ?? []).reduce(
+    (n, s) => n + (s.toolCalls?.length ?? 0),
+    0,
+  )
   return (
     <div className="mb-3 flex flex-wrap items-stretch gap-2">
       <StatCard
@@ -283,7 +366,17 @@ function AgentMetaBar({
         value={formatDurationMs(durationMs)}
         sub={tps != null ? `${tps.toLocaleString()} tok/s` : undefined}
       />
+      <StatCard
+        label="Turns"
+        value={turns.toLocaleString()}
+        sub={
+          toolCalls > 0
+            ? `${toolCalls.toLocaleString()} tool ${toolCalls === 1 ? 'call' : 'calls'}`
+            : undefined
+        }
+      />
       <StatCard label="Cost" value={formatUsd(step.costUsd)} />
+      <ToolCallsCard meta={meta} />
     </div>
   )
 }

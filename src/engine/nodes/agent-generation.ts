@@ -26,6 +26,17 @@ import type { StreamSink } from '../stream-sink'
 export type AgentNodeMeta = {
   model: string
   systemPrompt: string
+  /**
+   * Which AGENT this generation ran — stamped by the caller (the agent node or a
+   * spawned sub-agent), not by generation itself, which only knows a prompt and
+   * a model. It's the only durable link from a recorded step back to the agent:
+   * a graph node id resolves to an agent only through its version's graph, and a
+   * sub-agent step has no graph node at all. The agent editor's "recent calls"
+   * queries on it. Absent on steps recorded before the stamp existed.
+   */
+  agentId?: string
+  /** The published version of that agent, from the frozen run manifest. */
+  agentVersion?: number
   steps: Array<{
     stepNumber: number
     finishReason?: string
@@ -42,6 +53,21 @@ export type AgentNodeMeta = {
     usage?: { inputTokens?: number; outputTokens?: number }
   }>
   totalUsage: { inputTokens: number; outputTokens: number }
+  /**
+   * Set when the agent's `toolTokenBudget` — not `maxTurns` — is what ended its
+   * research. The answer is still a real answer, but it was written against
+   * whatever the agent had gathered by then, so a reader comparing two runs of
+   * the same agent needs to know one of them was cut short.
+   */
+  stoppedOnTokenBudget?: boolean
+  /**
+   * Set when the conversation approached the model's context window and the loop
+   * stopped gathering to avoid overflowing it. Unlike the budget this isn't a
+   * choice anyone made, so seeing it means the agent's tools return more than
+   * this model can hold — the fix is smaller tool results or a bigger model, not
+   * a config change.
+   */
+  stoppedOnContextLimit?: boolean
 }
 
 export type AgentNodeResult = {
@@ -70,6 +96,22 @@ export type RunAgentGenerationArgs = {
    * output kind (no tool loop). See `requireToolFirstTurn` on `AgentConfig`.
    */
   requireToolFirstTurn?: boolean
+  /**
+   * Spend ceiling for the tool loop, in tokens summed across finished turns.
+   * Reaching it denies tools on the next turn, forcing the answer. Omitted or
+   * null → no ceiling. See `toolTokenBudget` on `AgentConfig`.
+   */
+  toolTokenBudget?: number | null
+  /**
+   * The model's context window, frozen into the run manifest. Used only by the
+   * overflow guard below. Omitted → the guard stands down (no window reported).
+   */
+  contextLength?: number
+  /**
+   * Percentage of `contextLength` to keep free for writing the answer. Defaults
+   * to 10 when unset. Ignored without a `contextLength` to take a share of.
+   */
+  answerReservePercent?: number
   /** Stream the model's reasoning to the user's 'progress' channel when true. */
   streamReasoning: boolean
   /** Announce each tool the model calls on the user's 'progress' channel when
@@ -310,6 +352,9 @@ async function runToolLoop(
     modelId,
     maxTurns,
     requireToolFirstTurn,
+    toolTokenBudget,
+    contextLength,
+    answerReservePercent,
     streamReasoning,
     streamToolCalls,
     systemPrompt,
@@ -328,6 +373,27 @@ async function runToolLoop(
     (requireToolFirstTurn ?? false) &&
     maxTurns > 1 &&
     Object.keys(tools).length > 0
+  // Overflow guard. `inputTokens` of a round-trip IS the conversation as sent, so
+  // occupancy needs no estimation — but it can only be read AFTER sending, which
+  // makes every reading one turn stale. A naive "stop at N% full" therefore has
+  // to leave enough slack for one more turn's growth on top of the answer, and
+  // the author has no way to know how much that is: it's the size of their tool
+  // results, which they've never measured.
+  //
+  // So the engine measures it. `observedGrowth` is the largest turn-over-turn
+  // jump seen so far — deliberately the max, not the last, because a single fat
+  // tool result is exactly the thing that overflows the next request. The loop
+  // stops once `lastInput + growth` would leave less than the answer reserve.
+  // An agent with small tool results rides much closer to the window than a
+  // fixed percentage would have allowed; one with huge results stops sooner.
+  const answerReserveTokens =
+    contextLength != null
+      ? Math.floor((contextLength * (answerReservePercent ?? 10)) / 100)
+      : null
+  let lastInputTokens = 0
+  let observedGrowth = 0
+  let stoppedOnTokenBudget = false
+  let stoppedOnContextLimit = false
   const stepTraces: AgentNodeMeta['steps'] = []
   const totalUsage = { inputTokens: 0, outputTokens: 0 }
   const guard = armTotalBudget(budget)
@@ -355,11 +421,56 @@ async function runToolLoop(
       // which is how a $0.64 chat turn rendered as a blank message. Denying
       // tools on the final turn forces the model to commit what it has to
       // prose, caveats and all, which is what the reader needed anyway.
+      // Three rules, in strict precedence. The two that DENY tools come first and
+      // are never overridden: whatever else is configured, an agent that is out
+      // of turns or out of budget has to write its answer now.
       prepareStep: ({ stepNumber }) => {
         if (stepNumber >= maxTurns - 1) {
           void sink?.log?.({
             level: 'info',
             message: `→ ${modelId} (turn ${stepNumber + 1}/${maxTurns}, answering — no more tools)`,
+          })
+          return { toolChoice: 'none' }
+        }
+        // Would one more tool turn leave room to write the answer? Checked BEFORE
+        // the spend budget because overflowing the window is a hard error and
+        // the budget is a preference.
+        //
+        // With no growth sample yet (turn 2), the conversation's current size
+        // stands in for its growth — i.e. assume it could double. That's
+        // deliberately pessimistic and costs nothing in the normal case, where an
+        // opening prompt is a rounding error against the window; where it DOES
+        // bite, the conversation is already vast and stopping is right.
+        if (answerReserveTokens != null && lastInputTokens > 0) {
+          const growth = observedGrowth > 0 ? observedGrowth : lastInputTokens
+          const projected = lastInputTokens + growth
+          if (projected + answerReserveTokens > contextLength!) {
+            stoppedOnContextLimit = true
+            void sink?.log?.({
+              level: 'info',
+              message: `→ ${modelId} (turn ${stepNumber + 1}/${maxTurns}, another turn would reach ~${projected.toLocaleString()} of ${contextLength!.toLocaleString()} — answering while there is room to)`,
+              meta: {
+                lastInputTokens,
+                observedGrowth: growth,
+                projected,
+                answerReserveTokens,
+                contextLength,
+              },
+            })
+            return { toolChoice: 'none' }
+          }
+        }
+        // Spend ceiling reached. Deliberately NOT an error: the whole point of
+        // the budget is to reach the end of the money with an answer in hand,
+        // rather than let the node's wall-clock guard fail the run outright with
+        // nothing to show for what it already spent.
+        const spent = totalUsage.inputTokens + totalUsage.outputTokens
+        if (toolTokenBudget != null && spent >= toolTokenBudget) {
+          stoppedOnTokenBudget = true
+          void sink?.log?.({
+            level: 'info',
+            message: `→ ${modelId} (turn ${stepNumber + 1}/${maxTurns}, token budget reached at ${spent.toLocaleString()} — answering with what it has)`,
+            meta: { spent, toolTokenBudget },
           })
           return { toolChoice: 'none' }
         }
@@ -408,6 +519,18 @@ async function runToolLoop(
         })
         totalUsage.inputTokens += step.usage?.inputTokens ?? 0
         totalUsage.outputTokens += step.usage?.outputTokens ?? 0
+        // Not cumulative — this is the size of the conversation as sent for THIS
+        // turn, which is exactly what the context guard needs to read. The jump
+        // since the previous turn is what one more turn would add again; keep the
+        // largest seen, since the guard has to survive the worst tool result this
+        // agent actually produces, not the average one.
+        const input = step.usage?.inputTokens
+        if (input != null) {
+          if (lastInputTokens > 0) {
+            observedGrowth = Math.max(observedGrowth, input - lastInputTokens)
+          }
+          lastInputTokens = input
+        }
         if (sink) {
           // DEV feed (always): the model's reasoning + a raw line per tool call.
           // These power the run viewer's Logs panel and never reach the end user.
@@ -496,6 +619,8 @@ async function runToolLoop(
       systemPrompt,
       steps: stepTraces,
       totalUsage,
+      ...(stoppedOnTokenBudget ? { stoppedOnTokenBudget: true } : {}),
+      ...(stoppedOnContextLimit ? { stoppedOnContextLimit: true } : {}),
     },
   }
 }

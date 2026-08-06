@@ -42,6 +42,7 @@ function entry(
   level: string,
   message: string,
   ts: number,
+  meta: unknown = null,
 ): WfRunLogRow {
   return {
     nodeId: NODE,
@@ -49,7 +50,7 @@ function entry(
     sequence: 1,
     level,
     message,
-    meta: null,
+    meta,
     ts,
   }
 }
@@ -163,6 +164,40 @@ describe('live run-log appends', () => {
     // Only the curated `progress` level surfaces — and it does so while the
     // run is still running, which is the whole point.
     expect(feed?.status).toBe('running')
-    expect(feed?.lines).toEqual(['Searching knowledge base'])
+    expect(feed?.lines).toEqual([
+      { message: 'Searching knowledge base', variant: 'step' },
+    ])
+  })
+
+  test("a line's variant comes from the agent's `meta.progress` tag", async () => {
+    await db.insert(wfSchema.wfRun).values({
+      id: RUN,
+      workflowVersionId: 'v1',
+      triggerKind: 'chat_message',
+      status: 'running',
+      correlationId: 'org-1',
+    })
+    await attempt(db, [
+      entry('progress', 'Reading the case file', 10),
+      entry('progress', 'Let me check the docket…', 20, {
+        progress: 'reasoning',
+      }),
+      entry('progress', 'Searching documents', 30, {
+        progress: 'tool',
+        tool: 'search_documents',
+      }),
+    ])
+
+    const feed = await getRunProgressFeed(db, RUN)
+    // An untagged line stays a plain step, so pre-tag rows keep rendering.
+    expect(feed?.lines).toEqual([
+      { message: 'Reading the case file', variant: 'step' },
+      { message: 'Let me check the docket…', variant: 'reasoning' },
+      {
+        message: 'Searching documents',
+        variant: 'tool',
+        tool: 'search_documents',
+      },
+    ])
   })
 })

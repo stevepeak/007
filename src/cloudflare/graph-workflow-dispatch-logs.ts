@@ -1,3 +1,4 @@
+import { endEntryOf, nodeLabel, startEntryOf } from '../engine/run-log-entries'
 import type { RecordStepArgs } from '../engine/run-recorder'
 import type { ExecutableNode } from '../engine/scheduler'
 import type { RunLogEntry } from '../engine/stream-sink'
@@ -9,47 +10,10 @@ import type { RunCtx } from './graph-workflow-dispatch-run-ctx'
 import { stepDo } from './graph-workflow-dispatch-step'
 import { DEFAULT_STEP_OPTS } from './graph-workflow-dispatch-step-opts'
 
-// Human label for a node in the log feed ("Structure the document",
-// "Embed section"), falling back to the kind when a node has no label.
-export function nodeLabel(node: ExecutableNode): string {
-  return (node as { label?: string }).label?.trim() || node.kind
-}
-
-// Build the two bookend entries for a node's feed. `node-start` is
-// broadcast live from the `enter:` step and persisted (with the body's
-// entries) in the `record:` step; `node-end` closes it out.
-export function startEntryOf(
-  node: ExecutableNode,
-  seq: number,
-  ts: number,
-): RunLogEntry {
-  return {
-    ts,
-    level: 'node-start',
-    nodeId: node.id,
-    nodeKind: node.kind,
-    sequence: seq,
-    message: `▶ ${nodeLabel(node)}`,
-  }
-}
-function endEntryOf(
-  node: ExecutableNode,
-  seq: number,
-  ts: number,
-  failed: boolean,
-  detail?: string,
-): RunLogEntry {
-  return {
-    ts,
-    level: failed ? 'error' : 'node-end',
-    nodeId: node.id,
-    nodeKind: node.kind,
-    sequence: seq,
-    message: failed
-      ? `✕ ${nodeLabel(node)} failed${detail ? `: ${detail}` : ''}`
-      : `✓ ${nodeLabel(node)}`,
-  }
-}
+// The bookend builders moved to `engine/run-log-entries` once the inline
+// backend needed them too. Re-exported here so this module stays the one import
+// site for the durable backend's dispatch.
+export { nodeLabel, startEntryOf }
 
 // Persist a node's full feed (bookends + body) in one idempotent write,
 // and stream its closing line live. Shared by the success + failure

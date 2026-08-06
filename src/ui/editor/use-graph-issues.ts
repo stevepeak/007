@@ -55,9 +55,11 @@ export function useGraphIssues(graph: WorkflowGraph): GraphIssue[] {
             'Inputs have different shapes — a race must join producers of the same shape so its consumer sees one consistent result.',
         })
       }
-      // Message history is explicit: an agent gets prior context only via its
-      // `conversation` link. Warn when a message source is reachable but unlinked —
-      // the agent would run with no prior conversation until it's wired up.
+      // Message history is explicit twice over: the agent declares that it works
+      // on a conversation, and the node says where that conversation comes from.
+      // Warn when a declaring agent is left unlinked (it would run with no prior
+      // messages); error when a link points at an agent that declares no
+      // conversation, since that link feeds nothing the agent asked for.
       if (node.kind === 'agent') {
         const thread = agentThreadSource(graph, node.id, maps)
         if (thread.status === 'unlinked') {
@@ -65,7 +67,25 @@ export function useGraphIssues(graph: WorkflowGraph): GraphIssue[] {
             nodeId: node.id,
             nodeLabel: node.label,
             severity: 'warning',
-            message: `This agent has no conversation link, so it will run with no prior messages. Link its conversation input to “${thread.sourceLabel}” (the chat trigger’s messages) to pass the full conversation.`,
+            message: `This agent works on a conversation but has no conversation link, so it will run with no prior messages. Link its conversation input to “${thread.sourceLabel}” (the chat trigger’s messages) to pass the full conversation.`,
+          })
+        }
+        if (thread.status === 'idle') {
+          bindingIssues.push({
+            nodeId: node.id,
+            nodeLabel: node.label,
+            severity: 'warning',
+            message:
+              'This agent works on a conversation but nothing upstream carries one, so it will run with no prior messages.',
+          })
+        }
+        if (thread.status === 'unsupported') {
+          bindingIssues.push({
+            nodeId: node.id,
+            nodeLabel: node.label,
+            severity: 'error',
+            message:
+              'This node links a conversation, but the agent it points at doesn’t work on a conversation. Turn on “Works on a conversation” in the agent and publish it, or clear the link.',
           })
         }
       }

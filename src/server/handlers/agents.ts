@@ -5,6 +5,7 @@ import {
   createAgent,
   discardAgentDraft,
   getAgent,
+  listAgentCalls,
   listAgentVersions,
   listAgents,
   listWorkflowsReferencingAgent,
@@ -53,6 +54,7 @@ function agentSummary(
     output: cfg?.output ?? null,
     modelId: cfg?.modelId ?? null,
     toolIds: cfg?.toolIds ?? [],
+    acceptsConversation: cfg?.acceptsConversation ?? false,
     workflows,
   }
 }
@@ -72,6 +74,7 @@ export function buildAgentHandlers<TDeps>(
   | 'countAgentReferences'
   | 'listAgentReferences'
   | 'archiveAgent'
+  | 'listAgentCalls'
   | 'runAgentPreview'
   | 'runToolPreview'
 > {
@@ -205,6 +208,13 @@ export function buildAgentHandlers<TDeps>(
       await requireAgentExists(c.db, agentId)
       await archiveAgent(c.db, { agentId })
       return { ok: true }
+    },
+
+    listAgentCalls: async (c) => {
+      const agentId = str(c.params, 'agentId')
+      await requireAgentExists(c.db, agentId)
+      const p = c.params as { limit?: number }
+      return await listAgentCalls(c.db, { agentId, limit: p.limit })
     },
 
     runAgentPreview: async (c) => {

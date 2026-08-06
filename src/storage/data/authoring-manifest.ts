@@ -6,7 +6,7 @@ import {
   type WorkflowGraph,
 } from '../../engine/graph'
 import type { WfDb } from '../client'
-import { wfAgent, wfAgentVersion, wfWorkflow } from '../schema'
+import { wfAgent, wfAgentVersion, wfModel, wfWorkflow } from '../schema'
 
 import { latestAgentVersion } from './authoring-agents'
 import {
@@ -94,6 +94,17 @@ export async function resolveRunManifest(
         .limit(1)
     )[0]
     const config = agentConfigSchema.parse(version.config)
+    // Freeze the model's context window alongside the config: the engine's
+    // overflow guard needs it, and `getModel` only returns a model, not its
+    // metadata. A model the platform hasn't catalogued (or one reporting no
+    // context length) leaves this undefined and the guard simply stands down.
+    const model = (
+      await db
+        .select({ contextLength: wfModel.contextLength })
+        .from(wfModel)
+        .where(eq(wfModel.id, config.modelId))
+        .limit(1)
+    )[0]
     entries.push({
       kind: 'agent',
       id: agentId,
@@ -102,6 +113,9 @@ export async function resolveRunManifest(
       versionNumber: version.versionNumber,
       name: agent?.name ?? '',
       config,
+      ...(model?.contextLength != null
+        ? { contextLength: model.contextLength }
+        : {}),
     })
     // Freeze the agent's delegation targets so its `spawn_*` tools resolve.
     for (const target of config.subAgents.targets) {

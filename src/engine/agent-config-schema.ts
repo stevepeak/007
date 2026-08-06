@@ -95,7 +95,60 @@ export const agentConfigSchema = z.object({
   toolIds: z.array(z.string()).default([]),
   // How many turns (rounds of tool-calling) the agent may take before it must
   // give a final answer.
-  maxTurns: z.number().int().min(1).max(20).default(5),
+  //
+  // The ceiling is a runaway-loop backstop, not a recommendation — the real
+  // bound on a long agent is time (the node's ~17-minute in-process budget) and
+  // spend (`tokenBudget`), both of which bite well before 100 turns on any
+  // normal model. The editor warns past 20 rather than the schema rejecting it,
+  // because "too slow for the node budget" depends on the node's timeout and the
+  // model's latency, neither of which this schema can see.
+  maxTurns: z.number().int().min(1).max(100).default(5),
+  // Tokens (prompt + completion, summed across every turn) the agent may spend
+  // RESEARCHING before it has to write its answer. `null` — the default — means
+  // no ceiling, leaving only `maxTurns` and the node's wall-clock budget.
+  //
+  // It exists to turn the loop's worst failure mode into a graceful one. The
+  // node's wall-clock budget (`engine/model-budget.ts`) aborts an overrunning
+  // agent, and that abort is classified FATAL and never retried — a run that
+  // spent real money and produced nothing. A token ceiling reached first ends
+  // the same investigation with a written answer instead, via the same mechanism
+  // as the last-turn tool denial.
+  //
+  // It bounds RESEARCH, not the run: the forced final turn re-sends the
+  // conversation and generates an answer on top of this number, and nothing caps
+  // that (no `maxOutputTokens` is passed). So it's a floor on spend, not a
+  // ceiling — an earlier draft dressed this up as a percentage split with a
+  // "reserve" for the answer, which enforced nothing and just made the author do
+  // arithmetic to find the only number that mattered. The editor now states the
+  // cost as "from $X" for the same reason.
+  toolTokenBudget: z.number().int().min(1000).nullable().default(null),
+  // How much of the model's context window to keep free for writing the answer,
+  // as a percentage. The loop stops calling tools once one more turn would eat
+  // into it. Serves a different failure than `toolTokenBudget`: that one is about
+  // money and is a soft preference; this one is about overflowing the window,
+  // which is a hard provider error.
+  //
+  // Why a RESERVE and not a "stop at N% full" ceiling, which is the more obvious
+  // control: the engine can only read a request's size after sending it, so any
+  // occupancy reading is one turn stale. A raw "stop at 90%" leaves 10% to absorb
+  // both the next turn's growth AND the answer — and a single large tool result
+  // eats that, overflowing on the very turn that was supposed to be the graceful
+  // exit. The engine instead MEASURES this agent's real per-turn growth and stops
+  // when `lastInput + growth + reserve` would exceed the window, so what the
+  // author sets is only the part they can actually reason about: how much room
+  // their answers need. See `runToolLoop`.
+  answerReservePercent: z.number().int().min(2).max(50).default(10),
+  // Force the FIRST round-trip to call a tool (`toolChoice: 'required'`) instead
+  // of letting the model choose. The failure mode this exists for is an agent
+  // answering a retrieval question from parametric knowledge — confidently, and
+  // without ever searching. A system prompt saying "always search first" is only
+  // probabilistic; this makes it structural.
+  //
+  // Deliberately inert rather than an error in the three cases where it can't
+  // hold (see `runToolLoop`): no tools registered, `maxTurns: 1` (turn 1 is also
+  // the final answering turn, which denies tools and must win), and the
+  // structured-output kinds, which run `generateObject` with no tool loop at all.
+  requireToolFirstTurn: z.boolean().default(false),
   // NOTE: `exposeThinking` and `enableReasoning` used to live here and are gone.
   // Zod strips them from stored configs, so old rows still parse.
   //
@@ -116,6 +169,26 @@ export const agentConfigSchema = z.object({
   //
   // What the agent is expected to produce.
   output: agentOutputSchema.default({ kind: 'text' }),
+  // Whether this agent works on a CONVERSATION (a chat thread) or on a single
+  // input value. It is a declaration about the agent's contract, like
+  // `output` — a chat responder answers a thread; a document summarizer answers
+  // one document — and it belongs here rather than on the workflow node because
+  // it's a property of the agent's prompt, not of one placement.
+  //
+  // Off (the default) the agent is a step: whatever its predecessor produced
+  // becomes its single working user message. On, every agent NODE pointing at it
+  // grows an optional `conversation` input, bound to the message source (usually
+  // the chat trigger's `messages`) — see `AgentNode.config.conversation`. Before
+  // this flag existed the input appeared only when the editor could *infer* a
+  // reachable message source from graph topology, which made "does this agent
+  // take the conversation?" invisible on the agent itself and inconsistent
+  // between two agents in the same workflow.
+  //
+  // The flag governs the editor's affordance and validation; the node's binding
+  // is still what feeds history at run time (see `resolveConversation`), so
+  // turning the flag off does not silently strip a live workflow's history —
+  // the editor raises a blocking issue on the stale link instead.
+  acceptsConversation: z.boolean().default(false),
   // Delegation whitelist + guardrails. Non-empty `targets` makes the engine
   // synthesize `spawn_*` + `await_subagents` tools into this agent's tool set.
   subAgents: subAgentsConfigSchema,
