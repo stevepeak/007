@@ -13,8 +13,8 @@ import {
 } from '../engine/graph'
 import { modelBudgetFor } from '../engine/model-budget'
 import { nodeSpanLabel } from '../engine/node-label'
-import { isFatalAgentError } from '../engine/nodes/agent-generation'
 import { emitNodeStartProgress } from '../engine/node-progress'
+import { isFatalAgentError } from '../engine/nodes/agent-generation'
 import {
   executeSubgraph,
   resolveIterationList,

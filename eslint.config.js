@@ -8,6 +8,8 @@ const config = await defineESLintConfig(
   {
     rules: {
       '@typescript-eslint/consistent-type-definitions': 'off',
+      // Single-line JSDoc (`/** Foo */`) is the house style here
+      'jsdoc/multiline-blocks': 'off',
       // Prettier lowercases hex digits when formatting, so align the unicorn
       // rule to lowercase to avoid a fight between pre-commit prettier and CI.
       'unicorn/number-literal-case': [

@@ -1,6 +1,5 @@
 import type { WfBlobRef } from '../blob-ref'
 import type { ModelFactory, ResolvedImage } from '../config'
-import type { ModelBudget } from '../model-budget'
 import {
   agentFromManifest,
   type AgentConfig,
@@ -8,6 +7,7 @@ import {
   substitutePromptVariables,
   type WfRunManifestEntry,
 } from '../graph'
+import type { ModelBudget } from '../model-budget'
 import type { StreamSink } from '../stream-sink'
 import { buildAgentToolSet, type ToolRegistry } from '../tool-registry'
 
