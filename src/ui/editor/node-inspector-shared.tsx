@@ -18,6 +18,11 @@ export type NodeInspectorProps = {
   /** When the node is inside an iteration, the element schema of the loop's
    * list — so its inputs can bind to the current `Item`'s fields. */
   itemSchema?: JsonSchema
+  /** The node lives inside an iteration's subgraph. Only top-level dispatch
+   * emits progress notes (see `emitNodeStartProgress` in engine/executor.ts),
+   * so a subgraph child can never reach the user — the Inform user control is
+   * disabled for it. */
+  insideIteration?: boolean
   /** The id of the workflow being edited — so a Workflow node's picker can
    * exclude the current workflow (a direct self-call is always a cycle). */
   currentWorkflowId?: string

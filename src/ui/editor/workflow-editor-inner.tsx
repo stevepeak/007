@@ -107,6 +107,7 @@ export function EditorInner({
     // Element schema of the loop's list when the node is inside an iteration —
     // lets its inputs bind to the current `Item`'s fields.
     itemSchema?: Record<string, unknown>
+    insideIteration?: boolean
   } | null => {
     if (!selectedId) return null
     const top = graph.nodes.find((n) => n.id === selectedId)
@@ -119,6 +120,10 @@ export function EditorInner({
           node: child,
           graph: n.config.subgraph,
           itemSchema: n.config.itemSchema,
+          // Carried explicitly rather than inferred from `itemSchema` — that is
+          // undefined until the author binds a list, which would read as
+          // "top-level" for every child of an unbound iteration.
+          insideIteration: true,
         }
     }
     return null
@@ -402,6 +407,7 @@ export function EditorInner({
                 node={selection.node}
                 graph={selection.graph}
                 itemSchema={selection.itemSchema}
+                insideIteration={selection.insideIteration}
                 currentWorkflowId={workflowId}
                 onChange={(next) => patcherRef.current?.(next.id, next)}
               />

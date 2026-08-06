@@ -75,13 +75,20 @@ function SegmentedToggle<T extends string>({
   value,
   options,
   onChange,
+  disabled,
 }: {
   value: T
   options: { value: T; label: string; icon?: LucideIcon }[]
   onChange: (value: T) => void
+  disabled?: boolean
 }) {
   return (
-    <div className="bg-muted inline-flex w-full gap-0.5 rounded-md p-0.5">
+    <div
+      className={cn(
+        'bg-muted inline-flex w-full gap-0.5 rounded-md p-0.5',
+        disabled && 'cursor-not-allowed opacity-60',
+      )}
+    >
       {options.map((opt) => {
         const active = opt.value === value
         const Icon = opt.icon
@@ -90,12 +97,15 @@ function SegmentedToggle<T extends string>({
             key={opt.value}
             type="button"
             aria-pressed={active}
+            disabled={disabled}
             onClick={() => onChange(opt.value)}
             className={cn(
               'flex flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2.5 py-1.5 text-xs font-medium transition-colors',
               active
                 ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground',
+                : 'text-muted-foreground',
+              !disabled && !active && 'hover:text-foreground',
+              disabled && 'cursor-not-allowed',
             )}
           >
             {Icon ? <Icon className="size-3.5" /> : null}
@@ -145,7 +155,7 @@ function ToggleRow({
 }
 
 export function NodeInspector(props: NodeInspectorProps) {
-  const { node, onChange, graph, itemSchema } = props
+  const { node, onChange, graph, itemSchema, insideIteration } = props
   const { Input } = useWfComponents()
 
   const Inspector = NODE_INSPECTORS[node.kind]
@@ -153,7 +163,11 @@ export function NodeInspector(props: NodeInspectorProps) {
   // Only agents offer the dynamic (live-streaming) mode.
   const isAgent = node.kind === 'agent'
   const inform = node.informUser
-  const informMode: InformMode = inform.mode
+  // Inside an iteration nothing a step emits reaches the user, so the control is
+  // disabled and pinned to Off. We display Off rather than the stored value so a
+  // legacy `static`/`dynamic` never reads as a mode that does something — but we
+  // never write it back, because merely selecting a node must not dirty the graph.
+  const informMode: InformMode = insideIteration ? 'off' : inform.mode
   const informOptions: { value: InformMode; label: string }[] = [
     { value: 'off', label: 'Off' },
     { value: 'static', label: 'Static' },
@@ -220,9 +234,16 @@ export function NodeInspector(props: NodeInspectorProps) {
             value={informMode}
             onChange={setInformMode}
             options={informOptions}
+            disabled={insideIteration}
           />
 
-          {inform.mode === 'dynamic' ? (
+          {insideIteration ? (
+            <p className="text-muted-foreground text-xs">
+              Steps inside an iteration can&rsquo;t message the end user —
+              anything they report is dropped. Set the note on the iteration
+              step itself instead.
+            </p>
+          ) : inform.mode === 'dynamic' ? (
             <div className="space-y-3">
               <p className="text-muted-foreground text-xs">
                 The agent streams its live activity to the user as it works.
