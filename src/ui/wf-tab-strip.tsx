@@ -18,6 +18,7 @@ import { cn } from './cn'
 import { describeCheck } from './evals/shared'
 import { useAgent, useEvalSet, useRun, useTools, useWorkflow } from './hooks'
 import { useFeedbackForSubjects } from './hooks-feedback'
+import { toolText } from './tool-appearance'
 import { ToolIcon } from './tool-icon'
 import { Tooltip } from './tooltip'
 import { classifyAssetPath, type WfAsset } from './wf-tab-routes'
@@ -240,7 +241,22 @@ function ToolTab({ asset, ...rest }: KindProps<'tool'>) {
   const name = tool?.name || 'Tool'
   return (
     <TabChrome
-      icon={<ToolIcon icon={tool?.icon} className="size-4" />}
+      // Color lives on the wrapper so the lucide icon inherits it (see
+      // `toolText`), matching how the tool's card/chip renders elsewhere.
+      icon={
+        <span
+          className={cn(
+            'flex size-4 items-center justify-center',
+            toolText(tool?.color),
+          )}
+        >
+          <ToolIcon
+            icon={tool?.icon}
+            iconName={tool?.iconName}
+            className="size-4"
+          />
+        </span>
+      }
       label={name}
       trail={[name]}
       {...rest}

@@ -15,3 +15,13 @@ const toolColor = agentColor
 export function toolChip(color: string | null | undefined): string {
   return color ? toolColor(color).chip : 'bg-neutral-100 text-neutral-500'
 }
+
+/**
+ * Foreground-only classes for a tool icon drawn without a chip background (tab
+ * strip, page header). Same palette as {@link toolChip}, same neutral default.
+ * Set it on a *wrapper* so the icon inherits it — `ToolIcon`'s fallback carries
+ * its own color and `cn` doesn't resolve competing Tailwind classes.
+ */
+export function toolText(color: string | null | undefined): string {
+  return color ? toolColor(color).text : 'text-neutral-500'
+}

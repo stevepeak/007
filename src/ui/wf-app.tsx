@@ -20,6 +20,7 @@ import { useWfNav, WfNavProvider } from './nav'
 import { RunPage } from './run-page'
 import { RunsExplorer } from './runs-explorer'
 import { WfShell, WfShellAssetProvider } from './shell'
+import { toolText } from './tool-appearance'
 import { ToolDetail } from './tool-detail'
 import { ToolIcon } from './tool-icon'
 import { ToolsList } from './tools-list'
@@ -306,7 +307,20 @@ function ToolDetailPage({ toolId }: { toolId: string }) {
   return (
     <WfShell
       crumbs={[{ label: tool?.name ?? 'Tool' }]}
-      titleIcon={<ToolIcon icon={tool?.icon} className="size-5" />}
+      titleIcon={
+        <span
+          className={cn(
+            'flex size-5 shrink-0 items-center justify-center',
+            toolText(tool?.color),
+          )}
+        >
+          <ToolIcon
+            icon={tool?.icon}
+            iconName={tool?.iconName}
+            className="size-5"
+          />
+        </span>
+      }
       description={tool?.description}
       scroll
     >
