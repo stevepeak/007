@@ -11,7 +11,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react'
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, useMemo, type ReactNode } from 'react'
 
 import { agentColor, agentIcon } from './agent-appearance'
 import { cn } from './cn'
@@ -21,16 +21,23 @@ import { useFeedbackForSubjects } from './hooks-feedback'
 import { toolText } from './tool-appearance'
 import { ToolIcon } from './tool-icon'
 import { Tooltip } from './tooltip'
-import { classifyAssetPath, type WfAsset } from './wf-tab-routes'
+import {
+  classifyAssetPath,
+  groupTabs,
+  WF_TAB_GROUP_LABELS,
+  type WfAsset,
+} from './wf-tab-routes'
 import { HOME_TAB_ID, useWfTabs, type WfTab } from './wf-tabs'
 
 // The Chrome-style tab strip. A fixed, non-closable Home tab (hub + section
-// browsing) followed by one closable tab per open asset. Each tab shows the
+// browsing), then open asset tabs laid out as one labelled row per kind
+// ("Workflows: […] […]") so a crowded strip stays scannable. Each tab shows the
 // asset's icon + name and, on hover, its full breadcrumb trail. Identity is
 // resolved per tab from live query data (name/icon fill in once loaded).
 
 export function WfTabStrip() {
   const { tabs, activeId, activateTab, closeTab, closeAllTabs } = useWfTabs()
+  const groups = useMemo(() => groupTabs(tabs), [tabs])
 
   return (
     // Tabs wrap (never scroll) so the strip stays a fixed height. Each tab's
@@ -41,22 +48,37 @@ export function WfTabStrip() {
     // leaving overflow-y visible, so the tooltips (which drop *below* the strip)
     // still render in full.
     <div className="flex items-start gap-1 overflow-x-clip border-b border-neutral-200 bg-neutral-50 px-2 py-1">
-      <div className="flex flex-1 flex-wrap items-stretch gap-1">
-        <TabChrome
-          icon={<VenetianMask className="size-4 text-neutral-500" />}
-          label="007"
-          trail={['007']}
-          active={activeId === HOME_TAB_ID}
-          onSelect={() => activateTab(HOME_TAB_ID)}
-        />
-        {tabs.map((tab) => (
-          <TabItem
-            key={tab.id}
-            tab={tab}
-            active={activeId === tab.id}
-            onSelect={() => activateTab(tab.id)}
-            onClose={() => closeTab(tab.id)}
+      {/* Two columns — row heading, then that row's wrapping tabs — so every
+          row's tabs start at the same x regardless of heading width. Home gets
+          a heading-less row of its own (the 007 tab names itself). */}
+      <div className="grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2 gap-y-1">
+        <span />
+        <div className="flex flex-wrap items-stretch gap-1">
+          <TabChrome
+            icon={<VenetianMask className="size-4 text-neutral-500" />}
+            label="007"
+            trail={['007']}
+            active={activeId === HOME_TAB_ID}
+            onSelect={() => activateTab(HOME_TAB_ID)}
           />
+        </div>
+        {groups.map(({ group, tabs: rowTabs }) => (
+          <Fragment key={group}>
+            <span className="py-1 text-right text-xs leading-5 font-medium text-neutral-500">
+              {WF_TAB_GROUP_LABELS[group]}
+            </span>
+            <div className="flex flex-wrap items-stretch gap-1">
+              {rowTabs.map((tab) => (
+                <TabItem
+                  key={tab.id}
+                  tab={tab}
+                  active={activeId === tab.id}
+                  onSelect={() => activateTab(tab.id)}
+                  onClose={() => closeTab(tab.id)}
+                />
+              ))}
+            </div>
+          </Fragment>
         ))}
       </div>
       {tabs.length > 0 ? (

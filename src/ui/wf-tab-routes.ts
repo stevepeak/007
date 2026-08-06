@@ -108,3 +108,86 @@ export function isAssetPath(path: string): boolean {
 export function assetTabId(path: string): string {
   return segments(path).join('/')
 }
+
+// --- tab strip grouping -----------------------------------------------------
+//
+// The strip lays tabs out as one labelled row per kind ("Workflows: [wf 1] …"),
+// so a dozen open tabs stay scannable. Grouping is coarser than `WfAsset`: the
+// four eval shapes (set / sample / test / run report) share one "Evals" row,
+// since they're one workflow to the user.
+
+/** A row in the tab strip. */
+export type WfTabGroup =
+  | 'workflow'
+  | 'agent'
+  | 'run'
+  | 'tool'
+  | 'evals'
+  | 'feedback'
+
+/** Row order, top to bottom. Rows with no open tabs are omitted entirely. */
+export const WF_TAB_GROUP_ORDER: WfTabGroup[] = [
+  'workflow',
+  'agent',
+  'run',
+  'tool',
+  'evals',
+  'feedback',
+]
+
+/** The row heading for each group. */
+export const WF_TAB_GROUP_LABELS: Record<WfTabGroup, string> = {
+  workflow: 'Workflows',
+  agent: 'Agents',
+  run: 'Runs',
+  tool: 'Tools',
+  evals: 'Evals',
+  feedback: 'Feedback',
+}
+
+/**
+ * Which row a tab belongs in. An unclassifiable path (shouldn't happen — only
+ * asset paths become tabs) lands in "Workflows" rather than vanishing, matching
+ * the strip's fallback tab rendering.
+ */
+export function tabGroup(path: string): WfTabGroup {
+  const asset = classifyAssetPath(path)
+  switch (asset?.type) {
+    case 'agent':
+      return 'agent'
+    case 'run':
+      return 'run'
+    case 'tool':
+      return 'tool'
+    case 'evalSet':
+    case 'evalSample':
+    case 'evalTest':
+    case 'evalRun':
+      return 'evals'
+    case 'feedbackItem':
+      return 'feedback'
+    default:
+      return 'workflow'
+  }
+}
+
+/**
+ * Bucket tabs into strip rows, preserving open order within each row and
+ * dropping empty rows. Generic over the tab shape so the pure grouping stays
+ * testable without the UI's `WfTab` type.
+ */
+export function groupTabs<T extends { path: string }>(
+  tabs: T[],
+): { group: WfTabGroup; tabs: T[] }[] {
+  const byGroup = new Map<WfTabGroup, T[]>()
+  for (const tab of tabs) {
+    const group = tabGroup(tab.path)
+    const bucket = byGroup.get(group)
+    if (bucket) bucket.push(tab)
+    else byGroup.set(group, [tab])
+  }
+  return WF_TAB_GROUP_ORDER.filter((g) => byGroup.has(g)).map((group) => ({
+    group,
+    tabs: byGroup.get(group)!,
+  }))
+}
