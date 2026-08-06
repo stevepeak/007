@@ -55,9 +55,20 @@ function orderedExecutableNodes(graph: WorkflowGraph): WorkflowNode[] {
 export function buildSimulatedItems(graph: WorkflowGraph): RunSurfaceItem[] {
   const items: RunSurfaceItem[] = []
   for (const node of orderedExecutableNodes(graph)) {
-    const message = nodeProgressMessage(node, undefined)
+    // An iteration's note can use `${n}` (the item count), which a preview has
+    // no real list to read — feed it the sample size so the author sees the
+    // interpolated copy rather than a hole where the number goes.
+    const isIteration = node.kind === 'iteration'
+    const message = nodeProgressMessage(
+      node,
+      isIteration
+        ? { n: SAMPLE_ITERATION_ITEMS, total: SAMPLE_ITERATION_ITEMS }
+        : undefined,
+    )
     if (message) items.push({ kind: 'progress', message, nodeId: node.id })
-    if (node.kind === 'iteration') {
+    // Per-item ticks ride on the same toggle as the note (see `runIteration`),
+    // so an `off` iteration previews as silent — exactly as it now runs.
+    if (isIteration && node.informUser.mode === 'static') {
       for (let i = 1; i <= SAMPLE_ITERATION_ITEMS; i++) {
         items.push({
           kind: 'progress',

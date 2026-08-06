@@ -8,8 +8,10 @@ import { makeConfig } from './executor-test-helpers'
 // The first-class user-facing progress feed: a node emits a `level: 'progress'`
 // line at start ONLY when the author set a `progressNote` (interpolated from run
 // variables) — note-less nodes stay silent, there is no derived-title fallback.
-// Iteration additionally emits a `Processing item i of n` line per item. These
-// assert the engine contract through the in-process backend (no DB / Cloudflare).
+// An iteration follows the same rule but emits LATER (from `runIteration`, once
+// the list resolves and `${n}` exists) and then adds a `Processing item i of n`
+// line per item. These assert the engine contract through the in-process backend
+// (no DB / Cloudflare).
 
 const trigger = {
   id: 't',
@@ -96,7 +98,12 @@ describe('executor — user-facing progress', () => {
     expect(progressLines(sink)).toEqual([])
   })
 
-  test('an iteration emits a Processing item i of n line per item', async () => {
+  // An iteration over a 3-element list. `informUser` is the knob under test, so
+  // the caller supplies it; everything else is fixed scaffolding.
+  const runIterationGraph = async (
+    informUser: unknown,
+    list: unknown[] = ['a', 'b', 'c'],
+  ) => {
     const sink = createMemorySink()
     await executeWorkflow({
       graph: {
@@ -109,13 +116,14 @@ describe('executor — user-facing progress', () => {
             label: 'List',
             position: { x: 200, y: 0 },
             // Emit a literal array for the iteration to loop over.
-            config: { value: { kind: 'literal', value: ['a', 'b', 'c'] } },
+            config: { value: { kind: 'literal', value: list } },
           },
           {
             id: 'loop',
             kind: 'iteration' as const,
             label: 'Each',
             position: { x: 400, y: 0 },
+            informUser,
             config: {
               source: { kind: 'ref', nodeId: 'src', path: '' },
               concurrency: 1,
@@ -158,8 +166,41 @@ describe('executor — user-facing progress', () => {
       recorder: createMemoryRunRecorder(),
       sink,
     })
-    const lines = progressLines(sink)
+    return progressLines(sink)
+  }
+
+  test('a static iteration announces the count, then ticks per item', async () => {
+    const lines = await runIterationGraph({
+      mode: 'static',
+      note: 'Processing ${n} recipes…',
+    })
+    // The note leads — it is emitted the moment the list resolves, which is the
+    // only point `${n}` is knowable — and appears exactly once.
+    expect(lines[0]).toBe('Processing 3 recipes…')
+    expect(lines.filter((l) => l === 'Processing 3 recipes…')).toHaveLength(1)
     expect(lines).toContain('Processing item 1 of 3')
     expect(lines).toContain('Processing item 3 of 3')
+  })
+
+  test('an iteration set to off is silent — ticks included', async () => {
+    // Regression guard. The per-item lines used to be emitted unconditionally,
+    // making iteration the one node kind that talked to the user with its
+    // toggle off.
+    expect(await runIterationGraph({ mode: 'off' })).toEqual([])
+  })
+
+  test('an iteration with no informUser defaults to silent', async () => {
+    expect(await runIterationGraph(undefined)).toEqual([])
+  })
+
+  test('an empty list still announces zero rather than going quiet', async () => {
+    // The author asked to be told how many items there are; "none" is an answer
+    // the user wants, not a reason to say nothing.
+    expect(
+      await runIterationGraph(
+        { mode: 'static', note: 'Processing ${n} recipes…' },
+        [],
+      ),
+    ).toEqual(['Processing 0 recipes…'])
   })
 })

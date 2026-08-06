@@ -25,25 +25,27 @@ type ProgressNode = {
  */
 export function nodeProgressMessage(
   node: ProgressNode,
-  promptVariables: Record<string, string | undefined> | undefined,
+  vars: Record<string, unknown> | undefined,
 ): string {
   if (node.informUser.mode !== 'static') return ''
   const note = node.informUser.note.trim()
   if (!note) return ''
-  return interpolateUserText(note, promptVariables ?? {}).trim()
+  return interpolateUserText(note, vars ?? {}).trim()
 }
 
 /**
- * Emit the node's user-facing progress line at start. No-op when the sink can't
- * log or the node has no author-provided progress note.
+ * Emit the node's user-facing progress line. No-op when the sink can't log or
+ * the node has no author-provided progress note. `vars` is the interpolation bag
+ * — usually the run's prompt variables, plus whatever built-ins the caller can
+ * supply (see `runIteration`, which adds the item count).
  */
-export function emitNodeStartProgress(
+export function emitNodeProgress(
   sink: StreamSink | undefined,
   node: ProgressNode,
-  promptVariables: Record<string, string | undefined> | undefined,
+  vars: Record<string, unknown> | undefined,
 ): void {
   if (!sink?.log) return
-  const message = nodeProgressMessage(node, promptVariables)
+  const message = nodeProgressMessage(node, vars)
   if (!message) return
   void sink.log({
     level: 'progress',
@@ -51,4 +53,22 @@ export function emitNodeStartProgress(
     nodeId: node.id,
     nodeKind: node.kind,
   })
+}
+
+/**
+ * Emit the node's progress line at node START — the dispatch-time hook both
+ * backends call. Iteration is the one exception and stays silent here: its note
+ * is emitted later, from `runIteration`, once the list has been resolved and the
+ * item count exists. Authors write `Processing ${n} recipes…` on an iteration,
+ * and `n` simply isn't knowable at this point in the run. The exception lives
+ * here rather than at the call sites because dispatch is generic over node kind
+ * — a per-backend check would be two places to drift.
+ */
+export function emitNodeStartProgress(
+  sink: StreamSink | undefined,
+  node: ProgressNode,
+  vars: Record<string, unknown> | undefined,
+): void {
+  if (node.kind === 'iteration') return
+  emitNodeProgress(sink, node, vars)
 }

@@ -49,6 +49,54 @@ describe('buildSimulatedItems', () => {
     expect(messages).toEqual(['Fetching records'])
   })
 
+  // The iteration graph under test; `informUser` is the knob, the rest is fixed.
+  const iterationGraph = (informUser: unknown) =>
+    ({
+      version: 1,
+      nodes: [
+        node('t', 'trigger', 'Go', { config: { triggerKind: 'manual' } }),
+        node('loop', 'iteration', 'Each doc', {
+          informUser,
+          config: {
+            source: { kind: 'ref', nodeId: 't', path: '' },
+            concurrency: 1,
+            stopOnError: true,
+            subgraph: {
+              version: 1,
+              nodes: [
+                node('it', 'trigger', 'Item', {
+                  config: { triggerKind: 'iteration_item' },
+                }),
+                node('io', 'output', 'ItemOut', { config: {} }),
+              ],
+              edges: [
+                { id: 'ie', source: 'it', target: 'io', condition: null },
+              ],
+            },
+          },
+        }),
+        node('o', 'output', 'Out', { config: {} }),
+      ],
+      edges: [
+        { id: 'e1', source: 't', target: 'loop', condition: null },
+        { id: 'e2', source: 'loop', target: 'o', condition: null },
+      ],
+    }) as unknown as WorkflowGraph
+
+  test('an iteration note interpolates ${n} from the sample size', () => {
+    // The preview has no real list, so it feeds the sample count in — otherwise
+    // the author would see a hole where the number goes.
+    const messages = buildSimulatedItems(
+      iterationGraph({ mode: 'static', note: 'Reviewing ${n} documents' }),
+    ).map((i) => (i.kind === 'progress' ? i.message : ''))
+    expect(messages[0]).toBe('Reviewing 3 documents')
+  })
+
+  test('an iteration set to off previews as silent', () => {
+    // Mirrors the runtime: the ticks ride on the same toggle as the note.
+    expect(buildSimulatedItems(iterationGraph({ mode: 'off' }))).toEqual([])
+  })
+
   test('an iteration expands into sample item ticks', () => {
     const graph = {
       version: 1,

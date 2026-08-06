@@ -1,5 +1,6 @@
 import { resolveBinding } from '../binding'
 import type { IterationNode, WorkflowGraph } from '../graph'
+import { emitNodeProgress } from '../node-progress'
 import {
   errorMessage,
   runNode,
@@ -223,18 +224,35 @@ export async function runIteration(args: {
   node: IterationNode
   list: unknown[]
   runItem: (item: unknown, index: number) => Promise<unknown>
-  /** When present, emit a user-facing `Processing item i of n` progress line as
-   * each item starts. Live signal only — the durable per-item trace is the
-   * recorder's job. */
+  /** When present AND the node's `informUser` is `static`, emit the author's
+   * note once (with `${n}` = the item count) followed by a `Processing item i of
+   * n` line as each item starts. Live signal only — the durable per-item trace
+   * is the recorder's job. An `off` iteration says nothing, exactly like every
+   * other node kind. */
   sink?: StreamSink
+  /** The run's prompt variables, for interpolating the note. The iteration's own
+   * built-ins (`n`/`total`) are layered on top. */
+  promptVariables?: Record<string, unknown>
 }): Promise<IterationResult> {
-  const { node, list: arr, runItem, sink } = args
+  const { node, list: arr, runItem, sink, promptVariables } = args
   const { concurrency, stopOnError } = node.config
 
   const total = arr.length
   const results = new Array<unknown>(total)
   const statuses = new Array<IterationItemStatus | undefined>(total)
   const meta = { total, concurrency, stopOnError } as const
+
+  // The node's own user-facing line, emitted HERE rather than at dispatch
+  // because this is the first point at which the item count exists — that's the
+  // whole reason iteration is exempt from `emitNodeStartProgress`. Built-ins are
+  // spread last so a run variable that happens to be named `n` can't shadow the
+  // count the author is asking for. Emitted before the empty-list return below,
+  // so a zero-item run still says "Processing 0 recipes…" instead of going
+  // silent — an empty list is a result the user wants to see, not a non-event.
+  const announce = node.informUser.mode === 'static'
+  if (announce) {
+    emitNodeProgress(sink, node, { ...promptVariables, n: total, total })
+  }
 
   if (total === 0) {
     return { results: [], meta: { ...meta, items: [] } }
@@ -251,12 +269,14 @@ export async function runIteration(args: {
       const index = cursor
       if (index >= total) return
       cursor = index + 1
-      void sink?.log?.({
-        level: 'progress',
-        message: `Processing item ${index + 1} of ${total}`,
-        nodeId: node.id,
-        nodeKind: 'iteration',
-      })
+      if (announce) {
+        void sink?.log?.({
+          level: 'progress',
+          message: `Processing item ${index + 1} of ${total}`,
+          nodeId: node.id,
+          nodeKind: 'iteration',
+        })
+      }
       try {
         results[index] = await runItem(arr[index], index)
         statuses[index] = { index, status: 'completed' }

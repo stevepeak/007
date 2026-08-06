@@ -289,6 +289,13 @@ export function NodeInspector(props: NodeInspectorProps) {
               <p className="text-muted-foreground text-xs">
                 Shown to the user while this step runs. Use{' '}
                 <code>{'${var}'}</code> for run variables.
+                {node.kind === 'iteration' ? (
+                  <>
+                    {' '}
+                    <code>{'${n}'}</code> is the number of items in the list —
+                    the note is shown once, before the per-item lines.
+                  </>
+                ) : null}
               </p>
             </div>
           ) : (

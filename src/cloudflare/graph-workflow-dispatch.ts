@@ -108,6 +108,7 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
     // scheduler's global outputs — not the forwarded input.
     list: resolveIterationList(node, scheduler.getOutputs()),
     sink,
+    promptVariables: p.runContext.promptVariables,
     runItem: (item, index) =>
       stepDo(step, `iter:${node.id}:${index}`, AI_STEP_OPTS, async () => {
         const rc = { ...p.runContext, env }
@@ -426,10 +427,10 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
   let captured: CapturedFailure | null = null
   try {
     if (node.kind === 'iteration') {
-      // Iteration runs its own per-item durable steps (no `run:` step to host a
-      // per-node sink), so emit its coarse progress line straight to the run
-      // sink; per-item lines follow from `runIteration`.
-      emitNodeStartProgress(sink, node, p.runContext.promptVariables)
+      // No progress emit here: an iteration's note needs the item count, which
+      // only exists once the list is resolved inside `runIteration` — that's
+      // where both its note and its per-item lines are emitted, straight to the
+      // run sink (there's no `run:` step to host a per-node sink).
       result = await dispatchIteration(ctx, node)
     } else if (
       node.kind === 'workflow' &&

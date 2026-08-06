@@ -8,6 +8,7 @@ import {
 } from '../graph'
 import { collectGraphIssues } from '../graph-issues'
 import type { RunNodeContext } from '../run-node'
+import { createMemorySink } from '../stream-sink'
 import { ITERATION_ITEM_TRIGGER_KIND } from '../trigger-registry'
 import {
   executeSubgraph,
@@ -21,14 +22,19 @@ import {
 
 const iterNode = (
   config: Partial<IterationNode['config']> = {},
+  // Matches the schema default. Progress is opt-in, so an `off` iteration says
+  // nothing to the user — see the announce tests below.
+  informUser: IterationNode['informUser'] = { mode: 'off' },
 ): IterationNode => ({
   id: 'it',
   kind: 'iteration',
   position: { x: 0, y: 0 },
   label: 'Iterate',
+  informUser,
   config: {
     concurrency: 4,
     stopOnError: false,
+    itemExecution: 'inline',
     subgraph: buildIterationSubgraph(),
     ...config,
   },
@@ -93,6 +99,51 @@ describe('runIteration', () => {
     expect(r.results).toEqual([])
     expect(r.meta.items).toEqual([])
     expect(calls).toBe(0)
+  })
+
+  // The user-facing announcement. `${n}` is the reason it is emitted here rather
+  // than at node start: the count doesn't exist until the list is resolved.
+  const announceLines = async (
+    informUser: IterationNode['informUser'],
+    list: unknown[],
+  ) => {
+    const sink = createMemorySink()
+    await runIteration({
+      node: iterNode({ concurrency: 1 }, informUser),
+      list,
+      runItem: async (item) => item,
+      sink,
+    })
+    return sink.logs.filter((l) => l.level === 'progress').map((l) => l.message)
+  }
+
+  test('a static note announces the count before any item runs', async () => {
+    const lines = await announceLines(
+      { mode: 'static', note: 'Processing ${n} recipes…' },
+      ['a', 'b'],
+    )
+    expect(lines).toEqual([
+      'Processing 2 recipes…',
+      'Processing item 1 of 2',
+      'Processing item 2 of 2',
+    ])
+  })
+
+  test('an empty list still announces zero', async () => {
+    // Emitted ahead of the empty-list short-circuit: "none" is an answer the
+    // user asked for, not a reason to stay quiet.
+    expect(
+      await announceLines(
+        { mode: 'static', note: 'Processing ${n} recipes…' },
+        [],
+      ),
+    ).toEqual(['Processing 0 recipes…'])
+  })
+
+  test('an off iteration emits nothing, per-item lines included', async () => {
+    // Regression guard: these ticks used to fire unconditionally, making
+    // iteration the one node kind that spoke to the user with its toggle off.
+    expect(await announceLines({ mode: 'off' }, ['a', 'b'])).toEqual([])
   })
 
   test('resolveIterationList throws a clear error when the ref is not an array', () => {

@@ -266,6 +266,7 @@ export async function runNode<TDeps>(
         // run's global outputs — not read out of the forwarded input.
         list: resolveIterationList(node, ctx.nodeOutputs),
         sink: ctx.sink,
+        promptVariables: ctx.promptVariables,
         runItem: (item, index) =>
           executeSubgraph(
             node.config.subgraph,
