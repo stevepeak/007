@@ -3,10 +3,10 @@ import {
   BrushCleaning,
   FlaskConical,
   Goal,
+  Home,
   Microscope,
   Target,
   ThumbsUp,
-  VenetianMask,
   Workflow as WorkflowIcon,
   X,
   type LucideIcon,
@@ -49,19 +49,20 @@ export function WfTabStrip() {
     // still render in full.
     <div className="flex items-start gap-1 overflow-x-clip border-b border-neutral-200 bg-neutral-50 px-2 py-1">
       {/* Two columns — row heading, then that row's wrapping tabs — so every
-          row's tabs start at the same x regardless of heading width. Home gets
-          a heading-less row of its own (the 007 tab names itself). */}
+          row's tabs start at the same x regardless of heading width. Home sits
+          in the heading column above the labels, icon-only, flush left. */}
       <div className="grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2 gap-y-1">
-        <span />
-        <div className="flex flex-wrap items-stretch gap-1">
+        <div className="flex justify-start">
           <TabChrome
-            icon={<VenetianMask className="size-4 text-neutral-500" />}
-            label="007"
-            trail={['007']}
+            icon={<Home className="size-4 text-neutral-500" />}
+            label="Home"
+            iconOnly
+            trail={['Home']}
             active={activeId === HOME_TAB_ID}
             onSelect={() => activateTab(HOME_TAB_ID)}
           />
         </div>
+        <span />
         {groups.map(({ group, tabs: rowTabs }) => (
           <Fragment key={group}>
             <span className="py-1 text-right text-xs leading-5 font-medium text-neutral-500">
@@ -102,6 +103,8 @@ export function WfTabStrip() {
 type TabChromeProps = {
   icon: ReactNode
   label: string
+  /** Render the icon alone; `label` still names the tab for screen readers. */
+  iconOnly?: boolean
   /** Breadcrumb segments shown in the hover tooltip (section → … → leaf). */
   trail: string[]
   active: boolean
@@ -109,7 +112,15 @@ type TabChromeProps = {
   onClose?: () => void
 }
 
-function TabChrome({ icon, label, trail, active, onSelect, onClose }: TabChromeProps) {
+function TabChrome({
+  icon,
+  label,
+  iconOnly,
+  trail,
+  active,
+  onSelect,
+  onClose,
+}: TabChromeProps) {
   return (
     <Tooltip content={<TrailTooltip trail={trail} />} side="bottom">
       <div
@@ -123,12 +134,13 @@ function TabChrome({ icon, label, trail, active, onSelect, onClose }: TabChromeP
         <button
           type="button"
           onClick={onSelect}
+          aria-label={iconOnly ? label : undefined}
           className="flex min-w-0 items-center gap-1.5"
         >
           <span className="flex size-4 shrink-0 items-center justify-center">
             {icon}
           </span>
-          <span className="truncate">{label}</span>
+          {iconOnly ? null : <span className="truncate">{label}</span>}
         </button>
         {onClose ? (
           <button
