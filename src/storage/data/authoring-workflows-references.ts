@@ -1,9 +1,11 @@
+import { eq, sql } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/sqlite-core'
+
 import type { WorkflowGraph } from '../../engine/graph'
 import type { WfDb } from '../client'
-import { wfWorkflow, wfWorkflowDraft } from '../schema'
+import { wfWorkflow, wfWorkflowDraft, wfWorkflowVersion } from '../schema'
 
 import { agentIdsInGraph } from './authoring-graph'
-import { latestVersion } from './authoring-workflows'
 
 // Which workflows reference which agents, read from each workflow's "live"
 // graphs (its draft + latest published version). Powers the agent archive guard
@@ -23,32 +25,52 @@ import { latestVersion } from './authoring-workflows'
  * every referencing workflow immediately.
  */
 // Load every workflow's "live" reference graphs — its draft plus its latest
-// published version — in one place. Drafts are fetched in a single query (one
-// row per workflow) rather than per-workflow, so only the per-workflow
-// `latestVersion` lookup remains. Both `listWorkflowsReferencing*` build on this
-// so the load/filter shape lives in exactly one function.
+// published version — in one place. All three reads are single queries: the
+// per-workflow `latestVersion` lookup used to be an N+1 (one full-row fetch —
+// including the large `graph` blob — per workflow), which dominated CPU on the
+// agents list and the archive guard. Instead a correlated subquery pulls each
+// workflow's latest-version graph in one round trip. Both
+// `listWorkflowsReferencing*` build on this so the load/filter shape lives in
+// exactly one function.
 async function loadWorkflowReferenceGraphs(
   db: WfDb,
 ): Promise<{ id: string; name: string; graphs: WorkflowGraph[] }[]> {
-  const workflows = await db
-    .select({ id: wfWorkflow.id, name: wfWorkflow.name })
-    .from(wfWorkflow)
-  const drafts = await db
-    .select({
-      workflowId: wfWorkflowDraft.workflowId,
-      graph: wfWorkflowDraft.graph,
-    })
-    .from(wfWorkflowDraft)
+  // Self-alias for the correlated subquery: "the max version_number for THIS
+  // workflow", so the outer row is the latest published version of each. Built
+  // with the query builder (not a raw `sql` fragment) so the aliased table is
+  // declared as `wf_workflow_version AS wv_latest` in the subquery's FROM.
+  const inner = alias(wfWorkflowVersion, 'wv_latest')
+  const latestVersionNumber = db
+    .select({ v: sql<number>`max(${inner.versionNumber})` })
+    .from(inner)
+    .where(eq(inner.workflowId, wfWorkflowVersion.workflowId))
+  const [workflows, drafts, latestVersions] = await Promise.all([
+    db.select({ id: wfWorkflow.id, name: wfWorkflow.name }).from(wfWorkflow),
+    db
+      .select({
+        workflowId: wfWorkflowDraft.workflowId,
+        graph: wfWorkflowDraft.graph,
+      })
+      .from(wfWorkflowDraft),
+    db
+      .select({
+        workflowId: wfWorkflowVersion.workflowId,
+        graph: wfWorkflowVersion.graph,
+      })
+      .from(wfWorkflowVersion)
+      .where(eq(wfWorkflowVersion.versionNumber, latestVersionNumber)),
+  ])
   const draftByWorkflow = new Map(drafts.map((d) => [d.workflowId, d.graph]))
-  const out: { id: string; name: string; graphs: WorkflowGraph[] }[] = []
-  for (const wf of workflows) {
-    const version = await latestVersion(db, wf.id)
-    const graphs = [draftByWorkflow.get(wf.id), version?.graph].filter(
+  const latestByWorkflow = new Map(
+    latestVersions.map((v) => [v.workflowId, v.graph]),
+  )
+  return workflows.map((wf) => ({
+    id: wf.id,
+    name: wf.name,
+    graphs: [draftByWorkflow.get(wf.id), latestByWorkflow.get(wf.id)].filter(
       Boolean,
-    ) as WorkflowGraph[]
-    out.push({ id: wf.id, name: wf.name, graphs })
-  }
-  return out
+    ) as WorkflowGraph[],
+  }))
 }
 
 export async function listWorkflowsReferencingAgent(
