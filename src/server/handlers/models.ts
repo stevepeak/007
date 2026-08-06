@@ -47,6 +47,23 @@ export function buildModelHandlers<TDeps>(
   | 'listToolContextFields'
   | 'listTriggerEvents'
 > {
+  // The tool registry is static for the isolate's lifetime, but converting each
+  // tool's Zod input+output to JSON Schema (via `z.toJSONSchema`) is CPU-heavy.
+  // Doing it per request made `listTools` — fired on every editor/graph load —
+  // exceed the Worker CPU limit. `createWfSdkHandlers` runs once per isolate, so
+  // compute the wire shape a single time here and serve it from the closure.
+  const toolList = [...opts.config.toolRegistry].map(([id, entry]) => ({
+    id,
+    name: entry.name,
+    description: entry.description,
+    icon: entry.icon,
+    iconName: entry.iconName,
+    color: entry.color,
+    kind: entry.kind,
+    inputSchema: toJsonSchema(entry.inputSchema, 'input'),
+    outputSchema: toJsonSchema(entry.outputSchema, 'output'),
+  }))
+
   return {
     // Enabled models come from the DB catalog. Before the first refresh (no
     // provider rows yet) or if the tables are missing, fall back to the host's
@@ -182,18 +199,7 @@ export function buildModelHandlers<TDeps>(
       return { ok: true as const }
     },
 
-    listTools: () =>
-      [...opts.config.toolRegistry].map(([id, entry]) => ({
-        id,
-        name: entry.name,
-        description: entry.description,
-        icon: entry.icon,
-        iconName: entry.iconName,
-        color: entry.color,
-        kind: entry.kind,
-        inputSchema: toJsonSchema(entry.inputSchema, 'input'),
-        outputSchema: toJsonSchema(entry.outputSchema, 'output'),
-      })),
+    listTools: () => toolList,
 
     listToolInvocations: async (c) => {
       const toolId = str(c.params, 'toolId')
