@@ -68,6 +68,9 @@ export function engineToFlow(graph: WorkflowGraph): {
           type: editorTypeForKind(child.kind),
           position: child.position,
           parentId: n.id,
+          // Loop membership is structural: once inside, a node can be moved
+          // around the container but never dragged out of its bounds.
+          extent: 'parent',
           deletable: !BOOKEND_KINDS.has(child.kind),
           data: extractEditorData(child),
         })

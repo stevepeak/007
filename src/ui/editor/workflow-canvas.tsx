@@ -60,6 +60,23 @@ const EMPTY_INVALID: ReadonlySet<string> = new Set()
 // Stable empty map so the run-status provider keeps identity in the editor.
 const EMPTY_STATUSES: ReadonlyMap<string, string> = new Map()
 
+// Keep a freshly adopted child fully inside its container. React Flow enforces
+// `extent: 'parent'` on every subsequent drag, but not on the frame where the
+// node joins — without this a node dropped half-over the edge renders outside it.
+function clampInside(
+  rel: { x: number; y: number },
+  node: { width?: number; height?: number } | undefined,
+  container: { width?: number; height?: number } | undefined,
+): { x: number; y: number } {
+  if (!container?.width || !container.height) return rel
+  const maxX = Math.max(0, container.width - (node?.width ?? 0))
+  const maxY = Math.max(0, container.height - (node?.height ?? 0))
+  return {
+    x: Math.min(Math.max(rel.x, 0), maxX),
+    y: Math.min(Math.max(rel.y, 0), maxY),
+  }
+}
+
 export interface WorkflowCanvasProps {
   graph: WorkflowGraph
   readOnly?: boolean
@@ -206,46 +223,42 @@ function CanvasInner({
   )
 
   // Membership by containment: when a node is dropped over an iteration
-  // container it becomes that container's child (part of the loop); dragged back
-  // out onto the canvas it rejoins the top level. Containers don't nest, and the
-  // fixed `Item`/`Result` bookends never leave their container.
+  // container it becomes that container's child (part of the loop). Joining is
+  // one-way — children carry `extent: 'parent'`, so a node inside a loop can be
+  // moved around but never dragged back out past the container's boundary. To
+  // take a node out of a loop, delete it and re-add it on the canvas. Containers
+  // don't nest, and notes never join one.
   const handleNodeDragStop = useCallback(
     (_: unknown, dragged: EditorNode) => {
       // Notes are free-floating annotations; never fold one into a loop container.
       if (dragged.data.kind === 'iteration' || dragged.data.kind === 'note')
         return
+      // Already inside a loop — `extent: 'parent'` keeps it there, nothing to do.
+      if (dragged.parentId) return
       const absPos =
         getInternalNode(dragged.id)?.internals.positionAbsolute ??
         dragged.position
       const container = getIntersectingNodes(dragged).find(
         (n) => (n.data as EditorNodeData).kind === 'iteration',
       )
-      const currentParent = dragged.parentId
-      if (container && container.id !== currentParent) {
-        const cAbs =
-          getInternalNode(container.id)?.internals.positionAbsolute ??
-          container.position
-        const rel = { x: absPos.x - cAbs.x, y: absPos.y - cAbs.y }
-        setNodes((ns) =>
-          orderParentsFirst(
-            ns.map((n) =>
-              n.id === dragged.id
-                ? { ...n, parentId: container.id, position: rel }
-                : n,
-            ),
-          ),
-        )
-      } else if (!container && currentParent) {
-        // Bookends stay put; only real work nodes can leave the loop.
-        if (BOOKEND_KINDS.has(dragged.data.kind)) return
-        setNodes((ns) =>
+      if (!container) return
+      const cAbs =
+        getInternalNode(container.id)?.internals.positionAbsolute ??
+        container.position
+      const rel = clampInside(
+        { x: absPos.x - cAbs.x, y: absPos.y - cAbs.y },
+        getInternalNode(dragged.id)?.measured,
+        getInternalNode(container.id)?.measured,
+      )
+      setNodes((ns) =>
+        orderParentsFirst(
           ns.map((n) =>
             n.id === dragged.id
-              ? { ...n, parentId: undefined, position: absPos }
+              ? { ...n, parentId: container.id, extent: 'parent', position: rel }
               : n,
           ),
-        )
-      }
+        ),
+      )
     },
     [getIntersectingNodes, getInternalNode, setNodes],
   )
@@ -334,6 +347,7 @@ function CanvasInner({
           type: editorTypeForKind(child.kind),
           position: child.position,
           parentId: containerId,
+          extent: 'parent',
           deletable: !BOOKEND_KINDS.has(child.kind),
           data: extractEditorData(child),
         }))
@@ -378,6 +392,7 @@ function CanvasInner({
               type: editorTypeForKind(newData.kind),
               position: { x: position.x - cAbs.x, y: position.y - cAbs.y },
               parentId: container.id,
+              extent: 'parent',
               data: newData,
             },
           ]),
