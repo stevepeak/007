@@ -39,25 +39,81 @@ export type RunProgressToaster = {
 type ProgressContext = {
   fetch: RunProgressFetcher
   pollMs: number
+  maxFailures: number
+  maxBackoffMs: number
+  maxDurationMs: number
 }
 
 const Ctx = createContext<ProgressContext | null>(null)
 
 /**
+ * Defaults for the poll loop's self-limiting behavior — see {@link nextPollDelay}.
+ */
+const DEFAULT_POLL_MS = 1500
+const DEFAULT_MAX_FAILURES = 6
+const DEFAULT_MAX_BACKOFF_MS = 30_000
+const DEFAULT_MAX_DURATION_MS = 15 * 60_000
+
+/**
+ * How long to wait before the next poll, given how many times in a row the
+ * fetch has failed. A healthy loop stays at `pollMs`; a failing one backs off
+ * exponentially up to `maxBackoffMs`.
+ *
+ * This exists because the loop used to retry a failed fetch at the SAME fixed
+ * cadence forever. When the host was failing *because* it was overloaded, every
+ * mounted surface kept hammering it — the poll stopped being a symptom of the
+ * outage and became its engine. Backing off (and eventually giving up, see
+ * `maxFailures`) is what lets an overloaded host recover.
+ *
+ * Jittered so that many surfaces/tabs that started together don't stay in
+ * lockstep and re-converge on the host as one synchronized wave.
+ */
+export function nextPollDelay(
+  failures: number,
+  opts: { pollMs: number; maxBackoffMs: number },
+  random: () => number = Math.random,
+): number {
+  if (failures <= 0) return opts.pollMs
+  const backoff = Math.min(
+    opts.pollMs * 2 ** failures,
+    Math.max(opts.pollMs, opts.maxBackoffMs),
+  )
+  // ±20% jitter.
+  return Math.round(backoff * (0.8 + random() * 0.4))
+}
+
+/**
  * Provide the progress transport once (high in the host's tree). `useRunProgress`
  * anywhere below then just takes a run id. `pollMs` is the poll cadence while a
  * run is still running (it stops once terminal).
+ *
+ * The loop is bounded three ways, so it can always end: it stops when the run
+ * settles, when `maxFailures` fetches have failed back-to-back, and when a run
+ * has been watched for `maxDurationMs` without settling (a run whose host row
+ * is stranded mid-flight would otherwise be polled forever).
  */
 export function WorkflowProgressProvider({
   fetch,
-  pollMs = 1500,
+  pollMs = DEFAULT_POLL_MS,
+  maxFailures = DEFAULT_MAX_FAILURES,
+  maxBackoffMs = DEFAULT_MAX_BACKOFF_MS,
+  maxDurationMs = DEFAULT_MAX_DURATION_MS,
   children,
 }: {
   fetch: RunProgressFetcher
   pollMs?: number
+  /** Consecutive failed fetches before the loop gives up. */
+  maxFailures?: number
+  /** Ceiling on the exponential backoff between failed polls. */
+  maxBackoffMs?: number
+  /** Wall-clock ceiling on watching a single run that never settles. */
+  maxDurationMs?: number
   children: ReactNode
 }) {
-  const value = useMemo(() => ({ fetch, pollMs }), [fetch, pollMs])
+  const value = useMemo(
+    () => ({ fetch, pollMs, maxFailures, maxBackoffMs, maxDurationMs }),
+    [fetch, pollMs, maxFailures, maxBackoffMs, maxDurationMs],
+  )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 
@@ -80,13 +136,27 @@ const EMPTY: RunProgressSnapshot = { status: 'running', items: [] }
  * exists).
  */
 export function useRunProgress(runId: string | null): RunProgressSnapshot {
-  const { fetch, pollMs } = useProgressContext()
+  const { fetch, pollMs, maxFailures, maxBackoffMs, maxDurationMs } =
+    useProgressContext()
   const [snap, setSnap] = useState<RunProgressSnapshot>(EMPTY)
 
   useEffect(() => {
     if (!runId) return
     let alive = true
     let timer: ReturnType<typeof setTimeout> | null = null
+    let failures = 0
+    const startedAt = Date.now()
+
+    // We stopped watching without the run settling — either the transport kept
+    // failing or the run outlived `maxDurationMs`. Surface it as terminal so
+    // the UI stops spinning; the run itself may well still be going server-side,
+    // which is why we leave the timeline we already have intact.
+    const giveUp = () => {
+      setSnap((prev) =>
+        prev.status === 'running' ? { ...prev, status: 'failed' } : prev,
+      )
+    }
+
     const tick = async () => {
       let next: RunProgressSnapshot | null = null
       try {
@@ -95,18 +165,26 @@ export function useRunProgress(runId: string | null): RunProgressSnapshot {
         next = null
       }
       if (!alive) return
-      if (next) setSnap(next)
-      // Keep polling until the run is terminal (retry on transient fetch error).
-      if (!next || next.status === 'running') {
-        timer = setTimeout(() => void tick(), pollMs)
+      if (next) {
+        failures = 0
+        setSnap(next)
+        if (next.status !== 'running') return // settled — we're done
+      } else {
+        failures += 1
+        if (failures >= maxFailures) return giveUp()
       }
+      if (Date.now() - startedAt >= maxDurationMs) return giveUp()
+      timer = setTimeout(
+        () => void tick(),
+        nextPollDelay(failures, { pollMs, maxBackoffMs }),
+      )
     }
     void tick()
     return () => {
       alive = false
       if (timer) clearTimeout(timer)
     }
-  }, [runId, fetch, pollMs])
+  }, [runId, fetch, pollMs, maxFailures, maxBackoffMs, maxDurationMs])
 
   return runId ? snap : EMPTY
 }
@@ -123,12 +201,31 @@ export function createRunProgressToast(deps: {
   fetch: RunProgressFetcher
   toast: RunProgressToaster
   pollMs?: number
+  maxFailures?: number
+  maxBackoffMs?: number
+  maxDurationMs?: number
 }): (runId: string, opts: { label: string; successMessage?: string }) => void {
-  const { fetch, toast, pollMs = 1500 } = deps
+  const {
+    fetch,
+    toast,
+    pollMs = DEFAULT_POLL_MS,
+    maxFailures = DEFAULT_MAX_FAILURES,
+    maxBackoffMs = DEFAULT_MAX_BACKOFF_MS,
+    maxDurationMs = DEFAULT_MAX_DURATION_MS,
+  } = deps
   return (runId, opts) => {
     const toastId = `run-progress-${runId}`
     let settled = false
+    let failures = 0
+    const startedAt = Date.now()
     toast.loading(toastId, `${opts.label}…`)
+
+    // Same three bounds as `useRunProgress`: settle, give up after
+    // `maxFailures` back-to-back transport failures, or hit the wall clock.
+    const giveUp = () => {
+      settled = true
+      toast.error(toastId, `${opts.label} failed`)
+    }
 
     const tick = async () => {
       if (settled) return
@@ -140,11 +237,21 @@ export function createRunProgressToast(deps: {
       }
       if (settled) return
       if (!snap || snap.status === 'running') {
-        const latest = snap?.items.findLast((i) => i.kind === 'progress')
-        if (latest && latest.kind === 'progress') {
-          toast.loading(toastId, `${opts.label}: ${latest.message}`)
+        if (snap) {
+          failures = 0
+          const latest = snap.items.findLast((i) => i.kind === 'progress')
+          if (latest && latest.kind === 'progress') {
+            toast.loading(toastId, `${opts.label}: ${latest.message}`)
+          }
+        } else {
+          failures += 1
+          if (failures >= maxFailures) return giveUp()
         }
-        setTimeout(() => void tick(), pollMs)
+        if (Date.now() - startedAt >= maxDurationMs) return giveUp()
+        setTimeout(
+          () => void tick(),
+          nextPollDelay(failures, { pollMs, maxBackoffMs }),
+        )
         return
       }
       settled = true
