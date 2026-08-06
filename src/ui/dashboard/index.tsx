@@ -10,6 +10,7 @@ import { CostChart } from './cost-chart'
 import { FailuresPanel } from './failures-panel'
 import { FeedbackPanel } from './feedback-panel'
 import { KpiTiles } from './kpi-tiles'
+import { ProvidersPanel } from './providers-panel'
 import { RunsChart } from './runs-chart'
 
 // The home page's operational summary: is anything failing, what is it costing,
@@ -90,6 +91,9 @@ export function WfDashboard({ className }: { className?: string }) {
           <CostChart data={data} />
           <FailuresPanel data={data} />
           <FeedbackPanel data={data} />
+          {/* Budgets are current, not windowed — the timeframe control above
+              doesn't scope this one. */}
+          <ProvidersPanel />
         </div>
       </div>
     </div>

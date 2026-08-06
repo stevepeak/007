@@ -57,6 +57,7 @@ export function createHttpWfDataClient(
     listModels: bind('listModels'),
     listProviders: bind('listProviders'),
     getModelCatalog: bind('getModelCatalog'),
+    getProviderBudgets: bind('getProviderBudgets'),
     // Fetching a provider's full catalog hits an external `/models` endpoint and
     // upserts 300+ rows — give it a longer budget than the 20s UI backstop.
     refreshModels: bind('refreshModels', 120000),

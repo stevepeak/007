@@ -5,6 +5,7 @@ import type {
   AgentUsageRef,
   ModelCatalogEntry,
   ModelProviderStatus,
+  ProviderBudget,
 } from '../server/protocol'
 import { agentColor, agentIcon } from './agent-appearance'
 import { cn } from './cn'
@@ -22,6 +23,7 @@ import {
   type UsageMap,
 } from './models-list-shared'
 import { WfLink } from './nav'
+import { ProviderBudgetBar } from './provider-budget'
 import { Tooltip } from './tooltip'
 
 export function ProviderCard({
@@ -30,12 +32,18 @@ export function ProviderCard({
   usage,
   matches,
   filtersActive,
+  budget,
+  budgetLoading,
 }: {
   provider: ModelProviderStatus
   models: ModelCatalogEntry[]
   usage: UsageMap
   matches: (m: ModelCatalogEntry) => boolean
   filtersActive: boolean
+  /** This provider's live spend budget, once its separate request lands. */
+  budget?: ProviderBudget
+  /** Whether that request is still in flight (absent ≠ loading — it may have failed). */
+  budgetLoading?: boolean
 }) {
   const refresh = useRefreshModels()
   const refreshing =
@@ -90,6 +98,8 @@ export function ProviderCard({
           {refreshing ? 'Refreshing…' : 'Refresh'}
         </button>
       </header>
+
+      <ProviderBudgetBar budget={budget} loading={budgetLoading} />
 
       {refresh.isError && refresh.variables?.providerId === provider.id ? (
         <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700">

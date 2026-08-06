@@ -1,4 +1,8 @@
-import type { ModelProvider, ModelProviderStatus } from '../../engine/config'
+import type {
+  ModelProvider,
+  ModelProviderStatus,
+  ProviderBudget,
+} from '../../engine/config'
 import { describeTriggerEvents } from '../../engine/trigger-registry'
 import {
   getModelCatalog,
@@ -40,6 +44,7 @@ export function buildModelHandlers<TDeps>(
   | 'listModels'
   | 'listProviders'
   | 'getModelCatalog'
+  | 'getProviderBudgets'
   | 'refreshModels'
   | 'setModelEnabled'
   | 'listTools'
@@ -153,6 +158,42 @@ export function buildModelHandlers<TDeps>(
         (m) => m.providerId != null && allowed.has(m.providerId),
       )
       return { providers, models, usage }
+    },
+
+    // Live spend budgets, read from each provider's own API on every call —
+    // nothing is cached, so the number the UI shows is the number the provider
+    // will bill against. Kept OUT of `getModelCatalog` so those external calls
+    // never delay the page: the UI requests this separately and fills it in.
+    getProviderBudgets: async (c) => {
+      const env = await c.env()
+      const providers = await opts.config.listProviders({ env })
+      const fetchBudget = opts.config.fetchProviderBudget
+      // Every provider resolves to an entry, never an omission — a card that
+      // can't report is a card that SAYS it can't report. One provider's
+      // revoked key or outage is contained to its own entry.
+      return await Promise.all(
+        providers.map(async (p): Promise<ProviderBudget> => {
+          const unsupported: ProviderBudget = {
+            providerId: p.id,
+            status: 'unsupported',
+            remaining: null,
+            limit: null,
+            usage: null,
+            resetInterval: null,
+          }
+          if (!fetchBudget) return unsupported
+          try {
+            return (await fetchBudget({ env }, p.id)) ?? unsupported
+          } catch (err) {
+            console.error(`[wf] getProviderBudgets: ${p.id} failed`, err)
+            return {
+              ...unsupported,
+              status: 'error',
+              message: err instanceof Error ? err.message : String(err),
+            }
+          }
+        }),
+      )
     },
 
     refreshModels: async (c) => {

@@ -6,6 +6,7 @@ import type {
   ModelCatalogEntry,
   ModelOption,
   ModelProvider,
+  ProviderBudget,
 } from './model-catalog'
 import type { ToolRegistry } from './tool-registry'
 import type { TriggerRegistry } from './trigger-registry'
@@ -216,6 +217,21 @@ export interface WfSdkConfig<TDeps = unknown> {
     ctx: ModelListContext,
     providerId: string,
   ) => Promise<Omit<ModelCatalogEntry, 'enabled'>[]>
+  /**
+   * Optional: read one provider's live spend budget (remaining credit, cap,
+   * reset cadence) for the Models page and the dashboard's Providers panel.
+   * Reads `ctx.env` for the provider's API key, exactly like
+   * {@link WfSdkConfig.fetchModelCatalog}. Nothing is persisted — the SDK calls
+   * this on every request so the figure is never stale.
+   *
+   * Return `null` for a provider that publishes no balance endpoint (the UI
+   * then shows "not reported"); omit the hook entirely if no provider does.
+   * `providerId` is scoped to whatever {@link WfSdkConfig.listProviders} returns.
+   */
+  fetchProviderBudget?: (
+    ctx: ModelListContext,
+    providerId: string,
+  ) => Promise<ProviderBudget | null>
   /** Host tool registry, generic over the host's per-run deps. */
   toolRegistry: ToolRegistry<TDeps>
   /** Build the opaque per-run deps from a run context (live bindings inside). */

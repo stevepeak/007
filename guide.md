@@ -26,6 +26,7 @@ The SDK is deliberately generic. It ships **behavior**; the host supplies
 | RPC dispatch (`createWfSdkHandlers`)                             | ✅                | route auth + `{ userId? }`, the `WfDb`    |
 | Editor / run-viewer / hub UI (`WfApp`)                           | ✅                | router adapter, design-system primitives  |
 | Model provider (`getModel` + `listModels` + `listProviders`)     |                   | ✅                                        |
+| Provider spend budgets (`fetchProviderBudget`, optional)         | the cards + meter | ✅ the balance call (omit → no cards)     |
 | Tools (`toolRegistry`; `/tools` + `/cloudflare` ship a few)      |                   | ✅                                        |
 | Event catalog + input schemas (`triggers`)                       |                   | ✅ (manual/periodic built in)             |
 | Per-run deps (`buildRunDeps`)                                    |                   | ✅                                        |
@@ -218,9 +219,92 @@ Key rules:
   preview); the runtime needs `getModel` + `toolRegistry` + `buildRunDeps` +
   `triggers` (and `resolveBlobRef` if you use blob spilling).
 - **Optional hooks:** `fetchModelCatalog` (live provider `/models` refresh on the
-  Models admin page), `resolveImageRef` (vision inputs), and `onRunComplete` /
-  `onRunFailed` (reflect a run's terminal state back onto your own entity — the
-  one named by `subjectId`). Omit any you don't use.
+  Models admin page), `fetchProviderBudget` (spend/credit remaining — see below),
+  `resolveImageRef` (vision inputs), and `onRunComplete` / `onRunFailed` (reflect
+  a run's terminal state back onto your own entity — the one named by
+  `subjectId`). Omit any you don't use.
+
+### Provider spend budgets (optional)
+
+Implement `fetchProviderBudget` and the SDK renders, per provider, how much
+credit is left and what limits the key carries — as a strip on each provider card
+on the Models page, and as a **Providers** panel on the dashboard. Skip the hook
+and neither appears.
+
+```ts
+// your-host/src/model.ts
+import type { ModelListContext, ProviderBudget } from '@stevepeak/007'
+
+export async function fetchProviderBudget(
+  ctx: ModelListContext,
+  providerId: string,
+): Promise<ProviderBudget | null> {
+  if (providerId !== 'openrouter') return null // no balance API → "not reported"
+  const apiKey = (ctx.env as HostEnv).OPENROUTER_API_KEY
+  const res = await fetch('https://openrouter.ai/api/v1/key', {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  })
+  if (!res.ok) throw new Error(`OpenRouter /key failed: ${res.status}`)
+  const { data } = (await res.json()) as {
+    data: {
+      limit?: number | null
+      limit_remaining?: number | null
+      limit_reset?: string | null
+      usage?: number
+      label?: string
+      is_free_tier?: boolean
+    }
+  }
+  return {
+    providerId,
+    status: 'ok',
+    remaining: data.limit_remaining ?? null,
+    limit: data.limit ?? null,
+    usage: data.usage ?? null,
+    resetInterval: data.limit_reset ?? null, // e.g. 'monthly'
+    keyLabel: data.label,
+    isFreeTier: data.is_free_tier,
+  }
+}
+```
+
+Then register it beside the other model hooks:
+
+```ts
+export const wfConfig = defineWfConfig<HostDeps>({
+  getModel,
+  listModels,
+  listProviders,
+  fetchModelCatalog,
+  fetchProviderBudget, // ← optional
+  // …
+})
+```
+
+Rules that matter:
+
+- **Return `null`, don't throw, for a provider with no balance endpoint.** Neither
+  Anthropic nor OpenAI publishes one, so a direct-key provider returns `null` and
+  its card reads "doesn't report a balance". `null` is a normal answer; a throw is
+  reserved for a call that actually failed.
+- **Errors are contained per provider.** The SDK wraps each call in its own
+  try/catch and turns a throw into `status: 'error'` with the message on that one
+  card — a revoked key can't blank the others. You don't need to catch inside the
+  hook.
+- **Report `remaining` as the provider reports it — never derive it from
+  `limit - usage`.** On a resetting key those disagree: OpenRouter's `usage` is
+  all-time while `limit_remaining` respects `limit_reset`, so a key at $2.15
+  all-time against a $20 monthly cap has spent $0.56 this period, not $2.15.
+  (The SDK draws its meter from `limit - remaining` for the same reason.)
+- **`limit: null` means uncapped**, not unknown — the UI drops the meter and shows
+  spend-to-date instead. Same for `remaining`.
+- **Nothing is persisted.** Unlike `fetchModelCatalog` (which upserts into
+  `wf_model`), this is read live on every request and cached only in the browser
+  (60s). The figure on screen is the one the provider will bill against, and
+  credentials stay in your env.
+- **It must not be slow-path-critical.** The UI requests budgets on their own
+  round-trip, separate from the model catalog and the dashboard, so a sluggish
+  provider API delays only the money — never the page.
 
 **Trigger modes.** A workflow declares how it starts on its trigger node
 (`config.triggerKind`). Three modes exist:
@@ -612,8 +696,9 @@ import { createWfDb } from '@stevepeak/007/storage'
 import { wfConfig } from 'your-host'
 
 export const POST = createWfSdkHandlers({
-  // Uses listModels + listProviders + toolRegistry (editor dropdowns) + triggers
-  // (the create-workflow event picker). Passing the whole wfConfig is fine.
+  // Uses listModels + listProviders + toolRegistry (editor dropdowns), triggers
+  // (the create-workflow event picker) and the optional fetchModelCatalog /
+  // fetchProviderBudget hooks. Passing the whole wfConfig is fine.
   config: wfConfig,
   resolveDb: (req) => createWfDb(getEnv().DB), // the tenant's workspace database
   resolveContext: async (req) => {
@@ -621,6 +706,11 @@ export const POST = createWfSdkHandlers({
     if (!session) throw new Error('Unauthorized')
     return { userId: session.user.id } // attribution only; no tenant field
   },
+  // Your live bindings. REQUIRED if any config hook reads a key out of ctx.env —
+  // listModels/listProviders, fetchModelCatalog (Refresh) and
+  // fetchProviderBudget (the budget cards) all receive this as their env. Omit it
+  // and those see `env: undefined`.
+  resolveEnv: () => getEnv(),
   // Optional: AI-generated changelog for the publish dialog. Omit → heuristic
   // structural summary. Use wfConfig.getModel to stay within the injection contract.
   summarizeChanges: async ({ previousGraph, nextGraph, ctx }) => {
@@ -1025,6 +1115,7 @@ project is: write a `WfSdkConfig`, mount one API route, mount `WfApp`, export
 | Piece                            | File                                             |
 | -------------------------------- | ------------------------------------------------ |
 | Host config (`WfSdkConfig`)      | `packages/wf-host/src/config.ts`                 |
+| Provider registry + budgets      | `packages/wf-host/src/model.ts`                  |
 | Sync agents/workflows (spec CLI) | `docs/sync.md` + agent rule `docs/wf-spec-sync.mdc` |
 | Seed helper + template (legacy)  | `packages/wf-host/src/{seed,template}.ts`        |
 | RPC contract (`WorkflowsRpc`)    | `packages/wf-host/src/rpc.ts`                    |

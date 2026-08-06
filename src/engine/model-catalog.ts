@@ -113,6 +113,43 @@ export type ModelProviderStatus = ModelProvider & {
   enabledCount: number
 }
 
+/**
+ * A provider's live spend budget, read straight from the provider's own API on
+ * every request — never cached in our DB, so the number on screen is the number
+ * the provider will bill against. Providers that expose no such endpoint (a
+ * direct Anthropic or OpenAI key: neither publishes a balance API) report
+ * `status: 'unsupported'` rather than being omitted, so the UI can say so
+ * explicitly instead of leaving a silent gap.
+ */
+export type ProviderBudget = {
+  providerId: string
+  status: 'ok' | 'unsupported' | 'error'
+  /**
+   * Spend still available before requests start failing, USD. null = the key
+   * carries no cap. Taken verbatim from the provider — NOT derived from
+   * `limit - usage`, which is wrong for a key that resets (see `usage`).
+   */
+  remaining: number | null
+  /** Spend cap, USD. null = uncapped. */
+  limit: number | null
+  /**
+   * ALL-TIME spend on this key, USD (null when unreported). Deliberately not
+   * comparable to `limit`: on a monthly key this keeps climbing while
+   * `remaining` resets, so the progress bar must use `limit - remaining`.
+   */
+  usage: number | null
+  /** Reset cadence, e.g. 'monthly'. null = never resets. Open-ended string. */
+  resetInterval: string | null
+  /** The provider's own masked key label, e.g. 'sk-or-v1-efe...071'. */
+  keyLabel?: string
+  /** Whether the key is on the provider's free tier. */
+  isFreeTier?: boolean
+  /** Key expiry, epoch ms. Omit when the key never expires. */
+  expiresAt?: number
+  /** Set when `status` is 'error' — surfaced inline on the card. */
+  message?: string
+}
+
 /** A minimal agent reference for the "used by" avatars on the Models page. */
 export type AgentUsageRef = {
   id: string

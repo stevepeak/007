@@ -8,7 +8,7 @@ import type {
 import { cn } from './cn'
 import { EmptyState } from './evals/shared'
 import { FilterSelect } from './filters'
-import { useModelCatalog } from './hooks'
+import { useModelCatalog, useProviderBudgets } from './hooks'
 import { ProviderCard } from './models-list-provider-card'
 import {
   AGE_MAX_DAYS,
@@ -31,6 +31,9 @@ export type ModelsListProps = {
 
 export function ModelsList({ className }: ModelsListProps) {
   const { data, isLoading, error } = useModelCatalog()
+  // Fetched once here and handed down, on its own query so the catalog below
+  // renders without waiting on a round-trip to each provider's API.
+  const budgets = useProviderBudgets()
   const [query, setQuery] = useState('')
   const [caps, setCaps] = useState<ReadonlySet<keyof ModelCapabilities>>(
     () => new Set(),
@@ -47,6 +50,11 @@ export function ModelsList({ className }: ModelsListProps) {
     }
     return map
   }, [data?.models])
+
+  const budgetById = useMemo(
+    () => new Map((budgets.data ?? []).map((b) => [b.providerId, b])),
+    [budgets.data],
+  )
 
   // One predicate for all filters. `now` is captured once per render so age
   // buckets are stable across the pass.
@@ -201,6 +209,8 @@ export function ModelsList({ className }: ModelsListProps) {
           usage={data.usage}
           matches={matches}
           filtersActive={anyActive}
+          budget={budgetById.get(provider.id)}
+          budgetLoading={budgets.isPending}
         />
       ))}
     </div>

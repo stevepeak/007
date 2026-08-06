@@ -1,4 +1,9 @@
-import type { ModelCatalog, ModelOption, ModelProvider } from '../engine/config'
+import type {
+  ModelCatalog,
+  ModelOption,
+  ModelProvider,
+  ProviderBudget,
+} from '../engine/config'
 import type { AgentConfig, WorkflowGraph } from '../engine/graph'
 import type { TriggerEventOption } from '../engine/trigger-registry'
 import type {
@@ -68,6 +73,14 @@ export interface WfDataClient {
    * model, enabled and disabled, with pricing/metadata).
    */
   getModelCatalog(): Promise<ModelCatalog>
+  /**
+   * Every provider's live spend budget, one entry per provider the host
+   * declares (including those that report none — see {@link ProviderBudget}).
+   * Deliberately SEPARATE from `getModelCatalog`: it calls out to each
+   * provider's API, so keeping it its own request lets the Models page and the
+   * dashboard paint at full speed and fill the balances in when they land.
+   */
+  getProviderBudgets(): Promise<ProviderBudget[]>
   /**
    * Pull a provider's catalog from its `/models` endpoint and persist it,
    * preserving which models are enabled. Returns how many were cached and when.

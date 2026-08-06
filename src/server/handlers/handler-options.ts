@@ -26,18 +26,24 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
     | 'listModels'
     | 'listProviders'
     | 'fetchModelCatalog'
+    | 'fetchProviderBudget'
     | 'toolRegistry'
     | 'triggers'
   >
   resolveDb: (req: Request) => WfDb | Promise<WfDb>
   resolveContext: (req: Request) => WfServerContext | Promise<WfServerContext>
   /**
-   * Optional: the host's live bindings (Cloudflare `env`), passed to
-   * `config.getModel` so the SDK can generate publish-dialog change summaries
-   * itself. The SDK owns the summarization (prompt, diff, schema, persistence);
-   * the host only supplies the same model seam it already wires for agents. If
-   * omitted (and no `summarizeChanges` override), summaries fall back to a
-   * heuristic structural diff.
+   * Optional: the host's live bindings (Cloudflare `env`). This is how every
+   * env-reading seam on the config gets its credentials on a DATA-plane request
+   * — `listModels` / `listProviders`, `fetchModelCatalog` (Refresh) and
+   * `fetchProviderBudget` (the budget cards) all receive it as
+   * `ModelListContext.env` — and how `config.getModel` reaches a model when the
+   * SDK generates publish-dialog change summaries itself.
+   *
+   * Omit it and those hooks see `env: undefined`: a host that reads its API key
+   * out of `ctx.env` will then fail the catalog refresh and report every
+   * provider budget as an error, and summaries fall back to a heuristic
+   * structural diff. Supply it whenever any config hook reads a binding.
    */
   resolveEnv?: (req: Request) => unknown
   /**

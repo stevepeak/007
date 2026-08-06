@@ -169,6 +169,7 @@ export {
   type ModelProvider,
   type ModelProviderKind,
   type ModelProviderStatus,
+  type ProviderBudget,
   type ResolvedImage,
   type RunCompletion,
   type RunContext,

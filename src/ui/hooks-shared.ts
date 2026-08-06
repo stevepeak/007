@@ -19,6 +19,7 @@ export const keys = {
   models: ['wf', 'models'] as const,
   providers: ['wf', 'providers'] as const,
   modelCatalog: ['wf', 'model-catalog'] as const,
+  providerBudgets: ['wf', 'provider-budgets'] as const,
   tools: ['wf', 'tools'] as const,
   toolContextFields: ['wf', 'tool-context-fields'] as const,
   toolInvocations: (toolId: string, limit?: number) =>

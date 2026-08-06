@@ -9,4 +9,5 @@ export type {
   ModelProvider,
   ModelProviderKind,
   ModelProviderStatus,
+  ProviderBudget,
 } from '../engine/config'
