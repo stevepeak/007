@@ -5,6 +5,7 @@ import {
 } from '@tanstack/react-query'
 
 import type {
+  WfDashboardInput,
   WfDataClient,
   WfFeedbackListInput,
   WfRunListInput,
@@ -33,6 +34,7 @@ export const keys = {
   // Prefix key: invalidates every filter/page variant of the runs list.
   runsAll: ['wf', 'runs'] as const,
   runTriggerKinds: ['wf', 'run-trigger-kinds'] as const,
+  dashboard: (input: WfDashboardInput) => ['wf', 'dashboard', input] as const,
   run: (id: string) => ['wf', 'run', id] as const,
   agents: ['wf', 'agents'] as const,
   agent: (id: string) => ['wf', 'agent', id] as const,

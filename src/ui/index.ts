@@ -35,6 +35,7 @@ export {
   usePublishAgent,
   useRefreshModels,
   useSetModelEnabled,
+  useDashboard,
   useRetryRun,
   useRun,
   useRunEval,
@@ -62,6 +63,7 @@ export { DataView, type DataViewProps } from './data-view'
 export { RunViewer, StepRow, type RunViewerProps } from './run-viewer'
 export { RunPage, type RunPageProps } from './run-page'
 export { RunsExplorer, type RunsExplorerProps } from './runs-explorer'
+export { WfDashboard } from './dashboard'
 export { WfApp, type WfAppProps } from './wf-app'
 export {
   WfTabsProvider,
@@ -214,6 +216,10 @@ export type {
   WfFeedbackRating,
   WfFeedbackRow,
   WfFeedbackSubmitInput,
+  WfDashboardBucket,
+  WfDashboardInput,
+  WfDashboardResult,
+  WfDashboardSeries,
   WfRunDetail,
   WfRunListInput,
   WfRunListResult,

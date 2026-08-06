@@ -61,6 +61,8 @@
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.29.0",
     "react-hook-form": "^7.84.0",
+    "react-is": "^19.2.0",
+    "recharts": "^3.10.1",
     "zod": "^4.4.3"
   },
   "peerDependencies": {

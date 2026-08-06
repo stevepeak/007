@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+
 import {
   Activity,
   Bot,
@@ -11,17 +13,15 @@ import {
 
 import { cn } from './cn'
 
-// Brand hero served from jsDelivr's GitHub CDN (source of truth: this repo's
-// committed src/ui/jumbo007.png). Hosting it off the bundle keeps it out of the
-// Worker/static-asset deploy entirely. To update: replace the file, push to
-// main, then purge the CDN:
-//   https://purge.jsdelivr.net/gh/stevepeak/007@main/src/ui/jumbo007.png
-const JUMBO_IMG_URL =
-  'https://cdn.jsdelivr.net/gh/stevepeak/007@main/src/ui/jumbo007.png'
-
-// Top-level navigation hub for the workflow tooling: a 2×N grid of descriptive
-// cards, one per section. Purely presentational — the host owns routing and
-// wires `onOpen(key)` to navigate. No data client / provider required.
+// Top-level navigation for the workflow tooling: one descriptive card per
+// section. Purely presentational — the host owns routing and wires `onOpen(key)`
+// to navigate. No data client / provider required.
+//
+// Two layouts, chosen by whether `children` (the operational dashboard) is
+// passed. With content, the page is a two-column working surface: the dashboard
+// takes the main column and the cards collapse into a navigation rail on the
+// right. Without it there is nothing to be secondary to, so the cards spread
+// back out into the full-width grid.
 
 /** Per-card hover accent. Full literal Tailwind class strings (v4 scans them). */
 type WfHubAccent = {
@@ -125,70 +125,104 @@ export type WfHubProps = {
   sections?: WfHubSection[]
   /** Called with a section's `key` when its card is activated. */
   onOpen: (key: string) => void
-  title?: string
-  subtitle?: string
   className?: string
+  /**
+   * The page's main content — where `WfApp` mounts the operational dashboard.
+   * Passing it switches the hub to the two-column layout described above.
+   * Anything passed here supplies its own data; the hub itself stays
+   * presentational and needs no provider.
+   */
+  children?: ReactNode
 }
 
 export function WfHub({
   sections = DEFAULT_WF_SECTIONS,
   onOpen,
-  subtitle = 'Build, run, and evaluate AI workflows.',
   className,
+  children,
 }: WfHubProps) {
+  const asRail = children != null
   return (
-    <div className={cn('mx-auto max-w-4xl p-6', className)}>
-      <div className="mb-8 flex flex-col items-center">
-        <img
-          src={JUMBO_IMG_URL}
-          alt=""
-          className="h-auto w-full max-w-md rounded-lg"
-        />
-        <p className="mt-3 max-w-md text-center text-sm text-neutral-500">
-          {subtitle}
-        </p>
-      </div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {sections.map((section) => {
-          const Icon = section.icon
-          return (
-            <button
-              key={section.key}
-              type="button"
-              disabled={section.disabled}
-              onClick={() => {
-                if (!section.disabled) onOpen(section.key)
-              }}
-              className={cn(
-                'group flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-white p-5 text-left transition duration-200',
-                section.disabled
-                  ? 'cursor-not-allowed opacity-60'
-                  : (section.accent?.card ??
-                      'hover:border-neutral-300 hover:shadow-lg'),
-              )}
-            >
-              <div className="flex w-full items-center gap-3">
-                <span
+    <div className={cn('mx-auto w-full max-w-7xl p-6', className)}>
+      <div
+        className={cn(
+          asRail &&
+            'grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_19rem]',
+        )}
+      >
+        {/* min-w-0 so a wide chart can shrink instead of forcing the grid open. */}
+        {asRail ? <div className="min-w-0">{children}</div> : null}
+        <nav
+          aria-label="Sections"
+          className={cn(
+            asRail
+              ? 'flex flex-col gap-2'
+              : 'grid grid-cols-1 gap-4 sm:grid-cols-2',
+          )}
+        >
+          {sections.map((section) => {
+            const Icon = section.icon
+            return (
+              <button
+                key={section.key}
+                type="button"
+                disabled={section.disabled}
+                onClick={() => {
+                  if (!section.disabled) onOpen(section.key)
+                }}
+                className={cn(
+                  'group flex flex-col items-start rounded-xl border border-neutral-200 bg-white text-left transition duration-200',
+                  asRail ? 'gap-1.5 p-3.5' : 'gap-3 p-5',
+                  section.disabled
+                    ? 'cursor-not-allowed opacity-60'
+                    : (section.accent?.card ??
+                        'hover:border-neutral-300 hover:shadow-lg'),
+                )}
+              >
+                <div
                   className={cn(
-                    'flex size-10 items-center justify-center rounded-lg bg-neutral-100 text-neutral-600 transition duration-200',
-                    !section.disabled && section.accent?.icon,
+                    'flex w-full items-center',
+                    asRail ? 'gap-2.5' : 'gap-3',
                   )}
                 >
-                  <Icon className="size-5" />
-                </span>
-                <span className="text-base font-medium text-neutral-900">
-                  {section.title}
-                </span>
-                {section.badge ? (
-                  <span className="ml-auto rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-500">
-                    {section.badge}
+                  <span
+                    className={cn(
+                      'flex items-center justify-center rounded-lg bg-neutral-100 text-neutral-600 transition duration-200',
+                      asRail ? 'size-8' : 'size-10',
+                      !section.disabled && section.accent?.icon,
+                    )}
+                  >
+                    <Icon className={asRail ? 'size-4' : 'size-5'} />
                   </span>
-                ) : null}
-              </div>
-              <p className="text-sm text-neutral-500">{section.description}</p>
-            </button>
-          )
-        })}
+                  <span
+                    className={cn(
+                      'font-medium text-neutral-900',
+                      asRail ? 'text-sm' : 'text-base',
+                    )}
+                  >
+                    {section.title}
+                  </span>
+                  {section.badge ? (
+                    <span className="ml-auto rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-500">
+                      {section.badge}
+                    </span>
+                  ) : null}
+                </div>
+                {/* In the rail the description is supporting detail, not the
+                    pitch — clamped so one long section blurb can't push the
+                    whole nav out of view. */}
+                <p
+                  className={cn(
+                    'text-neutral-500',
+                    asRail ? 'line-clamp-2 text-xs' : 'text-sm',
+                  )}
+                >
+                  {section.description}
+                </p>
+              </button>
+            )
+          })}
+        </nav>
       </div>
     </div>
   )

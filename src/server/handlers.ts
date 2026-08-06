@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { errorMessage } from '../engine/run-node'
 
 import { buildAgentHandlers } from './handlers/agents'
+import { buildDashboardHandlers } from './handlers/dashboard'
 import { buildEvalHandlers } from './handlers/evals'
 import { buildFeedbackHandlers } from './handlers/feedback'
 import { buildModelHandlers } from './handlers/models'
@@ -56,6 +57,11 @@ const wfInputSchemas: Partial<Record<keyof WfDataClient, z.ZodType>> = {
     offset: z.number().optional(),
   }),
   getRun: z.object({ runId: z.string() }),
+  getDashboard: z.object({
+    since: z.number().optional(),
+    until: z.number().optional(),
+    bucket: z.enum(['hour', 'day']).optional(),
+  }),
   retryRun: z.object({
     runId: z.string(),
     mode: z.enum(['restart', 'resume']).optional(),
@@ -121,6 +127,7 @@ function buildHandlers<TDeps>(
     ...buildModelHandlers(opts),
     ...buildWorkflowHandlers(opts),
     ...buildRunHandlers(opts),
+    ...buildDashboardHandlers(opts),
     ...buildAgentHandlers(opts),
     ...buildEvalHandlers(opts),
     ...buildFeedbackHandlers(opts),

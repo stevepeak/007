@@ -11,6 +11,7 @@ export type {
 
 export * from './protocol-agents'
 export * from './protocol-client'
+export * from './protocol-dashboard'
 export * from './protocol-evals'
 export * from './protocol-feedback'
 export * from './protocol-models'

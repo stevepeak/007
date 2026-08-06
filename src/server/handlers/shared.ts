@@ -8,7 +8,7 @@ import {
 } from '../../engine/graph'
 import type { WfDb } from '../../storage/client'
 import { agentExists, workflowExists } from '../../storage/data'
-import type { JsonSchema, WfDataClient } from '../protocol'
+import type { JsonSchema, WfDataClient, WfRunSummary } from '../protocol'
 
 import type { WfServerContext } from './handler-options'
 
@@ -44,6 +44,51 @@ export function toJsonSchema(
 
 export function toEpoch(d: Date | null | undefined): number | null {
   return d ? d.getTime() : null
+}
+
+// The wire shape of one run row. Shared by the runs list, the run detail load,
+// and the dashboard's failures panel so all three describe a run identically.
+// `traceUrl` is the host's Sentry deep-link builder (absent when it wires none).
+export function runSummary(
+  r: {
+    id: string
+    status: string
+    triggerKind: string
+    workflowId: string
+    workflowName: string
+    versionNumber: number
+    subjectId: string | null
+    correlationId: string | null
+    createdAt: Date
+    startedAt: Date | null
+    finishedAt: Date | null
+    error: string | null
+    totalTokens?: number | null
+    costUsd?: number | null
+    sentryTraceId?: string | null
+  },
+  traceUrl?: (traceId: string) => string | null,
+): WfRunSummary {
+  const sentryTraceId = r.sentryTraceId ?? null
+  return {
+    id: r.id,
+    status: r.status,
+    triggerKind: r.triggerKind,
+    workflowId: r.workflowId,
+    workflowName: r.workflowName,
+    versionNumber: r.versionNumber,
+    subjectId: r.subjectId,
+    correlationId: r.correlationId,
+    createdAt: r.createdAt.getTime(),
+    startedAt: toEpoch(r.startedAt),
+    finishedAt: toEpoch(r.finishedAt),
+    error: r.error,
+    totalTokens: r.totalTokens ?? null,
+    costUsd: r.costUsd ?? null,
+    sentryTraceId,
+    sentryTraceUrl:
+      sentryTraceId && traceUrl ? (traceUrl(sentryTraceId) ?? null) : null,
+  }
 }
 
 export function json(body: unknown, status = 200): Response {

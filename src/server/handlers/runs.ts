@@ -10,59 +10,17 @@ import type {
   WfRunDetail,
   WfRunLogDTO,
   WfRunStepDTO,
-  WfRunSummary,
 } from '../protocol'
 
 import {
   NotFoundError,
   requireHook,
+  runSummary,
   str,
   toEpoch,
   type CreateWfSdkHandlersOptions,
   type WfHandlers,
 } from './shared'
-
-function runSummary(
-  r: {
-    id: string
-    status: string
-    triggerKind: string
-    workflowId: string
-    workflowName: string
-    versionNumber: number
-    subjectId: string | null
-    correlationId: string | null
-    createdAt: Date
-    startedAt: Date | null
-    finishedAt: Date | null
-    error: string | null
-    totalTokens?: number | null
-    costUsd?: number | null
-    sentryTraceId?: string | null
-  },
-  traceUrl?: (traceId: string) => string | null,
-): WfRunSummary {
-  const sentryTraceId = r.sentryTraceId ?? null
-  return {
-    id: r.id,
-    status: r.status,
-    triggerKind: r.triggerKind,
-    workflowId: r.workflowId,
-    workflowName: r.workflowName,
-    versionNumber: r.versionNumber,
-    subjectId: r.subjectId,
-    correlationId: r.correlationId,
-    createdAt: r.createdAt.getTime(),
-    startedAt: toEpoch(r.startedAt),
-    finishedAt: toEpoch(r.finishedAt),
-    error: r.error,
-    totalTokens: r.totalTokens ?? null,
-    costUsd: r.costUsd ?? null,
-    sentryTraceId,
-    sentryTraceUrl:
-      sentryTraceId && traceUrl ? (traceUrl(sentryTraceId) ?? null) : null,
-  }
-}
 
 export function buildRunHandlers<TDeps>(
   opts: CreateWfSdkHandlersOptions<TDeps>,

@@ -16,6 +16,10 @@ import type {
   WfAgentVersionSummary,
 } from './protocol-agents'
 import type {
+  WfDashboardInput,
+  WfDashboardResult,
+} from './protocol-dashboard'
+import type {
   WfEvalResultDTO,
   WfEvalRunDetail,
   WfEvalRunSummary,
@@ -170,6 +174,13 @@ export interface WfDataClient {
    * press-and-hold confirm.
    */
   deleteAllRuns(): Promise<WfRunPurgeResult>
+  /**
+   * The home dashboard's rollup — run volume per workflow, spend per model, the
+   * outstanding feedback queue, and the newest failures — in one round trip.
+   * Everything is derived per request; nothing is precomputed. The server clamps
+   * the requested window and returns the one it actually charted.
+   */
+  getDashboard(input: WfDashboardInput): Promise<WfDashboardResult>
 
   // Agents — reusable, pre-developed agents that workflow agent nodes point at.
   // Same draft/version lifecycle as workflows; publishing floats into every

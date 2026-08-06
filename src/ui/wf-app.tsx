@@ -4,6 +4,7 @@ import { AgentsList } from './agents-list'
 import { cn } from './cn'
 import { ComingSoon } from './coming-soon'
 import { CopilotPanel } from './copilot/copilot-panel'
+import { WfDashboard } from './dashboard'
 import { deriveCopilotContext } from './copilot/view-context'
 import { AgentEditor } from './editor/agent-editor'
 import { WorkflowEditor } from './editor/workflow-editor'
@@ -49,6 +50,12 @@ export type WfAppProps = {
   navigate: (to: string) => void
   /** Override the hub's section cards. */
   sections?: WfHubSection[]
+  /**
+   * Show the operational dashboard (run volume, spend, failures, feedback queue)
+   * on the home tab above the section cards. Default true; set false for a host
+   * that wants the hub as a bare launcher.
+   */
+  dashboard?: boolean
 }
 
 export function WfApp({
@@ -56,11 +63,12 @@ export function WfApp({
   path,
   navigate,
   sections = DEFAULT_WF_SECTIONS,
+  dashboard = true,
 }: WfAppProps) {
   return (
     <WfNavProvider basePath={basePath} path={path} navigate={navigate}>
       <WfTabsProvider path={path} navigate={navigate}>
-        <WfTabbedShell sections={sections} />
+        <WfTabbedShell sections={sections} dashboard={dashboard} />
       </WfTabsProvider>
     </WfNavProvider>
   )
@@ -69,7 +77,13 @@ export function WfApp({
 // Renders the tab strip plus a keep-alive stack: the Home surface and every open
 // asset tab are all mounted at once; inactive ones are hidden (display:none) so
 // their in-memory state persists. Only the active pane is visible.
-function WfTabbedShell({ sections }: { sections: WfHubSection[] }) {
+function WfTabbedShell({
+  sections,
+  dashboard,
+}: {
+  sections: WfHubSection[]
+  dashboard: boolean
+}) {
   const { tabs, activeId, homePath } = useWfTabs()
 
   // The path of whatever tab is active — the Home tab's browse path, or the
@@ -90,7 +104,11 @@ function WfTabbedShell({ sections }: { sections: WfHubSection[] }) {
         <WfTabStrip />
         <div className="relative min-h-0 flex-1">
           <TabPane active={activeId === HOME_TAB_ID}>
-            <HomeRoutes path={homePath} sections={sections} />
+            <HomeRoutes
+              path={homePath}
+              sections={sections}
+              dashboard={dashboard}
+            />
           </TabPane>
           {tabs.map((tab) => (
             <TabPane key={tab.id} active={activeId === tab.id}>
@@ -115,9 +133,11 @@ function TabPane({ active, children }: { active: boolean; children: ReactNode })
 function HomeRoutes({
   path,
   sections,
+  dashboard,
 }: {
   path: string
   sections: WfHubSection[]
+  dashboard: boolean
 }) {
   const { navigate } = useWfNav()
   // Split path from any query string, then into segments.
@@ -128,7 +148,9 @@ function HomeRoutes({
   if (parts.length === 0) {
     return (
       <div className="h-full overflow-y-auto">
-        <WfHub sections={sections} onOpen={(key) => navigate(key)} />
+        <WfHub sections={sections} onOpen={(key) => navigate(key)}>
+          {dashboard ? <WfDashboard /> : null}
+        </WfHub>
       </div>
     )
   }
@@ -222,7 +244,9 @@ function HomeRoutes({
   // Unknown path → fall back to the hub.
   return (
     <div className="h-full overflow-y-auto">
-      <WfHub sections={sections} onOpen={(key) => navigate(key)} />
+      <WfHub sections={sections} onOpen={(key) => navigate(key)}>
+        {dashboard ? <WfDashboard /> : null}
+      </WfHub>
     </div>
   )
 }

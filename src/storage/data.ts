@@ -8,6 +8,7 @@
 // Cloudflare backend (load graph, create/finalize run) and the UI's route
 // handlers (list/get/save).
 export * from './data/authoring'
+export * from './data/dashboard'
 export * from './data/runs'
 export * from './data/evals'
 export * from './data/eval-snapshot'
