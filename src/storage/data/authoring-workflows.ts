@@ -1,4 +1,5 @@
-import { and, desc, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/sqlite-core'
 
 import {
   workflowGraphShapeSchema,
@@ -154,6 +155,70 @@ export async function deleteWorkflow(db: WfDb, workflowId: string) {
 
 export function latestVersion(db: WfDb, workflowId: string) {
   return workflowVersions.latest(db, workflowId)
+}
+
+/** One workflow's latest published version, as {@link latestVersionGraphs} returns it. */
+export type LatestVersionGraph = {
+  id: string
+  versionNumber: number
+  /** The stored JSON column — run it through {@link parseStoredGraph} to type it. */
+  graph: unknown
+  createdAt: Date
+}
+
+/**
+ * Every workflow's latest published version — id, number, graph, and timestamp —
+ * in ONE query, keyed by workflow id. Workflows with no versions are absent.
+ *
+ * This exists because the obvious shape (`latestVersion` per workflow) is an
+ * N+1 that fetches a full `graph` blob per round trip, and it bit us twice: the
+ * agents list and the workflows list each grew their own copy, and each showed
+ * up in Sentry as the same repeating `wf_workflow_version` select. A correlated
+ * subquery ("the max version_number for THIS workflow") gets the same rows in
+ * one trip, riding the existing `(workflow_id, version_number)` unique index.
+ * Keep new callers on this instead of looping — that's the whole point of it
+ * living here rather than inside either caller.
+ *
+ * `ids` scopes the read to a known set (pass the ids you already listed);
+ * omit it for every workflow in the table.
+ */
+export async function latestVersionGraphs(
+  db: WfDb,
+  ids?: string[],
+): Promise<Map<string, LatestVersionGraph>> {
+  if (ids?.length === 0) return new Map()
+  // Self-alias for the correlated subquery, so the aliased table is declared as
+  // `wf_workflow_version AS wv_latest` in the subquery's FROM and the outer
+  // reference to `wf_workflow_version` stays unambiguous.
+  const inner = alias(wfWorkflowVersion, 'wv_latest')
+  const latestVersionNumber = db
+    .select({ v: sql<number>`max(${inner.versionNumber})` })
+    .from(inner)
+    .where(eq(inner.workflowId, wfWorkflowVersion.workflowId))
+  const isLatest = eq(wfWorkflowVersion.versionNumber, latestVersionNumber)
+  const rows = await db
+    .select({
+      workflowId: wfWorkflowVersion.workflowId,
+      id: wfWorkflowVersion.id,
+      versionNumber: wfWorkflowVersion.versionNumber,
+      graph: wfWorkflowVersion.graph,
+      createdAt: wfWorkflowVersion.createdAt,
+    })
+    .from(wfWorkflowVersion)
+    .where(
+      ids ? and(isLatest, inArray(wfWorkflowVersion.workflowId, ids)) : isLatest,
+    )
+  return new Map(
+    rows.map((r) => [
+      r.workflowId,
+      {
+        id: r.id,
+        versionNumber: r.versionNumber,
+        graph: r.graph,
+        createdAt: r.createdAt,
+      },
+    ]),
+  )
 }
 
 /** The editor's load shape: the workflow, its draft (if any), latest version. */
