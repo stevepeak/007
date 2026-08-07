@@ -11,6 +11,12 @@ import type { AgentUsageRef, ModelCapabilities } from '../server/protocol'
 export type UsageMap = Record<string, AgentUsageRef[]>
 export const NO_AGENTS: AgentUsageRef[] = []
 
+/**
+ * OpenRouter's side-by-side model comparison page — linked from the Models page
+ * so staff can weigh price, speed, and context against each other.
+ */
+export const OPENROUTER_COMPARE_URL = 'https://openrouter.ai/compare'
+
 // ── Filters ──────────────────────────────────────────────────────────────────
 
 export const CAP_FILTERS: {

@@ -14,7 +14,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useWfComponents } from '../context'
 import { groupModelsByProvider } from '../editor/model-grouping'
 import { PromptBodyEditor } from '../editor/prompt-body-editor'
-import { useAgents, useEvalSets, useModels, useProviders, useRunEval } from '../hooks'
+import {
+  DEFAULT_EVAL_CONCURRENCY,
+  useAgents,
+  useEvalSets,
+  useModels,
+  useProviders,
+  useRunEval,
+} from '../hooks'
 import { Modal } from '../modal'
 import { useWfNav } from '../nav'
 import { IdeaSpark } from '../idea-spark'
@@ -173,6 +180,10 @@ export function RunConfigDialog({
     runEval.mutate({
       setIds,
       matrix,
+      // Stated explicitly rather than left to the default: this is the rate the
+      // whole matrix hits the model provider, and it's the one knob a "run
+      // faster" control would change.
+      concurrency: DEFAULT_EVAL_CONCURRENCY,
       onStart: (evalRunId) => {
         onClose()
         navigate(`evals/runs/${evalRunId}`)
