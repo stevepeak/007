@@ -1,4 +1,4 @@
-import { asc, desc, eq, inArray } from 'drizzle-orm'
+import { asc, desc, eq, inArray, sql } from 'drizzle-orm'
 
 import type {
   AgentUsageRef,
@@ -217,6 +217,39 @@ export async function getModelUsage(
   return usage
 }
 
+// D1 allows at most 100 bound parameters per statement, and each statement in a
+// `db.batch()` is metered individually against the 1,000-queries-per-invocation
+// ceiling. A refresh carries 300–500 models, so the upsert is written as
+// multi-row INSERTs — as many rows per statement as the parameter budget allows
+// — issued as ONE batch. 500 models becomes ~100 statements in a single round
+// trip instead of 500 sequential ones.
+const D1_MAX_BOUND_PARAMS = 100
+
+/**
+ * The refreshable metadata, taken from the row being inserted (`excluded`), so
+ * the conflict path costs no extra bound parameters. `id`, `enabled` and
+ * `createdAt` are deliberately absent: the first is the conflict target, and the
+ * other two are what a refresh must preserve.
+ */
+const REFRESH_SET = {
+  providerId: sql`excluded.provider_id`,
+  modelId: sql`excluded.model_id`,
+  label: sql`excluded.label`,
+  vendor: sql`excluded.vendor`,
+  costPerMTok: sql`excluded.cost_per_m_tok`,
+  promptPricePerMTok: sql`excluded.prompt_price_per_m_tok`,
+  completionPricePerMTok: sql`excluded.completion_price_per_m_tok`,
+  contextLength: sql`excluded.context_length`,
+  tokensPerSec: sql`excluded.tokens_per_sec`,
+  releasedAt: sql`excluded.released_at`,
+  supportsTools: sql`excluded.supports_tools`,
+  supportsReasoning: sql`excluded.supports_reasoning`,
+  supportsStructuredOutput: sql`excluded.supports_structured_output`,
+  supportsVision: sql`excluded.supports_vision`,
+  raw: sql`excluded.raw`,
+  updatedAt: sql`excluded.updated_at`,
+}
+
 /**
  * Persist a provider's freshly-fetched catalog. New models are ALWAYS inserted
  * DISABLED — the admin opts them in explicitly — and existing rows keep their
@@ -231,11 +264,13 @@ export async function upsertModels(
 ): Promise<number> {
   if (entries.length === 0) return 0
   const now = new Date()
-  for (const e of entries) {
+  const rows = entries.map((e) => {
     const caps: ModelCapabilities = e.capabilities ?? {}
-    // `enabled` is intentionally absent from `meta`, so the conflict path never
-    // touches it — a refresh preserves the user's curation.
-    const meta = {
+    return {
+      id: e.id,
+      // New models arrive disabled; on conflict this column is left untouched
+      // (see REFRESH_SET), so the user's curation survives a refresh.
+      enabled: false,
       providerId,
       modelId: e.modelId,
       label: e.label,
@@ -253,11 +288,25 @@ export async function upsertModels(
       raw: e.raw ?? null,
       updatedAt: now,
     }
-    await db
-      .insert(wfModel)
-      .values({ id: e.id, enabled: false, ...meta })
-      .onConflictDoUpdate({ target: wfModel.id, set: meta })
+  })
+
+  // Derived, not hardcoded, so adding a column can't silently blow the budget.
+  const perRow = Math.max(1, Object.keys(rows[0]).length)
+  const rowsPerStatement = Math.max(1, Math.floor(D1_MAX_BOUND_PARAMS / perRow))
+
+  const chunks: (typeof rows)[] = []
+  for (let i = 0; i < rows.length; i += rowsPerStatement) {
+    chunks.push(rows.slice(i, i + rowsPerStatement))
   }
+  const statements = chunks.map((chunk) =>
+    db
+      .insert(wfModel)
+      .values(chunk)
+      .onConflictDoUpdate({ target: wfModel.id, set: REFRESH_SET }),
+  )
+  type Statement = (typeof statements)[number]
+  // `batch` wants a non-empty tuple; `statements` is non-empty here (entries is).
+  await db.batch(statements as [Statement, ...Statement[]])
   return entries.length
 }
 

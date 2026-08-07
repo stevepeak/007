@@ -30,32 +30,46 @@ interface D1RawResponse {
 /**
  * A {@link WfDb} that talks to D1 over its REST API — for Node contexts with no
  * Worker binding (CLI scripts, CI). Mirrors `@app/db`'s `createDbHttp` but binds
- * the `wf_*` schema. `db.batch()` is not wired (the proxy needs a batch
- * callback), so callers must issue statements individually — which the SDK's
- * seed/data helpers already do.
+ * the `wf_*` schema.
+ *
+ * `db.batch()` works here, but ONLY as a convenience: the REST endpoint takes
+ * one statement at a time, so a batch is replayed sequentially and is NOT
+ * atomic — a mid-batch failure leaves the earlier statements applied. Over a
+ * Worker binding (`createWfDb`) the same call IS atomic. Data helpers may use
+ * `batch` freely to cut round trips; anything relying on all-or-nothing must
+ * not run through this client.
  */
 export function createWfDbHttp(opts: CreateWfDbHttpOptions): WfDb {
   const endpoint = `https://api.cloudflare.com/client/v4/accounts/${opts.accountId}/d1/database/${opts.databaseId}/raw`
 
+  const run = async (query: string, params: unknown[], method: string) => {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${opts.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ sql: query, params }),
+    })
+    const json: unknown = await res.json()
+    const data = json as D1RawResponse
+    if (!res.ok || !data.success) {
+      throw new Error(`D1 HTTP query failed: ${JSON.stringify(data.errors)}`)
+    }
+    // The `/raw` endpoint returns rows as arrays of column values — exactly
+    // the shape sqlite-proxy expects.
+    const rows = data.result?.[0]?.results?.rows ?? []
+    return { rows: method === 'get' ? (rows[0] ?? []) : rows }
+  }
+
   return drizzleProxy(
-    async (query, params, method) => {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${opts.token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ sql: query, params }),
-      })
-      const json: unknown = await res.json()
-      const data = json as D1RawResponse
-      if (!res.ok || !data.success) {
-        throw new Error(`D1 HTTP query failed: ${JSON.stringify(data.errors)}`)
+    (query, params, method) => run(query, params, method),
+    async (queries) => {
+      const results: { rows: unknown[] }[] = []
+      for (const q of queries) {
+        results.push(await run(q.sql, q.params, q.method))
       }
-      // The `/raw` endpoint returns rows as arrays of column values — exactly
-      // the shape sqlite-proxy expects.
-      const rows = data.result?.[0]?.results?.rows ?? []
-      return { rows: method === 'get' ? (rows[0] ?? []) : rows }
+      return results
     },
     { schema: wfSchema },
   ) as unknown as WfDb
