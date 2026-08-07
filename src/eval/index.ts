@@ -32,6 +32,7 @@ export {
   type Rollup,
   type RowOutcome,
 } from './grade'
+export { EVAL_NODE_EXECUTION } from './execution-policy'
 export {
   buildAgentWrapperGraph,
   ensureAgentEvalWrapper,

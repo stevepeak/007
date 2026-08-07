@@ -1,5 +1,6 @@
 import {
   collectSeededToolCalls,
+  EVAL_NODE_EXECUTION,
   gradeRow,
   resolveEvalTarget,
   rollup,
@@ -37,6 +38,11 @@ import {
   type WfHandlers,
 } from './shared'
 
+
+// Cap on a recorded failure reason. Provider response bodies can be whole HTML
+// error pages; the report shows this inline, and the full detail already lives
+// in `wf_run_step.error` reachable via `wfRunId`.
+const MAX_RECORDED_ERROR_CHARS = 2000
 
 // The top-level run steps a grader reads. Iteration inner-subgraph steps (those
 // with a `parentNodeId`) are excluded — checks address the workflow's own nodes,
@@ -76,6 +82,7 @@ export function buildEvalHandlers<TDeps>(
   | 'createEvalRun'
   | 'startEvalRun'
   | 'gradeEvalResult'
+  | 'recordEvalFailure'
   | 'finalizeEvalRun'
   | 'listEvalRuns'
   | 'getEvalRun'
@@ -250,6 +257,10 @@ export function buildEvalHandlers<TDeps>(
         freezeTools: row.initialCondition.freezeTools ?? false,
         modelId: cell.modelId,
         promptBody: cell.promptBody,
+        // Cap this run's nodes. Applied per-run rather than baked into the
+        // graph so it covers workflow targets (whose graphs we must not
+        // rewrite) and agent targets whose hidden wrapper was cached long ago.
+        executionOverride: EVAL_NODE_EXECUTION,
         ctx: c.ctx,
         req: c.req,
       })
@@ -333,6 +344,51 @@ export function buildEvalHandlers<TDeps>(
       return evalResultDTO(
         { ...record, id: resultId, createdAt: new Date() },
         stats.get(wfRunId),
+      )
+    },
+
+    recordEvalFailure: async (c) => {
+      const evalRunId = str(c.params, 'evalRunId')
+      const rowId = str(c.params, 'rowId')
+      const error = str(c.params, 'error')
+      const p = c.params as {
+        wfRunId?: string
+        modelId?: string
+        promptLabel?: string
+        promptBody?: string
+        attempt?: number
+      }
+      const found = await getEvalRow(c.db, rowId)
+      if (!found) {
+        throw new NotFoundError('Eval sample not found.')
+      }
+      // Freeze the same Sample + Goal snapshot the graded path does. Without it
+      // the report has nothing to name the row by and renders a raw UUID — the
+      // failure would be recorded but still unreadable.
+      const snapshot = buildEvalSnapshot(found.row, found.set)
+      const snapshotHash = await hashEvalSnapshot(snapshot)
+      const record = {
+        evalRunId,
+        rowId,
+        wfRunId: p.wfRunId ?? null,
+        status: 'error' as const,
+        score: null,
+        checkResults: [],
+        error: error.slice(0, MAX_RECORDED_ERROR_CHARS),
+        snapshot,
+        snapshotHash,
+        modelId: p.modelId,
+        promptLabel: p.promptLabel,
+        promptBody: p.promptBody,
+        attempt: p.attempt,
+      }
+      const resultId = await insertEvalResult(c.db, record)
+      // A run that failed AFTER burning tokens still cost real money — surface
+      // that in the report rather than showing the cell as free.
+      const stats = p.wfRunId ? await loadRunStats(c.db, [p.wfRunId]) : null
+      return evalResultDTO(
+        { ...record, id: resultId, createdAt: new Date() },
+        p.wfRunId ? stats?.get(p.wfRunId) : null,
       )
     },
 

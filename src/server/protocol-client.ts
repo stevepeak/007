@@ -331,6 +331,30 @@ export interface WfDataClient {
     promptBody?: string
     attempt?: number
   }): Promise<WfEvalResultDTO>
+  /**
+   * Record a cell that never produced a gradeable run — the run failed, was
+   * cancelled, or was still executing when the orchestrator stopped waiting.
+   *
+   * Separate from `gradeEvalResult` on purpose: that method requires a finished
+   * `wf_run` and calls the judge model, whereas this one must be cheap and must
+   * work even when `startEvalRun` itself threw and there is no run id at all.
+   * Every cell writing SOME row is what keeps the run's `total` honest — a cell
+   * with no row silently doesn't count, which is how a provider outage rendered
+   * as "0 results" with no explanation.
+   */
+  recordEvalFailure(input: {
+    evalRunId: string
+    rowId: string
+    /** The run that was started, when one was. */
+    wfRunId?: string
+    /** Human-readable reason, shown verbatim in the report. */
+    error: string
+    /** Matrix cell identity to stamp on the result (all optional for a plain run). */
+    modelId?: string
+    promptLabel?: string
+    promptBody?: string
+    attempt?: number
+  }): Promise<WfEvalResultDTO>
   /** Roll up an eval run's results into its final counts/score + status. */
   finalizeEvalRun(input: { evalRunId: string }): Promise<WfEvalRunSummary>
   listEvalRuns(input?: { limit?: number }): Promise<WfEvalRunSummary[]>

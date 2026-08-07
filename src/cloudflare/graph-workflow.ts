@@ -8,6 +8,7 @@ import type { WfSdkConfig } from '../engine/config'
 import {
   isDecisionKind,
   workflowGraphSchema,
+  type NodeExecution,
   type WfNodeKind,
   type WfRunManifestEntry,
 } from '../engine/graph'
@@ -66,6 +67,11 @@ export type GraphRunContextInput = {
   freezeTools?: boolean
   /** Eval matrix override — swaps an agent node's modelId/prompt. See RunContext. */
   agentOverride?: { modelId?: string; prompt?: string }
+  /**
+   * Run-scoped step policy, tightening only. Caps what this run may spend
+   * without editing anybody's published graph. See `RunContext`.
+   */
+  executionOverride?: NodeExecution
   /** Stable 32-hex trace id, minted by `startGraphRun`, used to group every
    * per-node Sentry span into one distributed trace. */
   traceId?: string

@@ -35,6 +35,17 @@ export const MAX_ROUND_TRIP_MS = 8 * 60_000
 export const MAX_TOOL_MS = 90_000
 
 /**
+ * Provider-level retries inside ONE model call, on top of the first attempt.
+ *
+ * The AI SDK defaults to 2 (three attempts). An immediate second try genuinely
+ * converts a 429 or a one-off 500; a third almost never does against a gateway
+ * that is already failing, and each attempt costs a full request round-trip.
+ * One retry keeps the cheap win and halves the worst case — which then
+ * compounds with the node's own `step.do` retries, so the term counts twice.
+ */
+export const MODEL_MAX_RETRIES = 1
+
+/**
  * Floor for the total budget, so a node with an aggressively short
  * `execution.timeoutMs` still gets a usable (if tight) window rather than a
  * zero/negative one.

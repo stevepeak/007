@@ -130,21 +130,71 @@ export function useDeleteEvalRow(setId: string) {
 // sample start a real (simulated) run, wait for it to finish, and grade it —
 // concurrency-capped. A later durable orchestrator can replace this without
 // touching the protocol. Errors on one sample don't abort the batch; the run is
-// finalized over whatever results landed.
-const RUN_TERMINAL = new Set(['completed', 'failed', 'cancelled'])
+// finalized over whatever results landed — and EVERY cell lands something, pass,
+// fail, or error, so the run's totals always match what was requested.
+// A run has TWO success states: `done` (the Output was reached — the answer is
+// final and persisted — while branches that don't feed it are still draining)
+// and `completed` (nothing left to run). A waiter after an ANSWER must accept
+// both; only a waiter for the graph to fall quiet holds out for `completed`.
+const RUN_TERMINAL = new Set(['done', 'completed', 'failed', 'cancelled'])
+
+/**
+ * How long to wait for one cell's run to reach a terminal status.
+ *
+ * This MUST exceed the server's own bound on a failing agent node (see
+ * `EVAL_NODE_EXECUTION` in `../eval/execution-policy`), or it fires first and
+ * we're back to a waiter that gives up before the thing it waits on can
+ * possibly answer — which is exactly how a provider outage produced an eval
+ * report with zero results and no explanation.
+ */
+const EVAL_WAIT_TIMEOUT_MS = 15 * 60_000
+const EVAL_POLL_INTERVAL_MS = 3_000
+
+/**
+ * Concurrent runs one eval may have in flight. Each is a full agent call, so
+ * this is the rate at which the whole matrix hits the model provider — the
+ * knob that decides whether a large sweep is a workload or a denial of service.
+ */
+export const DEFAULT_EVAL_CONCURRENCY = 2
+const MAX_EVAL_CONCURRENCY = 4
+
+/**
+ * Consecutive failed model calls before the run stops launching new tests. Once
+ * the provider has refused three in a row, the rest are near-certain to fail
+ * too — continuing only burns time and hammers a service that is already down.
+ * Client-side timeouts do NOT count toward this: they say nothing about the
+ * provider's health.
+ */
+const MAX_CONSECUTIVE_CELL_ERRORS = 3
+
+const clampConcurrency = (n?: number) =>
+  Math.max(1, Math.min(n ?? DEFAULT_EVAL_CONCURRENCY, MAX_EVAL_CONCURRENCY))
+
+/**
+ * What became of one cell's run. Returning the outcome rather than throwing on
+ * the unhappy paths is what lets every one of them be recorded — a thrown
+ * timeout used to be indistinguishable from a network blip and got swallowed.
+ */
+type WaitOutcome =
+  | { kind: 'terminal'; status: string; error: string | null }
+  | { kind: 'timeout' }
 
 async function waitForRun(
   client: WfDataClient,
   wfRunId: string,
   opts: { pollIntervalMs: number; timeoutMs: number },
-): Promise<void> {
+): Promise<WaitOutcome> {
   const deadline = Date.now() + opts.timeoutMs
   for (;;) {
     const detail = await client.getRun(wfRunId)
-    if (detail && RUN_TERMINAL.has(detail.run.status)) return
-    if (Date.now() > deadline) {
-      throw new Error(`Eval run ${wfRunId} did not finish within the timeout.`)
+    if (detail && RUN_TERMINAL.has(detail.run.status)) {
+      return {
+        kind: 'terminal',
+        status: detail.run.status,
+        error: detail.run.error,
+      }
     }
+    if (Date.now() > deadline) return { kind: 'timeout' }
     await new Promise((r) => setTimeout(r, opts.pollIntervalMs))
   }
 }
@@ -246,32 +296,84 @@ export async function runEval(
   input.onStart?.(evalRunId)
 
   const wait = {
-    pollIntervalMs: input.pollIntervalMs ?? 1500,
-    timeoutMs: input.timeoutMs ?? 120000,
+    pollIntervalMs: input.pollIntervalMs ?? EVAL_POLL_INTERVAL_MS,
+    timeoutMs: input.timeoutMs ?? EVAL_WAIT_TIMEOUT_MS,
   }
   let done = 0
-  await pool(jobs, input.concurrency ?? 4, async (job) => {
+  // Circuit breaker state, shared across the pool's workers.
+  let consecutiveErrors = 0
+  let providerDown = false
+
+  await pool(jobs, clampConcurrency(input.concurrency), async (job) => {
+    const cell = {
+      modelId: job.modelId,
+      promptLabel: job.promptLabel,
+      promptBody: job.promptBody,
+      attempt: job.attempt,
+    }
+    // Every exit from this worker goes through here. A cell with no row does
+    // not merely lose its own verdict — `finalizeEvalRun` rolls up the rows
+    // that exist, so a missing row silently shrinks the run's `total` and the
+    // report reads as if the cell was never requested.
+    const record = (error: string, wfRunId?: string) =>
+      client
+        .recordEvalFailure({ evalRunId, rowId: job.rowId, wfRunId, error, ...cell })
+        .catch((e: unknown) => {
+          console.error(`[wf] eval failure not recorded for ${job.rowId}:`, e)
+        })
+
+    let wfRunId: string | undefined
     try {
-      const { wfRunId } = await client.startEvalRun({
+      if (providerDown) {
+        await record(
+          `Skipped — the model provider failed ${MAX_CONSECUTIVE_CELL_ERRORS} calls in a row, so the rest of this run was not launched.`,
+        )
+        return
+      }
+
+      ;({ wfRunId } = await client.startEvalRun({
         evalRunId,
         rowId: job.rowId,
         modelId: job.modelId,
         promptBody: job.promptBody,
-      })
-      await waitForRun(client, wfRunId, wait)
+      }))
+      const outcome = await waitForRun(client, wfRunId, wait)
+
+      if (outcome.kind === 'timeout') {
+        // Not a provider verdict — the run may still be going — so this does
+        // NOT trip the breaker.
+        await record(
+          `The run was still executing after ${Math.round(wait.timeoutMs / 60_000)} minutes; the report stopped waiting for it.`,
+          wfRunId,
+        )
+        return
+      }
+
+      if (outcome.status !== 'done' && outcome.status !== 'completed') {
+        // A failed or cancelled run has no gradeable output. Grading it anyway
+        // would produce a `fail` verdict that blames the Sample for what was an
+        // infrastructure failure — the other half of "pass rate 0, no idea why".
+        consecutiveErrors += 1
+        if (consecutiveErrors >= MAX_CONSECUTIVE_CELL_ERRORS) providerDown = true
+        await record(
+          outcome.error ?? `The run ended as "${outcome.status}".`,
+          wfRunId,
+        )
+        return
+      }
+
       await client.gradeEvalResult({
         evalRunId,
         rowId: job.rowId,
         wfRunId,
-        modelId: job.modelId,
-        promptLabel: job.promptLabel,
-        promptBody: job.promptBody,
-        attempt: job.attempt,
+        ...cell,
       })
+      consecutiveErrors = 0
     } catch (err) {
-      // Keep the batch going — a single cell's failure is captured by the
-      // absence of its result and the run still finalizes.
-      console.error(`[wf] eval sample ${job.rowId} failed:`, err)
+      // startEvalRun threw, the network dropped, grading blew up. Never
+      // swallow: the run is finalized over the rows that exist, so silence here
+      // is indistinguishable from success that produced nothing.
+      await record(err instanceof Error ? err.message : String(err), wfRunId)
     } finally {
       done += 1
       input.onProgress?.({ done, total: jobs.length })

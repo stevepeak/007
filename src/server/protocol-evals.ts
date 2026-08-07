@@ -128,6 +128,14 @@ export type WfEvalResultDTO = {
   score: number | null
   checkResults: CheckResult[]
   /**
+   * Why an `error` result has no verdict — the run failed, was cancelled, or
+   * never finished before the orchestrator stopped waiting. Null for pass/fail,
+   * where `checkResults` carries the explanation. This is the only place the
+   * report can tell a user that a zero pass rate was infrastructure, not their
+   * agent.
+   */
+  error: string | null
+  /**
    * Frozen Sample + Goal target this result ran + was graded against. The report
    * reads this (not the live Sample) so editing a Sample later doesn't rewrite
    * how a past run displays. Null only for results graded before snapshots

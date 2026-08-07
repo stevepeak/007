@@ -13,7 +13,7 @@ import {
 
 import { BOOLEAN_OUTPUT_SCHEMA } from '../agent-output'
 import type { AgentOutput } from '../graph'
-import type { ModelBudget } from '../model-budget'
+import { MODEL_MAX_RETRIES, type ModelBudget } from '../model-budget'
 import { interpolateUserText } from '../prompt-variables'
 import type { StreamSink } from '../stream-sink'
 
@@ -301,6 +301,7 @@ async function runStructuredGeneration(
       messages: messagesForModel,
       schema: jsonSchema(schema),
       abortSignal: guard.signal,
+      maxRetries: MODEL_MAX_RETRIES,
     }),
   )
   logModelCallEnd(sink, modelId, startedAt, {
@@ -448,7 +449,11 @@ async function runToolLoop(
       // Three rules, in strict precedence. The two that DENY tools come first and
       // are never overridden: whatever else is configured, an agent that is out
       // of turns or out of budget has to write its answer now.
-      prepareStep: ({ stepNumber }) => {
+      // `stepNumber` is annotated because `callOptions` is a bare literal with
+      // no contextual type (it feeds both generateText and streamText), so the
+      // SDK's own parameter types don't flow in — same reason `onStepFinish`
+      // below spells out `StepResult<ToolSet>`.
+      prepareStep: ({ stepNumber }: { stepNumber: number }) => {
         // Re-decided per step: an agent with no tools always answers, otherwise
         // only the branches below that deny tools qualify. See `streamAnswer`.
         stepMustAnswer = !hasTools
@@ -522,6 +527,7 @@ async function runToolLoop(
       // window. `abortSignal` carries our separate total-budget guard.
       timeout: budget && { stepMs: budget.stepMs, toolMs: budget.toolMs },
       abortSignal: guard.signal,
+      maxRetries: MODEL_MAX_RETRIES,
       onStepFinish: (step: StepResult<ToolSet>) => {
         const toolCalls = (step.toolCalls ?? []).map((tc) => {
           const r = step.toolResults?.find(

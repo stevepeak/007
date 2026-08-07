@@ -53,6 +53,15 @@ export function ResultDetail({ row }: { row: ResultRow }) {
 
       <RunStatsLine stats={result.runStats} />
 
+      {/* The one place a user learns that a zero pass rate was infrastructure
+          rather than their agent. An errored cell has no check verdicts to
+          explain itself — this message is all it has. */}
+      {row.error && (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs break-words whitespace-pre-wrap text-amber-800">
+          {row.error}
+        </p>
+      )}
+
       {result.checkResults.length > 0 && (
         <ul className="divide-y divide-neutral-100 rounded-md border border-neutral-100">
           {result.checkResults.map((cr, i) => (

@@ -23,10 +23,32 @@ export function defaultNodeTimeoutMs(kind: string): number {
     : DEFAULT_NODE_TIMEOUT_MS
 }
 
-/** A node's effective timeout: its `execution.timeoutMs`, else the kind default. */
-export function resolveNodeTimeoutMs(node: {
-  kind: string
-  execution?: NodeExecution
-}): number {
-  return node.execution?.timeoutMs ?? defaultNodeTimeoutMs(node.kind)
+/**
+ * A node's effective timeout: its `execution.timeoutMs`, else the kind default,
+ * optionally capped by a RUN-SCOPED override.
+ *
+ * The override TIGHTENS ONLY. A run-level bound exists to cap what one run may
+ * cost — an eval harness putting a ceiling on a wedged provider — so it must
+ * never loosen a node whose author declared something stricter, and equally
+ * must not be defeatable by an author who declared something looser. Hence the
+ * `min`, with the KIND DEFAULT participating: a node with no `execution` at all
+ * still inherits 20 minutes, and ignoring that would make the override a no-op
+ * for exactly the nodes it most needs to bound.
+ *
+ * Only the inline backend consults the override. The durable backend
+ * deliberately does not: threading it through `step.do` meant touching the
+ * dispatch hot path of every production run to serve one caller, and evals run
+ * inline anyway (see `buildAgentWrapperGraph`).
+ */
+export function resolveNodeTimeoutMs(
+  node: {
+    kind: string
+    execution?: NodeExecution
+  },
+  override?: NodeExecution,
+): number {
+  const own = node.execution?.timeoutMs ?? defaultNodeTimeoutMs(node.kind)
+  return override?.timeoutMs != null
+    ? Math.min(own, override.timeoutMs)
+    : own
 }

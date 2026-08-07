@@ -1,5 +1,9 @@
 import type { WfSdkConfig } from '../../engine/config'
-import type { AgentConfig, WorkflowGraph } from '../../engine/graph'
+import type {
+  AgentConfig,
+  NodeExecution,
+  WorkflowGraph,
+} from '../../engine/graph'
 import type { WfDb } from '../../storage/client'
 import type {
   AgentPreviewResult,
@@ -187,6 +191,13 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
      */
     modelId?: string
     promptBody?: string
+    /**
+     * Run-scoped step policy the host must forward to `startGraphRun`. The SDK
+     * always sets it for evals, so a host that drops it silently restores the
+     * 20-minute / 3-retry production policy — the exact condition that made a
+     * failing eval cell take ~21 minutes to report.
+     */
+    executionOverride: NodeExecution
     ctx: WfServerContext
     req: Request
   }) => Promise<{ wfRunId: string }>

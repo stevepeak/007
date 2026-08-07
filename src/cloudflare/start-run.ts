@@ -1,5 +1,5 @@
 import { resolveGraphEngine } from '../engine/graph-engine'
-import type { WfEngine } from '../engine/graph-schema'
+import type { NodeExecution, WfEngine } from '../engine/graph-schema'
 import { createWfDb } from '../storage/client'
 import { createRun, getVersionGraph } from '../storage/data'
 
@@ -43,6 +43,13 @@ export type StartGraphRunInput = {
    * node for this run (the eval wrapper's single agent). See RunContext.
    */
   agentOverride?: { modelId?: string; prompt?: string }
+  /**
+   * Run-scoped step policy layered onto every node's own, TIGHTENING only.
+   * Bounds what this one run may spend without touching the published graph —
+   * eval runs pass `EVAL_NODE_EXECUTION` so a failing node reports in minutes
+   * instead of exhausting the 20-minute AI default four times over.
+   */
+  executionOverride?: NodeExecution
   /** Optional human label for the RunRoom snapshot. */
   label?: string
   /** Resume mode: replay a prior failed run's completed steps into this run and
@@ -128,6 +135,7 @@ export async function startGraphRun(
       fixtures: input.fixtures,
       freezeTools: input.freezeTools,
       agentOverride: input.agentOverride,
+      executionOverride: input.executionOverride,
       traceId,
     },
     resumeFromRunId: input.resumeFromRunId,

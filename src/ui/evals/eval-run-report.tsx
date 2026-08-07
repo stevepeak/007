@@ -43,7 +43,11 @@ export function EvalRunReport({ evalRunId, className }: EvalRunReportProps) {
         <div className="mx-auto max-w-5xl space-y-4 p-6">
           <RunHeader run={data.run} results={data.results} />
           <MatrixSummary results={data.results} onHoverCell={setHoveredCell} />
-          <ResultsTable results={data.results} highlightedCell={hoveredCell} />
+          <ResultsTable
+            results={data.results}
+            runStatus={data.run.status}
+            highlightedCell={hoveredCell}
+          />
         </div>
       )}
     </WfShell>

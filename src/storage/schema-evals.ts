@@ -116,6 +116,13 @@ export const wfEvalResult = sqliteTable(
     checkResults: text('check_results', { mode: 'json' })
       .notNull()
       .default(sql`'[]'`),
+    // Why this cell has no verdict. Set only for `status: 'error'` — the run
+    // failed, was cancelled, or never reached a terminal state before the
+    // orchestrator stopped waiting. Null for pass/fail, where `checkResults`
+    // already explains the outcome. Without this a failed cell used to write no
+    // row at all, so an eval whose provider was down reported "0 results" and
+    // gave the user nothing to act on.
+    error: text('error'),
     // Frozen copy of the Sample + Goal target this result was produced and graded
     // against — see EvalRowSnapshot. Makes a historical result reproducible even
     // after its Sample/checks are edited (the report reads this, not the live

@@ -235,8 +235,13 @@ export async function runInlineGraph<TDeps, E extends { DB: D1Database }>(
       // nothing written anywhere. Derived from the SAME declared node timeout
       // the durable backend hands Cloudflare, so an author who tightens
       // `execution.timeoutMs` tightens both engines identically.
+      // The run-scoped override applies here too: the two backends must never
+      // disagree about how long a node may run, or a workflow behaves one way
+      // under an eval and another in production.
       resolveModelBudget: (node) =>
-        modelBudgetFor(resolveNodeTimeoutMs(node)),
+        modelBudgetFor(
+          resolveNodeTimeoutMs(node, p.runContext.executionOverride),
+        ),
       // The answer landed. Publish it and release the reader NOW — the walk
       // may still have arms to drain (a `branch → tool` side effect that the
       // Output never depended on), and making a chat turn wait on those is

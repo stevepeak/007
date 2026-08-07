@@ -55,6 +55,13 @@ export function RunHeader({
         <Metric label="Mean score">
           <Score value={score} />
         </Metric>
+        {live.errored > 0 && (
+          <Metric label="Errored">
+            <span className="tabular-nums font-medium text-amber-600">
+              {live.errored}
+            </span>
+          </Metric>
+        )}
         <Metric label="Tests">
           <span className="tabular-nums text-neutral-700">{run.total}</span>
         </Metric>
@@ -98,6 +105,11 @@ function liveTotals(results: WfEvalResultDTO[]) {
   return {
     completed: results.length,
     passed: results.filter((r) => r.status === 'pass').length,
+    // Cells that never produced a verdict — the run failed, was cancelled, or
+    // was still going when the report stopped waiting. Counted separately
+    // because "0% pass, all errored" and "0% pass, all genuinely failed" are
+    // completely different problems and used to look identical here.
+    errored: results.filter((r) => r.status === 'error').length,
     score: scores.length ? mean(scores) : null,
   }
 }

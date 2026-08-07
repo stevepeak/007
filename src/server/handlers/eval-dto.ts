@@ -78,6 +78,7 @@ export function evalResultDTO(
     status: WfEvalResultDTO['status']
     score: number | null
     checkResults: unknown
+    error?: string | null
     snapshot?: unknown
     snapshotHash?: string | null
     modelId?: string | null
@@ -99,6 +100,7 @@ export function evalResultDTO(
     checkResults: Array.isArray(r.checkResults)
       ? (r.checkResults as WfEvalResultDTO['checkResults'])
       : [],
+    error: r.error ?? null,
     snapshot: (r.snapshot as EvalRowSnapshot | null) ?? null,
     snapshotHash: r.snapshotHash ?? null,
     modelId: r.modelId ?? null,

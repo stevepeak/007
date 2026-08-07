@@ -9,6 +9,8 @@ import type { EvalCheck, WfEvalResultDTO } from '../../../server/protocol'
 export type ResultRow = {
   result: WfEvalResultDTO
   status: string
+  /** Why an `error` row has no verdict; null for pass/fail. */
+  error: string | null
   sampleName: string
   setId: string | null
   goalName: string
@@ -70,6 +72,7 @@ export function buildResultRows(
     return {
       result: r,
       status: r.status,
+      error: r.error,
       sampleName: snap?.row.name ?? r.rowId,
       setId: snap?.target.setId ?? null,
       goalName: snap?.target.setName ?? 'Goal',

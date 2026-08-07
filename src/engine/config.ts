@@ -1,7 +1,7 @@
 import type { LanguageModel } from 'ai'
 
 import type { WfBlobRef } from './blob-ref'
-import type { WfRunManifestEntry } from './graph'
+import type { NodeExecution, WfRunManifestEntry } from './graph'
 import type {
   ModelCatalogEntry,
   ModelOption,
@@ -126,6 +126,14 @@ export type RunContext = {
    * property of the run, not a tool argument — so a prompt can't route around it.
    */
   simulate?: boolean
+  /**
+   * Run-scoped execution policy layered onto every node's own, TIGHTENING only
+   * (see `tightenExecution`). Lets a caller cap what one run may spend without
+   * touching anybody's published graph — eval runs use it so a wedged provider
+   * surfaces in a couple of minutes instead of consuming the 20-minute AI
+   * default four times over. Undefined → each node's declared policy stands.
+   */
+  executionOverride?: NodeExecution
   /**
    * Canned tool outputs keyed by tool id, consumed only under `simulate`: a read
    * tool returns `fixtures[toolId]` instead of hitting live data, making an eval

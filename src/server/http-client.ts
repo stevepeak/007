@@ -119,6 +119,10 @@ export function createHttpWfDataClient(
     startEvalRun: bind('startEvalRun', 120000),
     // Judge checks call a model — give grading its own longer budget.
     gradeEvalResult: bind('gradeEvalResult', 120000),
+    // One insert, no model call. It runs on the path where something has
+    // ALREADY gone wrong, so it gets the short default budget deliberately —
+    // a slow failure-recorder would just compound the failure it's recording.
+    recordEvalFailure: bind('recordEvalFailure'),
     finalizeEvalRun: bind('finalizeEvalRun'),
     listEvalRuns: bind('listEvalRuns'),
     getEvalRun: (evalRunId) => call('getEvalRun', { evalRunId }),

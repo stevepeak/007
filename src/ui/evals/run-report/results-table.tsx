@@ -33,9 +33,16 @@ import { ResultDetail } from './result-detail'
 // expandable per-check detail, and crowns on the best / fastest / cheapest tests.
 export function ResultsTable({
   results,
+  runStatus,
   highlightedCell,
 }: {
   results: WfEvalResultDTO[]
+  /**
+   * The umbrella run's status, used only to word the empty state. Every cell
+   * now writes a row (pass, fail, or error), so an empty table on a finished
+   * run is a real, final answer — not something still on its way.
+   */
+  runStatus?: string
   /** Matrix cell key to highlight — every row in that cell tints (from card hover). */
   highlightedCell?: string | null
 }) {
@@ -145,7 +152,9 @@ export function ResultsTable({
               <ChevronRight className="size-3.5" />
             )}
           </td>
-          <td className="py-2 pr-3">
+          {/* Errored rows carry their reason on the dot, so a run full of them
+              is readable without expanding every one. */}
+          <td className="py-2 pr-3" title={r.error ?? undefined}>
             <StatusDot status={r.status} />
           </td>
           <td className="max-w-[16rem] py-2 pr-3 font-medium text-neutral-800">
@@ -298,7 +307,11 @@ export function ResultsTable({
       </div>
 
       {rows.length === 0 ? (
-        <p className="px-4 py-6 text-sm text-neutral-400">No results yet.</p>
+        <p className="px-4 py-6 text-sm text-neutral-400">
+          {runStatus === 'queued' || runStatus === 'running'
+            ? 'No results yet.'
+            : 'This run produced no results.'}
+        </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">

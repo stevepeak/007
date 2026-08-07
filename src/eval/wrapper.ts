@@ -5,6 +5,8 @@ import {
   createWorkflow,
   findWorkflowByName,
   getLatestVersionId,
+  getVersionGraph,
+  saveVersion,
 } from '../storage/data'
 
 // Phase 5 — target resolution. An eval always runs through the same
@@ -37,16 +39,24 @@ export function evalWrapperName(
  * The minimal runnable graph for an agent eval: a manual trigger wired through
  * an agent node (pointing at `agentId`) into an Output. `version` is the goal's
  * target pin — `null` floats to the agent's latest published version, a number
- * pins to that exact version. Pure — no db, no side effects; ids are fresh per
- * call (they're internal to the frozen version, never referenced elsewhere).
+ * pins to that exact version. Pure — no db, no side effects.
+ *
+ * Ids are DERIVED, not random. A wrapper is regenerated on every
+ * `ensureAgentEvalWrapper` call and compared against the stored one to detect
+ * drift (see `stableStringify`); random ids would make every comparison differ
+ * and republish forever. They stay internal to the frozen version and
+ * are never referenced from outside it, so their form is free — readable beats
+ * opaque when they show up in `wf_run_step.node_id` and Sentry `wf.node_id`.
  */
 export function buildAgentWrapperGraph(
   agentId: string,
   version: number | null = null,
 ): WorkflowGraph {
-  const triggerId = crypto.randomUUID()
-  const agentNodeId = crypto.randomUUID()
-  const outputId = crypto.randomUUID()
+  const pin = version == null ? 'latest' : `v${version}`
+  const nodeId = (role: string) => `eval-wrapper:${agentId}:${pin}:${role}`
+  const triggerId = nodeId('trigger')
+  const agentNodeId = nodeId('agent')
+  const outputId = nodeId('output')
   return {
     version: 1,
     nodes: [
@@ -56,7 +66,18 @@ export function buildAgentWrapperGraph(
         label: 'Manual start',
         position: { x: 0, y: 0 },
         informUser: { mode: 'off' },
-        config: { triggerKind: MANUAL_TRIGGER_KIND },
+        config: {
+          triggerKind: MANUAL_TRIGGER_KIND,
+          // Evals run INLINE, not on Cloudflare Workflows. A wrapper is one
+          // agent call with a caller waiting on the answer — it wants none of
+          // what the durable backend is for. Durability bought nothing here and
+          // cost a lot: `step.do` replays the whole node up to 4× against the
+          // same failing provider under a 20-minute timeout, which is what
+          // turned a Venice outage into cells that took ~21 minutes to report.
+          // Inline has one bound, the in-process model budget, and it fails
+          // fast and legibly.
+          engine: 'inline',
+        },
       },
       {
         id: agentNodeId,
@@ -89,28 +110,75 @@ export function buildAgentWrapperGraph(
       },
     ],
     edges: [
-      { id: crypto.randomUUID(), source: triggerId, target: agentNodeId, condition: null },
-      { id: crypto.randomUUID(), source: agentNodeId, target: outputId, condition: null },
+      { id: nodeId('edge-trigger-agent'), source: triggerId, target: agentNodeId, condition: null },
+      { id: nodeId('edge-agent-output'), source: agentNodeId, target: outputId, condition: null },
     ],
   }
 }
 
 /**
- * Ensure the hidden wrapper workflow for `agentId` exists, returning its id and
- * latest version id. Idempotent: created once (cached by {@link evalWrapperName}),
- * reused thereafter. The wrapper floats to the agent's latest version through the
- * agent node, so it never needs re-publishing when the agent changes.
+ * Order-insensitive structural equality for two wrapper graphs.
+ *
+ * A stored graph has been through JSON and zod, either of which may reorder or
+ * drop-and-default keys relative to the object the builder just returned, so a
+ * plain `JSON.stringify` comparison would report drift on every call. Sorting
+ * keys at every level compares what the graph MEANS rather than how it happens
+ * to be serialized.
+ */
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value)
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(',')}]`
+  }
+  const entries = Object.entries(value as Record<string, unknown>)
+    // `undefined` never survives a JSON round-trip, so an explicitly-undefined
+    // key on the fresh side must not read as drift against an absent one.
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(',')}}`
+}
+
+/**
+ * Ensure the hidden wrapper workflow for `agentId` exists and is CURRENT,
+ * returning its id and latest version id. Idempotent: created once (cached by
+ * {@link evalWrapperName}), reused thereafter. The wrapper floats to the
+ * agent's latest version through the agent node, so it needs no re-publishing
+ * when the agent itself changes.
+ *
+ * It DOES need re-publishing when the wrapper's own shape changes, and that is
+ * the subtle part. A cached wrapper is a frozen copy of whatever
+ * `buildAgentWrapperGraph` emitted the day it was first evaluated, so a fix to
+ * the builder reaches new agents only — every agent already evaluated keeps the
+ * old graph forever. That is not hypothetical: wrappers created before Output
+ * nodes required an explicit `config.source` kept an unbound Output, and every
+ * eval against them failed at run start with "Output node … has no bound
+ * value". Comparing structurally and republishing on drift heals those in place
+ * and makes the next builder change propagate on its own.
  */
 export async function ensureAgentEvalWrapper(
   db: WfDb,
   input: { agentId: string; createdBy?: string },
 ): Promise<{ workflowId: string; workflowVersionId: string }> {
   const name = evalWrapperName(input.agentId)
+  const graph = buildAgentWrapperGraph(input.agentId)
   const existing = await findWorkflowByName(db, name)
   if (existing) {
     const versionId = await getLatestVersionId(db, existing.id)
     if (versionId) {
-      return { workflowId: existing.id, workflowVersionId: versionId }
+      const stored = await getVersionGraph(db, versionId)
+      if (stored && stableStringify(stored.graph) === stableStringify(graph)) {
+        return { workflowId: existing.id, workflowVersionId: versionId }
+      }
+      // Stale (or unreadable) — publish the current shape as a new version and
+      // run against that. History is preserved, so a past eval result still
+      // resolves the exact graph it was produced by.
+      const published = await saveVersion(db, {
+        workflowId: existing.id,
+        graph,
+        changeNote: 'Regenerated eval wrapper (builder shape changed).',
+        publishedBy: input.createdBy,
+      })
+      return { workflowId: existing.id, workflowVersionId: published.versionId }
     }
     // Row exists but somehow has no version — fall through and recreate cleanly
     // under a fresh id (the orphaned row is harmless; it's hidden and unused).
@@ -120,7 +188,7 @@ export async function ensureAgentEvalWrapper(
     description: `Auto-generated eval wrapper for agent ${input.agentId}.`,
     hidden: true,
     createdBy: input.createdBy,
-    graph: buildAgentWrapperGraph(input.agentId),
+    graph,
   })
   return {
     workflowId: created.workflowId,

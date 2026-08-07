@@ -333,10 +333,13 @@ export async function insertEvalResult(
   input: {
     evalRunId: string
     rowId: string
-    wfRunId?: string
+    // Null when the cell never got as far as starting a run.
+    wfRunId?: string | null
     status: EvalResultStatus
     score?: number | null
     checkResults?: CheckResult[]
+    /** Why an `error` result has no verdict; null for pass/fail. */
+    error?: string | null
     /** Frozen state this result ran against — see buildEvalSnapshot. */
     snapshot?: EvalRowSnapshot | null
     /** sha256 of `snapshot` — see hashEvalSnapshot. */
@@ -357,6 +360,7 @@ export async function insertEvalResult(
     status: input.status,
     score: input.score ?? null,
     checkResults: input.checkResults ?? [],
+    error: input.error ?? null,
     snapshot: input.snapshot ?? null,
     snapshotHash: input.snapshotHash ?? null,
     modelId: input.modelId ?? null,

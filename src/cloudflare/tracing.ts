@@ -85,6 +85,10 @@ export async function withNodeSpan<T>(
             url: d.url ?? null,
             responseBody: d.responseBody ?? null,
             requestBodyValues: d.requestBodyValues ?? null,
+            // Present when the SDK's retry wrapper gave up — without these the
+            // issue shows one rejection and no sign it was tried repeatedly.
+            attempts: d.attempts ?? null,
+            retryReason: d.retryReason ?? null,
           })
         }
         return scope
