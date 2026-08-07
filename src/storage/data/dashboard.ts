@@ -10,8 +10,8 @@ import {
   wfWorkflowVersion,
 } from '../schema'
 
-import { listRuns } from './runs-list'
 import { loadModelPriceMap } from './runs-cost'
+import { listRuns } from './runs-list'
 
 // ---------------------------------------------------------------------------
 // Home-dashboard rollup — run volume, spend, failures, feedback queue
@@ -212,9 +212,9 @@ export function collapseSeries(
   const points = zeros(head[0]?.points.length ?? 0)
   let total = 0
   for (const s of tail) {
-    s.points.forEach((v, i) => {
+    for (const [i, v] of s.points.entries()) {
       points[i] = (points[i] ?? 0) + v
-    })
+    }
     total += s.total
   }
   return [...head, { key: '', label: otherLabel, total, points }]
