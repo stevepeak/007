@@ -1,14 +1,21 @@
 import type { ModelOption } from '../../engine/config'
+import { useWfComponents } from '../context'
+import { EVAL_CONCURRENCY_CHOICES } from '../hooks'
+
 import { BrandMark, inferModelBrand } from './shared'
 
 // The confirmation screen: the model × prompt matrix laid out as a grid, the
-// total test count, and a (blurred, not-yet-real) cost estimate. This is the
-// deliberate "here's what you're about to spend" gate before launch.
+// total test count, how fast to run it, and a (blurred, not-yet-real) cost
+// estimate. This is the deliberate "here's what you're about to spend" gate
+// before launch — which is why the speed control lives here and not on the
+// configure step: it's a cost/pressure decision, not part of the matrix.
 export function ConfirmStep({
   selectedModels,
   counts,
   promptCount,
   totalTests,
+  concurrency,
+  onConcurrencyChange,
   matrixBlocked,
   runError,
 }: {
@@ -16,9 +23,13 @@ export function ConfirmStep({
   counts: Record<string, number>
   promptCount: number
   totalTests: number
+  /** In-flight tests allowed at once — see EVAL_CONCURRENCY_CHOICES. */
+  concurrency: number
+  onConcurrencyChange: (next: number) => void
   matrixBlocked: boolean
   runError: boolean
 }) {
+  const { Button } = useWfComponents()
   // Row per prompt variation: the baseline plus each extra prompt.
   const promptRows = [
     'Agent’s saved prompt',
@@ -85,6 +96,33 @@ export function ConfirmStep({
             {totalTests} test{totalTests === 1 ? '' : 's'}
           </span>{' '}
           per sample
+        </p>
+      </div>
+
+      {/* How hard to push the provider. Each slot is one in-flight agent call;
+          the runs don't contend with each other locally, so this is purely a
+          rate limit on the model API. */}
+      <div>
+        <h3 className="mb-1.5 text-xs font-semibold tracking-wide text-neutral-500 uppercase">
+          Run speed
+        </h3>
+        <div className="flex items-center gap-1.5">
+          {EVAL_CONCURRENCY_CHOICES.map((n) => (
+            <Button
+              key={n}
+              type="button"
+              size="sm"
+              variant={n === concurrency ? 'default' : 'outline'}
+              onClick={() => onConcurrencyChange(n)}
+            >
+              {n === 1 ? '1 at a time' : `${n} at a time`}
+            </Button>
+          ))}
+        </div>
+        <p className="mt-1.5 text-xs text-neutral-400">
+          How many tests run at once. Higher finishes sooner but pushes the model
+          provider harder — if it starts rejecting calls, the run stops itself
+          after three failures in a row.
         </p>
       </div>
 

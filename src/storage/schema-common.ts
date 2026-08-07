@@ -29,6 +29,13 @@ export const WF_RUN_STATUSES = [
   'cancelled',
 ] as const
 
+/**
+ * The run lifecycle as a type — the SDK's own vocabulary, so a host surfacing
+ * run state narrows to THIS rather than restating the union (and drifting from
+ * it) or falling back to a bare `string`.
+ */
+export type WfRunStatus = (typeof WF_RUN_STATUSES)[number]
+
 export const WF_RUN_STEP_STATUSES = [
   'running',
   'completed',

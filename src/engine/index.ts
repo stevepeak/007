@@ -149,7 +149,14 @@ export {
   type TriggerMode,
   type TriggerRegistry,
 } from './trigger-registry'
-export { createMemorySink, type StreamSink } from './stream-sink'
+export {
+  createMemorySink,
+  type RunAnswerChunk,
+  type RunLogEntry,
+  type RunLogLevel,
+  type StreamSink,
+} from './stream-sink'
+export type { StartGraphRunInput, StartGraphRunResult } from './run-input'
 export {
   deriveRunProgress,
   type ProgressStep,

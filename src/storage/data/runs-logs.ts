@@ -1,7 +1,7 @@
 import { and, asc, count, eq, ne } from 'drizzle-orm'
 
 import type { WfDb } from '../client'
-import { wfRun, wfRunLog } from '../schema'
+import { wfRun, wfRunLog, type WfRunStatus } from '../schema'
 
 // ---------------------------------------------------------------------------
 // Run logs — the structured progress feed (wf_run_log)
@@ -189,7 +189,7 @@ export type RunProgressLine = {
 
 /** A run's persisted user-facing progress, for a poll-based consumer. */
 export type RunProgressFeed = {
-  status: string
+  status: WfRunStatus
   /** `wf_run.correlation_id` — the owning org, for host-side authorization. */
   correlationId: string | null
   /** Every user-facing `progress` line in emit order. */

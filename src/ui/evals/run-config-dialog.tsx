@@ -114,6 +114,9 @@ export function RunConfigDialog({
   const promptSeq = useRef(0)
   // Two-step flow: pick the matrix, then confirm it.
   const [step, setStep] = useState<'configure' | 'confirm'>('configure')
+  // How many tests run at once. Chosen on the confirm step, since it's a
+  // cost/provider-pressure decision rather than part of the matrix itself.
+  const [concurrency, setConcurrency] = useState<number>(DEFAULT_EVAL_CONCURRENCY)
 
   // Reset the selection each time the dialog opens so a stale pick from a prior
   // target doesn't leak in.
@@ -123,6 +126,7 @@ export function RunConfigDialog({
       setCollapsed({})
       setPrompts([])
       setStep('configure')
+      setConcurrency(DEFAULT_EVAL_CONCURRENCY)
     }
   }, [open])
 
@@ -180,10 +184,7 @@ export function RunConfigDialog({
     runEval.mutate({
       setIds,
       matrix,
-      // Stated explicitly rather than left to the default: this is the rate the
-      // whole matrix hits the model provider, and it's the one knob a "run
-      // faster" control would change.
-      concurrency: DEFAULT_EVAL_CONCURRENCY,
+      concurrency,
       onStart: (evalRunId) => {
         onClose()
         navigate(`evals/runs/${evalRunId}`)
@@ -476,6 +477,8 @@ export function RunConfigDialog({
             counts={counts}
             promptCount={prompts.length}
             totalTests={totalTests}
+            concurrency={concurrency}
+            onConcurrencyChange={setConcurrency}
             matrixBlocked={matrixBlocked}
             runError={runEval.isError}
           />

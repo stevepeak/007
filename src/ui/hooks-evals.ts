@@ -154,9 +154,26 @@ const EVAL_POLL_INTERVAL_MS = 3_000
  * Concurrent runs one eval may have in flight. Each is a full agent call, so
  * this is the rate at which the whole matrix hits the model provider — the
  * knob that decides whether a large sweep is a workload or a denial of service.
+ *
+ * The default stays low because a big matrix against a struggling provider is
+ * exactly how a 429 storm starts. Raising it is now much safer than it was —
+ * the circuit breaker stops the run after three consecutive provider failures
+ * and every cell records its own outcome — so the launch dialog offers the
+ * choice rather than hard-coding one.
  */
 export const DEFAULT_EVAL_CONCURRENCY = 2
-const MAX_EVAL_CONCURRENCY = 4
+/**
+ * The values the launch dialog offers — coarse steps rather than a free-form
+ * number, because the difference that matters is order-of-magnitude pressure on
+ * the provider, not 5 versus 6. Each slot is one in-flight agent call; the runs
+ * themselves each execute in their own Durable Object and don't contend
+ * locally, so this bounds the model API and nothing else.
+ */
+export const EVAL_CONCURRENCY_CHOICES = [1, 2, 4, 8] as const
+
+// The clamp ceiling is the largest offered choice, derived rather than restated
+// so the two can't drift apart.
+const MAX_EVAL_CONCURRENCY = Math.max(...EVAL_CONCURRENCY_CHOICES)
 
 /**
  * Consecutive failed model calls before the run stops launching new tests. Once

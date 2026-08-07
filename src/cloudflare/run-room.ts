@@ -2,7 +2,8 @@ import { DurableObject } from 'cloudflare:workers'
 
 import type { WfSdkConfig } from '../engine/config'
 import { errorMessage } from '../engine/run-node'
-import type { RunLogEntry } from '../engine/stream-sink'
+import type { RunAnswerChunk, RunLogEntry } from '../engine/stream-sink'
+import type { WfRunStatus } from '../storage/schema-common'
 
 import type { GraphWorkflowParams } from './graph-workflow'
 import { runInlineGraph } from './inline-run'
@@ -23,16 +24,11 @@ import { runInlineGraph } from './inline-run'
 // wf_run_log table is the source of truth for a completed run; this buffer is
 // just the live/reconnect window, so it's bounded.
 
-// Mirrors `WF_RUN_STATUSES` — including the `done` (answer final, background
-// arms still running) vs `completed` (nothing left to run) split, so a live
-// subscriber sees the same two beats a poller of `wf_run` does.
-export type WfRunRoomStatus =
-  | 'queued'
-  | 'running'
-  | 'done'
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
+// The room speaks the run lifecycle verbatim — including the `done` (answer
+// final, background arms still running) vs `completed` (nothing left to run)
+// split, so a live subscriber sees the same two beats a poller of `wf_run`
+// does. An alias rather than a restatement: one vocabulary, one place to edit.
+export type WfRunRoomStatus = WfRunStatus
 
 export type WfRunRoomState = {
   runId: string
@@ -167,7 +163,7 @@ export class RunRoomBase<E = unknown> extends DurableObject<E> {
    * rejected: a caller holding a stale cursor (the room restarted and the
    * buffer is empty) should quietly resynchronise, not fail the turn.
    */
-  getAnswerSince(cursor: number): { text: string; cursor: number } {
+  getAnswerSince(cursor: number): RunAnswerChunk {
     const from = Math.max(0, Math.min(cursor, this.answer.length))
     return { text: this.answer.slice(from), cursor: this.answer.length }
   }

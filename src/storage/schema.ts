@@ -10,6 +10,7 @@ export {
   WF_FEEDBACK_RATINGS,
   WF_RUN_STATUSES,
   WF_RUN_STEP_STATUSES,
+  type WfRunStatus,
 } from './schema-common'
 export {
   wfAgent,

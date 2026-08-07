@@ -46,6 +46,23 @@ export type RunLogEntry = {
   meta?: Record<string, unknown>
 }
 
+/**
+ * A slice of a run's answer, read back by cursor — the READ side of the
+ * {@link StreamSink.delta} write side below.
+ *
+ * The protocol is the whole type: `text` is everything written since the cursor
+ * the caller passed, and `cursor` is what to pass next time (the buffer's new
+ * length). A caller starts at 0 and echoes back whatever it last received.
+ *
+ * Only runs on the INLINE engine ever produce anything here — the durable
+ * engine cannot stream, so it returns empty text forever and its consumer falls
+ * back to the finished answer on `wf_run.output`.
+ */
+export type RunAnswerChunk = {
+  text: string
+  cursor: number
+}
+
 export interface StreamSink {
   append: (channel: string, text: string) => Promise<void> | void
   /**
