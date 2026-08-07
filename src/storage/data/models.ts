@@ -145,14 +145,19 @@ export async function getModelCatalog(
 /**
  * Which agents currently reference each model, keyed by CATALOG model id. An
  * agent counts if either its latest published version OR its live draft names
- * the model. Agent `modelId`s may be composite (`provider:model`) or bare
- * (legacy) — both are resolved to the catalog id by matching `wf_model.id` or
- * `wf_model.model_id`, so no provider prefix is hardcoded here.
+ * the model. Archived agents are excluded — they are retired and never run, so
+ * they must not make a model look in-use. Agent `modelId`s may be composite
+ * (`provider:model`) or bare (legacy) — both are resolved to the catalog id by
+ * matching `wf_model.id` or `wf_model.model_id`, so no provider prefix is
+ * hardcoded here.
  */
 export async function getModelUsage(
   db: WfDb,
 ): Promise<Record<string, AgentUsageRef[]>> {
-  const agents = await db.select().from(wfAgent)
+  const agents = await db
+    .select()
+    .from(wfAgent)
+    .where(eq(wfAgent.archived, false))
   if (agents.length === 0) return {}
 
   // Map every known id form → canonical catalog id.
