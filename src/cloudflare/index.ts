@@ -37,3 +37,8 @@ export {
   createR2BlobResolver,
   type CreateR2BlobResolverOptions,
 } from './blob-resolver'
+export {
+  createAnalyticsEngineTelemetry,
+  MAX_POINTS_PER_INVOCATION,
+  type CreateAnalyticsEngineTelemetryOptions,
+} from './analytics-engine'

@@ -220,9 +220,10 @@ Key rules:
   `triggers` (and `resolveBlobRef` if you use blob spilling).
 - **Optional hooks:** `fetchModelCatalog` (live provider `/models` refresh on the
   Models admin page), `fetchProviderBudget` (spend/credit remaining — see below),
-  `resolveImageRef` (vision inputs), and `onRunComplete` / `onRunFailed` (reflect
+  `resolveImageRef` (vision inputs), `onRunComplete` / `onRunFailed` (reflect
   a run's terminal state back onto your own entity — the one named by
-  `subjectId`). Omit any you don't use.
+  `subjectId`), and `resolveTelemetry` (per-step/per-run analytics — see §7b).
+  Omit any you don't use.
 
 ### Provider spend budgets (optional)
 
@@ -1000,6 +1001,105 @@ const run = await workflowsClient.startGraphRun({
 })
 // run.workflowRunId → poll getRun / key RunViewer
 ```
+
+---
+
+## 7b. Run telemetry (Cloudflare Analytics Engine)
+
+**Entirely optional.** Wire nothing and runs behave exactly as before: the SDK
+writes to a no-op sink and the dashboard answers from D1. Wire it and you get
+cheap spend/volume aggregation plus the one number D1 cannot produce — how many
+Cloudflare Workflows **steps** your runs actually burn.
+
+### Why steps, specifically
+
+A graph's step count is not proportional to its size. Every node costs three
+(`enter:` + `run:` + `record:`), an **iteration spends one step per ITEM**
+instead of one per node, a durable sub-workflow adds `spawn:` + `await:`, and the
+run envelope adds ~8. A 6-node graph iterating a 50-item list is ~70 steps, not
+18. That is the Workflows billing line, and nothing in SQL counts it — the SDK
+counts real `step.*` calls with a proxy over `WorkflowStep`, so the number cannot
+drift as steps are added.
+
+### Two halves, two credentials
+
+The write side and the read side are deliberately separate, and neither Worker
+holds the other's credential.
+
+| | Writes points | Reads points |
+| --- | --- | --- |
+| Where | the Worker that EXECUTES runs | the Worker that serves the data API |
+| How | an `analytics_engine_datasets` **binding** | the AE **SQL API** over HTTPS |
+| Credential | the binding itself | an API token scoped to **Account Analytics Read** |
+| Hook | `WfSdkConfig.resolveTelemetry` | `createWfSdkHandlers({ resolveAnalytics })` |
+
+Write side — in the executing Worker's `wrangler.jsonc`:
+
+```jsonc
+"analytics_engine_datasets": [
+  { "binding": "WF_TELEMETRY", "dataset": "wf_telemetry" },
+],
+```
+
+…and on your host config:
+
+```ts
+import { createAnalyticsEngineTelemetry } from '@stevepeak/007/cloudflare/analytics-engine'
+
+resolveTelemetry: ({ env }) => {
+  const dataset = (env as HostEnv | undefined)?.WF_TELEMETRY
+  // A THUNK, not the binding: a live binding cannot cross a `step.do`
+  // boundary, and `run()` re-executes with a fresh `env` on every wake.
+  return dataset
+    ? createAnalyticsEngineTelemetry({ dataset: () => dataset })
+    : undefined
+},
+```
+
+Read side — in the data-API route:
+
+```ts
+import { createAnalyticsQuery } from '@stevepeak/007/analytics'
+
+resolveAnalytics: () => {
+  const env = getCloudflareContext().env
+  // Null in local dev (AE is unreadable there) → the dashboard uses D1.
+  if (!env.CF_ANALYTICS_TOKEN || !env.CLOUDFLARE_ACCOUNT_ID) return null
+  return {
+    dataset: 'wf_telemetry',
+    query: createAnalyticsQuery({
+      accountId: env.CLOUDFLARE_ACCOUNT_ID,
+      apiToken: env.CF_ANALYTICS_TOKEN,
+      dataset: 'wf_telemetry',
+    }),
+  }
+},
+```
+
+Mint a **dedicated** token for that secret. Do not reuse a general Cloudflare API
+token — the read side has no business holding anything that can invoke Workers AI
+or edit a Worker.
+
+### What it changes, and what it doesn't
+
+- **AE records ATTEMPTS; D1 records FINAL STATE.** A retried step upserts the same
+  D1 row (its failed attempt's cost is discarded) but appends a second AE point.
+  For spend that is the more truthful record — those tokens really were spent
+  twice — so no suppression is attempted. Anything needing exactness (the run
+  inspector, the failures list) stays on D1.
+- **Dollars are priced when the tokens are spent**, from a price table frozen in
+  the run's existing `load-graph` step — the same freeze the run manifest applies
+  to prompts. The D1 path re-prices history against today's catalog; the two
+  paths therefore disagree by design, and the UI says which one it showed.
+- **Every panel falls back independently.** An AE outage, an expired token, or a
+  window past AE's ~3-month retention costs one chart, not the page. Each panel
+  reports its `source` on the wire.
+- **Retention is ~3 months.** AE is a rolling operational window, never an
+  archive. D1 remains the durable run trace.
+
+Local dev needs no configuration: `writeDataPoint` is a no-op there and AE is
+unreadable, so both hooks return nothing and the dashboard behaves as it always
+has.
 
 ---
 

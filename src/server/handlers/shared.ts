@@ -7,6 +7,7 @@ import {
   type WorkflowGraph,
 } from '../../engine/graph'
 import type { WfDb } from '../../storage/client'
+import type { DashboardAnalytics } from '../../storage/data'
 import { agentExists, workflowExists } from '../../storage/data'
 import type { JsonSchema, WfDataClient, WfRunSummary } from '../protocol'
 
@@ -152,6 +153,11 @@ export type HandlerCtx = {
   req: Request
   /** Lazily-resolved, request-memoized host bindings (Cloudflare `env`). */
   env: () => Promise<unknown>
+  /**
+   * Lazily-resolved Analytics Engine reader, or null when the host wired none.
+   * Memoized per request like `env`, since only the dashboard touches it.
+   */
+  analytics: () => Promise<DashboardAnalytics | null>
 }
 
 // A handler may be sync or async — the dispatcher always awaits its result

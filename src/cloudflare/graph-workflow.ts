@@ -22,11 +22,12 @@ import {
   failRun,
   getVersionGraph,
   loadResumeSteps,
+  loadRunPriceTable,
   markRunRunning,
+  priceMapFromTable,
   resolveRunManifest,
   setRunManifest,
 } from '../storage/data'
-import { createDurableRunRecorder } from '../storage/run-recorder'
 
 import {
   deliverOutput,
@@ -37,7 +38,14 @@ import {
   stepDo,
   type RunCtx,
 } from './graph-workflow-dispatch'
+import {
+  createTelemeteredRecorder,
+  emitRunPoint,
+  resolveTelemetrySink,
+  runDims,
+} from './graph-workflow-telemetry'
 import type { RunRoom } from './run-room'
+import { createCountingStep, createRunCounters } from './step-counter'
 
 // The minimal binding contract a host Env must satisfy for the durable backend.
 // The host's full Env is a superset; this is what `GraphWorkflow` touches.
@@ -61,6 +69,14 @@ export type GraphRunContextInput = {
   promptVariables?: Record<string, string | undefined>
   /** Eval signal — under simulate, side-effecting tools are neutralized. */
   simulate?: boolean
+  /**
+   * Mirrors `wf_run.is_eval`, carried into the run so telemetry can partition on
+   * it. Every dashboard query filters `is_eval = false`; without this the
+   * analytics numbers would count eval traffic the charts exclude and the two
+   * sources could never be reconciled. Nothing about EXECUTION reads it —
+   * `simulate` / `freezeTools` are the signals that change behavior.
+   */
+  isEval?: boolean
   /** Canned tool outputs consumed under `simulate`, keyed by tool id. */
   fixtures?: Record<string, unknown>
   /** Eval synthesis signal — run every agent node with an empty tool set. See RunContext. */
@@ -164,10 +180,16 @@ export function makeGraphWorkflow<
   > {
     override async run(
       event: WorkflowEvent<GraphWorkflowParams>,
-      step: WorkflowStep,
+      rawStep: WorkflowStep,
     ): Promise<GraphWorkflowResult> {
       const p = event.payload
       const env = this.env
+      // Wrapped ONCE, here, so every `stepDo(ctx.step, …)` — plus the direct
+      // `waitForEvent` a durable callee parks on — is tallied without any call
+      // site knowing. See `step-counter.ts` for why this is a proxy and why it
+      // survives replay.
+      const counters = createRunCounters()
+      const step = createCountingStep(rawStep, counters)
       const traceId = p.runContext.traceId
       const room = env.RUN_ROOM.get(env.RUN_ROOM.idFromName(p.runId))
       const sink: StreamSink = {
@@ -175,21 +197,56 @@ export function makeGraphWorkflow<
         log: (entry) => room.appendLog(entry),
       }
 
-      // Each recorder is built inside a step.do closure — `createWfDb` wraps a
-      // live binding that cannot cross a step boundary.
-      const recordOne = (args: RecordStepArgs) =>
-        createDurableRunRecorder({
-          db: createWfDb(env.DB),
-          runId: p.workflowRunId,
-        }).record(args)
+      // Resolved once per wake, which is exactly the scope of the sink's
+      // per-invocation point cap.
+      const telemetry = resolveTelemetrySink(config, env)
 
-      const graphJson = await stepDo(step, 'load-graph', async () => {
-        const v = await getVersionGraph(createWfDb(env.DB), p.workflowVersionId)
+      // `getVersionGraph` already reads the workflow id — it was simply being
+      // discarded. Telemetry indexes on it (a version id fragments a workflow's
+      // history across every publish), so it now comes back with the graph.
+      //
+      // The catalog's prices ride along in this SAME step rather than a new one:
+      // freezing them costs no extra durable step, and pricing tokens when they
+      // are spent is what stops a later catalog edit from rewriting what this
+      // run cost.
+      const loaded = await stepDo(step, 'load-graph', async () => {
+        const db = createWfDb(env.DB)
+        const v = await getVersionGraph(db, p.workflowVersionId)
         if (!v) {
           throw new Error(`Workflow version ${p.workflowVersionId} not found.`)
         }
-        return v.graph
+        return {
+          graph: v.graph,
+          workflowId: v.workflowId,
+          prices: await loadRunPriceTable(db),
+        }
       })
+      // An instance that started on the previous deploy resumes with the OLD
+      // journal entry — a bare graph. Narrow rather than assume, or every
+      // in-flight run breaks the moment this ships.
+      const isWidened =
+        !!loaded && typeof loaded === 'object' && 'workflowId' in loaded
+      const graphJson = isWidened ? loaded.graph : loaded
+      const workflowId = isWidened ? (loaded.workflowId ?? '') : ''
+      const prices = priceMapFromTable(isWidened ? (loaded.prices ?? []) : [])
+
+      const dims = runDims({
+        workflowId,
+        workflowVersionId: p.workflowVersionId,
+        runId: p.workflowRunId,
+        runContext: p.runContext,
+      })
+
+      // Each recorder is built inside a step.do closure — `createWfDb` wraps a
+      // live binding that cannot cross a step boundary.
+      const recordOne = (args: RecordStepArgs) =>
+        createTelemeteredRecorder({
+          db: createWfDb(env.DB),
+          runId: p.workflowRunId,
+          telemetry,
+          dims,
+          prices,
+        }).record(args)
 
       // Resolve every floating reference (prompts) to its latest published
       // version once, freeze it onto the run, and reuse it for the whole walk —
@@ -215,12 +272,19 @@ export function makeGraphWorkflow<
             return m
           })
 
-      await stepDo(step, 'begin-run', () =>
-        markRunRunning(createWfDb(env.DB), {
+      // Returns the run's start instant so the run telemetry point can bucket on
+      // when the run BEGAN — the point is emitted at finish, and bucketing a
+      // long run by its end would file it under the wrong hour and stop the
+      // volume chart reconciling with `wf_run.created_at`. Journaled, so a
+      // replay reuses the original instant. Null on an in-flight instance
+      // resuming across this deploy (old journal entry returned void).
+      const runStartedAtMs = await stepDo(step, 'begin-run', async () => {
+        await markRunRunning(createWfDb(env.DB), {
           runId: p.workflowRunId,
           cloudflareRunId: p.runId,
-        }),
-      )
+        })
+        return Date.now()
+      })
       await stepDo(step, 'room-running', () => room.setStatus('running'))
 
       const scheduler = new Scheduler(graphJson, config.limits?.nodeBudget)
@@ -252,6 +316,11 @@ export function makeGraphWorkflow<
         scheduler,
         traceId,
         instanceId: event.instanceId,
+        counters,
+        telemetry,
+        dims,
+        prices,
+        runStartedAtMs,
       }
 
       // Deterministic sequence counter — lives in the orchestrator (replayed in
@@ -377,6 +446,7 @@ export function makeGraphWorkflow<
             input: n.input,
             seq: sequence++,
           }))
+          counters.nodes += batch.length
 
           // `allSettled` (not `all`): a running `step.do` can't be cancelled, so
           // let every in-flight sibling finish before we surface a failure. Each
@@ -424,6 +494,14 @@ export function makeGraphWorkflow<
             error: message,
           })
           await room.setError(message)
+          // The last step this run is guaranteed to reach. Two more MAY follow,
+          // and whether they do is already decided — so count them here rather
+          // than under-report the billing line on every failure.
+          emitRunPoint(ctx, {
+            status: 'failed',
+            error: message,
+            extraSteps: (p.subRun ? 1 : 0) + (config.onRunFailed ? 1 : 0),
+          })
         })
         // Wake the parent BEFORE the host callback and before rethrowing: a
         // spawned callee that dies silently leaves its parent parked until the

@@ -21,11 +21,14 @@ export function buildDashboardHandlers<TDeps>(
         until?: number
         bucket?: DashboardBucket
       }
-      const stats = await loadDashboard(c.db, {
-        since: p.since,
-        until: p.until,
-        bucket: p.bucket,
-      })
+      const stats = await loadDashboard(
+        c.db,
+        { since: p.since, until: p.until, bucket: p.bucket },
+        Date.now(),
+        // Null when the host wired no reader (or it's local dev) — the storage
+        // layer then answers from D1 exactly as it always has.
+        await c.analytics(),
+      )
       // Annotated, not inferred: `DashboardStats` and `WfDashboardResult` are
       // declared independently (storage must not depend on the wire protocol),
       // so this assignment is what makes any drift between them a compile error.

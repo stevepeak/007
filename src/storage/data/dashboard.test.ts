@@ -367,3 +367,161 @@ describe('loadDashboard', () => {
     expect(d.recentFailures).toEqual([])
   })
 })
+
+// ---------------------------------------------------------------------------
+// Analytics Engine path — degradation, and equivalence with the D1 answer
+// ---------------------------------------------------------------------------
+
+/** A fake SQL API that answers by matching on the query's discriminators. */
+function fakeAnalytics(
+  answers: { volume?: unknown[]; spend?: unknown[]; steps?: unknown[] },
+  onQuery?: (sql: string) => void,
+) {
+  return {
+    dataset: 'wf_telemetry',
+    query: {
+      run: async (sql: string) => {
+        onQuery?.(sql)
+        if (sql.includes('workflow_steps')) return answers.steps ?? []
+        if (sql.includes("blob1 = 'step'")) return answers.spend ?? []
+        return answers.volume ?? []
+      },
+    },
+  }
+}
+
+describe('loadDashboard with analytics', () => {
+  let db: WfDb
+
+  beforeEach(async () => {
+    db = freshDb()
+    await seed(db)
+  })
+
+  test('with no analytics wired, the result is the untouched D1 path', async () => {
+    await addRun(db, 'r-1', { createdAt: new Date(NOW - DAY) })
+    await addAgentStep(db, 'r-1', PRICED, 1_000_000, 1_000_000)
+
+    const stats = await loadDashboard(db, {}, NOW)
+    expect(stats.runs.source).toBe('db')
+    expect(stats.cost.source).toBe('db')
+    expect(stats.cost.pricedAtRunTime).toBe(false)
+    expect(stats.cost.totalUsd).toBe(3)
+    // No SQL counts step.do calls, so there is nothing to fall back TO.
+    expect(stats.steps).toBeNull()
+  })
+
+  test('analytics answers volume, spend and steps, and says so', async () => {
+    const dayOrdinal = Math.floor(NOW / 1000 / 86_400)
+    const stats = await loadDashboard(db, {}, NOW, fakeAnalytics({
+      volume: [
+        { workflow_id: 'wf-1', ordinal: dayOrdinal, runs: 12, failed: 3 },
+      ],
+      spend: [
+        {
+          ordinal: dayOrdinal,
+          model: PRICED,
+          input_tokens: 1_000_000,
+          output_tokens: 500_000,
+          cost_usd: 2.25,
+          priced_tokens: 1_500_000,
+        },
+      ],
+      steps: [
+        {
+          workflow_id: 'wf-1',
+          ordinal: dayOrdinal,
+          runs: 12,
+          workflow_steps: 480,
+          nodes: 120,
+          iteration_items: 60,
+        },
+      ],
+    }))
+
+    expect(stats.runs.source).toBe('analytics')
+    expect(stats.runs.total).toBe(12)
+    expect(stats.runs.failed).toBe(3)
+    // AE holds the id; the CURRENT name is resolved from D1 so a rename shows.
+    expect(stats.runs.series[0]?.label).toBe('Intake')
+
+    expect(stats.cost.source).toBe('analytics')
+    expect(stats.cost.pricedAtRunTime).toBe(true)
+    expect(stats.cost.totalUsd).toBe(2.25)
+    expect(stats.cost.totalTokens).toBe(1_500_000)
+    expect(stats.cost.unpricedTokens).toBe(0)
+
+    expect(stats.steps?.total).toBe(480)
+    expect(stats.steps?.runs).toBe(12)
+    expect(stats.steps?.iterationItems).toBe(60)
+    expect(stats.steps?.series[0]?.label).toBe('Intake')
+  })
+
+  test('a failing analytics query degrades that panel to D1, not the page', async () => {
+    await addRun(db, 'r-1', { createdAt: new Date(NOW - DAY) })
+    await addAgentStep(db, 'r-1', PRICED, 1_000_000, 1_000_000)
+
+    const stats = await loadDashboard(db, {}, NOW, {
+      dataset: 'wf_telemetry',
+      query: {
+        run: () => Promise.reject(new Error('AE is down')),
+      },
+    })
+
+    expect(stats.runs.source).toBe('db')
+    expect(stats.runs.total).toBe(1)
+    expect(stats.cost.source).toBe('db')
+    expect(stats.cost.totalUsd).toBe(3)
+    // The steps panel has no D1 answer, so it degrades to absent.
+    expect(stats.steps).toBeNull()
+    // Everything that never moved to AE is unaffected.
+    expect(stats.feedback.unacknowledged).toBe(0)
+    expect(stats.recentFailures).toEqual([])
+  })
+
+  test('unpriced tokens survive the analytics fold', async () => {
+    const dayOrdinal = Math.floor(NOW / 1000 / 86_400)
+    const stats = await loadDashboard(db, {}, NOW, fakeAnalytics({
+      spend: [
+        {
+          ordinal: dayOrdinal,
+          model: UNPRICED,
+          input_tokens: 400,
+          output_tokens: 100,
+          cost_usd: 0,
+          priced_tokens: 0,
+        },
+      ],
+    }))
+    expect(stats.cost.totalTokens).toBe(500)
+    expect(stats.cost.unpricedTokens).toBe(500)
+    // Nothing could be priced, so the figure is null rather than a false $0.
+    expect(stats.cost.totalUsd).toBeNull()
+  })
+
+  test('a window beyond AE retention falls back to D1 without querying it', async () => {
+    await addRun(db, 'r-old', { createdAt: new Date(NOW - DAY) })
+    const seen: string[] = []
+    const stats = await loadDashboard(
+      db,
+      { since: NOW - 89 * DAY, until: NOW },
+      NOW,
+      fakeAnalytics({}, (sql) => seen.push(sql)),
+    )
+    expect(seen).toEqual([])
+    expect(stats.runs.source).toBe('db')
+    expect(stats.steps).toBeNull()
+  })
+
+  test('in-flight, feedback and failures always come from D1', async () => {
+    await addRun(db, 'r-live', { status: 'running', createdAt: new Date(NOW) })
+    await addRun(db, 'r-bad', {
+      status: 'failed',
+      error: 'boom',
+      createdAt: new Date(NOW - DAY),
+    })
+    const stats = await loadDashboard(db, {}, NOW, fakeAnalytics({}))
+    expect(stats.runs.inFlight).toBe(1)
+    expect(stats.recentFailures).toHaveLength(1)
+  })
+})

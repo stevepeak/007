@@ -1,5 +1,15 @@
 import { and, eq, gte, inArray, lte, sql } from 'drizzle-orm'
 
+import {
+  analyticsCoversWindow,
+  loadRunVolume,
+  loadSpend,
+  loadWorkflowSteps,
+  type AnalyticsCostRow,
+  type AnalyticsStepsRow,
+} from '../../analytics/dashboard'
+import type { AnalyticsQuery } from '../../analytics/query'
+import type { AnalyticsWindow } from '../../analytics/sql'
 import type { WfDb } from '../client'
 import { tokenCostUsd, type ModelPriceMap } from '../cost'
 import {
@@ -83,6 +93,13 @@ export type DashboardSeries = {
   points: number[]
 }
 
+/**
+ * Which backend answered a panel. Analytics Engine figures are SAMPLED
+ * estimates with ~a minute of ingest lag; D1 figures are exact. The UI says so,
+ * because a silent switch between them would look like the numbers moved.
+ */
+export type DashboardSource = 'analytics' | 'db'
+
 export type DashboardStats<TFailure> = DashboardWindow & {
   runs: {
     total: number
@@ -93,6 +110,7 @@ export type DashboardStats<TFailure> = DashboardWindow & {
     series: DashboardSeries[]
     /** Failed runs per bucket, across all workflows. */
     failedPoints: number[]
+    source: DashboardSource
   }
   cost: {
     /**
@@ -106,6 +124,13 @@ export type DashboardStats<TFailure> = DashboardWindow & {
     unpricedTokens: number
     /** Per-model spend in USD. */
     series: DashboardSeries[]
+    source: DashboardSource
+    /**
+     * True when the dollars were priced AT EXECUTION TIME (the analytics path),
+     * so they don't move when the catalog does. The D1 path re-prices against
+     * the current catalog on every read; the UI footnotes which one it showed.
+     */
+    pricedAtRunTime: boolean
   }
   feedback: {
     /** Outstanding triage queue depth (all time, not window-scoped). */
@@ -118,6 +143,27 @@ export type DashboardStats<TFailure> = DashboardWindow & {
     upPoints: number[]
     downPoints: number[]
   }
+  /**
+   * Cloudflare Workflows step consumption — the billing line a graph's node
+   * count does not predict (three steps per node, one per iteration ITEM, two
+   * per durable callee, plus the run envelope).
+   *
+   * Null, never zero, when analytics is unconfigured: D1 records no step counts,
+   * so there is nothing to fall back to and a fabricated 0 would read as "this
+   * run was free".
+   */
+  steps: {
+    /** Billable `step.*` calls across the window. */
+    total: number
+    /** Durable runs those steps came from — inline runs bill none. */
+    runs: number
+    nodes: number
+    iterationItems: number
+    /** Steps per bucket. */
+    points: number[]
+    /** Steps per workflow — which graphs are step-expensive. */
+    series: DashboardSeries[]
+  } | null
   recentFailures: TFailure[]
 }
 
@@ -232,7 +278,8 @@ type RunVolumeRow = {
 export function foldRunVolume(
   rows: RunVolumeRow[],
   window: DashboardWindow,
-): Pick<DashboardStats<never>['runs'], 'total' | 'failed' | 'series' | 'failedPoints'> {
+  source: DashboardSource = 'db',
+): Omit<DashboardStats<never>['runs'], 'inFlight'> {
   const series = collapseSeries(
     accumulate(rows, window, (r) => ({
       key: r.workflowId,
@@ -253,7 +300,7 @@ export function foldRunVolume(
       failedPoints[i] = (failedPoints[i] ?? 0) + Number(r.failed)
     }
   }
-  return { total, failed, series, failedPoints }
+  return { total, failed, series, failedPoints, source }
 }
 
 type CostRow = {
@@ -310,6 +357,93 @@ export function foldCostRows(
     totalTokens,
     unpricedTokens,
     series,
+    source: 'db',
+    // The D1 path multiplies stored tokens by the CURRENT catalog price, so
+    // these dollars move whenever the catalog does.
+    pricedAtRunTime: false,
+  }
+}
+
+/**
+ * Shape already-priced spend rows. The analytics counterpart to
+ * {@link foldCostRows}: the dollars arrive priced at execution time, so nothing
+ * here consults the catalog and historical spend cannot drift. `unpricedTokens`
+ * is what the priced subtotal leaves behind, which is the same distinction the
+ * D1 fold draws by asking the price map.
+ */
+export function foldPricedCostRows(
+  rows: AnalyticsCostRow[],
+  window: DashboardWindow,
+): DashboardStats<never>['cost'] {
+  let totalTokens = 0
+  let pricedTokens = 0
+  let totalUsd = 0
+  let priced = false
+
+  const priceable: Array<{ ordinal: number; model: string; usd: number }> = []
+  for (const r of rows) {
+    totalTokens += r.inputTokens + r.outputTokens
+    pricedTokens += r.pricedTokens
+    if (!r.model || r.pricedTokens <= 0) continue
+    priced = true
+    totalUsd += r.costUsd
+    priceable.push({ ordinal: r.ordinal, model: r.model, usd: r.costUsd })
+  }
+
+  return {
+    totalUsd: priced ? totalUsd : null,
+    totalTokens,
+    unpricedTokens: Math.max(0, totalTokens - pricedTokens),
+    series: collapseSeries(
+      accumulate(priceable, window, (r) => ({
+        key: r.model,
+        label: r.model,
+        ordinal: r.ordinal,
+        value: r.usd,
+      })),
+      MAX_COST_SERIES,
+    ),
+    source: 'analytics',
+    pricedAtRunTime: true,
+  }
+}
+
+/** Shape the Workflows step group-by into the billing panel's totals + series. */
+export function foldSteps(
+  rows: AnalyticsStepsRow[],
+  names: Map<string, string>,
+  window: DashboardWindow,
+): NonNullable<DashboardStats<never>['steps']> {
+  const points = zeros(window.buckets.length)
+  let total = 0
+  let runs = 0
+  let nodes = 0
+  let iterationItems = 0
+  for (const r of rows) {
+    total += r.workflowSteps
+    runs += r.runs
+    nodes += r.nodes
+    iterationItems += r.iterationItems
+    const i = r.ordinal - window.firstOrdinal
+    if (i >= 0 && i < points.length) {
+      points[i] = (points[i] ?? 0) + r.workflowSteps
+    }
+  }
+  return {
+    total,
+    runs,
+    nodes,
+    iterationItems,
+    points,
+    series: collapseSeries(
+      accumulate(rows, window, (r) => ({
+        key: r.workflowId,
+        label: names.get(r.workflowId) ?? r.workflowId,
+        ordinal: r.ordinal,
+        value: r.workflowSteps,
+      })),
+      MAX_RUN_SERIES,
+    ),
   }
 }
 
@@ -351,6 +485,30 @@ export function foldFeedback(
 
 type RecentFailure = Awaited<ReturnType<typeof listRuns>>['rows'][number]
 
+/** What the handler hands in when the host has wired Analytics Engine reads. */
+export type DashboardAnalytics = { query: AnalyticsQuery; dataset: string }
+
+/**
+ * Run one analytics panel, degrading to its D1 answer on ANY failure.
+ *
+ * Per panel, not per page: an AE outage, a token that lost its scope, or a
+ * dataset that has not seen its first write should cost one chart, not the whole
+ * dashboard. The failure is logged rather than swallowed silently — the `source`
+ * flag on the wire is what makes the degradation visible in the UI.
+ */
+async function orFallBack<T>(
+  panel: string,
+  attempt: () => Promise<T>,
+  fallback: () => T | Promise<T>,
+): Promise<T> {
+  try {
+    return await attempt()
+  } catch (err) {
+    console.warn(`[wf] dashboard ${panel} fell back to D1:`, err)
+    return await fallback()
+  }
+}
+
 /**
  * Everything the home dashboard renders, in one pass: run volume per workflow,
  * spend per model, the outstanding feedback queue, and the newest failures.
@@ -364,6 +522,7 @@ export async function loadDashboard(
   db: WfDb,
   input: DashboardInput = {},
   now = Date.now(),
+  analytics?: DashboardAnalytics | null,
 ): Promise<DashboardStats<RecentFailure>> {
   const window = resolveWindow(input, now)
   const since = new Date(window.since)
@@ -379,26 +538,45 @@ export async function loadDashboard(
     lte(wfRun.createdAt, until),
   )
 
-  const [volumeRows, inFlightRows, costRows, queueRows, trendRows, priceMap] =
-    await Promise.all([
-      // Run volume + failures, per workflow per bucket.
-      db
-        .select({
-          workflowId: wfWorkflowVersion.workflowId,
-          workflowName: wfWorkflow.name,
-          ordinal: runBucket,
-          runs: sql<number>`count(*)`,
-          failed: sql<number>`sum(case when ${wfRun.status} = 'failed' then 1 else 0 end)`,
-        })
-        .from(wfRun)
-        .innerJoin(
-          wfWorkflowVersion,
-          eq(wfRun.workflowVersionId, wfWorkflowVersion.id),
-        )
-        .innerJoin(wfWorkflow, eq(wfWorkflowVersion.workflowId, wfWorkflow.id))
-        .where(inWindow)
-        .groupBy(wfWorkflowVersion.workflowId, wfWorkflow.name, runBucket),
+  // The two migrated panels are LAZY: when analytics answers them, these never
+  // run at all — which is the entire point, since the spend query is the
+  // expensive one. They stay here, unchanged, as the fallback.
+  const d1RunVolume = () =>
+    db
+      .select({
+        workflowId: wfWorkflowVersion.workflowId,
+        workflowName: wfWorkflow.name,
+        ordinal: runBucket,
+        runs: sql<number>`count(*)`,
+        failed: sql<number>`sum(case when ${wfRun.status} = 'failed' then 1 else 0 end)`,
+      })
+      .from(wfRun)
+      .innerJoin(
+        wfWorkflowVersion,
+        eq(wfRun.workflowVersionId, wfWorkflowVersion.id),
+      )
+      .innerJoin(wfWorkflow, eq(wfWorkflowVersion.workflowId, wfWorkflow.id))
+      .where(inWindow)
+      .groupBy(wfWorkflowVersion.workflowId, wfWorkflow.name, runBucket)
 
+  // Only agent steps carry usage; the filter through `wf_run` is what keeps
+  // this off a full step-table scan. `json_extract` still has to parse each
+  // step's whole `meta` blob, tool inputs and outputs included.
+  const d1Spend = () =>
+    db
+      .select({
+        ordinal: runBucket,
+        model: sql<string | null>`json_extract(${wfRunStep.meta}, '$.model')`,
+        inputTokens: sql<number>`sum(coalesce(json_extract(${wfRunStep.meta}, '$.totalUsage.inputTokens'), 0))`,
+        outputTokens: sql<number>`sum(coalesce(json_extract(${wfRunStep.meta}, '$.totalUsage.outputTokens'), 0))`,
+      })
+      .from(wfRunStep)
+      .innerJoin(wfRun, eq(wfRunStep.runId, wfRun.id))
+      .where(and(eq(wfRunStep.nodeKind, 'agent'), inWindow))
+      .groupBy(runBucket, sql`json_extract(${wfRunStep.meta}, '$.model')`)
+
+  const [inFlightRows, queueRows, trendRows] =
+    await Promise.all([
       // In-flight is a "right now" reading, so it ignores the window.
       db
         .select({ count: sql<number>`count(*)` })
@@ -409,20 +587,6 @@ export async function loadDashboard(
             inArray(wfRun.status, ['queued', 'running']),
           ),
         ),
-
-      // Token usage per model per bucket. Only agent steps carry usage; the
-      // filter through `wf_run` is what keeps this off a full step-table scan.
-      db
-        .select({
-          ordinal: runBucket,
-          model: sql<string | null>`json_extract(${wfRunStep.meta}, '$.model')`,
-          inputTokens: sql<number>`sum(coalesce(json_extract(${wfRunStep.meta}, '$.totalUsage.inputTokens'), 0))`,
-          outputTokens: sql<number>`sum(coalesce(json_extract(${wfRunStep.meta}, '$.totalUsage.outputTokens'), 0))`,
-        })
-        .from(wfRunStep)
-        .innerJoin(wfRun, eq(wfRunStep.runId, wfRun.id))
-        .where(and(eq(wfRunStep.nodeKind, 'agent'), inWindow))
-        .groupBy(runBucket, sql`json_extract(${wfRunStep.meta}, '$.model')`),
 
       // Triage queue depth — all outstanding items, not just this window's.
       db
@@ -451,8 +615,6 @@ export async function loadDashboard(
           ),
         )
         .groupBy(wfFeedback.rating, feedbackBucket),
-
-      loadModelPriceMap(db),
     ])
 
   // The errors panel reuses the runs list wholesale — it already resolves the
@@ -466,14 +628,100 @@ export async function loadDashboard(
     limit: RECENT_FAILURE_LIMIT,
   })
 
+  // The analytics window, in the seconds AE speaks. Only used when a host wired
+  // a query AND the window is inside AE's retention.
+  const aeWindow: AnalyticsWindow = {
+    sinceSec: Math.floor(window.since / 1000),
+    untilSec: Math.ceil(window.until / 1000),
+    size: bucketSeconds(window.bucket),
+  }
+  const useAnalytics =
+    !!analytics && analyticsCoversWindow(aeWindow, Math.floor(now / 1000))
+
+  const [runs, cost, steps] = await Promise.all([
+    useAnalytics
+      ? orFallBack(
+          'run volume',
+          async () => {
+            const rows = await loadRunVolume(
+              analytics.query,
+              analytics.dataset,
+              aeWindow,
+            )
+            // AE holds the workflow ID, never its name — names are editable and
+            // a three-month-old point would show a stale one. Resolve live.
+            const names = await workflowNames(
+              db,
+              rows.map((r) => r.workflowId),
+            )
+            return foldRunVolume(
+              rows.map((r) => ({
+                ...r,
+                workflowName: names.get(r.workflowId) ?? r.workflowId,
+              })),
+              window,
+              'analytics',
+            )
+          },
+          async () => foldRunVolume(await d1RunVolume(), window),
+        )
+      : foldRunVolume(await d1RunVolume(), window),
+
+    useAnalytics
+      ? orFallBack(
+          'spend',
+          async () =>
+            foldPricedCostRows(
+              await loadSpend(analytics.query, analytics.dataset, aeWindow),
+              window,
+            ),
+          async () =>
+            foldCostRows(await d1Spend(), await loadModelPriceMap(db), window),
+        )
+      : foldCostRows(await d1Spend(), await loadModelPriceMap(db), window),
+
+    // No D1 fallback exists — nothing in SQL counts `step.do` calls — so this
+    // panel is null rather than zero whenever analytics can't answer.
+    useAnalytics
+      ? orFallBack(
+          'workflow steps',
+          async () => {
+            const rows = await loadWorkflowSteps(
+              analytics.query,
+              analytics.dataset,
+              aeWindow,
+            )
+            const names = await workflowNames(
+              db,
+              rows.map((r) => r.workflowId),
+            )
+            return foldSteps(rows, names, window)
+          },
+          () => null,
+        )
+      : null,
+  ])
+
   return {
     ...window,
-    runs: {
-      ...foldRunVolume(volumeRows, window),
-      inFlight: Number(inFlightRows[0]?.count ?? 0),
-    },
-    cost: foldCostRows(costRows, priceMap, window),
+    runs: { ...runs, inFlight: Number(inFlightRows[0]?.count ?? 0) },
+    cost,
     feedback: foldFeedback(queueRows, trendRows, window),
+    steps,
     recentFailures: failures.rows,
   }
+}
+
+/** Resolve workflow ids to their CURRENT names — one small indexed read. */
+async function workflowNames(
+  db: WfDb,
+  ids: string[],
+): Promise<Map<string, string>> {
+  const unique = [...new Set(ids.filter(Boolean))]
+  if (unique.length === 0) return new Map()
+  const rows = await db
+    .select({ id: wfWorkflow.id, name: wfWorkflow.name })
+    .from(wfWorkflow)
+    .where(inArray(wfWorkflow.id, unique))
+  return new Map(rows.map((r) => [r.id, r.name]))
 }

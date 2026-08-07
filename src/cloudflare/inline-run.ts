@@ -1,3 +1,5 @@
+import { encodeRunPoint } from '../analytics/points'
+import { safeWrite } from '../analytics/sink'
 import type { RunContext, WfSdkConfig } from '../engine/config'
 import { executeWorkflow } from '../engine/executor'
 import type { WfRunManifestEntry } from '../engine/graph'
@@ -11,15 +13,22 @@ import {
   completeRun,
   failRun,
   getVersionGraph,
+  loadModelPriceMap,
   markRunDone,
   markRunRunning,
   resolveRunManifest,
   setRunManifest,
 } from '../storage/data'
-import { createDurableRunRecorder } from '../storage/run-recorder'
 
 import type { GraphWorkflowParams } from './graph-workflow'
+import {
+  createTelemeteredRecorder,
+  resolveTelemetrySink,
+  runDims,
+  withRunCounts,
+} from './graph-workflow-telemetry'
 import type { WfRunRoomStatus } from './run-room'
+import { createRunCounters } from './step-counter'
 
 // The INLINE backend — the peer of `graph-workflow.ts`.
 //
@@ -178,6 +187,41 @@ export async function runInlineGraph<TDeps, E extends { DB: D1Database }>(
   const sink = createInlineSink(db, room, p.workflowRunId)
   let runContext: RunContext = { ...p.runContext, env }
 
+  // Telemetry, on equal footing with the durable backend — this is a real
+  // production path (a graph's trigger picks its engine), so leaving it out
+  // would silently under-report every number the dashboard shows.
+  const telemetry = resolveTelemetrySink(config, env)
+  const counters = createRunCounters()
+  const startedAtMs = Date.now()
+  // `workflowId` is filled in below once the version row is read; a run that
+  // dies before that still emits a point, indexed on the version id.
+  let dims = runDims({
+    workflowId: '',
+    workflowVersionId: p.workflowVersionId,
+    runId: p.workflowRunId,
+    runContext: p.runContext,
+  })
+  let deliveredOutputNodeId: string | null = null
+  const emit = (status: 'completed' | 'failed', args: { error?: string }) =>
+    safeWrite(
+      telemetry,
+      encodeRunPoint(dims, {
+        status,
+        outputNodeId: deliveredOutputNodeId,
+        // Inline runs bill no Workflows steps — that zero, next to a durable
+        // run's count, is the whole point of recording the engine.
+        engine: 'inline',
+        error: args.error,
+        startedAtMs,
+        finishedAtMs: Date.now(),
+        nodeCount: counters.nodes,
+        iterationItems: counters.iterationItems,
+        workflowSteps: 0,
+        failedNodeCount: counters.failedNodes,
+        droppedPoints: telemetry.dropped(),
+      }),
+    )
+
   // The lifecycle callbacks are driven from HERE, not from inside
   // `executeWorkflow`, so they fire in the same order the durable backend's
   // `deliverOutput` fires them: persist the outcome first, notify the host
@@ -205,6 +249,11 @@ export async function runInlineGraph<TDeps, E extends { DB: D1Database }>(
     if (!version) {
       throw new Error(`Workflow version ${p.workflowVersionId} not found.`)
     }
+    dims = { ...dims, workflowId: version.workflowId }
+    // Prices frozen at run start, exactly as the durable backend freezes them in
+    // `load-graph` — so a catalog edit mid-run can't change what this run cost,
+    // and the two engines report dollars the same way.
+    const prices = await loadModelPriceMap(db)
 
     // Resolve every floating reference to its published version once and freeze
     // it onto the run, so a mid-run publish can't split a run across two prompt
@@ -228,7 +277,18 @@ export async function runInlineGraph<TDeps, E extends { DB: D1Database }>(
       triggerInput: p.triggerInput,
       config: execConfig,
       runContext,
-      recorder: createDurableRunRecorder({ db, runId: p.workflowRunId }),
+      // Telemetered, and counted: with no orchestrator and no step journal, the
+      // recorder is the only place this backend can learn its own shape.
+      recorder: withRunCounts(
+        createTelemeteredRecorder({
+          db,
+          runId: p.workflowRunId,
+          telemetry,
+          dims,
+          prices,
+        }),
+        counters,
+      ),
       sink,
       // The only bound this backend has. There is no `step.do` timeout behind
       // it, so a wedged provider call would otherwise hang the run forever with
@@ -254,6 +314,7 @@ export async function runInlineGraph<TDeps, E extends { DB: D1Database }>(
       // of its own — and, unlike one, it still keeps the DO alive and still
       // records every step it takes.
       onOutput: async ({ output, outputNodeId, pendingWork }) => {
+        deliveredOutputNodeId = outputNodeId
         await markRunDone(db, {
           runId: p.workflowRunId,
           output,
@@ -278,6 +339,7 @@ export async function runInlineGraph<TDeps, E extends { DB: D1Database }>(
       error: result.drainError,
     })
     await room.setStatus('completed')
+    emit('completed', { error: result.drainError })
     if (result.drainError) {
       console.warn(
         `[wf] inline run ${p.workflowRunId} delivered its output, but a background branch failed:`,
@@ -286,6 +348,7 @@ export async function runInlineGraph<TDeps, E extends { DB: D1Database }>(
     }
   } catch (err) {
     const message = errorMessage(err)
+    emit('failed', { error: message })
     try {
       await failRun(db, { runId: p.workflowRunId, error: message })
       await room.setError(message)

@@ -36,7 +36,6 @@ import {
   replaceNodeLogs,
   type WfRunLogRow,
 } from '../storage/data'
-import { createDurableRunRecorder } from '../storage/run-recorder'
 
 import {
   calleeEventType,
@@ -58,6 +57,10 @@ import {
   resolveStepTimeoutMs,
   stepOptsFor,
 } from './graph-workflow-dispatch-step-opts'
+import {
+  createTelemeteredRecorder,
+  emitRunPoint,
+} from './graph-workflow-telemetry'
 import { withNodeSpan } from './tracing'
 
 // Re-export the extracted helpers so every symbol that historically lived in
@@ -141,9 +144,12 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
           // on retry, and the `(run_id, node_id, item_index)` upsert
           // makes that replay idempotent.
           {
-            recorder: createDurableRunRecorder({
+            recorder: createTelemeteredRecorder({
               db: createWfDb(env.DB),
               runId: p.workflowRunId,
+              telemetry: ctx.telemetry,
+              dims: ctx.dims,
+              prices: ctx.prices,
             }),
             parentNodeId: node.id,
             itemIndex: index,
@@ -151,6 +157,10 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
         )
       }),
   })
+  // The main step multiplier: an iteration spends one `iter:` step per item
+  // instead of a single `run:`, so a wide list is what makes a graph expensive.
+  // `iter.meta.total` is journaled, so this re-accumulates identically on replay.
+  ctx.counters.iterationItems += iter.meta.total
   return {
     schedulerOutput: iter.results,
     recordedOutput: iter.results,
@@ -585,9 +595,12 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
                       // `(run_id, node_id, item_index)` upsert makes that idempotent.
                       subStepRecorder:
                         node.kind === 'agent'
-                          ? createDurableRunRecorder({
+                          ? createTelemeteredRecorder({
                               db: createWfDb(env.DB),
                               runId: p.workflowRunId,
+                              telemetry: ctx.telemetry,
+                              dims: ctx.dims,
+                              prices: ctx.prices,
                             })
                           : undefined,
                     },
@@ -610,6 +623,7 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
       stored: errorStored(err),
       feed: errorFeedLine(err),
     }
+    ctx.counters.failedNodes++
     await recordTerminal(ctx, node, seq, input, startEntry, {
       status: 'failed',
       error: failure.stored,
@@ -722,6 +736,17 @@ export async function settleRun<TDeps, E extends GraphWorkflowEnv>(
       error: drainError,
     })
     await room.setStatus('completed')
+    // Emitted from INSIDE the last step, never from the orchestrator body — the
+    // body re-executes on every wake, so an emission there would fire once per
+    // hibernation. `settle` is genuinely last on the success path (finalize,
+    // room-output, report-to-parent and on-complete all precede it), so the
+    // step tally read here is the run's final count.
+    emitRunPoint(ctx, {
+      status: 'completed',
+      outputNodeId: result.outputNodeId,
+      error: drainError,
+      extraSteps: 0,
+    })
   })
   if (drainError) {
     console.warn(

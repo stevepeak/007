@@ -79,6 +79,7 @@ export async function startGraphRun(
       triggerKind: input.triggerKind,
       promptVariables: input.promptVariables,
       simulate: input.simulate,
+      isEval: input.isEval,
       fixtures: input.fixtures,
       freezeTools: input.freezeTools,
       agentOverride: input.agentOverride,

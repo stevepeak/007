@@ -67,7 +67,11 @@ export function RunsChart({
   return (
     <ChartCard
       title="Runs"
-      subtitle="Executions per workflow over time"
+      subtitle={
+        data.runs.source === 'analytics'
+          ? 'Executions per workflow over time (sampled)'
+          : 'Executions per workflow over time'
+      }
       action={
         <button
           type="button"

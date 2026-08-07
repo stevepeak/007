@@ -12,7 +12,9 @@
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./analytics": "./src/analytics/index.ts",
     "./cloudflare": "./src/cloudflare/index.ts",
+    "./cloudflare/analytics-engine": "./src/cloudflare/analytics-engine.ts",
     "./cloudflare/blob-resolver": "./src/cloudflare/blob-resolver.ts",
     "./cloudflare/extract-text": "./src/cloudflare/extract-text.ts",
     "./cloudflare/runtime": "./src/cloudflare/runtime.ts",

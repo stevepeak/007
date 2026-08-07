@@ -9,7 +9,12 @@ import type { WfDb } from '../client'
 import { wfRun, wfSchema, wfModel } from '../schema'
 
 import { getRunStatus } from './runs-inspector'
-import { invalidateModelPriceMap, loadModelPriceMap } from './runs-cost'
+import {
+  invalidateModelPriceMap,
+  loadModelPriceMap,
+  loadRunPriceTable,
+  priceMapFromTable,
+} from './runs-cost'
 
 const MIGRATIONS_DIR = fileURLToPath(
   new URL('../../../migrations', import.meta.url),
@@ -147,5 +152,41 @@ describe('getRunStatus', () => {
 
   test('returns null for an unknown run id', async () => {
     expect(await getRunStatus(db, 'nope')).toBeNull()
+  })
+})
+
+describe('loadRunPriceTable', () => {
+  test('round-trips through the journal shape without losing a price', async () => {
+    const db = freshDb()
+    await addModel(db, 'venice:qwen3-9b', 'qwen3-9b', 2)
+
+    const table = await loadRunPriceTable(db)
+    // Positional, so it survives JSON serialization into the step journal.
+    expect(JSON.parse(JSON.stringify(table))).toEqual(table)
+
+    const rehydrated = priceMapFromTable(table)
+    const direct = await loadModelPriceMap(db)
+    for (const key of ['qwen3-9b', 'venice:qwen3-9b']) {
+      expect(rehydrated.get(key)).toEqual(direct.get(key)!)
+    }
+  })
+
+  test('drops models the catalog never priced — they cost nothing to omit', async () => {
+    const db = freshDb()
+    await db.insert(wfModel).values({
+      id: 'venice:unpriced',
+      providerId: 'venice',
+      modelId: 'unpriced',
+      label: 'unpriced',
+    })
+    await addModel(db, 'venice:priced', 'priced', 3)
+
+    const keys = (await loadRunPriceTable(db)).map(([key]) => key)
+    expect(keys).toContain('priced')
+    expect(keys).not.toContain('unpriced')
+  })
+
+  test('an empty table rehydrates to an empty map, not a throw', () => {
+    expect(priceMapFromTable([]).size).toBe(0)
   })
 })

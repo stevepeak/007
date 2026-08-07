@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { errorMessage } from '../engine/run-node'
+import type { DashboardAnalytics } from '../storage/data'
 
 import { buildAgentHandlers } from './handlers/agents'
 import { buildDashboardHandlers } from './handlers/dashboard'
@@ -187,7 +188,18 @@ export function createWfSdkHandlers<TDeps>(
         }
         return envValue
       }
-      const result = await handler({ params, ctx, db, req, env })
+      let analyticsResolved = false
+      let analyticsValue: DashboardAnalytics | null = null
+      const analytics = async () => {
+        if (!analyticsResolved) {
+          analyticsValue = opts.resolveAnalytics
+            ? await opts.resolveAnalytics(req)
+            : null
+          analyticsResolved = true
+        }
+        return analyticsValue
+      }
+      const result = await handler({ params, ctx, db, req, env, analytics })
       return json(result)
     } catch (err) {
       // Bad client input (a `str()` guard or a handler-level zod parse) is a

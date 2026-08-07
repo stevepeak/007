@@ -69,25 +69,36 @@ export function stepCost(
 }
 
 /**
- * Narrow an untyped step `meta` to its agent token usage, or null for non-agent
- * steps (branches, tools, iteration — no LLM tokens). Mirrors the `asAgentMeta`
- * narrowing the run inspector uses on the client.
+ * Narrow an untyped step `meta` to an agent generation's meta, or null for a
+ * non-agent step (branch, tool, iteration — no LLM turns). Mirrors the
+ * `asAgentMeta` narrowing the run inspector uses on the client. The shape test
+ * is structural on purpose: `meta` is `unknown` at the recorder seam and older
+ * rows predate fields that were added since.
  */
-export function agentUsage(
-  meta: unknown,
-): { model: string; inputTokens: number; outputTokens: number } | null {
+export function asAgentMeta(meta: unknown): AgentNodeMeta | null {
   if (
     meta &&
     typeof meta === 'object' &&
     Array.isArray((meta as { steps?: unknown }).steps) &&
     'totalUsage' in meta
   ) {
-    const m = meta as AgentNodeMeta
-    return {
-      model: m.model,
-      inputTokens: m.totalUsage?.inputTokens ?? 0,
-      outputTokens: m.totalUsage?.outputTokens ?? 0,
-    }
+    return meta as AgentNodeMeta
   }
   return null
+}
+
+/**
+ * Narrow an untyped step `meta` to its agent token usage, or null for non-agent
+ * steps (branches, tools, iteration — no LLM tokens).
+ */
+export function agentUsage(
+  meta: unknown,
+): { model: string; inputTokens: number; outputTokens: number } | null {
+  const m = asAgentMeta(meta)
+  if (!m) return null
+  return {
+    model: m.model,
+    inputTokens: m.totalUsage?.inputTokens ?? 0,
+    outputTokens: m.totalUsage?.outputTokens ?? 0,
+  }
 }

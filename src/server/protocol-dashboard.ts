@@ -26,6 +26,13 @@ export type WfDashboardSeries = {
   points: number[]
 }
 
+/**
+ * Which backend answered a panel. `analytics` figures come from Cloudflare
+ * Analytics Engine: sampled estimates with ~a minute of ingest lag, and priced
+ * when the tokens were spent. `db` figures are exact and re-priced on read.
+ */
+export type WfDashboardSource = 'analytics' | 'db'
+
 export type WfDashboardResult = {
   /** The window actually queried; the server clamps what the client asks for. */
   since: number
@@ -43,6 +50,7 @@ export type WfDashboardResult = {
     series: WfDashboardSeries[]
     /** Failed runs per bucket across all workflows. */
     failedPoints: number[]
+    source: WfDashboardSource
   }
 
   cost: {
@@ -57,6 +65,13 @@ export type WfDashboardResult = {
     unpricedTokens: number
     /** USD per model. */
     series: WfDashboardSeries[]
+    source: WfDashboardSource
+    /**
+     * True when the dollars were priced AT EXECUTION TIME and therefore don't
+     * move when the model catalog does. False on the D1 path, which re-prices
+     * historical usage against today's catalog on every read.
+     */
+    pricedAtRunTime: boolean
   }
 
   feedback: {
@@ -70,6 +85,28 @@ export type WfDashboardResult = {
     upPoints: number[]
     downPoints: number[]
   }
+
+  /**
+   * Cloudflare Workflows step consumption — the billing line a graph's node
+   * count doesn't predict: three steps per node, one per iteration ITEM, two per
+   * durable callee, plus the run envelope.
+   *
+   * Null (never zero) when analytics is unconfigured — nothing in SQL counts
+   * `step.do` calls, so there is no fallback and a fabricated 0 would read as
+   * "these runs were free".
+   */
+  steps: {
+    /** Billable step calls across the window. */
+    total: number
+    /** Durable runs they came from; inline runs bill no steps. */
+    runs: number
+    nodes: number
+    iterationItems: number
+    /** Steps per bucket. */
+    points: number[]
+    /** Steps per workflow — which graphs are step-expensive. */
+    series: WfDashboardSeries[]
+  } | null
 
   /** Newest failed runs in the window, for the errors panel. */
   recentFailures: WfRunSummary[]

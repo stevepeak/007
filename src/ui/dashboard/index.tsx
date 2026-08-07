@@ -12,6 +12,7 @@ import { FeedbackPanel } from './feedback-panel'
 import { KpiTiles } from './kpi-tiles'
 import { ProvidersPanel } from './providers-panel'
 import { RunsChart } from './runs-chart'
+import { StepsChart } from './steps-chart'
 
 // The home page's operational summary: is anything failing, what is it costing,
 // and is feedback piling up. It is the home tab's MAIN column — the section
@@ -91,6 +92,10 @@ export function WfDashboard({ className }: { className?: string }) {
           <CostChart data={data} />
           <FailuresPanel data={data} />
           <FeedbackPanel data={data} />
+          {/* Renders itself away when analytics is unconfigured — there is no
+              D1 fallback for a step count, so the panel is absent rather than
+              showing a zero nobody measured. */}
+          <StepsChart data={data} />
           {/* Budgets are current, not windowed — the timeframe control above
               doesn't scope this one. */}
           <ProvidersPanel />

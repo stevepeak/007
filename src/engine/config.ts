@@ -1,5 +1,7 @@
 import type { LanguageModel } from 'ai'
 
+import type { TelemetrySink } from '../analytics/sink'
+
 import type { WfBlobRef } from './blob-ref'
 import type { NodeExecution, WfRunManifestEntry } from './graph'
 import type {
@@ -166,6 +168,14 @@ export type RunContext = {
    * deep-link. Undefined for runs started before tracing was wired.
    */
   traceId?: string
+  /**
+   * Mirrors `wf_run.is_eval`. Carried for TELEMETRY partitioning only — every
+   * dashboard query filters `is_eval = false`, so points that couldn't be
+   * partitioned the same way would never reconcile with the charts. Nothing
+   * about execution reads it; `simulate` and `freezeTools` are the eval signals
+   * that change behavior.
+   */
+  isEval?: boolean
   /** Host Env (live bindings). Opaque to the SDK; passed back to the host. */
   env?: unknown
 }
@@ -283,6 +293,21 @@ export interface WfSdkConfig<TDeps = unknown> {
    * budget). Omit to use the defaults. See {@link WfRunLimits}.
    */
   limits?: WfRunLimits
+  /**
+   * Optional: where per-step and per-run telemetry points go. Called once per
+   * Worker invocation (a Workflow's `run()` re-executes on every wake, so the
+   * sink's per-invocation point cap scopes itself naturally), and handed the
+   * live `env` so the host can reach a binding the SDK deliberately doesn't
+   * name — on Cloudflare, `createAnalyticsEngineTelemetry` from
+   * `@stevepeak/007/cloudflare`.
+   *
+   * Omit and runs are untelemetered: the engine writes to a no-op sink, which
+   * is what every in-process caller (evals, tests, the playground) uses.
+   * Telemetry is strictly additive — the D1 run trace is unaffected either way.
+   */
+  resolveTelemetry?: (ctx: {
+    env?: unknown
+  }) => TelemetrySink | undefined | null
 }
 
 /**

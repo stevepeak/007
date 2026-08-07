@@ -94,6 +94,64 @@ export async function loadModelPriceMap(db: WfDb): Promise<ModelPriceMap> {
 }
 
 /**
+ * A price table flattened for the workflow journal: `[modelKey, prompt,
+ * completion, blended]` per row, USD per 1M tokens.
+ *
+ * A `Map` can't cross a `step.do` boundary, and the journal is replayed on
+ * every wake, so the shape is deliberately positional and lossless-but-terse
+ * rather than a record per model.
+ */
+export type RunPriceTable = [
+  string,
+  number | null,
+  number | null,
+  number | null,
+][]
+
+/**
+ * The catalog's prices, frozen for one run and carried in its journal.
+ *
+ * Pricing at EXECUTION time is the same freeze the run manifest already applies
+ * to prompts and agents: a catalog edit mid-run must not split a run across two
+ * price lists, and re-pricing history against today's catalog (what a read-time
+ * derivation does) silently rewrites what past runs cost. Cost telemetry is
+ * therefore stamped when the tokens are spent.
+ *
+ * Rows with no price at all are dropped — they'd resolve to "unpriced" either
+ * way — which keeps the journal to the models that can actually contribute a
+ * dollar figure. Each priced model contributes two rows (its native id and its
+ * composite `provider:model`), since a step may record either form; at a few
+ * hundred priced models that is tens of KB in the run's journal, read once per
+ * run and replayed from the journal thereafter.
+ */
+export async function loadRunPriceTable(db: WfDb): Promise<RunPriceTable> {
+  const map = await loadModelPriceMap(db)
+  const table: RunPriceTable = []
+  for (const [key, price] of map) {
+    const { promptPerMTok, completionPerMTok, blendedPerMTok } = price
+    if (promptPerMTok == null && completionPerMTok == null && blendedPerMTok == null) {
+      continue
+    }
+    table.push([
+      key,
+      promptPerMTok ?? null,
+      completionPerMTok ?? null,
+      blendedPerMTok ?? null,
+    ])
+  }
+  return table
+}
+
+/** Rehydrate a {@link RunPriceTable} into the map the cost helpers consume. */
+export function priceMapFromTable(table: RunPriceTable): ModelPriceMap {
+  const map: ModelPriceMap = new Map()
+  for (const [key, promptPerMTok, completionPerMTok, blendedPerMTok] of table) {
+    map.set(key, { promptPerMTok, completionPerMTok, blendedPerMTok })
+  }
+  return map
+}
+
+/**
  * Per-run cost / speed / model, keyed by run id — powers the eval report's
  * per-sample stats and the run's rolled-up averages. Every figure is scoped to
  * the AGENT CALL(S) only: tokens/cost sum the agent steps' usage (tools, the

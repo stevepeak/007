@@ -1,4 +1,10 @@
-import { AlertTriangle, Activity, DollarSign, ThumbsDown } from 'lucide-react'
+import {
+  AlertTriangle,
+  Activity,
+  DollarSign,
+  Footprints,
+  ThumbsDown,
+} from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 import type { WfDashboardResult } from '../../server/protocol'
@@ -80,7 +86,7 @@ export function KpiTiles({
   onOpenRuns: () => void
   onOpenFeedback: () => void
 }) {
-  const { runs, cost, feedback } = data
+  const { runs, cost, feedback, steps } = data
   const failureRate = runs.total > 0 ? runs.failed / runs.total : 0
   // Only color the number when there is something to react to — a permanently
   // red tile stops meaning anything.
@@ -92,7 +98,12 @@ export function KpiTiles({
         : STATUS.serious
 
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div
+      className={cn(
+        'grid grid-cols-2 gap-3',
+        steps ? 'lg:grid-cols-5' : 'lg:grid-cols-4',
+      )}
+    >
       <StatTile
         label="Runs"
         icon={Activity}
@@ -140,6 +151,22 @@ export function KpiTiles({
         spark={data.cost.series[0]?.points}
         sparkColor={CHROME.axis}
       />
+      {/* Fifth tile ONLY when analytics is wired — the Workflows billing unit
+          has no D1 equivalent, so its absence is a real state, not a zero. */}
+      {steps ? (
+        <StatTile
+          label="Workflow steps"
+          icon={Footprints}
+          value={formatCount(steps.total)}
+          detail={
+            steps.runs > 0
+              ? `${(steps.total / steps.runs).toFixed(1)} per durable run`
+              : 'No durable runs'
+          }
+          spark={steps.points}
+          sparkColor={CHROME.axis}
+        />
+      ) : null}
     </div>
   )
 }

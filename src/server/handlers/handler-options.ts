@@ -5,6 +5,7 @@ import type {
   WorkflowGraph,
 } from '../../engine/graph'
 import type { WfDb } from '../../storage/client'
+import type { DashboardAnalytics } from '../../storage/data'
 import type {
   AgentPreviewResult,
   RetryRunMode,
@@ -50,6 +51,23 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
    * structural diff. Supply it whenever any config hook reads a binding.
    */
   resolveEnv?: (req: Request) => unknown
+  /**
+   * Optional: read run telemetry from Cloudflare Analytics Engine, which powers
+   * the dashboard's spend and run-volume panels and is the ONLY source for the
+   * Workflows step count.
+   *
+   * Returns null when analytics isn't configured — no API token, or local dev,
+   * where AE is unreadable — and the dashboard then answers from D1 exactly as
+   * it did before. Any per-panel failure falls back the same way, so wiring this
+   * can slow a panel down but can never break one.
+   *
+   * Note this is a READ credential (an `Account Analytics Read` API token over
+   * HTTPS), unrelated to the dataset BINDING the executing Worker writes
+   * through — see `WfSdkConfig.resolveTelemetry` for the write side.
+   */
+  resolveAnalytics?: (
+    req: Request,
+  ) => DashboardAnalytics | null | Promise<DashboardAnalytics | null>
   /**
    * Optional: which model the SDK summarizes changes with. Defaults to the
    * host's first offered model (`listModels()[0]`).

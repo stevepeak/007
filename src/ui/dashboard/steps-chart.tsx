@@ -12,11 +12,9 @@ import {
 } from 'recharts'
 
 import type { WfDashboardResult } from '../../server/protocol'
-import { formatTokens, formatUsd } from '../cost'
 
 import {
   ChartCard,
-  ChartEmpty,
   ChartLegend,
   ChartTooltip,
   StackedBarShape,
@@ -27,19 +25,23 @@ import {
   assignSeriesColors,
   axisProps,
   formatBucket,
+  formatCount,
   gridProps,
 } from './chart-theme'
 
-// Spend per bucket, stacked by model — part-to-whole over time. The stack answers
-// both questions at once: how much did this cost, and what did the money go to.
+// Cloudflare Workflows bills per STEP, and a graph's step count is not
+// proportional to its size: every node costs enter/run/record, an iteration
+// spends one step per ITEM, and a durable callee adds two more. This is the only
+// place that relationship is visible — which graph is expensive, and why.
+//
+// Stacked by workflow rather than lined: the question is "where did the steps
+// go", a part-to-whole reading, and the total height is itself the bill.
 
 type Row = Record<string, number | string> & { bucket: number; __top: string }
 
-const axisUsd = (v: number) =>
-  v >= 1 ? `$${v.toFixed(0)}` : v > 0 ? `$${v.toFixed(2)}` : '$0'
-
-export function CostChart({ data }: { data: WfDashboardResult }) {
-  const { series, totalUsd, totalTokens, unpricedTokens } = data.cost
+export function StepsChart({ data }: { data: WfDashboardResult }) {
+  const steps = data.steps
+  const series = useMemo(() => steps?.series ?? [], [steps])
   const colors = useMemo(
     () => assignSeriesColors(series.map((s) => s.key)),
     [series],
@@ -49,8 +51,6 @@ export function CostChart({ data }: { data: WfDashboardResult }) {
     () =>
       data.buckets.map((bucket, i) => {
         const row = { bucket, __top: '' } as Row
-        // Track the highest non-zero segment so only the stack's data-end gets
-        // the rounded cap — a rounded corner mid-stack reads as a gap.
         for (const s of series) {
           const v = s.points[i] ?? 0
           row[s.key] = v
@@ -61,69 +61,56 @@ export function CostChart({ data }: { data: WfDashboardResult }) {
     [data.buckets, series],
   )
 
+  // Unconfigured analytics is ABSENT, not empty: D1 records no step counts, so
+  // rendering a zeroed chart would assert something we never measured.
+  if (!steps) return null
+
+  const perRun = steps.runs > 0 ? steps.total / steps.runs : 0
   const legend: LegendItem[] = series.map((s) => ({
     key: s.key,
     label: s.label,
     color: colors.get(s.key) ?? '#000',
-    value: formatUsd(s.total),
+    value: formatCount(s.total),
   }))
 
   return (
     <ChartCard
-      title="Inference cost"
+      title="Workflow steps"
       subtitle={
-        totalTokens > 0 ? (
+        steps.total > 0 ? (
           <>
             <span className="font-medium text-neutral-900">
-              {formatUsd(totalUsd)}
+              {formatCount(steps.total)}
             </span>{' '}
-            across {formatTokens(totalTokens)} tokens
+            billable steps across {formatCount(steps.runs)} durable runs (
+            {perRun.toFixed(1)} per run)
           </>
         ) : (
-          'No spend in this window'
+          'No durable runs in this window'
         )
       }
       footnote={
         <>
-          {/* The two paths mean genuinely different things, so the caveat can't
-              be static: analytics figures were priced when the tokens were
-              spent, while the D1 fallback re-prices history on every read. */}
-          {data.cost.pricedAtRunTime ? (
-            <>
-              Cost was priced when each agent call ran, so it doesn&apos;t change
-              when the model catalog does. Sampled from Analytics Engine — the
-              newest bucket may still be filling in.
-            </>
-          ) : (
-            <>
-              Cost is derived from recorded token usage at the model
-              catalog&apos;s current prices, so historical spend re-prices when
-              the catalog changes.
-            </>
-          )}
-          {unpricedTokens > 0 ? (
-            <>
-              {' '}
-              {formatTokens(unpricedTokens)} tokens ran on models with no
-              catalog price and are excluded from the total.
-            </>
-          ) : null}
+          Each node costs three steps (enter, run, record); an iteration spends
+          one per item instead of one per node, and a durable sub-workflow adds
+          two. {formatCount(steps.nodes)} nodes and{' '}
+          {formatCount(steps.iterationItems)} iteration items produced these.
+          Runs on the inline engine bill no steps and are excluded. Sampled from
+          Analytics Engine, so figures are estimates.
         </>
       }
     >
-      {series.length === 0 ? (
-        <ChartEmpty
-          message="No priced agent calls in this window"
-          hint={
-            unpricedTokens > 0
-              ? `${formatTokens(unpricedTokens)} tokens ran on models with no catalog price.`
-              : 'Cost appears once a workflow runs an agent on a priced model.'
-          }
-        />
+      {steps.total === 0 ? (
+        <p className="py-8 text-center text-xs text-neutral-400">
+          Steps appear once a workflow runs on the durable engine.
+        </p>
       ) : (
         <>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={rows} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
+            <BarChart
+              data={rows}
+              margin={{ top: 4, right: 8, bottom: 0, left: -16 }}
+            >
               <CartesianGrid {...gridProps} />
               <XAxis
                 dataKey="bucket"
@@ -131,7 +118,7 @@ export function CostChart({ data }: { data: WfDashboardResult }) {
                 tickFormatter={(v: number) => formatBucket(v, data.bucket)}
                 minTickGap={24}
               />
-              <YAxis {...axisProps} width={44} tickFormatter={axisUsd} />
+              <YAxis {...axisProps} width={44} tickFormatter={formatCount} />
               <Tooltip
                 cursor={{ fill: 'rgba(11,11,11,0.04)' }}
                 content={(props: TooltipContentProps) => {
@@ -147,10 +134,13 @@ export function CostChart({ data }: { data: WfDashboardResult }) {
                         key: s.key,
                         label: s.label,
                         color: colors.get(s.key) ?? '#000',
-                        value: formatUsd(byKey.get(s.key) ?? 0),
+                        value: formatCount(byKey.get(s.key) ?? 0),
                       }))}
-                      total={formatUsd(
-                        shown.reduce((sum, s) => sum + (byKey.get(s.key) ?? 0), 0),
+                      total={formatCount(
+                        shown.reduce(
+                          (sum, s) => sum + (byKey.get(s.key) ?? 0),
+                          0,
+                        ),
                       )}
                     />
                   )
@@ -161,17 +151,16 @@ export function CostChart({ data }: { data: WfDashboardResult }) {
                   key={s.key}
                   dataKey={s.key}
                   name={s.label}
-                  stackId="cost"
+                  stackId="steps"
                   fill={colors.get(s.key) ?? '#000'}
                   maxBarSize={24}
                   isAnimationActive={false}
-                  // Custom shape rather than `radius`: it inserts the 2px
-                  // surface gap between segments (white doing the separating,
-                  // not a stroke) and caps only the stack's top.
                   shape={(props: BarShapeProps) => (
                     <StackedBarShape
                       {...props}
-                      rounded={(props.payload as Row | undefined)?.__top === s.key}
+                      rounded={
+                        (props.payload as Row | undefined)?.__top === s.key
+                      }
                     />
                   )}
                 />
