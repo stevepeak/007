@@ -40,6 +40,31 @@ export type ExecuteWorkflowDeps<TDeps> = {
    * the budget was built to eliminate on the durable path.
    */
   resolveModelBudget?: (node: ExecutableNode) => ModelBudget | undefined
+  /**
+   * Called the moment the run's answer is final — BEFORE the walk drains the
+   * arms that don't feed it. This is what lets a backend mark the run `done`
+   * and release whoever is waiting on the answer, while the leftover work keeps
+   * running behind it (see {@link WorkflowOutputDelivery}).
+   *
+   * Awaited, and allowed to throw: a backend that cannot persist the answer has
+   * produced nothing the host can read, so the failure belongs to the run.
+   */
+  onOutput?: (delivery: WorkflowOutputDelivery) => void | Promise<void>
+}
+
+/**
+ * The run's answer, handed over the instant it is settled.
+ *
+ * `pendingWork` is the `done` vs `completed` signal: true when arms remain to
+ * execute after this Output, so the backend should mark the run `done` now and
+ * `completed` when {@link executeWorkflow} resolves. False means the walk is
+ * already finished and the backend can settle it in one write.
+ */
+export type WorkflowOutputDelivery = {
+  output: unknown
+  /** The Output node that produced it, or null on a fizzled decision arm. */
+  outputNodeId: string | null
+  pendingWork: boolean
 }
 
 /**
@@ -71,13 +96,28 @@ export type ExecuteWorkflowResult = {
   /** The Output node that produced `output`, or `null` when the run ended on a
    * decision arm that fizzled out (no Output was reached). */
   outputNodeId: string | null
+  /**
+   * A failure from the DRAIN phase — a background arm that broke after the
+   * answer was already delivered. Never fails the run: the answer stood, and
+   * the caller was released before this node ever ran. Recorded so the run row
+   * says a background arm broke rather than pretending the run was clean; the
+   * node's own failed step row carries the detail.
+   */
+  drainError?: string
 }
 
 /**
  * In-process backend: walks a graph via the pure {@link Scheduler}, awaiting
  * each node inline (no durability). The Cloudflare `GraphWorkflow` drives the
  * same Scheduler + {@link runNode} but wraps each node in `step.do`. This one
- * powers the eval harness and tests.
+ * powers the eval harness, the tests, and the inline engine.
+ *
+ * Two-phase by design. Reaching an Output makes the run `done` — the answer is
+ * final and {@link ExecuteWorkflowDeps.onOutput} fires immediately so a waiting
+ * reader is released. The walk then keeps going until every remaining arm is
+ * exhausted, and only then resolves: the run is `completed`. Arms that don't
+ * feed the Output (a `branch → tool` side effect, say) run in that drain phase,
+ * behind the answer rather than instead of it.
  */
 export async function executeWorkflow<TDeps>(
   deps: ExecuteWorkflowDeps<TDeps>,
@@ -261,11 +301,41 @@ export async function executeWorkflow<TDeps>(
     }
   }
 
+  // The answer, once settled. Its presence is what turns the loop below from
+  // "producing the answer" into "draining what's left": every exit and failure
+  // path reads differently on each side of it.
+  let delivered: ExecuteWorkflowResult | null = null
+
+  // Hand the answer over and release whoever is waiting on it. Runs BEFORE the
+  // drain, so a background arm can never delay a reader — the whole point of
+  // the `done` state.
+  const deliver = async (
+    output: unknown,
+    outputNodeId: string | null,
+  ): Promise<ExecuteWorkflowResult> => {
+    await deps.onOutput?.({
+      output,
+      outputNodeId,
+      pendingWork: scheduler.hasReadyWork(),
+    })
+    if (config.onRunComplete) {
+      await notifyHost(() =>
+        config.onRunComplete!(runContext, { output, outputNodeId }),
+      )
+    }
+    return { output, outputNodeId }
+  }
+
   try {
     while (true) {
       const instruction = scheduler.nextBatch()
 
       if (instruction.type === 'stall') {
+        // Past the answer this is simply the end of the walk: every arm has run
+        // itself out and the run is `completed`, not merely `done`.
+        if (delivered) {
+          break
+        }
         // A decision node whose taken arm has no outgoing edge ends that path
         // quietly — an intentional "fizzle out", not a malformed graph. Finish
         // with no output. A stall with no decision ever fired is a genuinely
@@ -273,11 +343,8 @@ export async function executeWorkflow<TDeps>(
         if (!scheduler.hasRoutedDecision()) {
           throw new WorkflowStalledError()
         }
-        const result = { output: undefined, outputNodeId: null }
-        if (config.onRunComplete) {
-          await notifyHost(() => config.onRunComplete!(runContext, result))
-        }
-        return result
+        delivered = await deliver(undefined, null)
+        break
       }
 
       if (instruction.type === 'output') {
@@ -285,11 +352,16 @@ export async function executeWorkflow<TDeps>(
         // (e.g. a chat run must produce `{ text }`); this throws — failing the
         // run via the surrounding catch — rather than letting the host read an
         // empty result. Contract-less triggers pass through untouched.
-        const output = enforceOutputContract(
-          config.triggers,
-          trigger.config.triggerKind,
-          instruction.output,
-        )
+        // Only the FIRST Output answers to the contract: it is the one the host
+        // reads. A later arm reaching its own Output is recorded for the trace
+        // but changes nothing the caller already received.
+        const output = delivered
+          ? instruction.output
+          : enforceOutputContract(
+              config.triggers,
+              trigger.config.triggerKind,
+              instruction.output,
+            )
         await recorder.record({
           nodeId: instruction.nodeId,
           nodeKind: 'output',
@@ -298,14 +370,13 @@ export async function executeWorkflow<TDeps>(
           status: 'completed',
           output,
         })
-        const result = {
-          output,
-          outputNodeId: instruction.nodeId,
+        // Mark it settled so the walk moves past it to the arms that don't feed
+        // it, rather than being handed the same Output on every call.
+        scheduler.completeOutput(instruction.nodeId, output)
+        if (!delivered) {
+          delivered = await deliver(output, instruction.nodeId)
         }
-        if (config.onRunComplete) {
-          await notifyHost(() => config.onRunComplete!(runContext, result))
-        }
-        return result
+        continue
       }
 
       // Sequences assigned up front in stable batch order → deterministic trace
@@ -323,7 +394,18 @@ export async function executeWorkflow<TDeps>(
 
       const rejected = settled.find((s) => s.status === 'rejected')
       if (rejected && rejected.status === 'rejected') {
-        throw rejected.reason
+        // Before the answer, a failed node fails the run. After it, the answer
+        // has already been handed to the host and cannot be retracted, so the
+        // broken arm ends the drain and is reported alongside the result. We
+        // stop rather than continue because a node that failed was never marked
+        // completed — leaving it selectable would re-dispatch it forever.
+        if (!delivered) {
+          throw rejected.reason
+        }
+        return {
+          ...(delivered),
+          drainError: errorMessage(rejected.reason),
+        }
       }
 
       for (const s of settled) {
@@ -332,7 +414,19 @@ export async function executeWorkflow<TDeps>(
         }
       }
     }
+
+    return delivered
   } catch (err) {
+    // Same rule as a rejected drain node, applied to everything else the drain
+    // can throw (the node budget, a recorder write, a second Output's step):
+    // once the answer is out, the run is not a failure. Report it as a drain
+    // error and let the backend settle the run with the answer it already gave.
+    if (delivered) {
+      return {
+        ...(delivered),
+        drainError: errorMessage(err),
+      }
+    }
     if (config.onRunFailed) {
       await notifyHost(() =>
         config.onRunFailed!(runContext, { error: errorMessage(err) }),

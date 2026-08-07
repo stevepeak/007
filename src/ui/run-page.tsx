@@ -141,7 +141,12 @@ export function RunPage({ runId, className }: RunPageProps) {
         const { run } = data
         const start = run.startedAt ?? run.createdAt
         const end = run.finishedAt ?? (run.status === 'running' ? Date.now() : null)
-        const live = run.status === 'running' || run.status === 'queued'
+        // `done` is still live: the answer is in, but arms that don't feed the
+        // Output are draining and their steps are still landing.
+        const live =
+          run.status === 'running' ||
+          run.status === 'queued' ||
+          run.status === 'done'
         // Any terminal run can be re-run from scratch on the latest version — including
         // ones that completed successfully. "Resume from failed step" (canResume below)
         // stays gated on an actual failure.

@@ -9,9 +9,21 @@ import { integer } from 'drizzle-orm/sqlite-core'
 // and `correlationId` is a free-form host reference. No foreign keys point at
 // host tables — the host maps its own ids into these text columns.
 
+// A run's lifecycle. `done` and `completed` are deliberately two states:
+//
+//   done      — the Output was reached. The answer is final and readable from
+//               `wf_run.output`; anyone waiting on it can stop waiting. Arms of
+//               the graph that don't feed the Output are still executing.
+//   completed — nothing left to run. Every arm has exhausted itself.
+//
+// Collapsing the two is what let a fire-and-forget arm (`branch → tool`) be
+// killed the instant the answer arm won the race to the Output. A run with no
+// such arm goes straight to `completed` and never passes through `done`, so the
+// common case still settles in a single write.
 export const WF_RUN_STATUSES = [
   'queued',
   'running',
+  'done',
   'completed',
   'failed',
   'cancelled',

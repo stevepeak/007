@@ -19,6 +19,7 @@ import { useModifierHold } from './use-modifier-hold'
 const STATUS_OPTIONS = [
   'queued',
   'running',
+  'done',
   'completed',
   'failed',
   'cancelled',

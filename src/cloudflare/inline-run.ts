@@ -8,9 +8,10 @@ import type { RunLogEntry, StreamSink } from '../engine/stream-sink'
 import { createWfDb, type WfDb } from '../storage/client'
 import {
   appendRunLog,
+  completeRun,
   failRun,
-  finalizeRun,
   getVersionGraph,
+  markRunDone,
   markRunRunning,
   resolveRunManifest,
   setRunManifest,
@@ -51,7 +52,7 @@ export interface InlineRunRoom {
   append(channel: string, text: string): Promise<void>
   appendLog(entry: RunLogEntry): Promise<void>
   appendAnswer(text: string): void
-  setOutput(output: unknown): Promise<void>
+  setOutput(output: unknown, settled?: boolean): Promise<void>
   setError(error: string): Promise<void>
 }
 
@@ -179,7 +180,8 @@ export async function runInlineGraph<TDeps, E extends { DB: D1Database }>(
 
   // The lifecycle callbacks are driven from HERE, not from inside
   // `executeWorkflow`, so they fire in the same order the durable backend's
-  // `finishRun` fires them: persist the outcome first, notify the host second.
+  // `deliverOutput` fires them: persist the outcome first, notify the host
+  // second (see `onOutput` below).
   // Left to the executor, `onRunComplete` would run while `wf_run` still said
   // `running` — a host callback that reads the run back would see a stale row.
   const execConfig: WfSdkConfig<TDeps> = {
@@ -235,13 +237,46 @@ export async function runInlineGraph<TDeps, E extends { DB: D1Database }>(
       // `execution.timeoutMs` tightens both engines identically.
       resolveModelBudget: (node) =>
         modelBudgetFor(resolveNodeTimeoutMs(node)),
+      // The answer landed. Publish it and release the reader NOW — the walk
+      // may still have arms to drain (a `branch → tool` side effect that the
+      // Output never depended on), and making a chat turn wait on those is
+      // exactly the coupling the `done` state exists to break.
+      //
+      // Nothing extra is needed to get that work "off thread": this whole
+      // function already runs detached inside the RunRoom DO under
+      // `ctx.waitUntil` (see `RunRoom.startInline`), so the drain outlives the
+      // HTTP request that started the run without any fire-and-forget promise
+      // of its own — and, unlike one, it still keeps the DO alive and still
+      // records every step it takes.
+      onOutput: async ({ output, outputNodeId, pendingWork }) => {
+        await markRunDone(db, {
+          runId: p.workflowRunId,
+          output,
+          settled: !pendingWork,
+        })
+        await room.setOutput(output, !pendingWork)
+        if (config.onRunComplete) {
+          await notifyHost('on-complete', () =>
+            config.onRunComplete!(runContext, { output, outputNodeId }),
+          )
+        }
+      },
     })
 
-    await finalizeRun(db, { runId: p.workflowRunId, output: result.output })
-    await room.setOutput(result.output)
-    if (config.onRunComplete) {
-      await notifyHost('on-complete', () =>
-        config.onRunComplete!(runContext, result),
+    // Every arm has exhausted itself. `markRunDone` already settled the run
+    // when there was nothing to drain, so this is a no-op write only in the
+    // background-arm case — and it carries a drain failure through, which
+    // records a broken background arm WITHOUT retracting an answer the host
+    // has already been handed.
+    await completeRun(db, {
+      runId: p.workflowRunId,
+      error: result.drainError,
+    })
+    await room.setStatus('completed')
+    if (result.drainError) {
+      console.warn(
+        `[wf] inline run ${p.workflowRunId} delivered its output, but a background branch failed:`,
+        result.drainError,
       )
     }
   } catch (err) {

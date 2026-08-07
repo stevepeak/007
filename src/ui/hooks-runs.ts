@@ -37,9 +37,14 @@ export function useRun(runId: string | null) {
     // Poll while the run is live so the graph glow, node statuses, and the Logs
     // feed fill in as it executes, then stop once it settles. Mirrors
     // `useEvalRun`. 1.5s keeps it feeling live without hammering D1.
+    // `done` keeps polling: the answer has landed but background arms are still
+    // executing and still writing steps, and the viewer should show them fill
+    // in rather than freeze on the moment the Output was reached.
     refetchInterval: (query) => {
       const status = query.state.data?.run.status
-      return status === 'queued' || status === 'running' ? 1500 : false
+      return status === 'queued' || status === 'running' || status === 'done'
+        ? 1500
+        : false
     },
   })
 }

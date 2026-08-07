@@ -57,14 +57,29 @@ export type BatchExecuteInstruction = {
 export type BatchInstruction =
   BatchExecuteInstruction | OutputInstruction | StallInstruction
 
-/** The run has reached a terminal Output node. */
+/**
+ * The run has reached an Output node — its answer is final.
+ *
+ * NOT the end of the walk. An Output settles what the CALLER receives; it says
+ * nothing about the other arms of the graph, which may still have unrun nodes
+ * (a fire-and-forget tool hanging off a branch that never feeds the Output).
+ * A backend must therefore call {@link Scheduler.completeOutput} and keep
+ * pulling instructions until `stall` — see the `done` vs `completed` split in
+ * the run lifecycle. Returning here is what silently dropped those arms.
+ */
 export type OutputInstruction = {
   type: 'output'
   nodeId: string
   output: unknown
 }
 
-/** No node is ready and no Output is reachable — the graph is malformed. */
+/**
+ * No node is ready and no Output is reachable. What that means depends on
+ * whether the backend has already delivered an answer: after an Output it is
+ * the ordinary end of the walk (every arm exhausted, the run is `completed`);
+ * before one it's either a decision arm that fizzled out or — with no decision
+ * ever routed — a malformed graph.
+ */
 export type StallInstruction = { type: 'stall' }
 
 export type SchedulerInstruction =
@@ -170,6 +185,40 @@ export class Scheduler {
    */
   hasRoutedDecision(): boolean {
     return this.branchResults.size > 0
+  }
+
+  /**
+   * Settle an Output node the backend has just handled: record its value and
+   * mark it completed so `next()`/`nextBatch()` move PAST it to whatever else
+   * is still ready, instead of handing back the same Output forever.
+   *
+   * This is the hinge of the `done` / `completed` split. The run is `done` the
+   * moment an Output is reached — the answer is final and the caller can be
+   * released — but it is `completed` only once every remaining arm has run
+   * itself out. Backends used to `return` on the Output instruction, which
+   * killed sibling arms mid-flight: a `branch → tool` arm hanging off the
+   * trigger would route, become ready, and then never fire because the answer
+   * arm won the race to the Output.
+   */
+  completeOutput(nodeId: string, value: unknown): void {
+    this.nodeOutputs.set(nodeId, value)
+    this.completed.add(nodeId)
+  }
+
+  /**
+   * Whether any executable node is ready RIGHT NOW. Callers use it at the
+   * moment an Output settles to tell "answer delivered, background arms still
+   * to run" from "answer delivered, nothing left" — the latter can go straight
+   * to `completed` and skip the extra status write.
+   *
+   * Sound only at a batch barrier (nothing in flight), which is exactly where
+   * the backends ask: with every dispatched node reported, a graph with no
+   * ready node has no way to produce one.
+   */
+  hasReadyWork(): boolean {
+    return this.graph.nodes.some(
+      (n) => !isBookendKind(n) && this.isReady(n.id),
+    )
   }
 
   private isEdgeAlive = (e: WorkflowEdge): boolean => {
@@ -288,7 +337,8 @@ export class Scheduler {
   /**
    * Decide the next thing the backend should do. Returns an `execute`
    * instruction (run this node with this input), an `output` instruction
-   * (terminal — finalize and return), or `stall` (malformed graph).
+   * (the answer is final — deliver it, call `completeOutput`, keep walking),
+   * or `stall` (nothing left; see {@link StallInstruction}).
    *
    * Throws `WorkflowBudgetError` past the node budget. The trigger must be
    * seeded via `seedTrigger` before the first call.
@@ -319,8 +369,11 @@ export class Scheduler {
 
   /**
    * Like {@link next}, but returns EVERY ready node instead of the first, so a
-   * backend can dispatch them concurrently. Output is checked first (matching
-   * `next()`'s termination priority); otherwise the full ready-set is returned.
+   * backend can dispatch them concurrently. A reachable Output is checked and
+   * returned FIRST — the answer path takes priority over any remaining
+   * background arm, so a reader waits only on the work its answer depends on.
+   * Once that Output is settled via `completeOutput`, the next call hands back
+   * the leftover ready-set and the walk drains normally.
    * Because the ready-set is an antichain, the caller must `report()` every
    * returned node before calling `nextBatch()` again — the same barrier `next()`
    * relies on, which is why no in-flight bookkeeping is needed here.

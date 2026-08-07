@@ -35,9 +35,11 @@ function clip(value: unknown, max = 4000): unknown {
 // `z.infer` (the loose-arg pattern the AI SDK's `tool()` needs — see below).
 const LIST_RUNS_INPUT_SCHEMA = z.object({
   status: z
-    .enum(['running', 'completed', 'failed', 'cancelled'])
+    .enum(['running', 'done', 'completed', 'failed', 'cancelled'])
     .optional()
-    .describe('Only runs in this state.'),
+    .describe(
+      'Only runs in this state. `done` = the Output was reached but background branches were still running; `completed` = every branch finished.',
+    ),
   workflowId: z.string().optional().describe('Only runs of this workflow.'),
   limit: z
     .number()

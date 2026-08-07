@@ -23,9 +23,13 @@ import { runInlineGraph } from './inline-run'
 // wf_run_log table is the source of truth for a completed run; this buffer is
 // just the live/reconnect window, so it's bounded.
 
+// Mirrors `WF_RUN_STATUSES` — including the `done` (answer final, background
+// arms still running) vs `completed` (nothing left to run) split, so a live
+// subscriber sees the same two beats a poller of `wf_run` does.
 export type WfRunRoomStatus =
   | 'queued'
   | 'running'
+  | 'done'
   | 'completed'
   | 'failed'
   | 'cancelled'
@@ -175,13 +179,20 @@ export class RunRoomBase<E = unknown> extends DurableObject<E> {
     this.broadcast({ type: 'status', data: status })
   }
 
-  async setOutput(output: unknown): Promise<void> {
+  /**
+   * Publish the run's answer. `settled` says whether that was also the end of
+   * the walk: false leaves the room `done` (the answer is on screen, background
+   * arms are still running and still writing to the log feed), and a later
+   * `setStatus('completed')` closes it out.
+   */
+  async setOutput(output: unknown, settled = true): Promise<void> {
+    const status: WfRunRoomStatus = settled ? 'completed' : 'done'
     const state = await this.load()
     state.output = output
-    state.status = 'completed'
+    state.status = status
     await this.save(state)
     this.broadcast({ type: 'output', data: output })
-    this.broadcast({ type: 'status', data: 'completed' })
+    this.broadcast({ type: 'status', data: status })
   }
 
   async setError(error: string): Promise<void> {

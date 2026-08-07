@@ -63,17 +63,46 @@ export async function markRunRunning(
     .where(eq(wfRun.id, input.runId))
 }
 
-export async function finalizeRun(
+/**
+ * The Output was reached: persist the answer and mark the run `done`.
+ *
+ * `finishedAt` is stamped HERE, not when the last background arm settles — it
+ * is the number every latency question is really asking about ("how long until
+ * there was an answer"), and a fire-and-forget arm that runs for another minute
+ * shouldn't inflate it.
+ *
+ * Callers that know nothing is left to run pass `settled: true` and go straight
+ * to `completed`, so an ordinary run still settles in one write.
+ */
+export async function markRunDone(
   db: WfDb,
-  input: { runId: string; output: unknown },
+  input: { runId: string; output: unknown; settled?: boolean },
 ) {
   await db
     .update(wfRun)
     .set({
-      status: 'completed',
+      status: input.settled ? 'completed' : 'done',
       output: input.output ?? {},
       finishedAt: new Date(),
     })
+    .where(eq(wfRun.id, input.runId))
+}
+
+/**
+ * Every arm has run itself out — the run is `completed`.
+ *
+ * `error` records an arm that broke AFTER the answer was delivered. The run is
+ * still completed, not failed: the caller received a correct answer and cannot
+ * un-receive it. The failing node's own step row carries the detail; this just
+ * keeps the run row honest about the background work having broken.
+ */
+export async function completeRun(
+  db: WfDb,
+  input: { runId: string; error?: string },
+) {
+  await db
+    .update(wfRun)
+    .set({ status: 'completed', ...(input.error ? { error: input.error } : {}) })
     .where(eq(wfRun.id, input.runId))
 }
 

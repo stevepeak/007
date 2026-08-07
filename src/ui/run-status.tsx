@@ -12,6 +12,9 @@ import { useWfComponents } from './context'
 // Statuses not present fall through to a plain border (cn drops undefined).
 export const runStatusClass: Record<string, string> = {
   completed: 'bg-green-100 text-green-700 border-green-200',
+  // Answer delivered, background arms still draining — green (it succeeded)
+  // but distinct from a fully settled run.
+  done: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   running: 'bg-blue-100 text-blue-700 border-blue-200',
   failed: 'bg-red-100 text-red-700 border-red-200',
   queued: 'bg-amber-100 text-amber-700 border-amber-200',
@@ -24,6 +27,7 @@ export const runStatusClass: Record<string, string> = {
 // (no border/text) tuned for a 2.5px dot, not the pill palette.
 export const runStatusDotClass: Record<string, string> = {
   completed: 'bg-emerald-500',
+  done: 'bg-emerald-400',
   failed: 'bg-rose-500',
   running: 'bg-blue-500 animate-pulse',
   skipped: 'bg-neutral-300',

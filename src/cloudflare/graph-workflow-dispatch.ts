@@ -29,9 +29,10 @@ import { enforceOutputContract } from '../engine/trigger-registry'
 import { createWfDb } from '../storage/client'
 import {
   appendRunLog,
+  completeRun,
   countNodeBodyLogs,
   createRun,
-  finalizeRun,
+  markRunDone,
   replaceNodeLogs,
   type WfRunLogRow,
 } from '../storage/data'
@@ -647,14 +648,22 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
   }
 }
 
-// Settle a completed run: persist the final output, mirror it to the
-// RunRoom, and best-effort notify the host. Shared by the two success
+// Deliver a run's answer: persist the output, mirror it to the RunRoom, wake a
+// waiting parent, and best-effort notify the host. Shared by the two success
 // exits — a reached Output (with its node id) and a decision that fizzled
 // out (output `undefined`, no node id).
-export async function finishRun<TDeps, E extends GraphWorkflowEnv>(
+//
+// This makes the run `done`, NOT `completed`. Arms that don't feed the Output
+// keep executing behind it and `settleRun` closes the run out when they finish;
+// `pendingWork` (asked at the batch barrier, so nothing is in flight) is what
+// tells the two apart. Everyone waiting on an answer — the host callback, a
+// parent workflow parked on a callee — is released here rather than behind a
+// background arm they never depended on.
+export async function deliverOutput<TDeps, E extends GraphWorkflowEnv>(
   ctx: RunCtx<TDeps, E>,
   rawOutput: unknown,
   outputNodeId: string | null,
+  pendingWork: boolean,
 ): Promise<GraphWorkflowResult> {
   const { step, env, config, p, room, scheduler } = ctx
   // Enforce the trigger's output contract (e.g. chat's `{ text }`) before we
@@ -675,9 +684,13 @@ export async function finishRun<TDeps, E extends GraphWorkflowEnv>(
         rawOutput,
       )
   await stepDo(step, 'finalize', () =>
-    finalizeRun(createWfDb(env.DB), { runId: p.workflowRunId, output }),
+    markRunDone(createWfDb(env.DB), {
+      runId: p.workflowRunId,
+      output,
+      settled: !pendingWork,
+    }),
   )
-  await stepDo(step, 'room-output', () => room.setOutput(output))
+  await stepDo(step, 'room-output', () => room.setOutput(output, !pendingWork))
   await reportToParent(ctx, { ok: true, output })
   if (config.onRunComplete) {
     await notifyHost(step, 'on-complete', () =>
@@ -685,4 +698,36 @@ export async function finishRun<TDeps, E extends GraphWorkflowEnv>(
     )
   }
   return { output, outputNodeId }
+}
+
+/**
+ * Close out a run whose every arm has finished. A no-op-ish second write that
+ * only matters when {@link deliverOutput} left the run `done` because there was
+ * still work to drain.
+ *
+ * `drainError` is an arm that broke AFTER the answer went out. It never fails
+ * the run — the host already has a correct answer — so it lands on the run row
+ * as a note beside the failed node's own step, and the result the caller gets
+ * back is the one it was already promised.
+ */
+export async function settleRun<TDeps, E extends GraphWorkflowEnv>(
+  ctx: RunCtx<TDeps, E>,
+  result: GraphWorkflowResult,
+  drainError?: string,
+): Promise<GraphWorkflowResult> {
+  const { step, env, p, room } = ctx
+  await stepDo(step, 'settle', async () => {
+    await completeRun(createWfDb(env.DB), {
+      runId: p.workflowRunId,
+      error: drainError,
+    })
+    await room.setStatus('completed')
+  })
+  if (drainError) {
+    console.warn(
+      `[wf] run ${p.workflowRunId} delivered its output, but a background branch failed:`,
+      drainError,
+    )
+  }
+  return result
 }

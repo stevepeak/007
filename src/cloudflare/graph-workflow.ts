@@ -28,10 +28,11 @@ import {
 import { createDurableRunRecorder } from '../storage/run-recorder'
 
 import {
+  deliverOutput,
   dispatchNode,
-  finishRun,
   notifyHost,
   reportToParent,
+  settleRun,
   stepDo,
   type RunCtx,
 } from './graph-workflow-dispatch'
@@ -304,11 +305,20 @@ export function makeGraphWorkflow<
         }
       }
 
+      // The delivered answer, once an Output (or a fizzled arm) settles it.
+      // Non-null flips the loop from "producing the answer" to "draining the
+      // arms that never fed it" — the run is `done` but not yet `completed`.
+      let delivered: GraphWorkflowResult | null = null
+
       try {
         while (true) {
           const instruction = scheduler.nextBatch()
 
           if (instruction.type === 'stall') {
+            // Past the answer, this is the ordinary end of the walk.
+            if (delivered) {
+              return await settleRun(ctx, delivered)
+            }
             // A decision node whose taken arm has no outgoing edge ends that
             // path quietly — an intentional "fizzle out", not a malformed graph.
             // Finalize the run with no output. A stall with no decision ever
@@ -316,7 +326,10 @@ export function makeGraphWorkflow<
             if (!scheduler.hasRoutedDecision()) {
               throw new WorkflowStalledError()
             }
-            return await finishRun(ctx, undefined, null)
+            return await settleRun(
+              ctx,
+              await deliverOutput(ctx, undefined, null, false),
+            )
           }
 
           if (instruction.type === 'output') {
@@ -333,7 +346,20 @@ export function makeGraphWorkflow<
                 output,
               }),
             )
-            return await finishRun(ctx, output, outputNodeId)
+            // Settle it so the walk moves on to whatever else is ready instead
+            // of being handed the same Output forever. A second Output on
+            // another arm is recorded for the trace but never re-delivers: the
+            // caller already has its answer.
+            scheduler.completeOutput(outputNodeId, output)
+            if (!delivered) {
+              delivered = await deliverOutput(
+                ctx,
+                output,
+                outputNodeId,
+                scheduler.hasReadyWork(),
+              )
+            }
+            continue
           }
 
           // Assign sequence numbers up front, in the batch's stable order, so
@@ -355,7 +381,20 @@ export function makeGraphWorkflow<
 
           const rejected = settled.find((s) => s.status === 'rejected')
           if (rejected && rejected.status === 'rejected') {
-            throw rejected.reason
+            // Before the answer, a failed node fails the run. After it, the
+            // answer is already persisted and reported to the host/parent and
+            // cannot be retracted — so the broken arm ends the drain and is
+            // recorded beside the delivered result. Stopping (rather than
+            // continuing) is required: a failed node was never marked
+            // completed, so it would be re-selected forever.
+            if (!delivered) {
+              throw rejected.reason
+            }
+            return await settleRun(
+              ctx,
+              delivered,
+              errorMessage(rejected.reason),
+            )
           }
 
           for (const s of settled) {
@@ -366,6 +405,13 @@ export function makeGraphWorkflow<
         }
       } catch (err) {
         const message = errorMessage(err)
+        // Same rule as a rejected drain node, for everything else the drain can
+        // throw (the node budget, a recorder step, a second Output's record):
+        // once the answer is out the run is not a failure. Settle it with the
+        // answer already given and record the broken arm.
+        if (delivered) {
+          return await settleRun(ctx, delivered, message)
+        }
         await stepDo(step, 'record-failure', async () => {
           await failRun(createWfDb(env.DB), {
             runId: p.workflowRunId,
