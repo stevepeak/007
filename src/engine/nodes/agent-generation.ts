@@ -6,6 +6,7 @@ import {
   type LanguageModel,
   stepCountIs,
   type StepResult,
+  streamText,
   type ToolSet,
   type UIMessage,
 } from 'ai'
@@ -407,8 +408,31 @@ async function runToolLoop(
     budgetSeconds: budget && Math.round(budget.totalMs / 1000),
   })
   const messagesForModel = await convertToModelMessages(messages)
-  const result = await runGuarded(sink, modelId, startedAt, guard, () =>
-    generateText({
+
+  // Whether this generation streams its answer, and when.
+  //
+  // WHETHER: the sink was given a `delta` channel — which happens only on a
+  // backend that can carry a token stream (inline), and only for the node whose
+  // output IS the run's answer. See `StreamSink.delta`.
+  //
+  // WHEN is the subtler half. `result.text` is the FINAL step's text, not the
+  // concatenation across steps, so streaming every delta would show the reader
+  // any preamble an intermediate tool-calling turn wrote ("Let me search…") and
+  // then leave it stranded above the real answer — text already sent cannot be
+  // retracted, and the settled message would disagree with what was on screen.
+  //
+  // So deltas are forwarded only from a step we KNOW must answer: one where
+  // `prepareStep` denied tools, or where the agent has no tools to call. What
+  // the reader sees is then exactly the final step's text, byte for byte, and
+  // the bridge's reconciliation against `wf_run.output` is a clean no-op.
+  //
+  // The conservative direction is the safe one: a step we can't prove is the
+  // answer simply isn't streamed, which is the pre-streaming behaviour.
+  const streamAnswer = typeof sink?.delta === 'function'
+  const hasTools = Object.keys(tools).length > 0
+  let stepMustAnswer = false
+
+  const callOptions = {
       model,
       system: systemPrompt,
       messages: messagesForModel,
@@ -425,12 +449,16 @@ async function runToolLoop(
       // are never overridden: whatever else is configured, an agent that is out
       // of turns or out of budget has to write its answer now.
       prepareStep: ({ stepNumber }) => {
+        // Re-decided per step: an agent with no tools always answers, otherwise
+        // only the branches below that deny tools qualify. See `streamAnswer`.
+        stepMustAnswer = !hasTools
         if (stepNumber >= maxTurns - 1) {
+          stepMustAnswer = true
           void sink?.log?.({
             level: 'info',
             message: `→ ${modelId} (turn ${stepNumber + 1}/${maxTurns}, answering — no more tools)`,
           })
-          return { toolChoice: 'none' }
+          return { toolChoice: 'none' as const }
         }
         // Would one more tool turn leave room to write the answer? Checked BEFORE
         // the spend budget because overflowing the window is a hard error and
@@ -446,6 +474,7 @@ async function runToolLoop(
           const projected = lastInputTokens + growth
           if (projected + answerReserveTokens > contextLength!) {
             stoppedOnContextLimit = true
+            stepMustAnswer = true
             void sink?.log?.({
               level: 'info',
               message: `→ ${modelId} (turn ${stepNumber + 1}/${maxTurns}, another turn would reach ~${projected.toLocaleString()} of ${contextLength!.toLocaleString()} — answering while there is room to)`,
@@ -457,7 +486,7 @@ async function runToolLoop(
                 contextLength,
               },
             })
-            return { toolChoice: 'none' }
+            return { toolChoice: 'none' as const }
           }
         }
         // Spend ceiling reached. Deliberately NOT an error: the whole point of
@@ -467,12 +496,13 @@ async function runToolLoop(
         const spent = totalUsage.inputTokens + totalUsage.outputTokens
         if (toolTokenBudget != null && spent >= toolTokenBudget) {
           stoppedOnTokenBudget = true
+          stepMustAnswer = true
           void sink?.log?.({
             level: 'info',
             message: `→ ${modelId} (turn ${stepNumber + 1}/${maxTurns}, token budget reached at ${spent.toLocaleString()} — answering with what it has)`,
             meta: { spent, toolTokenBudget },
           })
-          return { toolChoice: 'none' }
+          return { toolChoice: 'none' as const }
         }
         // Opt-in: deny the model the option of answering turn 1 from what it
         // already "knows". Only turn 1 — every later turn is free to answer, so
@@ -482,7 +512,7 @@ async function runToolLoop(
             level: 'info',
             message: `→ ${modelId} (turn 1/${maxTurns}, tool call required)`,
           })
-          return { toolChoice: 'required' }
+          return { toolChoice: 'required' as const }
         }
         return {}
       },
@@ -588,8 +618,45 @@ async function runToolLoop(
           }
         }
       },
-    }),
-  )
+  }
+
+  // ONE options object, driven two ways. `streamText` and `generateText` take
+  // the same arguments, so the loop's whole policy — the turn ceiling, the
+  // context guard, the spend budget, the watchdogs, the step tracing — is
+  // shared verbatim rather than reimplemented per path. The only difference is
+  // how the result is obtained, which is exactly the difference that matters.
+  //
+  // Both run INSIDE `runGuarded`: with `streamText`, failures surface while the
+  // stream is consumed or when the final promises are awaited, not when the
+  // call is made, so consuming has to happen where the guard can classify a
+  // stall from a budget overrun.
+  const result = await runGuarded(sink, modelId, startedAt, guard, async () => {
+    if (!streamAnswer) return await generateText(callOptions)
+    const stream = streamText(callOptions)
+    let streamedChars = 0
+    for await (const part of stream.fullStream) {
+      if (part.type === 'text-delta' && stepMustAnswer && part.text) {
+        streamedChars += part.text.length
+        await sink?.delta?.(part.text)
+      }
+    }
+    // Whether the answer actually streamed is otherwise invisible — the deltas
+    // are unpersisted by design, so a run that quietly fell back to delivering
+    // its answer in one piece looks identical afterwards to one that streamed.
+    // Say so in the feed, where it can be read against the run that produced it.
+    void sink?.log?.({
+      level: 'info',
+      message: streamedChars
+        ? `⇢ streamed ${streamedChars} chars of the answer live`
+        : '⇢ answer not streamed (no step was forced to answer; delivered whole)',
+      meta: { streamedChars },
+    })
+    // Awaited after the stream is drained, so these are settled.
+    return {
+      text: await stream.text,
+      finishReason: await stream.finishReason,
+    }
+  })
   logModelCallEnd(sink, modelId, startedAt, {
     finishReason: result.finishReason,
     steps: stepTraces.length,
