@@ -456,7 +456,9 @@ export async function loadDashboard(
     ])
 
   // The errors panel reuses the runs list wholesale — it already resolves the
-  // workflow name, error text, timing and per-run cost.
+  // workflow name, error text, timing and per-run cost. It loads the price map
+  // again internally; that is a memo hit (see `loadModelPriceMap`), not a second
+  // `wf_model` scan, so it is not worth threading the map through `listRuns`.
   const failures = await listRuns(db, {
     status: 'failed',
     since,

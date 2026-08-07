@@ -81,6 +81,7 @@ export {
   getModelCatalog,
   getModelUsage,
   getRun,
+  getRunStatus,
   getRunProgressFeed,
   type RunProgressFeed,
   type RunProgressLine,

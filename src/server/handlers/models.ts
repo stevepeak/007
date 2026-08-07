@@ -7,6 +7,7 @@ import { describeTriggerEvents } from '../../engine/trigger-registry'
 import {
   getModelCatalog,
   getModelUsage,
+  invalidateModelPriceMap,
   listEnabledModels,
   listModelProviders,
   listToolInvocations,
@@ -211,6 +212,9 @@ export function buildModelHandlers<TDeps>(
       // `enabled` flag — see `upsertModels`.) A fresh DB thus starts with zero
       // enabled models until someone turns them on.
       const count = await upsertModels(c.db, providerId, entries)
+      // Prices just moved — drop the memo so run costs re-derive off the new
+      // catalog now rather than after the TTL.
+      invalidateModelPriceMap(c.db)
       const refreshedAt = new Date()
       const providers = await opts.config.listProviders({ env })
       const provider = providers.find((p) => p.id === providerId) ?? {
@@ -237,6 +241,7 @@ export function buildModelHandlers<TDeps>(
         }
       }
       await setModelEnabled(c.db, { modelId, enabled })
+      invalidateModelPriceMap(c.db)
       return { ok: true as const }
     },
 

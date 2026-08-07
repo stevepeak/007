@@ -14,12 +14,61 @@ import { wfModel, wfRun, wfRunStep } from '../schema'
 // ---------------------------------------------------------------------------
 
 /**
+ * How long a loaded price map stays warm. `wf_model` only changes when an admin
+ * refreshes a provider catalog or toggles a model, so a minute of staleness on a
+ * *displayed dollar figure* is immaterial — while the read itself sits behind
+ * every run-viewer tick, eval poll, and runs-list page.
+ */
+const PRICE_MAP_TTL_MS = 60_000
+
+/**
+ * Cache the SETTLED value, never the in-flight promise: workerd throws
+ * "Cannot perform I/O on behalf of a different request" when a later request
+ * awaits a promise created in an earlier request's I/O context. A concurrent
+ * miss therefore just runs the query twice, which is cheap and rare.
+ *
+ * Keyed by the underlying driver (`$client` — the D1 binding in a Worker, the
+ * sqlite handle under a test) rather than the drizzle wrapper, because
+ * `createWfDb` mints a fresh wrapper per request and keying on that would never
+ * hit. Keying on the driver also means two handles onto *different* databases
+ * can never share an entry: a process that talks to several databases (the
+ * `createWfDbHttp` CLI, a test file building its own in-memory DB) is correct
+ * by construction instead of by convention.
+ */
+const priceMapCache = new WeakMap<object, { at: number; map: ModelPriceMap }>()
+
+/** The driver behind a handle, or null when it can't be identified (in which
+ *  case we simply don't cache). */
+function priceMapKey(db: WfDb): object | null {
+  const client = (db as unknown as { $client?: unknown }).$client
+  return typeof client === 'object' && client !== null ? client : null
+}
+
+/**
+ * Drop the memo after a catalog write, so an admin who refreshes models sees
+ * new prices immediately instead of up to {@link PRICE_MAP_TTL_MS} later.
+ * Clears THIS isolate only — others converge within the TTL.
+ */
+export function invalidateModelPriceMap(db: WfDb): void {
+  const key = priceMapKey(db)
+  if (key) priceMapCache.delete(key)
+}
+
+/**
  * Every catalogued model's price, keyed for cost derivation. A run step records
  * `meta.model` as the provider-native id (`wf_model.modelId`); we key by that AND
- * the composite `id` so either resolves. One small table scan, shared by the runs
- * list (aggregate) and the run inspector (per node).
+ * the composite `id` so either resolves. Shared by the runs list (aggregate) and
+ * the run inspector (per node).
+ *
+ * The underlying read is a full `wf_model` scan — `refreshModels` upserts a
+ * provider's entire catalog (300+ rows) and never prunes — so it is memoized for
+ * {@link PRICE_MAP_TTL_MS}. The returned map is SHARED across requests and must
+ * be treated read-only; every consumer only ever `.get()`s from it.
  */
 export async function loadModelPriceMap(db: WfDb): Promise<ModelPriceMap> {
+  const key = priceMapKey(db)
+  const hit = key ? priceMapCache.get(key) : undefined
+  if (hit && Date.now() - hit.at < PRICE_MAP_TTL_MS) return hit.map
   const rows = await db
     .select({
       id: wfModel.id,
@@ -40,6 +89,7 @@ export async function loadModelPriceMap(db: WfDb): Promise<ModelPriceMap> {
     // Don't let a composite-id entry clobber a bare-id match (what steps record).
     if (!map.has(r.id)) map.set(r.id, price)
   }
+  if (key) priceMapCache.set(key, { at: Date.now(), map })
   return map
 }
 
