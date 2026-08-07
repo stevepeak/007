@@ -1,4 +1,4 @@
-import { Search } from 'lucide-react'
+import { ExternalLink, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import type {
@@ -14,6 +14,7 @@ import {
   AGE_MAX_DAYS,
   CAP_FILTERS,
   DAY_MS,
+  OPENROUTER_COMPARE_URL,
   type AgeFilter,
   type ChosenFilter,
 } from './models-list-shared'
@@ -108,10 +109,21 @@ export function ModelsList({ className }: ModelsListProps) {
 
   return (
     <div className={cn('mx-auto max-w-5xl space-y-6 p-6', className)}>
-      <div className="text-sm text-neutral-500">
-        The AI models the platform can use. Refresh a provider to pull its latest
-        catalog, then enable the models you want available in the Agent editor and
-        Eval runs.
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="text-sm text-neutral-500">
+          The AI models the platform can use. Refresh a provider to pull its
+          latest catalog, then enable the models you want available in the Agent
+          editor and Eval runs.
+        </div>
+        <a
+          href={OPENROUTER_COMPARE_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-50"
+        >
+          Compare models
+          <ExternalLink className="size-3" />
+        </a>
       </div>
 
       <QueryState
@@ -216,4 +228,3 @@ export function ModelsList({ className }: ModelsListProps) {
     </div>
   )
 }
-
