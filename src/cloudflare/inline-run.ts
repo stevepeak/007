@@ -50,6 +50,7 @@ export interface InlineRunRoom {
   setStatus(status: WfRunRoomStatus): Promise<void>
   append(channel: string, text: string): Promise<void>
   appendLog(entry: RunLogEntry): Promise<void>
+  appendAnswer(text: string): void
   setOutput(output: unknown): Promise<void>
   setError(error: string): Promise<void>
 }
@@ -116,6 +117,21 @@ function createInlineSink(
         await room.appendLog(stamped)
       } catch (err) {
         console.warn('[wf] inline sink broadcast failed:', errorMessage(err))
+      }
+    },
+    // Defining this at all is what enables streaming for this run — see
+    // `StreamSink.delta`. The inline engine can carry a token stream because
+    // the walk runs in one process with no `step.do` boundary between the model
+    // and the room; the durable backend's sink deliberately omits it.
+    //
+    // Synchronous and unpersisted by design: `room` here is the Durable Object
+    // instance itself, so this is a local string append, not an RPC or a write.
+    // That is the only reason it is affordable per token.
+    delta: (text) => {
+      try {
+        room.appendAnswer(text)
+      } catch (err) {
+        console.warn('[wf] inline sink delta failed:', errorMessage(err))
       }
     },
   }

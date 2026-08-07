@@ -53,6 +53,30 @@ export interface StreamSink {
    * stay valid; the Cloudflare backend wires it to `RunRoom.appendLog`.
    */
   log?: (entry: RunLogEntry) => Promise<void> | void
+  /**
+   * Emit a fragment of THE ANSWER as it is written — the text an end user is
+   * watching appear, not a progress line about it.
+   *
+   * Its PRESENCE is the signal to stream, and that is the whole mechanism:
+   *
+   *   • Only the backend that can carry a token stream defines it. The inline
+   *     engine does; the durable engine cannot (a `step.do` body is journaled
+   *     as JSON, so nothing incremental survives the boundary) and so leaves it
+   *     undefined.
+   *   • Only the node that produces the run's output receives it — the node
+   *     named by the Output node's `config.source`. Every other node's sink has
+   *     it undefined, so no intermediate agent's working text can ever be
+   *     mistaken for the answer.
+   *
+   * A node handler therefore decides whether to stream by asking whether this
+   * exists, with no flag threaded through the run context and nothing to keep
+   * in sync. Undefined is the safe default at every layer.
+   *
+   * Unlike {@link log}, fragments are NOT persisted — one row per token is not
+   * a feed, it is a denial of service. The finished answer is persisted once to
+   * `wf_run.output`, which stays the authority.
+   */
+  delta?: (text: string) => Promise<void> | void
 }
 
 // In-memory sink useful for tests / debugging. Captures every (channel, text)

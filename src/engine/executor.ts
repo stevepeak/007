@@ -1,5 +1,6 @@
 import type { RunContext, WfSdkConfig } from './config'
 import { isDecisionKind } from './graph'
+import { resolveAnswerNodeIds } from './graph-engine'
 import type { ModelBudget } from './model-budget'
 import { emitNodeStartProgress } from './node-progress'
 import { endEntryOf, startEntryOf } from './run-log-entries'
@@ -41,6 +42,30 @@ export type ExecuteWorkflowDeps<TDeps> = {
   resolveModelBudget?: (node: ExecutableNode) => ModelBudget | undefined
 }
 
+/**
+ * The delta channel one node should be given — the safety rule behind
+ * {@link StreamSink.delta}, named so it can be tested on its own rather than
+ * inferred from a run.
+ *
+ * Two conditions, both required:
+ *   • the run's sink can stream at all (the inline backend's can; the durable
+ *     backend's cannot, and so defines no `delta`), and
+ *   • this node is one the Output binds to, i.e. it produces the answer.
+ *
+ * Anything else gets `undefined`, which is what tells a node handler not to
+ * stream. Getting this wrong in the permissive direction is the failure that
+ * matters: an intermediate agent's working notes rendered to the reader as if
+ * they were the answer.
+ */
+export function deltaChannelFor(
+  sink: StreamSink,
+  answerNodeIds: ReadonlySet<string>,
+  nodeId: string,
+): StreamSink['delta'] {
+  if (!sink.delta || !answerNodeIds.has(nodeId)) return undefined
+  return (text: string) => sink.delta?.(text)
+}
+
 export type ExecuteWorkflowResult = {
   output: unknown
   /** The Output node that produced `output`, or `null` when the run ended on a
@@ -69,6 +94,11 @@ export async function executeWorkflow<TDeps>(
   // no `nodeId`, and a sink that persists per node drops the lot: the run then
   // shows a node that opened and never said another word, which reads as a hung
   // run even when the agent is working perfectly.
+  // The nodes whose output the Output node(s) bind to — see
+  // `resolveAnswerNodeIds`. Resolved once, up front, so the delta channel can be
+  // handed to exactly the node that writes the answer.
+  const answerNodeIds = resolveAnswerNodeIds(deps.graph)
+
   const sinkFor = (node: ExecutableNode, seq: number): StreamSink | undefined =>
     sink && {
       append: (channel, text) => sink.append(channel, text),
@@ -80,6 +110,9 @@ export async function executeWorkflow<TDeps>(
           nodeKind: entry.nodeKind ?? node.kind,
           sequence: entry.sequence ?? seq,
         }),
+      // Handed ONLY to the answer-producing node, and only when the backend can
+      // carry a stream at all — see `deltaChannelFor`.
+      delta: deltaChannelFor(sink, answerNodeIds, node.id),
     }
 
   const validatedTriggerInput = resolveTriggerInput(

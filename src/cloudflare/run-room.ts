@@ -59,6 +59,25 @@ const MAX_BUFFERED_LOGS = 1000
 export class RunRoomBase<E = unknown> extends DurableObject<E> {
   private memo: PersistedState | null = null
 
+  /**
+   * The run's answer, as it is being written — the text a reader is watching
+   * appear. Appended by the node that produces the run's output (see
+   * `StreamSink.delta`) and read incrementally by a waiting consumer via
+   * {@link getAnswerSince}.
+   *
+   * DELIBERATELY IN MEMORY, and deliberately not part of `PersistedState`.
+   * Every other field here is written through `storage.put` on each change,
+   * which is right at one-event-per-node granularity and ruinous at
+   * one-event-per-token. Nothing is lost by keeping it in memory: the finished
+   * answer is persisted once, authoritatively, to `wf_run.output`, and every
+   * consumer reconciles against that at the end. This buffer only exists to
+   * make the wait legible.
+   *
+   * Consequence, accepted: a consumer that attaches after the room is evicted
+   * sees no partial text and simply waits for the final answer.
+   */
+  private answer = ''
+
   private async load(): Promise<PersistedState> {
     if (this.memo) return this.memo
     const stored = await this.ctx.storage.get<PersistedState>('state')
@@ -123,6 +142,30 @@ export class RunRoomBase<E = unknown> extends DurableObject<E> {
     }
     await this.save(state)
     this.broadcast({ type: 'log', data: stamped })
+  }
+
+  /**
+   * Append a fragment of the run's answer. Synchronous and storage-free — this
+   * is on the token path, so it must stay a string concat and a broadcast.
+   */
+  appendAnswer(text: string): void {
+    if (!text) return
+    this.answer += text
+    this.broadcast({ type: 'answer', data: text })
+  }
+
+  /**
+   * Read the answer written since `cursor`, plus the cursor to pass next time.
+   *
+   * A cursor rather than a "give me everything" read so a poller writes each
+   * fragment exactly once and the response stays proportional to what is NEW,
+   * not to the answer so far. Out-of-range cursors are clamped rather than
+   * rejected: a caller holding a stale cursor (the room restarted and the
+   * buffer is empty) should quietly resynchronise, not fail the turn.
+   */
+  getAnswerSince(cursor: number): { text: string; cursor: number } {
+    const from = Math.max(0, Math.min(cursor, this.answer.length))
+    return { text: this.answer.slice(from), cursor: this.answer.length }
   }
 
   async setStatus(status: WfRunRoomStatus): Promise<void> {
