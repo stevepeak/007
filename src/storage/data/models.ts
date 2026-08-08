@@ -19,6 +19,8 @@ import {
   wfModelProvider,
 } from '../schema'
 
+import { selectChunked } from './shared'
+
 // Data-access for the model catalog: providers, per-model rows + pricing, the
 // admin catalog view, enablement toggles, and agent→model usage. The catalog is
 // a single GLOBAL set (no tenancy), like workflows and agents.
@@ -170,20 +172,24 @@ export async function getModelUsage(
     if (!canonical.has(r.modelId)) canonical.set(r.modelId, r.id)
   }
 
+  // Every non-archived agent, so both lookups chunk. Highest-version-first
+  // still resolves correctly per agent: an agent's versions never straddle two
+  // chunks, so only the ordering BETWEEN agents changes, which nothing reads.
   const agentIds = agents.map((a) => a.id)
-  const versions = await db
-    .select()
-    .from(wfAgentVersion)
-    .where(inArray(wfAgentVersion.agentId, agentIds))
-    .orderBy(desc(wfAgentVersion.versionNumber))
+  const versions = await selectChunked(agentIds, (ids) =>
+    db
+      .select()
+      .from(wfAgentVersion)
+      .where(inArray(wfAgentVersion.agentId, ids))
+      .orderBy(desc(wfAgentVersion.versionNumber)),
+  )
   const latestConfig = new Map<string, unknown>()
   for (const v of versions) {
     if (!latestConfig.has(v.agentId)) latestConfig.set(v.agentId, v.config)
   }
-  const drafts = await db
-    .select()
-    .from(wfAgentDraft)
-    .where(inArray(wfAgentDraft.agentId, agentIds))
+  const drafts = await selectChunked(agentIds, (ids) =>
+    db.select().from(wfAgentDraft).where(inArray(wfAgentDraft.agentId, ids)),
+  )
   const draftConfig = new Map(drafts.map((d) => [d.agentId, d.config]))
 
   const modelIdOf = (config: unknown): string | undefined => {

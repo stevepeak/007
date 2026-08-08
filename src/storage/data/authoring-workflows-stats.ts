@@ -6,6 +6,7 @@ import { wfAgent, wfRun, wfWorkflowDraft, wfWorkflowVersion } from '../schema'
 
 import { agentIdsInGraph } from './authoring-graph'
 import { latestVersionGraphs, listWorkflows } from './authoring-workflows'
+import { selectChunked } from './shared'
 
 // The Workflows-list activity rollup: latest version, last edit, run counts, and
 // the agents each workflow uses — three grouped aggregates + one agent lookup
@@ -60,30 +61,40 @@ export async function listWorkflowsWithStats(
 
   // The latest version doubles as the version aggregate: versions only ever
   // count up, so the newest one's `createdAt` IS `max(created_at)`.
+  // `listWorkflows` is unpaged, so `ids` is "every workflow" — each lookup
+  // chunks it. The run aggregate groups BY the chunked column, so a group can
+  // never straddle two chunks and the per-chunk rows concatenate as-is.
   const [latestByWf, draftRows, runRows] = await Promise.all([
     latestVersionGraphs(db, ids),
-    db
-      .select({
-        workflowId: wfWorkflowDraft.workflowId,
-        updatedAt: sql<number | null>`${wfWorkflowDraft.updatedAt}`,
-      })
-      .from(wfWorkflowDraft)
-      .where(inArray(wfWorkflowDraft.workflowId, ids)),
-    db
-      .select({
-        workflowId: wfWorkflowVersion.workflowId,
-        runCount: sql<number>`count(*)`,
-        lastRunAt: sql<number | null>`max(${wfRun.createdAt})`,
-      })
-      .from(wfRun)
-      .innerJoin(
-        wfWorkflowVersion,
-        eq(wfRun.workflowVersionId, wfWorkflowVersion.id),
-      )
-      .where(
-        and(eq(wfRun.isEval, false), inArray(wfWorkflowVersion.workflowId, ids)),
-      )
-      .groupBy(wfWorkflowVersion.workflowId),
+    selectChunked(ids, (chunkIds) =>
+      db
+        .select({
+          workflowId: wfWorkflowDraft.workflowId,
+          updatedAt: sql<number | null>`${wfWorkflowDraft.updatedAt}`,
+        })
+        .from(wfWorkflowDraft)
+        .where(inArray(wfWorkflowDraft.workflowId, chunkIds)),
+    ),
+    selectChunked(ids, (chunkIds) =>
+      db
+        .select({
+          workflowId: wfWorkflowVersion.workflowId,
+          runCount: sql<number>`count(*)`,
+          lastRunAt: sql<number | null>`max(${wfRun.createdAt})`,
+        })
+        .from(wfRun)
+        .innerJoin(
+          wfWorkflowVersion,
+          eq(wfRun.workflowVersionId, wfWorkflowVersion.id),
+        )
+        .where(
+          and(
+            eq(wfRun.isEval, false),
+            inArray(wfWorkflowVersion.workflowId, chunkIds),
+          ),
+        )
+        .groupBy(wfWorkflowVersion.workflowId),
+    ),
   ])
 
   // Agents each workflow uses, walked out of the latest published version graphs
@@ -98,18 +109,19 @@ export async function listWorkflowsWithStats(
     agentIdsByWf.set(w.id, agentIds)
     for (const id of agentIds) referencedAgentIds.add(id)
   }
-  const agentRows =
-    referencedAgentIds.size > 0
-      ? await db
-          .select({
-            id: wfAgent.id,
-            name: wfAgent.name,
-            icon: wfAgent.icon,
-            color: wfAgent.color,
-          })
-          .from(wfAgent)
-          .where(inArray(wfAgent.id, [...referencedAgentIds]))
-      : []
+  const agentRows = await selectChunked(
+    [...referencedAgentIds],
+    (agentIds) =>
+      db
+        .select({
+          id: wfAgent.id,
+          name: wfAgent.name,
+          icon: wfAgent.icon,
+          color: wfAgent.color,
+        })
+        .from(wfAgent)
+        .where(inArray(wfAgent.id, agentIds)),
+  )
   const agentById = new Map(agentRows.map((a) => [a.id, a]))
 
   const secondsToMs = (s: number | null | undefined) =>

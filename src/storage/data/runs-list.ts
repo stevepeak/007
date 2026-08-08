@@ -22,7 +22,7 @@ import {
 } from '../schema'
 
 import { loadModelPriceMap } from './runs-cost'
-import { clampLimit } from './shared'
+import { clampLimit, selectChunked } from './shared'
 
 // ---------------------------------------------------------------------------
 // Filtered/paginated run listing, per-run cost aggregation, and tool-call feeds
@@ -151,10 +151,14 @@ async function attachRunCost<R extends { id: string }>(
   const runIds = rows.map((r) => r.id)
   const [priceMap, stepRows] = await Promise.all([
     loadModelPriceMap(db),
-    db
-      .select({ runId: wfRunStep.runId, meta: wfRunStep.meta })
-      .from(wfRunStep)
-      .where(inArray(wfRunStep.runId, runIds)),
+    // A page can carry up to RUN_PAGE_MAX ids — past D1's parameter ceiling on
+    // its own. Chunked; the fold below is keyed by run id either way.
+    selectChunked(runIds, (ids) =>
+      db
+        .select({ runId: wfRunStep.runId, meta: wfRunStep.meta })
+        .from(wfRunStep)
+        .where(inArray(wfRunStep.runId, ids)),
+    ),
   ])
 
   const agg = new Map<

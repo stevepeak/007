@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/sqlite-core'
 
 import {
@@ -16,7 +16,7 @@ import {
 } from '../schema'
 import { createVersionedEntity } from '../versioned-entity'
 
-import { pickDefined } from './shared'
+import { chunk, pickDefined, selectChunked } from './shared'
 
 // Data-access for the authoring domain: workflows, agents, their shared
 // version/draft lifecycle, run-manifest resolution, and trigger assignments.
@@ -131,12 +131,18 @@ export async function deleteWorkflow(db: WfDb, workflowId: string) {
     .where(eq(wfWorkflowVersion.workflowId, workflowId))
   const versionIds = versions.map((v) => v.id)
   if (versionIds.length > 0) {
-    const runs = await db
-      .select({ id: wfRun.id })
-      .from(wfRun)
-      .where(inArray(wfRun.workflowVersionId, versionIds))
-    const runIds = runs.map((r) => r.id)
-    if (runIds.length > 0) {
+    const runs = await selectChunked(versionIds, (ids) =>
+      db
+        .select({ id: wfRun.id })
+        .from(wfRun)
+        .where(inArray(wfRun.workflowVersionId, ids)),
+    )
+    // A busy workflow has thousands of runs, so the cascade deletes go a chunk
+    // at a time — sequentially, matching the other bulk writes in this package.
+    // Not `db.batch`: the HTTP client replays batches non-atomically anyway
+    // (see `createWfDbHttp`), so batching would only imply a guarantee that
+    // doesn't hold. This cascade is already non-atomic by nature.
+    for (const runIds of chunk(runs.map((r) => r.id))) {
       await db.delete(wfRunStep).where(inArray(wfRunStep.runId, runIds))
       await db.delete(wfRun).where(inArray(wfRun.id, runIds))
     }
@@ -196,18 +202,25 @@ export async function latestVersionGraphs(
     .from(inner)
     .where(eq(inner.workflowId, wfWorkflowVersion.workflowId))
   const isLatest = eq(wfWorkflowVersion.versionNumber, latestVersionNumber)
-  const rows = await db
-    .select({
-      workflowId: wfWorkflowVersion.workflowId,
-      id: wfWorkflowVersion.id,
-      versionNumber: wfWorkflowVersion.versionNumber,
-      graph: wfWorkflowVersion.graph,
-      createdAt: wfWorkflowVersion.createdAt,
-    })
-    .from(wfWorkflowVersion)
-    .where(
-      ids ? and(isLatest, inArray(wfWorkflowVersion.workflowId, ids)) : isLatest,
-    )
+  const select = (where: SQL | undefined) =>
+    db
+      .select({
+        workflowId: wfWorkflowVersion.workflowId,
+        id: wfWorkflowVersion.id,
+        versionNumber: wfWorkflowVersion.versionNumber,
+        graph: wfWorkflowVersion.graph,
+        createdAt: wfWorkflowVersion.createdAt,
+      })
+      .from(wfWorkflowVersion)
+      .where(where)
+  // Callers scope this by "every workflow I just listed", which is unbounded —
+  // chunk the id list so it can't blow D1's parameter budget. Each row keys
+  // back to one workflow id, so the chunks concatenate cleanly.
+  const rows = ids
+    ? await selectChunked(ids, (chunkIds) =>
+        select(and(isLatest, inArray(wfWorkflowVersion.workflowId, chunkIds))),
+      )
+    : await select(isLatest)
   return new Map(
     rows.map((r) => [
       r.workflowId,

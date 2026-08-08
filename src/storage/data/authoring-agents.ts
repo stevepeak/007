@@ -6,7 +6,7 @@ import { wfAgent, wfAgentDraft, wfAgentVersion } from '../schema'
 import { createVersionedEntity } from '../versioned-entity'
 
 import { listWorkflowsReferencingAgent } from './authoring-workflows-references'
-import { pickDefined } from './shared'
+import { pickDefined, selectChunked } from './shared'
 
 // ---------------------------------------------------------------------------
 // Agents + versions + drafts
@@ -29,17 +29,18 @@ export async function listAgents(db: WfDb) {
   }
   // Attach each agent's latest published config so callers can expose its
   // prompt variables + output contract without an N+1 per-agent fetch. One
-  // query, highest version-number first, first-seen-per-agent wins.
-  const versions = await db
-    .select()
-    .from(wfAgentVersion)
-    .where(
-      inArray(
-        wfAgentVersion.agentId,
-        agents.map((a) => a.id),
-      ),
-    )
-    .orderBy(desc(wfAgentVersion.versionNumber))
+  // query per parameter-budget chunk of agent ids, highest version-number
+  // first, first-seen-per-agent wins — chunking only breaks the ordering
+  // ACROSS chunks, and every version of a given agent lands in one chunk.
+  const versions = await selectChunked(
+    agents.map((a) => a.id),
+    (ids) =>
+      db
+        .select()
+        .from(wfAgentVersion)
+        .where(inArray(wfAgentVersion.agentId, ids))
+        .orderBy(desc(wfAgentVersion.versionNumber)),
+  )
   const latestByAgent = new Map<string, (typeof versions)[number]>()
   for (const v of versions) {
     if (!latestByAgent.has(v.agentId)) latestByAgent.set(v.agentId, v)

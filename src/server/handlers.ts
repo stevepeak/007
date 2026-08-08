@@ -100,8 +100,12 @@ const wfInputSchemas: Partial<Record<keyof WfDataClient, z.ZodType>> = {
   listFeedback: z.object({
     ratings: z.array(z.enum(['up', 'down'])).optional(),
     ackState: z.enum(['acknowledged', 'unacknowledged']).optional(),
-    correlationIds: z.array(z.string()).optional(),
-    raterIds: z.array(z.string()).optional(),
+    // Both facet filters are AND-ed into ONE statement, so unlike the id
+    // lookups elsewhere they can't be chunked independently — these caps are
+    // what keeps that statement inside D1's 100-bound-parameter limit
+    // (40 + 40 ids, plus the ratings/search/limit binds). See `listFeedback`.
+    correlationIds: z.array(z.string()).max(40).optional(),
+    raterIds: z.array(z.string()).max(40).optional(),
     search: z.string().optional(),
   }),
   setFeedbackAcknowledged: z.object({
@@ -112,7 +116,15 @@ const wfInputSchemas: Partial<Record<keyof WfDataClient, z.ZodType>> = {
     subjectId: z.string(),
     note: z.string().nullable(),
   }),
-  getFeedbackForSubjects: z.object({ subjectIds: z.array(z.string()) }),
+  // The read itself chunks, so this cap is only a guard against an absurd
+  // payload — deliberately well above any real conversation length, because a
+  // tight cap would 400 a long chat instead of hydrating its thumbs. Note it
+  // guards the HTTP path only: in-process hosts call the storage function
+  // directly and never pass through here, which is why the chunking lives
+  // down in `getFeedbackForSubjects` rather than up here.
+  getFeedbackForSubjects: z.object({
+    subjectIds: z.array(z.string()).max(1000),
+  }),
 }
 
 // The method table. Typed against `keyof WfDataClient` so the compiler proves

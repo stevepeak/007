@@ -14,6 +14,8 @@ import type { WfDb } from '../client'
 import { wfFeedback } from '../schema'
 import type { WF_FEEDBACK_RATINGS } from '../schema-common'
 
+import { selectChunked } from './shared'
+
 // Data-access for thumbs feedback + triage. Pure functions over `WfDb`, no auth
 // and no tenancy — the host gatekeeps the route and passes opaque ids/labels.
 // One row per rated subject; `subject_id` is UNIQUE so submitting is an upsert
@@ -192,6 +194,14 @@ export async function listFeedback(
   } else if (filters.ackState === 'unacknowledged') {
     conds.push(isNull(wfFeedback.ackAt))
   }
+  // Deliberately NOT chunked, unlike the id lookups elsewhere in this file:
+  // these two are AND-ed into one statement, so splitting them independently
+  // would mean a cross-product of queries — and the shared `orderBy … limit`
+  // would then need a top-N merge across it. They're facet-dropdown
+  // selections, so the protocol schema caps each at 40 instead (see
+  // `wfInputSchemas`): 80 ids plus the ratings/search/limit binds stays inside
+  // D1's 100-parameter budget with room to spare. If a real filter ever needs
+  // more than 40 facets, that's the point to rework this into a top-N merge.
   if (filters.correlationIds && filters.correlationIds.length > 0) {
     conds.push(inArray(wfFeedback.correlationId, filters.correlationIds))
   }
@@ -248,14 +258,17 @@ export async function listFeedback(
 /**
  * Current rating/note for a set of subjects — the host's read path uses this to
  * re-hydrate the thumbs widget when it re-renders a conversation.
+ *
+ * Hosts pass one subject id per rendered message, and a chat's message list
+ * isn't paged, so `subjectIds` routinely runs past D1's parameter ceiling on a
+ * long conversation — hence the chunking. Rows come back unordered either way;
+ * callers key them by `subjectId`.
  */
 export async function getFeedbackForSubjects(
   db: WfDb,
   subjectIds: string[],
 ): Promise<FeedbackRecord[]> {
-  if (subjectIds.length === 0) return []
-  return await db
-    .select()
-    .from(wfFeedback)
-    .where(inArray(wfFeedback.subjectId, subjectIds))
+  return await selectChunked(subjectIds, (ids) =>
+    db.select().from(wfFeedback).where(inArray(wfFeedback.subjectId, ids)),
+  )
 }

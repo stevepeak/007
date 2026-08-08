@@ -9,6 +9,8 @@ import {
 } from '../cost'
 import { wfModel, wfRun, wfRunStep } from '../schema'
 
+import { selectChunked } from './shared'
+
 // ---------------------------------------------------------------------------
 // Cost derivation — model price map + per-run token/cost/timing stats
 // ---------------------------------------------------------------------------
@@ -182,25 +184,32 @@ export async function loadRunStats(
 ): Promise<Map<string, RunStats>> {
   const out = new Map<string, RunStats>()
   if (runIds.length === 0) return out
+  // An eval run hands over one id per sample, so `runIds` is matrix-sized —
+  // both lookups chunk. Every row keys back to its own run id, so the folds
+  // below don't care that the rows arrive chunk by chunk.
   const [priceMap, runRows, stepRows] = await Promise.all([
     loadModelPriceMap(db),
-    db
-      .select({
-        id: wfRun.id,
-        startedAt: wfRun.startedAt,
-        finishedAt: wfRun.finishedAt,
-      })
-      .from(wfRun)
-      .where(inArray(wfRun.id, runIds)),
-    db
-      .select({
-        runId: wfRunStep.runId,
-        meta: wfRunStep.meta,
-        startedAt: wfRunStep.startedAt,
-        finishedAt: wfRunStep.finishedAt,
-      })
-      .from(wfRunStep)
-      .where(inArray(wfRunStep.runId, runIds)),
+    selectChunked(runIds, (ids) =>
+      db
+        .select({
+          id: wfRun.id,
+          startedAt: wfRun.startedAt,
+          finishedAt: wfRun.finishedAt,
+        })
+        .from(wfRun)
+        .where(inArray(wfRun.id, ids)),
+    ),
+    selectChunked(runIds, (ids) =>
+      db
+        .select({
+          runId: wfRunStep.runId,
+          meta: wfRunStep.meta,
+          startedAt: wfRunStep.startedAt,
+          finishedAt: wfRunStep.finishedAt,
+        })
+        .from(wfRunStep)
+        .where(inArray(wfRunStep.runId, ids)),
+    ),
   ])
 
   // Run wall-clock, used only as a duration fallback when agent steps carry no

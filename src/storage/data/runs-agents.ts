@@ -13,7 +13,7 @@ import {
 
 import { allNodes } from './authoring-graph'
 import { loadModelPriceMap } from './runs-cost'
-import { clampLimit } from './shared'
+import { chunk, clampLimit } from './shared'
 
 // ---------------------------------------------------------------------------
 // One agent's recent calls, with per-call metrics
@@ -133,52 +133,84 @@ export async function listAgentCalls(
     max: AGENT_CALL_PAGE_MAX,
   })
   const nodeIds = await agentNodeIds(db, input.agentId)
-  const attribution: SQL[] = [
-    eq(sql`json_extract(${wfRunStep.meta}, '$.agentId')`, input.agentId),
-  ]
-  if (nodeIds.length > 0) {
-    attribution.push(inArray(wfRunStep.nodeId, nodeIds))
+  const byStampedAgentId = eq(
+    sql`json_extract(${wfRunStep.meta}, '$.agentId')`,
+    input.agentId,
+  )
+
+  // One page per parameter-budget chunk of node ids. This one can't just
+  // concatenate chunks the way the plain id lookups do: the node-id list is an
+  // OR arm of a query with a global `ORDER BY … LIMIT`, so each chunk returns
+  // its own top-N. Take `limit` from every chunk, then merge — the top `limit`
+  // overall is guaranteed to be inside the union of the per-chunk top-`limit`s.
+  // The stamped-agentId arm rides along in every chunk and so matches the same
+  // steps repeatedly, hence the de-dupe by step id.
+  const nodeIdChunks = chunk(nodeIds)
+  const attributions: SQL[] = nodeIdChunks.length > 0
+    ? nodeIdChunks.flatMap((ids) => {
+        const clause = or(byStampedAgentId, inArray(wfRunStep.nodeId, ids))
+        return clause ? [clause] : []
+      })
+    : [byStampedAgentId]
+
+  const page = (matchesAgent: SQL) =>
+    db
+      .select({
+        id: wfRunStep.id,
+        runId: wfRunStep.runId,
+        nodeId: wfRunStep.nodeId,
+        itemIndex: wfRunStep.itemIndex,
+        status: wfRunStep.status,
+        error: wfRunStep.error,
+        meta: wfRunStep.meta,
+        startedAt: wfRunStep.startedAt,
+        finishedAt: wfRunStep.finishedAt,
+        runCreatedAt: wfRun.createdAt,
+        workflowId: wfWorkflowVersion.workflowId,
+        workflowName: wfWorkflow.name,
+        versionNumber: wfWorkflowVersion.versionNumber,
+      })
+      .from(wfRunStep)
+      .innerJoin(wfRun, eq(wfRunStep.runId, wfRun.id))
+      .innerJoin(
+        wfWorkflowVersion,
+        eq(wfRun.workflowVersionId, wfWorkflowVersion.id),
+      )
+      .innerJoin(wfWorkflow, eq(wfWorkflowVersion.workflowId, wfWorkflow.id))
+      // Real runs only. An eval's runs are simulated and can outnumber
+      // production traffic many times over, so mixing them in would make the
+      // metrics say nothing about what this agent actually costs — the eval
+      // report is where a simulated run belongs.
+      .where(
+        and(
+          eq(wfRunStep.nodeKind, 'agent'),
+          matchesAgent,
+          eq(wfRun.isEval, false),
+        ),
+      )
+      // A queued/running step has no `startedAt` yet, so order by the run's own
+      // creation time — a live call still sorts to the top where it belongs.
+      .orderBy(desc(wfRun.createdAt), desc(wfRunStep.startedAt))
+      .limit(limit)
+
+  const pages = await Promise.all(attributions.map(page))
+  const byStepId = new Map<string, (typeof pages)[number][number]>()
+  for (const p of pages) {
+    for (const row of p) byStepId.set(row.id, row)
   }
-  const matchesAgent = or(...attribution)
-  if (!matchesAgent) return []
-
-  // Real runs only. An eval's runs are simulated and can outnumber production
-  // traffic many times over, so mixing them in would make the metrics say
-  // nothing about what this agent actually costs — the eval report is where a
-  // simulated run belongs.
-  const conds: SQL[] = [
-    eq(wfRunStep.nodeKind, 'agent'),
-    matchesAgent,
-    eq(wfRun.isEval, false),
-  ]
-
-  const rows = await db
-    .select({
-      runId: wfRunStep.runId,
-      nodeId: wfRunStep.nodeId,
-      itemIndex: wfRunStep.itemIndex,
-      status: wfRunStep.status,
-      error: wfRunStep.error,
-      meta: wfRunStep.meta,
-      startedAt: wfRunStep.startedAt,
-      finishedAt: wfRunStep.finishedAt,
-      runCreatedAt: wfRun.createdAt,
-      workflowId: wfWorkflowVersion.workflowId,
-      workflowName: wfWorkflow.name,
-      versionNumber: wfWorkflowVersion.versionNumber,
+  // Re-apply the SQL ordering across the merged pages, NULL `startedAt` last
+  // to match SQLite's `DESC` (NULL sorts lowest), then re-take the top N.
+  const rows = [...byStepId.values()]
+    .sort((a, b) => {
+      const byRun = b.runCreatedAt.getTime() - a.runCreatedAt.getTime()
+      if (byRun !== 0) return byRun
+      const aStarted = a.startedAt?.getTime()
+      const bStarted = b.startedAt?.getTime()
+      if (aStarted == null) return bStarted == null ? 0 : 1
+      if (bStarted == null) return -1
+      return bStarted - aStarted
     })
-    .from(wfRunStep)
-    .innerJoin(wfRun, eq(wfRunStep.runId, wfRun.id))
-    .innerJoin(
-      wfWorkflowVersion,
-      eq(wfRun.workflowVersionId, wfWorkflowVersion.id),
-    )
-    .innerJoin(wfWorkflow, eq(wfWorkflowVersion.workflowId, wfWorkflow.id))
-    .where(and(...conds))
-    // A queued/running step has no `startedAt` yet, so order by the run's own
-    // creation time — a live call still sorts to the top where it belongs.
-    .orderBy(desc(wfRun.createdAt), desc(wfRunStep.startedAt))
-    .limit(limit)
+    .slice(0, limit)
 
   const priceMap = await loadModelPriceMap(db)
 

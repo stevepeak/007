@@ -22,6 +22,7 @@ import {
 
 import { loadModelPriceMap } from './runs-cost'
 import { listRuns } from './runs-list'
+import { selectChunked } from './shared'
 
 // ---------------------------------------------------------------------------
 // Home-dashboard rollup — run volume, spend, failures, feedback queue
@@ -718,10 +719,12 @@ async function workflowNames(
   ids: string[],
 ): Promise<Map<string, string>> {
   const unique = [...new Set(ids.filter(Boolean))]
-  if (unique.length === 0) return new Map()
-  const rows = await db
-    .select({ id: wfWorkflow.id, name: wfWorkflow.name })
-    .from(wfWorkflow)
-    .where(inArray(wfWorkflow.id, unique))
+  // Deduped, but bounded only by how many workflows the window touched.
+  const rows = await selectChunked(unique, (chunkIds) =>
+    db
+      .select({ id: wfWorkflow.id, name: wfWorkflow.name })
+      .from(wfWorkflow)
+      .where(inArray(wfWorkflow.id, chunkIds)),
+  )
   return new Map(rows.map((r) => [r.id, r.name]))
 }
