@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 
 import { collectGraphIssues } from './graph-issues'
-import { workflowGraphShapeSchema, type WorkflowGraph } from './graph'
+import {
+  ITERATION_MAX_ITEMS_CEILING,
+  workflowGraphShapeSchema,
+  type WorkflowGraph,
+} from './graph'
 
 const pos = { x: 0, y: 0 }
 const trigger = {
@@ -346,6 +350,9 @@ describe('collectGraphIssues', () => {
         concurrency: 1,
         stopOnError: false,
         itemExecution,
+        // Bounded, so these fixtures raise only the execution-shape issue they
+        // are about — the fan-out fence has its own tests below.
+        maxItems: 10,
         subgraph: graph(
           [itemTrigger, ...inner, output('res', last.id)],
           [
@@ -393,5 +400,61 @@ describe('collectGraphIssues', () => {
 
   test('leaves a heavy durable item alone', () => {
     expect(loopIssue(loop('durable', [agent('a')]))).toBeUndefined()
+  })
+
+  // ── Iteration fan-out bound ─────────────────────────────────────────────────
+  // Unlike the two above these are ERRORS, because how many items a runtime can
+  // carry isn't a judgement call the author is better placed to make — and the
+  // list length is data, so nothing at authoring time rules a huge one out.
+
+  // Same fixture as `loop`, with `maxItems` under the author's control.
+  const boundedLoop = (
+    itemExecution: 'inline' | 'durable',
+    maxItems: number | undefined,
+  ) => {
+    const node = loop(itemExecution, [tool('s1')])
+    return {
+      ...node,
+      config: { ...node.config, maxItems },
+    }
+  }
+
+  const boundIssue = (node: WorkflowGraph['nodes'][number]) =>
+    collectGraphIssues(
+      graph(
+        [trigger, node, output('o', 'loop')],
+        [edge('t', 'loop'), edge('loop', 'o')],
+      ),
+    ).find((i) => i.nodeId === 'loop' && /limit/i.test(i.message))
+
+  test('errors when an iteration has no item limit', () => {
+    const issue = boundIssue(boundedLoop('inline', undefined))
+    expect(issue?.severity).toBe('error')
+    expect(issue?.message).toMatch(/No item limit set/)
+    // Names the ceiling, so the author has a number to reach for.
+    expect(issue?.message).toContain(String(ITERATION_MAX_ITEMS_CEILING.inline))
+  })
+
+  test('errors when the limit is above the mode’s ceiling', () => {
+    const issue = boundIssue(
+      boundedLoop('inline', ITERATION_MAX_ITEMS_CEILING.inline + 1),
+    )
+    expect(issue?.severity).toBe('error')
+    expect(issue?.message).toMatch(/above the/)
+    // Inline's ceiling is the low one, so the way out is named.
+    expect(issue?.message).toMatch(/Durable/)
+  })
+
+  test('the ceiling follows the item execution mode', () => {
+    // A bound that is too wide for inline is fine once each item owns a run.
+    const overInline = ITERATION_MAX_ITEMS_CEILING.inline + 1
+    expect(boundIssue(boundedLoop('inline', overInline))?.severity).toBe(
+      'error',
+    )
+    expect(boundIssue(boundedLoop('durable', overInline))).toBeUndefined()
+  })
+
+  test('leaves a bounded iteration alone', () => {
+    expect(boundIssue(boundedLoop('inline', 25))).toBeUndefined()
   })
 })

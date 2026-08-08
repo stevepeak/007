@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 
 import {
   buildIterationSubgraph,
+  ITERATION_MAX_ITEMS_CEILING,
+  ITERATION_MAX_ITEMS_FALLBACK,
   workflowGraphSchema,
   type IterationNode,
   type WorkflowGraph,
@@ -12,6 +14,8 @@ import { createMemorySink } from '../stream-sink'
 import { ITERATION_ITEM_TRIGGER_KIND } from '../trigger-registry'
 import {
   executeSubgraph,
+  iterationItemLimit,
+  IterationTooManyItemsError,
   resolveIterationList,
   runIteration,
 } from './iteration'
@@ -203,6 +207,91 @@ describe('runIteration', () => {
     ).rejects.toThrow('halt')
     // Only items 0 and 1 ran; 2 and 3 were never started.
     expect(calls).toBe(2)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The fan-out fence — `maxItems`
+// ---------------------------------------------------------------------------
+//
+// The list an iteration loops over is DATA: a bad extraction or a paginated
+// source can hand a three-item loop three hundred items. These cover the bound
+// that stops that, and the two things that must stay true when it trips — the
+// count is visible first, and not one item runs.
+
+describe('iteration fan-out fence', () => {
+  test('an over-limit list fails before a single item starts', async () => {
+    let calls = 0
+    await expect(
+      runIteration({
+        node: iterNode({ maxItems: 3 }),
+        list: [1, 2, 3, 4],
+        runItem: async (item) => {
+          calls++
+          return item
+        },
+      }),
+    ).rejects.toThrow(IterationTooManyItemsError)
+    // The whole point of failing over truncating: no per-item work is spawned,
+    // so the fence costs nothing rather than half a run's budget.
+    expect(calls).toBe(0)
+  })
+
+  test('the failure names the node, the count and the limit', async () => {
+    const err = await runIteration({
+      node: iterNode({ maxItems: 2 }),
+      list: ['a', 'b', 'c'],
+      runItem: async (item) => item,
+    }).catch((e: unknown) => e as IterationTooManyItemsError)
+    expect(err).toBeInstanceOf(IterationTooManyItemsError)
+    expect(err.message).toContain('Iterate')
+    expect(err.message).toContain('3 items')
+    expect(err.message).toContain('limit of 2')
+    expect(err.total).toBe(3)
+    expect(err.limit).toBe(2)
+  })
+
+  test('a list exactly at the limit runs', async () => {
+    const r = await runIteration({
+      node: iterNode({ maxItems: 3 }),
+      list: [1, 2, 3],
+      runItem: async (item) => item,
+    })
+    expect(r.results).toEqual([1, 2, 3])
+  })
+
+  test('logs the resolved count before the fence trips, however quiet the node', async () => {
+    // `informUser: off` silences the USER-facing progress lines; the size of a
+    // list is a dev-feed fact, and it's the number whoever opens the failed run
+    // needs to see next to the error.
+    const sink = createMemorySink()
+    await runIteration({
+      node: iterNode({ maxItems: 2 }, { mode: 'off' }),
+      list: ['a', 'b', 'c'],
+      runItem: async (item) => item,
+      sink,
+    }).catch(() => null)
+    expect(sink.logs.map((l) => l.message)).toEqual([
+      'List resolved to 3 items (limit 2).',
+    ])
+  })
+
+  test('a node with no bound falls back to the permissive cap, not to none', () => {
+    // Only an already-published version can be in this state; it gets a real
+    // ceiling, just not one that would retroactively fail a working workflow.
+    expect(iterationItemLimit(iterNode())).toBe(ITERATION_MAX_ITEMS_FALLBACK)
+    expect(iterationItemLimit(iterNode({ maxItems: 5 }))).toBe(5)
+  })
+
+  test('an over-ceiling bound is enforced as written, not clamped', async () => {
+    // The Issues panel already told the author this number is too high for
+    // inline. Quietly enforcing a different one would make the editor lie.
+    const r = await runIteration({
+      node: iterNode({ maxItems: ITERATION_MAX_ITEMS_CEILING.inline + 50 }),
+      list: Array.from({ length: ITERATION_MAX_ITEMS_CEILING.inline + 10 }),
+      runItem: async (item) => item,
+    })
+    expect(r.meta.total).toBe(ITERATION_MAX_ITEMS_CEILING.inline + 10)
   })
 })
 

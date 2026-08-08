@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import {
   BRANCH_OPERATORS,
+  ITERATION_MAX_ITEMS_CEILING,
   type ArgBinding,
   type IterationItemExecution,
 } from '../../engine'
@@ -283,6 +284,39 @@ export function IterationInspector({
         </Select>
         <p className="text-muted-foreground text-xs">
           {ITEM_EXECUTION_HELP[node.config.itemExecution]}
+        </p>
+      </div>
+      <div className={field}>
+        <Label>Max items</Label>
+        <Input
+          type="number"
+          min={1}
+          max={ITERATION_MAX_ITEMS_CEILING[node.config.itemExecution]}
+          // Empty means UNSET, which is a real state (the Issues panel calls it
+          // an error) and not the same as zero — so a cleared field clears the
+          // bound rather than silently snapping back to a default.
+          value={
+            node.config.maxItems === undefined
+              ? ''
+              : String(node.config.maxItems)
+          }
+          onChange={(e) => {
+            const n = Number.parseInt(e.target.value, 10)
+            onChange({
+              ...node,
+              config: {
+                ...node.config,
+                maxItems: Number.isNaN(n) ? undefined : Math.max(1, n),
+              },
+            })
+          }}
+        />
+        <p className="text-muted-foreground text-xs">
+          The most items this loop will ever run. A longer list fails the node
+          outright — nothing is truncated, so a bad list can’t look like a
+          finished one. Up to{' '}
+          {ITERATION_MAX_ITEMS_CEILING[node.config.itemExecution]} on{' '}
+          {node.config.itemExecution} item execution.
         </p>
       </div>
       <label className="flex items-center gap-2 text-sm">

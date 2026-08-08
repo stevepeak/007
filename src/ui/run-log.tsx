@@ -460,7 +460,10 @@ export function RunLog({ step }: { step: WfRunStepDTO }) {
             <Repeat className="size-3" />
             concurrency {iterMeta.concurrency}
           </span>
-          <span>· {iterMeta.total} items</span>
+          <span>
+            · {iterMeta.total} items
+            {iterMeta.limit === undefined ? '' : ` of max ${iterMeta.limit}`}
+          </span>
           {iterMeta.stopOnError ? <span>· stop on error</span> : null}
         </div>
       ) : null}

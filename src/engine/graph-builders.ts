@@ -1,4 +1,4 @@
-import type { WorkflowGraph } from './graph-schema'
+import { ITERATION_MAX_ITEMS_DEFAULT, type WorkflowGraph } from './graph-schema'
 import {
   ITERATION_ITEM_TRIGGER_KIND,
   MANUAL_TRIGGER_KIND,
@@ -65,6 +65,41 @@ export function buildStarterGraph(trigger: NewWorkflowTrigger): WorkflowGraph {
       },
     ],
   }
+}
+
+/**
+ * Give every unbounded iteration node in a graph the default fan-out limit for
+ * its execution mode, recursing into iteration subgraphs.
+ *
+ * Applied at PUBLISH, so the bound lands where it can be enforced without ever
+ * being enforced retroactively: a version published from here on is bounded,
+ * while versions already published keep running under the permissive
+ * `ITERATION_MAX_ITEMS_FALLBACK` (see `iterationItemLimit`). Drafts are left
+ * alone — the Issues panel flags an unbounded loop there, which is the point at
+ * which the author can still choose a number that suits their list.
+ *
+ * Only ever fills a gap: a node that already declares `maxItems` keeps it, even
+ * one above its mode's ceiling (that's an authoring error to fix, not a value to
+ * silently rewrite). Returns the same graph object when there is nothing to fill.
+ */
+export function backfillIterationLimits(graph: WorkflowGraph): WorkflowGraph {
+  let changed = false
+  const nodes = graph.nodes.map((node) => {
+    if (node.kind !== 'iteration') return node
+    const subgraph = backfillIterationLimits(node.config.subgraph)
+    const maxItems =
+      node.config.maxItems ??
+      ITERATION_MAX_ITEMS_DEFAULT[node.config.itemExecution]
+    if (
+      maxItems === node.config.maxItems &&
+      subgraph === node.config.subgraph
+    ) {
+      return node
+    }
+    changed = true
+    return { ...node, config: { ...node.config, maxItems, subgraph } }
+  })
+  return changed ? { ...graph, nodes } : graph
 }
 
 /**

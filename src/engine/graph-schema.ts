@@ -85,6 +85,45 @@ export type IterationItemExecution = z.infer<
   typeof iterationItemExecutionSchema
 >
 
+// How wide an iteration is ALLOWED to fan out — the bound the author declares
+// (`config.maxItems`) and the ceilings that bound the declaration itself.
+//
+// An iteration runs its subgraph once per element of whatever its `source` ref
+// resolves to, and that list is data: a bad extraction, a paginated source, or a
+// model that returns three hundred entries turns one node into three hundred
+// executions. Inline items each cost a `step.do` (subrequest + CPU budget);
+// durable items each cost a whole workflow instance. Neither is a number an
+// author should discover from a bill or a stuck run.
+//
+//   • `ITERATION_MAX_ITEMS_CEILING` — the most an author may declare, per item
+//     execution mode. Inline is far lower because the whole fan-out shares ONE
+//     instance's subrequest budget. Enforced at AUTHORING time only
+//     (`collectGraphIssues`): a graph is never rejected for it, and the number
+//     the fence actually enforces is the author's own.
+//   • `ITERATION_MAX_ITEMS_DEFAULT` — what a fresh iteration node is seeded with
+//     and what {@link backfillIterationLimits} writes into a legacy node at
+//     publish, so "bounded" is the default state rather than an opt-in.
+//   • `ITERATION_MAX_ITEMS_FALLBACK` — the bound applied at RUN time to a node
+//     that has none. Only already-published versions can be in that state (the
+//     publish backfill catches everything else), so it is deliberately permissive:
+//     it exists to stop a runaway, not to retroactively fail a workflow that has
+//     been looping over 300 rows every night for months.
+export const ITERATION_MAX_ITEMS_CEILING: Record<
+  IterationItemExecution,
+  number
+> = {
+  inline: 100,
+  durable: 1000,
+}
+export const ITERATION_MAX_ITEMS_DEFAULT: Record<
+  IterationItemExecution,
+  number
+> = {
+  inline: 100,
+  durable: 500,
+}
+export const ITERATION_MAX_ITEMS_FALLBACK = 1000
+
 // The same choice for a workflow-call node's callee. A separate alias rather
 // than a shared one so each node kind's values can diverge later without a
 // rename, and so the schema reads in the node's own vocabulary.
@@ -471,6 +510,16 @@ const iterationNodeSchema = baseNode.extend({
     // graph already behaves as 'inline', so writing the default into stored JSON
     // records what those graphs were always doing.
     itemExecution: iterationItemExecutionSchema.default('inline'),
+    // The most items this loop may fan out over. Optional — and, unlike
+    // `itemExecution`, NOT defaulted — because "never set" has to stay
+    // distinguishable from a deliberate number: it is what the Issues panel
+    // flags at authoring time and what the run-time fence answers with the
+    // permissive `ITERATION_MAX_ITEMS_FALLBACK` instead of the author's bound.
+    // Defaulting it here would write a bound into every legacy graph the moment
+    // it was read, erasing both. Not capped by the schema either: an over-ceiling
+    // value must still SAVE (the editor's whole contract) and is surfaced as an
+    // authoring error rather than a parse failure.
+    maxItems: z.number().int().min(1).optional(),
     // Editor-only container dimensions for the group box on the canvas — the
     // engine ignores them, but they must live on the schema (not be stripped) so
     // a resized block persists across save/reload.
@@ -532,6 +581,7 @@ export interface IterationNode {
     concurrency: number
     stopOnError: boolean
     itemExecution: IterationItemExecution
+    maxItems?: number
     width?: number
     height?: number
     itemSchema?: Record<string, unknown>

@@ -138,6 +138,9 @@ export type IterationMeta = {
   total: number
   concurrency: number
   stopOnError: boolean
+  /** The fan-out bound this run was held to. Optional: steps recorded before the
+   * bound existed have none, and their meta still has to read. */
+  limit?: number
   items: Array<{ index: number; status: string; error?: string }>
 }
 

@@ -1,5 +1,9 @@
 import { resolveBinding } from '../binding'
-import type { IterationNode, WorkflowGraph } from '../graph'
+import {
+  ITERATION_MAX_ITEMS_FALLBACK,
+  type IterationNode,
+  type WorkflowGraph,
+} from '../graph'
 import { emitNodeProgress } from '../node-progress'
 import {
   errorMessage,
@@ -47,6 +51,10 @@ export type IterationResult = {
     total: number
     concurrency: number
     stopOnError: boolean
+    /** The fan-out bound in force for this run — the author's `maxItems`, or the
+     * permissive fallback for a version published before bounds existed. Recorded
+     * so a run shows how much headroom a loop had, not just how wide it went. */
+    limit: number
     items: IterationItemStatus[]
   }
 }
@@ -210,6 +218,39 @@ export function resolveIterationList(
 }
 
 /**
+ * The most items this node may fan out over at run time.
+ *
+ * The author's declared `maxItems` when there is one — including a value above
+ * the mode's ceiling, which the Issues panel already flagged at authoring time
+ * and which this deliberately does NOT clamp: a fence that quietly enforces a
+ * different number than the one in the editor is worse than a loud, visible
+ * disagreement. A node with no bound at all can only be an already-published
+ * version (the publish backfill writes one into everything else), so it falls
+ * back to a permissive cap that stops a runaway without retroactively failing a
+ * workflow that has always looped over more than a fresh node would allow.
+ */
+export function iterationItemLimit(node: IterationNode): number {
+  return node.config.maxItems ?? ITERATION_MAX_ITEMS_FALLBACK
+}
+
+/**
+ * A list that blew past its node's `maxItems` fence. Its own class so a backend
+ * can tell "this list is too long" (never worth retrying — the same list comes
+ * back) apart from an item that failed for a transient reason.
+ */
+export class IterationTooManyItemsError extends Error {
+  constructor(
+    readonly nodeId: string,
+    readonly total: number,
+    readonly limit: number,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'IterationTooManyItemsError'
+  }
+}
+
+/**
  * Drive an iteration node: run each element of `list` through `runItem` under a
  * bounded worker pool honoring `concurrency`, and collect the results in order.
  * The caller resolves `list` via {@link resolveIterationList}.
@@ -237,10 +278,11 @@ export async function runIteration(args: {
   const { node, list: arr, runItem, sink, promptVariables } = args
   const { concurrency, stopOnError } = node.config
 
+  const limit = iterationItemLimit(node)
   const total = arr.length
   const results = new Array<unknown>(total)
   const statuses = new Array<IterationItemStatus | undefined>(total)
-  const meta = { total, concurrency, stopOnError } as const
+  const meta = { total, concurrency, stopOnError, limit } as const
 
   // The node's own user-facing line, emitted HERE rather than at dispatch
   // because this is the first point at which the item count exists — that's the
@@ -252,6 +294,33 @@ export async function runIteration(args: {
   const announce = node.informUser.mode === 'static'
   if (announce) {
     emitNodeProgress(sink, node, { ...promptVariables, n: total, total })
+  }
+
+  // How wide this fan-out turned out to be, on the dev feed unconditionally —
+  // `announce` is the author's choice about what an END USER sees, and the size
+  // of a list is exactly the thing whoever is reading a run needs whether or not
+  // the author opted into narration. Emitted BEFORE the fence below so an
+  // oversized list is a visible number in the run viewer rather than only an
+  // error message about one.
+  void sink?.log?.({
+    level: 'info',
+    message: `List resolved to ${total} item${total === 1 ? '' : 's'} (limit ${limit}).`,
+    nodeId: node.id,
+    nodeKind: 'iteration',
+  })
+
+  // The fence. Fail loudly and BEFORE any item starts: truncating would hand
+  // back a plausible-looking partial collection that no downstream node — and no
+  // reader of the run — could tell from a complete one, and running the first
+  // `limit` items would spend the very budget the bound exists to protect.
+  if (total > limit) {
+    throw new IterationTooManyItemsError(
+      node.id,
+      total,
+      limit,
+      `Iteration "${node.label}" resolved a list of ${total} items, above its limit of ${limit}. ` +
+        `Nothing was run. Narrow the list upstream, or raise the limit on this node if ${total} items is expected.`,
+    )
   }
 
   if (total === 0) {

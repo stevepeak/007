@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/sqlite-core'
 
 import {
+  backfillIterationLimits,
   workflowGraphShapeSchema,
   type WorkflowGraph,
 } from '../../engine/graph'
@@ -280,7 +281,12 @@ export async function saveVersion(
 ) {
   return await workflowVersions.publish(db, {
     ownerId: input.workflowId,
-    payload: input.graph,
+    // Publishing is the one moment a graph is frozen into something that will
+    // run unattended, so it is where an iteration written before fan-out limits
+    // existed picks one up. Deliberately not in `updateDraft`: a draft is what
+    // the author is still looking at, and the Issues panel asking them for a
+    // number beats an invisible default appearing under them.
+    payload: backfillIterationLimits(input.graph),
     publishedBy: input.publishedBy,
     changeNote: input.changeNote,
     versionExtra: {

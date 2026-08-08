@@ -293,6 +293,11 @@ export function IterationNodeRenderer(props: NodeProps) {
           <div className="min-w-0 flex-1">
             <div className="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
               {style.label} · ×{data.config.concurrency}
+              {/* The fan-out bound belongs on the container itself: it's the one
+                  iteration setting that decides whether the block runs at all. */}
+              {data.config.maxItems === undefined
+                ? ' · no limit'
+                : ` · max ${data.config.maxItems}`}
               {data.config.stopOnError ? ' · stop on error' : ''}
             </div>
             <div className="truncate text-sm font-medium">{data.label}</div>

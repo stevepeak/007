@@ -1,4 +1,5 @@
 import {
+  ITERATION_MAX_ITEMS_CEILING,
   SWITCH_DEFAULT_CASE,
   type WorkflowGraph,
   type WorkflowNode,
@@ -175,6 +176,49 @@ function iterationExecutionIssue(node: WorkflowNode): GraphIssue | null {
   return null
 }
 
+/**
+ * Flag an iteration that has no upper bound on how wide it may fan out, or one
+ * whose bound is wider than its execution mode can carry.
+ *
+ * Errors, not warnings — the two other iteration checks are judgement calls the
+ * author is better placed to make, but "how many items is too many" is a
+ * property of the RUNTIME, not of the workflow: an inline fan-out shares one
+ * instance's subrequest and CPU budget no matter what the list means. An unbound
+ * loop is a run that gets expensive, or wedged, before anyone can see it is
+ * wrong — and the list length is data, so no amount of care at authoring time
+ * rules it out.
+ *
+ * The bound the author declares is the one the run-time fence enforces; the
+ * ceiling here only governs what may be declared, so this is the only place a
+ * too-wide bound is ever mentioned. See `ITERATION_MAX_ITEMS_CEILING`.
+ */
+function iterationMaxItemsIssue(node: WorkflowNode): GraphIssue | null {
+  if (node.kind !== 'iteration') {
+    return null
+  }
+  const base = { nodeId: node.id, nodeLabel: node.label } as const
+  const mode = node.config.itemExecution
+  const ceiling = ITERATION_MAX_ITEMS_CEILING[mode]
+  const { maxItems } = node.config
+
+  if (maxItems === undefined) {
+    return {
+      ...base,
+      severity: 'error',
+      message: `No item limit set — cap how many items this loop may run (up to ${ceiling} on ${mode} item execution). Without one, an unexpectedly long list fans out until the run runs out of budget.`,
+    }
+  }
+  if (maxItems > ceiling) {
+    const other = mode === 'inline' ? 'Durable' : 'Inline'
+    return {
+      ...base,
+      severity: 'error',
+      message: `Item limit ${maxItems} is above the ${ceiling}-item maximum for ${mode} item execution — lower it${mode === 'inline' ? `, or switch to ${other} to raise the ceiling` : ''}.`,
+    }
+  }
+  return null
+}
+
 // Collect every author-time issue for a graph. Pure and metadata-free — the UI
 // appends binding-completeness issues (missing required inputs) on top.
 export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
@@ -223,6 +267,12 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
     // can legitimately fire on the same node.
     const exec = iterationExecutionIssue(node)
     if (exec) issues.push(exec)
+
+    // Fan-out width. Separate again from the two above: they weigh HOW an item
+    // runs, this one caps HOW MANY may run at all — and unlike them it's an
+    // error, because the answer isn't a judgement call (see below).
+    const bound = iterationMaxItemsIssue(node)
+    if (bound) issues.push(bound)
 
     // Connectivity. A Note is a portless canvas annotation — it is meant to be
     // unconnected, so it's exempt from both connectivity checks.

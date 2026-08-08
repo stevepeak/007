@@ -24,6 +24,10 @@ export {
   ITERATION_ITEM_EXECUTIONS,
   iterationItemExecutionSchema,
   type IterationItemExecution,
+  ITERATION_MAX_ITEMS_CEILING,
+  ITERATION_MAX_ITEMS_DEFAULT,
+  ITERATION_MAX_ITEMS_FALLBACK,
+  backfillIterationLimits,
   CALLEE_EXECUTIONS,
   calleeExecutionSchema,
   type CalleeExecution,
@@ -216,6 +220,8 @@ export {
 } from './nodes/aggregate'
 export {
   executeSubgraph,
+  iterationItemLimit,
+  IterationTooManyItemsError,
   runIteration,
   type IterationErrorPlaceholder,
   type IterationItemStatus,

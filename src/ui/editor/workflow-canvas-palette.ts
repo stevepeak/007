@@ -1,4 +1,7 @@
-import { buildIterationSubgraph } from '../../engine'
+import {
+  buildIterationSubgraph,
+  ITERATION_MAX_ITEMS_DEFAULT,
+} from '../../engine'
 import { type EditorNodeData } from './node-renderers'
 
 /** Defaults for freshly-dragged nodes — sourced from the host's models/tools. */
@@ -71,6 +74,11 @@ function nodeConfigForKind(
         // Durable once the subgraph grows past a step or two, which is the point
         // at which the choice actually starts to matter.
         itemExecution: 'inline',
+        // Bounded from the first frame: an unset limit is an error in the Issues
+        // panel, and a new node should never open already broken. The seed is the
+        // inline ceiling, so the author's only reason to touch it is to go LOWER
+        // (or to raise it after switching to Durable).
+        maxItems: ITERATION_MAX_ITEMS_DEFAULT.inline,
         subgraph: buildIterationSubgraph(),
       },
     }

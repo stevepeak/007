@@ -17,6 +17,7 @@ import { emitNodeStartProgress } from '../engine/node-progress'
 import { isFatalAgentError } from '../engine/nodes/agent-generation'
 import {
   executeSubgraph,
+  IterationTooManyItemsError,
   resolveIterationList,
   runIteration,
 } from '../engine/nodes/iteration'
@@ -106,6 +107,10 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
       `Iteration "${node.label}" is set to Durable item execution, which is not available yet. Switch it back to Inline to run this workflow.`,
     )
   }
+  // The fan-out fence throws before a single `iter:` step is spawned, and the
+  // list it rejected is the same list every replay resolves — retrying only
+  // spends the budget the fence just refused. Escalate it the same way the
+  // durable-mode guard above does.
   const iter = await runIteration({
     node,
     // List is a ref into an upstream output, resolved against the
@@ -156,6 +161,11 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
           },
         )
       }),
+  }).catch((err: unknown) => {
+    if (err instanceof IterationTooManyItemsError) {
+      throw new NonRetryableError(err.message)
+    }
+    throw err
   })
   // The main step multiplier: an iteration spends one `iter:` step per item
   // instead of a single `run:`, so a wide list is what makes a graph expensive.
