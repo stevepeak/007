@@ -14,6 +14,7 @@ import type {
 
 import {
   NotFoundError,
+  optStr,
   requireHook,
   runSummary,
   str,
@@ -70,7 +71,8 @@ export function buildRunHandlers<TDeps>(
 
     getRun: async (c) => {
       const runId = str(c.params, 'runId')
-      const result = await getRun(c.db, runId)
+      const knownVersionId = optStr(c.params, 'knownVersionId')
+      const result = await getRun(c.db, runId, { knownVersionId })
       if (!result) {
         return null
       }
@@ -113,6 +115,11 @@ export function buildRunHandlers<TDeps>(
         logs,
         graph: result.graph,
         versionNumber: result.versionNumber,
+        workflowVersionId: result.workflowVersionId,
+        // Only ever set, never set-to-false — `versionOmitted?: true` is a
+        // presence flag, and an explicit `false` would be one more byte on
+        // every full load for no reader.
+        ...(result.versionOmitted ? { versionOmitted: true as const } : {}),
       }
       return detail
     },

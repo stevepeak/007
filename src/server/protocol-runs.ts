@@ -113,4 +113,17 @@ export type WfRunDetail = {
   logs: WfRunLogDTO[]
   graph: WorkflowGraph | null
   versionNumber: number | null
+  /**
+   * The version this run is pinned to. Immutable for the life of the run, and
+   * the cache key a poller passes back as `knownVersionId` to suppress the
+   * version block on subsequent fetches.
+   */
+  workflowVersionId: string
+  /**
+   * Set when the caller's `knownVersionId` matched, meaning the version block
+   * was NOT read: `graph`, `versionNumber`, and `run`'s `workflowId` /
+   * `workflowName` / `versionNumber` are placeholders, and the caller must
+   * splice in the values it already holds. Absent on a full load.
+   */
+  versionOmitted?: true
 }

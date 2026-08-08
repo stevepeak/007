@@ -126,6 +126,14 @@ export function str(params: unknown, key: string): string {
   return v
 }
 
+// `str`'s optional sibling: absent, empty, or wrong-typed all read as "not
+// supplied" rather than as an error. For params that only ever narrow what the
+// server does (a cache hint, a filter) — never for anything load-bearing.
+export function optStr(params: unknown, key: string): string | undefined {
+  const v = (params as Record<string, unknown>)[key]
+  return typeof v === 'string' && v ? v : undefined
+}
+
 // Coerce an untrusted `{ [k]: v }` bag into a string→string record, dropping
 // non-string values. Used for the playground's prompt-variable inputs.
 export function parseStringRecord(value: unknown): Record<string, string> {

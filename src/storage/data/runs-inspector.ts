@@ -34,17 +34,38 @@ export async function getRunStatus(db: WfDb, runId: string) {
   return row ?? null
 }
 
+export type GetRunOptions = {
+  /**
+   * A `workflowVersionId` the caller already holds the version block for
+   * (graph, version number, workflow identity). When it matches this run's
+   * version, that lookup is skipped entirely and the block comes back null with
+   * `versionOmitted: true` — the caller is expected to splice in what it has.
+   *
+   * The block is immutable for a given version id, so re-reading it on a 1.5s
+   * poll is pure waste: it is both a query and, because the whole serialized
+   * graph rides along, by far the largest thing in the response. Omit this
+   * option (every non-polling caller does) to always get the full load.
+   */
+  knownVersionId?: string
+}
+
 /** The run-inspector load shape: run, ordered steps, the version's graph. */
-export async function getRun(db: WfDb, runId: string) {
+export async function getRun(
+  db: WfDb,
+  runId: string,
+  opts: GetRunOptions = {},
+) {
   const run = (
     await db.select().from(wfRun).where(eq(wfRun.id, runId)).limit(1)
   )[0]
   if (!run) {
     return null
   }
-  // Everything below depends only on the run row, so it goes out in one wave
-  // rather than four sequential round trips. Only the workflow-name lookup has
-  // to wait, since it keys off the version row.
+  const versionOmitted = opts.knownVersionId === run.workflowVersionId
+  // Everything below depends only on the run row, so it goes out in ONE wave.
+  // The version and the workflow it belongs to are a single join rather than a
+  // second sequential round trip — the name lookup used to wait on the version
+  // row purely to read its `workflowId`.
   const [rawSteps, priceMap, logs, version] = await Promise.all([
     db
       .select()
@@ -55,12 +76,23 @@ export async function getRun(db: WfDb, runId: string) {
     // price, and roll the run's totals up for the header.
     loadModelPriceMap(db),
     getRunLogs(db, runId),
-    db
-      .select()
-      .from(wfWorkflowVersion)
-      .where(eq(wfWorkflowVersion.id, run.workflowVersionId))
-      .limit(1)
-      .then((rows) => rows[0]),
+    versionOmitted
+      ? undefined
+      : db
+          .select({
+            graph: wfWorkflowVersion.graph,
+            versionNumber: wfWorkflowVersion.versionNumber,
+            workflowId: wfWorkflow.id,
+            workflowName: wfWorkflow.name,
+          })
+          .from(wfWorkflowVersion)
+          .leftJoin(
+            wfWorkflow,
+            eq(wfWorkflow.id, wfWorkflowVersion.workflowId),
+          )
+          .where(eq(wfWorkflowVersion.id, run.workflowVersionId))
+          .limit(1)
+          .then((rows) => rows[0]),
   ])
   let costUsd: number | null = null
   let totalTokens: number | null = null
@@ -78,23 +110,18 @@ export async function getRun(db: WfDb, runId: string) {
       costUsd: c?.cost ?? null,
     }
   })
-  const workflow = version
-    ? (
-        await db
-          .select({ id: wfWorkflow.id, name: wfWorkflow.name })
-          .from(wfWorkflow)
-          .where(eq(wfWorkflow.id, version.workflowId))
-          .limit(1)
-      )[0]
-    : undefined
   return {
     run,
     steps,
     logs,
     graph: version?.graph != null ? parseStoredGraph(version.graph) : null,
     versionNumber: version?.versionNumber ?? null,
-    workflowId: workflow?.id ?? null,
-    workflowName: workflow?.name ?? null,
+    workflowId: version?.workflowId ?? null,
+    workflowName: version?.workflowName ?? null,
+    /** The version this run is pinned to — the cache key for the block above. */
+    workflowVersionId: run.workflowVersionId,
+    /** True when the four version-derived fields were deliberately not read. */
+    versionOmitted,
     costUsd,
     totalTokens,
   }

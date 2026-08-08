@@ -161,7 +161,15 @@ export interface WfDataClient {
   listRuns(input: WfRunListInput): Promise<WfRunListResult>
   /** Distinct trigger kinds seen across all runs (filter dropdown). */
   listRunTriggerKinds(): Promise<string[]>
-  getRun(runId: string): Promise<WfRunDetail | null>
+  /**
+   * The full run-inspector load. `knownVersionId` is a cache hint for pollers:
+   * pass the `workflowVersionId` you already hold the version block for and the
+   * server skips reading it, answering with `versionOmitted: true` and null
+   * placeholders. The block is immutable per version id, so this trades a query
+   * and the entire serialized graph for one string on the wire. Omit it — as
+   * every one-shot caller does — for a complete response.
+   */
+  getRun(runId: string, knownVersionId?: string): Promise<WfRunDetail | null>
   /**
    * Re-dispatch a finished run as a NEW run (the original stays as history).
    * The same trigger input is reconstructed from the original run's recorded

@@ -57,7 +57,12 @@ const wfInputSchemas: Partial<Record<keyof WfDataClient, z.ZodType>> = {
     limit: z.number().optional(),
     offset: z.number().optional(),
   }),
-  getRun: z.object({ runId: z.string() }),
+  getRun: z.object({
+    runId: z.string(),
+    // Cache hint only — see `WfClient.getRun`. A stale or unknown id simply
+    // fails the equality check server-side and yields a full load.
+    knownVersionId: z.string().optional(),
+  }),
   getDashboard: z.object({
     since: z.number().optional(),
     until: z.number().optional(),

@@ -7,6 +7,7 @@ import type { WfRunStatus } from '../storage/schema-common'
 
 import type { GraphWorkflowParams } from './graph-workflow'
 import { runInlineGraph } from './inline-run'
+import { adoptTail, appendBounded, readTail } from './run-room-buffer'
 
 // Per-run coordination room — the SDK's live-progress backend, and (on the
 // inline engine) the run's execution host.
@@ -40,11 +41,47 @@ export type WfRunRoomState = {
   error: string | null
 }
 
-type PersistedState = Omit<WfRunRoomState, 'runId'>
+/**
+ * The room's scalar fields — everything that is overwritten rather than
+ * appended to. These share one `'state'` key, which is right for them: each
+ * write replaces a handful of bytes.
+ *
+ * The two APPEND-ONLY fields (`logs`, `progress`) are deliberately NOT here.
+ * They used to be, and appending one entry re-serialized the entire array, so a
+ * run paid O(n²) bytes in storage writes across its own log feed. Worse, the
+ * SQLite-backed DO caps a value at 2 MB and log entries carry full reasoning
+ * text and tool-call arguments — a long agent run can reach it, at which point
+ * `put` rejects and (on the inline path, which catches and warns) the room
+ * silently stops persisting. Now each entry is its own key: O(1) per append,
+ * and no single value that grows.
+ */
+type PersistedScalars = Pick<
+  WfRunRoomState,
+  'label' | 'status' | 'output' | 'error'
+>
 
-// How many recent structured entries the room keeps for the reconnect snapshot.
-// The durable wf_run_log table holds the full feed; this is only the live tail.
+/** In-memory view: the scalars plus the two append-only buffers and their cursors. */
+type RoomMemo = PersistedScalars & {
+  progress: string[]
+  logs: RunLogEntry[]
+  /**
+   * Next sequence to assign. Invariant, per buffer: the entries in memory are
+   * exactly sequences `[next - buffer.length, next)`, which is what lets
+   * `appendBounded` name the keys that fell off the end without re-listing.
+   */
+  nextLogSeq: number
+  nextProgressSeq: number
+}
+
+// How many recent entries the room keeps for the reconnect snapshot. The
+// durable wf_run_log table holds the full feed; this is only the live tail.
+// `progress` is bounded for the same reason `logs` is — it previously had no
+// trim at all, so a chatty run grew it without limit.
 const MAX_BUFFERED_LOGS = 1000
+const MAX_BUFFERED_PROGRESS = 1000
+
+const LOG_PREFIX = 'log:'
+const PROGRESS_PREFIX = 'prog:'
 
 /**
  * The room's generic half: live progress state, persistence, and the WebSocket
@@ -57,7 +94,7 @@ const MAX_BUFFERED_LOGS = 1000
 // ambient `Env`, which would pin this SDK class to one host's bindings.
 // `makeRunRoom` supplies the concrete `E`.
 export class RunRoomBase<E = unknown> extends DurableObject<E> {
-  private memo: PersistedState | null = null
+  private memo: RoomMemo | null = null
 
   /**
    * The run's answer, as it is being written — the text a reader is watching
@@ -65,10 +102,12 @@ export class RunRoomBase<E = unknown> extends DurableObject<E> {
    * `StreamSink.delta`) and read incrementally by a waiting consumer via
    * {@link getAnswerSince}.
    *
-   * DELIBERATELY IN MEMORY, and deliberately not part of `PersistedState`.
-   * Every other field here is written through `storage.put` on each change,
-   * which is right at one-event-per-node granularity and ruinous at
-   * one-event-per-token. Nothing is lost by keeping it in memory: the finished
+   * DELIBERATELY IN MEMORY, and deliberately not persisted at all — neither in
+   * {@link PersistedScalars} nor as its own keys. Every other field here is
+   * written through `storage.put` on each change, which is right at
+   * one-event-per-node granularity and ruinous at one-event-per-token (the
+   * key-per-entry split below makes appends cheap, not free). Nothing is lost
+   * by keeping it in memory: the finished
    * answer is persisted once, authoritatively, to `wf_run.output`, and every
    * consumer reconciles against that at the end. This buffer only exists to
    * make the wait legible.
@@ -78,26 +117,49 @@ export class RunRoomBase<E = unknown> extends DurableObject<E> {
    */
   private answer = ''
 
-  private async load(): Promise<PersistedState> {
+  private async load(): Promise<RoomMemo> {
     if (this.memo) return this.memo
-    const stored = await this.ctx.storage.get<PersistedState>('state')
-    this.memo = stored ?? {
-      label: null,
-      status: 'queued',
-      progress: [],
-      logs: [],
-      output: null,
-      error: null,
+    // Rooms written before the append-only split carried both arrays inside the
+    // `'state'` blob. Read them off it so a run in flight across a deploy keeps
+    // its tail; from here on they live under their own keys, and the legacy
+    // copies fall away with the next scalar `save`.
+    const [stored, logs, progress] = await Promise.all([
+      this.ctx.storage.get<PersistedScalars & Partial<WfRunRoomState>>('state'),
+      readTail<RunLogEntry>(this.ctx.storage, LOG_PREFIX, MAX_BUFFERED_LOGS),
+      readTail<string>(
+        this.ctx.storage,
+        PROGRESS_PREFIX,
+        MAX_BUFFERED_PROGRESS,
+      ),
+    ])
+    const logTail = adoptTail(logs, stored?.logs ?? [], MAX_BUFFERED_LOGS)
+    const progressTail = adoptTail(
+      progress,
+      stored?.progress ?? [],
+      MAX_BUFFERED_PROGRESS,
+    )
+    this.memo = {
+      label: stored?.label ?? null,
+      status: stored?.status ?? 'queued',
+      output: stored?.output ?? null,
+      error: stored?.error ?? null,
+      logs: logTail.values,
+      nextLogSeq: logTail.nextSeq,
+      progress: progressTail.values,
+      nextProgressSeq: progressTail.nextSeq,
     }
-    // Back-compat: rooms persisted before the structured feed existed have no
-    // `logs` array — normalise so appends don't hit `undefined`.
-    if (!this.memo.logs) this.memo.logs = []
     return this.memo
   }
 
-  private async save(state: PersistedState): Promise<void> {
+  /** Persist the scalar half. Small and fixed-size — one key is correct here. */
+  private async save(state: RoomMemo): Promise<void> {
     this.memo = state
-    await this.ctx.storage.put('state', state)
+    await this.ctx.storage.put('state', {
+      label: state.label,
+      status: state.status,
+      output: state.output,
+      error: state.error,
+    } satisfies PersistedScalars)
   }
 
   private broadcast(event: {
@@ -125,8 +187,14 @@ export class RunRoomBase<E = unknown> extends DurableObject<E> {
   async append(channel: string, text: string): Promise<void> {
     const state = await this.load()
     if (channel === 'progress') {
-      state.progress.push(text)
-      await this.save(state)
+      await appendBounded(
+        this.ctx.storage,
+        state.progress,
+        text,
+        PROGRESS_PREFIX,
+        state.nextProgressSeq++,
+        MAX_BUFFERED_PROGRESS,
+      )
     }
     this.broadcast({ type: 'stream', channel, data: text })
   }
@@ -136,11 +204,14 @@ export class RunRoomBase<E = unknown> extends DurableObject<E> {
   async appendLog(entry: RunLogEntry): Promise<void> {
     const state = await this.load()
     const stamped: RunLogEntry = { ...entry, ts: entry.ts ?? Date.now() }
-    state.logs.push(stamped)
-    if (state.logs.length > MAX_BUFFERED_LOGS) {
-      state.logs = state.logs.slice(-MAX_BUFFERED_LOGS)
-    }
-    await this.save(state)
+    await appendBounded(
+      this.ctx.storage,
+      state.logs,
+      stamped,
+      LOG_PREFIX,
+      state.nextLogSeq++,
+      MAX_BUFFERED_LOGS,
+    )
     this.broadcast({ type: 'log', data: stamped })
   }
 
@@ -202,7 +273,17 @@ export class RunRoomBase<E = unknown> extends DurableObject<E> {
 
   async getState(runId: string): Promise<WfRunRoomState> {
     const state = await this.load()
-    return { runId, ...state }
+    // Field-by-field rather than a spread: `RoomMemo` also carries the buffers'
+    // internal cursors, and a spread would ship those over RPC.
+    return {
+      runId,
+      label: state.label,
+      status: state.status,
+      progress: state.progress,
+      logs: state.logs,
+      output: state.output,
+      error: state.error,
+    }
   }
 
   /**
