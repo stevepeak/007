@@ -41,6 +41,15 @@ export type NodeSpanInfo = {
   nodeKind: string
   sequence: number
   /**
+   * The run's opaque host references, carried onto the span so an issue in
+   * Sentry says WHO it happened to, not just which run it came from. `actorId`
+   * becomes the Sentry user id; the other two become searchable tags. All
+   * optional — unattended runs (cron, ingest, evals) have no actor.
+   */
+  actorId?: string
+  subjectId?: string
+  correlationId?: string
+  /**
    * Human span title, e.g. `Agent: Legal Researcher - Draft the memo` or
    * `Branch: Has prior rulings?`. Falls back to the terse kind + id form when
    * absent.
@@ -64,6 +73,9 @@ export async function withNodeSpan<T>(
   }
   if (info.traceId) attributes['wf.trace_id'] = info.traceId
   if (info.label) attributes['wf.node_label'] = info.label
+  if (info.actorId) attributes['wf.actor_id'] = info.actorId
+  if (info.subjectId) attributes['wf.subject_id'] = info.subjectId
+  if (info.correlationId) attributes['wf.correlation_id'] = info.correlationId
 
   // Capture a node failure as a Sentry issue from *inside* the span, so it is
   // attached to this node's span on the run's pinned trace (auto-instrumented
@@ -78,6 +90,17 @@ export async function withNodeSpan<T>(
         scope.setTag('wf.run_id', info.runId)
         scope.setTag('wf.node_id', info.nodeId)
         scope.setTag('wf.node_kind', info.nodeKind)
+        // Identity, so the issue is attributable to a user and a client
+        // without a D1 join. Ids only — the host owns the mapping back to
+        // names and emails, and this keeps PII out of Sentry entirely.
+        if (info.actorId) {
+          scope.setUser({ id: info.actorId })
+          scope.setTag('wf.actor_id', info.actorId)
+        }
+        if (info.subjectId) scope.setTag('wf.subject_id', info.subjectId)
+        if (info.correlationId) {
+          scope.setTag('wf.correlation_id', info.correlationId)
+        }
         const d = apiErrorDetail(err)
         if (d) {
           scope.setContext('ai_api_call', {

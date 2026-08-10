@@ -18,6 +18,8 @@ export async function createRun(
     triggerKind: string
     subjectId?: string
     correlationId?: string
+    /** The host principal this run acts for; opaque, see `RunContext.actorId`. */
+    actorId?: string
     /** Marks this as an eval-produced run so the Runs explorer excludes it. */
     isEval?: boolean
     /** Stable 32-hex trace id for the run's Sentry spans + deep-link. */
@@ -31,6 +33,7 @@ export async function createRun(
     triggerKind: input.triggerKind,
     subjectId: input.subjectId ?? null,
     correlationId: input.correlationId ?? null,
+    actorId: input.actorId ?? null,
     isEval: input.isEval ?? false,
     sentryTraceId: input.sentryTraceId ?? null,
     status: 'queued',

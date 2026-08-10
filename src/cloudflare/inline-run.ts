@@ -354,7 +354,10 @@ export async function runInlineGraph<TDeps, E extends { DB: D1Database }>(
       await room.setError(message)
       if (config.onRunFailed) {
         await notifyHost('on-failed', () =>
-          config.onRunFailed!(runContext, { error: message }),
+          config.onRunFailed!(runContext, {
+            error: message,
+            workflowRunId: p.workflowRunId,
+          }),
         )
       }
     } catch (recordErr) {

@@ -60,6 +60,7 @@ export async function startGraphRun(
     triggerKind: input.triggerKind,
     subjectId: input.subjectId,
     correlationId: input.correlationId,
+    actorId: input.actorId,
     isEval: input.isEval,
     sentryTraceId: traceId,
   })
@@ -76,6 +77,7 @@ export async function startGraphRun(
     runContext: {
       subjectId: input.subjectId,
       correlationId: input.correlationId,
+      actorId: input.actorId,
       triggerKind: input.triggerKind,
       promptVariables: input.promptVariables,
       simulate: input.simulate,

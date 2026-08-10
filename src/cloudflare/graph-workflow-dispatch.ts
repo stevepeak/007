@@ -257,6 +257,10 @@ async function dispatchDurableCallee<TDeps, E extends GraphWorkflowEnv>(
         triggerKind: p.runContext.triggerKind,
         subjectId: p.runContext.subjectId,
         correlationId: p.runContext.correlationId,
+        // The callee acts for the same principal as its caller — carried onto
+        // the child row so a failure inside a spawned sub-run is attributable
+        // without walking back to the parent.
+        actorId: p.runContext.actorId,
         // Same trace as the parent, so the callee's spans land in one
         // distributed trace instead of a detached second one.
         sentryTraceId: traceId,
@@ -567,6 +571,9 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
                   nodeKind: node.kind,
                   sequence: seq,
                   label: nodeSpanLabel(node, manifest),
+                  actorId: p.runContext.actorId,
+                  subjectId: p.runContext.subjectId,
+                  correlationId: p.runContext.correlationId,
                 },
                 () =>
                   runNode(

@@ -17,6 +17,13 @@ export type StartGraphRunInput = {
   triggerInput: unknown
   subjectId?: string
   correlationId?: string
+  /**
+   * The host principal this run acts for (a user id), opaque to the SDK exactly
+   * like `subjectId`/`correlationId`. Persisted to `wf_run.actor_id` and used to
+   * attribute the run's Sentry spans, so a failed run says WHO it belonged to
+   * without a host DB join. Omit for unattended runs (cron, ingest, evals).
+   */
+  actorId?: string
   promptVariables?: Record<string, string | undefined>
   /**
    * Eval signal — execute the real graph and write a real trace, but neutralize

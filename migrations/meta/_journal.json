@@ -162,6 +162,13 @@
       "when": 1786133080288,
       "tag": "0022_ambiguous_reaper",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1786378018623,
+      "tag": "0023_watery_squirrel_girl",
+      "breakpoints": true
     }
   ]
 }

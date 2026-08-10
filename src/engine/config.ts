@@ -36,7 +36,17 @@ export type ModelListContext = { env?: unknown }
 /** Payload handed to {@link WfSdkConfig.onRunComplete} when a run finalizes. */
 export type RunCompletion = { output: unknown; outputNodeId: string | null }
 /** Payload handed to {@link WfSdkConfig.onRunFailed} when a run aborts. */
-export type RunFailure = { error: string }
+export type RunFailure = {
+  error: string
+  /**
+   * The `wf_run` id — the one in the run viewer's URL. Present on both backing
+   * stores (durable + inline); undefined only on the pure in-process engine
+   * (evals, tests, the playground), which writes no run row at all. A host that
+   * reports failures somewhere durable needs this to link back, and it cannot
+   * reconstruct it from `RunContext` — nothing there names the run.
+   */
+  workflowRunId?: string
+}
 
 /**
  * Node-facing model factory — resolves a `modelId` to an AI SDK model. The
@@ -97,6 +107,16 @@ export type ImageRefResolver<TDeps> = (
 export type RunContext = {
   subjectId?: string
   correlationId?: string
+  /**
+   * The host principal this run acts for (a user id) — a third opaque host
+   * reference, same contract as `subjectId`/`correlationId`: the SDK never
+   * interprets it, only persists it (`wf_run.actor_id`) and attributes the
+   * run's Sentry spans with it. That is what lets a failure report name the
+   * affected user without the host re-deriving it from a chat id. Undefined for
+   * unattended runs (cron, ingest, evals) and for runs started before it
+   * existed.
+   */
+  actorId?: string
   triggerKind: string
   /**
    * Whether this generation should use the model's reasoning / thinking. The

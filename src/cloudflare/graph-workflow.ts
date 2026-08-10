@@ -65,6 +65,8 @@ export interface GraphWorkflowEnv {
 export type GraphRunContextInput = {
   subjectId?: string
   correlationId?: string
+  /** The host principal this run acts for; opaque, see `RunContext.actorId`. */
+  actorId?: string
   triggerKind: string
   promptVariables?: Record<string, string | undefined>
   /** Eval signal — under simulate, side-effecting tools are neutralized. */
@@ -509,7 +511,10 @@ export function makeGraphWorkflow<
         await reportToParent(ctx, { ok: false, error: message })
         if (config.onRunFailed) {
           await notifyHost(step, 'on-failed', () =>
-            config.onRunFailed!({ ...p.runContext, env }, { error: message }),
+            config.onRunFailed!(
+              { ...p.runContext, env },
+              { error: message, workflowRunId: p.workflowRunId },
+            ),
           )
         }
         throw err

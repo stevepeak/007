@@ -24,6 +24,10 @@ export const wfRun = sqliteTable(
     // Opaque host references (no FK).
     subjectId: text('subject_id'),
     correlationId: text('correlation_id'),
+    // The host principal the run acted for. Third opaque reference beside the
+    // two above — persisted so a failed run can name its user (and attribute
+    // its Sentry trace) without the host re-deriving identity from subject_id.
+    actorId: text('actor_id'),
     triggerKind: text('trigger_kind').notNull(),
     // Cloudflare Workflows run id — used by RunRoom and to scope writes from
     // concurrent attempts to the right row.

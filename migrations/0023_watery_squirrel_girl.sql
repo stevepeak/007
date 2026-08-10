@@ -1,0 +1,1 @@
+ALTER TABLE `wf_run` ADD `actor_id` text;
