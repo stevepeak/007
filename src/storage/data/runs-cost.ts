@@ -17,8 +17,8 @@ import { selectChunked } from './shared'
 
 /**
  * How long a loaded price map stays warm. `wf_model` only changes when an admin
- * refreshes a provider catalog or toggles a model, so a minute of staleness on a
- * *displayed dollar figure* is immaterial — while the read itself sits behind
+ * refreshes a provider catalog or toggles a model, so a minute of staleness on
+ * a *displayed dollar figure* is immaterial — while the read itself sits behind
  * every run-viewer tick, eval poll, and runs-list page.
  */
 const PRICE_MAP_TTL_MS = 60_000
