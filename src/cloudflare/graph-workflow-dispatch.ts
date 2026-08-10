@@ -150,7 +150,7 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
           // makes that replay idempotent.
           {
             recorder: createTelemeteredRecorder({
-              db: createWfDb(env.DB),
+              db: createWfDb(env.WF_DB),
               runId: p.workflowRunId,
               telemetry: ctx.telemetry,
               dims: ctx.dims,
@@ -252,7 +252,7 @@ async function dispatchDurableCallee<TDeps, E extends GraphWorkflowEnv>(
     `spawn:${node.id}`,
     DEFAULT_STEP_OPTS,
     async () => {
-      const childRunId = await createRun(createWfDb(env.DB), {
+      const childRunId = await createRun(createWfDb(env.WF_DB), {
         workflowVersionId: entry.versionId,
         triggerKind: p.runContext.triggerKind,
         subjectId: p.runContext.subjectId,
@@ -430,7 +430,7 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
       status: 'running',
       startedAt: new Date(startTs),
     })
-    await replaceNodeLogs(createWfDb(env.DB), {
+    await replaceNodeLogs(createWfDb(env.WF_DB), {
       runId: p.workflowRunId,
       nodeId: node.id,
       entries: [startRow],
@@ -486,7 +486,7 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
           // keeps a shorter retry from stranding the last attempt's tail.
           bodyLogs.length = 0
           captured = null
-          const logDb = createWfDb(env.DB)
+          const logDb = createWfDb(env.WF_DB)
           // Rows this node already appended — from an EARLIER ATTEMPT, since
           // `step.do` replays the whole closure. Used as this attempt's ordinal
           // base so its rows land in a fresh id range instead of overwriting
@@ -613,7 +613,7 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
                       subStepRecorder:
                         node.kind === 'agent'
                           ? createTelemeteredRecorder({
-                              db: createWfDb(env.DB),
+                              db: createWfDb(env.WF_DB),
                               runId: p.workflowRunId,
                               telemetry: ctx.telemetry,
                               dims: ctx.dims,
@@ -715,7 +715,7 @@ export async function deliverOutput<TDeps, E extends GraphWorkflowEnv>(
         rawOutput,
       )
   await stepDo(step, 'finalize', () =>
-    markRunDone(createWfDb(env.DB), {
+    markRunDone(createWfDb(env.WF_DB), {
       runId: p.workflowRunId,
       output,
       settled: !pendingWork,
@@ -748,7 +748,7 @@ export async function settleRun<TDeps, E extends GraphWorkflowEnv>(
 ): Promise<GraphWorkflowResult> {
   const { step, env, p, room } = ctx
   await stepDo(step, 'settle', async () => {
-    await completeRun(createWfDb(env.DB), {
+    await completeRun(createWfDb(env.WF_DB), {
       runId: p.workflowRunId,
       error: drainError,
     })

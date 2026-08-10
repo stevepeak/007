@@ -50,7 +50,25 @@ import { createCountingStep, createRunCounters } from './step-counter'
 // The minimal binding contract a host Env must satisfy for the durable backend.
 // The host's full Env is a superset; this is what `GraphWorkflow` touches.
 export interface GraphWorkflowEnv {
-  DB: D1Database
+  /**
+   * D1 holding the SDK's `wf_*` tables. This is the SDK's OWN database — give it
+   * one, do not point it at a database that also holds host tables.
+   *
+   * The name is `WF_DB`, not `DB`, for two reasons. A host Worker generally needs
+   * BOTH its own database and this one in the same request, so one binding name
+   * cannot serve both. And a dedicated D1 keeps the SDK's Drizzle migrations on
+   * their own `d1_migrations` ledger: sharing a database means sharing that
+   * ledger with the host's migration set, where two generators numbering from
+   * `0000_` can eventually emit the same filename and silently mark an unapplied
+   * migration as applied.
+   *
+   * Required, deliberately. If you are migrating from the older shared-`DB`
+   * contract, do NOT add a `?? env.DB` fallback: while the old database still
+   * carries a copy of the `wf_*` schema, a fallback reads and writes a
+   * plausible-looking database and splits your data with no error anywhere.
+   * Let the missing property fail typecheck instead.
+   */
+  WF_DB: D1Database
   RUN_ROOM: DurableObjectNamespace<RunRoom>
   /**
    * This same Workflow, so a run can spawn a CHILD instance for a callee marked
@@ -212,7 +230,7 @@ export function makeGraphWorkflow<
       // are spent is what stops a later catalog edit from rewriting what this
       // run cost.
       const loaded = await stepDo(step, 'load-graph', async () => {
-        const db = createWfDb(env.DB)
+        const db = createWfDb(env.WF_DB)
         const v = await getVersionGraph(db, p.workflowVersionId)
         if (!v) {
           throw new Error(`Workflow version ${p.workflowVersionId} not found.`)
@@ -243,7 +261,7 @@ export function makeGraphWorkflow<
       // live binding that cannot cross a step boundary.
       const recordOne = (args: RecordStepArgs) =>
         createTelemeteredRecorder({
-          db: createWfDb(env.DB),
+          db: createWfDb(env.WF_DB),
           runId: p.workflowRunId,
           telemetry,
           dims,
@@ -260,14 +278,14 @@ export function makeGraphWorkflow<
       const inherited = p.inheritedManifest
       const manifest: WfRunManifestEntry[] = inherited
         ? await stepDo(step, 'inherit-manifest', async () => {
-            await setRunManifest(createWfDb(env.DB), {
+            await setRunManifest(createWfDb(env.WF_DB), {
               runId: p.workflowRunId,
               manifest: inherited,
             })
             return inherited
           })
         : await stepDo(step, 'resolve-manifest', async () => {
-            const db = createWfDb(env.DB)
+            const db = createWfDb(env.WF_DB)
             const graph = workflowGraphSchema.parse(graphJson)
             const m = await resolveRunManifest(db, graph)
             await setRunManifest(db, { runId: p.workflowRunId, manifest: m })
@@ -281,7 +299,7 @@ export function makeGraphWorkflow<
       // replay reuses the original instant. Null on an in-flight instance
       // resuming across this deploy (old journal entry returned void).
       const runStartedAtMs = await stepDo(step, 'begin-run', async () => {
-        await markRunRunning(createWfDb(env.DB), {
+        await markRunRunning(createWfDb(env.WF_DB), {
           runId: p.workflowRunId,
           cloudflareRunId: p.runId,
         })
@@ -350,7 +368,7 @@ export function makeGraphWorkflow<
       const resumeFromRunId = p.resumeFromRunId
       if (resumeFromRunId) {
         const prior = await stepDo(step, 'load-resume', () =>
-          loadResumeSteps(createWfDb(env.DB), resumeFromRunId),
+          loadResumeSteps(createWfDb(env.WF_DB), resumeFromRunId),
         )
         for (const s of prior) {
           const seedSeq = sequence++
@@ -491,7 +509,7 @@ export function makeGraphWorkflow<
           return await settleRun(ctx, delivered, message)
         }
         await stepDo(step, 'record-failure', async () => {
-          await failRun(createWfDb(env.DB), {
+          await failRun(createWfDb(env.WF_DB), {
             runId: p.workflowRunId,
             error: message,
           })

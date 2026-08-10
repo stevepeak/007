@@ -37,7 +37,7 @@ async function persistLogs<TDeps, E extends GraphWorkflowEnv>(
       ts: e.ts ?? Date.now(),
     }),
   )
-  await replaceNodeLogs(createWfDb(ctx.env.DB), {
+  await replaceNodeLogs(createWfDb(ctx.env.WF_DB), {
     runId: ctx.p.workflowRunId,
     nodeId: node.id,
     entries,

@@ -14,7 +14,8 @@ import type { RunRoom } from './run-room'
 // returning the ids a caller needs to subscribe (RunRoom) and poll (instance).
 
 export interface GraphRunBindings {
-  DB: D1Database
+  /** The SDK's own D1 (`wf_*` tables) — see `GraphWorkflowEnv.WF_DB`. */
+  WF_DB: D1Database
   RUN_ROOM: DurableObjectNamespace<RunRoom>
   GRAPH_WORKFLOW: Workflow<GraphWorkflowParams>
 }
@@ -38,7 +39,7 @@ export async function startGraphRun(
   env: GraphRunBindings,
   input: StartGraphRunInput,
 ): Promise<StartGraphRunResult> {
-  const db = createWfDb(env.DB)
+  const db = createWfDb(env.WF_DB)
 
   // Which backend takes this run. An explicit `input.engine` wins (the A/B
   // escape hatch); otherwise it comes from the graph's trigger node. Reading the

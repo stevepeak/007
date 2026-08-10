@@ -117,7 +117,8 @@ import { z } from 'zod'
 // (a) The live Cloudflare bindings you read out of RunContext.env at run time.
 //     RunContext.env is `unknown` to the SDK — you own its type and the cast.
 export type HostEnv = {
-  DB: D1Database
+  DB: D1Database // your app tables
+  WF_DB: D1Database // the SDK's own D1 (wf_* tables)
   MODEL_API_KEY: string
   // …whatever your tools need
 }
@@ -379,9 +380,31 @@ by `schema.ts`). The core set is the workflow/agent lifecycle — `wf_workflow`,
 `wf_model_provider`), evals (`wf_eval_set`, `wf_eval_row`, `wf_eval_run`,
 `wf_eval_result`), and feedback (`wf_feedback`). Workflows and agents share one
 lifecycle shape (entity + 1:1 editable draft + immutable published versions). All
-tables use **opaque text identity** (no foreign keys into your tables), so they
-coexist with any host schema in the same D1. The generated SQL lives in
-`migrations/` (append-only; regenerate with `bun run db:generate`).
+tables use **opaque text identity** (no foreign keys into your tables), and the
+SDK never reads or writes a non-`wf_` table — so it is fully self-contained. The
+generated SQL lives in `migrations/` (append-only; regenerate with
+`bun run db:generate`).
+
+> **Give the SDK its own D1.** Because it is self-contained, the `wf_*` tables
+> *can* sit in a host's database — but don't. Two reasons, in order of how much
+> they will hurt:
+>
+> 1. **Migration ledgers collide.** D1 tracks applied migrations in a single
+>    `d1_migrations` table per database. Point two Drizzle migration sets at one
+>    database and they share that ledger while numbering independently from
+>    `0000_`. Drizzle's random filename suffixes come from one word list, so two
+>    sets will eventually generate the same name — at which point the ledger
+>    reports an unapplied migration as already applied and the schema silently
+>    diverges. Nothing warns you.
+> 2. **Write contention and blast radius.** D1 is SQLite: one writer per
+>    database. `wf_run_step` and `wf_run_log` are the highest-volume writes the
+>    SDK makes, and they will contend with your user-facing queries. A separate
+>    database also means the SDK's 10 GB ceiling, backups, and read replication
+>    are yours to tune independently — and that a bad `wf_*` migration cannot
+>    reach your data.
+>
+> Cost is not a factor: D1 bills on rows read/written and total storage, not per
+> database.
 
 The generated SQL lives in this repo's `migrations/` dir. **Applying it is the
 host's job.** This repo's CI only validates (lint/typecheck/test) and never
@@ -394,10 +417,11 @@ public, multi-consumer) repo. Wire it up in your **host** repo instead.
 Assumes you consume this SDK as a git submodule (mounted at, say,
 `packages/wf-sdk`) or vendored dir; adjust paths to match.
 
-**1. Add a host-owned wrangler config** next to your host glue (e.g.
-`packages/wf-host/wrangler.jsonc`). It binds _your_ D1 with real IDs — safe
-because it lives in your **private** host repo — and points `migrations_dir` at
-this package's `migrations/`. `migrations_dir` is resolved relative to this file:
+**1. Create a D1 for the SDK** — `wrangler d1 create your-wf-db` — then **add a
+host-owned wrangler config** next to your host glue (e.g.
+`packages/wf-host/wrangler.jsonc`). It binds that D1 with real IDs — safe because
+it lives in your **private** host repo — and points `migrations_dir` at this
+package's `migrations/`. `migrations_dir` is resolved relative to this file:
 
 ```jsonc
 // packages/wf-host/wrangler.jsonc  (../wf-sdk == the submodule mount)
@@ -406,9 +430,11 @@ this package's `migrations/`. `migrations_dir` is resolved relative to this file
   "name": "wf-sdk-migrations", // not a deployable Worker; migrations-only
   "d1_databases": [
     {
-      "binding": "DB",
-      "database_name": "your-db",
-      "database_id": "<your-db-id>",
+      // WF_DB, not DB — your Workers generally need their own database in the
+      // same request, so the two bindings must not share a name.
+      "binding": "WF_DB",
+      "database_name": "your-wf-db", // dedicated to the SDK; see the box above
+      "database_id": "<your-wf-db-id>",
       "migrations_dir": "../wf-sdk/migrations",
     },
   ],
@@ -474,14 +500,26 @@ wrangler d1 migrations apply your-db --local \
 `bun run db:generate` inside this package (drizzle-kit; needs no credentials),
 then commit the new SQL here and let the host apply it.
 
-> ⚠️ **Gotcha (shared D1):** if your host also has its own migrations dir (e.g.
-> 1121law applies `packages/db/migrations` for its _own_ schema), you can't put
-> two `migrations_dir` on one binding — the `wf_*` migrations need a **separate**
-> config + `apply` step (exactly step 2 above). Both dirs share the D1's default
-> `d1_migrations` tracking table with distinct filenames, so they coexist without
-> collision. Worked example: 1121law runs two `d1 migrations apply law-db` steps
-> back-to-back in its `deploy-migrations` job — one for `packages/db`, one for
-> `packages/wf-host`.
+> ⚠️ **Two migration sets, two databases.** Your host almost certainly has its
+> own migrations dir. You cannot put two `migrations_dir` on one binding, so the
+> `wf_*` migrations always need a **separate** config + `apply` step (exactly
+> step 2 above). Point that step at the SDK's own database — then each set owns
+> its own `d1_migrations` ledger and the collision described at the top of this
+> section cannot happen. Worked example: 1121law runs two `apply` steps in its
+> `deploy-migrations` job, one for `packages/db` → `law-db`, one for the wf
+> config → `law-wf`, and wraps both in a single `bun run db:migrate`.
+>
+> **Migrating from a shared database?** The order that matters is: create the new
+> D1 and apply the migrations to it *first* (inert — nothing reads it yet), then
+> deploy the `WF_DB` binding, and only then ship code that reads `env.WF_DB`. A
+> binding with no reader is harmless; a reader with no binding is
+> `createWfDb(undefined)` and a live outage. Copy the data with a data-only
+> `wrangler d1 export --table wf_… --no-schema` into
+> `wrangler d1 execute <new-db> --file=` (there is no `d1 import`), and **never
+> copy the `d1_migrations` rows** — the new database already has its own correct
+> ledger. Leave the old `wf_*` tables in place until you are confident, then drop
+> them; while they exist, resist adding a `env.WF_DB ?? env.DB` fallback, which
+> would silently read and write the stale copy.
 
 You can also **skip CI** and apply manually via this package's `db:migrate`
 script — fill the `wrangler.jsonc` placeholders with real IDs first, or pass
@@ -496,7 +534,7 @@ script — fill the `wrangler.jsonc` placeholders with real IDs first, or pass
 >
 > | var            | default                 | meaning                                            |
 > | -------------- | ----------------------- | -------------------------------------------------- |
-> | `WF_D1_NAME`   | `DB`                    | D1 name **or binding** to migrate (both hosts bind `DB`) |
+> | `WF_D1_NAME`   | `WF_DB`                 | D1 name **or binding** to migrate                  |
 > | `WF_D1_CONFIG` | `./wrangler.jsonc`      | wrangler config providing that binding + `migrations_dir` |
 > | `WF_D1_STATE`  | `../../.wrangler/state` | local persist dir (repo-root state)                |
 >
@@ -507,16 +545,22 @@ script — fill the `wrangler.jsonc` placeholders with real IDs first, or pass
 > nothing host-specific is committed here. Examples:
 >
 > ```sh
-> # newco/.wf-migrate.env   (apps/workflows binds DB → newco-wf, migrations_dir → 007)
-> export WF_D1_NAME=DB
+> # newco/.wf-migrate.env   (apps/workflows binds WF_DB → newco-wf, migrations_dir → 007)
+> export WF_D1_NAME=WF_DB
 > export WF_D1_CONFIG=../../apps/workflows/wrangler.jsonc
 > export WF_D1_STATE=../../.wrangler/state
 >
-> # 1121law/.wf-migrate.env (packages/db/wrangler.wf-sdk.jsonc binds DB → law-db, migrations_dir → ../007/migrations)
-> export WF_D1_NAME=DB
-> export WF_D1_CONFIG=../../packages/db/wrangler.wf-sdk.jsonc
+> # 1121law/.wf-migrate.env (packages/db/wrangler.wf.jsonc binds WF_DB → law-wf, migrations_dir → ../007/migrations)
+> export WF_D1_NAME=law-wf
+> export WF_D1_CONFIG=../../packages/db/wrangler.wf.jsonc
 > export WF_D1_STATE=../../.wrangler/state
 > ```
+>
+> ⚠️ This file is **gitignored in the host repo**, so a change to which database
+> the wf migrations target cannot reach a teammate through a pull. If
+> `bun run db:migrate:local` inside this package starts writing an unexpected
+> database, a stale `.wf-migrate.env` is the first thing to check. Committing a
+> `.wf-migrate.env.example` alongside it makes the current value discoverable.
 >
 > With no `.wf-migrate.env` present the scripts fall back to this package's own
 > placeholder `wrangler.jsonc`, which is a template only — fill it in, or (better)
@@ -544,7 +588,7 @@ Get a `WfDb` handle from a D1 binding inside the request/step path:
 
 ```ts
 import { createWfDb } from '@stevepeak/007/storage'
-const db = createWfDb(env.DB) // never at module load — DB is a request binding
+const db = createWfDb(env.WF_DB) // never at module load — a request binding
 ```
 
 ---
@@ -587,7 +631,7 @@ binding names on `env`:
 
 ```ts
 interface GraphRunBindings {
-  DB: D1Database
+  WF_DB: D1Database
   RUN_ROOM: DurableObjectNamespace<RunRoom>
   GRAPH_WORKFLOW: Workflow<GraphWorkflowParams>
 }
@@ -629,8 +673,10 @@ type StartGraphRunInput = {
     "bindings": [{ "name": "RUN_ROOM", "class_name": "RunRoom" }],
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RunRoom"] }],
+  // Two: your own app database, plus the SDK's dedicated one (see §3).
   "d1_databases": [
     { "binding": "DB", "database_name": "your-db", "database_id": "…" },
+    { "binding": "WF_DB", "database_name": "your-wf-db", "database_id": "…" },
   ],
 }
 ```
@@ -984,7 +1030,7 @@ import { resolveAssignedVersion } from '@stevepeak/007'
 import { createWfDb } from '@stevepeak/007/storage'
 import { seedChatWorkflow } from 'your-host'
 
-const db = createWfDb(env.DB) // the tenant's workspace database
+const db = createWfDb(env.WF_DB) // the tenant's workspace database
 let assigned = await resolveAssignedVersion(db, { triggerKind: 'chat_message' })
 if (!assigned) {
   await seedChatWorkflow(db)
@@ -1181,10 +1227,13 @@ project:
    Worker; it only lets a manual `wrangler d1 migrations apply` run against
    `./migrations` once you fill the placeholders. This repo's CI never applies
    migrations — that's the host's job (see §3).
-5. **Migrations wiring.** Decide up front how `wf_*` migrations reach your D1: a
-   host-owned config + CI step pointing at this repo's `migrations/` (§3 option 1),
-   or a manual step (§3 option 2). Keep the host's Cloudflare secrets in the host
-   repo — never here.
+5. **Migrations wiring.** Create a **dedicated D1** for the SDK (§3) rather than
+   reusing your app's — sharing a database means sharing one `d1_migrations`
+   ledger between two independently-numbered migration sets, which silently
+   corrupts schema state when their filenames eventually collide. Then decide how
+   `wf_*` migrations reach it: a host-owned config + CI step pointing at this
+   repo's `migrations/` (§3 option 1), or a manual step (§3 option 2). Keep the
+   host's Cloudflare secrets in the host repo — never here.
 6. **Tailwind + React 19.** Hard requirements for the UI. The SDK's markup uses
    Tailwind utility classes directly, so Tailwind must scan the package's files.
 7. **`RunContext.env` is untyped (`unknown`).** You own the `HostEnv` type and the

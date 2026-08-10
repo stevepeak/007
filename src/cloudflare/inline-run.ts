@@ -178,12 +178,12 @@ export type RunInlineGraphDeps<E> = {
  * Never throws: a failed run is recorded as failed (D1 + room) and swallowed,
  * because the caller is a fire-and-forget DO task with nowhere to report to.
  */
-export async function runInlineGraph<TDeps, E extends { DB: D1Database }>(
+export async function runInlineGraph<TDeps, E extends { WF_DB: D1Database }>(
   config: WfSdkConfig<TDeps>,
   deps: RunInlineGraphDeps<E>,
 ): Promise<void> {
   const { env, room, params: p } = deps
-  const db = createWfDb(env.DB)
+  const db = createWfDb(env.WF_DB)
   const sink = createInlineSink(db, room, p.workflowRunId)
   let runContext: RunContext = { ...p.runContext, env }
 

@@ -349,7 +349,7 @@ type InlineHostRpc = {
  */
 export interface RunRoom extends RunRoomBase, InlineHostRpc {}
 
-export type RunRoomClass<E extends { DB: D1Database }> = new (
+export type RunRoomClass<E extends { WF_DB: D1Database }> = new (
   ctx: DurableObjectState,
   env: E,
 ) => RunRoomBase<E> & InlineHostRpc
@@ -366,7 +366,7 @@ export type RunRoomClass<E extends { DB: D1Database }> = new (
  * run's execution host, so it needs the host's model factory, tools, and deps —
  * exactly what {@link makeGraphWorkflow} needs for the durable engine.
  */
-export function makeRunRoom<TDeps, E extends { DB: D1Database }>(
+export function makeRunRoom<TDeps, E extends { WF_DB: D1Database }>(
   config: WfSdkConfig<TDeps>,
 ): RunRoomClass<E> {
   return class RunRoom extends RunRoomBase<E> {

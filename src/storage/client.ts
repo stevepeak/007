@@ -5,8 +5,9 @@ import { drizzle as drizzleProxy } from 'drizzle-orm/sqlite-proxy'
 import { wfSchema } from './schema'
 
 // A Drizzle client bound to the SDK's `wf_*` tables only. D1 is a Worker
-// binding (`env.DB`), available only inside a request / workflow step — call
-// this in the request path, never at module load. `D1Database` is imported
+// binding (`env.WF_DB` — the SDK's own database, separate from the host's),
+// available only inside a request / workflow step — call this in the request
+// path, never at module load. `D1Database` is imported
 // explicitly (not from the ambient workers-types globals) so consumers whose
 // tsconfig omits those globals (a Next app on the DOM lib) can import this too.
 export type WfDb = DrizzleD1Database<typeof wfSchema>
