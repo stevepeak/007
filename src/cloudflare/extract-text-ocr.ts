@@ -9,9 +9,26 @@
 const OCR_PROMPT =
   'You are an OCR engine. Extract all text from this document page exactly as it appears, preserving line breaks and table layout where reasonable. Output only the raw text — no preamble, no explanation, no markdown fences.'
 
-const PDFJS_VERSION = '4.7.76'
-const PDFJS_LIB_URL = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/legacy/build/pdf.min.mjs`
-const PDFJS_WORKER_URL = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/legacy/build/pdf.worker.min.mjs`
+/**
+ * The PDF.js release this renderer is written against. Exported so a host can
+ * build a matching self-hosted asset path (and assert its pinned `pdfjs-dist`
+ * dependency hasn't drifted from what the injected script expects).
+ */
+export const PDFJS_VERSION = '4.7.76'
+
+/**
+ * Where the injected page loads PDF.js from — a *directory* URL containing
+ * `pdf.min.mjs` and `pdf.worker.min.mjs`.
+ *
+ * Defaults to jsDelivr so the SDK works with zero wiring, but a host serving
+ * privileged documents should override it (`getPdfjsBaseUrl` on the tool) to
+ * point at its own origin: this script runs in a page holding the document's
+ * bytes, so whatever this URL returns executes against them, and an `import`
+ * specifier cannot carry a subresource-integrity hash.
+ */
+const DEFAULT_PDFJS_BASE_URL = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/legacy/build/`
+/** How long the page gets to fetch + evaluate the PDF.js module script. */
+const PDFJS_LOAD_TIMEOUT_MS = 15_000
 const PAGE_RENDER_SCALE = 1.5
 const MAX_OCR_PAGES = 50
 // A capable image-to-text model on Workers AI; override via `visionModel`.
@@ -56,6 +73,7 @@ function toBase64(bytes: Uint8Array): string {
 async function renderPdfPages(
   browserBinding: Fetcher,
   pdfBytes: Uint8Array,
+  pdfjsBaseUrl: string,
 ): Promise<Uint8Array[]> {
   // Lazy import: keep `@cloudflare/puppeteer` (and any Worker-only modules it
   // may pull) out of module-load so this tool imports cleanly in Node contexts
@@ -64,9 +82,29 @@ async function renderPdfPages(
   const browser = await puppeteer.launch(browserBinding)
   try {
     const page = await browser.newPage()
-    await page.setContent(buildRendererHtml(), {
+    await page.setContent(buildRendererHtml(pdfjsBaseUrl), {
       waitUntil: 'domcontentloaded',
     })
+    // `domcontentloaded` fires before the module script has fetched and run, so
+    // wait for the script to actually settle — otherwise a slow PDF.js load
+    // races the `evaluate` below and surfaces as a bare
+    // "__renderPdf is not a function".
+    await page
+      .waitForFunction(
+        'typeof window.__renderPdf === "function" || typeof window.__pdfjsError === "string"',
+        { timeout: PDFJS_LOAD_TIMEOUT_MS },
+      )
+      .catch(() => {
+        throw new Error(
+          `PDF.js did not load from ${pdfjsBaseUrl} within ${PDFJS_LOAD_TIMEOUT_MS}ms`,
+        )
+      })
+    const loadError = await page.evaluate(
+      () => (window as unknown as { __pdfjsError?: string }).__pdfjsError ?? '',
+    )
+    if (loadError) {
+      throw new Error(`PDF.js failed to load from ${pdfjsBaseUrl}: ${loadError}`)
+    }
     const numPages = await page.evaluate((b64: string) => {
       const w = window as unknown as {
         __renderPdf: (b: string) => Promise<number>
@@ -98,8 +136,19 @@ export async function ocrPdf(
   browserBinding: Fetcher,
   pdfBytes: Uint8Array,
   recognize: OcrRecognize,
+  opts?: {
+    /**
+     * Directory URL holding `pdf.min.mjs` + `pdf.worker.min.mjs`. Defaults to
+     * jsDelivr; see {@link DEFAULT_PDFJS_BASE_URL} for why hosts should override.
+     */
+    pdfjsBaseUrl?: string
+  },
 ): Promise<{ text: string; pages: number }> {
-  const pages = await renderPdfPages(browserBinding, pdfBytes)
+  const pages = await renderPdfPages(
+    browserBinding,
+    pdfBytes,
+    opts?.pdfjsBaseUrl ?? DEFAULT_PDFJS_BASE_URL,
+  )
   const out: string[] = []
   for (let i = 0; i < pages.length; i++) {
     const png = pages[i]
@@ -121,34 +170,44 @@ export async function ocrPdf(
   return { text, pages: pages.length }
 }
 
-function buildRendererHtml(): string {
+function buildRendererHtml(pdfjsBaseUrl: string): string {
+  // A directory URL, so the two filenames concatenate cleanly.
+  const base = pdfjsBaseUrl.endsWith('/') ? pdfjsBaseUrl : `${pdfjsBaseUrl}/`
+  // `import()` rather than a static `import` so a failed fetch is catchable: a
+  // static import that 404s kills the whole module, leaving neither
+  // `__renderPdf` nor `__pdfjsError` defined and the Worker with nothing but a
+  // timeout to report.
   return `<!doctype html>
 <html>
 <head><meta charset="utf-8"><style>body{margin:0;background:#fff} canvas{display:block}</style></head>
 <body>
 <div id="pages"></div>
 <script type="module">
-import * as pdfjsLib from ${JSON.stringify(PDFJS_LIB_URL)};
-pdfjsLib.GlobalWorkerOptions.workerSrc = ${JSON.stringify(PDFJS_WORKER_URL)};
+try {
+  const pdfjsLib = await import(${JSON.stringify(`${base}pdf.min.mjs`)});
+  pdfjsLib.GlobalWorkerOptions.workerSrc = ${JSON.stringify(`${base}pdf.worker.min.mjs`)};
 
-window.__renderPdf = async (b64) => {
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
-  const container = document.getElementById('pages');
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const viewport = page.getViewport({ scale: ${PAGE_RENDER_SCALE} });
-    const canvas = document.createElement('canvas');
-    canvas.id = 'page-' + i;
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    container.appendChild(canvas);
-    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-  }
-  return pdf.numPages;
-};
+  window.__renderPdf = async (b64) => {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+    const container = document.getElementById('pages');
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const viewport = page.getViewport({ scale: ${PAGE_RENDER_SCALE} });
+      const canvas = document.createElement('canvas');
+      canvas.id = 'page-' + i;
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      container.appendChild(canvas);
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+    }
+    return pdf.numPages;
+  };
+} catch (e) {
+  window.__pdfjsError = String((e && e.message) || e);
+}
 </script>
 </body>
 </html>`

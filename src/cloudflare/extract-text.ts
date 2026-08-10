@@ -13,9 +13,12 @@ import {
 
 // Re-exported so the public `./cloudflare/extract-text` entry (and `./cloudflare`
 // barrel) keeps offering the OCR seam even though it now lives in its own module.
+// `PDFJS_VERSION` rides along so a host wiring `getPdfjsBaseUrl` to a
+// self-hosted copy can pin the same release the injected script expects.
 export {
   cloudflareVisionRecognizer,
   type OcrRecognize,
+  PDFJS_VERSION,
 } from './extract-text-ocr'
 
 // Cloudflare-native `extract_text` built-in: fetch an uploaded file from R2 and
@@ -122,6 +125,14 @@ export type CreateExtractTextToolOptions<TDeps> = {
   getBrowser?: (deps: TDeps) => Fetcher
   /** Custom page → text recognizer; defaults to Workers AI vision. */
   getRecognize?: (deps: TDeps) => OcrRecognize
+  /**
+   * Directory URL the OCR page loads PDF.js from — it must serve
+   * `pdf.min.mjs` and `pdf.worker.min.mjs` for {@link PDFJS_VERSION}. Defaults
+   * to jsDelivr. Hosts extracting privileged documents should point this at
+   * their own origin: the script runs in a page holding the document's bytes,
+   * and an `import` specifier can't carry an integrity hash.
+   */
+  getPdfjsBaseUrl?: (deps: TDeps) => string
   /** Workers AI vision model for the default recognizer. */
   visionModel?: string
   /** Override the registry id (default `extract_text`). */
@@ -273,6 +284,7 @@ export function createExtractTextTool<TDeps>(
               opts.getBrowser(deps),
               bytes,
               recognize,
+              { pdfjsBaseUrl: opts.getPdfjsBaseUrl?.(deps) },
             )
             if (text.length > 0) {
               return await finalize({

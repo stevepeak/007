@@ -26,6 +26,7 @@ export {
   extractTextInputSchema,
   extractTextOutputSchema,
   looksLikeScannedPdf,
+  PDFJS_VERSION,
   type CreateExtractTextToolOptions,
   type ExtractTextArgs,
   type ExtractTextMeta,
