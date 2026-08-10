@@ -76,7 +76,12 @@ export {
   type CompileResult,
   type JsonSchema,
 } from './agent-output'
-export { resolveBinding, resolvePath } from './binding'
+export {
+  describeNode,
+  NodeOutputs,
+  resolveBinding,
+  resolvePath,
+} from './binding'
 export {
   isBlobRef,
   makeBlobRef,

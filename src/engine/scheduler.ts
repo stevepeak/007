@@ -1,4 +1,4 @@
-import { resolveBinding } from './binding'
+import { NodeOutputs, resolveBinding } from './binding'
 import {
   isBookendKind,
   workflowGraphSchema,
@@ -132,7 +132,10 @@ export class Scheduler {
 
   private readonly completed = new Set<string>()
   private readonly branchResults = new Map<string, string>()
-  private readonly nodeOutputs = new Map<string, unknown>()
+  // Seeded with the graph's node identities so a failed ref names the boxes the
+  // author drew rather than their uuids. Assigned in the constructor — it needs
+  // the parsed graph.
+  private readonly nodeOutputs: NodeOutputs
   private nodesFired = 0
   // The runaway-loop backstop for THIS run (host-tunable; defaults to
   // DEFAULT_NODE_BUDGET). Nested subgraph schedulers get their own budget.
@@ -147,6 +150,7 @@ export class Scheduler {
       throw new Error('Graph has no trigger node.')
     }
     this.trigger = trigger
+    this.nodeOutputs = new NodeOutputs(this.graph.nodes)
     for (const n of this.graph.nodes) {
       if (n.kind === 'race') {
         this.raceIds.add(n.id)
@@ -171,8 +175,10 @@ export class Scheduler {
   /**
    * The node-output cache, used by tool arg ref resolution. Returned as the
    * live map (engine-internal); callers read from it and must not mutate it.
+   * A {@link NodeOutputs} rather than a bare Map — it also carries the graph's
+   * node labels, so binding errors raised anywhere downstream can name nodes.
    */
-  getOutputs(): Map<string, unknown> {
+  getOutputs(): NodeOutputs {
     return this.nodeOutputs
   }
 
@@ -293,7 +299,7 @@ export class Scheduler {
     const { source } = out.config
     if (!source) {
       throw new Error(
-        `Output node ${out.id} has no bound value — connect its source to the upstream result the caller should receive.`,
+        `${this.nodeOutputs.describe(out.id)} has no bound value — connect its source to the upstream result the caller should receive.`,
       )
     }
     return resolveBinding(source, this.nodeOutputs, {

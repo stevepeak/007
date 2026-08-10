@@ -1,4 +1,4 @@
-import { resolveBinding } from '../binding'
+import { describeNode, resolveBinding } from '../binding'
 import {
   ITERATION_MAX_ITEMS_FALLBACK,
   type IterationNode,
@@ -198,10 +198,11 @@ export function resolveIterationList(
   node: IterationNode,
   nodeOutputs: Map<string, unknown>,
 ): unknown[] {
+  const self = describeNode(nodeOutputs, node.id)
   const { source } = node.config
   if (!source) {
     throw new Error(
-      `Iteration node ${node.id} has no list selected — pick an upstream list to loop over.`,
+      `${self} has no list selected — pick an upstream list to loop over.`,
     )
   }
   const value = resolveBinding(source, nodeOutputs, {
@@ -209,9 +210,12 @@ export function resolveIterationList(
     name: 'list',
   })
   if (!Array.isArray(value)) {
-    const where = `${source.nodeId}${source.path ? `.${source.path}` : ' (whole output)'}`
+    const producer = describeNode(nodeOutputs, source.nodeId)
+    const where = source.path
+      ? `${producer}.${source.path}`
+      : `${producer} (whole output)`
     throw new Error(
-      `Iteration node ${node.id} expected an array at ${where} but received ${value === undefined ? 'undefined' : typeof value}.`,
+      `${self} expected an array at ${where} but received ${value === undefined ? 'undefined' : typeof value}.`,
     )
   }
   return value

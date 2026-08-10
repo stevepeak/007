@@ -107,6 +107,6 @@ describe('executePassthroughNode', () => {
         input: undefined,
         nodeOutputs: new Map(),
       }),
-    ).rejects.toThrow(/references node missing which has no recorded output/)
+    ).rejects.toThrow(/reads node missing, but that node produced no output/)
   })
 })

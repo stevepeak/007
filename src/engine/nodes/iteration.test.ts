@@ -156,7 +156,7 @@ describe('runIteration', () => {
         iterNode({ source: { kind: 'ref', nodeId: 'src', path: 'words' } }),
         new Map([['src', { words: 'not-an-array' }]]),
       ),
-    ).toThrow(/expected an array at src\.words/)
+    ).toThrow(/expected an array at node src\.words/)
   })
 
   test('resolveIterationList throws when no list is selected', () => {

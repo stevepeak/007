@@ -38,7 +38,7 @@ describe('Scheduler', () => {
     })
     s.seedTrigger({ userText: 'hi' })
     expect(() => drive(s, (id) => ({ output: { ran: id } }))).toThrow(
-      /Output node o has no bound value/,
+      /\(output\) has no bound value/,
     )
   })
 
