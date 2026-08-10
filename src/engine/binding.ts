@@ -1,4 +1,4 @@
-import type { ArgBinding } from './graph'
+import type { ArgBinding, WorkflowNode } from './graph'
 
 // Shared resolution for node input bindings (tool `args`, agent `inputs`). A
 // binding is either a literal value or a `ref` into a prior node's cached
