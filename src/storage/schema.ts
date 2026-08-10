@@ -42,7 +42,7 @@ import {
 } from './schema-evals'
 import { wfFeedback } from './schema-feedback'
 import { wfModel, wfModelProvider } from './schema-models'
-import { wfRun, wfRunStep } from './schema-runs'
+import { wfRun, wfRunLog, wfRunStep } from './schema-runs'
 import {
   wfWorkflow,
   wfWorkflowAssignment,
@@ -60,6 +60,7 @@ export const wfSchema = {
   wfWorkflowAssignment,
   wfRun,
   wfRunStep,
+  wfRunLog,
   wfEvalSet,
   wfEvalRow,
   wfEvalRun,
