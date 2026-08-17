@@ -1,4 +1,9 @@
-import { APICallError, RetryError } from 'ai'
+import {
+  APICallError,
+  type LanguageModelUsage,
+  NoObjectGeneratedError,
+  RetryError,
+} from 'ai'
 
 // When an agent/tool node's model call fails, the thrown value is usually an
 // AI SDK `APICallError` whose `.message` is a bare "Bad Request". The one thing
@@ -20,6 +25,21 @@ export interface ApiErrorDetail {
   attempts?: number
   /** Why the retry wrapper gave up: maxRetriesExceeded | errorNotRetryable | abort. */
   retryReason?: string
+  /** The wrapped error's message — for a structured call, the parse or schema
+   * complaint that explains WHY the output was rejected. */
+  cause?: string
+  /** Structured calls only: why the model stopped. `length` says the response
+   * was cut off (the cap, or reasoning eating it) — a different bug entirely
+   * from a model that answered in prose, which stops with `stop`. */
+  finishReason?: string
+  /** Structured calls only. `outputTokenDetails.reasoningTokens` against
+   * `outputTokens` is what distinguishes "thought until it ran out of room to
+   * answer" from "answered badly" — and it exists nowhere else once the error
+   * has been stringified. */
+  usage?: LanguageModelUsage
+  /** Structured calls only: the raw text the model produced. Last field of the
+   * serialized detail — see `MAX_TEXT`. */
+  text?: string
 }
 
 // Cap on the serialized error stored in D1. The full request messages (e.g. a
@@ -27,14 +47,28 @@ export interface ApiErrorDetail {
 // error blob to be unbounded — the response body is the valuable part.
 const MAX_STORED = 16_000
 
-function cap(s: string): string {
-  return s.length > MAX_STORED
-    ? `${s.slice(0, MAX_STORED)}…[truncated ${s.length - MAX_STORED} chars]`
+// The model's raw output is worth keeping on a structured failure — it's the
+// only way to see what actually came back — but it's unbounded: an agent that
+// answers in prose instead of JSON hands back its entire answer. Capped well
+// under `MAX_STORED` so it can never crowd out the fields that explain the
+// failure. (`text` is also serialized LAST, so the outer cap eats it first.)
+const MAX_TEXT = 2_000
+
+function cap(s: string, limit = MAX_STORED): string {
+  return s.length > limit
+    ? `${s.slice(0, limit)}…[truncated ${s.length - limit} chars]`
     : s
 }
 
 /**
- * Structured detail for an AI SDK API error, or `null` for anything else.
+ * Structured detail for an AI SDK error, or `null` for anything else.
+ *
+ * Two error shapes are read directly — `APICallError` (the provider rejected
+ * the call) and `NoObjectGeneratedError` (it answered, but not with the object
+ * the schema asked for). The latter used to fall through to the `cause` walk
+ * below, which bottomed out at a bare `SyntaxError` and returned `null`: the
+ * stored error was a stack and nothing else, and `finishReason` — the one field
+ * that says whether the response was TRUNCATED or merely wrong — was dropped.
  *
  * Unwraps two kinds of wrapper:
  *
@@ -67,6 +101,20 @@ export function apiErrorDetail(
       data: err.data,
     }
   }
+  // Deliberately no `isRetryable`: leaving it undefined keeps the dispatch's
+  // step-level retry as the backstop for a one-off unparseable response.
+  // Setting it `false` here would escalate to `NonRetryableError` and fail the
+  // run on the first flake.
+  if (NoObjectGeneratedError.isInstance(err)) {
+    return {
+      name: err.name,
+      message: err.message,
+      cause: err.cause instanceof Error ? cap(err.cause.message) : undefined,
+      finishReason: err.finishReason,
+      usage: err.usage,
+      text: err.text == null ? undefined : cap(err.text, MAX_TEXT),
+    }
+  }
   if (depth <= 0) return null
   if (RetryError.isInstance(err)) {
     // `lastError` first — it's the attempt that decided the outcome — then the
@@ -96,7 +144,11 @@ export function errorFeedLine(err: unknown): string {
     // Name the attempt count when the SDK retried, so the feed distinguishes a
     // one-off rejection from a provider that refused repeatedly.
     const tries = d.attempts && d.attempts > 1 ? ` after ${d.attempts} attempts` : ''
-    return `${d.name}: ${d.message}${status}${tries}`
+    // The finish reason is the whole diagnosis for a structured failure, and
+    // it's short — the feed carries it rather than making a reader open the
+    // stored blob to learn whether the response was simply cut off.
+    const finish = d.finishReason ? ` (finish: ${d.finishReason})` : ''
+    return `${d.name}: ${d.message}${status}${finish}${tries}`
   }
   return err instanceof Error ? err.message : String(err)
 }

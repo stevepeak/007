@@ -112,6 +112,16 @@ export async function withNodeSpan<T>(
             // issue shows one rejection and no sign it was tried repeatedly.
             attempts: d.attempts ?? null,
             retryReason: d.retryReason ?? null,
+            // Present when a structured call produced something unusable. The
+            // finish reason separates "the response was cut off" from "the
+            // model answered in the wrong shape", and the usage split says
+            // whether reasoning is what consumed the output room; the raw text
+            // is the only record of what actually came back. None of it
+            // survives the stack, which is all this issue used to carry.
+            finishReason: d.finishReason ?? null,
+            usage: d.usage ?? null,
+            cause: d.cause ?? null,
+            text: d.text ?? null,
           })
         }
         return scope

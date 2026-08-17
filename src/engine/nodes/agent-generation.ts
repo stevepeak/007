@@ -4,6 +4,7 @@ import {
   generateText,
   jsonSchema,
   type LanguageModel,
+  NoObjectGeneratedError,
   stepCountIs,
   type StepResult,
   streamText,
@@ -280,6 +281,25 @@ function isTimeoutError(err: unknown): boolean {
   )
 }
 
+/**
+ * How many times one structured call may be issued before giving up.
+ *
+ * A structured call can come back unusable in a way the AI SDK does NOT retry:
+ * `maxRetries` covers transport-level rejections (429, 503), while a response
+ * that arrives intact but isn't the object the schema asked for — truncated
+ * mid-JSON, or valid JSON of the wrong shape — throws `NoObjectGeneratedError`
+ * on the first occurrence. Observed in production as a body consisting of a
+ * lone `{`.
+ *
+ * The dispatch's step-level retry does eventually catch it, but at the price of
+ * replaying the ENTIRE node closure after a backoff — for a document-reading
+ * agent, that's the whole source re-sent to the model seconds later. Re-issuing
+ * the one call here is the cheap fix for a flake; the step retry stays as the
+ * backstop for a failure that survives it. Both attempts run under the same
+ * total-budget guard, so this can't extend a node past its budget.
+ */
+const STRUCTURED_MAX_ATTEMPTS = 2
+
 // generateObject path — for the structured-object and YES/NO output kinds we
 // return the parsed object as the node output. No tool loop, no progress.
 async function runStructuredGeneration(
@@ -290,11 +310,12 @@ async function runStructuredGeneration(
   const schema =
     output.kind === 'object' ? output.schema : BOOLEAN_OUTPUT_SCHEMA
   const startedAt = logModelCallStart(sink, modelId, { mode: output.kind })
-  // `generateObject` accepts no `timeout` config — only `abortSignal` — but it
-  // is a single round-trip anyway, so the total budget is the only bound needed.
+  // `generateObject` accepts no `timeout` config — only `abortSignal` — and
+  // every attempt shares the one guard, so the total budget bounds the node
+  // however many times the call is re-issued.
   const guard = armTotalBudget(budget)
   const messagesForModel = await convertToModelMessages(messages)
-  const result = await runGuarded(sink, modelId, startedAt, guard, () =>
+  const issue = () =>
     generateObject({
       model,
       system: systemPrompt,
@@ -302,8 +323,33 @@ async function runStructuredGeneration(
       schema: jsonSchema(schema),
       abortSignal: guard.signal,
       maxRetries: MODEL_MAX_RETRIES,
-    }),
-  )
+    })
+  const result = await runGuarded(sink, modelId, startedAt, guard, async () => {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await issue()
+      } catch (err) {
+        // Only an unusable OBJECT is re-issued. A provider rejection has
+        // already exhausted `maxRetries` inside the call above, and an overrun
+        // means there is no budget left to spend on another round-trip.
+        if (
+          attempt >= STRUCTURED_MAX_ATTEMPTS ||
+          !NoObjectGeneratedError.isInstance(err) ||
+          guard.overran()
+        ) {
+          throw err
+        }
+        // The retry is otherwise invisible: `runGuarded` logs the outcome of
+        // the LAST attempt only, so without this line a run that flaked and
+        // recovered looks identical to one that worked first time.
+        void sink?.log?.({
+          level: 'warn',
+          message: `⟳ ${modelId} returned no usable object (finish: ${err.finishReason ?? 'unknown'}) — re-issuing`,
+          meta: { attempt, finishReason: err.finishReason },
+        })
+      }
+    }
+  })
   logModelCallEnd(sink, modelId, startedAt, {
     finishReason: result.finishReason,
   })
