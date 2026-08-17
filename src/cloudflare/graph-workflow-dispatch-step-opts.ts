@@ -40,11 +40,17 @@ export const DEFAULT_STEP_OPTS = {
 // reads when layering a partial override.
 function kindDefaultOpts(kind: string) {
   // The deterministic `branch` needs no retries/long timeout and falls through
-  // to the default policy. A `workflow` node runs a whole callee subgraph
-  // inline (often several LLM nodes) in one step, so it gets the longer,
-  // retried AI policy — authors can raise the timeout further per-node via
-  // `execution` for long callees.
-  return kind === 'agent' || kind === 'workflow'
+  // to the default policy. The subgraph CONTAINERS — `workflow` (one callee) and
+  // `iteration` (one item) — each run several LLM nodes inside one step, so they
+  // get the longer, retried AI policy; authors can raise it further per-node via
+  // `execution`.
+  //
+  // This must stay in lockstep with `defaultNodeTimeoutMs`: the timeout below is
+  // handed to `step.do` while the same number, via `resolveStepTimeoutMs`,
+  // derives the in-process model budget. If the two kind lists disagree, the
+  // budget stops being a strictly-shorter version of the step timeout and the
+  // external kill wins the race again.
+  return kind === 'agent' || kind === 'workflow' || kind === 'iteration'
     ? AI_STEP_OPTS
     : DEFAULT_STEP_OPTS
 }

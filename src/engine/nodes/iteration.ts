@@ -4,6 +4,7 @@ import {
   type IterationNode,
   type WorkflowGraph,
 } from '../graph'
+import { remainingBudget, type ModelBudget } from '../model-budget'
 import { emitNodeProgress } from '../node-progress'
 import {
   errorMessage,
@@ -93,6 +94,26 @@ export async function executeSubgraph<TDeps>(
   const scheduler = new Scheduler(subgraph)
   scheduler.seedTrigger(item)
 
+  // `ctx.modelBudget` bounds the CONTAINER — one `iter:` step, one inline item,
+  // one callee — not each node in it, so it is spent down across the walk below
+  // rather than reissued in full to every node. Started here, so concurrent
+  // items each get their own deadline (which is what the durable backend gives
+  // them anyway: one `step.do` apiece).
+  const subgraphStartedAt = Date.now()
+  const budgetForNextNode = (label: string): ModelBudget | undefined => {
+    if (!ctx.modelBudget) return undefined
+    const left = remainingBudget(
+      ctx.modelBudget,
+      Date.now() - subgraphStartedAt,
+    )
+    if (left.totalMs <= 0) {
+      throw new Error(
+        `The enclosing step's ${Math.round(ctx.modelBudget.totalMs / 1000)}s time budget was spent before "${label}" could start.`,
+      )
+    }
+    return left
+  }
+
   // Local, per-item sequence + a thin wrapper that stamps the container/item
   // scope onto every row. Omitted entirely when no recorder is wired.
   let seq = 0
@@ -142,6 +163,10 @@ export async function executeSubgraph<TDeps>(
     try {
       result = await runNode(instruction, {
         ...ctx,
+        // Called INSIDE the try so an exhausted container is recorded as this
+        // node's failure — the item's break point stays inspectable — instead of
+        // throwing past the recorder.
+        modelBudget: budgetForNextNode(node.label),
         // Per-item output cache — ref bindings inside the subgraph resolve
         // against this run's nodes only.
         nodeOutputs: scheduler.getOutputs(),

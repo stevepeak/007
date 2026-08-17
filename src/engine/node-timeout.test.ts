@@ -14,6 +14,16 @@ describe('resolveNodeTimeoutMs without an override', () => {
     expect(resolveNodeTimeoutMs({ kind: 'tool' })).toBe(60_000)
   })
 
+  // The regression: `iteration` fell through to the 60s default, and since the
+  // container's timeout is what the item subgraph's model budget derives from,
+  // 60s minus the 3-minute slack floored at `MIN_TOTAL_MS` — so every agent
+  // inside every iteration ran under a 30-second cap while its own `iter:` step
+  // was allowed 20 minutes. Both subgraph containers need the AI default.
+  test('subgraph containers get the AI default, not the 60s one', () => {
+    expect(resolveNodeTimeoutMs({ kind: 'iteration' })).toBe(AI_NODE_TIMEOUT_MS)
+    expect(resolveNodeTimeoutMs({ kind: 'workflow' })).toBe(AI_NODE_TIMEOUT_MS)
+  })
+
   test("respects the author's own timeout", () => {
     expect(
       resolveNodeTimeoutMs({ kind: 'agent', execution: { timeoutMs: 90_000 } }),

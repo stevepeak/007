@@ -83,3 +83,30 @@ export function modelBudgetFor(stepTimeoutMs: number): ModelBudget {
     toolMs: Math.min(totalMs, MAX_TOOL_MS),
   }
 }
+
+/**
+ * What is left of a CONTAINER's budget, shaped as a budget for the next node
+ * inside it.
+ *
+ * A `workflow` or `iteration` node runs a whole subgraph inside one unit of
+ * execution, and that unit — not any single node in it — is what the enclosing
+ * timeout bounds. Handing every inner node the container's full budget would let
+ * a five-agent subgraph spend five times it and sail straight past the step
+ * timeout, which is the silent external kill this module exists to replace. So
+ * the budget is spent DOWN as the subgraph walks.
+ *
+ * `totalMs` may come back zero or negative — the container is out of time. That
+ * is deliberately not floored: the caller reports an exhausted container rather
+ * than starting a node it cannot finish.
+ */
+export function remainingBudget(
+  budget: ModelBudget,
+  elapsedMs: number,
+): ModelBudget {
+  const totalMs = budget.totalMs - elapsedMs
+  return {
+    totalMs,
+    stepMs: Math.min(budget.stepMs, totalMs),
+    toolMs: Math.min(budget.toolMs, totalMs),
+  }
+}

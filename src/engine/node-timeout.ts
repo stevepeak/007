@@ -9,16 +9,29 @@ import type { NodeExecution } from './graph-schema'
 // it; the inline backend has no step to hand it to, so the budget is the ONLY
 // bound it has. Same declared number, same meaning, one knob for the author.
 
-/** LLM-ish nodes (agent, workflow) — long, since they wait on a provider. */
+/** LLM-ish nodes — long, since they wait on a provider. */
 export const AI_NODE_TIMEOUT_MS = 20 * 60_000
 /** Everything else — deterministic branches, tools, joins. */
 export const DEFAULT_NODE_TIMEOUT_MS = 60_000
 
+/** True for a node that runs a whole subgraph as one unit of execution. */
+function isSubgraphContainer(kind: string): boolean {
+  return kind === 'workflow' || kind === 'iteration'
+}
+
 /** The per-kind default before any `execution` override. */
 export function defaultNodeTimeoutMs(kind: string): number {
-  // A `workflow` node runs a whole callee subgraph (often several LLM nodes) in
-  // one unit, so it gets the AI budget too.
-  return kind === 'agent' || kind === 'workflow'
+  // `workflow` and `iteration` are CONTAINERS: each runs a whole subgraph —
+  // usually several LLM nodes — as one unit, so they need the AI budget too. For
+  // `iteration` the unit is ONE ITEM (the fan-out is many such units), which is
+  // why the wide default is not multiplied by the item count.
+  //
+  // Omitting `iteration` here is not a smaller budget, it is a broken one: the
+  // container's timeout is what the item subgraph's model budget derives from,
+  // and 60s minus `STEP_TIMEOUT_SLACK_MS` floors at `MIN_TOTAL_MS`, so every
+  // agent inside every iteration silently ran under a 30-second cap while its
+  // enclosing step was allowed 20 minutes.
+  return kind === 'agent' || isSubgraphContainer(kind)
     ? AI_NODE_TIMEOUT_MS
     : DEFAULT_NODE_TIMEOUT_MS
 }

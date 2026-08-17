@@ -367,6 +367,66 @@ describe('executeSubgraph', () => {
 })
 
 // ---------------------------------------------------------------------------
+// executeSubgraph — the container's time budget
+// ---------------------------------------------------------------------------
+
+// `ctx.modelBudget` bounds the CONTAINER — one `iter:` step, one inline item,
+// one callee — not each node inside it. Reissuing it in full per node let a
+// multi-agent item spend N × the budget and outlive the step wrapping it, which
+// is the silent external kill the budget exists to replace.
+describe('executeSubgraph under a container budget', () => {
+  const branchSubgraph = (): WorkflowGraph => ({
+    version: 1,
+    nodes: [
+      {
+        id: 'item',
+        kind: 'trigger',
+        label: 'Item',
+        position: { x: 0, y: 0 },
+        config: { triggerKind: ITERATION_ITEM_TRIGGER_KIND },
+      },
+      {
+        id: 'b',
+        kind: 'branch',
+        label: 'Truthy?',
+        position: { x: 100, y: 0 },
+        config: { operator: 'is_not_empty' },
+      },
+      {
+        id: 'yes',
+        kind: 'output',
+        label: 'Yes',
+        position: { x: 200, y: 0 },
+        config: { source: { kind: 'ref', nodeId: 'b', path: '' } },
+      },
+    ],
+    edges: [
+      { id: 'e1', source: 'item', target: 'b', condition: null },
+      { id: 'e2', source: 'b', target: 'yes', condition: 'yes' },
+    ],
+  })
+
+  const ctxWithBudget = (totalMs: number) =>
+    ({
+      modelBudget: { totalMs, stepMs: totalMs, toolMs: totalMs },
+    }) as unknown as RunNodeContext<unknown>
+
+  test('walks the subgraph while the container has time left', async () => {
+    expect(
+      await executeSubgraph(branchSubgraph(), 'present', ctxWithBudget(60_000)),
+    ).toMatchObject({ result: 'yes' })
+  })
+
+  // Naming the node it refused to start is the point: an item that dies here
+  // otherwise looks identical to one that died inside the model call.
+  test('refuses to start a node once the container is spent', async () => {
+    await expect(
+      executeSubgraph(branchSubgraph(), 'present', ctxWithBudget(0)),
+    ).rejects.toThrow(/time budget was spent before "Truthy\?" could start/)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Schema validation
 // ---------------------------------------------------------------------------
 

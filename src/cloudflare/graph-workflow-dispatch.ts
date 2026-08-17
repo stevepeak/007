@@ -53,7 +53,6 @@ import {
 import type { RunCtx } from './graph-workflow-dispatch-run-ctx'
 import { notifyHost, stepDo } from './graph-workflow-dispatch-step'
 import {
-  AI_STEP_OPTS,
   DEFAULT_STEP_OPTS,
   resolveStepTimeoutMs,
   stepOptsFor,
@@ -119,7 +118,12 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
     sink,
     promptVariables: p.runContext.promptVariables,
     runItem: (item, index) =>
-      stepDo(step, `iter:${node.id}:${index}`, AI_STEP_OPTS, async () => {
+      // The iteration node creates no `run:` step of its own — these per-item
+      // steps are the only ones it has, so its `execution` policy governs ONE
+      // ITEM. `stepOptsFor` and `resolveStepTimeoutMs` below read that same
+      // policy, which is what keeps the item's wall-clock timeout and the
+      // in-process budget derived from it in agreement.
+      stepDo(step, `iter:${node.id}:${index}`, stepOptsFor(node), async () => {
         const rc = { ...p.runContext, env }
         const toolDeps = await config.buildRunDeps(rc)
         return await executeSubgraph(
