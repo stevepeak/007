@@ -24,6 +24,13 @@ export type ToolOption = {
    */
   sideEffect?: 'read' | 'write'
   /**
+   * Ambient run-scope keys this tool needs, referencing {@link ToolContextField}
+   * `key`s declared by the host. Not arguments — the agent never sets these. A
+   * playground that runs this tool for real has to collect them first, or the
+   * tool runs against an empty scope and quietly matches nothing.
+   */
+  requiresContext?: string[]
+  /**
    * JSON Schema of the tool's input arguments (converted from the tool's Zod
    * `inputSchema`). Drives the "requires" side of node data-mapping. Absent when
    * the tool didn't declare one.

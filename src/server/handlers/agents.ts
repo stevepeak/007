@@ -264,6 +264,7 @@ export function buildAgentHandlers<TDeps>(
         promptVariables?: unknown
         liveToolIds?: unknown
         messages?: unknown
+        context?: unknown
       }
       const input = typeof p.input === 'string' ? p.input : ''
       const promptVariables = parseStringRecord(p.promptVariables)
@@ -274,6 +275,9 @@ export function buildAgentHandlers<TDeps>(
       // rather than rejected — a broken history should not fail the run, it
       // should just leave the agent with less context.
       const messages = parsePreviewMessages(p.messages)
+      // Ambient run scope for whatever is running live (client org, chat
+      // thread). Opaque here — only the host knows how these map onto a run.
+      const context = parseStringRecord(p.context)
       // Which tools run for real. Anything not listed is simulated, so a
       // malformed/absent field degrades to the safe all-simulated run.
       const liveToolIds = Array.isArray(p.liveToolIds)
@@ -285,6 +289,7 @@ export function buildAgentHandlers<TDeps>(
         promptVariables,
         liveToolIds,
         messages,
+        context,
         ctx: c.ctx,
         req: c.req,
       })

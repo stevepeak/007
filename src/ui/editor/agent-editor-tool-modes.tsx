@@ -1,10 +1,11 @@
 import { AlertTriangle } from 'lucide-react'
 
-import type { ToolOption } from '../../server/protocol'
+import type { ToolContextField, ToolOption } from '../../server/protocol'
 import { cn } from '../cn'
 import { toolChip } from '../tool-appearance'
 import { ToolIcon } from '../tool-icon'
 import { Tooltip } from '../tooltip'
+import { contextLabelsFor } from './agent-editor-context'
 
 // Per-tool live/simulated switches for the agent playground.
 //
@@ -31,6 +32,8 @@ export function isRiskyLive(tool: ToolOption): boolean {
 export function ToolModeList({
   tools,
   live,
+  contextFields,
+  unmetContext,
   onToggle,
   disabled,
 }: {
@@ -38,6 +41,10 @@ export function ToolModeList({
   tools: ToolOption[]
   /** Ids currently set to run for real. */
   live: ReadonlySet<string>
+  /** Host-declared context fields, for naming what a tool requires. */
+  contextFields: readonly ToolContextField[]
+  /** Context keys a live tool needs that are still blank. */
+  unmetContext: ReadonlySet<string>
   onToggle: (toolId: string, live: boolean) => void
   /** Locked while a run is in flight — the modes are part of that run. */
   disabled?: boolean
@@ -75,8 +82,16 @@ export function ToolModeList({
                 />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-xs font-medium text-neutral-800">
-                  {t.name}
+                <span className="flex items-center gap-1.5">
+                  <span className="min-w-0 truncate text-xs font-medium text-neutral-800">
+                    {t.name}
+                  </span>
+                  <ContextChip
+                    tool={t}
+                    fields={contextFields}
+                    live={isLive}
+                    unmet={unmetContext}
+                  />
                 </span>
                 <CapabilityBadge tool={t} />
               </span>
@@ -122,6 +137,50 @@ export function ToolModeList({
         </p>
       )}
     </div>
+  )
+}
+
+/**
+ * What run scope this tool filters by, when it declares one. Shown on the row so
+ * it's obvious WHICH tool summoned the Context field below — and highlighted
+ * while that tool is live and the value is still blank, since that's the
+ * combination that produces a confidently empty answer.
+ */
+function ContextChip({
+  tool,
+  fields,
+  live,
+  unmet,
+}: {
+  tool: ToolOption
+  fields: readonly ToolContextField[]
+  live: boolean
+  unmet: ReadonlySet<string>
+}) {
+  const labels = contextLabelsFor(tool, fields)
+  if (labels.length === 0) return null
+  const blocking =
+    live && (tool.requiresContext ?? []).some((k) => unmet.has(k))
+
+  return (
+    <Tooltip
+      content={
+        live
+          ? `This tool filters everything it returns by ${labels.join(' and ')}. Set it above before running.`
+          : `Runs live only with ${labels.join(' and ')}. Simulated, it needs nothing.`
+      }
+    >
+      <span
+        className={cn(
+          'shrink-0 rounded px-1.5 py-px text-[10px] font-medium',
+          blocking
+            ? 'bg-amber-100 text-amber-700'
+            : 'bg-neutral-100 text-neutral-500',
+        )}
+      >
+        needs {labels.join(' + ')}
+      </span>
+    </Tooltip>
   )
 }
 

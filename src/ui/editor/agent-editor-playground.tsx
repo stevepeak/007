@@ -5,6 +5,7 @@ import {
   ChevronDown,
   Copy,
   History,
+  Layers,
   Loader2,
   Play,
   Wrench,
@@ -16,15 +17,28 @@ import type {
   AgentPreviewMessage,
   AgentPreviewResult,
   JsonSchema,
+  ToolContextField,
   ToolOption,
 } from '../../server/protocol'
 import { WfAutoForm } from '../autoform/wf-auto-form'
 import { cn } from '../cn'
 import { formatRelative, formatTimestamp } from '../cost'
 import { highlightJson } from '../data-view'
-import { useModels, useRunAgentPreview, useTools } from '../hooks'
+import {
+  useModels,
+  useRunAgentPreview,
+  useToolContextFields,
+  useTools,
+} from '../hooks'
 import { Tooltip } from '../tooltip'
+import { ContextField } from '../tool-context-field'
 import { NoteMarkdown } from './note-markdown'
+import {
+  contextFieldsFor,
+  filledContext,
+  missingContext,
+  requiredContextKeys,
+} from './agent-editor-context'
 import {
   ConversationBuilder,
   ConversationTranscript,
@@ -83,6 +97,12 @@ type PlaygroundRun = {
   input: Record<string, string>
   /** The prior turns this run was given, if the agent works on a conversation. */
   messages: AgentPreviewMessage[]
+  /**
+   * The run scope the live tools were given (client org, chat thread). Frozen
+   * with the rest: "found nothing" means something different depending on which
+   * client the search was pointed at.
+   */
+  context: Record<string, string>
   /**
    * The tools that ran FOR REAL in this run (everything else was faked). Part of
    * the record because "the agent found nothing" means something very different
@@ -161,6 +181,27 @@ export function PlaygroundPanel({
     }
     return set
   }, [attachedTools, toolModes])
+
+  // The ambient run scope this run needs — the union of what the LIVE tools
+  // declare (`requiresContext`), resolved to the host's own field definitions.
+  // Simulated tools ask for nothing, so an all-simulated run stays one click.
+  const contextFields = useToolContextFields().data
+  const [context, setContext] = useState<Record<string, string>>({})
+  const neededContext = useMemo(
+    () =>
+      contextFieldsFor(
+        contextFields ?? [],
+        requiredContextKeys(attachedTools, liveTools),
+      ),
+    [contextFields, attachedTools, liveTools],
+  )
+  // Blocking the run is the point: an unscoped live tool doesn't fail, it
+  // matches nothing and reports "found nothing" — the one answer you must never
+  // be shown while judging whether an agent works.
+  const missing = useMemo(
+    () => missingContext(neededContext, context),
+    [neededContext, context],
+  )
   // Every run this session, newest first. Each keeps its own status, result and
   // config, so comparing two prompts is "run, edit, run" and both answers stay
   // on screen — the previous behaviour showed only the latest, which made the
@@ -189,6 +230,9 @@ export function PlaygroundPanel({
     const messages = conversational
       ? history.filter((m) => m.text.trim().length > 0)
       : []
+    // Only the keys this run's live tools asked for — a value left over from a
+    // tool that's since been switched to simulated isn't part of this run.
+    const runContext = filledContext(neededContext, context)
     setRuns((prev) => [
       {
         id,
@@ -197,6 +241,7 @@ export function PlaygroundPanel({
         config: snapshot,
         input,
         messages,
+        context: runContext,
         liveToolIds,
         result: null,
         error: null,
@@ -211,8 +256,20 @@ export function PlaygroundPanel({
     void run
       .mutateAsync(
         hasVars
-          ? { config: snapshot, promptVariables: input, liveToolIds, messages }
-          : { config: snapshot, input: input.input, liveToolIds, messages },
+          ? {
+              config: snapshot,
+              promptVariables: input,
+              liveToolIds,
+              messages,
+              context: runContext,
+            }
+          : {
+              config: snapshot,
+              input: input.input,
+              liveToolIds,
+              messages,
+              context: runContext,
+            },
       )
       .then(
         (result) =>
@@ -258,6 +315,8 @@ export function PlaygroundPanel({
         <ToolModeList
           tools={attachedTools}
           live={liveTools}
+          contextFields={contextFields ?? []}
+          unmetContext={new Set(missing.map((f) => f.key))}
           disabled={pending}
           onToggle={(toolId, isLive) =>
             setToolModes((m) => ({ ...m, [toolId]: isLive }))
@@ -270,12 +329,26 @@ export function PlaygroundPanel({
           </p>
         ) : null}
 
+        <PlaygroundContext
+          fields={neededContext}
+          values={context}
+          missing={missing}
+          disabled={pending}
+          onChange={(key, value) => setContext((c) => ({ ...c, [key]: value }))}
+        />
+
         <WfAutoForm
           schema={schema}
           disabled={pending}
           pending={pending}
           submitLabel="Run agent"
           submitIcon={<Play className="size-3.5" />}
+          submitDisabled={missing.length > 0}
+          submitTitle={
+            missing.length > 0
+              ? `Provide ${missing.map((f) => f.label).join(', ')} first`
+              : undefined
+          }
           onSubmit={onRun}
         />
       </aside>
@@ -291,6 +364,64 @@ export function PlaygroundPanel({
           onRestore={onRestore ? () => onRestore(r.config) : undefined}
         />
       ))}
+    </div>
+  )
+}
+
+/**
+ * The ambient run scope for whatever is running live. Rendered only when a live
+ * tool actually declares a need, so an all-simulated run never sees it — the
+ * form appears and disappears with the tool switches above it.
+ */
+function PlaygroundContext({
+  fields,
+  values,
+  missing,
+  disabled,
+  onChange,
+}: {
+  fields: ToolContextField[]
+  values: Record<string, string>
+  missing: ToolContextField[]
+  disabled?: boolean
+  onChange: (key: string, value: string) => void
+}) {
+  if (fields.length === 0) return null
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-indigo-200 bg-indigo-50/40">
+      <div className="border-b border-indigo-100 bg-indigo-50/60 px-3 py-2">
+        <div className="flex items-center gap-1.5">
+          <Layers className="size-3.5 text-indigo-500" />
+          <span className="text-xs font-semibold text-indigo-900">Context</span>
+        </div>
+        <p className="mt-0.5 text-[11px] text-indigo-700/70">
+          The run scope your live tools filter by — supplied by the environment
+          in a real run, never chosen by the agent.
+        </p>
+      </div>
+      <div className="space-y-3 p-3">
+        {fields.map((f) => (
+          <ContextField
+            key={f.key}
+            field={f}
+            required
+            value={values[f.key] ?? ''}
+            disabled={disabled}
+            onChange={(v) => onChange(f.key, v)}
+          />
+        ))}
+        {missing.length > 0 ? (
+          <p className="text-[11px] text-indigo-700/70">
+            Provide{' '}
+            <span className="font-medium">
+              {missing.map((f) => f.label).join(', ')}
+            </span>{' '}
+            to run. Without it a live tool filters on nothing and reports an
+            empty result, which reads exactly like a bad answer.
+          </p>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -365,6 +496,8 @@ function PlaygroundRunCard({
           </div>
 
           <RunToolModes run={run} />
+
+          <RunContextValues run={run} />
 
           {run.status === 'running' ? (
             <div className="flex items-center gap-1.5 rounded-md border border-neutral-200 px-3 py-2 text-xs text-neutral-400">
@@ -455,6 +588,34 @@ function RunToolModes({ run }: { run: PlaygroundRun }) {
           </>
         )}
       </p>
+    </div>
+  )
+}
+
+/** The scope a run's live tools filtered by, as part of its record. */
+function RunContextValues({ run }: { run: PlaygroundRun }) {
+  const fields = useToolContextFields().data ?? []
+  const entries = Object.entries(run.context)
+  if (entries.length === 0) return null
+  const label = (key: string) => fields.find((f) => f.key === key)?.label ?? key
+
+  return (
+    <div className="space-y-1">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+        Context
+      </div>
+      <dl className="space-y-1 rounded-md border border-indigo-100 bg-indigo-50/40 px-2.5 py-2 text-xs">
+        {entries.map(([key, value]) => (
+          <div key={key} className="flex gap-2">
+            <dt className="shrink-0 font-medium text-indigo-700/80">
+              {label(key)}
+            </dt>
+            <dd className="min-w-0 truncate font-mono text-[11px] text-neutral-600">
+              {value}
+            </dd>
+          </div>
+        ))}
+      </dl>
     </div>
   )
 }

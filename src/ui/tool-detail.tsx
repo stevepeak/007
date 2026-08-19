@@ -1,11 +1,7 @@
 import { AlertTriangle, Layers, Play, SlidersHorizontal } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
-import type {
-  ToolContextField,
-  ToolOption,
-  WfToolInvocation,
-} from '../server/protocol'
+import type { ToolOption, WfToolInvocation } from '../server/protocol'
 import { WfAutoForm } from './autoform/wf-auto-form'
 import { cn } from './cn'
 import { useWfComponents } from './context'
@@ -20,6 +16,7 @@ import {
 import { useWfNav } from './nav'
 import { runStatusClass } from './run-status'
 import { toolChip } from './tool-appearance'
+import { ContextField } from './tool-context-field'
 import { ToolIcon } from './tool-icon'
 
 // The tool detail page: one tool's identity, a real-execution playground, and
@@ -79,7 +76,11 @@ function ToolHeader({ tool }: { tool: ToolOption }) {
           toolChip(tool.color),
         )}
       >
-        <ToolIcon icon={tool.icon} iconName={tool.iconName} className="size-7" />
+        <ToolIcon
+          icon={tool.icon}
+          iconName={tool.iconName}
+          className="size-7"
+        />
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -108,7 +109,7 @@ function Playground({ tool }: { tool: ToolOption }) {
   // Required context (e.g. which client to scope to) must be filled before a
   // real run — otherwise the tool would silently run against the wrong scope.
   const missingContext = useMemo(
-    () => fields.filter((f) => f.required && !(context[f.key]?.trim())),
+    () => fields.filter((f) => f.required && !context[f.key]?.trim()),
     [fields, context],
   )
 
@@ -174,7 +175,9 @@ function Playground({ tool }: { tool: ToolOption }) {
         <div className="border-b border-neutral-100 bg-neutral-50 px-4 py-3">
           <div className="flex items-center gap-2">
             <SlidersHorizontal className="size-4 text-neutral-400" />
-            <h3 className="text-sm font-semibold text-neutral-900">Arguments</h3>
+            <h3 className="text-sm font-semibold text-neutral-900">
+              Arguments
+            </h3>
           </div>
           <p className="mt-1 text-xs text-neutral-500">
             The inputs an agent (or an upstream node) passes to this tool.
@@ -241,40 +244,6 @@ function Playground({ tool }: { tool: ToolOption }) {
   )
 }
 
-function ContextField({
-  field,
-  value,
-  disabled,
-  onChange,
-}: {
-  field: ToolContextField
-  value: string
-  disabled?: boolean
-  onChange: (value: string) => void
-}) {
-  const { Input, Label } = useWfComponents()
-  const id = `tool-ctx-${field.key}`
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id}>
-        {field.label}
-        {field.required ? <span className="ml-0.5 text-red-500">*</span> : null}
-      </Label>
-      {field.description ? (
-        <p className="text-xs text-neutral-500">{field.description}</p>
-      ) : null}
-      <Input
-        id={id}
-        value={value}
-        disabled={disabled}
-        placeholder={field.placeholder}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5 text-sm"
-      />
-    </div>
-  )
-}
-
 function RecentCalls({ toolId }: { toolId: string }) {
   const { data, isLoading, error } = useToolInvocations(toolId)
 
@@ -304,7 +273,9 @@ function RecentCalls({ toolId }: { toolId: string }) {
       ) : null}
 
       <div className="space-y-2">
-        {data?.map((inv, i) => <InvocationRow key={`${inv.runId}-${i}`} inv={inv} />)}
+        {data?.map((inv, i) => (
+          <InvocationRow key={`${inv.runId}-${i}`} inv={inv} />
+        ))}
       </div>
     </section>
   )

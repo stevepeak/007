@@ -122,6 +122,12 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
      * Empty for an agent that doesn't work on a conversation.
      */
     messages: AgentPreviewMessage[]
+    /**
+     * The run scope the live tools need, keyed by `toolContextFields` key. Map
+     * these into the RunContext handed to `executeAgentPreview` — the same
+     * mapping `runToolPreview` performs — or a live tool runs unscoped.
+     */
+    context: Record<string, string>
     ctx: WfServerContext
     req: Request
   }) => Promise<AgentPreviewResult>

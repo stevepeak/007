@@ -44,8 +44,8 @@ export function PublishAgentDialog({
         Publish new version
       </h2>
       <p className="mb-3 text-sm text-neutral-500">
-        Publishing makes this the live version. Add an optional note
-        describing the change — it's saved with the version.
+        Publishing makes this the live version. Add an optional note describing
+        the change — it's saved with the version.
       </p>
 
       {refCount != null && refCount > 0 ? (
@@ -74,11 +74,7 @@ export function PublishAgentDialog({
         <Button variant="ghost" size="sm" onClick={onCancel}>
           Cancel
         </Button>
-        <Button
-          size="sm"
-          onClick={() => onConfirm(note)}
-          disabled={publishing}
-        >
+        <Button size="sm" onClick={() => onConfirm(note)} disabled={publishing}>
           {publishing ? 'Publishing…' : 'Publish version'}
         </Button>
       </div>

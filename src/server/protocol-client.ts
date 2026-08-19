@@ -20,10 +20,7 @@ import type {
   WfAgentSummary,
   WfAgentVersionSummary,
 } from './protocol-agents'
-import type {
-  WfDashboardInput,
-  WfDashboardResult,
-} from './protocol-dashboard'
+import type { WfDashboardInput, WfDashboardResult } from './protocol-dashboard'
 import type {
   WfEvalResultDTO,
   WfEvalRunDetail,

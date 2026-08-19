@@ -54,7 +54,10 @@ export async function executeToolPreview<TDeps>(opts: {
     config: {
       toolId,
       args: Object.fromEntries(
-        Object.entries(args).map(([k, v]) => [k, { kind: 'literal', value: v }]),
+        Object.entries(args).map(([k, v]) => [
+          k,
+          { kind: 'literal', value: v },
+        ]),
       ),
     },
   }

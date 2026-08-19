@@ -58,6 +58,19 @@ export type ToolMeta = {
    */
   sideEffect?: ToolSideEffect
   /**
+   * Ambient run-scope this tool needs, as keys into the host's declared
+   * `toolContextFields`. These are NOT arguments — an agent never sees or sets
+   * them; they come from the run itself (which client, which chat thread) and
+   * reach the tool through `buildRunDeps`.
+   *
+   * Declaring them is what lets a caller that runs OUTSIDE a real run — the
+   * agent playground — know what to collect first. A scope-filtered tool given
+   * an empty value doesn't fail, it silently matches nothing, so an undeclared
+   * requirement surfaces as "found nothing" rather than "you didn't say which
+   * client". Declare a key only when the tool genuinely can't work without it.
+   */
+  requiresContext?: readonly string[]
+  /**
    * Optional human-readable status shown to the end user each time this tool is
    * called — but only when the calling agent's node has "expose thinking" on. A
    * `${arg}` template interpolated from the tool call's input args (e.g.

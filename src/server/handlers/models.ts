@@ -67,6 +67,9 @@ export function buildModelHandlers<TDeps>(
     color: entry.color,
     kind: entry.kind,
     sideEffect: entry.sideEffect,
+    requiresContext: entry.requiresContext
+      ? [...entry.requiresContext]
+      : undefined,
     inputSchema: toJsonSchema(entry.inputSchema, 'input'),
     outputSchema: toJsonSchema(entry.outputSchema, 'output'),
   }))

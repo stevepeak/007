@@ -99,8 +99,7 @@ export function createHttpWfDataClient(
     discardAgentDraft: bind('discardAgentDraft'),
     countAgentReferences: (agentId) =>
       call('countAgentReferences', { agentId }),
-    listAgentReferences: (agentId) =>
-      call('listAgentReferences', { agentId }),
+    listAgentReferences: (agentId) => call('listAgentReferences', { agentId }),
     archiveAgent: (agentId) => call('archiveAgent', { agentId }),
     listAgentCalls: bind('listAgentCalls'),
     // A tool-calling agent can run well past the default 20s UI backstop, so

@@ -109,6 +109,13 @@ export type AgentPreviewInput = {
    * user turn. Omitted/empty → the agent answers with no prior context.
    */
   messages?: AgentPreviewMessage[]
+  /**
+   * The ambient run scope for the tools running live, keyed by
+   * {@link ToolContextField} `key` (e.g. `clientOrgId`). The host maps these into
+   * the RunContext its `buildRunDeps` reads. Only the keys the live tools
+   * declare via `requiresContext` are collected; a simulated run sends none.
+   */
+  context?: Record<string, string>
 }
 
 /**

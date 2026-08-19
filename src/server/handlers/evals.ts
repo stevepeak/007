@@ -38,7 +38,6 @@ import {
   type WfHandlers,
 } from './shared'
 
-
 // Cap on a recorded failure reason. Provider response bodies can be whole HTML
 // error pages; the report shows this inline, and the full detail already lives
 // in `wf_run_step.error` reachable via `wfRunId`.

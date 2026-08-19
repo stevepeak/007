@@ -51,7 +51,9 @@ describe('repairSummaryText', () => {
   test('gives up on an empty response rather than inventing a summary', () => {
     expect(repairSummaryText('')).toBeNull()
     expect(repairSummaryText('   \n  ')).toBeNull()
-    expect(repairSummaryText('<think>only reasoning, no answer</think>')).toBeNull()
+    expect(
+      repairSummaryText('<think>only reasoning, no answer</think>'),
+    ).toBeNull()
     expect(repairSummaryText('```\n\n```')).toBeNull()
   })
 })

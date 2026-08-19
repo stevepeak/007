@@ -3,7 +3,7 @@ import { MockLanguageModelV3 } from 'ai/test'
 import { describe, expect, test } from 'bun:test'
 import { z } from 'zod'
 
-import type { WfSdkConfig } from '../engine/config'
+import type { RunContext, WfSdkConfig } from '../engine/config'
 import type { AgentConfig } from '../engine/graph'
 import type { ToolRegistry } from '../engine/tool-registry'
 
@@ -41,7 +41,7 @@ function turns(prompt: unknown): string {
 function fakeConfig(opts: {
   seen: { prompt: unknown }
   registry?: ToolRegistry<Deps>
-  onBuildDeps?: () => void
+  onBuildDeps?: (ctx: RunContext) => void
 }): WfSdkConfig<Deps> {
   return {
     getModel: () =>
@@ -57,8 +57,8 @@ function fakeConfig(opts: {
         },
       }),
     toolRegistry: opts.registry ?? new Map(),
-    buildRunDeps: () => {
-      opts.onBuildDeps?.()
+    buildRunDeps: (ctx: RunContext) => {
+      opts.onBuildDeps?.(ctx)
       return { marker: 'real' }
     },
   } as unknown as WfSdkConfig<Deps>
@@ -137,6 +137,37 @@ describe('executeAgentPreview — live vs simulated tools', () => {
     expect(built.live).toEqual({ marker: 'real' })
     expect(built.simulated).toBe(false)
     expect(depsBuilt).toBe(1)
+  })
+
+  test('the run scope reaches the deps a live tool is built from', async () => {
+    // The whole context feature rides on this pass-through: whatever the host
+    // maps out of the playground's Context form has to arrive here, or a live
+    // tool filters on nothing and reports a confidently empty result.
+    const seen: { prompt: unknown } = { prompt: null }
+    const built = { live: null as unknown, simulated: false }
+    let depsCtx: RunContext | null = null
+    await executeAgentPreview({
+      config: { ...BASE_CONFIG, toolIds: ['live_tool'] },
+      input: 'go',
+      liveToolIds: ['live_tool'],
+      wfConfig: fakeConfig({
+        seen,
+        registry: registry(built),
+        onBuildDeps: (ctx) => {
+          depsCtx = ctx
+        },
+      }),
+      runContext: {
+        triggerKind: 'playground',
+        correlationId: 'org-1',
+        subjectId: 'chat-1',
+      },
+    })
+
+    expect(depsCtx).toMatchObject({
+      correlationId: 'org-1',
+      subjectId: 'chat-1',
+    })
   })
 
   test('an all-simulated run never builds the host deps', async () => {

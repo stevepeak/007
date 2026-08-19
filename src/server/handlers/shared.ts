@@ -42,7 +42,6 @@ export function toJsonSchema(
   }
 }
 
-
 export function toEpoch(d: Date | null | undefined): number | null {
   return d ? d.getTime() : null
 }

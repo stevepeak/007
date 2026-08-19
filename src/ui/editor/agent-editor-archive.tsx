@@ -49,9 +49,7 @@ export function ArchiveAgentDialog({
             Checking for workflows using this agent…
           </span>
         ) : refs.error ? (
-          <span className="text-red-600">
-            {(refs.error as Error).message}
-          </span>
+          <span className="text-red-600">{(refs.error as Error).message}</span>
         ) : blocked ? (
           <div className="space-y-3">
             <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">
