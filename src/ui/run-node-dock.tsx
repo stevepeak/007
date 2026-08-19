@@ -1,4 +1,9 @@
-import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  SquareArrowOutUpRight,
+} from 'lucide-react'
 import { useCallback, useRef, useState } from 'react'
 
 import type { WorkflowGraph, WorkflowNode } from '../engine'
@@ -6,7 +11,9 @@ import type { WfRunLogDTO, WfRunStepDTO } from '../server/protocol'
 import { useWfComponents } from './context'
 import { cn } from './cn'
 import { CreateSampleFromRun } from './evals/create-sample-from-run'
+import { WfLink } from './nav'
 import { RunActivityLog } from './run-activity-log'
+import { stepAgentVersion } from './run-agent-versions'
 import { RunLog } from './run-log'
 import { runStatusClass } from './run-status'
 
@@ -82,9 +89,11 @@ export function RunNodeDock({
   // it without re-subscribing.
   const [height, setHeight] = useState(DEFAULT_DOCK_H)
   const [dragging, setDragging] = useState(false)
-  const dragRef = useRef<{ startY: number; startH: number; moved: boolean } | null>(
-    null,
-  )
+  const dragRef = useRef<{
+    startY: number
+    startH: number
+    moved: boolean
+  } | null>(null)
   const openRef = useRef(open)
   openRef.current = open
 
@@ -208,6 +217,7 @@ export function RunNodeDock({
                 {hasItemPicker ? 'no data for this item' : 'not run'}
               </span>
             )}
+            <OpenAgentLink node={node} step={step} />
             <CreateSampleFromRun node={node} step={step} steps={steps} />
           </span>
         ) : null}
@@ -261,5 +271,41 @@ export function RunNodeDock({
         </div>
       ) : null}
     </div>
+  )
+}
+
+// An agent node inspected here is a pointer at a reusable agent — this is the
+// jump back to it. Opens the agent editor in a NEW tab on purpose: you're
+// mid-investigation on a run and shouldn't lose it to a plain navigation. The
+// version is the one the run FROZE (stamped on the step by the run manifest),
+// falling back to the node's pin, so the link names what actually executed.
+function OpenAgentLink({
+  node,
+  step,
+}: {
+  node: WorkflowNode
+  step: WfRunStepDTO | null
+}) {
+  if (node.kind !== 'agent') return null
+  const agentId = node.config.agentId
+  if (!agentId) return null
+  // Prefer what the run froze; fall back to the node's own pin (null = it
+  // floated, and an unrun step can't tell us where it would have landed).
+  const version = stepAgentVersion(step) ?? node.config.version
+  return (
+    <WfLink
+      to={`agents/${agentId}/edit`}
+      newTab
+      className="inline-flex shrink-0 items-center gap-1 rounded border border-neutral-200 px-1.5 py-0.5 text-[11px] font-medium text-neutral-600 hover:border-neutral-300 hover:bg-neutral-50 hover:text-neutral-800"
+      title="Open this agent in a new tab"
+    >
+      <SquareArrowOutUpRight className="size-3" />
+      Open agent
+      {version != null ? (
+        <span className="font-normal text-neutral-400 tabular-nums">
+          v{version}
+        </span>
+      ) : null}
+    </WfLink>
   )
 }
