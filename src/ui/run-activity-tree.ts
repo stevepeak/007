@@ -1,4 +1,5 @@
 import { NON_STEP_KINDS, TERMINAL_STEP_STATUSES } from '../engine/run-progress'
+import { RUN_STATE_LEVEL } from '../engine/stream-sink'
 
 import type { WorkflowGraph, WorkflowNode } from '../engine'
 import type { WfRunLogDTO, WfRunStepDTO } from '../server/protocol'
@@ -74,12 +75,37 @@ export type ActivityLogRow = {
   ts: number
 }
 
+// A run-level lifecycle marker — queued / started / answer delivered / settled
+// / failed. Not a graph node: it sits BETWEEN node rows at the moment it
+// happened, which is the only way to see, say, that the answer was delivered
+// while three nodes were still running.
+export type ActivityStateRow = {
+  kind: 'state'
+  key: string
+  /** The run status this marks (`WF_RUN_STATUSES`). */
+  status: string
+  /** The engine's plain-text line, rendered when nothing richer is derivable. */
+  message: string
+  ts: number
+  /**
+   * Wall-clock from the run STARTING to this marker. Timed off the `running`
+   * marker rather than the run row, so the tree stays a pure function of the
+   * feed. Null on `queued`, and on runs recorded before markers existed.
+   */
+  elapsedMs: number | null
+  /** Nodes still executing behind the answer — `done` markers only. */
+  pendingNodes: number | null
+}
+
 export type ActivityRow = ActivityNodeRow | ActivityGroupRow | ActivityLogRow
+
+/** A row at the top level of the tree: a graph node, or a lifecycle marker. */
+export type ActivityTopRow = ActivityNodeRow | ActivityStateRow
 
 // A tree row flattened for rendering: carries its indent `depth` and resolved
 // expand state so the view is a single `.map`, not a recursive component tree.
 export type FlatRow = {
-  row: ActivityRow
+  row: ActivityRow | ActivityStateRow
   depth: number
   expanded: boolean
   hasChildren: boolean
@@ -170,12 +196,25 @@ function iterationTotal(step: WfRunStepDTO | null | undefined): number | null {
   return readIterationTotal(step?.meta)
 }
 
+// The run status a lifecycle marker carries, from its `{ status }` meta.
+function readStateStatus(meta: unknown): string | null {
+  const status = (meta as { status?: unknown } | null)?.status
+  return typeof status === 'string' ? status : null
+}
+
+// How many nodes were still running when the marker was written. Absent on
+// every marker but `done`, and on rows written before the field existed.
+function readPendingNodes(meta: unknown): number | null {
+  const n = (meta as { pendingNodes?: unknown } | null)?.pendingNodes
+  return typeof n === 'number' ? n : null
+}
+
 export function buildActivityTree(input: {
   graph: WorkflowGraph | null
   steps: WfRunStepDTO[]
   logs: WfRunLogDTO[]
   live?: boolean
-}): ActivityNodeRow[] {
+}): ActivityTopRow[] {
   const { graph, steps, logs, live = false } = input
 
   // --- Index steps: latest top-level step per node + children by container. ---
@@ -391,36 +430,129 @@ export function buildActivityTree(input: {
     }
   }
 
+  // --- Run lifecycle markers, from the node-less entries in the feed. ---
+  const stateLogs = logs
+    .filter((l) => l.level === RUN_STATE_LEVEL)
+    .sort((a, b) => a.ts - b.ts)
+  // The run's t0, for the elapsed each later marker reports.
+  const runStartTs =
+    stateLogs.find((l) => readStateStatus(l.meta) === 'running')?.ts ?? null
+  const stateRows: ActivityStateRow[] = stateLogs.map((l) => {
+    const status = readStateStatus(l.meta) ?? 'running'
+    return {
+      kind: 'state' as const,
+      key: `state:${status}`,
+      status,
+      message: l.message,
+      ts: l.ts,
+      elapsedMs:
+        runStartTs != null && status !== 'queued' && l.ts >= runStartTs
+          ? l.ts - runStartTs
+          : null,
+      pendingNodes: readPendingNodes(l.meta),
+    }
+  })
+
+  // Most markers have a DEFINED position, not a computed one. `queued` and
+  // `running` precede all node work by definition, and the terminal three
+  // follow all of it, so they are pinned rather than placed by timestamp.
+  //
+  // Pinning is also the only reliable option: `wf_run_step.started_at` is a
+  // `mode: 'timestamp'` column and therefore truncated to whole SECONDS, while
+  // a marker's `ts` is exact millis. Comparing the two inside a single second
+  // is a coin flip — which is precisely where `queued` and `running` land, so
+  // they were sorting after the first nodes.
+  //
+  // `done` is the one marker that genuinely falls among the rows: the whole
+  // point is seeing which nodes were still running when the answer went out.
+  const pinnedRank = (status: string): number =>
+    status === 'queued' ? 0 : status === 'running' ? 1 : 2
+  const leading = stateRows
+    .filter((r) => r.status === 'queued' || r.status === 'running')
+    .sort((a, b) => pinnedRank(a.status) - pinnedRank(b.status))
+  const trailing = stateRows.filter(
+    (r) =>
+      r.status === 'completed' ||
+      r.status === 'failed' ||
+      r.status === 'cancelled',
+  )
+  const floating = stateRows.filter(
+    (r) => !leading.includes(r) && !trailing.includes(r),
+  )
+
+  // When a top-level node row STARTED, for placing the floating markers among
+  // them. Falls back to the node-start bookend, then to +Infinity for a node
+  // that never ran — so a marker lands before the nodes an early branch
+  // skipped rather than after them.
+  const startTsOf = (nodeId: string, step?: WfRunStepDTO | null): number =>
+    step?.startedAt ?? timingFor(nodeId)?.start ?? Number.POSITIVE_INFINITY
+
+  // Second granularity on both sides, since that is all `started_at` carries.
+  const toSeconds = (ms: number): number =>
+    Number.isFinite(ms) ? Math.floor(ms / 1000) : ms
+
+  // Place the floating markers WITHOUT reordering the nodes: walk the ordered
+  // nodes and flush every marker at or before each one's start. Node ordering
+  // stays sequence-driven, exactly as before.
+  const interleave = (
+    nodes: Array<{ row: ActivityNodeRow; startTs: number }>,
+  ): ActivityTopRow[] => {
+    const out: ActivityTopRow[] = [...leading]
+    let s = 0
+    for (const n of nodes) {
+      while (
+        s < floating.length &&
+        toSeconds(floating[s].ts) <= toSeconds(n.startTs)
+      ) {
+        out.push(floating[s++])
+      }
+      out.push(n.row)
+    }
+    while (s < floating.length) out.push(floating[s++])
+    out.push(...trailing)
+    return out
+  }
+
   // --- Top-level ordering: graph order, refined by executed sequence. ---
   if (graph) {
-    return graph.nodes
-      .filter((n) => !NON_STEP_KINDS.has(n.kind))
-      .map((n, i) => ({ n, i }))
-      .sort((a, b) => {
-        const sa = topSteps.get(a.n.id)?.sequence ?? Number.POSITIVE_INFINITY
-        const sb = topSteps.get(b.n.id)?.sequence ?? Number.POSITIVE_INFINITY
-        return sa - sb || a.i - b.i
-      })
-      .map(({ n }) => makeTopRow(n.id, n, topSteps.get(n.id)))
+    return interleave(
+      graph.nodes
+        .filter((n) => !NON_STEP_KINDS.has(n.kind))
+        .map((n, i) => ({ n, i }))
+        .sort((a, b) => {
+          const sa = topSteps.get(a.n.id)?.sequence ?? Number.POSITIVE_INFINITY
+          const sb = topSteps.get(b.n.id)?.sequence ?? Number.POSITIVE_INFINITY
+          return sa - sb || a.i - b.i
+        })
+        .map(({ n }) => ({
+          row: makeTopRow(n.id, n, topSteps.get(n.id)),
+          startTs: startTsOf(n.id, topSteps.get(n.id)),
+        })),
+    )
   }
 
   // Null graph (version gone): build from recorded steps alone.
-  return [...topSteps.values()]
-    .filter((s) => !NON_STEP_KINDS.has(s.nodeKind))
-    .sort((a, b) => a.sequence - b.sequence)
-    .map((s) => makeTopRow(s.nodeId, undefined, s))
+  return interleave(
+    [...topSteps.values()]
+      .filter((s) => !NON_STEP_KINDS.has(s.nodeKind))
+      .sort((a, b) => a.sequence - b.sequence)
+      .map((s) => ({
+        row: makeTopRow(s.nodeId, undefined, s),
+        startTs: startTsOf(s.nodeId, s),
+      })),
+  )
 }
 
 // Walk the tree depth-first into an ordered render list, honoring per-key
 // expand overrides (falling back to each row's `defaultOpen`). Overrides are
 // keyed by stable identity strings, so user toggles survive each poll refresh.
 export function flattenTree(
-  rows: ActivityNodeRow[],
+  rows: ActivityTopRow[],
   overrides: Map<string, 'open' | 'closed'>,
 ): FlatRow[] {
   const out: FlatRow[] = []
-  const walk = (row: ActivityRow, depth: number) => {
-    if (row.kind === 'log') {
+  const walk = (row: ActivityRow | ActivityStateRow, depth: number) => {
+    if (row.kind === 'log' || row.kind === 'state') {
       out.push({ row, depth, expanded: false, hasChildren: false })
       return
     }

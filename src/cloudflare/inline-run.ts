@@ -313,12 +313,13 @@ export async function runInlineGraph<TDeps, E extends { WF_DB: D1Database }>(
       // HTTP request that started the run without any fire-and-forget promise
       // of its own — and, unlike one, it still keeps the DO alive and still
       // records every step it takes.
-      onOutput: async ({ output, outputNodeId, pendingWork }) => {
+      onOutput: async ({ output, outputNodeId, pendingWork, pendingNodes }) => {
         deliveredOutputNodeId = outputNodeId
         await markRunDone(db, {
           runId: p.workflowRunId,
           output,
           settled: !pendingWork,
+          pendingNodes,
         })
         await room.setOutput(output, !pendingWork)
         if (config.onRunComplete) {

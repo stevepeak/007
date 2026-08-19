@@ -6,6 +6,7 @@ import type { RetryRunMode, WfRunStepDTO } from '../server/protocol'
 import { useWfComponents } from './context'
 import { cn } from './cn'
 import { WorkflowCanvas } from './editor/workflow-canvas'
+import { NOT_RUN_STATUS } from './editor/node-renderers-shared'
 import {
   formatDuration,
   formatTimestamp,
@@ -101,6 +102,41 @@ export type RunPageProps = {
   className?: string
 }
 
+// A run still producing steps. `done` counts as live: the answer is in, but the
+// arms that don't feed the Output are draining and their steps are still
+// landing — so nothing may be called un-run yet.
+const LIVE_RUN_STATUSES = new Set(['queued', 'running', 'done'])
+
+function isRunLive(status: string): boolean {
+  return LIVE_RUN_STATUSES.has(status)
+}
+
+/**
+ * Statuses for one iteration container's inner nodes at the focused item —
+ * what actually ran for that item, plus `not-run` for the rest once the run has
+ * settled. Empty when the container isn't in the graph (a version since gone).
+ */
+function innerStatuses(
+  graph: WorkflowGraph | null,
+  steps: readonly WfRunStepDTO[],
+  containerId: string,
+  itemIndex: number,
+  settled: boolean,
+): Array<[string, string]> {
+  const out: Array<[string, string]> = steps
+    .filter((s) => s.parentNodeId === containerId && s.itemIndex === itemIndex)
+    .map((s) => [s.nodeId, s.status])
+  if (!settled || !graph) return out
+  const container = graph.nodes.find((n) => n.id === containerId)
+  if (container?.kind !== 'iteration') return out
+  const ran = new Set(out.map(([id]) => id))
+  for (const n of container.config.subgraph.nodes) {
+    if (n.kind === 'note' || ran.has(n.id)) continue
+    out.push([n.id, NOT_RUN_STATUS])
+  }
+  return out
+}
+
 export function RunPage({
   runId,
   initialNodeId,
@@ -129,15 +165,29 @@ export function RunPage({
   // nodeId → status for the top-level graph (the canvas's own nodes), driving
   // the tint + status dots. Iteration inner steps are keyed per item and layered
   // on separately (see `canvasStatuses`) so they don't collide here.
-  const nodeStatuses = useMemo(
-    () =>
-      new Map(
-        (data?.steps ?? [])
-          .filter((s) => !s.parentNodeId)
-          .map((s) => [s.nodeId, s.status]),
-      ),
-    [data?.steps],
-  )
+  //
+  // Once the run has SETTLED, every top-level node still missing a step is
+  // marked `not-run` so the canvas dims it. Absence of a step is the only
+  // evidence either way, and it covers both reasons a node goes untouched — an
+  // arm a branch routed away from, and a node with no live path into it at all.
+  // Gated on settled because until then "no step" means "not yet", and dimming
+  // the whole graph at run start would say the opposite of what it means.
+  const nodeStatuses = useMemo(() => {
+    const map = new Map(
+      (data?.steps ?? [])
+        .filter((s) => !s.parentNodeId)
+        .map((s) => [s.nodeId, s.status as string]),
+    )
+    if (data?.graph && data.run && !isRunLive(data.run.status)) {
+      for (const n of data.graph.nodes) {
+        // A Note is a canvas annotation, never executed — dimming it would
+        // report a non-event.
+        if (n.kind === 'note' || map.has(n.id)) continue
+        map.set(n.id, NOT_RUN_STATUS)
+      }
+    }
+    return map
+  }, [data?.steps, data?.graph, data?.run])
 
   // A deep link's node is selected once, as soon as the canvas exists: going
   // through the canvas's own selector (rather than state alone) also tints the
@@ -184,12 +234,7 @@ export function RunPage({
         const start = run.startedAt ?? run.createdAt
         const end =
           run.finishedAt ?? (run.status === 'running' ? Date.now() : null)
-        // `done` is still live: the answer is in, but arms that don't feed the
-        // Output are draining and their steps are still landing.
-        const live =
-          run.status === 'running' ||
-          run.status === 'queued' ||
-          run.status === 'done'
+        const live = isRunLive(run.status)
         // Any terminal run can be re-run from scratch on the latest version — including
         // ones that completed successfully. "Resume from failed step" (canResume below)
         // stays gated on an actual failure.
@@ -239,15 +284,22 @@ export function RunPage({
         // Canvas tint: top-level statuses, plus — when an iteration or one of its
         // inner nodes is selected — that iteration's inner nodes tinted by the focused
         // item, so stepping through items lights up the subgraph item by item.
+        //
+        // The inner nodes of a container get `not-run` only while that container
+        // is FOCUSED, because only then are we layering an item's steps and can
+        // tell "didn't run for this item" from "no item selected". Blanket-
+        // dimming every subgraph would mark a perfectly successful loop as
+        // un-run until you clicked into it.
         const canvasStatuses = iterationId
-          ? new Map([
+          ? new Map<string, string>([
               ...nodeStatuses,
-              ...data.steps
-                .filter(
-                  (s) =>
-                    s.parentNodeId === iterationId && s.itemIndex === itemIndex,
-                )
-                .map((s) => [s.nodeId, s.status] as const),
+              ...innerStatuses(
+                data.graph,
+                data.steps,
+                iterationId,
+                itemIndex,
+                !isRunLive(data.run.status),
+              ),
             ])
           : nodeStatuses
 

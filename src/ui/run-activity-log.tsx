@@ -53,6 +53,45 @@ function logStyle(level: string) {
   return LEVEL_STYLE[level] ?? LEVEL_STYLE.info
 }
 
+// The label for a lifecycle marker. Composed here rather than read off the
+// persisted `message` so it can carry the run's elapsed time and what is still
+// in flight — a `done` row's whole job is to say "the answer took 23s, and here
+// is what is still going". Falls back to the engine's plain line for a run
+// recorded before the marker meta existed.
+function stateLabel(row: {
+  status: string
+  message: string
+  elapsedMs: number | null
+  pendingNodes: number | null
+}): string {
+  if (row.elapsedMs == null) return row.message
+  const took = formatDurationMs(row.elapsedMs)
+  if (row.status !== 'done') {
+    return `${row.message} in ${took}`
+  }
+  const n = row.pendingNodes
+  const still =
+    n == null
+      ? 'Background work still running…'
+      : n === 0
+        ? 'Background work still to start…'
+        : `${n} background node${n === 1 ? '' : 's'} still running…`
+  return `Workflow done in ${took}. ${still}`
+}
+
+// Text tone for a run lifecycle marker, keyed by the run status it marks.
+// `done` is deliberately its own colour: the answer is out but the run has not
+// settled, and reading it as "finished" is exactly the confusion these rows
+// exist to clear up.
+const STATE_TONE: Record<string, string> = {
+  queued: 'text-amber-600',
+  running: 'text-blue-600',
+  done: 'text-emerald-600',
+  completed: 'text-emerald-700',
+  failed: 'text-rose-600',
+  cancelled: 'text-neutral-500',
+}
+
 // Type icon + colour + label for a node row, reusing the editor's per-kind
 // palette (`KIND_STYLE`). Its accent is a `border-l-<colour>` class, which we
 // retone to a `text-<colour>` for the icon. Unknown kinds fall back to a
@@ -101,6 +140,12 @@ export type RunActivityLogProps = {
   graph: WorkflowGraph | null
   /** True while the run is still executing — shows a live "listening" footer. */
   live?: boolean
+  /**
+   * The run emitted more log entries than the server returns, and `logs` holds
+   * only the newest. Surfaced inline: a clipped feed that looks complete sends
+   * you hunting for a line that was silently dropped.
+   */
+  logsTruncated?: boolean
   /** Highlight rows for this node (the one selected on the graph). */
   selectedNodeId?: string | null
   /** Which iteration item is focused, so only that item's inner rows highlight. */
@@ -121,6 +166,7 @@ export function RunActivityLog({
   steps,
   graph,
   live,
+  logsTruncated,
   selectedNodeId,
   selectedItemIndex,
   onSelectNode,
@@ -165,6 +211,18 @@ export function RunActivityLog({
 
   return (
     <div className="text-[11px] leading-relaxed">
+      {/* Sits at the TOP because that is where the missing entries would be —
+          the feed keeps its newest entries, so it is the run's opening that is
+          gone. */}
+      {logsTruncated ? (
+        <div className="mb-1 flex items-center gap-1.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-1 text-amber-700">
+          <Info className="size-3 shrink-0 text-amber-500" />
+          <span>
+            This run logged more than the viewer shows. Earlier entries have
+            been dropped; node rows and timings below are complete.
+          </span>
+        </div>
+      ) : null}
       {flat.map((f) => (
         <ActivityRowView
           key={f.row.key}
@@ -244,6 +302,34 @@ function ActivityRowView({
         <span className={cn('min-w-0 break-words whitespace-pre-wrap', s.tone)}>
           {row.message}
         </span>
+      </div>
+    )
+  }
+
+  // Run lifecycle marker. Rendered as a full-width rule rather than a list
+  // item: it is a moment in the run, not a thing that ran, and the whole point
+  // is to see WHICH node rows fall on either side of it.
+  if (row.kind === 'state') {
+    return (
+      <div className="flex items-center gap-2 py-1 pr-1.5 pl-1.5 font-mono">
+        <span className="shrink-0 tabular-nums text-neutral-300">
+          {formatClock(row.ts)}
+        </span>
+        <span
+          className={cn(
+            'size-1.5 shrink-0 rounded-full',
+            runStatusDotClass[row.status] ?? 'bg-neutral-300',
+          )}
+        />
+        <span
+          className={cn(
+            'shrink-0 font-medium',
+            STATE_TONE[row.status] ?? 'text-neutral-500',
+          )}
+        >
+          {stateLabel(row)}
+        </span>
+        <span className="h-px min-w-0 grow bg-neutral-200" />
       </div>
     )
   }

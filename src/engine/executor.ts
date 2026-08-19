@@ -66,6 +66,13 @@ export type WorkflowOutputDelivery = {
   /** The Output node that produced it, or null on a fizzled decision arm. */
   outputNodeId: string | null
   pendingWork: boolean
+  /**
+   * How many nodes are executing RIGHT NOW, behind the answer. Zero with
+   * `pendingWork: true` means work is ready but not yet started. Backends
+   * surface it on the run's `done` lifecycle marker, so the activity feed says
+   * what the run is still doing rather than just that it isn't finished.
+   */
+  pendingNodes: number
 }
 
 /**
@@ -328,15 +335,12 @@ export async function executeWorkflow<TDeps>(
     // `hasPendingWork`, not `hasReadyWork`: the background arms are RUNNING at
     // this point, not merely ready, and reporting nothing pending here would
     // settle the run `completed` while its side effects were still executing.
-    const pendingWork = scheduler.hasPendingWork()
-    if (pendingWork) {
-      await sink?.log?.({
-        level: 'progress',
-        message: `Answer delivered — ${scheduler.inFlightCount()} background node(s) still running.`,
-        ts: Date.now(),
-      })
-    }
-    await deps.onOutput?.({ output, outputNodeId, pendingWork })
+    await deps.onOutput?.({
+      output,
+      outputNodeId,
+      pendingWork: scheduler.hasPendingWork(),
+      pendingNodes: scheduler.inFlightCount(),
+    })
     if (config.onRunComplete) {
       await notifyHost(() =>
         config.onRunComplete!(runContext, { output, outputNodeId }),

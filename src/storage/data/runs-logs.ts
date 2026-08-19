@@ -1,5 +1,6 @@
-import { and, asc, count, eq, ne } from 'drizzle-orm'
+import { and, asc, count, desc, eq, ne } from 'drizzle-orm'
 
+import { RUN_STATE_LEVEL } from '../../engine/stream-sink'
 import type { WfDb } from '../client'
 import { wfRun, wfRunLog, type WfRunStatus } from '../schema'
 
@@ -150,13 +151,124 @@ export async function countNodeBodyLogs(
   return row?.n ?? 0
 }
 
-// The whole run's log feed in emit order, for the run viewer (loaded once, then
-// polled while the run is live).
+// ---------------------------------------------------------------------------
+// Run lifecycle markers
+// ---------------------------------------------------------------------------
+//
+// The run row records only its CURRENT status, so the moments it changed are
+// otherwise unrecoverable — and one of them has no other home at all:
+// `finishedAt` is deliberately stamped when the Output is reached, not when the
+// last background arm settles (see `markRunDone`). A run that answered in 16s
+// and drained for another 75 therefore looks, everywhere in the UI, like a 16s
+// run. These rows are where "when did it actually settle" lives.
+//
+// Written with a status-derived id so they are idempotent: a durable step that
+// replays its status write rewrites the same marker instead of appending a
+// second one.
+
+/** Deterministic id — one marker per status, per run. */
+function stateLogId(runId: string, status: WfRunStatus): string {
+  return `${runId}:run:${status}`
+}
+
+// Plain-text fallback. The activity feed composes its own label from `meta`
+// (it can time the run off the markers themselves and knows how to format a
+// duration); this is what every other reader — a log dump, a CLI — sees.
+const STATE_MESSAGE: Record<WfRunStatus, string> = {
+  queued: 'Workflow queued',
+  running: 'Workflow started',
+  done: 'Workflow done',
+  completed: 'Workflow completed',
+  failed: 'Workflow failed',
+  cancelled: 'Workflow cancelled',
+}
+
+/**
+ * Record that a run entered `status`, as a node-less entry in its feed.
+ *
+ * Never throws. Every caller is a lifecycle write whose whole job is to move
+ * the run forward; losing a marker is a cosmetic gap in the activity feed,
+ * while letting it break the transition would strand the run.
+ */
+export async function recordRunStateChange(
+  db: WfDb,
+  input: {
+    runId: string
+    status: WfRunStatus
+    ts?: number
+    /** Appended to the plain-text message — e.g. why a run failed. */
+    detail?: string
+    /**
+     * Nodes still executing behind the answer, on a `done` marker. Kept
+     * structured rather than baked into the message so the feed can render it
+     * alongside a duration it computes itself.
+     */
+    pendingNodes?: number
+  },
+): Promise<void> {
+  const ts = input.ts ?? Date.now()
+  const message = input.detail
+    ? `${STATE_MESSAGE[input.status]} — ${input.detail}`
+    : STATE_MESSAGE[input.status]
+  const row = {
+    id: stateLogId(input.runId, input.status),
+    runId: input.runId,
+    nodeId: null,
+    nodeKind: null,
+    sequence: null,
+    level: RUN_STATE_LEVEL,
+    message,
+    meta: {
+      status: input.status,
+      ...(input.pendingNodes != null ? { pendingNodes: input.pendingNodes } : {}),
+    },
+    ts,
+  }
+  try {
+    await db
+      .insert(wfRunLog)
+      .values(row)
+      .onConflictDoUpdate({
+        target: wfRunLog.id,
+        set: { message: row.message, meta: row.meta, ts: row.ts },
+      })
+  } catch (err) {
+    console.warn('[wf] run state marker not recorded:', err)
+  }
+}
+
+/**
+ * How many log entries one run's feed read returns. An agent node mirrors its
+ * reasoning and every tool call into this table, so a long run — or any run
+ * with a wide iteration — emits thousands of rows, and the run viewer re-reads
+ * the whole feed every 1.5s while it's live.
+ */
+export const RUN_LOG_READ_LIMIT = 500
+
+/**
+ * The run's log feed for the run viewer (loaded once, then polled while the run
+ * is live), capped at the NEWEST {@link RUN_LOG_READ_LIMIT} entries and handed
+ * back in emit order.
+ *
+ * Newest-N rather than a cursor, deliberately. `replaceNodeLogs` deletes and
+ * rewrites a node's whole feed with fresh UUIDs when the node ends, so a client
+ * resuming from a `ts` cursor would either re-receive that node's entries or
+ * silently miss them — there is no stable per-entry identity to resume from.
+ * A plain cap has no such failure mode.
+ *
+ * Newest wins over oldest because a live run's feed must keep advancing past
+ * the cap: keeping the first 500 would freeze the panel on the run's opening
+ * moments and never show the work actually in flight. `truncated` tells the
+ * caller entries were dropped so the UI can say so rather than imply the feed
+ * is complete.
+ */
 export async function getRunLogs(
   db: WfDb,
   runId: string,
-): Promise<WfRunLogRow[]> {
-  const rows = await db
+  limit = RUN_LOG_READ_LIMIT,
+): Promise<{ rows: WfRunLogRow[]; truncated: boolean }> {
+  // One past the cap, so "there was more" is known without a second COUNT.
+  const newestFirst = await db
     .select({
       nodeId: wfRunLog.nodeId,
       nodeKind: wfRunLog.nodeKind,
@@ -168,8 +280,13 @@ export async function getRunLogs(
     })
     .from(wfRunLog)
     .where(eq(wfRunLog.runId, runId))
-    .orderBy(asc(wfRunLog.ts))
-  return rows
+    .orderBy(desc(wfRunLog.ts))
+    .limit(limit + 1)
+  const truncated = newestFirst.length > limit
+  const kept = truncated ? newestFirst.slice(0, limit) : newestFirst
+  // Read newest-first to pick the tail; hand back oldest-first, which is the
+  // order every consumer renders in.
+  return { rows: kept.reverse(), truncated }
 }
 
 // What a user-facing progress line IS, so a surface can render each kind

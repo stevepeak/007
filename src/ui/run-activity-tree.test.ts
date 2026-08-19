@@ -2,10 +2,13 @@ import { describe, expect, test } from 'bun:test'
 
 import type { WorkflowGraph } from '../engine'
 import type { WfRunLogDTO, WfRunStepDTO } from '../server/protocol'
+import { RUN_STATE_LEVEL } from '../engine/stream-sink'
 import {
   buildActivityTree,
   flattenTree,
   type ActivityNodeRow,
+  type ActivityStateRow,
+  type ActivityTopRow,
 } from './run-activity-tree'
 
 // Minimal builders — the tree only reads node id/kind/label (+ subgraph for
@@ -266,5 +269,172 @@ describe('flattenTree', () => {
     flat = flattenTree(rows, new Map([['draft', 'closed']]))
     expect(flat.some((f) => f.row.kind === 'log')).toBe(false)
     expect(flat.find((f) => f.row.key === 'draft')?.expanded).toBe(false)
+  })
+})
+
+
+// --- Run lifecycle markers -------------------------------------------------
+
+/** A run-level state entry as the storage writer produces it. */
+function stateLog(
+  status: string,
+  ts: number,
+  extra: { message?: string; pendingNodes?: number } = {},
+): WfRunLogDTO {
+  return {
+    nodeId: null,
+    nodeKind: null,
+    sequence: null,
+    level: RUN_STATE_LEVEL,
+    message: extra.message ?? status,
+    meta: {
+      status,
+      ...(extra.pendingNodes != null ? { pendingNodes: extra.pendingNodes } : {}),
+    },
+    ts,
+  }
+}
+
+const isState = (r: ActivityTopRow): r is ActivityStateRow => r.kind === 'state'
+const isNode = (r: ActivityTopRow): r is ActivityNodeRow => r.kind === 'node'
+
+describe('buildActivityTree — run lifecycle markers', () => {
+  test('opens with queued then running, and closes with the terminal marker', () => {
+    // `read` starts at 2_000_000, `draft` at 5_000_000. `done` at 3_000_000 is
+    // between them; everything else is a bookend.
+    const rows = buildActivityTree({
+      graph: GRAPH,
+      steps: [
+        step('read', 'tool', 1, 'completed', {
+          startedAt: 2_000_000,
+          finishedAt: 2_900_000,
+        }),
+        step('draft', 'agent', 2, 'completed', {
+          startedAt: 5_000_000,
+          finishedAt: 9_000_000,
+        }),
+      ],
+      logs: [
+        stateLog('queued', 1_000_000),
+        stateLog('running', 1_500_000),
+        stateLog('done', 3_000_000),
+        stateLog('completed', 9_500_000),
+      ],
+    })
+    expect(
+      rows.map((r) => (isState(r) ? `@${r.status}` : (r as ActivityNodeRow).nodeId)),
+    ).toEqual(['@queued', '@running', 'read', '@done', 'draft', '@completed'])
+  })
+
+  test('queued and running lead even when a node claims an earlier start', () => {
+    // `started_at` is a whole-SECOND column while a marker's ts is exact
+    // millis, so inside one second the timestamps can order the wrong way. The
+    // bookends are pinned precisely so that can't surface — this fixes the
+    // marker ts ABOVE the node start to prove the placement isn't a comparison.
+    const rows = buildActivityTree({
+      graph: GRAPH,
+      steps: [
+        step('read', 'tool', 1, 'completed', {
+          startedAt: 1_000_000,
+          finishedAt: 1_500_000,
+        }),
+      ],
+      logs: [stateLog('queued', 9_000_000), stateLog('running', 9_000_001)],
+    })
+    expect(
+      rows.map((r) => (isState(r) ? `@${r.status}` : (r as ActivityNodeRow).nodeId)),
+    ).toEqual(['@queued', '@running', 'read', 'draft'])
+  })
+
+  test('a terminal marker closes the list even with nodes that never ran', () => {
+    // `draft` was skipped by a branch, so it has no start time. `completed`
+    // still belongs at the end — nothing runs after it by definition.
+    const rows = buildActivityTree({
+      graph: GRAPH,
+      steps: [
+        step('read', 'tool', 1, 'completed', {
+          startedAt: 1_000_000,
+          finishedAt: 1_400_000,
+        }),
+      ],
+      logs: [stateLog('completed', 1_500_000)],
+    })
+    expect(
+      rows.map((r) => (isState(r) ? `@${r.status}` : (r as ActivityNodeRow).nodeId)),
+    ).toEqual(['read', 'draft', '@completed'])
+  })
+
+  test('node ordering is untouched by the markers', () => {
+    const withMarkers = buildActivityTree({
+      graph: GRAPH,
+      steps: [step('read', 'tool', 1, 'completed'), step('draft', 'agent', 2, 'running')],
+      logs: [stateLog('running', 1), stateLog('done', 2)],
+    })
+    expect(withMarkers.filter(isNode).map((r) => r.nodeId)).toEqual([
+      'read',
+      'draft',
+    ])
+  })
+
+  test('a state entry never becomes a node leaf', () => {
+    // It has no nodeId, so it must not be swallowed by the per-node log index.
+    const rows = buildActivityTree({
+      graph: GRAPH,
+      steps: [step('read', 'tool', 1, 'completed')],
+      logs: [stateLog('done', 5)],
+    })
+    expect(rows.filter(isState)).toHaveLength(1)
+    for (const r of rows.filter(isNode)) {
+      expect(r.children.some((c) => c.kind === 'log' && c.level === RUN_STATE_LEVEL)).toBe(false)
+    }
+  })
+
+  test('flattenTree emits markers as depth-0 leaves', () => {
+    const rows = buildActivityTree({
+      graph: GRAPH,
+      steps: [step('read', 'tool', 1, 'completed')],
+      logs: [stateLog('done', 5)],
+    })
+    const flat = flattenTree(rows, new Map())
+    const marker = flat.find((f) => f.row.kind === 'state')
+    expect(marker).toBeDefined()
+    expect(marker?.depth).toBe(0)
+    expect(marker?.hasChildren).toBe(false)
+  })
+})
+
+describe('buildActivityTree — marker timing', () => {
+  test('times each marker off the running marker, not the queued one', () => {
+    // Queue wait is not run time: `done` at 25s after `running` is 23s of work
+    // even though the run was created 2s earlier.
+    const rows = buildActivityTree({
+      graph: GRAPH,
+      steps: [step('read', 'tool', 1, 'completed')],
+      logs: [
+        stateLog('queued', 1_000_000),
+        stateLog('running', 1_002_000),
+        stateLog('done', 1_025_000, { pendingNodes: 3 }),
+        stateLog('completed', 1_100_000),
+      ],
+    })
+    const byStatus = new Map(rows.filter(isState).map((r) => [r.status, r]))
+    expect(byStatus.get('queued')?.elapsedMs).toBeNull()
+    expect(byStatus.get('running')?.elapsedMs).toBe(0)
+    expect(byStatus.get('done')?.elapsedMs).toBe(23_000)
+    expect(byStatus.get('done')?.pendingNodes).toBe(3)
+    expect(byStatus.get('completed')?.elapsedMs).toBe(98_000)
+  })
+
+  test('leaves elapsed null when the run predates lifecycle markers', () => {
+    // No `running` marker to time from — the view falls back to the engine's
+    // plain persisted line rather than inventing a duration.
+    const rows = buildActivityTree({
+      graph: GRAPH,
+      steps: [step('read', 'tool', 1, 'completed')],
+      logs: [stateLog('completed', 1_100_000, { message: 'Workflow completed' })],
+    })
+    const marker = rows.filter(isState)[0]
+    expect(marker.elapsedMs).toBeNull()
+    expect(marker.message).toBe('Workflow completed')
   })
 })

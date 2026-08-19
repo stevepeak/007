@@ -699,17 +699,7 @@ export async function deliverOutput<TDeps, E extends GraphWorkflowEnv>(
   outputNodeId: string | null,
   pendingWork: boolean,
 ): Promise<GraphWorkflowResult> {
-  const { step, env, config, p, room, scheduler, sink } = ctx
-  if (pendingWork) {
-    // Makes the two-phase finish legible in the run viewer: without it a run
-    // sitting in `done` looks indistinguishable from one still working on the
-    // answer.
-    await sink?.log?.({
-      level: 'progress',
-      message: `Answer delivered — ${scheduler.inFlightCount()} background node(s) still running.`,
-      ts: Date.now(),
-    })
-  }
+  const { step, env, config, p, room, scheduler } = ctx
   // Enforce the trigger's output contract (e.g. chat's `{ text }`) before we
   // persist anything: a run whose Output was bound to the wrong shape — or that
   // fizzled out with no result under a contract that requires one — fails here
@@ -732,6 +722,7 @@ export async function deliverOutput<TDeps, E extends GraphWorkflowEnv>(
       runId: p.workflowRunId,
       output,
       settled: !pendingWork,
+      pendingNodes: scheduler.inFlightCount(),
     }),
   )
   await stepDo(step, 'room-output', () => room.setOutput(output, !pendingWork))

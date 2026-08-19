@@ -173,17 +173,43 @@ export function useNodeRenderer<K extends EditorNodeData['kind']>(
   }
 }
 
+/**
+ * Synthetic status for a graph node the run never reached — no step was ever
+ * recorded for it. Two very different causes produce it, and neither is a
+ * failure: an arm a branch routed away from, and a node with no live path into
+ * it at all. Both mean the same thing to a reader ("this did not happen"), so
+ * they get one treatment.
+ *
+ * Not a `WfRunStatus` — nothing persists it. The run page derives it for the
+ * canvas once a run has settled, since before that "hasn't run" and "hasn't run
+ * YET" are indistinguishable.
+ */
+export const NOT_RUN_STATUS = 'not-run'
+
+/** Dimming for a node the run never reached, and for one it skipped. */
+export function notRunClass(status: string | undefined): string | false {
+  return (
+    (status === NOT_RUN_STATUS && 'opacity-40 saturate-0') ||
+    (status === 'skipped' && 'opacity-60')
+  )
+}
+
 // A small corner badge marking a node's run status — sits just outside the card
 // so it reads at a glance without crowding the label.
 export function RunStatusDot({ status }: { status: string }) {
+  const notRun = status === NOT_RUN_STATUS
   return (
     <span
       className={cn(
         'absolute -top-1 -right-1 size-2.5 rounded-full ring-2 ring-white',
-        runStatusDotClass[status] ?? 'bg-neutral-300',
+        // Hollow for a node that never ran: a filled dot reads as an outcome,
+        // and the whole point is that there wasn't one.
+        notRun
+          ? 'border border-neutral-300 bg-transparent'
+          : (runStatusDotClass[status] ?? 'bg-neutral-300'),
       )}
-      aria-label={`Status: ${status}`}
-      title={status}
+      aria-label={notRun ? 'Status: did not run' : `Status: ${status}`}
+      title={notRun ? 'did not run' : status}
     />
   )
 }
@@ -272,7 +298,7 @@ export function NodeCard({
           : running
             ? 'border-blue-300 border-l-blue-500 ring-1 ring-blue-200 wf-node-glow'
             : style.accent,
-        status === 'skipped' && 'opacity-60',
+        notRunClass(status),
         selected && 'ring-ring ring-2 ring-offset-1',
         highlighted &&
           !selected &&
@@ -354,7 +380,7 @@ export function NodePill({
           : running
             ? 'border-blue-300 border-l-blue-500 ring-1 ring-blue-200 wf-node-glow'
             : style.accent,
-        status === 'skipped' && 'opacity-60',
+        notRunClass(status),
         selected && 'ring-ring ring-2 ring-offset-1',
         highlighted &&
           !selected &&

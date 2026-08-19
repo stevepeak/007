@@ -17,6 +17,13 @@
 //   - thinking              : an agent's internal reasoning for a step (dev feed)
 //   - tool                  : an agent invoked a tool (dev feed)
 //   - warn / error          : something went wrong (error carries the message)
+//   - state                 : a RUN-level lifecycle marker (queued / running /
+//                             done / completed / failed), written straight to
+//                             `wf_run_log` beside the status change rather than
+//                             emitted by a node. Node-less, so the activity feed
+//                             renders it between node rows at the moment it
+//                             happened — the only place the true settle time of
+//                             a `done`-then-drain run is visible.
 export type RunLogLevel =
   | 'node-start'
   | 'node-end'
@@ -26,6 +33,13 @@ export type RunLogLevel =
   | 'tool'
   | 'warn'
   | 'error'
+  | 'state'
+
+/**
+ * The `state` level as a value, for the storage writer and the feed reader.
+ * Lives here with the rest of the level vocabulary so the two cannot drift.
+ */
+export const RUN_STATE_LEVEL = 'state' satisfies RunLogLevel
 
 // One structured progress event. Emitted by the engine as a run executes, both
 // broadcast live (RunRoom → SSE) and persisted (wf_run_log) so a completed run

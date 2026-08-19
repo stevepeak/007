@@ -24,6 +24,7 @@ import {
   defineNode,
   KIND_STYLE,
   NodeCard,
+  notRunClass,
   RunStatusDot,
   useNodeRenderer,
   useRunAgentVersions,
@@ -314,7 +315,7 @@ export function IterationNodeRenderer(props: NodeProps) {
             : status === 'running'
               ? 'border-blue-300 border-l-blue-500 ring-1 ring-blue-200'
               : style.accent,
-          status === 'skipped' && 'opacity-60',
+          notRunClass(status),
           props.selected && 'ring-ring ring-2 ring-offset-1',
         )}
       >
