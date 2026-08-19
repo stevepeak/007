@@ -48,6 +48,7 @@ export async function listAgents(db: WfDb) {
   return agents.map((a) => ({
     ...a,
     config: latestByAgent.get(a.id)?.config ?? null,
+    latestVersionNumber: latestByAgent.get(a.id)?.versionNumber ?? null,
   }))
 }
 

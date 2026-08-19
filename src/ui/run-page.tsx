@@ -6,13 +6,19 @@ import type { RetryRunMode, WfRunStepDTO } from '../server/protocol'
 import { useWfComponents } from './context'
 import { cn } from './cn'
 import { WorkflowCanvas } from './editor/workflow-canvas'
-import { formatDuration, formatTimestamp, formatTokens, formatUsd } from './cost'
+import {
+  formatDuration,
+  formatTimestamp,
+  formatTokens,
+  formatUsd,
+} from './cost'
 import { useFeedbackForSubjects } from './hooks-feedback'
 import { useRetryRun, useRun } from './hooks'
 import { MessageFeedback } from './message-feedback'
 import { useWfNav } from './nav'
 import { QueryState } from './query-state'
 import { readIterationTotal } from './run-activity-tree'
+import { runAgentVersions } from './run-agent-versions'
 import { RunNodeDock } from './run-node-dock'
 import { runStatusClass } from './run-status'
 import { WfShell } from './shell'
@@ -118,6 +124,14 @@ export function RunPage({ runId, className }: RunPageProps) {
     [data?.steps],
   )
 
+  // nodeId → the agent version each agent node ran, so its card is labelled with
+  // what this run froze rather than whatever the agent has published since.
+  // Includes iteration inner steps — those nodes are on the canvas too.
+  const agentVersions = useMemo(
+    () => runAgentVersions(data?.steps ?? []),
+    [data?.steps],
+  )
+
   return (
     <QueryState
       query={{ isLoading, error, data }}
@@ -140,7 +154,8 @@ export function RunPage({ runId, className }: RunPageProps) {
       {(data) => {
         const { run } = data
         const start = run.startedAt ?? run.createdAt
-        const end = run.finishedAt ?? (run.status === 'running' ? Date.now() : null)
+        const end =
+          run.finishedAt ?? (run.status === 'running' ? Date.now() : null)
         // `done` is still live: the answer is in, but arms that don't feed the
         // Output are draining and their steps are still landing.
         const live =
@@ -170,8 +185,9 @@ export function RunPage({ runId, className }: RunPageProps) {
           parentIterationId ??
           (selectedNode?.kind === 'iteration' ? selectedId : null)
         const iterationStep = iterationId
-          ? (data.steps.find((s) => s.nodeId === iterationId && !s.parentNodeId) ??
-            null)
+          ? (data.steps.find(
+              (s) => s.nodeId === iterationId && !s.parentNodeId,
+            ) ?? null)
           : null
         const itemCount = iterationItemCount(iterationStep)
         const itemIndex =
@@ -188,8 +204,9 @@ export function RunPage({ runId, className }: RunPageProps) {
                   s.parentNodeId === parentIterationId &&
                   s.itemIndex === itemIndex,
               ) ?? null)
-            : (data.steps.find((s) => s.nodeId === selectedId && !s.parentNodeId) ??
-              null)
+            : (data.steps.find(
+                (s) => s.nodeId === selectedId && !s.parentNodeId,
+              ) ?? null)
 
         // Canvas tint: top-level statuses, plus — when an iteration or one of its
         // inner nodes is selected — that iteration's inner nodes tinted by the focused
@@ -199,7 +216,8 @@ export function RunPage({ runId, className }: RunPageProps) {
               ...nodeStatuses,
               ...data.steps
                 .filter(
-                  (s) => s.parentNodeId === iterationId && s.itemIndex === itemIndex,
+                  (s) =>
+                    s.parentNodeId === iterationId && s.itemIndex === itemIndex,
                 )
                 .map((s) => [s.nodeId, s.status] as const),
             ])
@@ -208,7 +226,9 @@ export function RunPage({ runId, className }: RunPageProps) {
         const handleRetry = (mode: RetryRunMode) => {
           retry.mutate(
             { runId, mode },
-            { onSuccess: ({ runId: newRunId }) => navigate(`runs/${newRunId}`) },
+            {
+              onSuccess: ({ runId: newRunId }) => navigate(`runs/${newRunId}`),
+            },
           )
         }
 
@@ -233,7 +253,10 @@ export function RunPage({ runId, className }: RunPageProps) {
                 <span className="text-xs text-neutral-500">
                   {run.workflowName}
                   {data.versionNumber != null ? (
-                    <span className="text-neutral-400"> v{data.versionNumber}</span>
+                    <span className="text-neutral-400">
+                      {' '}
+                      v{data.versionNumber}
+                    </span>
                   ) : null}
                 </span>
                 <Badge className={cn('border', runStatusClass[run.status])}>
@@ -314,6 +337,7 @@ export function RunPage({ runId, className }: RunPageProps) {
                     graph={data.graph}
                     readOnly
                     nodeStatuses={canvasStatuses}
+                    nodeAgentVersions={agentVersions}
                     onSelectionChange={setSelectedId}
                   />
                 ) : (

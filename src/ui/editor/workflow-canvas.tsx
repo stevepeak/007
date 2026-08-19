@@ -30,6 +30,7 @@ import {
   editorTypeForKind,
   InvalidNodesProvider,
   NODE_TYPES,
+  RunAgentVersionProvider,
   RunStatusProvider,
   type EditorNodeData,
 } from './node-renderers'
@@ -49,7 +50,10 @@ import {
   type EditorNode,
 } from './workflow-canvas-graph'
 import { layoutNodes } from './workflow-canvas-layout'
-import { defaultDataForKind, type NodeDefaults } from './workflow-canvas-palette'
+import {
+  defaultDataForKind,
+  type NodeDefaults,
+} from './workflow-canvas-palette'
 
 export type { NodeDefaults } from './workflow-canvas-palette'
 
@@ -59,6 +63,9 @@ const EMPTY_INVALID: ReadonlySet<string> = new Set()
 
 // Stable empty map so the run-status provider keeps identity in the editor.
 const EMPTY_STATUSES: ReadonlyMap<string, string> = new Map()
+
+// Ditto for the run's frozen agent versions (empty in the editor).
+const EMPTY_AGENT_VERSIONS: ReadonlyMap<string, number> = new Map()
 
 // Keep a freshly adopted child fully inside its container. React Flow enforces
 // `extent: 'parent'` on every subsequent drag, but not on the frame where the
@@ -85,6 +92,10 @@ export interface WorkflowCanvasProps {
   invalidNodeIds?: ReadonlySet<string>
   /** Run-view only: nodeId → run status, tinting nodes + showing status dots. */
   nodeStatuses?: ReadonlyMap<string, string>
+  /** Run-view only: nodeId → the agent version that node actually ran (frozen
+   *  in the run manifest). Agent cards label themselves with it instead of the
+   *  catalog's current latest, which a floating node may since have outgrown. */
+  nodeAgentVersions?: ReadonlyMap<string, number>
   /** Fired after each change with the current engine graph. */
   onChange?: (next: WorkflowGraph) => void
   /** Fires when the selected node changes; null on deselect. */
@@ -113,6 +124,7 @@ function CanvasInner({
   defaults,
   invalidNodeIds,
   nodeStatuses,
+  nodeAgentVersions,
   onChange,
   onSelectionChange,
   registerNodePatcher,
@@ -254,7 +266,12 @@ function CanvasInner({
         orderParentsFirst(
           ns.map((n) =>
             n.id === dragged.id
-              ? { ...n, parentId: container.id, extent: 'parent', position: rel }
+              ? {
+                  ...n,
+                  parentId: container.id,
+                  extent: 'parent',
+                  position: rel,
+                }
               : n,
           ),
         ),
@@ -417,67 +434,71 @@ function CanvasInner({
   return (
     <div ref={wrapperRef} className="relative h-full w-full">
       <RunStatusProvider statuses={nodeStatuses ?? EMPTY_STATUSES}>
-        <InvalidNodesProvider ids={invalidNodeIds ?? EMPTY_INVALID}>
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={handleNodesChange}
-            onEdgesChange={readOnly ? undefined : onEdgesChange}
-            onConnect={readOnly ? undefined : handleConnect}
-            onSelectionChange={handleSelectionChange}
-            onNodeDragStop={readOnly ? undefined : handleNodeDragStop}
-            isValidConnection={isValidConnection}
-            nodeTypes={NODE_TYPES}
-            // Keep iteration children clickable: without this, selecting the
-            // container elevates it above its own children so their clicks never
-            // land. Children already sit above the container by array order.
-            elevateNodesOnSelect={false}
-            nodesDraggable={!readOnly}
-            nodesConnectable={!readOnly}
-            onDrop={readOnly ? undefined : handleDrop}
-            onDragOver={readOnly ? undefined : handleDragOver}
-            defaultEdgeOptions={{
-              type: 'smoothstep',
-              markerEnd: { type: MarkerType.ArrowClosed },
-            }}
-            fitView
-            // Frame the whole workflow on open instead of zooming right in:
-            // React Flow's default maxZoom is 2, which blows small graphs up to
-            // fill the viewport. Cap at 1 so the entire graph stays visible.
-            fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
-            proOptions={{ hideAttribution: true }}
-          >
-            <Background gap={20} />
-            <Controls />
-            {!readOnly ? (
-              <Panel
-                position="top-left"
-                className="rounded-md bg-white shadow-sm"
-              >
-                <Tooltip
-                  content="Auto-arrange nodes into a tidy left-to-right layout"
-                  side="right"
-                >
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleTidyLayout}
-                  >
-                    <LayoutGrid className="size-4" />
-                    Tidy
-                  </Button>
-                </Tooltip>
-              </Panel>
-            ) : null}
-            <MiniMap pannable zoomable />
-            <Panel
-              position="top-right"
-              className="bg-card text-muted-foreground rounded-md border px-2 py-1 text-[11px]"
+        <RunAgentVersionProvider
+          versions={nodeAgentVersions ?? EMPTY_AGENT_VERSIONS}
+        >
+          <InvalidNodesProvider ids={invalidNodeIds ?? EMPTY_INVALID}>
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={handleNodesChange}
+              onEdgesChange={readOnly ? undefined : onEdgesChange}
+              onConnect={readOnly ? undefined : handleConnect}
+              onSelectionChange={handleSelectionChange}
+              onNodeDragStop={readOnly ? undefined : handleNodeDragStop}
+              isValidConnection={isValidConnection}
+              nodeTypes={NODE_TYPES}
+              // Keep iteration children clickable: without this, selecting the
+              // container elevates it above its own children so their clicks never
+              // land. Children already sit above the container by array order.
+              elevateNodesOnSelect={false}
+              nodesDraggable={!readOnly}
+              nodesConnectable={!readOnly}
+              onDrop={readOnly ? undefined : handleDrop}
+              onDragOver={readOnly ? undefined : handleDragOver}
+              defaultEdgeOptions={{
+                type: 'smoothstep',
+                markerEnd: { type: MarkerType.ArrowClosed },
+              }}
+              fitView
+              // Frame the whole workflow on open instead of zooming right in:
+              // React Flow's default maxZoom is 2, which blows small graphs up to
+              // fill the viewport. Cap at 1 so the entire graph stays visible.
+              fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
+              proOptions={{ hideAttribution: true }}
             >
-              {nodes.length} nodes · {edges.length} edges
-            </Panel>
-          </ReactFlow>
-        </InvalidNodesProvider>
+              <Background gap={20} />
+              <Controls />
+              {!readOnly ? (
+                <Panel
+                  position="top-left"
+                  className="rounded-md bg-white shadow-sm"
+                >
+                  <Tooltip
+                    content="Auto-arrange nodes into a tidy left-to-right layout"
+                    side="right"
+                  >
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleTidyLayout}
+                    >
+                      <LayoutGrid className="size-4" />
+                      Tidy
+                    </Button>
+                  </Tooltip>
+                </Panel>
+              ) : null}
+              <MiniMap pannable zoomable />
+              <Panel
+                position="top-right"
+                className="bg-card text-muted-foreground rounded-md border px-2 py-1 text-[11px]"
+              >
+                {nodes.length} nodes · {edges.length} edges
+              </Panel>
+            </ReactFlow>
+          </InvalidNodesProvider>
+        </RunAgentVersionProvider>
       </RunStatusProvider>
     </div>
   )

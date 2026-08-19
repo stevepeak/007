@@ -26,6 +26,7 @@ import {
   NodeCard,
   RunStatusDot,
   useNodeRenderer,
+  useRunAgentVersions,
 } from './node-renderers-shared'
 
 // Most nodes are a card with target/source handles — see `defineNode`. Only the
@@ -40,6 +41,15 @@ function resolveAgent(
     ? (agents.data ?? []).find((a) => a.id === config.agentId)
     : undefined
 }
+
+// An agent node needs two lookups, so its `useExtra` bundles them: the live
+// agent catalog (name / icon / output contract) and — in the run viewer — the
+// per-node version the run actually froze.
+function useAgentNodeExtra() {
+  return { agents: useAgents(), runVersions: useRunAgentVersions() }
+}
+
+type AgentNodeExtra = ReturnType<typeof useAgentNodeExtra>
 
 function resolveTool(
   config: { toolId?: string | null },
@@ -82,23 +92,44 @@ export const TriggerNodeRenderer = defineNode({
 
 export const AgentNodeRenderer = defineNode({
   kind: 'agent',
-  useExtra: useAgents,
+  useExtra: useAgentNodeExtra,
   // A YES/NO (boolean) output agent doubles as a branch: it exposes yes/no source
   // handles and routes its outgoing edges by the answer, so the author wires the
   // two arms directly instead of dropping a separate Branch node.
-  source: (data, agents) =>
-    resolveAgent(data.config, agents)?.output?.kind === 'boolean'
+  source: (data, extra) =>
+    resolveAgent(data.config, extra.agents)?.output?.kind === 'boolean'
       ? 'decision'
       : 'single',
-  subtitle: (data, agents) =>
-    resolveAgent(data.config, agents)?.name ?? 'No agent selected',
-  appearance: (data, agents) => {
-    const agent = resolveAgent(data.config, agents)
+  // "Legal Researcher · v4" — the version matters as much as the name, since an
+  // agent node is a pointer that usually floats. See `agentNodeVersion`.
+  subtitle: (data, extra, props) => {
+    const agent = resolveAgent(data.config, extra.agents)
+    if (!agent) return 'No agent selected'
+    const version = agentNodeVersion(data.config, agent, extra, props.id)
+    return version == null ? agent.name : `${agent.name} · v${version}`
+  },
+  appearance: (data, extra) => {
+    const agent = resolveAgent(data.config, extra.agents)
     return agent
       ? { icon: agentIcon(agent.icon), iconChip: agentColor(agent.color).chip }
       : undefined
   },
 })
+
+// The version an agent node shows. In a run, the only honest answer is what the
+// run froze (a floating node resolved once, at start — today's latest may be
+// newer). In the editor there is no run, so it's the node's pin, or the version
+// a float would resolve to right now. Null only for a never-published agent.
+function agentNodeVersion(
+  config: { version?: number | null },
+  agent: { latestVersionNumber: number | null },
+  extra: AgentNodeExtra,
+  nodeId: string,
+): number | null {
+  return (
+    extra.runVersions.get(nodeId) ?? config.version ?? agent.latestVersionNumber
+  )
+}
 
 export const ToolNodeRenderer = defineNode({
   kind: 'tool',

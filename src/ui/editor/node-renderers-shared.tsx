@@ -84,6 +84,36 @@ function useNodeRunStatus(id: string): string | undefined {
   return useContext(RunStatusContext).get(id)
 }
 
+// Run-view only: nodeId → the agent version that node actually ran, frozen into
+// the run's manifest at start. An agent node usually FLOATS to the agent's
+// latest published version, so the live catalog can't answer this after the
+// fact — without this the run graph would label an old run with today's version.
+// Empty in the editor, where the pin (or the catalog's latest) is the truth.
+const RunAgentVersionContext = createContext<ReadonlyMap<string, number>>(
+  new Map(),
+)
+
+export function RunAgentVersionProvider({
+  versions,
+  children,
+}: {
+  versions: ReadonlyMap<string, number>
+  children: ReactNode
+}) {
+  return (
+    <RunAgentVersionContext.Provider value={versions}>
+      {children}
+    </RunAgentVersionContext.Provider>
+  )
+}
+
+/** nodeId → the agent version it ran, for the surrounding run. Empty outside
+ *  a run view. Returns the whole map (not one lookup) so a renderer can read it
+ *  from an unconditional `useExtra` and index it later during render. */
+export function useRunAgentVersions(): ReadonlyMap<string, number> {
+  return useContext(RunAgentVersionContext)
+}
+
 // The node id currently highlighted from OUTSIDE the canvas — e.g. hovering a
 // binding's source in the inspector illuminates that node in the graph. Provided
 // around BOTH the canvas and the inspector so one side sets it and the other
@@ -244,7 +274,9 @@ export function NodeCard({
             : style.accent,
         status === 'skipped' && 'opacity-60',
         selected && 'ring-ring ring-2 ring-offset-1',
-        highlighted && !selected && 'ring-2 ring-sky-400 ring-offset-1 wf-node-glow',
+        highlighted &&
+          !selected &&
+          'ring-2 ring-sky-400 ring-offset-1 wf-node-glow',
       )}
       style={{ minWidth: 200, maxWidth: 260 }}
     >
@@ -324,7 +356,9 @@ export function NodePill({
             : style.accent,
         status === 'skipped' && 'opacity-60',
         selected && 'ring-ring ring-2 ring-offset-1',
-        highlighted && !selected && 'ring-2 ring-sky-400 ring-offset-1 wf-node-glow',
+        highlighted &&
+          !selected &&
+          'ring-2 ring-sky-400 ring-offset-1 wf-node-glow',
       )}
     >
       {status ? <RunStatusDot status={status} /> : null}
@@ -407,12 +441,17 @@ export type NodeSpec<K extends EditorNodeData['kind'], E = undefined> = {
   hasTarget?: boolean
   /** Right-side output handle(s). Default 'single'; may depend on data/extra. */
   source?:
-    | NodeSourceKind
-    | ((data: NarrowedNodeData<K>, extra: E) => NodeSourceKind)
-  /** Card subtitle — static, or derived from the node's data (+ extra lookup). */
+    NodeSourceKind | ((data: NarrowedNodeData<K>, extra: E) => NodeSourceKind)
+  /** Card subtitle — static, or derived from the node's data (+ extra lookup).
+   *  `props` is passed too so a subtitle can key off the node's id (e.g. an
+   *  agent node reading the version it ran from the run context). */
   subtitle?:
     | string
-    | ((data: NarrowedNodeData<K>, extra: E) => string | undefined)
+    | ((
+        data: NarrowedNodeData<K>,
+        extra: E,
+        props: NodeProps,
+      ) => string | undefined)
   /** An unconditional hook for async lookups (agents/tools/workflows/events). */
   useExtra?: () => E
   /** Icon override for the card (an agent's icon, a tool's brand mark). */
@@ -444,7 +483,7 @@ export function defineNode<K extends EditorNodeData['kind'], E = undefined>(
         : (spec.source ?? 'single')
     const subtitle =
       typeof spec.subtitle === 'function'
-        ? spec.subtitle(data, extra)
+        ? spec.subtitle(data, extra, props)
         : spec.subtitle
     const pill = spec.pill?.(data, props) ?? null
     const appear = spec.appearance?.(data, extra)

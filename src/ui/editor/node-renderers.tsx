@@ -19,6 +19,7 @@ import {
 // the public ones so hosts keep importing them from `./node-renderers`.
 export {
   InvalidNodesProvider,
+  RunAgentVersionProvider,
   RunStatusProvider,
   type EditorNodeData,
 } from './node-renderers-shared'

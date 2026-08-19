@@ -38,6 +38,7 @@ function agentSummary(
   },
   config?: unknown,
   workflows: { id: string; name: string }[] = [],
+  latestVersionNumber: number | null = null,
 ): WfAgentSummary {
   // `config` is an untyped JSON column; parse it defensively so a malformed row
   // degrades to "no variables/output" rather than throwing the whole listing.
@@ -55,6 +56,7 @@ function agentSummary(
     modelId: cfg?.modelId ?? null,
     toolIds: cfg?.toolIds ?? [],
     acceptsConversation: cfg?.acceptsConversation ?? false,
+    latestVersionNumber,
     workflows,
   }
 }
@@ -82,7 +84,14 @@ export function buildAgentHandlers<TDeps>(
     listAgents: async (c) => {
       const rows = await listAgents(c.db)
       const byAgent = await listWorkflowsReferencingAllAgents(c.db)
-      return rows.map((r) => agentSummary(r, r.config, byAgent.get(r.id) ?? []))
+      return rows.map((r) =>
+        agentSummary(
+          r,
+          r.config,
+          byAgent.get(r.id) ?? [],
+          r.latestVersionNumber,
+        ),
+      )
     },
 
     getAgent: async (c) => {
@@ -92,7 +101,12 @@ export function buildAgentHandlers<TDeps>(
         return null
       }
       const detail: WfAgentDetail = {
-        agent: agentSummary(result.agent, result.currentVersion?.config),
+        agent: agentSummary(
+          result.agent,
+          result.currentVersion?.config,
+          [],
+          result.currentVersion?.versionNumber ?? null,
+        ),
         draft: result.draft
           ? { config: agentConfigSchema.parse(result.draft.config) }
           : null,

@@ -43,6 +43,13 @@ export type WfAgentSummary = {
    */
   acceptsConversation: boolean
   /**
+   * The agent's newest version number, or null when it has never been
+   * published. This is what a float-to-latest reference (an agent node with no
+   * version pin) currently resolves to, so the editor can show the version an
+   * agent node WOULD run without an extra per-agent fetch.
+   */
+  latestVersionNumber: number | null
+  /**
    * The workflows whose draft or latest published version reference this agent
    * (via an agent node). Populated by {@link WfDataClient.listAgents}; empty in
    * the single-agent {@link WfDataClient.getAgent} summary.
