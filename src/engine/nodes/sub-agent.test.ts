@@ -21,6 +21,8 @@ import { synthesizeDelegationTools } from './sub-agent'
 const baseConfig = (over: Partial<AgentConfig>): AgentConfig => ({
   modelId: 'mock',
   prompt: '',
+  userPrompt: 'Go.',
+  inputKind: 'task' as const,
   toolIds: [],
   maxTurns: 3,
   output: { kind: 'text' },

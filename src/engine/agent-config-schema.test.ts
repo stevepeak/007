@@ -10,6 +10,8 @@ import { agentConfigSchema } from './agent-config-schema'
 const base = {
   modelId: 'mock',
   prompt: 'Do the thing.',
+  userPrompt: 'Go.',
+  inputKind: 'task' as const,
   toolIds: [],
 }
 
@@ -50,6 +52,8 @@ describe('agentConfigSchema — limits', () => {
     const legacy = {
       modelId: 'venice-uncensored',
       prompt: 'Answer the question.',
+      userPrompt: 'Go.',
+      inputKind: 'task' as const,
       toolIds: ['search'],
       maxTurns: 5,
       output: { kind: 'text' as const },
@@ -61,15 +65,56 @@ describe('agentConfigSchema — limits', () => {
   })
 })
 
-describe('agentConfigSchema — acceptsConversation', () => {
-  // The declaration that makes an agent node's `conversation` input exist. It
-  // defaults OFF so a config written before it existed reads as what it is: a
-  // step agent that answers its single input, not a chat responder.
-  test('defaults to off, and a stored declaration round-trips', () => {
-    expect(agentConfigSchema.parse(base).acceptsConversation).toBe(false)
+describe('agentConfigSchema — input contract', () => {
+  test('defaults to a task agent', () => {
+    expect(agentConfigSchema.parse(base).inputKind).toBe('task')
+  })
+
+  // The AI SDK throws on a call with no messages, so a task agent that renders
+  // no user turn cannot run at all. Rejecting it at save time turns a run-time
+  // crash into a form error.
+  test('a task agent must carry a user message', () => {
     expect(
-      agentConfigSchema.parse({ ...base, acceptsConversation: true })
-        .acceptsConversation,
-    ).toBe(true)
+      agentConfigSchema.safeParse({ ...base, userPrompt: '' }).success,
+    ).toBe(false)
+    expect(
+      agentConfigSchema.safeParse({ ...base, userPrompt: '   \n ' }).success,
+    ).toBe(false)
+  })
+
+  // A conversation agent's messages come from the node's binding, so it needs no
+  // turn of its own.
+  test('a conversation agent may omit the user message', () => {
+    const c = agentConfigSchema.parse({
+      ...base,
+      inputKind: 'conversation',
+      userPrompt: '',
+    })
+    expect(c.inputKind).toBe('conversation')
+    expect(c.userPrompt).toBe('')
+  })
+})
+
+describe('agentConfigSchema — legacy configs', () => {
+  // `wf_agent_version` rows are immutable, so every config stored before this
+  // contract existed still has to parse — otherwise the agents list blanks and
+  // the run manifest aborts. What it CAN'T do is reproduce the old user turn:
+  // that was the incoming edge's payload, which lives in the run, not the config.
+  const legacy = {
+    modelId: 'mock',
+    prompt: 'Classify ${title} from ${document}.',
+    toolIds: [],
+  }
+
+  test('an old config parses, with a turn synthesized from its variables', () => {
+    const c = agentConfigSchema.parse(legacy)
+    expect(c.inputKind).toBe('task')
+    expect(c.userPrompt).toBe('title: ${title}\n\ndocument: ${document}')
+  })
+
+  test('acceptsConversation maps onto the conversation kind', () => {
+    const c = agentConfigSchema.parse({ ...legacy, acceptsConversation: true })
+    expect(c.inputKind).toBe('conversation')
+    expect(c.userPrompt).toBe('')
   })
 })

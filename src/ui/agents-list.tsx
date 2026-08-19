@@ -21,6 +21,11 @@ import { QueryState } from './query-state'
 // "New agent" always starts from a blank agent the author configures.
 
 const STARTER_PROMPT = 'You are a helpful assistant.'
+// A new agent starts as a task agent, so it needs a user message from the outset
+// — `agentConfigSchema` refuses to save one without it. The `${…}` token doubles
+// as the worked example: it's how an author learns that data arrives by mapping a
+// variable, not by wiring an edge.
+const STARTER_USER_PROMPT = 'Here is what to work on:\n\n${input}'
 
 export type AgentsListProps = {
   className?: string
@@ -66,13 +71,14 @@ export function AgentsList({ className }: AgentsListProps) {
         config: {
           modelId: defaultModelId,
           prompt: STARTER_PROMPT,
+          userPrompt: STARTER_USER_PROMPT,
           toolIds: [],
           maxTurns: 5,
           requireToolFirstTurn: false,
           toolTokenBudget: null,
           answerReservePercent: 10,
           output: { kind: 'text' },
-          acceptsConversation: false,
+          inputKind: 'task',
           subAgents: {
             targets: [],
             maxConcurrent: 4,

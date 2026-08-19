@@ -10,6 +10,7 @@ import {
   formatUsd,
 } from '../cost'
 import { useAgentCalls, useTools } from '../hooks'
+import { runLinkFor } from './agent-editor-call-inspect'
 import { WfLink } from '../nav'
 import { runStatusDotClass } from '../run-status'
 import { toolChip } from '../tool-appearance'
@@ -19,18 +20,20 @@ import { Tooltip } from '../tooltip'
 // This agent's last real executions, as METRICS only: how many turns it took,
 // what it spent, and which tools it reached for. Deliberately no inputs/outputs
 // — the question answered here is "how hard is this agent working, and what does
-// it cost"; every row links straight to its run for the data itself.
+// it cost"; selecting a row opens the data itself in the editor's bottom dock.
 //
 // Split in two because the editor shows them in different places: the averages
 // (`AgentCallMetrics`) are a page-level strip above the tabs — the numbers you
 // tune budgets against, visible whichever tab you're on — while the rows
-// (`AgentCallsList`) own the full page width inside the Inspector tab. Both read
-// the same query, so mounting both costs one fetch.
+// (`AgentCallsList`) own the full page width inside the "Recent calls" tab. Both
+// read the same query, so mounting both costs one fetch.
 //
-// A call is one recorded agent step, so an agent used by three workflows — or
-// spawned as a sub-agent, or run once per item inside an iteration — contributes
-// a row per execution, not one per run. Eval runs are excluded server-side:
-// they're simulated, and at eval volume they'd drown out real traffic.
+// A row is a CALL SITE — one agent node in one run — with every execution that
+// happened there folded in, so an agent that fans out over 40 items is one row
+// saying "Ran 40 times" and not 40 rows of the same run. The tile strip above
+// still speaks in per-call averages, since that's the unit a turn cap or a token
+// budget is set in. Eval runs are excluded server-side: they're simulated, and
+// at eval volume they'd drown out real traffic.
 
 const CALL_LIMIT = 20
 
@@ -44,27 +47,46 @@ export function AgentCallMetrics({ agentId }: { agentId: string }) {
   const calls = useAgentCalls(agentId, { limit: CALL_LIMIT })
   const rows = calls.data ?? []
 
-  const avg = (values: number[]) =>
-    values.length > 0
-      ? values.reduce((sum, v) => sum + v, 0) / values.length
-      : null
-  const avgTurns = avg(rows.map((r) => r.turns))
-  const avgTokens = avg(rows.map((r) => r.inputTokens + r.outputTokens))
-  const costs = rows.map((r) => r.costUsd).filter((c): c is number => c != null)
-  const avgCost = avg(costs)
-  const durations = rows
-    .map((r) => r.durationMs)
-    .filter((d): d is number => d != null)
-  const avgDuration = avg(durations)
-  const avgToolCalls = avg(
-    rows.map((r) => r.toolCalls.reduce((sum, t) => sum + t.count, 0)),
+  // Every figure is PER CALL, not per row: a row can fold a 40-item fan-out, and
+  // "avg turns" has to stay the number you compare a turn cap against. So each
+  // total is divided by the executions that actually contributed it — rows with
+  // no recorded duration, or an unpriced model, are left out of that divisor
+  // rather than dragging their average toward zero.
+  const totalOf = (pick: (r: (typeof rows)[number]) => number) =>
+    rows.reduce((sum, r) => sum + pick(r), 0)
+  const callsWhere = (has: (r: (typeof rows)[number]) => boolean) =>
+    rows.filter(has).reduce((sum, r) => sum + r.callCount, 0)
+
+  const totalCalls = callsWhere(() => true)
+  const per = (total: number, over: number) => (over > 0 ? total / over : null)
+  const avgTurns = per(
+    totalOf((r) => r.turns),
+    totalCalls,
+  )
+  const avgTokens = per(
+    totalOf((r) => r.inputTokens + r.outputTokens),
+    totalCalls,
+  )
+  const pricedCalls = callsWhere((r) => r.costUsd != null)
+  const avgCost = per(
+    totalOf((r) => r.costUsd ?? 0),
+    pricedCalls,
+  )
+  const timedCalls = callsWhere((r) => r.durationMs != null)
+  const avgDuration = per(
+    totalOf((r) => r.durationMs ?? 0),
+    timedCalls,
+  )
+  const avgToolCalls = per(
+    totalOf((r) => r.toolCalls.reduce((sum, t) => sum + t.count, 0)),
+    totalCalls,
   )
 
   // No calls yet (or still loading): keep the strip in place with em dashes
   // rather than reflowing the page once the numbers land.
   const over =
-    rows.length > 0
-      ? `Averaged over the last ${rows.length} call${rows.length === 1 ? '' : 's'}`
+    totalCalls > 0
+      ? `Averaged over the last ${totalCalls} call${totalCalls === 1 ? '' : 's'}`
       : 'No real calls recorded yet'
 
   return (
@@ -88,8 +110,8 @@ export function AgentCallMetrics({ agentId }: { agentId: string }) {
         label="Avg cost"
         value={formatUsd(avgCost)}
         hint={
-          costs.length < rows.length
-            ? `Tokens × the model’s catalog price — ${rows.length - costs.length} call(s) ran on an unpriced model and are excluded`
+          pricedCalls < totalCalls
+            ? `Tokens × the model’s catalog price — ${totalCalls - pricedCalls} call(s) ran on an unpriced model and are excluded`
             : `Tokens × the model’s catalog price. ${over}`
         }
       />
@@ -137,7 +159,22 @@ function SummaryTile({
 const ROW_COLS =
   'grid grid-cols-[minmax(12rem,1fr)_4.5rem_5.5rem_5rem_5.5rem_minmax(7rem,16rem)_6rem] items-center gap-x-4'
 
-export function AgentCallsList({ agentId }: { agentId: string }) {
+/** Stable identity of one call site — the key, and what "selected" compares. */
+export function callKey(call: Pick<WfAgentCall, 'runId' | 'nodeId'>): string {
+  return `${call.runId}:${call.nodeId}`
+}
+
+export function AgentCallsList({
+  agentId,
+  selectedKey,
+  onSelect,
+}: {
+  agentId: string
+  /** {@link callKey} of the row currently open in the dock, if any. */
+  selectedKey?: string | null
+  /** Open a row in the editor's bottom dock. */
+  onSelect?: (call: WfAgentCall) => void
+}) {
   const calls = useAgentCalls(agentId, { limit: CALL_LIMIT })
   const tools = useTools()
   const rows = calls.data ?? []
@@ -183,9 +220,11 @@ export function AgentCallsList({ agentId }: { agentId: string }) {
           </div>
           {rows.map((call) => (
             <CallRow
-              key={`${call.runId}:${call.nodeId}:${call.itemIndex ?? -1}`}
+              key={callKey(call)}
               call={call}
               tools={tools.data ?? []}
+              selected={selectedKey === callKey(call)}
+              onSelect={onSelect}
             />
           ))}
         </div>
@@ -200,28 +239,65 @@ export function AgentCallsList({ agentId }: { agentId: string }) {
 }
 
 /**
- * One call. The whole row is a real link to its run (so cmd-click and
- * middle-click work like any other link), with the workflow it ran in as the
- * visible link text — the run page is where the inputs/outputs this list
- * leaves out actually live.
+ * What this row IS, in one line under the workflow name: how many times the
+ * agent ran at this call site, in which published version, and — when it's not
+ * a plain graph node — that it was a spawned sub-agent. "Ran once" rather than
+ * "1 time" because the common row is the single call, and it should read as a
+ * sentence, not a table cell.
  */
-function CallRow({ call, tools }: { call: WfAgentCall; tools: ToolOption[] }) {
+function callSubtitle(call: WfAgentCall): string {
+  const times = call.callCount === 1 ? 'once' : `${call.callCount} times`
+  const where =
+    call.versionNumber != null ? ` in workflow v${call.versionNumber}` : ''
+  const parts = [`Ran ${times}${where}`]
+  if (call.failedCount > 0 && call.callCount > 1) {
+    parts.push(`${call.failedCount} failed`)
+  }
+  if (call.subAgentName) parts.push(`sub-agent of ${call.subAgentName}`)
+  return parts.join(' · ')
+}
+
+/**
+ * One call site. Activating the row opens it in the editor's bottom dock rather
+ * than navigating: reading what the agent did shouldn't cost you the prompt you
+ * were editing above. The run itself is still one click away through the arrow,
+ * which stays a real link (so cmd-click and middle-click behave) and carries the
+ * node along so the run page lands with this agent already selected.
+ */
+function CallRow({
+  call,
+  tools,
+  selected,
+  onSelect,
+}: {
+  call: WfAgentCall
+  tools: ToolOption[]
+  selected?: boolean
+  onSelect?: (call: WfAgentCall) => void
+}) {
   const tokens = call.inputTokens + call.outputTokens
-  // Everything a call can be beyond "an agent node in a workflow": a spawned
-  // sub-agent, or one item of an iteration.
-  const context: string[] = []
-  if (call.subAgentName) context.push(`sub-agent of ${call.subAgentName}`)
-  if (call.itemIndex != null) context.push(`item ${call.itemIndex + 1}`)
-  if (call.versionNumber != null)
-    context.push(`workflow v${call.versionNumber}`)
+  // Every number in the row is a total, so say so once a row folds more than
+  // one execution — otherwise "10 turns" reads as one very long call.
+  const across = call.callCount > 1 ? ` across ${call.callCount} calls` : ''
 
   return (
-    <WfLink
-      to={`runs/${call.runId}`}
-      title="Open this run"
+    <div
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      title="Inspect these calls below"
+      onClick={() => onSelect?.(call)}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return
+        e.preventDefault()
+        onSelect?.(call)
+      }}
       className={cn(
         ROW_COLS,
-        'group rounded-md border border-neutral-200 px-3 py-2 transition-colors hover:border-neutral-300 hover:bg-neutral-50/60',
+        'group cursor-pointer rounded-md border px-3 py-2 transition-colors',
+        selected
+          ? 'border-neutral-400 bg-neutral-50'
+          : 'border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50/60',
       )}
     >
       <span className="flex min-w-0 items-center gap-1.5">
@@ -235,16 +311,24 @@ function CallRow({ call, tools }: { call: WfAgentCall; tools: ToolOption[] }) {
         </Tooltip>
         <span className="min-w-0">
           <span className="flex items-center gap-1.5">
-            <span className="min-w-0 truncate text-sm font-medium text-neutral-800 group-hover:text-neutral-900 group-hover:underline">
+            <span className="min-w-0 truncate text-sm font-medium text-neutral-800 group-hover:text-neutral-900">
               {call.workflowName ?? '(unknown workflow)'}
             </span>
-            <ArrowUpRight className="size-3.5 shrink-0 text-neutral-300 group-hover:text-neutral-500" />
+            <WfLink
+              to={runLinkFor(call, call.itemIndexes[0] ?? null)}
+              title="Open this run, with this agent selected"
+              aria-label="Open this run"
+              // The row's own activation is inspection, so the link must not
+              // also fire it on the way out.
+              onClick={(e) => e.stopPropagation()}
+              className="shrink-0 rounded text-neutral-300 hover:text-neutral-700"
+            >
+              <ArrowUpRight className="size-3.5" />
+            </WfLink>
           </span>
-          {context.length > 0 ? (
-            <span className="block truncate text-[11px] text-neutral-400">
-              {context.join(' · ')}
-            </span>
-          ) : null}
+          <span className="block truncate text-[11px] text-neutral-400">
+            {callSubtitle(call)}
+          </span>
           {call.error ? (
             <span className="block truncate text-xs text-red-600">
               {call.error}
@@ -255,23 +339,23 @@ function CallRow({ call, tools }: { call: WfAgentCall; tools: ToolOption[] }) {
 
       <Cell
         value={String(call.turns)}
-        hint={`${call.turns} round(s) of the tool loop${call.model ? ` on ${call.model}` : ''}`}
+        hint={`${call.turns} round(s) of the tool loop${across}${call.model ? ` on ${call.model}` : ''}`}
       />
       <Cell
         value={formatTokens(tokens)}
-        hint={`${call.inputTokens.toLocaleString()} in · ${call.outputTokens.toLocaleString()} out`}
+        hint={`${call.inputTokens.toLocaleString()} in · ${call.outputTokens.toLocaleString()} out${across}`}
       />
       <Cell
         value={formatUsd(call.costUsd)}
         hint={
           call.costUsd == null
             ? 'No catalog price for the model this ran on'
-            : undefined
+            : `Tokens × the model’s catalog price${across}`
         }
       />
       <Cell
         value={formatDurationMs(call.durationMs)}
-        hint="Wall-clock of this agent call"
+        hint={`Wall-clock of this agent call${across}, summed — not the span it ran over`}
       />
 
       <span className="flex min-w-0 flex-wrap items-center gap-1">
@@ -302,7 +386,7 @@ function CallRow({ call, tools }: { call: WfAgentCall; tools: ToolOption[] }) {
           {formatRelative(call.startedAt)}
         </span>
       </Tooltip>
-    </WfLink>
+    </div>
   )
 }
 

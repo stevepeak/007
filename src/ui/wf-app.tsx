@@ -123,7 +123,13 @@ function WfTabbedShell({
   )
 }
 
-function TabPane({ active, children }: { active: boolean; children: ReactNode }) {
+function TabPane({
+  active,
+  children,
+}: {
+  active: boolean
+  children: ReactNode
+}) {
   return <div className={cn('h-full', !active && 'hidden')}>{children}</div>
 }
 
@@ -160,10 +166,7 @@ function HomeRoutes({
     const [key] = parts
     if (key === 'workflows') {
       return (
-        <WfShell
-          crumbs={[sectionCrumb('workflows', { current: true })]}
-          scroll
-        >
+        <WfShell crumbs={[sectionCrumb('workflows', { current: true })]} scroll>
           <WorkflowsList />
         </WfShell>
       )
@@ -183,50 +186,35 @@ function HomeRoutes({
     }
     if (key === 'agents') {
       return (
-        <WfShell
-          crumbs={[sectionCrumb('agents', { current: true })]}
-          scroll
-        >
+        <WfShell crumbs={[sectionCrumb('agents', { current: true })]} scroll>
           <AgentsList />
         </WfShell>
       )
     }
     if (key === 'tools') {
       return (
-        <WfShell
-          crumbs={[sectionCrumb('tools', { current: true })]}
-          scroll
-        >
+        <WfShell crumbs={[sectionCrumb('tools', { current: true })]} scroll>
           <ToolsList />
         </WfShell>
       )
     }
     if (key === 'evals') {
       return (
-        <WfShell
-          crumbs={[sectionCrumb('evals', { current: true })]}
-          scroll
-        >
+        <WfShell crumbs={[sectionCrumb('evals', { current: true })]} scroll>
           <EvalsList />
         </WfShell>
       )
     }
     if (key === 'models') {
       return (
-        <WfShell
-          crumbs={[sectionCrumb('models', { current: true })]}
-          scroll
-        >
+        <WfShell crumbs={[sectionCrumb('models', { current: true })]} scroll>
           <ModelsList />
         </WfShell>
       )
     }
     if (key === 'feedback') {
       return (
-        <WfShell
-          crumbs={[sectionCrumb('feedback', { current: true })]}
-          scroll
-        >
+        <WfShell crumbs={[sectionCrumb('feedback', { current: true })]} scroll>
           <FeedbackList />
         </WfShell>
       )
@@ -266,13 +254,28 @@ function AssetRoute({ path }: { path: string }) {
   const { navigate } = useWfNav()
   const asset = classifyAssetPath(path)
   if (!asset) return null
+  const query = new URLSearchParams(path.split('?', 2)[1] ?? '')
 
   // The copilot for each surface now lives in the persistent right rail (see
   // `CopilotPanel` in `WfTabbedShell`), grounded on the active tab — so these
   // surfaces render plainly, with no per-asset chat dock.
   switch (asset.type) {
-    case 'run':
-      return <RunPage runId={asset.runId} className="h-full" />
+    case 'run': {
+      // Optional `?node=<nodeId>[&item=<i>]` opens the run with that node
+      // already selected and inspected — how the agent editor's "Recent calls"
+      // hands an investigation over, instead of dropping you on a run and
+      // making you find the agent in it again.
+      const rawItem = query.get('item')
+      const item = rawItem == null ? Number.NaN : Number(rawItem)
+      return (
+        <RunPage
+          runId={asset.runId}
+          initialNodeId={query.get('node')}
+          initialItemIndex={Number.isInteger(item) && item >= 0 ? item : null}
+          className="h-full"
+        />
+      )
+    }
     case 'agent':
       // Stay on the editor after publishing — the editor shows an inline
       // "Published" confirmation rather than navigating back to the list.
@@ -308,7 +311,9 @@ function AssetRoute({ path }: { path: string }) {
         />
       )
     case 'evalSet':
-      return <EvalSet key={asset.setId} setId={asset.setId} className="h-full" />
+      return (
+        <EvalSet key={asset.setId} setId={asset.setId} className="h-full" />
+      )
     case 'workflow':
       // The workflow editor keeps its own richer bottom dock (Data/Issues).
       return (

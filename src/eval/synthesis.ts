@@ -6,8 +6,10 @@ import type { SeededMessage } from './checks'
 // `initialCondition.seededMessages`) is a compact transcript — user turns plus
 // assistant turns that already carry their tool calls and canned results. Two
 // consumers turn it into concrete shapes:
-//   • `seededMessagesToUiMessages` → the AI-SDK `UIMessage[]` the run starts from
-//     (fed as the agent node's input via `{ messages }`, see `coerceToMessages`).
+//   • `seededMessagesToUiMessages` → the AI-SDK `UIMessage[]` the run starts from,
+//     reaching the agent through the node's `conversation` binding. Synthesis
+//     therefore only applies to a CONVERSATION agent: a task agent's messages are
+//     its own `userPrompt`, so seed its `${variables}` instead of a transcript.
 //   • `collectSeededToolCalls`      → the flat tool-call list the LLM judge is
 //     shown so it can grade groundedness against the context the model "saw",
 //     even though — under `freezeTools` — no real tool step exists in the trace.

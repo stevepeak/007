@@ -1,5 +1,5 @@
 import { Activity, ChevronDown, ExternalLink, RotateCcw } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { WorkflowGraph, WorkflowNode } from '../engine'
 import type { RetryRunMode, WfRunStepDTO } from '../server/protocol'
@@ -92,10 +92,21 @@ function iterationItemCount(step: WfRunStepDTO | null | undefined): number {
 
 export type RunPageProps = {
   runId: string
+  /** Select this node as soon as the run loads, with the dock on Inspect —
+   *  a deep link that hands over an investigation already in progress (the
+   *  agent editor's "Recent calls" rows link in this way). */
+  initialNodeId?: string | null
+  /** The iteration item to focus alongside `initialNodeId`. */
+  initialItemIndex?: number | null
   className?: string
 }
 
-export function RunPage({ runId, className }: RunPageProps) {
+export function RunPage({
+  runId,
+  initialNodeId,
+  initialItemIndex,
+  className,
+}: RunPageProps) {
   const { Badge } = useWfComponents()
   const { navigate } = useWfNav()
   const { data, isLoading, error } = useRun(runId)
@@ -105,11 +116,15 @@ export function RunPage({ runId, className }: RunPageProps) {
   const feedbackSubjectId = `run:${runId}`
   const { data: feedbackRows } = useFeedbackForSubjects([feedbackSubjectId])
   const feedback = feedbackRows?.[0] ?? null
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(
+    initialNodeId ?? null,
+  )
   // Which iteration item the dock is focused on when an inner-subgraph node is
   // selected. Clamped to the node's item count at read time, so it survives
   // switching between iterations of different lengths without a reset.
-  const [selectedItemIndex, setSelectedItemIndex] = useState(0)
+  const [selectedItemIndex, setSelectedItemIndex] = useState(
+    initialItemIndex ?? 0,
+  )
 
   // nodeId → status for the top-level graph (the canvas's own nodes), driving
   // the tint + status dots. Iteration inner steps are keyed per item and layered
@@ -123,6 +138,19 @@ export function RunPage({ runId, className }: RunPageProps) {
       ),
     [data?.steps],
   )
+
+  // A deep link's node is selected once, as soon as the canvas exists: going
+  // through the canvas's own selector (rather than state alone) also tints the
+  // card and pans to it, so the node the link named is the one you're looking
+  // at. Once only — after that the selection is yours.
+  const selectNodeRef = useRef<((nodeId: string) => void) | null>(null)
+  const appliedInitialNode = useRef(false)
+  useEffect(() => {
+    if (appliedInitialNode.current || !initialNodeId || !data?.graph) return
+    appliedInitialNode.current = true
+    setSelectedId(initialNodeId)
+    selectNodeRef.current?.(initialNodeId)
+  }, [initialNodeId, data?.graph])
 
   // nodeId → the agent version each agent node ran, so its card is labelled with
   // what this run froze rather than whatever the agent has published since.
@@ -339,6 +367,9 @@ export function RunPage({ runId, className }: RunPageProps) {
                     nodeStatuses={canvasStatuses}
                     nodeAgentVersions={agentVersions}
                     onSelectionChange={setSelectedId}
+                    registerSelectNode={(select) => {
+                      selectNodeRef.current = select
+                    }}
                   />
                 ) : (
                   <div className="flex h-full items-center justify-center p-6 text-sm text-neutral-400">
@@ -353,6 +384,9 @@ export function RunPage({ runId, className }: RunPageProps) {
                 logs={data.logs}
                 graph={data.graph}
                 live={live}
+                // A deep link arrives pointing AT a node, so open on that node's
+                // trace rather than the run-wide feed it would have to be found in.
+                initialTab={initialNodeId ? 'logs' : 'activity'}
                 selectedNodeId={selectedId}
                 onSelectNode={setSelectedId}
                 // Per-item picker: only meaningful when inspecting a node INSIDE an

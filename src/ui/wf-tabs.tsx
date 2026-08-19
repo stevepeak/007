@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react'
 
-import { isAssetPath } from './wf-tab-routes'
+import { assetTabId, isAssetPath } from './wf-tab-routes'
 
 // Browser-style tab state for the 007 surface, layered on the injected
 // `path`/`navigate` contract (the SDK stays framework-free — the host owns the
@@ -89,7 +89,8 @@ function readStored(): StoredTabs | null {
     return {
       tabs,
       homePath: typeof parsed.homePath === 'string' ? parsed.homePath : '',
-      activeId: typeof parsed.activeId === 'string' ? parsed.activeId : HOME_TAB_ID,
+      activeId:
+        typeof parsed.activeId === 'string' ? parsed.activeId : HOME_TAB_ID,
     }
   } catch {
     return null
@@ -120,6 +121,17 @@ type Init = {
   counter: number
 }
 
+/**
+ * The already-open tab for an asset path, matched on IDENTITY rather than the
+ * literal string: a deep link carries a query (`runs/r1?node=n3` selects a node
+ * on that run) and must land in the run's existing tab instead of opening a
+ * second one for the same run.
+ */
+function findTab(tabs: readonly WfTab[], path: string): WfTab | undefined {
+  const id = assetTabId(path)
+  return tabs.find((t) => assetTabId(t.path) === id)
+}
+
 // Reconcile persisted tabs with the initial URL: an asset URL ensures+activates
 // its tab; a home URL activates Home and remembers the sub-path.
 function computeInit(path: string, stored: StoredTabs | null): Init {
@@ -129,8 +141,10 @@ function computeInit(path: string, stored: StoredTabs | null): Init {
   let activeId: string
 
   if (isAssetPath(path)) {
-    const existing = tabs.find((t) => t.path === path)
+    const existing = findTab(tabs, path)
     if (existing) {
+      // Adopt the deep link's query — same tab, freshly aimed.
+      tabs = tabs.map((t) => (t.id === existing.id ? { ...t, path } : t))
       activeId = existing.id
     } else {
       counter += 1
@@ -156,7 +170,11 @@ export type WfTabsProviderProps = {
   children: ReactNode
 }
 
-export function WfTabsProvider({ path, navigate, children }: WfTabsProviderProps) {
+export function WfTabsProvider({
+  path,
+  navigate,
+  children,
+}: WfTabsProviderProps) {
   const [init] = useState<Init>(() => computeInit(path, readStored()))
   const [tabs, setTabs] = useState<WfTab[]>(init.tabs)
   const [homePath, setHomePath] = useState<string>(init.homePath)
@@ -187,9 +205,11 @@ export function WfTabsProvider({ path, navigate, children }: WfTabsProviderProps
       setActiveId(HOME_TAB_ID)
       return
     }
-    const existing = tabsRef.current.find((t) => t.path === path)
+    const existing = findTab(tabsRef.current, path)
     if (existing) {
-      setActiveId(existing.id)
+      const eid = existing.id
+      setTabs((prev) => prev.map((t) => (t.id === eid ? { ...t, path } : t)))
+      setActiveId(eid)
       return
     }
     if (activeIdRef.current !== HOME_TAB_ID) {
@@ -220,9 +240,13 @@ export function WfTabsProvider({ path, navigate, children }: WfTabsProviderProps
         // Reuse an already-open tab for this asset rather than duplicating it:
         // focus the existing one, else open a fresh tab. Mirrors how the URL
         // reconcile effect above resolves an asset path to a tab.
-        const existing = tabsRef.current.find((t) => t.path === to)
+        const existing = findTab(tabsRef.current, to)
         if (existing) {
-          setActiveId(existing.id)
+          const eid = existing.id
+          setTabs((prev) =>
+            prev.map((t) => (t.id === eid ? { ...t, path: to } : t)),
+          )
+          setActiveId(eid)
         } else {
           const id = genId()
           setTabs((prev) => [...prev, { id, path: to }])
@@ -292,9 +316,19 @@ export function WfTabsProvider({ path, navigate, children }: WfTabsProviderProps
   }, [tabs, activeId, homePath, navigate])
 
   const value = useMemo<WfTabsState>(
-    () => ({ tabs, activeId, homePath, openAsset, closeTab, closeAllTabs, activateTab }),
+    () => ({
+      tabs,
+      activeId,
+      homePath,
+      openAsset,
+      closeTab,
+      closeAllTabs,
+      activateTab,
+    }),
     [tabs, activeId, homePath, openAsset, closeTab, closeAllTabs, activateTab],
   )
 
-  return <WfTabsContext.Provider value={value}>{children}</WfTabsContext.Provider>
+  return (
+    <WfTabsContext.Provider value={value}>{children}</WfTabsContext.Provider>
+  )
 }

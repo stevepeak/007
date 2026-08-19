@@ -23,6 +23,8 @@ function manifest(output: {
       config: {
         modelId: 'mock',
         prompt: 'Is this urgent?',
+        userPrompt: 'Go.',
+        inputKind: 'task' as const,
         toolIds: [],
         maxTurns: 1,
         output,

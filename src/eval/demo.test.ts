@@ -194,6 +194,8 @@ describe('eval harness — agent graph', () => {
           config: {
             modelId: 'mock',
             prompt: 'Be helpful.',
+            userPrompt: 'Go.',
+            inputKind: 'task' as const,
             toolIds: [],
             maxTurns: 5,
             output: { kind: 'text' },
@@ -366,6 +368,8 @@ describe('eval harness — blob-ref rehydration', () => {
       config: {
         modelId: 'mock',
         prompt: 'Summarize this:\n${text}',
+        userPrompt: 'Go.',
+        inputKind: 'task' as const,
         toolIds: [],
         maxTurns: 1,
         output: { kind: 'text' as const },

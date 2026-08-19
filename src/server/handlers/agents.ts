@@ -1,4 +1,4 @@
-import { agentConfigSchema, inferPromptVariables } from '../../engine/graph'
+import { agentConfigSchema, agentInputVariables } from '../../engine/graph'
 import {
   archiveAgent,
   countWorkflowsReferencingAgent,
@@ -73,11 +73,13 @@ function agentSummary(
     icon: a.icon,
     color: a.color,
     createdAt: a.createdAt.getTime(),
-    inputVariables: cfg ? inferPromptVariables(cfg.prompt) : [],
+    // The union across BOTH prompts — a variable used only in the user message is
+    // just as much a required node binding as one in the system prompt.
+    inputVariables: cfg ? agentInputVariables(cfg) : [],
     output: cfg?.output ?? null,
     modelId: cfg?.modelId ?? null,
     toolIds: cfg?.toolIds ?? [],
-    acceptsConversation: cfg?.acceptsConversation ?? false,
+    inputKind: cfg?.inputKind ?? 'task',
     latestVersionNumber,
     workflows,
   }

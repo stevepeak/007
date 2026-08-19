@@ -43,8 +43,8 @@ const maps = {
   // `bot` declares it works on a conversation (so its nodes get the input);
   // `summarizer` is a step agent that takes a single value.
   agentsById: new Map([
-    ['bot', { output: { kind: 'text' }, acceptsConversation: true }],
-    ['summarizer', { output: { kind: 'text' }, acceptsConversation: false }],
+    ['bot', { output: { kind: 'text' }, inputKind: 'conversation' }],
+    ['summarizer', { output: { kind: 'text' }, inputKind: 'task' }],
   ]),
   triggersByKind: new Map([
     [

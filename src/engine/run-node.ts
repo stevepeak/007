@@ -1,9 +1,5 @@
 import { rehydrateBlobRefs } from './blob-ref'
-import type {
-  BlobRefResolver,
-  ImageRefResolver,
-  ModelFactory,
-} from './config'
+import type { BlobRefResolver, ModelFactory } from './config'
 import type { WfRunManifestEntry } from './graph'
 import type { ModelBudget } from './model-budget'
 import { executeAgentNode } from './nodes/agent'
@@ -62,13 +58,6 @@ export type RunNodeContext<TDeps> = {
    * their real value before the node runs. Omitted → refs pass through as-is.
    */
   resolveBlobRef?: BlobRefResolver<TDeps>
-  /**
-   * Host image-ref resolver (from `WfSdkConfig.resolveImageRef`). When present,
-   * an agent node's `imageInputs` that resolve to a {@link WfBlobRef} are read
-   * to model-ready images inside the node's step. Omitted → image-ref inputs
-   * throw (a text-only run wires none).
-   */
-  resolveImageRef?: ImageRefResolver<TDeps>
   /** Eval signal — under simulate, side-effecting tools are neutralized. */
   simulate?: boolean
   /** Canned tool outputs consumed under `simulate`, keyed by tool id. */
@@ -111,17 +100,11 @@ export async function runNode<TDeps>(
         )
     : undefined
 
-  // Bind the host image resolver to this run's deps, mirroring `rehydrate`.
-  const resolveImage = ctx.resolveImageRef
-    ? (ref: Parameters<typeof ctx.resolveImageRef>[0]) =>
-        ctx.resolveImageRef!(ref, ctx.toolDeps)
-    : undefined
 
   switch (node.kind) {
     case 'agent': {
       const r = await executeAgentNode({
         node,
-        input,
         getModel: ctx.getModel,
         toolRegistry: ctx.toolRegistry,
         toolDeps: ctx.toolDeps,
@@ -130,7 +113,6 @@ export async function runNode<TDeps>(
         nodeOutputs: ctx.nodeOutputs,
         manifest: ctx.manifest ?? [],
         rehydrate,
-        resolveImage,
         simulate: ctx.simulate,
         fixtures: ctx.fixtures,
         freezeTools: ctx.freezeTools,

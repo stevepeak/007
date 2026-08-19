@@ -35,6 +35,8 @@ const MANIFEST = (
     config: {
       modelId: 'mock',
       prompt: 'Research, then answer.',
+      userPrompt: 'Go.',
+      inputKind: 'task' as const,
       toolIds,
       maxTurns,
       requireToolFirstTurn,

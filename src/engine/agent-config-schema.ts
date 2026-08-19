@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { inferPromptVariables } from './prompt-variables'
+
 // The versioned behavior of a reusable **agent** (a `wf_agent`): its model,
 // prompt, tools, output contract, and delegation whitelist. This is a distinct
 // domain from the node/edge graph model in `graph-schema.ts` — a workflow agent
@@ -85,12 +87,30 @@ export type SubAgentsConfig = z.infer<typeof subAgentsConfigSchema>
 // agent nodes don't carry this — they point at an agent by id and the run
 // manifest freezes the resolved config. Name/icon/color are display metadata on
 // the entity, not part of the versioned behavior.
-export const agentConfigSchema = z.object({
+const agentConfigObjectSchema = z.object({
   // Model id passed to the host `getModel(modelId)` factory.
   modelId: z.string().min(1),
   // Inline system prompt (authored in the TipTap editor). `${name}` tokens are
   // interpolated at execution time from the run's `promptVariables`.
+  //
+  // INSTRUCTIONS ONLY. Per-call data belongs in `userPrompt`: this string is the
+  // provider's cache prefix, so a `${var}` carrying a document or a candidate
+  // list here changes that prefix on every call and defeats prompt caching for a
+  // workflow that runs the same agent once per item.
   prompt: z.string().min(1),
+  // The single user turn a TASK agent runs on, and the ONLY way data reaches it.
+  // `${name}` tokens interpolate from the same variable bag as `prompt` — their
+  // UNION is the agent's input contract (see `inferPromptVariables`) — with
+  // non-string values JSON-stringified by `resolveNodeInputs`.
+  //
+  // Required and non-empty for `inputKind: 'task'`; see the refinement below.
+  // The AI SDK rejects a call carrying no messages outright (`standardizePrompt`
+  // — "messages must not be empty"), so an agent that renders no user turn isn't
+  // a degraded call, it's a crash.
+  //
+  // Optional for `inputKind: 'conversation'`, where it is appended after the
+  // bound thread as the current turn; empty means the thread IS the whole input.
+  userPrompt: z.string().default(''),
   // Tool registry keys. Each id must resolve in the host tool registry.
   toolIds: z.array(z.string()).default([]),
   // How many turns (rounds of tool-calling) the agent may take before it must
@@ -169,28 +189,100 @@ export const agentConfigSchema = z.object({
   //
   // What the agent is expected to produce.
   output: agentOutputSchema.default({ kind: 'text' }),
-  // Whether this agent works on a CONVERSATION (a chat thread) or on a single
-  // input value. It is a declaration about the agent's contract, like
-  // `output` — a chat responder answers a thread; a document summarizer answers
-  // one document — and it belongs here rather than on the workflow node because
-  // it's a property of the agent's prompt, not of one placement.
+  // WHERE this agent's messages come from — a declaration about its contract,
+  // like `output`. It belongs here rather than on the workflow node because it's
+  // a property of the agent's prompt, not of one placement.
   //
-  // Off (the default) the agent is a step: whatever its predecessor produced
-  // becomes its single working user message. On, every agent NODE pointing at it
-  // grows an optional `conversation` input, bound to the message source (usually
-  // the chat trigger's `messages`) — see `AgentNode.config.conversation`. Before
-  // this flag existed the input appeared only when the editor could *infer* a
-  // reachable message source from graph topology, which made "does this agent
-  // take the conversation?" invisible on the agent itself and inconsistent
-  // between two agents in the same workflow.
+  //   • 'task'         — the agent runs on exactly one user turn, rendered from
+  //                      `userPrompt` with its `${vars}` mapped on the node. A
+  //                      classifier, an extractor, a summarizer.
+  //   • 'conversation' — the agent answers a chat thread. Every NODE pointing at
+  //                      it MUST bind `conversation` to the message source
+  //                      (usually the chat trigger's `messages`); `userPrompt`,
+  //                      if set, is appended as the current turn.
   //
-  // The flag governs the editor's affordance and validation; the node's binding
-  // is still what feeds history at run time (see `resolveConversation`), so
-  // turning the flag off does not silently strip a live workflow's history —
-  // the editor raises a blocking issue on the stale link instead.
-  acceptsConversation: z.boolean().default(false),
+  // This replaced `acceptsConversation`, which was inert: nothing in the engine
+  // read it. It only made the node's `conversation` input appear in the editor,
+  // while at run time an unbound agent silently fell back to JSON-stringifying
+  // whatever its incoming edge happened to carry. That fallback is gone — an
+  // edge means sequencing and a source for `ref` bindings, never content — so
+  // this field now decides how messages are built. See `engine/nodes/agent.ts`.
+  inputKind: z.enum(['conversation', 'task']).default('task'),
   // Delegation whitelist + guardrails. Non-empty `targets` makes the engine
   // synthesize `spawn_*` + `await_subagents` tools into this agent's tool set.
   subAgents: subAgentsConfigSchema,
 })
+
+/**
+ * Back-compat for configs stored before `inputKind`/`userPrompt` existed.
+ *
+ * `wf_agent_version` rows are IMMUTABLE snapshots, so this reads raw stored JSON
+ * ahead of the parse — the same trick `migrateInformUser` uses for legacy node
+ * fields. Without it every pre-existing version fails validation, which would
+ * blank the agents list (`buildAgentSummary` safe-parses and degrades) and abort
+ * the run manifest for any agent not yet re-published.
+ *
+ * A legacy config's user turn CANNOT be reproduced: it was the incoming edge's
+ * payload, which lives in the run, not the config. So the synthesized turn is an
+ * approximation — one `name: ${name}` line per variable the system prompt
+ * declares, the same rendering the agent playground has always stood in when an
+ * author supplied variables but no test input. Republishing an agent through the
+ * editor replaces it with a real authored template.
+ */
+function migrateInputKind(raw: unknown): unknown {
+  if (raw == null || typeof raw !== 'object') return raw
+  const config = raw as Record<string, unknown>
+  if (config.inputKind != null && config.userPrompt != null) return config
+  const inputKind =
+    config.inputKind ??
+    (config.acceptsConversation === true ? 'conversation' : 'task')
+  let userPrompt = config.userPrompt
+  if (typeof userPrompt !== 'string' || userPrompt.length === 0) {
+    const vars =
+      typeof config.prompt === 'string' ? inferPromptVariables(config.prompt) : []
+    // A conversation agent needs no turn of its own — the thread is its input.
+    userPrompt =
+      inputKind === 'conversation'
+        ? ''
+        : vars.map((name) => `${name}: \${${name}}`).join('\n\n')
+  }
+  return { ...config, inputKind, userPrompt }
+}
+
+export const agentConfigSchema = z
+  .preprocess(migrateInputKind, agentConfigObjectSchema)
+  .superRefine((config, ctx) => {
+    // A task agent with no user turn cannot be called at all: the AI SDK throws
+    // `InvalidPromptError` ("messages must not be empty") before the request
+    // reaches a provider. Catching it here turns a run-time crash on the author's
+    // most expensive node into a save-time validation error.
+    if (config.inputKind === 'task' && config.userPrompt.trim().length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['userPrompt'],
+        message:
+          'A task agent needs a user message — it is the only way data reaches it. Write one, using ${variables} you map on each workflow node.',
+      })
+    }
+  })
 export type AgentConfig = z.infer<typeof agentConfigSchema>
+
+/**
+ * An agent's input contract: every `${name}` it references, across BOTH prompts.
+ *
+ * The two templates share one variable bag at run time (`resolveNodeInputs`), so
+ * a name used in both is one input mapped once. This is what the workflow editor
+ * lists as the node's required bindings and what `runAgentPreview` asks for — it
+ * must stay the union, or a variable that appears only in the user message would
+ * be silently unmappable and reach the model as a literal `${name}`.
+ */
+export function agentInputVariables(
+  config: Pick<AgentConfig, 'prompt' | 'userPrompt'>,
+): string[] {
+  return [
+    ...new Set([
+      ...inferPromptVariables(config.prompt),
+      ...inferPromptVariables(config.userPrompt),
+    ]),
+  ]
+}

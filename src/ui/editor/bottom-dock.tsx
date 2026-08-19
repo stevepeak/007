@@ -1,4 +1,4 @@
-import { AlertTriangle, ChevronDown, Info, Sparkles } from 'lucide-react'
+import { AlertTriangle, ChevronDown, Info, Sparkles, X } from 'lucide-react'
 import { useCallback, useRef, useState, type ReactNode } from 'react'
 
 import type {
@@ -41,14 +41,21 @@ const MAX_BODY_H = 640
 const DEFAULT_BODY_H = 224
 
 // The reusable tray chrome: a resizable, collapsible bottom panel with a tab
-// strip. Owns open/active-tab/height state; the caller supplies the tabs.
-function BottomTray({
+// strip. Owns open/active-tab/height state; the caller supplies the tabs. The
+// workflow editor's Data/Issues dock and the agent editor's call inspector are
+// both thin compositions of it.
+export function BottomTray({
   tabs,
   initialOpen = true,
+  onClose,
 }: {
   tabs: TrayTab[]
   /** Whether the body starts expanded. The tab strip always shows. */
   initialOpen?: boolean
+  /** When set, a dismiss button sits beside the collapse chevron — for a tray
+   *  that exists only while something is selected, so closing it means letting
+   *  that selection go rather than just hiding the body. */
+  onClose?: () => void
 }) {
   const [open, setOpen] = useState(initialOpen)
   const [activeId, setActiveId] = useState<string>(tabs[0]?.id ?? '')
@@ -160,6 +167,16 @@ function BottomTray({
         })}
         <div className="flex-1" />
         {open && active?.accessory ? active.accessory : null}
+        {onClose ? (
+          <button
+            type="button"
+            aria-label="Close panel"
+            onClick={onClose}
+            className="ml-1 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
+        ) : null}
         <button
           type="button"
           aria-label={open ? 'Collapse panel' : 'Expand panel'}

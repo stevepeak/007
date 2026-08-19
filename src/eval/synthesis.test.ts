@@ -129,6 +129,9 @@ const graph = {
 }
 
 // An agent that DOES declare the search tool — proving freezeTools strips it.
+// It must be a CONVERSATION agent: a seeded transcript is a thread, and a thread
+// only reaches an agent that declares it takes one and has it bound on the node.
+// Synthesis against a task agent is a contradiction — seed its variables instead.
 const manifest = [
   {
     kind: 'agent' as const,
@@ -139,6 +142,8 @@ const manifest = [
     config: {
       modelId: 'mock',
       prompt: 'Answer from the conversation.',
+      userPrompt: '',
+      inputKind: 'conversation' as const,
       toolIds: ['search_rag'],
       maxTurns: 5,
       output: { kind: 'text' as const },

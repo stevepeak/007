@@ -28,6 +28,10 @@ import { Tooltip } from './tooltip'
 
 // The Logs view renders a step's execution as an AI-style vertical timeline:
 //   Input → thinking → tool call → … → Output.
+// For an agent step the head of that timeline is what the model was SENT (its
+// system prompt and messages, from `meta`), never the node's incoming input —
+// an edge is sequencing and a source for bindings, not content, so captioning
+// it as the user's message would be a lie about what the model read.
 // Only agent (AI) steps get the "thinking" (Brain) nodes. Tool calls and other
 // node kinds share the SAME timeline without thinking — just Input, whatever the
 // node did, and Output. Every row is a one-line entry you expand to inspect, and
@@ -150,14 +154,38 @@ function systemStep(prompt: string): LogStep {
   }
 }
 
-// Chat framing for agent (AI) steps: the incoming Input reads as the user's
-// message and the final Output as the model's reply. Both keep the full payload
-// one click away in the expandable body.
-function userStep(value: unknown): LogStep {
+// One message the model was actually sent. This used to render the step's INPUT
+// — the incoming edge's payload — which was only ever the message because the
+// engine implicitly stringified it into one. It doesn't any more, so showing the
+// edge here would caption data the model never saw as "the user's message".
+// Now it renders `meta.messages`, recorded at the point of the call.
+function messageStep(m: { role: string; text: string }): LogStep {
+  const assistant = m.role === 'assistant'
+  return {
+    tone: assistant ? 'response' : 'user',
+    icon: assistant ? (
+      <Bot className="size-3.5" />
+    ) : (
+      <User className="size-3.5" />
+    ),
+    title: firstLine(m.text) || (assistant ? 'Assistant' : 'Message'),
+    subtitle: m.role,
+    body: (
+      <div className="text-sm whitespace-pre-wrap text-neutral-700">
+        {m.text}
+      </div>
+    ),
+  }
+}
+
+// Fallback for steps recorded before `meta.messages` existed, where the input
+// genuinely WAS the user turn.
+function legacyUserStep(value: unknown): LogStep {
   return {
     tone: 'user',
     icon: <User className="size-3.5" />,
     title: previewLine(value) || 'Message',
+    subtitle: 'from the incoming edge (legacy run)',
     body: <DataView value={value} />,
   }
 }
@@ -395,7 +423,9 @@ export function RunLog({ step }: { step: WfRunStepDTO }) {
   const steps: LogStep[] = agentMeta
     ? [
         ...(agentMeta.systemPrompt ? [systemStep(agentMeta.systemPrompt)] : []),
-        userStep(step.input),
+        ...(agentMeta.messages
+          ? agentMeta.messages.map(messageStep)
+          : [legacyUserStep(step.input)]),
       ]
     : [inputStep(step.input)]
 

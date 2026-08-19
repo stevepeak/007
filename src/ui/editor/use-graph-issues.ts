@@ -55,28 +55,27 @@ export function useGraphIssues(graph: WorkflowGraph): GraphIssue[] {
             'Inputs have different shapes — a race must join producers of the same shape so its consumer sees one consistent result.',
         })
       }
-      // Message history is explicit twice over: the agent declares that it works
-      // on a conversation, and the node says where that conversation comes from.
-      // Warn when a declaring agent is left unlinked (it would run with no prior
-      // messages); error when a link points at an agent that declares no
-      // conversation, since that link feeds nothing the agent asked for.
+      // An agent reads ONLY what this node binds. Two ways that goes wrong, both
+      // fatal at run time rather than merely degraded, so both are errors:
+      // a conversation agent with no thread bound (the engine throws), and a
+      // `${variable}` left unmapped (it reaches the model as the literal token).
       if (node.kind === 'agent') {
         const thread = agentThreadSource(graph, node.id, maps)
         if (thread.status === 'unlinked') {
           bindingIssues.push({
             nodeId: node.id,
             nodeLabel: node.label,
-            severity: 'warning',
-            message: `This agent works on a conversation but has no conversation link, so it will run with no prior messages. Link its conversation input to “${thread.sourceLabel}” (the chat trigger’s messages) to pass the full conversation.`,
+            severity: 'error',
+            message: `This agent works on a conversation but has no conversation link, so the run will fail. Link its conversation input to “${thread.sourceLabel}” (the chat trigger’s messages).`,
           })
         }
         if (thread.status === 'idle') {
           bindingIssues.push({
             nodeId: node.id,
             nodeLabel: node.label,
-            severity: 'warning',
+            severity: 'error',
             message:
-              'This agent works on a conversation but nothing upstream carries one, so it will run with no prior messages.',
+              'This agent works on a conversation but nothing upstream carries one. Add a message source and link it, or switch the agent to a Task agent.',
           })
         }
         if (thread.status === 'unsupported') {
@@ -85,7 +84,25 @@ export function useGraphIssues(graph: WorkflowGraph): GraphIssue[] {
             nodeLabel: node.label,
             severity: 'error',
             message:
-              'This node links a conversation, but the agent it points at doesn’t work on a conversation. Turn on “Works on a conversation” in the agent and publish it, or clear the link.',
+              'This node links a conversation, but the agent it points at is a Task agent. Switch the agent to Conversation and publish it, or clear the link.',
+          })
+        }
+        // Every `${variable}` the agent declares — across its system prompt AND
+        // its user message — has to be bound here. Nothing fills a gap: an
+        // incoming edge is sequencing, not content, so an unmapped variable is
+        // sent to the model verbatim as `${name}`.
+        const declared = maps.agentsById.get(node.config.agentId)?.inputVariables
+        const unmapped = (declared ?? []).filter(
+          (name) => node.config.inputs[name] == null,
+        )
+        if (unmapped.length > 0) {
+          bindingIssues.push({
+            nodeId: node.id,
+            nodeLabel: node.label,
+            severity: 'error',
+            message: `Unmapped ${unmapped.length === 1 ? 'input' : 'inputs'}: ${unmapped
+              .map((n) => `\${${n}}`)
+              .join(', ')}. Map each to an upstream value — bind a whole result by choosing the node with no field, which passes it as JSON.`,
           })
         }
       }

@@ -156,7 +156,10 @@ describe('listAgentCalls', () => {
     expect(call.durationMs).toBe(3000)
     expect(call.agentVersion).toBe(7)
     expect(call.subAgentName).toBe('Researcher')
-    expect(call.itemIndex).toBeNull()
+    // Not a fan-out: one execution, no iteration items behind it.
+    expect(call.callCount).toBe(1)
+    expect(call.itemIndexes).toEqual([])
+    expect(call.failedCount).toBe(0)
   })
 
   test('attributes an unstamped call by the node it ran on', async () => {
@@ -229,6 +232,79 @@ describe('listAgentCalls', () => {
 
     const calls = await listAgentCalls(db, { agentId: AGENT, limit: 2 })
     expect(calls.map((c) => c.runId)).toEqual(['run-2', 'run-1'])
+  })
+
+  test('folds an iteration fan-out into one row with summed metrics', async () => {
+    await addRun(db, 'run-1', { createdAt: new Date(1000) })
+    // The same agent node, run once per item of an enclosing iteration — five
+    // steps that are ONE call site, not five rows in the editor.
+    await db.insert(wfRunStep).values(
+      Array.from({ length: 5 }, (_, i) => ({
+        runId: 'run-1',
+        nodeId: AGENT_NODE,
+        nodeKind: 'agent',
+        itemIndex: i,
+        sequence: i,
+        status: i === 3 ? 'failed' : 'completed',
+        error: i === 3 ? 'item blew up' : null,
+        meta: agentMeta({ agentId: AGENT }),
+        startedAt: new Date(1000 + i * 1000),
+        finishedAt: new Date(2000 + i * 1000),
+      })),
+    )
+
+    const calls = await listAgentCalls(db, { agentId: AGENT })
+    expect(calls).toHaveLength(1)
+    const [call] = calls
+    expect(call.callCount).toBe(5)
+    expect(call.itemIndexes).toEqual([0, 1, 2, 3, 4])
+    // Metrics are the TOTAL across the fan-out — 2 turns and 1.5k tokens each.
+    expect(call.turns).toBe(10)
+    expect(call.inputTokens).toBe(5000)
+    expect(call.outputTokens).toBe(2500)
+    expect(call.costUsd).toBeCloseTo(0.01, 10)
+    expect(call.toolCalls).toEqual([
+      { toolId: 'search', count: 10 },
+      { toolId: 'calculator', count: 5 },
+    ])
+    // Summed compute (5 × 1s), not the wall-clock span of the fan-out.
+    expect(call.durationMs).toBe(5000)
+    expect(call.startedAt).toBe(1000)
+    expect(call.finishedAt).toBe(6000)
+    // One failed item speaks for the whole row.
+    expect(call.status).toBe('failed')
+    expect(call.failedCount).toBe(1)
+    expect(call.error).toBe('item blew up')
+  })
+
+  test('keeps two nodes in the same run as separate call sites', async () => {
+    await addRun(db, 'run-1', { createdAt: new Date(1000) })
+    await db.insert(wfRunStep).values([
+      {
+        runId: 'run-1',
+        nodeId: AGENT_NODE,
+        nodeKind: 'agent',
+        sequence: 0,
+        status: 'completed',
+        meta: agentMeta({ agentId: AGENT }),
+        startedAt: new Date(1000),
+      },
+      {
+        runId: 'run-1',
+        // The same agent placed twice in the graph — two call sites, so two
+        // rows, even though they share a run.
+        nodeId: 'node-agent-1b',
+        nodeKind: 'agent',
+        sequence: 1,
+        status: 'completed',
+        meta: agentMeta({ agentId: AGENT }),
+        startedAt: new Date(2000),
+      },
+    ])
+
+    const calls = await listAgentCalls(db, { agentId: AGENT })
+    expect(calls.map((c) => c.nodeId)).toEqual(['node-agent-1b', AGENT_NODE])
+    expect(calls.every((c) => c.callCount === 1)).toBe(true)
   })
 
   test('an unpriced model yields tokens but no cost', async () => {

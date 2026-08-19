@@ -5,6 +5,7 @@ import {
   Cpu,
   History,
   MessageSquareText,
+  MessagesSquare,
   Settings2,
   Users,
   Wallet,
@@ -12,11 +13,9 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { type AgentConfig } from '../../engine'
-import {
-  AGENT_ICONS,
-  DEFAULT_AGENT_COLOR,
-} from '../agent-appearance'
+import { type AgentConfig, inferPromptVariables } from '../../engine'
+import type { WfAgentCall } from '../../server/protocol'
+import { AGENT_ICONS, DEFAULT_AGENT_COLOR } from '../agent-appearance'
 import { AppearancePicker } from '../appearance-picker'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
@@ -34,8 +33,10 @@ import { QueryState } from '../query-state'
 import { WfShell } from '../shell'
 import { SaveStateBadge } from '../save-state-badge'
 import { Tooltip } from '../tooltip'
+import { AgentInputEditor } from './agent-input-editor'
 import { AgentOutputEditor } from './agent-output-editor'
-import { AgentCallMetrics, AgentCallsList } from './agent-editor-calls'
+import { AgentCallInspect } from './agent-editor-call-inspect'
+import { AgentCallMetrics, AgentCallsList, callKey } from './agent-editor-calls'
 import { ArchiveAgentDialog } from './agent-editor-archive'
 import { EditorSection } from './editor-section'
 import { fmt, humanTokens, usd } from './format-tokens'
@@ -417,11 +418,11 @@ export function AgentEditor({
   )
 }
 
-type EditorTab = 'editor' | 'inspector'
+type EditorTab = 'editor' | 'calls'
 
 const EDITOR_TABS = [
   { key: 'editor', label: 'Editor' },
-  { key: 'inspector', label: 'Inspector' },
+  { key: 'calls', label: 'Recent calls' },
 ]
 
 function AgentEditorInner({
@@ -468,6 +469,10 @@ function AgentEditorInner({
   // Which half of the page you're on: authoring the agent (config + playground)
   // or inspecting what it has actually been doing.
   const [tab, setTab] = useState<EditorTab>('editor')
+  // The call site open in the bottom dock, selected from the Recent calls list.
+  // Kept while you flip back to the Editor tab, so returning to the list picks
+  // up the investigation where you left it.
+  const [inspectedCall, setInspectedCall] = useState<WfAgentCall | null>(null)
   // Set when you load an older configuration back out of a playground run: the
   // edits you had at that moment, parked so the restore is a toggle and not a
   // one-way door. Cleared only by taking them back, which is why restoring a
@@ -586,18 +591,23 @@ function AgentEditorInner({
     setConfig((c) => ({ ...c, ...next }))
   }
 
-  // Every other control is driven by `config`, but the prompt body is a TipTap
-  // document seeded once from `initialBody` — so a restore has to push the new
-  // text into it imperatively or the editor would keep showing the old prompt
-  // while `config.prompt` held the restored one.
+  // Every other control is driven by `config`, but both prompt bodies are TipTap
+  // documents seeded once from `initialBody` — so a restore has to push the new
+  // text into them imperatively or the editors would keep showing the old text
+  // while `config` held the restored one.
   const setPromptBody = useRef<((body: string) => void) | null>(null)
   const registerSetBody = useCallback((set: (body: string) => void) => {
     setPromptBody.current = set
+  }, [])
+  const setUserPromptBody = useRef<((body: string) => void) | null>(null)
+  const registerSetUserPrompt = useCallback((set: (body: string) => void) => {
+    setUserPromptBody.current = set
   }, [])
 
   function loadConfig(next: AgentConfig) {
     setConfig(next)
     setPromptBody.current?.(next.prompt)
+    setUserPromptBody.current?.(next.userPrompt)
   }
 
   /** Take a playground run's frozen config, parking the current edits. */
@@ -680,7 +690,8 @@ function AgentEditorInner({
     <>
       <WfShell
         className={className}
-        scroll
+        // Not `scroll`: the page owns its own scroll region so the call dock can
+        // stay pinned to the bottom instead of riding down with the content.
         titleIcon={
           <AppearancePicker
             icon={icon}
@@ -767,292 +778,322 @@ function AgentEditorInner({
           </>
         }
       >
-        {/* Full-bleed, in three bands:
+        {/* Full-bleed, in bands — the first three scroll together, the dock is
+            pinned under them:
               1. the agent's key metrics — averages over its real calls, which is
                  what you're tuning against, so they stay visible on both tabs;
               2. the tabs;
               3. the pane. Editor = configuration alongside the playground, an
-                 even split so neither is the cramped one; Inspector = the call
-                 rows with the whole page width to spread into.
-            The Editor pane stays MOUNTED while Inspector is showing — the prompt
-            editor seeds itself from `initialConfig` and the playground holds its
-            last result, so unmounting would silently throw both away. */}
-        <div className="w-full space-y-6 p-6">
-          <AgentCallMetrics agentId={agentId} />
+                 even split so neither is the cramped one; Recent calls = the
+                 call rows with the whole page width to spread into.
+            The Editor pane stays MOUNTED while Recent calls is showing — the
+            prompt editor seeds itself from `initialConfig` and the playground
+            holds its last result, so unmounting would silently throw both
+            away. */}
+        <div className="flex h-full min-h-0 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="w-full space-y-6 p-6">
+              <AgentCallMetrics agentId={agentId} />
 
-          <Tabs
-            active={tab}
-            onChange={(k) => setTab(k as EditorTab)}
-            tabs={EDITOR_TABS}
-          />
+              <Tabs
+                active={tab}
+                onChange={(k) => setTab(k as EditorTab)}
+                tabs={EDITOR_TABS}
+              />
 
-          {tab === 'inspector' ? <AgentCallsList agentId={agentId} /> : null}
-
-          <div
-            className={cn(
-              'grid grid-cols-1 gap-6 lg:grid-cols-2',
-              tab !== 'editor' && 'hidden',
-            )}
-          >
-            {/* Left: configuration */}
-            <div className="space-y-6">
-              {/* Model */}
-              <EditorSection
-                icon={Cpu}
-                title="Model"
-                description="The LLM that powers this agent."
-              >
-                <ModelSelect
-                  value={config.modelId}
-                  onChange={(modelId) => patch({ modelId })}
-                  // Gate the picker on what THIS agent needs: a tool-calling model
-                  // when tools are attached, and structured output for a Yes/No or
-                  // structured result (both go through `generateObject`).
-                  requirements={{
-                    tools: config.toolIds.length > 0,
-                    structuredOutput:
-                      config.output.kind === 'object' ||
-                      config.output.kind === 'boolean',
-                  }}
+              {tab === 'calls' ? (
+                <AgentCallsList
+                  agentId={agentId}
+                  selectedKey={inspectedCall ? callKey(inspectedCall) : null}
+                  onSelect={setInspectedCall}
                 />
-              </EditorSection>
+              ) : null}
 
-              {/* Prompt */}
-              <EditorSection
-                icon={MessageSquareText}
-                title="Prompt"
-                description="The system instructions that define what this agent does."
+              <div
+                className={cn(
+                  'grid grid-cols-1 gap-6 lg:grid-cols-2',
+                  tab !== 'editor' && 'hidden',
+                )}
               >
-                <PromptBodyEditor
-                  initialBody={initialConfig.prompt}
-                  onChange={(body) => patch({ prompt: body })}
-                  registerSetBody={registerSetBody}
-                />
-              </EditorSection>
+                {/* Left: configuration */}
+                <div className="space-y-6">
+                  {/* Model */}
+                  <EditorSection
+                    icon={Cpu}
+                    title="Model"
+                    description="The LLM that powers this agent."
+                  >
+                    <ModelSelect
+                      value={config.modelId}
+                      onChange={(modelId) => patch({ modelId })}
+                      // Gate the picker on what THIS agent needs: a tool-calling model
+                      // when tools are attached, and structured output for a Yes/No or
+                      // structured result (both go through `generateObject`).
+                      requirements={{
+                        tools: config.toolIds.length > 0,
+                        structuredOutput:
+                          config.output.kind === 'object' ||
+                          config.output.kind === 'boolean',
+                      }}
+                    />
+                  </EditorSection>
 
-              {/* Tools — folded away when the agent has none, same as
+                  {/* Prompt */}
+                  <EditorSection
+                    icon={MessageSquareText}
+                    title="Prompt"
+                    description="The system instructions that define what this agent does."
+                  >
+                    <PromptBodyEditor
+                      initialBody={initialConfig.prompt}
+                      onChange={(body) => patch({ prompt: body })}
+                      registerSetBody={registerSetBody}
+                    />
+                  </EditorSection>
+
+                  {/* Input — the peer of "Expected output": what this agent
+                  receives. Sits directly under the system prompt because the two
+                  are one authoring act now that nothing arrives implicitly. */}
+                  <EditorSection
+                    icon={MessagesSquare}
+                    title="Input"
+                    description="Where this agent's messages come from, and the data it runs on."
+                  >
+                    <AgentInputEditor
+                      inputKind={config.inputKind}
+                      userPrompt={config.userPrompt}
+                      initialUserPrompt={initialConfig.userPrompt}
+                      onChange={patch}
+                      registerSetUserPrompt={registerSetUserPrompt}
+                      systemPromptVariables={inferPromptVariables(config.prompt)}
+                    />
+                  </EditorSection>
+
+                  {/* Tools — folded away when the agent has none, same as
                   Sub-agents: the header stays discoverable, the picker doesn't
                   take the space until it's actually in use. */}
-              <EditorSection
-                icon={Wrench}
-                title="Tools"
-                collapsible
-                defaultCollapsed={config.toolIds.length === 0}
-                description="Tools the agent may call while it works."
-              >
-                <ToolPicker
-                  tools={aiTools}
-                  selectedIds={config.toolIds}
-                  onChange={(toolIds) => patchToolsAndRetireLoop({ toolIds })}
-                  disabled={modelLacksTools}
-                  disabledReason={`${selectedModel?.label ?? 'The selected model'} can’t call tools — pick a tool-calling model to attach tools.`}
-                />
-              </EditorSection>
+                  <EditorSection
+                    icon={Wrench}
+                    title="Tools"
+                    collapsible
+                    defaultCollapsed={config.toolIds.length === 0}
+                    description="Tools the agent may call while it works."
+                  >
+                    <ToolPicker
+                      tools={aiTools}
+                      selectedIds={config.toolIds}
+                      onChange={(toolIds) =>
+                        patchToolsAndRetireLoop({ toolIds })
+                      }
+                      disabled={modelLacksTools}
+                      disabledReason={`${selectedModel?.label ?? 'The selected model'} can’t call tools — pick a tool-calling model to attach tools.`}
+                    />
+                  </EditorSection>
 
-              {/* Sub-agents (delegation) — delegation is the exception, not the
+                  {/* Sub-agents (delegation) — delegation is the exception, not the
                   norm, so an agent with none opens folded: the header keeps it
                   discoverable without spending a screenful of picker and
                   guardrails on a feature this agent isn't using. */}
-              <EditorSection
-                icon={Users}
-                title="Sub-agents"
-                collapsible
-                defaultCollapsed={config.subAgents.targets.length === 0}
-                description={
-                  <>
-                    Agents or workflows this agent may spawn as sub-agents. It
-                    gets a tool to launch each in the background and an{' '}
-                    <code className="text-[11px]">await_subagents</code> tool to
-                    gather their results — like Claude Code's sub-agents.
-                  </>
-                }
-              >
-                <SubAgentPicker
-                  value={config.subAgents}
-                  onChange={(subAgents) =>
-                    patchToolsAndRetireLoop({ subAgents })
-                  }
-                  currentAgentId={agentId}
-                />
-              </EditorSection>
+                  <EditorSection
+                    icon={Users}
+                    title="Sub-agents"
+                    collapsible
+                    defaultCollapsed={config.subAgents.targets.length === 0}
+                    description={
+                      <>
+                        Agents or workflows this agent may spawn as sub-agents.
+                        It gets a tool to launch each in the background and an{' '}
+                        <code className="text-[11px]">await_subagents</code>{' '}
+                        tool to gather their results — like Claude Code's
+                        sub-agents.
+                      </>
+                    }
+                  >
+                    <SubAgentPicker
+                      value={config.subAgents}
+                      onChange={(subAgents) =>
+                        patchToolsAndRetireLoop({ subAgents })
+                      }
+                      currentAgentId={agentId}
+                    />
+                  </EditorSection>
 
-              {/* Expected output */}
-              <EditorSection
-                icon={Braces}
-                title="Expected output"
-                description="The shape of the result the agent must return."
-              >
-                <AgentOutputEditor
-                  value={config.output}
-                  onChange={(output) => patch({ output })}
-                  structuredDisabled={modelLacksStructuredOutput}
-                  structuredDisabledReason={`${selectedModel?.label ?? 'The selected model'} doesn’t support structured output — only a Text result is available.`}
-                />
-              </EditorSection>
+                  {/* Expected output */}
+                  <EditorSection
+                    icon={Braces}
+                    title="Expected output"
+                    description="The shape of the result the agent must return."
+                  >
+                    <AgentOutputEditor
+                      value={config.output}
+                      onChange={(output) => patch({ output })}
+                      structuredDisabled={modelLacksStructuredOutput}
+                      structuredDisabledReason={`${selectedModel?.label ?? 'The selected model'} doesn’t support structured output — only a Text result is available.`}
+                    />
+                  </EditorSection>
 
-              {/* Budget — every ceiling on how much work one call may do: rounds,
+                  {/* Budget — every ceiling on how much work one call may do: rounds,
                 tokens, and the room kept back for the answer. Turns belong here
                 rather than under Tools because a round may be spent on a
                 sub-agent as easily as a tool, and all three trade against each
                 other — raising turns raises what the budget has to cover. */}
-              {/* With nothing to call there are no inner turns to bound or pay
+                  {/* With nothing to call there are no inner turns to bound or pay
                   for — the agent answers in one pass — so the whole section is
                   inert. Its fields are already read-only in that shape; folding
                   it (and badging why) keeps the author from tuning numbers that
                   can't do anything. Opening it still shows the reason. */}
-              <EditorSection
-                icon={Wallet}
-                title="Budget"
-                collapsible
-                defaultCollapsed={!!budgetIrrelevantReason}
-                badge={budgetIrrelevantReason ? 'Not applicable' : undefined}
-                description="How much work the agent may do, and what it may spend, before it has to answer."
-              >
-                {budgetIrrelevantReason ? (
-                  <p className="rounded-md bg-neutral-50 p-3 text-xs text-neutral-500">
-                    {budgetIrrelevantReason}
-                  </p>
-                ) : null}
-
-                <div className="space-y-2">
-                  <Label>Max turns</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={100}
-                    className="max-w-[8rem]"
-                    disabled={!!budgetIrrelevantReason}
-                    value={effectiveMaxTurns}
-                    onChange={(e) =>
-                      patch({
-                        // Clamp here rather than relying on the `max` attribute,
-                        // which doesn't stop a typed value — an out-of-range number
-                        // reaches the server and fails as a raw schema error.
-                        maxTurns: Math.min(
-                          100,
-                          Math.max(1, Number.parseInt(e.target.value, 10) || 1),
-                        ),
-                      })
+                  <EditorSection
+                    icon={Wallet}
+                    title="Budget"
+                    collapsible
+                    defaultCollapsed={!!budgetIrrelevantReason}
+                    badge={
+                      budgetIrrelevantReason ? 'Not applicable' : undefined
                     }
-                  />
-                  <p className="text-xs text-neutral-400">
-                    How many turns the agent may take before it must give a
-                    final answer. Each turn is one round of calling tools or
-                    spawning sub-agents and reading the results; a higher limit
-                    lets the agent do more work but costs more and runs longer.
-                    Defaults to 5.
-                  </p>
-                  {turnsWarning && !budgetIrrelevantReason ? (
-                    <p className="text-xs text-amber-600">⚠ {turnsWarning}</p>
-                  ) : null}
-                </div>
+                    description="How much work the agent may do, and what it may spend, before it has to answer."
+                  >
+                    {budgetIrrelevantReason ? (
+                      <p className="rounded-md bg-neutral-50 p-3 text-xs text-neutral-500">
+                        {budgetIrrelevantReason}
+                      </p>
+                    ) : null}
 
-                <div className="border-t border-neutral-200 pt-4">
-                  <TokenBudgetField
-                    value={config.toolTokenBudget}
-                    onChange={(toolTokenBudget) => patch({ toolTokenBudget })}
-                    maxTurns={effectiveMaxTurns}
-                    modelLabel={selectedModel?.label}
-                    contextLength={contextLength}
-                    costPerMTok={costPerMTok}
-                    suggestedTokens={suggestedTokens}
-                    worstCaseTokens={worstCaseTokens}
-                    disabledReason={budgetIrrelevantReason}
-                  />
-                </div>
+                    <div className="space-y-2">
+                      <Label>Max turns</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={100}
+                        className="max-w-[8rem]"
+                        disabled={!!budgetIrrelevantReason}
+                        value={effectiveMaxTurns}
+                        onChange={(e) =>
+                          patch({
+                            // Clamp here rather than relying on the `max` attribute,
+                            // which doesn't stop a typed value — an out-of-range number
+                            // reaches the server and fails as a raw schema error.
+                            maxTurns: Math.min(
+                              100,
+                              Math.max(
+                                1,
+                                Number.parseInt(e.target.value, 10) || 1,
+                              ),
+                            ),
+                          })
+                        }
+                      />
+                      <p className="text-xs text-neutral-400">
+                        How many turns the agent may take before it must give a
+                        final answer. Each turn is one round of calling tools or
+                        spawning sub-agents and reading the results; a higher
+                        limit lets the agent do more work but costs more and
+                        runs longer. Defaults to 5.
+                      </p>
+                      {turnsWarning && !budgetIrrelevantReason ? (
+                        <p className="text-xs text-amber-600">
+                          ⚠ {turnsWarning}
+                        </p>
+                      ) : null}
+                    </div>
 
-                {/* Outside the budget's on/off: an unbudgeted agent can still
+                    <div className="border-t border-neutral-200 pt-4">
+                      <TokenBudgetField
+                        value={config.toolTokenBudget}
+                        onChange={(toolTokenBudget) =>
+                          patch({ toolTokenBudget })
+                        }
+                        maxTurns={effectiveMaxTurns}
+                        modelLabel={selectedModel?.label}
+                        contextLength={contextLength}
+                        costPerMTok={costPerMTok}
+                        suggestedTokens={suggestedTokens}
+                        worstCaseTokens={worstCaseTokens}
+                        disabledReason={budgetIrrelevantReason}
+                      />
+                    </div>
+
+                    {/* Outside the budget's on/off: an unbudgeted agent can still
                   overflow the window, so this applies either way. */}
-                <div className="border-t border-neutral-200 pt-4">
-                  <AnswerReserveField
-                    value={config.answerReservePercent}
-                    onChange={(answerReservePercent) =>
-                      patch({ answerReservePercent })
-                    }
-                    contextLength={contextLength}
-                    modelLabel={selectedModel?.label}
-                    disabled={!!budgetIrrelevantReason}
-                  />
+                    <div className="border-t border-neutral-200 pt-4">
+                      <AnswerReserveField
+                        value={config.answerReservePercent}
+                        onChange={(answerReservePercent) =>
+                          patch({ answerReservePercent })
+                        }
+                        contextLength={contextLength}
+                        modelLabel={selectedModel?.label}
+                        disabled={!!budgetIrrelevantReason}
+                      />
+                    </div>
+                  </EditorSection>
+
+                  {/* Settings — behavior switches that aren't limits. What the
+                agent is FED moved out to its own "Input" section, next to the
+                prompt it belongs with. */}
+                  <EditorSection
+                    icon={Settings2}
+                    title="Settings"
+                    description="How the agent behaves while it works."
+                  >
+                    <label
+                      className={cn(
+                        'flex items-start gap-2.5',
+                        requireToolReason
+                          ? 'cursor-not-allowed opacity-60'
+                          : 'cursor-pointer',
+                      )}
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="text-foreground block text-sm font-medium">
+                          Require a tool or agent call on the first turn
+                        </span>
+                        <span className="mt-0.5 block text-xs text-neutral-400">
+                          The agent must call a tool or spawn a sub-agent before
+                          it may answer, instead of replying from what the model
+                          already knows. Use it when an answer is only
+                          trustworthy if the agent looked something up or
+                          delegated first. Later turns are unaffected — it may
+                          answer as soon as it has read the results.
+                        </span>
+                      </span>
+                      <Checkbox
+                        className="mt-0.5"
+                        checked={
+                          config.requireToolFirstTurn && !requireToolReason
+                        }
+                        disabled={!!requireToolReason}
+                        onChange={(e) =>
+                          patch({ requireToolFirstTurn: e.target.checked })
+                        }
+                      />
+                    </label>
+                    {requireToolReason ? (
+                      <p className="text-xs text-amber-600">
+                        {requireToolReason}
+                      </p>
+                    ) : null}
+                  </EditorSection>
                 </div>
-              </EditorSection>
 
-              {/* Settings — behavior switches that aren't limits: what the agent
-                is fed, and whether it must reach for a tool or sub-agent before
-                it's allowed to answer. */}
-              <EditorSection
-                icon={Settings2}
-                title="Settings"
-                description="How the agent behaves while it works."
-              >
-                <label className="flex cursor-pointer items-start gap-2.5">
-                  <span className="min-w-0 flex-1">
-                    <span className="text-foreground block text-sm font-medium">
-                      Works on a conversation
-                    </span>
-                    <span className="mt-0.5 block text-xs text-neutral-400">
-                      The agent answers a chat thread rather than a single
-                      input. Every workflow node using it gains a{' '}
-                      <code className="rounded bg-muted px-1 py-0.5">
-                        conversation
-                      </code>{' '}
-                      input to link the message source (usually the chat
-                      trigger’s messages). Leave it off for step agents — a
-                      summarizer or classifier — which read only what their
-                      previous step produced.
-                    </span>
-                  </span>
-                  <Checkbox
-                    className="mt-0.5"
-                    checked={config.acceptsConversation}
-                    onChange={(e) =>
-                      patch({ acceptsConversation: e.target.checked })
-                    }
-                  />
-                </label>
-
-                <label
-                  className={cn(
-                    'flex items-start gap-2.5',
-                    requireToolReason
-                      ? 'cursor-not-allowed opacity-60'
-                      : 'cursor-pointer',
-                  )}
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="text-foreground block text-sm font-medium">
-                      Require a tool or agent call on the first turn
-                    </span>
-                    <span className="mt-0.5 block text-xs text-neutral-400">
-                      The agent must call a tool or spawn a sub-agent before it
-                      may answer, instead of replying from what the model
-                      already knows. Use it when an answer is only trustworthy
-                      if the agent looked something up or delegated first. Later
-                      turns are unaffected — it may answer as soon as it has
-                      read the results.
-                    </span>
-                  </span>
-                  <Checkbox
-                    className="mt-0.5"
-                    checked={config.requireToolFirstTurn && !requireToolReason}
-                    disabled={!!requireToolReason}
-                    onChange={(e) =>
-                      patch({ requireToolFirstTurn: e.target.checked })
-                    }
-                  />
-                </label>
-                {requireToolReason ? (
-                  <p className="text-xs text-amber-600">{requireToolReason}</p>
-                ) : null}
-              </EditorSection>
-            </div>
-
-            {/* Right: the experiment. Not a setting, so it stays out of the
+                {/* Right: the experiment. Not a setting, so it stays out of the
                 configuration column — and at half the page it finally has room
                 for a real transcript. */}
-            <div className="space-y-6">
-              <PlaygroundPanel config={config} onRestore={restoreConfig} />
+                <div className="space-y-6">
+                  <PlaygroundPanel config={config} onRestore={restoreConfig} />
+                </div>
+              </div>
             </div>
           </div>
+          {/* Band 4, and only while a call is selected: that call site's steps,
+              in the same dock the workflow editor and run viewer use. Reading
+              what the agent DID stays on this page, so the prompt above (and
+              the playground's last result) survive the trip. */}
+          {tab === 'calls' && inspectedCall ? (
+            <AgentCallInspect
+              call={inspectedCall}
+              onClose={() => setInspectedCall(null)}
+            />
+          ) : null}
         </div>
       </WfShell>
 

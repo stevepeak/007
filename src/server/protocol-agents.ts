@@ -36,12 +36,12 @@ export type WfAgentSummary = {
    */
   toolIds: string[]
   /**
-   * Whether the agent declares that it works on a chat thread
-   * (`AgentConfig.acceptsConversation`). True → an agent node pointing at it
-   * exposes the optional `conversation` input. False when it takes a single
-   * input value, is unpublished, or the config is malformed.
+   * Where the agent's messages come from (`AgentConfig.inputKind`).
+   * `'conversation'` → a node pointing at it MUST bind the `conversation` input.
+   * `'task'` → it runs on its own rendered user message alone. Defaults to
+   * `'task'` when the agent is unpublished or its config is malformed.
    */
-  acceptsConversation: boolean
+  inputKind: 'conversation' | 'task'
   /**
    * The agent's newest version number, or null when it has never been
    * published. This is what a float-to-latest reference (an agent node with no
@@ -102,11 +102,11 @@ export type AgentPreviewInput = {
    */
   liveToolIds?: string[]
   /**
-   * Prior turns for an agent that works on a conversation
-   * (`AgentConfig.acceptsConversation`) — the history that precedes `input`, in
-   * order. Stands in for what a chat trigger's `messages` would supply in a real
-   * run; `input` (or the rendered `promptVariables`) is appended as the current
-   * user turn. Omitted/empty → the agent answers with no prior context.
+   * Prior turns for an agent whose `inputKind` is `'conversation'` — the history
+   * that precedes `input`, in order. Stands in for what a chat trigger's
+   * `messages` would supply in a real run; `input` is appended as the current
+   * user turn. Omitted/empty → the agent answers with no prior context. Ignored
+   * for a task agent, whose only turn is its own `userPrompt`.
    */
   messages?: AgentPreviewMessage[]
   /**
@@ -119,47 +119,57 @@ export type AgentPreviewInput = {
 }
 
 /**
- * One recorded execution of an agent, reduced to its metrics — what the agent
- * editor's "Recent calls" section shows. No input/output on purpose: the section
- * answers "how hard did it work, and what did it cost"; the run page holds the
- * data itself, one click away via `runId`.
+ * One agent's executions inside ONE run node, folded into a single row — what
+ * the agent editor's "Recent calls" tab lists. The unit is the CALL SITE, not
+ * the individual execution: an agent inside an iteration runs once per item, so
+ * `callCount` says how many times it ran there and the metrics are the totals
+ * across them. No input/output on purpose: the tab answers "how hard did it
+ * work, and what did it cost"; the run holds the data, one click away.
  */
 export type WfAgentCall = {
-  /** The run this call happened in — links to the run page. */
+  /** The run these calls happened in — links to the run page. */
   runId: string
-  /** The graph node that ran it, or a `sub:<primary>:<n>` id for a sub-agent. */
+  /** The graph node that ran them, or a `sub:<primary>:<n>` id for a sub-agent. */
   nodeId: string
-  /** 0-based item index when the call ran inside an iteration; null otherwise. */
-  itemIndex: number | null
+  /** How many executions this row folds — >1 only for an iteration fan-out. */
+  callCount: number
+  /** The 0-based iteration item indexes covered, ascending; empty outside a
+   *  fan-out. Lets the caller address each individual call's recorded step. */
+  itemIndexes: number[]
+  /** The group's worst status — one failed item makes the whole row failed. */
   status: string
+  /** The first error across the group, when any call failed. */
   error: string | null
-  /** Step start, falling back to the run's creation time for a queued call. */
+  /** How many of the `callCount` executions failed. */
+  failedCount: number
+  /** Earliest start, falling back to the run's creation time for a queued call. */
   startedAt: number | null
+  /** Latest finish; null while any call is still running. */
   finishedAt: number | null
-  /** The agent call's own wall-clock in ms; null when no timing was recorded. */
+  /** Summed wall-clock ACROSS the calls; null when no timing was recorded. */
   durationMs: number | null
   workflowId: string | null
   workflowName: string | null
   versionNumber: number | null
-  /** Provider-native model id the call ran on. */
+  /** Provider-native model id the calls ran on. */
   model: string | null
   /** The agent version resolved from the run manifest, when stamped. */
   agentVersion: number | null
-  /** Rounds of the tool loop the agent took. */
+  /** Rounds of the tool loop, summed across the calls. */
   turns: number
   inputTokens: number
   outputTokens: number
-  /** Derived USD cost; null when the model carries no catalog price. */
+  /** Derived USD cost; null when no call ran on a priced model. */
   costUsd: number | null
-  /** Per-tool call counts across every turn, most-called first. Ids resolve to
-   *  names/icons via {@link WfDataClient.listTools}; a `spawn_*` /
+  /** Per-tool call counts across every call and turn, most-called first. Ids
+   *  resolve to names/icons via {@link WfDataClient.listTools}; a `spawn_*` /
    *  `await_subagents` id is a synthesized delegation tool, not a registered one. */
   toolCalls: { toolId: string; count: number }[]
-  /** The agent stopped researching early — its token budget, or the model's
+  /** Any call stopped researching early — its token budget, or the model's
    *  context window, ended the loop before `maxTurns` did. */
   stoppedOnTokenBudget: boolean
   stoppedOnContextLimit: boolean
-  /** Set when this call was a SPAWNED sub-agent rather than a graph node. */
+  /** Set when these calls were a SPAWNED sub-agent rather than a graph node. */
   subAgentName: string | null
 }
 

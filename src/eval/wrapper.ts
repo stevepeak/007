@@ -89,11 +89,11 @@ export function buildAgentWrapperGraph(
           agentId,
           version,
           inputs: {},
-          imageInputs: {},
           // Synthesis mode seeds a conversation via `triggerInput.messages`; link
-          // it explicitly so the seeded thread reaches the agent (history is no
-          // longer implicitly expanded from the trigger payload). Absent messages
-          // (non-synthesis evals) resolve to nothing and are ignored.
+          // it explicitly so the seeded thread reaches the agent. Only a
+          // CONVERSATION agent reads it — for a task agent the binding is inert
+          // and the sample's `promptVariables` are what feed the run, which is
+          // the same bag a real node's bindings resolve into.
           conversation: { kind: 'ref', nodeId: triggerId, path: 'messages' },
         },
       },

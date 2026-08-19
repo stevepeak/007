@@ -1,5 +1,6 @@
 export {
   agentConfigSchema,
+  agentInputVariables,
   agentFromManifest,
   workflowFromManifest,
   agentOutputSchema,
@@ -175,7 +176,7 @@ export {
   defineWfConfig,
   type AgentUsageRef,
   type BlobRefResolver,
-  type ImageRefResolver,
+
   type ModelCapabilities,
   type ModelCatalog,
   type ModelCatalogEntry,
@@ -186,7 +187,7 @@ export {
   type ModelProviderKind,
   type ModelProviderStatus,
   type ProviderBudget,
-  type ResolvedImage,
+
   type RunCompletion,
   type RunContext,
   type RunFailure,

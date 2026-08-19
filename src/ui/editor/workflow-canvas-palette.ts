@@ -36,7 +36,6 @@ function nodeConfigForKind(
         agentId: '',
         version: null,
         inputs: {},
-        imageInputs: {},
       },
     }
   }

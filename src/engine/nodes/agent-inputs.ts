@@ -1,33 +1,21 @@
 import type { UIMessage } from 'ai'
 
+import type { AgentConfig } from '../agent-config-schema'
 import { resolveBinding } from '../binding'
-import { isBlobRef, type WfBlobRef } from '../blob-ref'
-import type { ResolvedImage } from '../config'
 import type { AgentNode } from '../graph'
 
-// Pure input-preparation helpers for the agent node: turn the incoming node
-// input into a message list, resolve the node's prompt-variable and image
-// bindings against the live output cache, and fold images onto the conversation.
-// Kept apart from the orchestration (`agent.ts`) and the model loop
-// (`agent-generation.ts`) so each stays a single, testable concern.
+// Pure input-preparation helpers for the agent node: build its messages from the
+// declared templates and bindings, and resolve its prompt-variable bindings
+// against the live output cache. Kept apart from the orchestration (`agent.ts`)
+// and the model loop (`agent-generation.ts`) so each stays a single, testable
+// concern.
+//
+// Nothing here reads the node's incoming `input`. An edge carries sequencing and
+// gives `ref` bindings something to point at; it is never itself content.
 
-// True when a value looks like a chat/trigger payload carrying a message thread
-// (`{ messages: [...] }`). The agent node uses this to keep history EXPLICIT: a
-// payload is never auto-expanded into the thread — it must be linked via the
-// node's `conversation` binding — so an unlinked chat agent starts fresh instead
-// of implicitly inheriting the conversation.
-export function isMessagesPayload(input: unknown): input is { messages: UIMessage[] } {
-  return (
-    input !== null &&
-    typeof input === 'object' &&
-    Array.isArray((input as { messages?: unknown }).messages)
-  )
-}
-
-// Wraps a single upstream value as one user message — how a tool/iteration-fed
-// agent runs on its predecessor's output. It intentionally does NOT expand a
-// `{ messages: [...] }` payload into a thread; multi-message history comes only
-// from the agent node's explicit `conversation` binding (see `resolveConversation`).
+// Wraps a single value as one user message. The delegation path uses it to turn
+// a spawned sub-agent's task string into its opening turn (see `sub-agent.ts`);
+// nothing else may fabricate a turn from an arbitrary value.
 export function coerceToMessages(input: unknown): UIMessage[] {
   const text =
     typeof input === 'string' ? input : JSON.stringify(input ?? '', null, 2)
@@ -40,17 +28,45 @@ export function coerceToMessages(input: unknown): UIMessage[] {
   ]
 }
 
-// The messages an agent runs on when NO conversation is linked. Prior history is
-// explicit (the `conversation` binding), so a chat/trigger payload contributes
-// only its CURRENT (last) turn — the agent answers the latest message with no
-// prior context, rather than implicitly inheriting the whole thread. A non-payload
-// upstream value becomes the single working user message (tool/iteration input).
-export function unlinkedMessages(input: unknown): UIMessage[] {
-  if (isMessagesPayload(input)) {
-    const last = input.messages[input.messages.length - 1]
-    return last ? [last] : []
+/**
+ * Build the messages an agent node runs on. Everything here is declared: the
+ * author writes a user template (task) or binds a thread (conversation), and an
+ * incoming edge contributes nothing on its own.
+ *
+ *  • task         — exactly one user turn, the interpolated `userPrompt`. Its
+ *                   non-emptiness is guaranteed by `agentConfigSchema`, so the
+ *                   AI SDK's "messages must not be empty" can't be reached.
+ *  • conversation — the bound thread, with the interpolated `userPrompt`
+ *                   appended as the current turn when the author wrote one.
+ *
+ * An unbound conversation THROWS rather than degrading. The old fallback made a
+ * mis-wired chat agent look like it worked while answering with no context; a
+ * missing binding is an authoring bug and reads better as one.
+ */
+export async function buildAgentMessages(args: {
+  inputKind: AgentConfig['inputKind']
+  /** `userPrompt` with its `${vars}` already substituted. */
+  userPrompt: string
+  node: AgentNode
+  nodeOutputs: Map<string, unknown>
+  rehydrate?: (value: unknown) => Promise<unknown>
+}): Promise<UIMessage[]> {
+  const { inputKind, userPrompt, node, nodeOutputs, rehydrate } = args
+  const turn = (text: string): UIMessage => ({
+    id: crypto.randomUUID(),
+    role: 'user',
+    parts: [{ type: 'text', text }],
+  })
+
+  if (inputKind === 'task') return [turn(userPrompt)]
+
+  const linked = await resolveConversation(node, nodeOutputs, rehydrate)
+  if (!linked) {
+    throw new Error(
+      `Agent node ${node.id} works on a conversation but its \`conversation\` input is not bound to a message source. Bind it in the workflow editor (usually the chat trigger's \`messages\`).`,
+    )
   }
-  return coerceToMessages(input)
+  return userPrompt.trim().length > 0 ? [...linked, turn(userPrompt)] : linked
 }
 
 // Resolves the agent node's optional `conversation` binding to a message list.
@@ -101,79 +117,4 @@ export async function resolveNodeInputs(
           : JSON.stringify(value)
   }
   return vars
-}
-
-// A model-ready image message part (AI SDK UIMessage `file` part). `url` is a
-// data: or http(s) URL; `mediaType` is the image MIME type.
-type ImagePart = { type: 'file'; mediaType: string; url: string }
-
-function isResolvedImage(v: unknown): v is ResolvedImage {
-  return (
-    typeof v === 'object' &&
-    v !== null &&
-    typeof (v as { url?: unknown }).url === 'string' &&
-    typeof (v as { mediaType?: unknown }).mediaType === 'string'
-  )
-}
-
-// Resolve the agent node's `imageInputs` bindings into image message parts.
-// Each binding resolves to a WfBlobRef (read via the host `resolveImage`) or an
-// already-formed `{ url, mediaType }`; null/undefined bindings are skipped.
-export async function resolveImageInputs(
-  node: AgentNode,
-  nodeOutputs: Map<string, unknown>,
-  resolveImage?: (ref: WfBlobRef) => Promise<ResolvedImage>,
-): Promise<ImagePart[]> {
-  const entries = Object.entries(node.config.imageInputs)
-  if (entries.length === 0) return []
-  const parts = await Promise.all(
-    entries.map(async ([name, binding]): Promise<ImagePart | null> => {
-      const value = resolveBinding(binding, nodeOutputs, {
-        nodeId: node.id,
-        name,
-      })
-      if (value == null) return null
-      if (isBlobRef(value)) {
-        if (!resolveImage) {
-          throw new Error(
-            `Agent node ${node.id} image input '${name}' is a blob ref but no resolveImageRef is configured.`,
-          )
-        }
-        const img = await resolveImage(value)
-        return { type: 'file', mediaType: img.mediaType, url: img.url }
-      }
-      if (isResolvedImage(value)) {
-        return { type: 'file', mediaType: value.mediaType, url: value.url }
-      }
-      throw new Error(
-        `Agent node ${node.id} image input '${name}' did not resolve to an image (expected a blob ref or { url, mediaType }).`,
-      )
-    }),
-  )
-  return parts.filter((p): p is ImagePart => p !== null)
-}
-
-// Attach image parts to the conversation. If the last message is already a user
-// turn, fold them in (avoids two consecutive user messages some providers
-// reject); otherwise add a fresh user message carrying just the images.
-export function attachImages(
-  messages: UIMessage[],
-  imageParts: ImagePart[],
-): UIMessage[] {
-  if (imageParts.length === 0) return messages
-  const last = messages[messages.length - 1]
-  if (last && last.role === 'user') {
-    return [
-      ...messages.slice(0, -1),
-      { ...last, parts: [...last.parts, ...imageParts] },
-    ]
-  }
-  return [
-    ...messages,
-    {
-      id: crypto.randomUUID(),
-      role: 'user',
-      parts: imageParts,
-    } satisfies UIMessage,
-  ]
 }

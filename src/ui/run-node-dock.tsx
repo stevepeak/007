@@ -53,6 +53,9 @@ export type RunNodeDockProps = {
   itemIndex?: number | null
   itemCount?: number
   onSelectItem?: (index: number) => void
+  /** Which tab the dock opens on. Defaults to the run-wide Activity feed; a
+   *  deep link that already names a node opens on that node's trace instead. */
+  initialTab?: 'activity' | 'logs'
 }
 
 // Height bounds for the resizable body: never let it shrink out of sight, and
@@ -77,11 +80,12 @@ export function RunNodeDock({
   itemIndex,
   itemCount = 0,
   onSelectItem,
+  initialTab = 'activity',
 }: RunNodeDockProps) {
   const { Badge } = useWfComponents()
   const hasItemPicker = itemCount > 0 && itemIndex != null
   const [open, setOpen] = useState(true)
-  const [tab, setTab] = useState<'activity' | 'logs'>('activity')
+  const [tab, setTab] = useState<'activity' | 'logs'>(initialTab)
 
   // Drag-to-resize the body height. The top border doubles as the handle: a
   // click (no movement) toggles the panel, a drag resizes it (clamped so it

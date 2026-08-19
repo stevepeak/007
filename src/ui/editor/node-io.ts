@@ -499,16 +499,16 @@ export type ThreadStatus =
   | { status: 'none' }
 
 /**
- * Whether the agent a node points at declares that it takes a chat thread. Read
- * from the agent's LATEST PUBLISHED config (like `inputVariables`), so toggling
- * it on an agent draft only reaches workflow editors once the agent is published.
+ * Whether the agent a node points at works on a chat thread. Read from the
+ * agent's LATEST PUBLISHED config (like `inputVariables`), so switching the kind
+ * on a draft only reaches workflow editors once the agent is published.
  */
 export function agentAcceptsConversation(
   node: WorkflowNode,
   maps: IoMaps,
 ): boolean {
   if (node.kind !== 'agent') return false
-  return maps.agentsById.get(node.config.agentId)?.acceptsConversation ?? false
+  return maps.agentsById.get(node.config.agentId)?.inputKind === 'conversation'
 }
 
 export function agentThreadSource(

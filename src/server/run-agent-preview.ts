@@ -53,10 +53,10 @@ export async function executeAgentPreview<TDeps>(opts: {
   /** The agent config to run — typically the editor's live draft. */
   config: AgentConfig
   /**
-   * Free-form conversational message for agents that take one. May be empty for
-   * a variable-driven agent — the message is then synthesized from the prompt
-   * variables so the model still receives a non-empty user turn (mirroring how a
-   * real run feeds upstream data into the node).
+   * The current user turn, for a CONVERSATION agent — appended after `messages`
+   * exactly as a live chat run appends it. Ignored by a task agent, whose only
+   * turn is its own `userPrompt` template; the playground fills that agent's
+   * `${variables}` instead, which is what a real node's bindings do.
    */
   input: string
   /**
@@ -105,28 +105,23 @@ export async function executeAgentPreview<TDeps>(opts: {
   })
 
   const promptVariables = runContext.promptVariables ?? {}
-  // A variable-driven agent (e.g. a classifier reading `${title}`/`${text}`)
-  // has no conversational message. In a real run the node still receives its
-  // upstream input as the message; here we stand in a compact rendering of the
-  // variables so the model always gets a non-empty user turn.
-  const message =
-    opts.input.trim() ||
-    Object.entries(promptVariables)
-      .map(([name, value]) => `${name}: ${value}`)
-      .join('\n\n')
-
-  // A scratch conversation is bound exactly where a real run binds the chat
-  // trigger's messages: the node's `conversation`. History in the engine is
-  // always explicit, so without this the agent would answer `message` with no
-  // prior context no matter what the author typed. The current turn is appended
-  // here (not on the client) so the variable-driven path — where the message is
-  // synthesized from promptVariables above — carries its turn too.
+  // The playground now runs the agent's REAL message contract. It used to
+  // synthesize a `name: value` turn out of the prompt variables, because a live
+  // node's turn came from an upstream edge the playground had no way to stand
+  // in for — so what an author tested here was never what production sent. A
+  // task agent's turn is its own `userPrompt`, rendered by the engine from the
+  // variables below, and there is nothing left to fake.
+  //
+  // A scratch conversation is bound where a real chat run binds it: the node's
+  // `conversation`. `input` is the current turn, appended here rather than on
+  // the client so an author can preview a reply with no prior history.
   const history = opts.messages ?? []
+  const currentTurn = opts.input.trim()
   const conversation =
-    history.length > 0
+    config.inputKind === 'conversation'
       ? [
           ...toUiMessages(history),
-          ...toUiMessages([{ role: 'user', text: message }]),
+          ...(currentTurn ? toUiMessages([{ role: 'user', text: currentTurn }]) : []),
         ]
       : undefined
 
@@ -142,7 +137,6 @@ export async function executeAgentPreview<TDeps>(opts: {
       agentId: PREVIEW_AGENT_ID,
       version: null,
       inputs: {},
-      imageInputs: {},
       ...(conversation
         ? { conversation: { kind: 'literal' as const, value: conversation } }
         : {}),
@@ -151,7 +145,6 @@ export async function executeAgentPreview<TDeps>(opts: {
 
   const result = await executeAgentNode<unknown>({
     node,
-    input: message,
     // Playground always reasons (runContext.reasoning) so the trace shows the
     // model's thinking, regardless of the synthetic node's inform-user flags.
     getModel: (modelId, opts) =>

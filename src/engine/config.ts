@@ -77,25 +77,12 @@ export type BlobRefResolver<TDeps> = (
   deps: TDeps,
 ) => Promise<string>
 
-/**
- * A resolved image, ready to hand to a vision model as a message part. `url` is
- * either a `data:` URL (host base64-encoded the bytes) or an `http(s)` URL the
- * model can fetch (e.g. a signed link); `mediaType` is its MIME type.
- */
-export type ResolvedImage = { url: string; mediaType: string }
-
-/**
- * Reads a {@link WfBlobRef} that points at an IMAGE back to a model-ready
- * {@link ResolvedImage}. This is the vision counterpart to
- * {@link BlobRefResolver} (which returns text): an agent node's `imageInputs`
- * bind to image blob-refs, and the SDK calls this — inside the agent's own step
- * — to turn each into an image message part. The host owns the storage read and
- * the bytes→URL choice, keeping the engine provider-agnostic.
- */
-export type ImageRefResolver<TDeps> = (
-  ref: WfBlobRef,
-  deps: TDeps,
-) => Promise<ResolvedImage>
+// NOTE: vision (`ResolvedImage` / `ImageRefResolver` / an agent node's
+// `imageInputs`) was removed along with the implicit user message. Image parts
+// were appended to whatever turn happened to exist, which is exactly the kind of
+// content an author never declared — and a `${var}` cannot carry an image, since
+// base64 in a text turn is not an image to any provider. Vision needs its own
+// design where the user template names and places the attachment.
 
 /**
  * Per-run context handed to `buildRunDeps`. Identity is opaque to the SDK:
@@ -281,12 +268,6 @@ export interface WfSdkConfig<TDeps = unknown> {
    */
   resolveBlobRef?: BlobRefResolver<TDeps>
   /**
-   * Optional: resolve an agent node's `imageInputs` that are {@link WfBlobRef}
-   * pointers into model-ready images (vision). Omit if no agent consumes image
-   * inputs; an image-ref input with no resolver configured is a run-time error.
-   */
-  resolveImageRef?: ImageRefResolver<TDeps>
-  /**
    * Host-declared **events** + their data schemas. These are the "on an event"
    * trigger options offered in the creation flow; the built-in manual and
    * periodic triggers need no registry entry.
@@ -365,9 +346,7 @@ export function defineWfConfig<TDeps = unknown>(
   if (config.resolveBlobRef != null && typeof config.resolveBlobRef !== 'function') {
     problems.push('`resolveBlobRef`, if set, must be a function')
   }
-  if (config.resolveImageRef != null && typeof config.resolveImageRef !== 'function') {
-    problems.push('`resolveImageRef`, if set, must be a function')
-  }
+
   if (config.onRunComplete != null && typeof config.onRunComplete !== 'function') {
     problems.push('`onRunComplete`, if set, must be a function')
   }

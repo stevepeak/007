@@ -28,6 +28,8 @@ const MANIFEST: WfRunManifestEntry[] = [
     config: {
       modelId: 'mock',
       prompt: 'List the titles.',
+      userPrompt: 'Go.',
+      inputKind: 'task' as const,
       toolIds: [],
       maxTurns: 1,
       output: {

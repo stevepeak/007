@@ -70,11 +70,14 @@ export function NodeInputsPanel({
   const empty = conversationEmptyState(thread)
   const nothingToShow = requires.length === 0 && !showConversation
 
-  // Group by required vs optional. The conversation link is optional and lives at
-  // the top of the optional group.
+  // Group by required vs optional. The conversation link heads the REQUIRED
+  // group: a conversation agent has no other source of messages, so an unbound
+  // one fails the run rather than degrading it (see `buildAgentMessages`). Only
+  // a stale link on a task agent (`unsupported`) is shown outside that group, to
+  // be seen and cleared.
   const requiredInputs = requires.filter((i) => i.required)
   const optionalInputs = requires.filter((i) => !i.required)
-  const hasOptional = showConversation || optionalInputs.length > 0
+  const hasOptional = optionalInputs.length > 0
 
   const renderInput = (input: NodeInput) => (
     <BindingField
@@ -99,21 +102,15 @@ export function NodeInputsPanel({
             : 'This tool takes no arguments.'}
         </p>
       ) : null}
-      {requiredInputs.length > 0 ? (
+      {requiredInputs.length > 0 || showConversation ? (
         <div className="space-y-1.5">
           <InputGroupLabel>Required</InputGroupLabel>
-          <div className="space-y-1.5">{requiredInputs.map(renderInput)}</div>
-        </div>
-      ) : null}
-      {hasOptional ? (
-        <div className="space-y-1.5">
-          <InputGroupLabel>Optional</InputGroupLabel>
           <div className="space-y-1.5">
             {showConversation ? (
               <>
                 <BindingField
                   label="conversation"
-                  description="The chat thread passed to this agent as its message history. This agent declares that it works on a conversation, so link it to the message source (e.g. the chat trigger's messages). Left unlinked, the agent runs with no prior conversation."
+                  description="The chat thread this agent answers. It is the agent's only source of messages, so it must be linked — usually to the chat trigger's messages. A run with it unbound fails."
                   icon={
                     empty?.tone === 'warn' || thread.status === 'unsupported' ? (
                       <AlertTriangle className="size-3.5 shrink-0 text-rose-500" />
@@ -127,15 +124,20 @@ export function NodeInputsPanel({
                 />
                 {thread.status === 'unsupported' ? (
                   <p className="text-xs text-rose-600">
-                    This agent doesn’t work on a conversation, so this link is
-                    ignored. Turn on “Works on a conversation” in the agent (and
-                    publish it), or clear the link.
+                    This is a Task agent, so this link is ignored. Switch the
+                    agent to Conversation (and publish it), or clear the link.
                   </p>
                 ) : null}
               </>
             ) : null}
-            {optionalInputs.map(renderInput)}
+            {requiredInputs.map(renderInput)}
           </div>
+        </div>
+      ) : null}
+      {hasOptional ? (
+        <div className="space-y-1.5">
+          <InputGroupLabel>Optional</InputGroupLabel>
+          <div className="space-y-1.5">{optionalInputs.map(renderInput)}</div>
         </div>
       ) : null}
     </InspectorSection>
@@ -152,21 +154,20 @@ function InputGroupLabel({ children }: { children: ReactNode }) {
 }
 
 // The label shown in the conversation field when it has no explicit binding.
-// `unlinked` = a message source is reachable but not linked, so the agent will
-// run with no prior context (warn, and point at the source to link). `idle` =
-// the agent takes a thread but nothing upstream carries one yet — a neutral
-// hint, since there's nothing to point at.
+// Both states are failures now, not degradations — the engine throws on an
+// unbound thread — so both warn. `unlinked` can name the source to link;
+// `idle` has nothing upstream to point at yet.
 function conversationEmptyState(
   thread: ThreadStatus,
 ): { text: string; tone: 'muted' | 'warn' } | undefined {
   if (thread.status === 'unlinked') {
     return {
-      text: `Not linked — no prior messages · link to ${thread.sourceLabel}`,
+      text: `Not linked — the run will fail · link to ${thread.sourceLabel}`,
       tone: 'warn',
     }
   }
   if (thread.status === 'idle') {
-    return { text: 'Not linked — no prior messages', tone: 'muted' }
+    return { text: 'Not linked — the run will fail', tone: 'warn' }
   }
   return undefined
 }

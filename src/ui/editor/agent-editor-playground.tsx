@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 
-import { inferPromptVariables, type AgentConfig } from '../../engine'
+import { agentInputVariables, type AgentConfig } from '../../engine'
 import type {
   AgentPreviewMessage,
   AgentPreviewResult,
@@ -117,7 +117,8 @@ type PlaygroundRun = {
 // Used to tell you what a run's snapshot would change before you take it.
 const CONFIG_FIELDS: { key: keyof AgentConfig; label: string }[] = [
   { key: 'modelId', label: 'model' },
-  { key: 'prompt', label: 'prompt' },
+  { key: 'prompt', label: 'system prompt' },
+  { key: 'userPrompt', label: 'user message' },
   { key: 'toolIds', label: 'tools' },
   { key: 'subAgents', label: 'sub-agents' },
   { key: 'output', label: 'output' },
@@ -125,7 +126,7 @@ const CONFIG_FIELDS: { key: keyof AgentConfig; label: string }[] = [
   { key: 'toolTokenBudget', label: 'token budget' },
   { key: 'answerReservePercent', label: 'answer reserve' },
   { key: 'requireToolFirstTurn', label: 'tool-first' },
-  { key: 'acceptsConversation', label: 'conversation' },
+  { key: 'inputKind', label: 'input kind' },
 ]
 
 function changedFields(a: AgentConfig, b: AgentConfig): string[] {
@@ -142,14 +143,14 @@ export function PlaygroundPanel({
   /** Load a run's frozen config back into the editor. */
   onRestore?: (config: AgentConfig) => void
 }) {
-  const variables = useMemo(
-    () => inferPromptVariables(config.prompt),
-    [config.prompt],
-  )
+  // Both prompts, since either can declare a variable and both interpolate from
+  // one bag — the same union a workflow node has to bind.
+  const variables = useMemo(() => agentInputVariables(config), [config])
   const hasVars = variables.length > 0
-  // An agent that declares it works on a conversation gets a thread to run
-  // against; everything else runs on a single message, as before.
-  const conversational = config.acceptsConversation
+  // A conversation agent gets a thread to run against. A task agent has no
+  // free-text turn to type: its message IS `userPrompt`, and filling the
+  // variables below is exactly what a node's bindings do at run time.
+  const conversational = config.inputKind === 'conversation'
   const schema = useMemo(
     () => agentInputSchema(variables, conversational),
     [variables, conversational],
@@ -513,7 +514,13 @@ function PlaygroundRunCard({
             </div>
           ) : null}
 
-          {run.result ? <PlaygroundResult result={run.result} /> : null}
+          {run.result ? (
+            <PlaygroundResult
+              result={run.result}
+              liveToolIds={run.liveToolIds}
+              attachedToolIds={run.config.toolIds}
+            />
+          ) : null}
 
           {onRestore ? (
             <div className="flex items-center gap-2 border-t border-neutral-100 pt-2.5">
@@ -672,7 +679,17 @@ function formatCost(usd: number): string {
 // yes/no verdicts are syntax-highlighted (JSON tokens / a coloured verdict),
 // while free-form prose is parsed as markdown. Plus an optional step-by-step
 // trace and total token usage/cost.
-function PlaygroundResult({ result }: { result: AgentPreviewResult }) {
+function PlaygroundResult({
+  result,
+  liveToolIds,
+  attachedToolIds,
+}: {
+  result: AgentPreviewResult
+  /** The tools this run executed for real — everything else was faked. */
+  liveToolIds: readonly string[]
+  /** The agent's own tools, to tell them from synthesized delegation tools. */
+  attachedToolIds: readonly string[]
+}) {
   const { output, meta } = result
   const models = useModels().data
   const textOutput =
@@ -769,21 +786,15 @@ function PlaygroundResult({ result }: { result: AgentPreviewResult }) {
                   </p>
                 ) : null}
                 {step.toolCalls.map((tc) => (
-                  <div
+                  <ToolCallLine
                     key={tc.toolCallId}
-                    className="flex items-start gap-1.5 rounded border border-neutral-200 bg-neutral-50 px-2 py-1 text-[11px] text-neutral-500"
-                  >
-                    <Wrench className="mt-0.5 size-3 shrink-0" />
-                    <span className="break-words">
-                      <span className="font-medium text-neutral-700">
-                        {tc.toolName}
-                      </span>
-                      <span className="ml-1 rounded bg-amber-100 px-1 py-px text-[9px] font-medium uppercase tracking-wide text-amber-700">
-                        simulated
-                      </span>
-                      {tc.input != null ? ` ${JSON.stringify(tc.input)}` : null}
-                    </span>
-                  </div>
+                    call={tc}
+                    mode={toolCallMode(
+                      tc.toolName,
+                      liveToolIds,
+                      attachedToolIds,
+                    )}
+                  />
                 ))}
               </div>
             ))}
@@ -795,6 +806,89 @@ function PlaygroundResult({ result }: { result: AgentPreviewResult }) {
         {meta.model} · {totalTokens.toLocaleString()} tokens
         {cost != null ? ` · ${formatCost(cost)}` : null}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Whether this trace line's tool actually ran. A playground run freezes the
+ * modes it was launched with, so the answer is a lookup, not a guess — and it
+ * has to be shown per call: the trace used to badge EVERY call `simulated`,
+ * which quietly told authors their live tool had been faked.
+ *
+ * A name that is neither live nor one of the agent's own tools is a synthesized
+ * delegation tool (spawn/await a sub-agent). Those aren't part of the live /
+ * simulated split, so they get no badge rather than a wrong one.
+ */
+function toolCallMode(
+  toolName: string,
+  liveToolIds: readonly string[],
+  attachedToolIds: readonly string[],
+): 'live' | 'simulated' | 'other' {
+  if (liveToolIds.includes(toolName)) return 'live'
+  if (attachedToolIds.includes(toolName)) return 'simulated'
+  return 'other'
+}
+
+// A tool result can be an entire extracted document; render enough to judge it
+// and say what was cut rather than pushing megabytes into the DOM.
+const MAX_RESULT_CHARS = 4000
+
+/**
+ * One tool call in the step trace: what was called, whether it ran for real, the
+ * arguments the agent chose, and what came back. The result is the evidence that
+ * a live tool really executed — a simulated one returns the model's invention,
+ * and side by side the difference is obvious.
+ */
+function ToolCallLine({
+  call,
+  mode,
+}: {
+  call: { toolName: string; input: unknown; output: unknown }
+  mode: 'live' | 'simulated' | 'other'
+}) {
+  const output =
+    call.output == null ? null : JSON.stringify(call.output, null, 2)
+  const clipped = output != null && output.length > MAX_RESULT_CHARS
+
+  return (
+    <div className="rounded border border-neutral-200 bg-neutral-50 px-2 py-1 text-[11px] text-neutral-500">
+      <div className="flex items-start gap-1.5">
+        <Wrench className="mt-0.5 size-3 shrink-0" />
+        <span className="break-words">
+          <span className="font-medium text-neutral-700">{call.toolName}</span>
+          {mode === 'other' ? null : (
+            <span
+              className={cn(
+                'ml-1 rounded px-1 py-px text-[9px] font-medium uppercase tracking-wide',
+                mode === 'live'
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : 'bg-amber-100 text-amber-700',
+              )}
+            >
+              {mode}
+            </span>
+          )}
+          {call.input != null ? ` ${JSON.stringify(call.input)}` : null}
+        </span>
+      </div>
+      {output != null ? (
+        <details className="mt-1">
+          <summary className="cursor-pointer text-[10px] uppercase tracking-wide text-neutral-400">
+            result
+          </summary>
+          <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-white px-2 py-1 font-mono text-[10px] text-neutral-600">
+            {highlightJson(
+              clipped ? `${output.slice(0, MAX_RESULT_CHARS)}…` : output,
+            )}
+          </pre>
+          {clipped ? (
+            <p className="mt-0.5 text-[10px] text-neutral-400">
+              Truncated — {output.length.toLocaleString()} characters in full.
+            </p>
+          ) : null}
+        </details>
+      ) : null}
     </div>
   )
 }

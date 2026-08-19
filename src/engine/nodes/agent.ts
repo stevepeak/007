@@ -1,5 +1,4 @@
-import type { WfBlobRef } from '../blob-ref'
-import type { ModelFactory, ResolvedImage } from '../config'
+import type { ModelFactory } from '../config'
 import {
   agentFromManifest,
   type AgentConfig,
@@ -16,12 +15,9 @@ import {
   runAgentGeneration,
 } from './agent-generation'
 import {
-  attachImages,
+  buildAgentMessages,
   coerceToMessages,
-  resolveConversation,
-  resolveImageInputs,
   resolveNodeInputs,
-  unlinkedMessages,
 } from './agent-inputs'
 import { type SubAgentRunCtx, synthesizeDelegationTools } from './sub-agent'
 
@@ -38,7 +34,11 @@ export type {
 
 export type ExecuteAgentNodeArgs<TDeps> = {
   node: AgentNode
-  input: unknown
+  // NOTE: the node's incoming `input` is deliberately absent. An agent reads only
+  // what its prompts declare and its bindings resolve, so handing the payload to
+  // this function at all would just be an invitation to reintroduce the implicit
+  // user message. `resolveNodeInputs` reaches upstream outputs through
+  // `nodeOutputs`, which is the supported path.
   getModel: ModelFactory
   toolRegistry: ToolRegistry<TDeps>
   toolDeps: TDeps
@@ -64,12 +64,7 @@ export type ExecuteAgentNodeArgs<TDeps> = {
    * through unchanged.
    */
   rehydrate?: (value: unknown) => Promise<unknown>
-  /**
-   * Resolves an image blob-ref (from an `imageInputs` binding) to a model-ready
-   * image. Bound to the run's deps by the caller. Omitted → an image blob-ref
-   * input throws (a text-only run wires no image resolver).
-   */
-  resolveImage?: (ref: WfBlobRef) => Promise<ResolvedImage>
+
   /** Eval signal — under simulate, side-effecting tools are neutralized. */
   simulate?: boolean
   /** Canned tool outputs consumed under `simulate`. */
@@ -138,9 +133,7 @@ export async function executeAgentNode<TDeps>(
     promptVariables,
     nodeOutputs,
     manifest,
-    input,
     rehydrate,
-    resolveImage,
     simulate,
     fixtures,
     freezeTools,
@@ -196,23 +189,23 @@ export async function executeAgentNode<TDeps>(
     ...(await resolveNodeInputs(node, nodeOutputs, rehydrate)),
   }
   const systemPrompt = substitutePromptVariables(promptTemplate, vars)
-  // Any bound image inputs ride along as vision parts on the user turn.
-  const imageParts = await resolveImageInputs(node, nodeOutputs, resolveImage)
-  // History is EXPLICIT: it comes only from the node's `conversation` binding (a
-  // linked message source, typically the chat trigger's `messages`). Without a
-  // link, a chat/trigger payload does NOT implicitly become the thread — the agent
-  // answers only the current turn with no prior context (surfaced as an editor
-  // warning). See `unlinkedMessages`.
+  // The agent's messages, built ONLY from what the author declared. An incoming
+  // edge means sequencing and a source for `ref` bindings — never content. It is
+  // deliberately not consulted here: `input` reaches the model only where a
+  // binding names it, so nothing arrives that the prompts didn't ask for.
   //
-  // The agent's own `acceptsConversation` declaration is what makes that binding
-  // AUTHORABLE (it's the agent's contract — see `agent-config-schema.ts`), but it
-  // deliberately does not gate this read: a binding already wired reaches the
-  // model even if the flag is later turned off, so flipping a toggle can't
-  // silently strip a live workflow's history mid-run. The editor raises a
-  // blocking issue on that combination instead.
-  const linked = await resolveConversation(node, nodeOutputs, rehydrate)
-  const history = linked ?? unlinkedMessages(input)
-  const messages = attachImages(history, imageParts)
+  // This replaced `history = linked ?? unlinkedMessages(input)`, whose fallback
+  // JSON-stringified the whole upstream output into an unlabeled user turn. That
+  // sent data no prompt referenced, keyed multi-parent joins by internal node id,
+  // skipped the blob rehydration that bindings get, and duplicated every payload
+  // the system prompt already interpolated.
+  const messages = await buildAgentMessages({
+    inputKind: config.inputKind,
+    userPrompt: substitutePromptVariables(config.userPrompt, vars),
+    node,
+    nodeOutputs,
+    rehydrate,
+  })
 
   // Delegation: when this agent whitelists sub-agents/workflows, merge the
   // synthesized spawn/await tools into its tool set (text agents only — the

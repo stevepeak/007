@@ -220,6 +220,8 @@ describe('eval harness — workflow-calls-workflow (agent callee, nested manifes
       config: {
         modelId: 'mock',
         prompt: 'Be helpful.',
+        userPrompt: 'Go.',
+        inputKind: 'task' as const,
         toolIds: [],
         maxTurns: 1,
         output: { kind: 'text' },

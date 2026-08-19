@@ -232,7 +232,7 @@ export async function executeWorkflow<TDeps>(
           manifest: runContext.manifest,
           sink: nodeSink,
           resolveBlobRef: config.resolveBlobRef,
-          resolveImageRef: config.resolveImageRef,
+
           simulate: runContext.simulate,
           fixtures: runContext.fixtures,
           freezeTools: runContext.freezeTools,

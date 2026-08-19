@@ -63,6 +63,8 @@ describe('agent override — matrix eval seam', () => {
       config: {
         modelId: 'mock',
         prompt: 'Saved prompt.',
+        userPrompt: 'Go.',
+        inputKind: 'task' as const,
         toolIds: [],
         maxTurns: 5,
         output: { kind: 'text' as const },

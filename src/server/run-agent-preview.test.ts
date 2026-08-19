@@ -17,10 +17,20 @@ type Deps = { marker: string }
 const BASE_CONFIG: AgentConfig = {
   modelId: 'mock',
   prompt: 'Answer.',
+  userPrompt: 'Go.',
+  inputKind: 'task' as const,
   toolIds: [],
   maxTurns: 1,
   output: { kind: 'text' },
 } as AgentConfig
+
+// The playground runs the agent's REAL contract, so a conversation preview needs
+// an agent that declares one — a task agent ignores authored turns entirely.
+const CHAT_CONFIG: AgentConfig = {
+  ...BASE_CONFIG,
+  inputKind: 'conversation',
+  userPrompt: '',
+}
 
 /** The role/text of every turn in the model's prompt, in order. */
 function turns(prompt: unknown): string {
@@ -68,7 +78,7 @@ describe('executeAgentPreview — conversation', () => {
   test('authored turns become the history, with the input as the newest turn', async () => {
     const seen: { prompt: unknown } = { prompt: null }
     await executeAgentPreview({
-      config: BASE_CONFIG,
+      config: CHAT_CONFIG,
       input: 'and the second one?',
       messages: [
         { role: 'user', text: 'I have two leases' },
@@ -86,7 +96,7 @@ describe('executeAgentPreview — conversation', () => {
   test('no authored turns leaves the agent answering the input alone', async () => {
     const seen: { prompt: unknown } = { prompt: null }
     await executeAgentPreview({
-      config: BASE_CONFIG,
+      config: CHAT_CONFIG,
       input: 'hello',
       wfConfig: fakeConfig({ seen }),
       runContext: { triggerKind: 'playground' },
@@ -188,5 +198,119 @@ describe('executeAgentPreview — live vs simulated tools', () => {
     expect(depsBuilt).toBe(0)
     expect(built.live).toBeNull()
     expect(built.simulated).toBe(false)
+  })
+})
+
+describe('executeAgentPreview — a live tool actually executes', () => {
+  // Building the tool against real deps (above) is necessary but not sufficient:
+  // what an author is promised is that the RESULT the agent reasoned on came
+  // from the real implementation. So drive a full tool-calling turn and read the
+  // outputs back off the trace.
+  const CALLING_CONFIG: AgentConfig = {
+    ...BASE_CONFIG,
+    toolIds: ['live_tool', 'fake_tool'],
+    maxTurns: 2,
+  }
+
+  function callingModel() {
+    let toolTurn = 0
+    return new MockLanguageModelV3({
+      doGenerate: async (o) => {
+        // The simulator stands in for a tool with a plain, tool-less generation;
+        // the agent loop itself always passes the tool set. That's what tells
+        // the two callers of this one mock apart.
+        const hasTools = ((o as { tools?: unknown[] }).tools ?? []).length > 0
+        if (hasTools && toolTurn++ === 0) {
+          return {
+            content: [
+              {
+                type: 'tool-call' as const,
+                toolCallId: 'c1',
+                toolName: 'live_tool',
+                input: '{}',
+              },
+              {
+                type: 'tool-call' as const,
+                toolCallId: 'c2',
+                toolName: 'fake_tool',
+                input: '{}',
+              },
+            ],
+            finishReason: 'tool-calls' as const,
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            warnings: [],
+          }
+        }
+        return {
+          content: [
+            { type: 'text' as const, text: hasTools ? 'done' : 'invented' },
+          ],
+          finishReason: 'stop' as const,
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          warnings: [],
+        }
+      },
+    })
+  }
+
+  function callingRegistry(ran: { live: boolean; fake: boolean }) {
+    const entry = (id: string, mark: () => void) => ({
+      id,
+      name: id,
+      description: id,
+      kind: 'ai-tool' as const,
+      inputSchema: z.object({}),
+      build: () =>
+        tool({
+          inputSchema: z.object({}),
+          execute: async () => {
+            mark()
+            return { source: 'real', tool: id }
+          },
+        }),
+    })
+    return new Map([
+      [
+        'live_tool',
+        entry('live_tool', () => {
+          ran.live = true
+        }),
+      ],
+      [
+        'fake_tool',
+        entry('fake_tool', () => {
+          ran.fake = true
+        }),
+      ],
+    ]) as ToolRegistry<Deps>
+  }
+
+  test('the live tool runs for real and its result is what the agent sees', async () => {
+    const ran = { live: false, fake: false }
+    const model = callingModel()
+    const result = await executeAgentPreview({
+      config: CALLING_CONFIG,
+      input: 'go',
+      liveToolIds: ['live_tool'],
+      wfConfig: {
+        getModel: () => model,
+        toolRegistry: callingRegistry(ran),
+        buildRunDeps: () => ({ marker: 'real' }),
+      } as unknown as WfSdkConfig<Deps>,
+      runContext: { triggerKind: 'playground' },
+    })
+
+    expect(ran.live).toBe(true)
+    // The whole point of the simulated mode: this implementation never ran.
+    expect(ran.fake).toBe(false)
+
+    const calls = result.meta.steps.flatMap((s) => s.toolCalls)
+    const byName = (name: string) => calls.find((c) => c.toolName === name)
+    expect(byName('live_tool')?.output).toEqual({
+      source: 'real',
+      tool: 'live_tool',
+    })
+    // Simulated: the model's invention, in the simulator's envelope.
+    expect(byName('fake_tool')?.output).toEqual({ result: 'invented' })
   })
 })

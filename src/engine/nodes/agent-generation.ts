@@ -29,6 +29,17 @@ export type AgentNodeMeta = {
   model: string
   systemPrompt: string
   /**
+   * The messages the model was actually sent, as plain role/text — the rendered
+   * user turn for a task agent, the bound thread for a conversation one.
+   *
+   * Recorded because the run viewer used to render the step's INPUT as the user
+   * message, which was true only while an incoming edge implicitly became the
+   * turn. It no longer does, and a viewer that keeps showing the edge payload as
+   * "the message" reports something the model never saw. Text-only: image parts
+   * and tool payloads would balloon every stored step.
+   */
+  messages?: Array<{ role: string; text: string }>
+  /**
    * Which AGENT this generation ran — stamped by the caller (the agent node or a
    * spawned sub-agent), not by generation itself, which only knows a prompt and
    * a model. It's the only durable link from a recorded step back to the agent:
@@ -300,6 +311,21 @@ function isTimeoutError(err: unknown): boolean {
  */
 const STRUCTURED_MAX_ATTEMPTS = 2
 
+// Flatten the sent messages to role/text for the recorded trace. Non-text parts
+// (files, tool payloads) are deliberately dropped — the trace is for reading
+// what the model was asked, not for reconstructing the request byte for byte.
+function recordedMessages(
+  messages: UIMessage[],
+): { role: string; text: string }[] {
+  return messages.map((m) => ({
+    role: m.role,
+    text: m.parts
+      .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+      .map((p) => p.text)
+      .join('\n'),
+  }))
+}
+
 // generateObject path — for the structured-object and YES/NO output kinds we
 // return the parsed object as the node output. No tool loop, no progress.
 async function runStructuredGeneration(
@@ -356,6 +382,7 @@ async function runStructuredGeneration(
   const meta: AgentNodeMeta = {
     model: modelId,
     systemPrompt,
+    messages: recordedMessages(messages),
     steps: [
       {
         stepNumber: 0,
@@ -736,6 +763,7 @@ async function runToolLoop(
     meta: {
       model: modelId,
       systemPrompt,
+      messages: recordedMessages(messages),
       steps: stepTraces,
       totalUsage,
       ...(stoppedOnTokenBudget ? { stoppedOnTokenBudget: true } : {}),

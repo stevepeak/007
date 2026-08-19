@@ -232,22 +232,23 @@ const agentNodeSchema = baseNode.extend({
     // behavior; a number pins the node to that exact version number, frozen
     // into the run manifest at run start regardless of later publishes.
     version: z.number().int().positive().nullable().default(null),
-    // Maps the referenced agent's prompt `${variables}` to bindings (a literal
-    // or a `ref` into an upstream node's output). Resolved at run time into the
-    // node's promptVariables; a bound var overrides the run-level value.
+    // Maps the referenced agent's `${variables}` — across BOTH its system prompt
+    // and its user message — to bindings (a literal, or a `ref` into an upstream
+    // node's output). Resolved at run time into the node's promptVariables; a
+    // bound var overrides the run-level value. A `ref` with an empty path binds
+    // the WHOLE upstream output, which `resolveNodeInputs` JSON-stringifies —
+    // that is how an author deliberately passes a full result through.
+    //
+    // These bindings are the only route from the graph into the model. There is
+    // no implicit channel: an unbound `${var}` reaches the prompt as the literal
+    // token, which the workflow editor raises as a blocking issue.
     inputs: z.record(z.string(), argBindingSchema).default({}),
-    // Vision inputs: bindings that resolve to images appended to the agent's
-    // message as image parts. Each resolves to a WfBlobRef (read via the host
-    // `resolveImageRef`) or an already-formed `{ url, mediaType }`. The binding
-    // key is a label only. Empty for text-only agents.
-    imageInputs: z.record(z.string(), argBindingSchema).default({}),
-    // The prior conversation fed to the agent as its message history — a binding
-    // (typically a `ref` into the chat trigger's `messages`) that resolves to a
-    // UIMessage[]. This is the ONLY source of message history: when omitted the
-    // agent runs with no prior messages (a chat/trigger payload on the primary
-    // edge is NOT implicitly expanded into the thread). The primary incoming edge
-    // governs ordering; a non-conversation upstream value still becomes the
-    // agent's single working user message.
+    // The conversation fed to a `conversation`-kind agent as its message history
+    // — a binding (typically a `ref` into the chat trigger's `messages`) that
+    // resolves to a UIMessage[]. It is the ONLY source of message history, and
+    // for such an agent it is REQUIRED: the engine throws when it is missing
+    // rather than answering with no context (see `buildAgentMessages`). Unused
+    // by `task` agents, which run on their rendered user message alone.
     conversation: argBindingSchema.optional(),
     // Whether/what this placement streams to the user (dynamic mode) lives on the
     // node's `informUser` field (see `informUserSchema`), NOT in this config, so

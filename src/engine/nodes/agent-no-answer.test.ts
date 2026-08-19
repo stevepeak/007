@@ -30,6 +30,8 @@ const MANIFEST = (maxTurns: number): WfRunManifestEntry[] => [
     config: {
       modelId: 'mock',
       prompt: 'Research, then answer.',
+      userPrompt: 'Go.',
+      inputKind: 'task' as const,
       toolIds: ['lookup'],
       maxTurns,
       output: { kind: 'text' },

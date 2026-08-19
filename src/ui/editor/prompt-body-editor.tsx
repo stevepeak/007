@@ -55,15 +55,24 @@ export type PromptBodyEditorProps = {
   editable?: boolean
   placeholder?: string
   className?: string
+  /**
+   * Tailwind classes setting the editor's resting height. Defaults to the tall
+   * system-prompt box; a user-message template is usually a couple of lines, so
+   * it passes a shorter one rather than opening on a screenful of white space.
+   */
+  minHeightClass?: string
   /** Receives an imperative setter so the parent can replace the body. */
   registerSetBody?: (setBody: (body: string) => void) => void
 }
+
+export const PROMPT_EDITOR_COMPACT_HEIGHT =
+  'min-h-[7rem] [&_.ProseMirror]:min-h-[6rem]'
 
 // Prose styling for the rendered Markdown. There's no Tailwind Typography
 // plugin in this package, so the block/inline elements are styled directly via
 // arbitrary variants on the ProseMirror root.
 const PROSE_CLASSES = cn(
-  '[&_.ProseMirror]:min-h-[11rem] [&_.ProseMirror]:outline-none',
+  '[&_.ProseMirror]:outline-none',
   '[&_.ProseMirror>*+*]:mt-2',
   '[&_.ProseMirror_h1]:mt-4 [&_.ProseMirror_h1]:text-lg [&_.ProseMirror_h1]:font-semibold',
   '[&_.ProseMirror_h2]:mt-3 [&_.ProseMirror_h2]:text-base [&_.ProseMirror_h2]:font-semibold',
@@ -84,6 +93,7 @@ export function PromptBodyEditor({
   editable = true,
   placeholder = 'Write the prompt… use Markdown to format and ${variable} to inject values.',
   className,
+  minHeightClass = 'min-h-[12rem] [&_.ProseMirror]:min-h-[11rem]',
   registerSetBody,
 }: PromptBodyEditorProps) {
   const onChangeRef = useRef(onChange)
@@ -129,7 +139,8 @@ export function PromptBodyEditor({
     <EditorContent
       editor={editor}
       className={cn(
-        'min-h-[12rem] rounded-md border border-neutral-300 px-3 py-2 text-sm leading-relaxed focus-within:border-neutral-500',
+        'rounded-md border border-neutral-300 px-3 py-2 text-sm leading-relaxed focus-within:border-neutral-500',
+        minHeightClass,
         PROSE_CLASSES,
         className,
       )}
