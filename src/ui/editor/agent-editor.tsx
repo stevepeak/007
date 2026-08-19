@@ -3,6 +3,7 @@ import {
   Braces,
   Check,
   Cpu,
+  History,
   MessageSquareText,
   Plus,
   Settings2,
@@ -10,7 +11,7 @@ import {
   Wallet,
   Wrench,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { type AgentConfig } from '../../engine'
 import {
@@ -22,6 +23,7 @@ import {
 } from '../agent-appearance'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
+import { Tabs } from '../filters'
 import {
   useAgent,
   useModels,
@@ -36,7 +38,7 @@ import { WfShell } from '../shell'
 import { SaveStateBadge } from '../save-state-badge'
 import { Tooltip } from '../tooltip'
 import { AgentOutputEditor } from './agent-output-editor'
-import { AgentRecentCalls } from './agent-editor-calls'
+import { AgentCallMetrics, AgentCallsList } from './agent-editor-calls'
 import { ArchiveAgentDialog } from './agent-editor-archive'
 import { EditorSection } from './editor-section'
 import { fmt, humanTokens, usd } from './format-tokens'
@@ -136,12 +138,14 @@ function TokenBudgetField({
           lands near it. */}
       {!on && !disabledReason && worstCaseTokens != null ? (
         <p className="mt-2 text-xs text-amber-600">
-          ⚠ Unbudgeted, this agent is bounded only by Max turns:{' '}
-          {maxTurns} {maxTurns === 1 ? 'turn' : 'turns'} ×{' '}
+          ⚠ Unbudgeted, this agent is bounded only by Max turns: {maxTurns}{' '}
+          {maxTurns === 1 ? 'turn' : 'turns'} ×{' '}
           {humanTokens(contextLength as number)} of context is up to{' '}
           {humanTokens(worstCaseTokens)} tokens
-          {worstCaseCost != null ? <> — about {usd(worstCaseCost)}</> : null} per
-          run
+          {worstCaseCost != null ? (
+            <> — about {usd(worstCaseCost)}</>
+          ) : null}{' '}
+          per run
           {modelLabel ? ` on ${modelLabel}` : ''}.
         </p>
       ) : null}
@@ -178,9 +182,9 @@ function TokenBudgetField({
             {contextLength != null ? (
               <p className="text-xs text-neutral-400">
                 That&rsquo;s the ceiling on any <em>single</em> turn. Each turn
-                re-sends the whole conversation, so turn 3 pays for turns 1 and 2
-                again — your budget below caps that running total, which is what
-                you&rsquo;re billed for.
+                re-sends the whole conversation, so turn 3 pays for turns 1 and
+                2 again — your budget below caps that running total, which is
+                what you&rsquo;re billed for.
               </p>
             ) : null}
           </div>
@@ -226,13 +230,15 @@ function TokenBudgetField({
 
             <p className="text-xs text-neutral-600">
               <span className="text-neutral-400">=</span> stops calling tools at{' '}
-              <strong className="text-neutral-800">{fmt(budget)}</strong> tokens,
-              then writes its answer
+              <strong className="text-neutral-800">{fmt(budget)}</strong>{' '}
+              tokens, then writes its answer
               {cost != null ? (
                 <>
                   {' '}
                   ·{' '}
-                  <strong className="text-neutral-800">from {usd(cost)}</strong>{' '}
+                  <strong className="text-neutral-800">
+                    from {usd(cost)}
+                  </strong>{' '}
                   per run
                 </>
               ) : null}
@@ -241,9 +247,9 @@ function TokenBudgetField({
 
           <div className="space-y-1.5 border-t border-neutral-200 pt-3 text-xs text-neutral-500">
             <p>
-              &ldquo;From&rdquo;, not &ldquo;up to&rdquo;: this budget covers the
-              research. Writing the answer costs whatever it costs on top, so a
-              run always lands somewhat above {fmt(budget)}.
+              &ldquo;From&rdquo;, not &ldquo;up to&rdquo;: this budget covers
+              the research. Writing the answer costs whatever it costs on top,
+              so a run always lands somewhat above {fmt(budget)}.
             </p>
             {cost == null ? (
               <p>
@@ -338,7 +344,8 @@ function AnswerReserveField({
         {reserveTokens != null ? (
           <>
             {' '}
-            — <strong className="text-neutral-600">
+            —{' '}
+            <strong className="text-neutral-600">
               {fmt(reserveTokens)} tokens
             </strong>{' '}
             of {modelLabel ?? 'this model'}&rsquo;s{' '}
@@ -347,8 +354,9 @@ function AnswerReserveField({
         ) : null}
         . It measures how much this agent&rsquo;s own tool results grow the
         conversation each turn, so agents with large results stop earlier on
-        their own — you don&rsquo;t have to pad this number for them. Raise it if
-        answers come out truncated; lower it to let the agent research longer.
+        their own — you don&rsquo;t have to pad this number for them. Raise it
+        if answers come out truncated; lower it to let the agent research
+        longer.
       </p>
       {contextLength == null ? (
         <p className="text-xs text-amber-600">
@@ -412,6 +420,13 @@ export function AgentEditor({
   )
 }
 
+type EditorTab = 'editor' | 'inspector'
+
+const EDITOR_TABS = [
+  { key: 'editor', label: 'Editor' },
+  { key: 'inspector', label: 'Inspector' },
+]
+
 function AgentEditorInner({
   agentId,
   initialConfig,
@@ -454,6 +469,14 @@ function AgentEditorInner({
   const [showIconPicker, setShowIconPicker] = useState(false)
   // Transient "Published" confirmation shown in place of navigating away.
   const [justPublished, setJustPublished] = useState<number | null>(null)
+  // Which half of the page you're on: authoring the agent (config + playground)
+  // or inspecting what it has actually been doing.
+  const [tab, setTab] = useState<EditorTab>('editor')
+  // Set when you load an older configuration back out of a playground run: the
+  // edits you had at that moment, parked so the restore is a toggle and not a
+  // one-way door. Cleared only by taking them back, which is why restoring a
+  // second run doesn't overwrite them — they're still the newest thing you wrote.
+  const [latestEdits, setLatestEdits] = useState<AgentConfig | null>(null)
 
   const saveDraft = useSaveAgentDraft()
   const publish = usePublishAgent()
@@ -565,6 +588,33 @@ function AgentEditorInner({
 
   function patch(next: Partial<AgentConfig>) {
     setConfig((c) => ({ ...c, ...next }))
+  }
+
+  // Every other control is driven by `config`, but the prompt body is a TipTap
+  // document seeded once from `initialBody` — so a restore has to push the new
+  // text into it imperatively or the editor would keep showing the old prompt
+  // while `config.prompt` held the restored one.
+  const setPromptBody = useRef<((body: string) => void) | null>(null)
+  const registerSetBody = useCallback((set: (body: string) => void) => {
+    setPromptBody.current = set
+  }, [])
+
+  function loadConfig(next: AgentConfig) {
+    setConfig(next)
+    setPromptBody.current?.(next.prompt)
+  }
+
+  /** Take a playground run's frozen config, parking the current edits. */
+  function restoreConfig(next: AgentConfig) {
+    setLatestEdits((parked) => parked ?? config)
+    loadConfig(next)
+  }
+
+  /** Go back to the edits parked by the first restore. */
+  function returnToLatestEdits() {
+    if (!latestEdits) return
+    loadConfig(latestEdits)
+    setLatestEdits(null)
   }
 
   function commitRename() {
@@ -681,6 +731,21 @@ function AgentEditorInner({
             {saveError ? (
               <span className="text-xs text-red-600">{saveError}</span>
             ) : null}
+            {latestEdits ? (
+              <Tooltip
+                content="You're on a configuration restored from a playground run — go back to the edits you had before restoring."
+                side="bottom"
+              >
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={returnToLatestEdits}
+                >
+                  <History className="mr-1.5 size-3.5" />
+                  Latest changes
+                </Button>
+              </Tooltip>
+            ) : null}
             <Tooltip content="Archive" side="bottom">
               <button
                 type="button"
@@ -709,305 +774,329 @@ function AgentEditorInner({
           </>
         }
       >
-        {/* Two columns: configuration on the left, evidence (recent calls) +
-            experiment (playground) on the right. The right column is wider than
-            a plain sidebar because the call rows carry real numbers. */}
-        <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-6 p-6 lg:grid-cols-[1fr_24rem]">
-          {/* Left: configuration */}
-          <div className="space-y-6">
-            {/* Appearance */}
-            <section className="space-y-2">
-              <Label>Appearance</Label>
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex flex-wrap gap-1.5">
-                  {/* Curated quick picks, plus the selected icon if it isn't
+        {/* Full-bleed, in three bands:
+              1. the agent's key metrics — averages over its real calls, which is
+                 what you're tuning against, so they stay visible on both tabs;
+              2. the tabs;
+              3. the pane. Editor = configuration alongside the playground, an
+                 even split so neither is the cramped one; Inspector = the call
+                 rows with the whole page width to spread into.
+            The Editor pane stays MOUNTED while Inspector is showing — the prompt
+            editor seeds itself from `initialConfig` and the playground holds its
+            last result, so unmounting would silently throw both away. */}
+        <div className="w-full space-y-6 p-6">
+          <AgentCallMetrics agentId={agentId} />
+
+          <Tabs
+            active={tab}
+            onChange={(k) => setTab(k as EditorTab)}
+            tabs={EDITOR_TABS}
+          />
+
+          {tab === 'inspector' ? <AgentCallsList agentId={agentId} /> : null}
+
+          <div
+            className={cn(
+              'grid grid-cols-1 gap-6 lg:grid-cols-2',
+              tab !== 'editor' && 'hidden',
+            )}
+          >
+            {/* Left: configuration */}
+            <div className="space-y-6">
+              {/* Appearance */}
+              <section className="space-y-2">
+                <Label>Appearance</Label>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex flex-wrap gap-1.5">
+                    {/* Curated quick picks, plus the selected icon if it isn't
                       one of them (e.g. chosen from the full picker). */}
-                  {(AGENT_ICONS.some((i) => i.name === icon)
-                    ? AGENT_ICONS
-                    : [{ name: icon, Icon: agentIcon(icon) }, ...AGENT_ICONS]
-                  ).map(({ name: iconName, Icon }) => (
-                    <button
-                      key={iconName}
-                      type="button"
-                      aria-label={iconName}
-                      onClick={() => selectIcon(iconName)}
-                      className={cn(
-                        'flex size-9 items-center justify-center rounded-md border transition',
-                        icon === iconName
-                          ? cn('border-transparent', agentColor(color).chip)
-                          : 'border-neutral-200 text-neutral-500 hover:border-neutral-300',
-                      )}
-                    >
-                      <Icon className="size-4" />
-                    </button>
-                  ))}
-                  <Tooltip content="Browse all icons" side="bottom">
-                    <button
-                      type="button"
-                      aria-label="Browse all icons"
-                      onClick={() => setShowIconPicker(true)}
-                      className="flex size-9 items-center justify-center rounded-md border border-dashed border-neutral-300 text-neutral-400 transition hover:border-neutral-400 hover:text-neutral-700"
-                    >
-                      <Plus className="size-4" />
-                    </button>
-                  </Tooltip>
+                    {(AGENT_ICONS.some((i) => i.name === icon)
+                      ? AGENT_ICONS
+                      : [{ name: icon, Icon: agentIcon(icon) }, ...AGENT_ICONS]
+                    ).map(({ name: iconName, Icon }) => (
+                      <button
+                        key={iconName}
+                        type="button"
+                        aria-label={iconName}
+                        onClick={() => selectIcon(iconName)}
+                        className={cn(
+                          'flex size-9 items-center justify-center rounded-md border transition',
+                          icon === iconName
+                            ? cn('border-transparent', agentColor(color).chip)
+                            : 'border-neutral-200 text-neutral-500 hover:border-neutral-300',
+                        )}
+                      >
+                        <Icon className="size-4" />
+                      </button>
+                    ))}
+                    <Tooltip content="Browse all icons" side="bottom">
+                      <button
+                        type="button"
+                        aria-label="Browse all icons"
+                        onClick={() => setShowIconPicker(true)}
+                        className="flex size-9 items-center justify-center rounded-md border border-dashed border-neutral-300 text-neutral-400 transition hover:border-neutral-400 hover:text-neutral-700"
+                      >
+                        <Plus className="size-4" />
+                      </button>
+                    </Tooltip>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {AGENT_COLORS.map((c) => (
+                      <button
+                        key={c.key}
+                        type="button"
+                        aria-label={c.key}
+                        onClick={() => selectColor(c.key)}
+                        className={cn(
+                          'size-6 rounded-full transition',
+                          c.swatch,
+                          color === c.key
+                            ? 'ring-2 ring-neutral-900 ring-offset-2'
+                            : 'opacity-70 hover:opacity-100',
+                        )}
+                      />
+                    ))}
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {AGENT_COLORS.map((c) => (
-                    <button
-                      key={c.key}
-                      type="button"
-                      aria-label={c.key}
-                      onClick={() => selectColor(c.key)}
-                      className={cn(
-                        'size-6 rounded-full transition',
-                        c.swatch,
-                        color === c.key
-                          ? 'ring-2 ring-neutral-900 ring-offset-2'
-                          : 'opacity-70 hover:opacity-100',
-                      )}
-                    />
-                  ))}
-                </div>
-              </div>
-            </section>
+              </section>
 
-            {/* Model */}
-            <EditorSection
-              icon={Cpu}
-              title="Model"
-              description="The LLM that powers this agent."
-            >
-              <ModelSelect
-                value={config.modelId}
-                onChange={(modelId) => patch({ modelId })}
-                // Gate the picker on what THIS agent needs: a tool-calling model
-                // when tools are attached, and structured output for a Yes/No or
-                // structured result (both go through `generateObject`).
-                requirements={{
-                  tools: config.toolIds.length > 0,
-                  structuredOutput:
-                    config.output.kind === 'object' ||
-                    config.output.kind === 'boolean',
-                }}
-              />
-            </EditorSection>
+              {/* Model */}
+              <EditorSection
+                icon={Cpu}
+                title="Model"
+                description="The LLM that powers this agent."
+              >
+                <ModelSelect
+                  value={config.modelId}
+                  onChange={(modelId) => patch({ modelId })}
+                  // Gate the picker on what THIS agent needs: a tool-calling model
+                  // when tools are attached, and structured output for a Yes/No or
+                  // structured result (both go through `generateObject`).
+                  requirements={{
+                    tools: config.toolIds.length > 0,
+                    structuredOutput:
+                      config.output.kind === 'object' ||
+                      config.output.kind === 'boolean',
+                  }}
+                />
+              </EditorSection>
 
-            {/* Prompt */}
-            <EditorSection
-              icon={MessageSquareText}
-              title="Prompt"
-              description="The system instructions that define what this agent does."
-            >
-              <PromptBodyEditor
-                initialBody={initialConfig.prompt}
-                onChange={(body) => patch({ prompt: body })}
-              />
-            </EditorSection>
+              {/* Prompt */}
+              <EditorSection
+                icon={MessageSquareText}
+                title="Prompt"
+                description="The system instructions that define what this agent does."
+              >
+                <PromptBodyEditor
+                  initialBody={initialConfig.prompt}
+                  onChange={(body) => patch({ prompt: body })}
+                  registerSetBody={registerSetBody}
+                />
+              </EditorSection>
 
-            {/* Tools */}
-            <EditorSection
-              icon={Wrench}
-              title="Tools"
-              description="Tools the agent may call while it works."
-            >
-              <ToolPicker
-                tools={aiTools}
-                selectedIds={config.toolIds}
-                onChange={(toolIds) => patchToolsAndRetireLoop({ toolIds })}
-                disabled={modelLacksTools}
-                disabledReason={`${selectedModel?.label ?? 'The selected model'} can’t call tools — pick a tool-calling model to attach tools.`}
-              />
-            </EditorSection>
+              {/* Tools */}
+              <EditorSection
+                icon={Wrench}
+                title="Tools"
+                description="Tools the agent may call while it works."
+              >
+                <ToolPicker
+                  tools={aiTools}
+                  selectedIds={config.toolIds}
+                  onChange={(toolIds) => patchToolsAndRetireLoop({ toolIds })}
+                  disabled={modelLacksTools}
+                  disabledReason={`${selectedModel?.label ?? 'The selected model'} can’t call tools — pick a tool-calling model to attach tools.`}
+                />
+              </EditorSection>
 
-            {/* Sub-agents (delegation) */}
-            <EditorSection
-              icon={Users}
-              title="Sub-agents"
-              description={
-                <>
-                  Agents or workflows this agent may spawn as sub-agents. It gets
-                  a tool to launch each in the background and an{' '}
-                  <code className="text-[11px]">await_subagents</code> tool to
-                  gather their results — like Claude Code's sub-agents.
-                </>
-              }
-            >
-              <SubAgentPicker
-                value={config.subAgents}
-                onChange={(subAgents) =>
-                  patchToolsAndRetireLoop({ subAgents })
+              {/* Sub-agents (delegation) */}
+              <EditorSection
+                icon={Users}
+                title="Sub-agents"
+                description={
+                  <>
+                    Agents or workflows this agent may spawn as sub-agents. It
+                    gets a tool to launch each in the background and an{' '}
+                    <code className="text-[11px]">await_subagents</code> tool to
+                    gather their results — like Claude Code's sub-agents.
+                  </>
                 }
-                currentAgentId={agentId}
-              />
-            </EditorSection>
+              >
+                <SubAgentPicker
+                  value={config.subAgents}
+                  onChange={(subAgents) =>
+                    patchToolsAndRetireLoop({ subAgents })
+                  }
+                  currentAgentId={agentId}
+                />
+              </EditorSection>
 
-            {/* Expected output */}
-            <EditorSection
-              icon={Braces}
-              title="Expected output"
-              description="The shape of the result the agent must return."
-            >
-              <AgentOutputEditor
-                value={config.output}
-                onChange={(output) => patch({ output })}
-                structuredDisabled={modelLacksStructuredOutput}
-                structuredDisabledReason={`${selectedModel?.label ?? 'The selected model'} doesn’t support structured output — only a Text result is available.`}
-              />
-            </EditorSection>
+              {/* Expected output */}
+              <EditorSection
+                icon={Braces}
+                title="Expected output"
+                description="The shape of the result the agent must return."
+              >
+                <AgentOutputEditor
+                  value={config.output}
+                  onChange={(output) => patch({ output })}
+                  structuredDisabled={modelLacksStructuredOutput}
+                  structuredDisabledReason={`${selectedModel?.label ?? 'The selected model'} doesn’t support structured output — only a Text result is available.`}
+                />
+              </EditorSection>
 
-            {/* Budget — every ceiling on how much work one call may do: rounds,
+              {/* Budget — every ceiling on how much work one call may do: rounds,
                 tokens, and the room kept back for the answer. Turns belong here
                 rather than under Tools because a round may be spent on a
                 sub-agent as easily as a tool, and all three trade against each
                 other — raising turns raises what the budget has to cover. */}
-            <EditorSection
-              icon={Wallet}
-              title="Budget"
-              description="How much work the agent may do, and what it may spend, before it has to answer."
-            >
-              {budgetIrrelevantReason ? (
-                <p className="rounded-md bg-neutral-50 p-3 text-xs text-neutral-500">
-                  {budgetIrrelevantReason}
-                </p>
-              ) : null}
-
-              <div className="space-y-2">
-                <Label>Max turns</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={100}
-                  className="max-w-[8rem]"
-                  disabled={!!budgetIrrelevantReason}
-                  value={effectiveMaxTurns}
-                  onChange={(e) =>
-                    patch({
-                      // Clamp here rather than relying on the `max` attribute,
-                      // which doesn't stop a typed value — an out-of-range number
-                      // reaches the server and fails as a raw schema error.
-                      maxTurns: Math.min(
-                        100,
-                        Math.max(1, Number.parseInt(e.target.value, 10) || 1),
-                      ),
-                    })
-                  }
-                />
-                <p className="text-xs text-neutral-400">
-                  How many turns the agent may take before it must give a final
-                  answer. Each turn is one round of calling tools or spawning
-                  sub-agents and reading the results; a higher limit lets the
-                  agent do more work but costs more and runs longer. Defaults
-                  to 5.
-                </p>
-                {turnsWarning && !budgetIrrelevantReason ? (
-                  <p className="text-xs text-amber-600">⚠ {turnsWarning}</p>
+              <EditorSection
+                icon={Wallet}
+                title="Budget"
+                description="How much work the agent may do, and what it may spend, before it has to answer."
+              >
+                {budgetIrrelevantReason ? (
+                  <p className="rounded-md bg-neutral-50 p-3 text-xs text-neutral-500">
+                    {budgetIrrelevantReason}
+                  </p>
                 ) : null}
-              </div>
 
-              <div className="border-t border-neutral-200 pt-4">
-                <TokenBudgetField
-                value={config.toolTokenBudget}
-                onChange={(toolTokenBudget) => patch({ toolTokenBudget })}
-                maxTurns={effectiveMaxTurns}
-                modelLabel={selectedModel?.label}
-                contextLength={contextLength}
-                costPerMTok={costPerMTok}
-                  suggestedTokens={suggestedTokens}
-                  worstCaseTokens={worstCaseTokens}
-                  disabledReason={budgetIrrelevantReason}
-                />
-              </div>
+                <div className="space-y-2">
+                  <Label>Max turns</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={100}
+                    className="max-w-[8rem]"
+                    disabled={!!budgetIrrelevantReason}
+                    value={effectiveMaxTurns}
+                    onChange={(e) =>
+                      patch({
+                        // Clamp here rather than relying on the `max` attribute,
+                        // which doesn't stop a typed value — an out-of-range number
+                        // reaches the server and fails as a raw schema error.
+                        maxTurns: Math.min(
+                          100,
+                          Math.max(1, Number.parseInt(e.target.value, 10) || 1),
+                        ),
+                      })
+                    }
+                  />
+                  <p className="text-xs text-neutral-400">
+                    How many turns the agent may take before it must give a
+                    final answer. Each turn is one round of calling tools or
+                    spawning sub-agents and reading the results; a higher limit
+                    lets the agent do more work but costs more and runs longer.
+                    Defaults to 5.
+                  </p>
+                  {turnsWarning && !budgetIrrelevantReason ? (
+                    <p className="text-xs text-amber-600">⚠ {turnsWarning}</p>
+                  ) : null}
+                </div>
 
-              {/* Outside the budget's on/off: an unbudgeted agent can still
+                <div className="border-t border-neutral-200 pt-4">
+                  <TokenBudgetField
+                    value={config.toolTokenBudget}
+                    onChange={(toolTokenBudget) => patch({ toolTokenBudget })}
+                    maxTurns={effectiveMaxTurns}
+                    modelLabel={selectedModel?.label}
+                    contextLength={contextLength}
+                    costPerMTok={costPerMTok}
+                    suggestedTokens={suggestedTokens}
+                    worstCaseTokens={worstCaseTokens}
+                    disabledReason={budgetIrrelevantReason}
+                  />
+                </div>
+
+                {/* Outside the budget's on/off: an unbudgeted agent can still
                   overflow the window, so this applies either way. */}
-              <div className="border-t border-neutral-200 pt-4">
-                <AnswerReserveField
-                  value={config.answerReservePercent}
-                  onChange={(answerReservePercent) =>
-                    patch({ answerReservePercent })
-                  }
-                  contextLength={contextLength}
-                  modelLabel={selectedModel?.label}
-                  disabled={!!budgetIrrelevantReason}
-                />
-              </div>
-            </EditorSection>
+                <div className="border-t border-neutral-200 pt-4">
+                  <AnswerReserveField
+                    value={config.answerReservePercent}
+                    onChange={(answerReservePercent) =>
+                      patch({ answerReservePercent })
+                    }
+                    contextLength={contextLength}
+                    modelLabel={selectedModel?.label}
+                    disabled={!!budgetIrrelevantReason}
+                  />
+                </div>
+              </EditorSection>
 
-            {/* Settings — behavior switches that aren't limits: what the agent
+              {/* Settings — behavior switches that aren't limits: what the agent
                 is fed, and whether it must reach for a tool or sub-agent before
                 it's allowed to answer. */}
-            <EditorSection
-              icon={Settings2}
-              title="Settings"
-              description="How the agent behaves while it works."
-            >
-              <label className="flex cursor-pointer items-start gap-2.5">
-                <span className="min-w-0 flex-1">
-                  <span className="text-foreground block text-sm font-medium">
-                    Works on a conversation
-                  </span>
-                  <span className="mt-0.5 block text-xs text-neutral-400">
-                    The agent answers a chat thread rather than a single input.
-                    Every workflow node using it gains a{' '}
-                    <code className="rounded bg-muted px-1 py-0.5">
-                      conversation
-                    </code>{' '}
-                    input to link the message source (usually the chat trigger’s
-                    messages). Leave it off for step agents — a summarizer or
-                    classifier — which read only what their previous step
-                    produced.
-                  </span>
-                </span>
-                <Checkbox
-                  className="mt-0.5"
-                  checked={config.acceptsConversation}
-                  onChange={(e) =>
-                    patch({ acceptsConversation: e.target.checked })
-                  }
-                />
-              </label>
-
-              <label
-                className={cn(
-                  'flex items-start gap-2.5',
-                  requireToolReason ? 'cursor-not-allowed' : 'cursor-pointer',
-                )}
+              <EditorSection
+                icon={Settings2}
+                title="Settings"
+                description="How the agent behaves while it works."
               >
-                <span className="min-w-0 flex-1">
-                  <span className="text-foreground block text-sm font-medium">
-                    Require a tool or agent call on the first turn
+                <label className="flex cursor-pointer items-start gap-2.5">
+                  <span className="min-w-0 flex-1">
+                    <span className="text-foreground block text-sm font-medium">
+                      Works on a conversation
+                    </span>
+                    <span className="mt-0.5 block text-xs text-neutral-400">
+                      The agent answers a chat thread rather than a single
+                      input. Every workflow node using it gains a{' '}
+                      <code className="rounded bg-muted px-1 py-0.5">
+                        conversation
+                      </code>{' '}
+                      input to link the message source (usually the chat
+                      trigger’s messages). Leave it off for step agents — a
+                      summarizer or classifier — which read only what their
+                      previous step produced.
+                    </span>
                   </span>
-                  <span className="mt-0.5 block text-xs text-neutral-400">
-                    The agent must call a tool or spawn a sub-agent before it may
-                    answer, instead of replying from what the model already
-                    knows. Use it when an answer is only trustworthy if the agent
-                    looked something up or delegated first. Later turns are
-                    unaffected — it may answer as soon as it has read the
-                    results.
-                  </span>
-                </span>
-                <Checkbox
-                  className="mt-0.5"
-                  checked={config.requireToolFirstTurn && !requireToolReason}
-                  disabled={!!requireToolReason}
-                  onChange={(e) =>
-                    patch({ requireToolFirstTurn: e.target.checked })
-                  }
-                />
-              </label>
-              {requireToolReason ? (
-                <p className="text-xs text-amber-600">{requireToolReason}</p>
-              ) : null}
-            </EditorSection>
-          </div>
+                  <Checkbox
+                    className="mt-0.5"
+                    checked={config.acceptsConversation}
+                    onChange={(e) =>
+                      patch({ acceptsConversation: e.target.checked })
+                    }
+                  />
+                </label>
 
-          {/* Right: what this agent DOES — its real calls (evidence) above the
-              playground (experiment). Neither is a setting, so both stay out of
-              the configuration column on the left. */}
-          <div className="space-y-6">
-            <AgentRecentCalls agentId={agentId} />
-            <PlaygroundPanel config={config} />
+                <label
+                  className={cn(
+                    'flex items-start gap-2.5',
+                    requireToolReason ? 'cursor-not-allowed' : 'cursor-pointer',
+                  )}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="text-foreground block text-sm font-medium">
+                      Require a tool or agent call on the first turn
+                    </span>
+                    <span className="mt-0.5 block text-xs text-neutral-400">
+                      The agent must call a tool or spawn a sub-agent before it
+                      may answer, instead of replying from what the model
+                      already knows. Use it when an answer is only trustworthy
+                      if the agent looked something up or delegated first. Later
+                      turns are unaffected — it may answer as soon as it has
+                      read the results.
+                    </span>
+                  </span>
+                  <Checkbox
+                    className="mt-0.5"
+                    checked={config.requireToolFirstTurn && !requireToolReason}
+                    disabled={!!requireToolReason}
+                    onChange={(e) =>
+                      patch({ requireToolFirstTurn: e.target.checked })
+                    }
+                  />
+                </label>
+                {requireToolReason ? (
+                  <p className="text-xs text-amber-600">{requireToolReason}</p>
+                ) : null}
+              </EditorSection>
+            </div>
+
+            {/* Right: the experiment. Not a setting, so it stays out of the
+                configuration column — and at half the page it finally has room
+                for a real transcript. */}
+            <div className="space-y-6">
+              <PlaygroundPanel config={config} onRestore={restoreConfig} />
+            </div>
           </div>
         </div>
       </WfShell>
