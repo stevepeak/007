@@ -40,6 +40,11 @@ import { HOME_TAB_ID, useWfTabs, type WfTab } from './wf-tabs'
 export function WfTabStrip() {
   const { tabs, activeId, activateTab, closeTab, closeAllTabs } = useWfTabs()
   const groups = useMemo(() => groupTabs(tabs), [tabs])
+  // The sweep spares the tab in focus, so it's only offered when it would
+  // actually close something — and it names what it will do.
+  const closable = tabs.filter((t) => t.id !== activeId).length
+  const sweepLabel =
+    closable < tabs.length ? 'Close other tabs' : 'Close all tabs'
 
   return (
     // Tabs wrap (never scroll) so the strip stays a fixed height. Each tab's
@@ -95,11 +100,11 @@ export function WfTabStrip() {
           </Fragment>
         ))}
       </div>
-      {tabs.length > 0 ? (
-        <Tooltip content="Close all tabs" side="bottom">
+      {closable > 0 ? (
+        <Tooltip content={sweepLabel} side="bottom">
           <button
             type="button"
-            aria-label="Close all tabs"
+            aria-label={sweepLabel}
             onClick={closeAllTabs}
             className="flex shrink-0 items-center justify-center rounded-md border border-transparent px-2 py-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800"
           >

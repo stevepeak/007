@@ -45,7 +45,10 @@ export type WfTabsState = {
   openAsset: (to: string, opts?: { newTab?: boolean }) => void
   /** Close an asset tab; if it was active, focus falls back to a neighbor/Home. */
   closeTab: (id: string) => void
-  /** Close every asset tab and return focus to Home. */
+  /**
+   * Close every asset tab EXCEPT the one in focus — the tab you're looking at
+   * survives the sweep. From Home (no asset focused) this closes them all.
+   */
   closeAllTabs: () => void
   /** Focus an existing tab. Focusing Home always returns to the hub root. */
   activateTab: (id: string) => void
@@ -278,11 +281,15 @@ export function WfTabsProvider({ path, navigate, children }: WfTabsProviderProps
 
   const closeAllTabs = useCallback(() => {
     if (tabs.length === 0) return
-    setTabs([])
+    // Keep the tab currently in focus — sweeping away the thing you're reading
+    // is never what "close all" means here. Focus (and the URL) don't move.
+    const keep = tabs.filter((t) => t.id === activeId)
+    setTabs(keep)
+    if (keep.length > 0) return
     expectedPath.current = homePath
     setActiveId(HOME_TAB_ID)
     navigate(homePath)
-  }, [tabs, homePath, navigate])
+  }, [tabs, activeId, homePath, navigate])
 
   const value = useMemo<WfTabsState>(
     () => ({ tabs, activeId, homePath, openAsset, closeTab, closeAllTabs, activateTab }),
