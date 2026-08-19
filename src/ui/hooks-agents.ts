@@ -5,7 +5,7 @@ import {
 } from '@tanstack/react-query'
 
 import type { AgentConfig } from '../engine/graph'
-import type { AgentPreviewInput } from '../server/protocol'
+import type { AgentPreviewInput, WfChangeSummary } from '../server/protocol'
 import { useWfClient } from './context'
 import { keys, useWfMutation } from './hooks-shared'
 
@@ -32,6 +32,29 @@ export function useAgentVersions(agentId: string) {
   return useQuery({
     queryKey: keys.agentVersions(agentId),
     queryFn: () => client.listAgentVersions(agentId),
+    // A version published before its AI summary was ready gets one generated in
+    // the background — poll briefly so it shows up without a manual refresh.
+    // Bounded to recently-published versions so we never poll forever over old
+    // rows that will never get one (pre-feature versions, or a failed gen).
+    refetchInterval: (query) => {
+      const rows = query.state.data
+      if (!rows) return false
+      const pending = rows.some(
+        (v) =>
+          !v.aiSummaryShort &&
+          v.publishedAt != null &&
+          Date.now() - v.publishedAt < 90_000,
+      )
+      return pending ? 3000 : false
+    },
+  })
+}
+
+export function useSummarizeAgentChanges() {
+  const client = useWfClient()
+  return useMutation({
+    mutationFn: (input: { agentId: string; config: AgentConfig }) =>
+      client.summarizeAgentChanges(input),
   })
 }
 
@@ -67,6 +90,7 @@ export function usePublishAgent() {
       agentId: string
       config: AgentConfig
       changeNote?: string
+      aiSummary?: WfChangeSummary
     }) => client.publishAgent(input),
     onSuccess: (_r, input) => {
       void qc.invalidateQueries({ queryKey: keys.agent(input.agentId) })

@@ -2,7 +2,7 @@ import { generateObject, type LanguageModel } from 'ai'
 import { z } from 'zod'
 
 import type { RunContext } from '../engine/config'
-import type { WorkflowGraph } from '../engine/graph'
+import type { AgentConfig, WorkflowGraph } from '../engine/graph'
 
 import type { WfChangeSummary } from './protocol'
 
@@ -11,6 +11,11 @@ import type { WfChangeSummary } from './protocol'
 // resolves the model (and reads its own live bindings out of the RunContext's
 // `env`), so the only thing the host supplies is the same model seam it already
 // wires for agent nodes. Nothing here knows about OpenRouter, API keys, etc.
+//
+// Both versioned entities go through it. Everything except *what a change means*
+// — the JSON payload shaping and the domain sentence in the prompt — is shared,
+// so `summarizeWorkflowChanges` and `summarizeAgentChanges` are thin wrappers
+// over `summarizePayloadChanges` rather than two copies that drift.
 
 const summarySchema = z.object({
   short: z
@@ -86,16 +91,30 @@ function describeGraph(graph: WorkflowGraph) {
   }
 }
 
-export async function summarizeWorkflowChanges(input: {
+/** What the model factory and the prompt need, minus anything domain-specific. */
+type SummarizeSeam = {
   /** The host's model factory (from `WfSdkConfig.getModel`). */
   getModel: (modelId: string, ctx: RunContext) => LanguageModel
   /** Which model to summarize with (defaults to the host's first offered model). */
   modelId: string
   /** The host's live bindings, passed through to `getModel`. Opaque to the SDK. */
   env: unknown
-  previousGraph: WorkflowGraph | null
-  nextGraph: WorkflowGraph
-}): Promise<WfChangeSummary> {
+}
+
+/**
+ * The shared summarizer. `intro` names the thing being changed and `guidance`
+ * says what counts as a meaningful change in that domain; `previous` / `next`
+ * are the already-shaped payloads (callers strip their own cosmetic noise).
+ */
+async function summarizePayloadChanges(
+  input: SummarizeSeam & {
+    intro: string
+    guidance: string
+    /** `null` means "no previous version"; any other value is the payload. */
+    previous: unknown
+    next: unknown
+  },
+): Promise<WfChangeSummary> {
   const model = input.getModel(input.modelId, {
     triggerKind: '__summarize__',
     // Internal utility call — a one-line changelog wants a direct answer, not a
@@ -106,10 +125,11 @@ export async function summarizeWorkflowChanges(input: {
     promptVariables: {},
   })
 
-  const previous = input.previousGraph
-    ? JSON.stringify(describeGraph(input.previousGraph))
-    : 'none (this is the first published version)'
-  const next = JSON.stringify(describeGraph(input.nextGraph))
+  const previous =
+    input.previous === null
+      ? 'none (this is the first published version)'
+      : JSON.stringify(input.previous)
+  const next = JSON.stringify(input.next)
 
   const { object } = await generateObject({
     model,
@@ -118,14 +138,10 @@ export async function summarizeWorkflowChanges(input: {
     // answer as a markdown-fenced commit message rather than JSON.
     repairText: ({ text }) => Promise.resolve(repairSummaryText(text)),
     prompt: [
-      'You are writing a git-style commit message describing a change to an',
-      'automation workflow — a graph of nodes (triggers, tools, agents,',
-      'branches, outputs) connected by edges.',
+      input.intro,
       '',
       'Compare the PREVIOUS and NEXT versions and summarize what changed for a',
-      'human reviewer. Focus on meaningful behavioral changes (nodes added,',
-      'removed, or reconfigured; tools or agents swapped; branching/logic',
-      'changes) and ignore cosmetic canvas moves. Be specific but brief.',
+      `human reviewer. ${input.guidance} Be specific but brief.`,
       '',
       `PREVIOUS:\n${previous}`,
       '',
@@ -134,4 +150,53 @@ export async function summarizeWorkflowChanges(input: {
   })
 
   return object
+}
+
+export async function summarizeWorkflowChanges(
+  input: SummarizeSeam & {
+    previousGraph: WorkflowGraph | null
+    nextGraph: WorkflowGraph
+  },
+): Promise<WfChangeSummary> {
+  return await summarizePayloadChanges({
+    ...input,
+    intro: [
+      'You are writing a git-style commit message describing a change to an',
+      'automation workflow — a graph of nodes (triggers, tools, agents,',
+      'branches, outputs) connected by edges.',
+    ].join('\n'),
+    guidance:
+      'Focus on meaningful behavioral changes (nodes added, removed, or ' +
+      'reconfigured; tools or agents swapped; branching/logic changes) and ' +
+      'ignore cosmetic canvas moves.',
+    previous: input.previousGraph ? describeGraph(input.previousGraph) : null,
+    next: describeGraph(input.nextGraph),
+  })
+}
+
+// Unlike a graph, an agent config has no cosmetic noise to strip: name, icon and
+// color live on the entity row, not in the versioned config, so every field here
+// is behavior and the whole object goes to the model as-is.
+export async function summarizeAgentChanges(
+  input: SummarizeSeam & {
+    previousConfig: AgentConfig | null
+    nextConfig: AgentConfig
+  },
+): Promise<WfChangeSummary> {
+  return await summarizePayloadChanges({
+    ...input,
+    intro: [
+      'You are writing a git-style commit message describing a change to an AI',
+      'agent — its model, system prompt, user prompt, tools, turn and token',
+      'budgets, output contract, and the agents it may delegate to.',
+    ].join('\n'),
+    guidance:
+      'Focus on meaningful behavioral changes (model swapped; instructions ' +
+      'added, removed or reworded; tools granted or revoked; turn or token ' +
+      'budgets changed; output contract or input kind changed; delegation ' +
+      'targets changed). When the prompt text changed, say what it now does ' +
+      'differently rather than quoting it.',
+    previous: input.previousConfig,
+    next: input.nextConfig,
+  })
 }

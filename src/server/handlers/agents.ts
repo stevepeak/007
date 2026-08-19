@@ -5,12 +5,15 @@ import {
   createAgent,
   discardAgentDraft,
   getAgent,
+  getAgentVersionConfig,
   listAgentCalls,
   listAgentVersions,
   listAgents,
   listWorkflowsReferencingAgent,
   listWorkflowsReferencingAllAgents,
+  parseStoredAgentConfig,
   publishAgent,
+  setAgentVersionAiSummary,
   updateAgentDraft,
   updateAgentMeta,
 } from '../../storage/data'
@@ -20,7 +23,9 @@ import type {
   WfAgentSummary,
 } from '../protocol'
 
+import { computeAgentChangeSummary } from './change-summary'
 import {
+  NotFoundError,
   parseAgentConfig,
   parseStringRecord,
   requireAgentExists,
@@ -94,7 +99,9 @@ export function buildAgentHandlers<TDeps>(
   | 'createAgent'
   | 'updateAgentDraft'
   | 'publishAgent'
+  | 'summarizeAgentChanges'
   | 'listAgentVersions'
+  | 'getAgentVersion'
   | 'updateAgentMeta'
   | 'discardAgentDraft'
   | 'countAgentReferences'
@@ -178,14 +185,85 @@ export function buildAgentHandlers<TDeps>(
     publishAgent: async (c) => {
       const agentId = str(c.params, 'agentId')
       const config = parseAgentConfig(c.params)
-      const changeNote = (c.params as { changeNote?: string }).changeNote
-      await requireAgentExists(c.db, agentId)
-      return await publishAgent(c.db, {
+      const p = c.params as {
+        changeNote?: string
+        aiSummary?: { short: string; long: string } | null
+      }
+      // Read the outgoing config — the base for the diff, including a possible
+      // background summary — before publishAgent bumps the latest pointer.
+      const owner = await getAgent(c.db, agentId)
+      if (!owner) {
+        throw new NotFoundError('Agent not found')
+      }
+      const previousConfig = owner.currentVersion
+        ? parseStoredAgentConfig(owner.currentVersion.config)
+        : null
+      const out = await publishAgent(c.db, {
         agentId,
         config,
-        changeNote,
+        changeNote: p.changeNote,
+        aiSummaryShort: p.aiSummary?.short,
+        aiSummaryLong: p.aiSummary?.long,
         publishedBy: c.ctx.userId,
       })
+      // Published before the summary was ready: generate + persist it in the
+      // background so the response returns immediately. Only when the host
+      // wired a scheduler — otherwise the summary stays null until a later
+      // explicit summarizeAgentChanges call. `env` is resolved now, inside the
+      // request scope, so the deferred work doesn't depend on request-bound
+      // context that may be gone once the response is sent.
+      if (!p.aiSummary && opts.waitUntil) {
+        const env = await c.env()
+        opts.waitUntil(
+          (async () => {
+            try {
+              const summary = await computeAgentChangeSummary(opts, {
+                previousConfig,
+                nextConfig: config,
+                ctx: c.ctx,
+                req: c.req,
+                env,
+              })
+              await setAgentVersionAiSummary(c.db, {
+                versionId: out.versionId,
+                short: summary.short,
+                long: summary.long,
+              })
+            } catch (err) {
+              console.error('[wf] background agent summary failed:', err)
+            }
+          })(),
+        )
+      }
+      return out
+    },
+
+    summarizeAgentChanges: async (c) => {
+      const agentId = str(c.params, 'agentId')
+      const nextConfig = parseAgentConfig(c.params)
+      const owner = await getAgent(c.db, agentId)
+      if (!owner) {
+        throw new NotFoundError('Agent not found')
+      }
+      const previousConfig = owner.currentVersion
+        ? parseStoredAgentConfig(owner.currentVersion.config)
+        : null
+      return await computeAgentChangeSummary(opts, {
+        previousConfig,
+        nextConfig,
+        ctx: c.ctx,
+        req: c.req,
+        env: await c.env(),
+      })
+    },
+
+    getAgentVersion: async (c) => {
+      const versionId = str(c.params, 'versionId')
+      const v = await getAgentVersionConfig(c.db, versionId)
+      if (!v) {
+        return null
+      }
+      return { config: v.config, versionNumber: v.versionNumber }
     },
 
     listAgentVersions: async (c) => {
@@ -196,6 +274,8 @@ export function buildAgentHandlers<TDeps>(
         id: v.id,
         versionNumber: v.versionNumber,
         changeNote: v.changeNote,
+        aiSummaryShort: v.aiSummaryShort,
+        aiSummaryLong: v.aiSummaryLong,
         createdAt: v.createdAt.getTime(),
         publishedAt: toEpoch(v.publishedAt),
       }))

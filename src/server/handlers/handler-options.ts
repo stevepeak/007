@@ -93,6 +93,17 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
     req: Request
   }) => Promise<WfChangeSummary>
   /**
+   * The same override for agent publishes. Separate from `summarizeChanges`
+   * because the payload a host would inspect is a different shape — a config,
+   * not a graph — and a host may well want to override one and not the other.
+   */
+  summarizeAgentChanges?: (input: {
+    previousConfig: AgentConfig | null
+    nextConfig: AgentConfig
+    ctx: WfServerContext
+    req: Request
+  }) => Promise<WfChangeSummary>
+  /**
    * Optional background-work scheduler. When a version is published *without* a
    * ready AI summary, the SDK uses this to generate + persist the summary after
    * the response is sent (on Cloudflare, pass `ctx.waitUntil`). If omitted, the

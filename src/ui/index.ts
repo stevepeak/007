@@ -45,6 +45,7 @@ export {
   useSaveDraft,
   useSaveVersion,
   useRunToolPreview,
+  useSummarizeAgentChanges,
   useSummarizeChanges,
   useToolContextFields,
   useToolInvocations,

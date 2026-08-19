@@ -1,6 +1,6 @@
 import { desc, eq, inArray } from 'drizzle-orm'
 
-import type { AgentConfig } from '../../engine/graph'
+import { agentConfigSchema, type AgentConfig } from '../../engine/graph'
 import type { WfDb } from '../client'
 import { wfAgent, wfAgentDraft, wfAgentVersion } from '../schema'
 import { createVersionedEntity } from '../versioned-entity'
@@ -141,6 +141,9 @@ export async function publishAgent(
     agentId: string
     config: AgentConfig
     changeNote?: string
+    /** The AI summary, when the publish dialog already had it (else filled later). */
+    aiSummaryShort?: string
+    aiSummaryLong?: string
     publishedBy?: string
   },
 ) {
@@ -149,15 +152,75 @@ export async function publishAgent(
     payload: input.config,
     publishedBy: input.publishedBy,
     changeNote: input.changeNote,
+    versionExtra: {
+      aiSummaryShort: input.aiSummaryShort ?? null,
+      aiSummaryLong: input.aiSummaryLong ?? null,
+    },
   })
 }
 
+/**
+ * Write the AI change summary onto a version after the fact — used when a
+ * version is published before its summary was ready, and the host generates it
+ * in the background (e.g. via `waitUntil`). Mirrors `setVersionAiSummary`.
+ */
+export async function setAgentVersionAiSummary(
+  db: WfDb,
+  input: { versionId: string; short: string; long: string },
+) {
+  await db
+    .update(wfAgentVersion)
+    .set({ aiSummaryShort: input.short, aiSummaryLong: input.long })
+    .where(eq(wfAgentVersion.id, input.versionId))
+}
+
+// The single boundary where a stored agent config JSON column becomes a typed
+// `AgentConfig`. Parsing here (rather than blind-casting at each read site) is
+// what lets rows written before a field was added or removed still load — the
+// schema's defaults and `migrateInputKind` preprocessor do the forward port.
+export function parseStoredAgentConfig(value: unknown): AgentConfig {
+  return agentConfigSchema.parse(value)
+}
+
+/**
+ * One published version's config, for loading history back into the editor.
+ * The agent twin of `getVersionGraph`.
+ */
+export async function getAgentVersionConfig(
+  db: WfDb,
+  versionId: string,
+): Promise<{
+  config: AgentConfig
+  versionNumber: number
+  agentId: string
+} | null> {
+  const row = (
+    await db
+      .select()
+      .from(wfAgentVersion)
+      .where(eq(wfAgentVersion.id, versionId))
+      .limit(1)
+  )[0]
+  return row
+    ? {
+        config: parseStoredAgentConfig(row.config),
+        versionNumber: row.versionNumber,
+        agentId: row.agentId,
+      }
+    : null
+}
+
 export async function listAgentVersions(db: WfDb, agentId: string) {
+  // Deliberately no `config` in the select — the history list renders notes and
+  // summaries only, and a full config per row would make opening the dropdown
+  // as expensive as loading every version of the agent.
   return await db
     .select({
       id: wfAgentVersion.id,
       versionNumber: wfAgentVersion.versionNumber,
       changeNote: wfAgentVersion.changeNote,
+      aiSummaryShort: wfAgentVersion.aiSummaryShort,
+      aiSummaryLong: wfAgentVersion.aiSummaryLong,
       createdAt: wfAgentVersion.createdAt,
       publishedAt: wfAgentVersion.publishedAt,
     })

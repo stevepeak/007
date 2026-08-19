@@ -74,6 +74,7 @@ const wfInputSchemas: Partial<Record<keyof WfDataClient, z.ZodType>> = {
   }),
   getAgent: z.object({ agentId: z.string() }),
   listAgentVersions: z.object({ agentId: z.string() }),
+  getAgentVersion: z.object({ versionId: z.string() }),
   countAgentReferences: z.object({ agentId: z.string() }),
   listAgentReferences: z.object({ agentId: z.string() }),
   archiveAgent: z.object({ agentId: z.string() }),

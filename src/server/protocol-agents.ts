@@ -57,10 +57,16 @@ export type WfAgentSummary = {
   workflows: { id: string; name: string }[]
 }
 
+// Structurally identical to `WfVersionSummary` — deliberately, so one
+// `VersionsMenu` renders the history of either entity.
 export type WfAgentVersionSummary = {
   id: string
   versionNumber: number
+  /** The human's own note about the change (may be empty). */
   changeNote: string | null
+  /** The AI's git-style summary — null until generated. */
+  aiSummaryShort: string | null
+  aiSummaryLong: string | null
   createdAt: number
   publishedAt: number | null
 }

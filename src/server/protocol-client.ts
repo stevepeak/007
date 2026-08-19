@@ -220,8 +220,18 @@ export interface WfDataClient {
     agentId: string
     config: AgentConfig
     changeNote?: string
+    /** Ridden along when the publish dialog's summary landed in time. */
+    aiSummary?: WfChangeSummary
   }): Promise<{ versionId: string; versionNumber: number }>
+  /** AI-summarize the changes since the latest published version (publish dialog). */
+  summarizeAgentChanges(input: {
+    agentId: string
+    config: AgentConfig
+  }): Promise<WfChangeSummary>
   listAgentVersions(agentId: string): Promise<WfAgentVersionSummary[]>
+  getAgentVersion(
+    versionId: string,
+  ): Promise<{ config: AgentConfig; versionNumber: number } | null>
   updateAgentMeta(input: {
     agentId: string
     name?: string

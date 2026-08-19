@@ -1,28 +1,43 @@
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, Loader2, Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
+import type { AgentConfig } from '../../engine/graph'
 import { useWfClient, useWfComponents } from '../context'
+import { useSummarizeAgentChanges } from '../hooks'
 import { Modal } from '../modal'
 
-// Publish flow — warns how many workflows reference this agent (they float to
-// the latest published version and update immediately).
+// Publish flow — the human writes their own note; an AI summary of the changes
+// is generated alongside (shown when ready) but NEVER blocks publishing. If the
+// user publishes before it lands, the server fills it in afterward. Also warns
+// how many workflows reference this agent (they float to the latest published
+// version and update immediately).
 export function PublishAgentDialog({
   agentId,
+  config,
   publishing,
   error,
   onCancel,
   onConfirm,
 }: {
   agentId: string
+  config: AgentConfig
   publishing: boolean
   error: string | null
   onCancel: () => void
-  onConfirm: (changeNote: string) => void
+  onConfirm: (input: {
+    changeNote: string
+    aiSummary: { short: string; long: string } | null
+  }) => void
 }) {
   const { Button, Textarea } = useWfComponents()
   const client = useWfClient()
+  const summarize = useSummarizeAgentChanges()
   const [note, setNote] = useState('')
   const [refCount, setRefCount] = useState<number | null>(null)
+  const [aiSummary, setAiSummary] = useState<{
+    short: string
+    long: string
+  } | null>(null)
 
   const ranRef = useRef(false)
   useEffect(() => {
@@ -32,7 +47,11 @@ export function PublishAgentDialog({
       .countAgentReferences(agentId)
       .then((r) => setRefCount(r.workflows))
       .catch(() => setRefCount(0))
-  }, [client, agentId])
+    // Kick off the AI summary once. It populates the panel below when it lands;
+    // it never gates the Publish button.
+    summarize.mutate({ agentId, config }, { onSuccess: (r) => setAiSummary(r) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <Modal
@@ -44,9 +63,44 @@ export function PublishAgentDialog({
         Publish new version
       </h2>
       <p className="mb-3 text-sm text-neutral-500">
-        Publishing makes this the live version. Add an optional note describing
-        the change — it's saved with the version.
+        Publishing makes this the live version. Add a note about what changed —
+        we'll also summarize the changes with AI, and you can publish without
+        waiting for it.
       </p>
+
+      {/* AI summary — fixed height so the dialog never resizes; content
+          scrolls/crops when it's long. */}
+      <div className="mb-3">
+        <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-neutral-500">
+          <Sparkles className="size-3 text-indigo-500" />
+          AI summary of changes
+        </div>
+        <div className="h-24 overflow-y-auto rounded-md border border-neutral-200 bg-neutral-50 p-2 text-sm">
+          {summarize.isPending ? (
+            <div className="flex items-center gap-1.5 text-neutral-400">
+              <Loader2 className="size-3.5 animate-spin" />
+              Generating summary of changes…
+            </div>
+          ) : summarize.error ? (
+            <span className="text-amber-600">
+              Couldn't generate a summary (
+              {(summarize.error as Error).message}). It'll be generated after
+              you publish.
+            </span>
+          ) : aiSummary ? (
+            <div className="space-y-1">
+              <p className="font-medium text-neutral-800">{aiSummary.short}</p>
+              {aiSummary.long ? (
+                <p className="whitespace-pre-wrap text-neutral-500">
+                  {aiSummary.long}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <span className="text-neutral-400">No summary.</span>
+          )}
+        </div>
+      </div>
 
       {refCount != null && refCount > 0 ? (
         <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
@@ -60,6 +114,9 @@ export function PublishAgentDialog({
         </div>
       ) : null}
 
+      <label className="mb-1 block text-xs font-medium text-neutral-500">
+        Your note (optional)
+      </label>
       <Textarea
         value={note}
         onChange={(e) => setNote(e.target.value)}
@@ -74,7 +131,11 @@ export function PublishAgentDialog({
         <Button variant="ghost" size="sm" onClick={onCancel}>
           Cancel
         </Button>
-        <Button size="sm" onClick={() => onConfirm(note)} disabled={publishing}>
+        <Button
+          size="sm"
+          onClick={() => onConfirm({ changeNote: note, aiSummary })}
+          disabled={publishing}
+        >
           {publishing ? 'Publishing…' : 'Publish version'}
         </Button>
       </div>

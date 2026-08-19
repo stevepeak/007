@@ -94,7 +94,9 @@ export function createHttpWfDataClient(
     createAgent: bind('createAgent'),
     updateAgentDraft: bind('updateAgentDraft'),
     publishAgent: bind('publishAgent'),
+    summarizeAgentChanges: bind('summarizeAgentChanges'),
     listAgentVersions: (agentId) => call('listAgentVersions', { agentId }),
+    getAgentVersion: (versionId) => call('getAgentVersion', { versionId }),
     updateAgentMeta: bind('updateAgentMeta'),
     discardAgentDraft: bind('discardAgentDraft'),
     countAgentReferences: (agentId) =>

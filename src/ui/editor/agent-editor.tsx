@@ -18,10 +18,11 @@ import type { WfAgentCall } from '../../server/protocol'
 import { AGENT_ICONS, DEFAULT_AGENT_COLOR } from '../agent-appearance'
 import { AppearancePicker } from '../appearance-picker'
 import { cn } from '../cn'
-import { useWfComponents } from '../context'
+import { useWfClient, useWfComponents } from '../context'
 import { Tabs } from '../filters'
 import {
   useAgent,
+  useAgentVersions,
   useModels,
   usePublishAgent,
   useSaveAgentDraft,
@@ -39,6 +40,7 @@ import { AgentCallInspect } from './agent-editor-call-inspect'
 import { AgentCallMetrics, AgentCallsList, callKey } from './agent-editor-calls'
 import { ArchiveAgentDialog } from './agent-editor-archive'
 import { EditorSection } from './editor-section'
+import { VersionsMenu } from './editor-menus'
 import { fmt, humanTokens, usd } from './format-tokens'
 import { PlaygroundPanel } from './agent-editor-playground'
 import { PublishAgentDialog } from './agent-editor-publish'
@@ -463,6 +465,7 @@ function AgentEditorInner({
   const [savedName, setSavedName] = useState(initialName)
   const [savedDescription, setSavedDescription] = useState(initialDescription)
   const [showPublish, setShowPublish] = useState(false)
+  const [showVersions, setShowVersions] = useState(false)
   const [showArchive, setShowArchive] = useState(false)
   // Transient "Published" confirmation shown in place of navigating away.
   const [justPublished, setJustPublished] = useState<number | null>(null)
@@ -481,8 +484,10 @@ function AgentEditorInner({
 
   const saveDraft = useSaveAgentDraft()
   const publish = usePublishAgent()
+  const versions = useAgentVersions(agentId)
   const updateMeta = useUpdateAgentMeta()
   const { navigate } = useWfNav()
+  const client = useWfClient()
 
   const selectedModel = (models.data ?? []).find((m) => m.id === config.modelId)
   const modelCaps = selectedModel?.capabilities
@@ -665,9 +670,32 @@ function AgentEditorInner({
     )
   }
 
-  function onPublish(changeNote: string) {
+  // Load a published version back into the editor as an unsaved edit. Nothing is
+  // published and the live version doesn't move — the author reviews it and, if
+  // they want it back, publishes it as a NEW version on top. History is never
+  // rewritten. (The workflow editor parks this in its undo stack; the agent
+  // editor has none, so the dirty check below is what makes it recoverable.)
+  async function loadVersion(versionId: string) {
+    const v = await client.getAgentVersion(versionId)
+    setShowVersions(false)
+    if (!v) return
+    setConfig(v.config)
+  }
+
+  function onPublish({
+    changeNote,
+    aiSummary,
+  }: {
+    changeNote: string
+    aiSummary: { short: string; long: string } | null
+  }) {
     publish.mutate(
-      { agentId, config, changeNote: changeNote.trim() || undefined },
+      {
+        agentId,
+        config,
+        changeNote: changeNote.trim() || undefined,
+        aiSummary: aiSummary ?? undefined,
+      },
       {
         onSuccess: (result) => {
           setSavedConfig(config)
@@ -760,6 +788,12 @@ function AgentEditorInner({
                 <Archive className="size-4" />
               </button>
             </Tooltip>
+            <VersionsMenu
+              open={showVersions}
+              onToggle={() => setShowVersions((v) => !v)}
+              versions={versions.data}
+              onSelect={(id) => void loadVersion(id)}
+            />
             <Button
               variant="outline"
               size="sm"
@@ -1100,6 +1134,7 @@ function AgentEditorInner({
       {showPublish ? (
         <PublishAgentDialog
           agentId={agentId}
+          config={config}
           publishing={publish.isPending}
           error={(publish.error as Error | null)?.message ?? null}
           onCancel={() => setShowPublish(false)}

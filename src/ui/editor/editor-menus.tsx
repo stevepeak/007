@@ -1,6 +1,5 @@
 import { GitBranch, History, Sparkles } from 'lucide-react'
 
-import type { WfVersionSummary } from '../../server/protocol'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import type { EditSnapshot } from './use-edit-history'
@@ -81,8 +80,18 @@ export function HistoryMenu({
   )
 }
 
+// Just the fields the dropdown renders. Typed structurally rather than as
+// `WfVersionSummary` so the same menu serves workflow *and* agent history —
+// the two DTOs are deliberately the same shape (see `WfAgentVersionSummary`).
+type VersionRow = {
+  id: string
+  versionNumber: number
+  changeNote: string | null
+  aiSummaryShort: string | null
+}
+
 // The version-history dropdown: published versions with their notes + AI
-// summary, click to load one as a fresh (undoable) edit.
+// summary, click to load one as a fresh edit.
 export function VersionsMenu({
   open,
   onToggle,
@@ -91,7 +100,7 @@ export function VersionsMenu({
 }: {
   open: boolean
   onToggle: () => void
-  versions: WfVersionSummary[] | undefined
+  versions: VersionRow[] | undefined
   onSelect: (versionId: string) => void
 }) {
   const { Button } = useWfComponents()

@@ -56,7 +56,14 @@ export const wfAgentVersion = sqliteTable(
     agentId: text('agent_id').notNull(),
     versionNumber: integer('version_number').notNull(),
     config: text('config', { mode: 'json' }).notNull(),
+    // The human's own note about what changed (written in the publish dialog).
     changeNote: text('change_note'),
+    // The AI's git-style summary of the config diff: a one-line subject
+    // (`ai_summary_short`) and an optional longer body (`ai_summary_long`).
+    // Null until the summary is generated — it may be filled at publish time
+    // (if the dialog's summary landed) or written asynchronously afterward.
+    aiSummaryShort: text('ai_summary_short'),
+    aiSummaryLong: text('ai_summary_long'),
     createdBy: text('created_by'),
     publishedBy: text('published_by'),
     publishedAt: integer('published_at', { mode: 'timestamp' }),
