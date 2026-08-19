@@ -10,8 +10,9 @@ import type { GraphWorkflowParams } from './graph-workflow'
 import type { RunRoom } from './run-room'
 
 // Turnkey run starter for the host worker. Mints the RunRoom address, creates
-// the `wf_run` row, primes the room, and kicks off the GraphWorkflow instance —
-// returning the ids a caller needs to subscribe (RunRoom) and poll (instance).
+// the `wf_run` row, and hands the run to its engine — returning the ids a caller
+// needs to poll it (`workflowRunId`) and, on the inline engine, to read its
+// streaming answer out of the room (`runId`).
 
 export interface GraphRunBindings {
   /** The SDK's own D1 (`wf_*` tables) — see `GraphWorkflowEnv.WF_DB`. */
@@ -67,8 +68,6 @@ export async function startGraphRun(
   })
 
   const runId = crypto.randomUUID()
-  const room = env.RUN_ROOM.get(env.RUN_ROOM.idFromName(runId))
-  await room.init(input.label)
 
   const params: GraphWorkflowParams = {
     runId,
@@ -93,9 +92,11 @@ export async function startGraphRun(
   }
 
   // Both branches are fire-and-forget by design: they return once the run is
-  // accepted, not once it finishes. Callers subscribe via the RunRoom (`runId`)
-  // and poll `wf_run` (`workflowRunId`) exactly the same way for either engine.
+  // accepted, not once it finishes. Callers poll `wf_run` (`workflowRunId`) the
+  // same way for either engine; `runId` additionally addresses the RunRoom,
+  // which on the inline engine holds the streaming answer buffer.
   if (engine === 'inline') {
+    const room = env.RUN_ROOM.get(env.RUN_ROOM.idFromName(runId))
     await room.startInline(params)
     return { runId, workflowRunId, instanceId: null, engine }
   }

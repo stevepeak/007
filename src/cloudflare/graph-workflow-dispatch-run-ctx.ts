@@ -10,7 +10,6 @@ import type { StreamSink } from '../engine/stream-sink'
 import type { ModelPriceMap } from '../storage/cost'
 
 import type { GraphWorkflowEnv, GraphWorkflowParams } from './graph-workflow'
-import type { RunRoom } from './run-room'
 import type { RunCounters } from './step-counter'
 
 // Shared run-level locals every hoisted dispatch/log helper closes over. Bundled
@@ -29,7 +28,6 @@ export type RunCtx<TDeps, E extends GraphWorkflowEnv> = {
   manifest: WfRunManifestEntry[]
   sink: StreamSink
   recordOne: (args: RecordStepArgs) => Promise<void>
-  room: DurableObjectStub<RunRoom>
   scheduler: Scheduler
   traceId: string | undefined
   /**

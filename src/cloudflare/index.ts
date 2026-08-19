@@ -12,7 +12,7 @@ export type {
   GraphWorkflowParams,
   GraphWorkflowResult,
 } from './graph-workflow'
-export type { RunRoom, WfRunRoomState, WfRunRoomStatus } from './run-room'
+export type { RunRoom } from './run-room'
 export type { InlineRunRoom, RunInlineGraphDeps } from './inline-run'
 export {
   startGraphRun,

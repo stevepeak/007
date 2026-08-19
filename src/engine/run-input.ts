@@ -52,8 +52,6 @@ export type StartGraphRunInput = {
    * instead of exhausting the 20-minute AI default four times over.
    */
   executionOverride?: NodeExecution
-  /** Optional human label for the RunRoom snapshot. */
-  label?: string
   /** Resume mode: replay a prior failed run's completed steps into this run and
    * pick up at the failed node. The prior run must use the same version. */
   resumeFromRunId?: string

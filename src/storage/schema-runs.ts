@@ -112,8 +112,8 @@ export const wfRunStep = sqliteTable(
 )
 
 // Structured progress feed — the human-readable, run-controlled log stream shown
-// in the run viewer's Logs panel and streamed live over the RunRoom → SSE
-// channel. One row per emitted entry (a node entered/finished, a line we chose
+// in the run viewer's Logs panel, which polls these rows (there is no live push
+// channel; see ART-25). One row per emitted entry (a node entered/finished, a line we chose
 // to print, an agent's internal reasoning, a tool call). Distinct from
 // `wf_run_step` (one row per node, the machine trace): this is the narrative.
 // `ts` is the engine-stamped emit time (millis) and drives ordering, since many

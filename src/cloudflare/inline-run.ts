@@ -27,7 +27,6 @@ import {
   runDims,
   withRunCounts,
 } from './graph-workflow-telemetry'
-import type { WfRunRoomStatus } from './run-room'
 import { createRunCounters } from './step-counter'
 
 // The INLINE backend — the peer of `graph-workflow.ts`.
@@ -55,19 +54,22 @@ import { createRunCounters } from './step-counter'
 //   • No durability across eviction. The DO holds the run; if it dies the run
 //     is failed, not resumable.
 
-/** The slice of `RunRoom` the inline backend drives. */
+/**
+ * The slice of `RunRoom` the inline backend drives — now just the answer buffer.
+ *
+ * It was once the run's whole live surface (status, output, error, log and
+ * progress fan-out). All of that was removed with the unread WebSocket channel:
+ * D1 already carried the same facts for the consumers that actually read them,
+ * so the room's copy was written and never looked at. The answer buffer stays
+ * because it has a real reader — `getAnswerSince`, polled by the chat bridge.
+ */
 export interface InlineRunRoom {
-  setStatus(status: WfRunRoomStatus): Promise<void>
-  append(channel: string, text: string): Promise<void>
-  appendLog(entry: RunLogEntry): Promise<void>
   appendAnswer(text: string): void
-  setOutput(output: unknown, settled?: boolean): Promise<void>
-  setError(error: string): Promise<void>
 }
 
 /**
  * Build the run's sink: every entry the engine emits is persisted to
- * `wf_run_log` AND broadcast to the room.
+ * `wf_run_log`.
  *
  * Persisting live (rather than rewriting a node's feed once it settles, as the
  * durable backend's `record:` step does) is what makes a run observable while it
@@ -89,17 +91,10 @@ function createInlineSink(
 ): StreamSink {
   const ordinals = new Map<string, number>()
   return {
-    append: async (channel, text) => {
-      try {
-        await room.append(channel, text)
-      } catch (err) {
-        console.warn('[wf] inline sink append failed:', errorMessage(err))
-      }
-    },
     log: async (entry) => {
       const stamped: RunLogEntry = { ...entry, ts: entry.ts ?? Date.now() }
-      // Entries with no node id (run-level lines) are broadcast but not
-      // persisted — `appendRunLog` keys its deterministic id on the node.
+      // Entries with no node id (run-level lines) are dropped — `appendRunLog`
+      // keys its deterministic id on the node, so there is nowhere to put them.
       const nodeId = stamped.nodeId
       if (nodeId) {
         const ordinal = ordinals.get(nodeId) ?? 0
@@ -122,11 +117,6 @@ function createInlineSink(
         } catch (err) {
           console.warn('[wf] inline sink persist failed:', errorMessage(err))
         }
-      }
-      try {
-        await room.appendLog(stamped)
-      } catch (err) {
-        console.warn('[wf] inline sink broadcast failed:', errorMessage(err))
       }
     },
     // Defining this at all is what enables streaming for this run — see
@@ -268,7 +258,6 @@ export async function runInlineGraph<TDeps, E extends { WF_DB: D1Database }>(
     // run viewer keys off `wf_run.id` either way; the column stays null, which
     // is itself the marker that a run executed inline.
     await markRunRunning(db, { runId: p.workflowRunId })
-    await room.setStatus('running')
 
     runContext = { ...p.runContext, manifest, env }
 
@@ -321,7 +310,6 @@ export async function runInlineGraph<TDeps, E extends { WF_DB: D1Database }>(
           settled: !pendingWork,
           pendingNodes,
         })
-        await room.setOutput(output, !pendingWork)
         if (config.onRunComplete) {
           await notifyHost('on-complete', () =>
             config.onRunComplete!(runContext, { output, outputNodeId }),
@@ -339,7 +327,6 @@ export async function runInlineGraph<TDeps, E extends { WF_DB: D1Database }>(
       runId: p.workflowRunId,
       error: result.drainError,
     })
-    await room.setStatus('completed')
     emit('completed', { error: result.drainError })
     if (result.drainError) {
       console.warn(
@@ -352,7 +339,6 @@ export async function runInlineGraph<TDeps, E extends { WF_DB: D1Database }>(
     emit('failed', { error: message })
     try {
       await failRun(db, { runId: p.workflowRunId, error: message })
-      await room.setError(message)
       if (config.onRunFailed) {
         await notifyHost('on-failed', () =>
           config.onRunFailed!(runContext, {

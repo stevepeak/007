@@ -45,7 +45,6 @@ import {
   resolveTelemetrySink,
   runDims,
 } from './graph-workflow-telemetry'
-import type { RunRoom } from './run-room'
 import { createCountingStep, createRunCounters } from './step-counter'
 
 // The minimal binding contract a host Env must satisfy for the durable backend.
@@ -70,7 +69,6 @@ export interface GraphWorkflowEnv {
    * Let the missing property fail typecheck instead.
    */
   WF_DB: D1Database
-  RUN_ROOM: DurableObjectNamespace<RunRoom>
   /**
    * This same Workflow, so a run can spawn a CHILD instance for a callee marked
    * `calleeExecution: 'durable'` — and so the child can reach back to send its
@@ -215,11 +213,20 @@ export function makeGraphWorkflow<
       const counters = createRunCounters()
       const step = createCountingStep(rawStep, counters)
       const traceId = p.runContext.traceId
-      const room = env.RUN_ROOM.get(env.RUN_ROOM.idFromName(p.runId))
-      const sink: StreamSink = {
-        append: (channel, text) => room.append(channel, text),
-        log: (entry) => room.appendLog(entry),
-      }
+      // The durable backend has no RUN-LEVEL live channel. Every line a
+      // consumer reads is written by the PER-NODE sink in `dispatchNode`, which
+      // persists to `wf_run_log` directly; this run-level sink is the terminus
+      // those forward to, and it now has nowhere further to go.
+      //
+      // Left deliberately empty rather than deleted, because the sink is still
+      // threaded to `runIteration` and `executeSubgraph`: lines emitted there
+      // (an iteration's note, an inner node's feed) have no per-node D1 writer
+      // behind them and so are not persisted on this engine. They were not
+      // persisted before either — they went to the RunRoom, which nothing read.
+      // Wiring them to `wf_run_log` is a real gap, and a separate one: it has to
+      // reconcile with the terminal `replaceNodeLogs` rewrite that owns a node's
+      // feed. Tracked on ART-25.
+      const sink: StreamSink = {}
 
       // Resolved once per wake, which is exactly the scope of the sink's
       // per-invocation point cap.
@@ -309,7 +316,6 @@ export function makeGraphWorkflow<
         })
         return Date.now()
       })
-      await stepDo(step, 'room-running', () => room.setStatus('running'))
 
       const scheduler = new Scheduler(graphJson, config.limits?.nodeBudget)
       const trigger = scheduler.trigger
@@ -336,7 +342,6 @@ export function makeGraphWorkflow<
         manifest,
         sink,
         recordOne,
-        room,
         scheduler,
         traceId,
         instanceId: event.instanceId,
@@ -555,7 +560,6 @@ export function makeGraphWorkflow<
             runId: p.workflowRunId,
             error: message,
           })
-          await room.setError(message)
           // The last step this run is guaranteed to reach. Two more MAY follow,
           // and whether they do is already decided — so count them here rather
           // than under-report the billing line on every failure.

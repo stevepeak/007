@@ -1,7 +1,12 @@
-// Thin abstraction over a live progress channel (e.g. the RunRoom Durable
-// Object) so the engine can publish progress without a hard dependency on the
-// DO type. The Cloudflare backend passes an adapter that forwards to
-// `RunRoom.append(channel, text)`; tests pass an in-memory recorder.
+// Thin abstraction over a run's progress channel so the engine can publish
+// without a hard dependency on any backend type. Each Cloudflare backend passes
+// an adapter that persists to `wf_run_log`; tests pass an in-memory recorder.
+//
+// There used to be a second, free-text channel here — `append(channel, text)`,
+// the "legacy progress" surface. It was removed with the RunRoom fan-out: it had
+// no producer anywhere in the SDK (nothing ever called it), and both backends
+// terminated it in the room's unread progress buffer. User-facing progress lives
+// on `log` at the `progress` level, which is persisted and actually read.
 
 // Severity / kind of a structured run-log entry. Drives the icon + colour the
 // Logs panel renders, and lets the run viewer derive the currently-active node
@@ -41,9 +46,8 @@ export type RunLogLevel =
  */
 export const RUN_STATE_LEVEL = 'state' satisfies RunLogLevel
 
-// One structured progress event. Emitted by the engine as a run executes, both
-// broadcast live (RunRoom → SSE) and persisted (wf_run_log) so a completed run
-// replays its whole feed. `nodeId`/`nodeKind`/`sequence` are stamped by the
+// One structured progress event. Emitted by the engine as a run executes and
+// persisted to `wf_run_log`, so a completed run replays its whole feed. `nodeId`/`nodeKind`/`sequence` are stamped by the
 // per-node sink wrapper so a caller deep inside a node handler need not know
 // where it sits in the walk.
 export type RunLogEntry = {
@@ -78,10 +82,9 @@ export type RunAnswerChunk = {
 }
 
 export interface StreamSink {
-  append: (channel: string, text: string) => Promise<void> | void
   /**
    * Emit a structured log entry. Optional so existing sinks (noop / memory)
-   * stay valid; the Cloudflare backend wires it to `RunRoom.appendLog`.
+   * stay valid; the Cloudflare backends wire it to the `wf_run_log` writer.
    */
   log?: (entry: RunLogEntry) => Promise<void> | void
   /**
@@ -110,21 +113,14 @@ export interface StreamSink {
   delta?: (text: string) => Promise<void> | void
 }
 
-// In-memory sink useful for tests / debugging. Captures every (channel, text)
-// pair and every structured entry in order so assertions can inspect what would
-// have been streamed.
+// In-memory sink useful for tests / debugging. Captures every structured entry
+// in order so assertions can inspect what would have been streamed.
 export function createMemorySink(): StreamSink & {
-  events: { channel: string; text: string }[]
   logs: RunLogEntry[]
 } {
-  const events: { channel: string; text: string }[] = []
   const logs: RunLogEntry[] = []
   return {
-    events,
     logs,
-    append: (channel, text) => {
-      events.push({ channel, text })
-    },
     log: (entry) => {
       logs.push(entry)
     },

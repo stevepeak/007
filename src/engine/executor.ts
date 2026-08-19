@@ -156,7 +156,6 @@ export async function executeWorkflow<TDeps>(
 
   const sinkFor = (node: ExecutableNode, seq: number): StreamSink | undefined =>
     sink && {
-      append: (channel, text) => sink.append(channel, text),
       log: (entry: RunLogEntry) =>
         sink.log?.({
           ...entry,

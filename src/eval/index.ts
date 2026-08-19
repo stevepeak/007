@@ -82,8 +82,6 @@ export type WorkflowTestRun = {
   /** `null` when the run ended on a decision arm that fizzled out (no Output). */
   outputNodeId: string | null
   steps: RecordStepArgs[]
-  /** Legacy free-text `append` channel events. */
-  progress: { channel: string; text: string }[]
   /** Structured run-log entries — including the user-facing `progress` level. */
   logs: RunLogEntry[]
 }
@@ -97,10 +95,7 @@ export async function runWorkflowUnderConditions<TDeps>(
   tc: WorkflowTestCase<TDeps>,
 ): Promise<WorkflowTestRun> {
   const recorder = createMemoryRunRecorder()
-  const sink: StreamSink & {
-    events: { channel: string; text: string }[]
-    logs: RunLogEntry[]
-  } = createMemorySink()
+  const sink: StreamSink & { logs: RunLogEntry[] } = createMemorySink()
 
   const runContext: RunContext = {
     subjectId: tc.runContext?.subjectId,
@@ -128,7 +123,6 @@ export async function runWorkflowUnderConditions<TDeps>(
     output: result.output,
     outputNodeId: result.outputNodeId,
     steps: recorder.steps,
-    progress: sink.events,
     logs: sink.logs,
   }
 }

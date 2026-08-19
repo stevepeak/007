@@ -337,8 +337,8 @@ function progressLine(row: {
 
 // The full USER-FACING progress feed for a run, read from the PERSISTED tables
 // (keyed by `wf_run.id` = `workflowRunId`). This is the single source a client
-// polls to show "what's happening" — during the run and after, with no live
-// RunRoom subscription or token. Null when the run row is absent. `status`
+// polls to show "what's happening" — during the run and after. There is no live
+// push channel at all: the poll IS the transport (see ART-25). Null when the run row is absent. `status`
 // (from `wf_run`) lets the poller stop; `correlationId` lets the host authorize.
 export async function getRunProgressFeed(
   db: WfDb,

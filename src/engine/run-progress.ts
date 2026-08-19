@@ -5,9 +5,11 @@ import type { WorkflowGraph } from './graph'
 // (the currently-active node + a completed/total bar), derived purely from the
 // graph shape and the recorded step trace. No DB, no Cloudflare: the storage
 // layer loads the rows and calls this, and the run-viewer UI calls it directly
-// on the already-fetched `getRun` payload. Designed to be transport-agnostic so
-// a future live (RunRoom WebSocket) subscriber can produce the same shape from
-// the streamed `wf_run_step`/status events.
+// on the already-fetched `getRun` payload. Deliberately transport-agnostic: if a
+// live push subscriber is ever built it can derive the same shape from streamed
+// `wf_run_step`/status events without touching this. (The RunRoom WebSocket that
+// once stood in for that subscriber was removed in ART-25 — it had no client.
+// See `docs/chat-latency/02-push-transport.md`.)
 // ---------------------------------------------------------------------------
 
 // Structural bookends / annotations that never execute as a run step, so they

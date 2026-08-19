@@ -403,7 +403,7 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
   input: unknown,
   seq: number,
 ): Promise<{ nodeId: string; report: ReportResult }> {
-  const { step, env, config, p, manifest, sink, scheduler, room, traceId } = ctx
+  const { step, env, config, p, manifest, sink, scheduler, traceId } = ctx
   const startTs = Date.now()
   const startEntry = startEntryOf(node, seq, startTs)
 
@@ -438,7 +438,6 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
       nodeId: node.id,
       entries: [startRow],
     })
-    await room.appendLog(startEntry)
     return null
   })
 
@@ -501,12 +500,11 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
           const isRetry = ordinal > 0
           // Per-node sink: every structured entry a node handler emits (agent
           // reasoning, tool calls, our own info lines) is (a) persisted to
-          // `wf_run_log` IMMEDIATELY, (b) forwarded to the live RunRoom, and
-          // (c) buffered for the terminal rewrite. (a) is what makes a run
-          // observable while it runs — every consumer polls the persisted feed,
-          // so without it a node is invisible until it finishes.
+          // `wf_run_log` IMMEDIATELY and (b) buffered for the terminal rewrite.
+          // (a) is what makes a run observable while it runs — every consumer
+          // polls the persisted feed, so without it a node is invisible until
+          // it finishes.
           const nodeSink: StreamSink = {
-            append: (channel, text) => sink.append(channel, text),
             log: (entry) => {
               const e: RunLogEntry = {
                 ...entry,
@@ -681,8 +679,8 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
   }
 }
 
-// Deliver a run's answer: persist the output, mirror it to the RunRoom, wake a
-// waiting parent, and best-effort notify the host. Shared by the two success
+// Deliver a run's answer: persist the output, wake a waiting parent, and
+// best-effort notify the host. Shared by the two success
 // exits — a reached Output (with its node id) and a decision that fizzled
 // out (output `undefined`, no node id).
 //
@@ -699,7 +697,7 @@ export async function deliverOutput<TDeps, E extends GraphWorkflowEnv>(
   outputNodeId: string | null,
   pendingWork: boolean,
 ): Promise<GraphWorkflowResult> {
-  const { step, env, config, p, room, scheduler } = ctx
+  const { step, env, config, p, scheduler } = ctx
   // Enforce the trigger's output contract (e.g. chat's `{ text }`) before we
   // persist anything: a run whose Output was bound to the wrong shape — or that
   // fizzled out with no result under a contract that requires one — fails here
@@ -725,7 +723,6 @@ export async function deliverOutput<TDeps, E extends GraphWorkflowEnv>(
       pendingNodes: scheduler.inFlightCount(),
     }),
   )
-  await stepDo(step, 'room-output', () => room.setOutput(output, !pendingWork))
   await reportToParent(ctx, { ok: true, output })
   if (config.onRunComplete) {
     await notifyHost(step, 'on-complete', () =>
@@ -750,18 +747,17 @@ export async function settleRun<TDeps, E extends GraphWorkflowEnv>(
   result: GraphWorkflowResult,
   drainError?: string,
 ): Promise<GraphWorkflowResult> {
-  const { step, env, p, room } = ctx
+  const { step, env, p } = ctx
   await stepDo(step, 'settle', async () => {
     await completeRun(createWfDb(env.WF_DB), {
       runId: p.workflowRunId,
       error: drainError,
     })
-    await room.setStatus('completed')
     // Emitted from INSIDE the last step, never from the orchestrator body — the
     // body re-executes on every wake, so an emission there would fire once per
     // hibernation. `settle` is genuinely last on the success path (finalize,
-    // room-output, report-to-parent and on-complete all precede it), so the
-    // step tally read here is the run's final count.
+    // report-to-parent and on-complete all precede it), so the step tally read
+    // here is the run's final count.
     emitRunPoint(ctx, {
       status: 'completed',
       outputNodeId: result.outputNodeId,

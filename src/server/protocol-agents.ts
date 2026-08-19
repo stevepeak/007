@@ -182,6 +182,4 @@ export type WfAgentCall = {
 export type AgentPreviewResult = {
   output: { text: string } | Record<string, unknown>
   meta: AgentNodeMeta
-  /** Progress events streamed during the run (thinking, when exposed). */
-  progress: { channel: string; text: string }[]
 }

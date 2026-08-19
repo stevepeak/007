@@ -15,9 +15,9 @@ import { DEFAULT_STEP_OPTS } from './graph-workflow-dispatch-step-opts'
 // site for the durable backend's dispatch.
 export { nodeLabel, startEntryOf }
 
-// Persist a node's full feed (bookends + body) in one idempotent write,
-// and stream its closing line live. Shared by the success + failure
-// paths so every node — even a failed one — leaves a readable feed.
+// Persist a node's full feed (bookends + body) in one idempotent write. Shared
+// by the success + failure paths so every node — even a failed one — leaves a
+// readable feed.
 async function persistLogs<TDeps, E extends GraphWorkflowEnv>(
   ctx: RunCtx<TDeps, E>,
   node: ExecutableNode,
@@ -42,7 +42,6 @@ async function persistLogs<TDeps, E extends GraphWorkflowEnv>(
     nodeId: node.id,
     entries,
   })
-  await ctx.room.appendLog(endEntry)
 }
 
 // Flip a node's (run_id, node_id) row to its terminal status and rewrite its

@@ -172,5 +172,5 @@ export async function executeAgentPreview<TDeps>(opts: {
     ],
   })
 
-  return { ...result, progress: sink.events }
+  return result
 }
