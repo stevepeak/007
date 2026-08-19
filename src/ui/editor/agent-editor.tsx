@@ -830,10 +830,14 @@ function AgentEditorInner({
                 />
               </EditorSection>
 
-              {/* Tools */}
+              {/* Tools — folded away when the agent has none, same as
+                  Sub-agents: the header stays discoverable, the picker doesn't
+                  take the space until it's actually in use. */}
               <EditorSection
                 icon={Wrench}
                 title="Tools"
+                collapsible
+                defaultCollapsed={config.toolIds.length === 0}
                 description="Tools the agent may call while it works."
               >
                 <ToolPicker
@@ -845,10 +849,15 @@ function AgentEditorInner({
                 />
               </EditorSection>
 
-              {/* Sub-agents (delegation) */}
+              {/* Sub-agents (delegation) — delegation is the exception, not the
+                  norm, so an agent with none opens folded: the header keeps it
+                  discoverable without spending a screenful of picker and
+                  guardrails on a feature this agent isn't using. */}
               <EditorSection
                 icon={Users}
                 title="Sub-agents"
+                collapsible
+                defaultCollapsed={config.subAgents.targets.length === 0}
                 description={
                   <>
                     Agents or workflows this agent may spawn as sub-agents. It
@@ -886,9 +895,17 @@ function AgentEditorInner({
                 rather than under Tools because a round may be spent on a
                 sub-agent as easily as a tool, and all three trade against each
                 other — raising turns raises what the budget has to cover. */}
+              {/* With nothing to call there are no inner turns to bound or pay
+                  for — the agent answers in one pass — so the whole section is
+                  inert. Its fields are already read-only in that shape; folding
+                  it (and badging why) keeps the author from tuning numbers that
+                  can't do anything. Opening it still shows the reason. */}
               <EditorSection
                 icon={Wallet}
                 title="Budget"
+                collapsible
+                defaultCollapsed={!!budgetIrrelevantReason}
+                badge={budgetIrrelevantReason ? 'Not applicable' : undefined}
                 description="How much work the agent may do, and what it may spend, before it has to answer."
               >
                 {budgetIrrelevantReason ? (
@@ -996,7 +1013,9 @@ function AgentEditorInner({
                 <label
                   className={cn(
                     'flex items-start gap-2.5',
-                    requireToolReason ? 'cursor-not-allowed' : 'cursor-pointer',
+                    requireToolReason
+                      ? 'cursor-not-allowed opacity-60'
+                      : 'cursor-pointer',
                   )}
                 >
                   <span className="min-w-0 flex-1">
