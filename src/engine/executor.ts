@@ -3,9 +3,9 @@ import { isDecisionKind } from './graph'
 import { resolveAnswerNodeIds } from './graph-engine'
 import type { ModelBudget } from './model-budget'
 import { emitNodeStartProgress } from './node-progress'
+import { settleOf, type NodeSettlement } from './node-settlement'
 import { endEntryOf, startEntryOf } from './run-log-entries'
 import { errorMessage, runNode } from './run-node'
-import { settleOf, type NodeSettlement } from './node-settlement'
 import { recordedBranchResult, type RunRecorder } from './run-recorder'
 import {
   Scheduler,

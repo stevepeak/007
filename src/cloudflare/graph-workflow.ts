@@ -12,9 +12,9 @@ import {
   type WfNodeKind,
   type WfRunManifestEntry,
 } from '../engine/graph'
+import { settleOf, type NodeSettlement } from '../engine/node-settlement'
 import { errorMessage } from '../engine/run-node'
 import type { RecordStepArgs } from '../engine/run-recorder'
-import { settleOf, type NodeSettlement } from '../engine/node-settlement'
 import { Scheduler, WorkflowStalledError } from '../engine/scheduler'
 import type { StreamSink } from '../engine/stream-sink'
 import { resolveTriggerInput } from '../engine/trigger-registry'
