@@ -133,6 +133,14 @@ export function optStr(params: unknown, key: string): string | undefined {
   return typeof v === 'string' && v ? v : undefined
 }
 
+// `optStr`'s numeric sibling, with the same "absent or wrong-typed reads as not
+// supplied" contract. NaN is rejected too, since it silently poisons every
+// comparison it reaches. For hints that only narrow what the server does.
+export function optNum(params: unknown, key: string): number | undefined {
+  const v = (params as Record<string, unknown>)[key]
+  return typeof v === 'number' && Number.isFinite(v) ? v : undefined
+}
+
 // Coerce an untrusted `{ [k]: v }` bag into a string→string record, dropping
 // non-string values. Used for the playground's prompt-variable inputs.
 export function parseStringRecord(value: unknown): Record<string, string> {

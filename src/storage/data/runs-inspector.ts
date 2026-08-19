@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm'
+import { and, asc, eq, getTableColumns, isNull, sql } from 'drizzle-orm'
 
 import type { WfDb } from '../client'
 import { stepCost } from '../cost'
@@ -47,7 +47,44 @@ export type GetRunOptions = {
    * option (every non-polling caller does) to always get the full load.
    */
   knownVersionId?: string
+  /**
+   * Settled-step watermark for pollers: the highest step `cursor` below which
+   * the caller already holds every step AND every one of them is terminal.
+   * Steps at or below it are not returned, and the result carries
+   * `stepsPartial: true` so the caller knows to merge rather than replace.
+   *
+   * Why a *settled* watermark and not simply "steps I've seen": `wf_run_step`
+   * is upserted on `(run_id, node_id, item_index)`, so a row mutates in place
+   * from `running` to its terminal status. Cursoring on "seen" would freeze
+   * every in-flight step at its first-seen state — the canvas glow, per-node
+   * status and per-step cost would all stop updating. Only `completed` and
+   * `skipped` rows are immutable; `failed` is not (a resume can re-run it).
+   *
+   * See {@link WfRunStepDTO.cursor} for why the key is insert order rather than
+   * `sequence`, which is NOT unique within a run.
+   */
+  settledStepCursor?: number
 }
+
+/**
+ * Insert-order key for a step row, projected from SQLite's implicit `rowid`.
+ *
+ * `sequence` cannot serve as this key: it is a per-walk counter, and an
+ * iteration's per-item subgraph and a sub-agent's child steps each restart it
+ * at 0 (see `nodes/iteration.ts` and `nodes/sub-agent.ts`). A 500-item
+ * iteration therefore has 500 rows at sequence 0 — precisely the run shape the
+ * incremental read exists to serve.
+ *
+ * `rowid` has the property the cursor needs: SQLite assigns it as one greater
+ * than the largest in the table, so a step inserted later can never sort below
+ * one inserted earlier, and an upsert UPDATEs in place without changing it.
+ * Rowid reuse after a delete can't reach a live watermark either — a watermark
+ * is always a row the caller still holds, so that row's rowid still exists and
+ * still bounds the next assignment. The only paths that delete steps
+ * (`deleteAllRuns`, deleting a workflow's runs) remove whole runs, after which
+ * the run reads as absent rather than as a partial set.
+ */
+const stepCursor = sql<number>`wf_run_step.rowid`
 
 /** The run-inspector load shape: run, ordered steps, the version's graph. */
 export async function getRun(
@@ -66,9 +103,9 @@ export async function getRun(
   // The version and the workflow it belongs to are a single join rather than a
   // second sequential round trip — the name lookup used to wait on the version
   // row purely to read its `workflowId`.
-  const [rawSteps, priceMap, logs, version] = await Promise.all([
+  const [rawSteps, priceMap, logRead, version] = await Promise.all([
     db
-      .select()
+      .select({ ...getTableColumns(wfRunStep), cursor: stepCursor })
       .from(wfRunStep)
       .where(eq(wfRunStep.runId, runId))
       .orderBy(asc(wfRunStep.sequence)),
@@ -110,10 +147,22 @@ export async function getRun(
       costUsd: c?.cost ?? null,
     }
   })
+  // The roll-up above has to visit EVERY step, so the watermark trims what goes
+  // over the wire and what the client re-parses each tick, not what D1 reads.
+  // A rows-read win would need the cost totals to be incremental too, and they
+  // can't be: a step's cost changes when its `meta` lands, in place.
+  const stepsPartial = opts.settledStepCursor != null
+  const shippedSteps = stepsPartial
+    ? steps.filter((s) => s.cursor > (opts.settledStepCursor as number))
+    : steps
   return {
     run,
-    steps,
-    logs,
+    steps: shippedSteps,
+    /** True when `settledStepCursor` was supplied: `steps` is a delta to merge. */
+    stepsPartial,
+    logs: logRead.rows,
+    /** True when the feed outgrew the read cap and its oldest entries are gone. */
+    logsTruncated: logRead.truncated,
     graph: version?.graph != null ? parseStoredGraph(version.graph) : null,
     versionNumber: version?.versionNumber ?? null,
     workflowId: version?.workflowId ?? null,
@@ -125,4 +174,109 @@ export async function getRun(
     costUsd,
     totalTokens,
   }
+}
+
+// ---------------------------------------------------------------------------
+// Narrow reads — the in-process callers that never wanted the inspector load
+// ---------------------------------------------------------------------------
+//
+// Both of the functions below used to call `getRun` and throw away almost all
+// of it. That is the same waste `getRunStatus` exists to prevent, one layer up:
+// a server-side caller paying for every step, every log, the whole serialized
+// graph and the model price map to read one field. Neither is on a poll loop,
+// but `gradeEvalResult` fires once per eval cell — on top of that cell's poll.
+
+/**
+ * Everything `retryRun` needs to re-dispatch a run: the run row's own
+ * identifiers, the workflow the run's version belongs to, and the trigger input
+ * (which the run row doesn't persist — it is recovered from the recorded
+ * trigger step, whose output is the validated trigger input; see executor.ts).
+ *
+ * The trigger step is matched on `parentNodeId IS NULL`, not on sequence order.
+ * An iteration's per-item subgraph and a sub-agent's child runs record their own
+ * `trigger`-kind steps, and every one of them carries `sequence: 0` — the same
+ * sequence as the run's real trigger. Picking the first `nodeKind === 'trigger'`
+ * out of a sequence-ordered list, as this path used to, could therefore retry a
+ * run with one iteration item's input in place of the run's own.
+ */
+export async function getRunRetrySource(db: WfDb, runId: string) {
+  const run = (
+    await db
+      .select({
+        workflowVersionId: wfRun.workflowVersionId,
+        triggerKind: wfRun.triggerKind,
+        subjectId: wfRun.subjectId,
+        correlationId: wfRun.correlationId,
+      })
+      .from(wfRun)
+      .where(eq(wfRun.id, runId))
+      .limit(1)
+  )[0]
+  if (!run) {
+    return null
+  }
+  const [trigger, version] = await Promise.all([
+    db
+      .select({ input: wfRunStep.input, output: wfRunStep.output })
+      .from(wfRunStep)
+      .where(
+        and(
+          eq(wfRunStep.runId, runId),
+          eq(wfRunStep.nodeKind, 'trigger'),
+          isNull(wfRunStep.parentNodeId),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0]),
+    db
+      .select({ workflowId: wfWorkflowVersion.workflowId })
+      .from(wfWorkflowVersion)
+      .where(eq(wfWorkflowVersion.id, run.workflowVersionId))
+      .limit(1)
+      .then((rows) => rows[0]),
+  ])
+  return {
+    ...run,
+    workflowId: version?.workflowId ?? null,
+    // Both backends record the trigger with its validated input as BOTH the
+    // step's input and its output, so these agree whenever a trigger step
+    // exists; `input` is kept only as a guard against a backend recording just
+    // one of them. `{}` covers a run with no recorded trigger at all — a run
+    // that died before its first write has nothing to replay.
+    triggerInput: trigger?.output ?? trigger?.input ?? {},
+  }
+}
+
+/**
+ * What an eval judge grades: the run's final output plus its TOP-LEVEL steps.
+ *
+ * Iteration inner-subgraph steps are excluded in SQL rather than filtered after
+ * the fact — checks address the workflow's own nodes, never an iteration's
+ * per-item copies, and on a wide iteration those copies are the overwhelming
+ * majority of the rows. No logs, no graph, no price map: a judge reads none of
+ * them.
+ */
+export async function getRunForGrading(db: WfDb, runId: string) {
+  const run = (
+    await db
+      .select({ output: wfRun.output })
+      .from(wfRun)
+      .where(eq(wfRun.id, runId))
+      .limit(1)
+  )[0]
+  if (!run) {
+    return null
+  }
+  const steps = await db
+    .select({
+      nodeId: wfRunStep.nodeId,
+      nodeKind: wfRunStep.nodeKind,
+      input: wfRunStep.input,
+      output: wfRunStep.output,
+      meta: wfRunStep.meta,
+    })
+    .from(wfRunStep)
+    .where(and(eq(wfRunStep.runId, runId), isNull(wfRunStep.parentNodeId)))
+    .orderBy(asc(wfRunStep.sequence))
+  return { output: run.output, steps }
 }

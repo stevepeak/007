@@ -62,7 +62,13 @@ const wfInputSchemas: Partial<Record<keyof WfDataClient, z.ZodType>> = {
     // Cache hint only — see `WfClient.getRun`. A stale or unknown id simply
     // fails the equality check server-side and yields a full load.
     knownVersionId: z.string().optional(),
+    // Incremental-read hint only. A cursor from a different run (or a stale
+    // one) can withhold steps the caller then never sees, so it is bounded to
+    // non-negative and the client only ever derives it from its own last
+    // response for this run.
+    settledStepCursor: z.number().int().nonnegative().optional(),
   }),
+  getRunStatus: z.object({ runId: z.string() }),
   getDashboard: z.object({
     since: z.number().optional(),
     until: z.number().optional(),

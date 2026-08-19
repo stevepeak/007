@@ -36,6 +36,8 @@ export type RunNodeDockProps = {
   steps: WfRunStepDTO[]
   /** The whole run's structured progress feed (drives the Activity tab). */
   logs: WfRunLogDTO[]
+  /** The log feed was capped server-side — passed through to the activity feed. */
+  logsTruncated?: boolean
   /** The run's graph at the version that ran — the Activity tree's skeleton. */
   graph: WorkflowGraph | null
   /** True while the run is still executing — enables the live/auto-scroll UI. */
@@ -73,6 +75,7 @@ export function RunNodeDock({
   step,
   steps,
   logs,
+  logsTruncated,
   graph,
   live,
   selectedNodeId,
@@ -245,6 +248,7 @@ export function RunNodeDock({
           {tab === 'activity' ? (
             <RunActivityLog
               logs={logs}
+              logsTruncated={logsTruncated}
               steps={steps}
               graph={graph}
               live={live}

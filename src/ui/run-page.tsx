@@ -382,6 +382,7 @@ export function RunPage({
                 step={selectedStep}
                 steps={data.steps}
                 logs={data.logs}
+                logsTruncated={data.logsTruncated}
                 graph={data.graph}
                 live={live}
                 // A deep link arrives pointing AT a node, so open on that node's

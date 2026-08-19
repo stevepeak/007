@@ -41,6 +41,7 @@ import type {
   WfRunListInput,
   WfRunListResult,
   WfRunPurgeResult,
+  WfRunStatusDTO,
 } from './protocol-runs'
 import type {
   ToolContextField,
@@ -159,14 +160,38 @@ export interface WfDataClient {
   /** Distinct trigger kinds seen across all runs (filter dropdown). */
   listRunTriggerKinds(): Promise<string[]>
   /**
-   * The full run-inspector load. `knownVersionId` is a cache hint for pollers:
-   * pass the `workflowVersionId` you already hold the version block for and the
-   * server skips reading it, answering with `versionOmitted: true` and null
-   * placeholders. The block is immutable per version id, so this trades a query
-   * and the entire serialized graph for one string on the wire. Omit it — as
-   * every one-shot caller does — for a complete response.
+   * The full run-inspector load: the run row, every recorded step, the whole
+   * log feed, and the version's serialized graph.
+   *
+   * Both options are incremental-read hints for pollers, and both are safe to
+   * omit — as every one-shot caller does — for a complete response:
+   *
+   * - `knownVersionId` — the `workflowVersionId` you already hold the version
+   *   block for. The server skips reading it and answers `versionOmitted: true`
+   *   with null placeholders. Immutable per version id, so this trades a query
+   *   and the entire serialized graph for one string on the wire.
+   * - `settledStepCursor` — the highest step {@link WfRunStepDTO.cursor} below
+   *   which you hold every step and all of them are `completed`/`skipped`. The
+   *   server returns only the steps above it and answers `stepsPartial: true`.
+   *   Steps at or below the watermark can never change again, so nothing goes
+   *   stale; anything still in flight keeps arriving in full on every tick.
+   *
+   * A run that only needs to be checked for settlement should call
+   * {@link WfDataClient.getRunStatus} instead — none of this load is free.
    */
-  getRun(runId: string, knownVersionId?: string): Promise<WfRunDetail | null>
+  getRun(
+    runId: string,
+    opts?: { knownVersionId?: string; settledStepCursor?: number },
+  ): Promise<WfRunDetail | null>
+  /**
+   * The settle check: one indexed row, three fields, no steps and no graph.
+   *
+   * This is what a loop that waits for a run to finish must call. `getRun` is
+   * the *inspector* load, and calling it on a timer to read `status` costs a
+   * full re-serialization of every step's tool IO — per poll, per waiter.
+   * Returns null when the run row is absent.
+   */
+  getRunStatus(runId: string): Promise<WfRunStatusDTO | null>
   /**
    * Re-dispatch a finished run as a NEW run (the original stays as history).
    * The same trigger input is reconstructed from the original run's recorded

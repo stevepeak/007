@@ -67,7 +67,29 @@ export type WfRunPurgeResult = {
 // original version and pick up at the failed step.
 export type RetryRunMode = 'restart' | 'resume'
 
+/**
+ * The settle-check payload — the three fields a poll loop acts on, read off one
+ * indexed run row. The cheap sibling of {@link WfRunDetail}: anything that only
+ * needs to notice a run finished asks for this. See `WfDataClient.getRunStatus`.
+ */
+export type WfRunStatusDTO = {
+  status: string
+  output: unknown
+  error: string | null
+}
+
 export type WfRunStepDTO = {
+  /**
+   * Opaque, strictly-increasing key in the order the engine recorded steps.
+   * Stable for the life of a row: a step keeps its cursor as it moves from
+   * `running` to terminal.
+   *
+   * This — not `sequence` — is the identity for merging an incremental steps
+   * read (see `stepsPartial`). `sequence` is a per-walk counter that restarts
+   * at 0 inside an iteration's per-item subgraph and inside a sub-agent's child
+   * run, so it is neither unique nor monotonic within a run.
+   */
+  cursor: number
   nodeId: string
   nodeKind: string
   /**
@@ -109,8 +131,21 @@ export type WfRunLogDTO = {
 export type WfRunDetail = {
   run: WfRunSummary & { output: unknown }
   steps: WfRunStepDTO[]
+  /**
+   * Set when the caller passed a `settledStepCursor`, meaning `steps` holds ONLY
+   * the steps above that watermark: the caller must merge them into the set it
+   * already holds (keyed on {@link WfRunStepDTO.cursor}) rather than replace it.
+   * Absent on a full load.
+   */
+  stepsPartial?: true
   /** The structured progress feed, in emit order. */
   logs: WfRunLogDTO[]
+  /**
+   * Set when the run's feed is longer than the server's read cap and `logs`
+   * holds only its newest entries. A presence flag like `versionOmitted`: the
+   * UI says so rather than presenting a clipped feed as the whole story.
+   */
+  logsTruncated?: true
   graph: WorkflowGraph | null
   versionNumber: number | null
   /**

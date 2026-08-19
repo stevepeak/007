@@ -9,6 +9,7 @@ import type {
   RetryRunMode,
   WfRunDetail,
   WfRunListInput,
+  WfRunStepDTO,
 } from '../server/protocol'
 import { useWfClient } from './context'
 import { keys } from './hooks-shared'
@@ -58,6 +59,62 @@ export function mergeVersionBlock(
   }
 }
 
+/**
+ * Step statuses that can never change again. `failed` is deliberately absent:
+ * a resume re-runs a failed node, and the row it upserts carries the same
+ * cursor — treating it as settled would pin the failure on screen forever.
+ */
+const SETTLED_STEP_STATUSES = new Set(['completed', 'skipped'])
+
+/**
+ * The watermark to ask the server to read above: the highest cursor such that
+ * every step at or below it is held AND settled.
+ *
+ * The "held" half is what makes the scan from the bottom, rather than "the
+ * highest settled cursor anywhere". A full load returns every step, and each
+ * incremental load returns everything above the last watermark, so by induction
+ * the client always holds an unbroken prefix — but only up to the first
+ * still-moving step. Stopping there is what keeps an in-flight step, and every
+ * step recorded after it, arriving in full on every tick.
+ */
+export function settledStepCursor(
+  steps: readonly WfRunStepDTO[],
+): number | undefined {
+  let watermark: number | undefined
+  for (const s of [...steps].sort((a, b) => a.cursor - b.cursor)) {
+    if (!SETTLED_STEP_STATUSES.has(s.status)) break
+    watermark = s.cursor
+  }
+  return watermark
+}
+
+/**
+ * Splice an incremental steps read into the set already held, so consumers see
+ * the shape a full load would have given them. The sibling of
+ * {@link mergeVersionBlock}, and the reason the three step consumers
+ * (`buildActivityTree`, the iteration item picker, `create-sample-from-run`)
+ * need no accumulator of their own — every one of them still receives the whole
+ * run's steps.
+ *
+ * Keyed on `cursor`, which is stable across a step's `running` → terminal
+ * transition, so a re-sent step replaces its earlier state rather than doubling
+ * it. Ordering stays `sequence`-primary (what consumers have always seen), with
+ * `cursor` breaking the ties that an iteration's per-item steps create.
+ */
+export function mergeStepBlock(
+  next: WfRunDetail,
+  prev: WfRunDetail,
+): WfRunDetail {
+  const byCursor = new Map(prev.steps.map((s) => [s.cursor, s]))
+  for (const s of next.steps) byCursor.set(s.cursor, s)
+  return {
+    ...next,
+    steps: [...byCursor.values()].sort(
+      (a, b) => a.sequence - b.sequence || a.cursor - b.cursor,
+    ),
+  }
+}
+
 export function useRun(runId: string | null) {
   const client = useWfClient()
   const qc = useQueryClient()
@@ -76,11 +133,21 @@ export function useRun(runId: string | null) {
       // has a null graph, and suppressing the lookup would pin that null forever
       // instead of letting it recover.
       const known = prev?.graph ? prev.workflowVersionId : undefined
-      const next = await client.getRun(runId as string, known)
-      // `prev` can vanish between the read above and here (cache eviction, a
-      // `removeQueries`), so re-check rather than assume — worst case we drop
-      // one poll's version block and the next one asks for it in full.
-      return next?.versionOmitted && prev ? mergeVersionBlock(next, prev) : next
+      // Both hints are derived from `prev` and both are spliced back against
+      // that SAME snapshot below. `prev` is a local const, so a cache eviction
+      // racing this fetch can't leave us merging a delta into nothing — the
+      // only way to ask for a partial response is to be holding the full one.
+      const next = await client.getRun(runId as string, {
+        knownVersionId: known,
+        settledStepCursor: prev ? settledStepCursor(prev.steps) : undefined,
+      })
+      if (!next || !prev) return next
+      const withVersion = next.versionOmitted
+        ? mergeVersionBlock(next, prev)
+        : next
+      return withVersion.stepsPartial
+        ? mergeStepBlock(withVersion, prev)
+        : withVersion
     },
     enabled: !!runId,
     // Poll while the run is live so the graph glow, node statuses, and the Logs

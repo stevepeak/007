@@ -17,7 +17,7 @@ import {
   getEvalRow,
   getEvalRun,
   getEvalSet,
-  getRun,
+  getRunForGrading,
   hashEvalSnapshot,
   insertEvalResult,
   listEvalRuns,
@@ -43,28 +43,26 @@ import {
 // in `wf_run_step.error` reachable via `wfRunId`.
 const MAX_RECORDED_ERROR_CHARS = 2000
 
-// The top-level run steps a grader reads. Iteration inner-subgraph steps (those
-// with a `parentNodeId`) are excluded — checks address the workflow's own nodes,
-// not an iteration's per-item subgraph nodes.
+// Project recorded steps onto the shape a grader reads. The "top-level only"
+// rule — checks address the workflow's own nodes, never an iteration's per-item
+// subgraph copies — now lives in `getRunForGrading`'s WHERE clause, so those
+// rows are never read rather than read and discarded.
 function toGradeSteps(
   steps: Array<{
     nodeId: string
     nodeKind: string
-    parentNodeId?: string | null
     input?: unknown
     output?: unknown
     meta?: unknown
   }>,
 ): GradeStep[] {
-  return steps
-    .filter((s) => !s.parentNodeId)
-    .map((s) => ({
-      nodeId: s.nodeId,
-      nodeKind: s.nodeKind,
-      input: s.input,
-      output: s.output,
-      meta: s.meta,
-    }))
+  return steps.map((s) => ({
+    nodeId: s.nodeId,
+    nodeKind: s.nodeKind,
+    input: s.input,
+    output: s.output,
+    meta: s.meta,
+  }))
 }
 
 export function buildEvalHandlers<TDeps>(
@@ -289,7 +287,10 @@ export function buildEvalHandlers<TDeps>(
       if (!found) {
         throw new NotFoundError('Eval sample not found.')
       }
-      const runResult = await getRun(c.db, wfRunId)
+      // The narrow read, not `getRun`: a judge reads the run's output and its
+      // top-level steps, never the log feed, the graph or the price map. This
+      // fires once per eval cell, on top of that cell's own settle poll.
+      const runResult = await getRunForGrading(c.db, wfRunId)
       if (!runResult) {
         throw new NotFoundError('Run not found.')
       }
@@ -303,7 +304,7 @@ export function buildEvalHandlers<TDeps>(
       const graded = await gradeRow({
         checks: found.row.checks,
         steps,
-        output: runResult.run.output,
+        output: runResult.output,
         getModel,
         defaultJudgeModelId,
         // Synthesis mode: the tools were frozen, so the model's context came from

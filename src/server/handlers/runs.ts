@@ -2,6 +2,8 @@ import {
   deleteAllRuns,
   getLatestVersionId,
   getRun,
+  getRunRetrySource,
+  getRunStatus,
   listRunTriggerKinds,
   listRuns,
 } from '../../storage/data'
@@ -9,11 +11,13 @@ import type {
   RetryRunMode,
   WfRunDetail,
   WfRunLogDTO,
+  WfRunStatusDTO,
   WfRunStepDTO,
 } from '../protocol'
 
 import {
   NotFoundError,
+  optNum,
   optStr,
   requireHook,
   runSummary,
@@ -27,7 +31,12 @@ export function buildRunHandlers<TDeps>(
   opts: CreateWfSdkHandlersOptions<TDeps>,
 ): Pick<
   WfHandlers,
-  'listRuns' | 'listRunTriggerKinds' | 'getRun' | 'retryRun' | 'deleteAllRuns'
+  | 'listRuns'
+  | 'listRunTriggerKinds'
+  | 'getRun'
+  | 'getRunStatus'
+  | 'retryRun'
+  | 'deleteAllRuns'
 > {
   return {
     listRuns: async (c) => {
@@ -69,14 +78,38 @@ export function buildRunHandlers<TDeps>(
     // slice. See `deleteAllRuns` for exactly what cascades.
     deleteAllRuns: async (c) => await deleteAllRuns(c.db),
 
+    // The settle check. Deliberately NOT `getRun` with the fields picked off:
+    // this is one indexed row, and the whole point is that a poll loop never
+    // touches the step, log, graph or price-map reads to learn a run finished.
+    getRunStatus: async (c) => {
+      const runId = str(c.params, 'runId')
+      const row = await getRunStatus(c.db, runId)
+      if (!row) {
+        return null
+      }
+      // Named rather than spread, so a column added to the storage read can't
+      // silently widen the payload this exists to keep narrow.
+      const status: WfRunStatusDTO = {
+        status: row.status,
+        output: row.output,
+        error: row.error,
+      }
+      return status
+    },
+
     getRun: async (c) => {
       const runId = str(c.params, 'runId')
       const knownVersionId = optStr(c.params, 'knownVersionId')
-      const result = await getRun(c.db, runId, { knownVersionId })
+      const settledStepCursor = optNum(c.params, 'settledStepCursor')
+      const result = await getRun(c.db, runId, {
+        knownVersionId,
+        settledStepCursor,
+      })
       if (!result) {
         return null
       }
       const steps: WfRunStepDTO[] = result.steps.map((s) => ({
+        cursor: s.cursor,
         nodeId: s.nodeId,
         nodeKind: s.nodeKind,
         parentNodeId: s.parentNodeId ?? null,
@@ -116,10 +149,11 @@ export function buildRunHandlers<TDeps>(
         graph: result.graph,
         versionNumber: result.versionNumber,
         workflowVersionId: result.workflowVersionId,
-        // Only ever set, never set-to-false — `versionOmitted?: true` is a
-        // presence flag, and an explicit `false` would be one more byte on
-        // every full load for no reader.
+        // Only ever set, never set-to-false — these are presence flags, and an
+        // explicit `false` would be more bytes on every full load for no reader.
         ...(result.versionOmitted ? { versionOmitted: true as const } : {}),
+        ...(result.stepsPartial ? { stepsPartial: true as const } : {}),
+        ...(result.logsTruncated ? { logsTruncated: true as const } : {}),
       }
       return detail
     },
@@ -132,28 +166,27 @@ export function buildRunHandlers<TDeps>(
       const runId = str(c.params, 'runId')
       const mode: RetryRunMode =
         (c.params as { mode?: string }).mode === 'resume' ? 'resume' : 'restart'
-      const result = await getRun(c.db, runId)
-      if (!result) {
+      // The narrow read, not `getRun`: retry needs four run columns and one
+      // trigger step, and used to pay for every step, every log, the whole
+      // graph and the model price map to get them.
+      const source = await getRunRetrySource(c.db, runId)
+      if (!source) {
         throw new NotFoundError('Run not found.')
       }
-      // Reconstruct the trigger input from the recorded trigger step — the
-      // run row doesn't persist it. The trigger "executes" instantly with
-      // its output set to the validated trigger input (see executor.ts).
-      const triggerStep = result.steps.find((s) => s.nodeKind === 'trigger')
-      const latestVersionId = result.workflowId
-        ? await getLatestVersionId(c.db, result.workflowId)
+      const latestVersionId = source.workflowId
+        ? await getLatestVersionId(c.db, source.workflowId)
         : null
       return await retryRun({
         mode,
         source: {
           runId,
-          workflowId: result.workflowId ?? '',
-          originalVersionId: result.run.workflowVersionId,
+          workflowId: source.workflowId ?? '',
+          originalVersionId: source.workflowVersionId,
           latestVersionId,
-          triggerKind: result.run.triggerKind,
-          triggerInput: triggerStep?.output ?? triggerStep?.input ?? {},
-          subjectId: result.run.subjectId,
-          correlationId: result.run.correlationId,
+          triggerKind: source.triggerKind,
+          triggerInput: source.triggerInput,
+          subjectId: source.subjectId,
+          correlationId: source.correlationId,
         },
         ctx: c.ctx,
         req: c.req,

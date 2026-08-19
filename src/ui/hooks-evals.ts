@@ -203,12 +203,17 @@ async function waitForRun(
 ): Promise<WaitOutcome> {
   const deadline = Date.now() + opts.timeoutMs
   for (;;) {
-    const detail = await client.getRun(wfRunId)
-    if (detail && RUN_TERMINAL.has(detail.run.status)) {
+    // `getRunStatus`, not `getRun`: this loop reads exactly two fields, and at
+    // the top concurrency it runs once per matrix cell every few seconds for up
+    // to fifteen minutes. On `getRun` that was thousands of full run-inspector
+    // loads — every step's tool IO, the whole log feed, and (with no version
+    // hint passed) the serialized graph on every single tick.
+    const status = await client.getRunStatus(wfRunId)
+    if (status && RUN_TERMINAL.has(status.status)) {
       return {
         kind: 'terminal',
-        status: detail.run.status,
-        error: detail.run.error,
+        status: status.status,
+        error: status.error,
       }
     }
     if (Date.now() > deadline) return { kind: 'timeout' }

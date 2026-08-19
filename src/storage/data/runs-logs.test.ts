@@ -80,7 +80,7 @@ describe('live run-log appends', () => {
   test('an appended entry is readable before the node finishes', async () => {
     await attempt(db, [entry('info', '→ model', 10)])
 
-    const logs = await getRunLogs(db, RUN)
+    const { rows: logs } = await getRunLogs(db, RUN)
     expect(logs.map((l) => l.message)).toEqual(['→ model'])
   })
 
@@ -98,7 +98,7 @@ describe('live run-log appends', () => {
       entry('info', '→ model', 40),
     ])
 
-    const logs = await getRunLogs(db, RUN)
+    const { rows: logs } = await getRunLogs(db, RUN)
     expect(logs.map((l) => l.message)).toEqual([
       '→ model',
       'Called search',
@@ -138,7 +138,7 @@ describe('live run-log appends', () => {
       ],
     })
 
-    const logs = await getRunLogs(db, RUN)
+    const { rows: logs } = await getRunLogs(db, RUN)
     expect(logs.map((l) => l.message)).toEqual([
       '▶ Chat Bot',
       '→ model',
@@ -199,5 +199,81 @@ describe('live run-log appends', () => {
         tool: 'search_documents',
       },
     ])
+  })
+})
+
+describe('getRunLogs read cap', () => {
+  let db: WfDb
+
+  beforeEach(() => {
+    db = freshDb()
+  })
+
+  // Write `n` entries with strictly increasing `ts`, so "newest" is unambiguous.
+  async function feedOf(n: number): Promise<void> {
+    await replaceNodeLogs(db, {
+      runId: RUN,
+      nodeId: NODE,
+      entries: Array.from({ length: n }, (_, i) =>
+        entry('info', `line ${i}`, i + 1),
+      ),
+    })
+  }
+
+  test('a feed within the cap comes back whole and untruncated', async () => {
+    await feedOf(5)
+
+    const { rows, truncated } = await getRunLogs(db, RUN, 5)
+
+    expect(truncated).toBe(false)
+    expect(rows.map((r) => r.message)).toEqual([
+      'line 0',
+      'line 1',
+      'line 2',
+      'line 3',
+      'line 4',
+    ])
+  })
+
+  test('an over-cap feed keeps the NEWEST entries, in emit order', async () => {
+    await feedOf(10)
+
+    const { rows, truncated } = await getRunLogs(db, RUN, 4)
+
+    expect(truncated).toBe(true)
+    // The tail, not the head — a live run's panel has to keep advancing rather
+    // than freeze on the run's opening moments.
+    expect(rows.map((r) => r.message)).toEqual([
+      'line 6',
+      'line 7',
+      'line 8',
+      'line 9',
+    ])
+    // Still oldest-first: every consumer renders the feed in emit order.
+    expect(rows.map((r) => r.ts)).toEqual([7, 8, 9, 10])
+  })
+
+  test('exactly the cap does not report truncation', async () => {
+    await feedOf(4)
+
+    const { rows, truncated } = await getRunLogs(db, RUN, 4)
+
+    // The read asks for cap+1 to detect overflow; landing exactly on the cap
+    // must not be mistaken for it.
+    expect(truncated).toBe(false)
+    expect(rows).toHaveLength(4)
+  })
+
+  test('the cap is scoped to the run', async () => {
+    await feedOf(3)
+    await replaceNodeLogs(db, {
+      runId: 'run-2',
+      nodeId: NODE,
+      entries: [entry('info', 'other run', 99)],
+    })
+
+    const { rows } = await getRunLogs(db, RUN, 10)
+
+    expect(rows.map((r) => r.message)).toEqual(['line 0', 'line 1', 'line 2'])
   })
 })
