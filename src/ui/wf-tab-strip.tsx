@@ -18,6 +18,7 @@ import { cn } from './cn'
 import { describeCheck } from './evals/shared'
 import { useAgent, useEvalSet, useRun, useTools, useWorkflow } from './hooks'
 import { useFeedbackForSubjects } from './hooks-feedback'
+import { WfLink } from './nav'
 import { toolText } from './tool-appearance'
 import { ToolIcon } from './tool-icon'
 import { Tooltip } from './tooltip'
@@ -25,6 +26,7 @@ import {
   classifyAssetPath,
   groupTabs,
   WF_TAB_GROUP_LABELS,
+  WF_TAB_GROUP_PATHS,
   type WfAsset,
 } from './wf-tab-routes'
 import { HOME_TAB_ID, useWfTabs, type WfTab } from './wf-tabs'
@@ -65,9 +67,20 @@ export function WfTabStrip() {
         <span />
         {groups.map(({ group, tabs: rowTabs }) => (
           <Fragment key={group}>
-            <span className="py-1 text-right text-xs leading-5 font-medium text-neutral-500">
-              {WF_TAB_GROUP_LABELS[group]}
-            </span>
+            {/* The row heading doubles as a shortcut into that section's
+                landing page (Home tab), so "Agents" isn't dead text. */}
+            <Tooltip
+              content={`Open ${WF_TAB_GROUP_LABELS[group]}`}
+              side="bottom"
+              className="justify-end"
+            >
+              <WfLink
+                to={WF_TAB_GROUP_PATHS[group]}
+                className="rounded py-1 text-right text-xs leading-5 font-medium text-neutral-500 hover:text-neutral-900 hover:underline"
+              >
+                {WF_TAB_GROUP_LABELS[group]}
+              </WfLink>
+            </Tooltip>
             <div className="flex flex-wrap items-stretch gap-1">
               {rowTabs.map((tab) => (
                 <TabItem

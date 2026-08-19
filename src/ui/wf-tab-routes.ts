@@ -191,3 +191,16 @@ export function groupTabs<T extends { path: string }>(
     tabs: byGroup.get(group)!,
   }))
 }
+
+/**
+ * The section landing page each row heading links to (relative to `basePath`) —
+ * so "Agents:" in the strip is a shortcut into the agents list, not dead text.
+ */
+export const WF_TAB_GROUP_PATHS: Record<WfTabGroup, string> = {
+  workflow: 'workflows',
+  agent: 'agents',
+  run: 'runs',
+  tool: 'tools',
+  evals: 'evals',
+  feedback: 'feedback',
+}
