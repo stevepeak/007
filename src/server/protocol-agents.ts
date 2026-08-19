@@ -85,6 +85,12 @@ export type AgentPreviewInput = {
   input?: string
   /** Values for the prompt's `${…}` variables, keyed by variable name. */
   promptVariables?: Record<string, string>
+  /**
+   * Tool ids to execute FOR REAL in this run instead of simulating them. Every
+   * other tool is stood in for by the model. Omitted → the whole run is
+   * simulated (the safe default): no live call is made and no real data moves.
+   */
+  liveToolIds?: string[]
 }
 
 /**

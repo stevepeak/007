@@ -237,16 +237,26 @@ export function buildAgentHandlers<TDeps>(
         'The agent playground is not configured on this host.',
       )
       const config = parseAgentConfig(c.params)
-      const p = c.params as { input?: unknown; promptVariables?: unknown }
+      const p = c.params as {
+        input?: unknown
+        promptVariables?: unknown
+        liveToolIds?: unknown
+      }
       const input = typeof p.input === 'string' ? p.input : ''
       const promptVariables = parseStringRecord(p.promptVariables)
       if (!input && Object.keys(promptVariables).length === 0) {
         throw new Error('Provide a test input or fill in the prompt variables.')
       }
+      // Which tools run for real. Anything not listed is simulated, so a
+      // malformed/absent field degrades to the safe all-simulated run.
+      const liveToolIds = Array.isArray(p.liveToolIds)
+        ? p.liveToolIds.filter((id): id is string => typeof id === 'string')
+        : []
       return await runAgentPreview({
         config,
         input,
         promptVariables,
+        liveToolIds,
         ctx: c.ctx,
         req: c.req,
       })

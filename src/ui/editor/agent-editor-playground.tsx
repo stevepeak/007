@@ -12,14 +12,19 @@ import {
 import { useMemo, useRef, useState } from 'react'
 
 import { inferPromptVariables, type AgentConfig } from '../../engine'
-import type { AgentPreviewResult, JsonSchema } from '../../server/protocol'
+import type {
+  AgentPreviewResult,
+  JsonSchema,
+  ToolOption,
+} from '../../server/protocol'
 import { WfAutoForm } from '../autoform/wf-auto-form'
 import { cn } from '../cn'
 import { formatRelative, formatTimestamp } from '../cost'
 import { highlightJson } from '../data-view'
-import { useModels, useRunAgentPreview } from '../hooks'
+import { useModels, useRunAgentPreview, useTools } from '../hooks'
 import { Tooltip } from '../tooltip'
 import { NoteMarkdown } from './note-markdown'
+import { defaultsToLive, ToolModeList } from './agent-editor-tool-modes'
 
 // Playground — runs the editor's live draft config in isolation (no graph, no
 // persistence) and shows the final answer plus the per-step thinking/tool-call
@@ -62,6 +67,12 @@ type PlaygroundRun = {
   config: AgentConfig
   /** What was submitted — one entry per prompt variable, or `input`. */
   input: Record<string, string>
+  /**
+   * The tools that ran FOR REAL in this run (everything else was faked). Part of
+   * the record because "the agent found nothing" means something very different
+   * depending on whether the search actually happened.
+   */
+  liveToolIds: string[]
   result: AgentPreviewResult | null
   error: string | null
 }
@@ -103,6 +114,28 @@ export function PlaygroundPanel({
   const schema = useMemo(() => agentInputSchema(variables), [variables])
 
   const run = useRunAgentPreview()
+  // The agent's attached tools, resolved to their registry metadata (name, icon,
+  // and the `sideEffect` tag the live/simulated default is drawn from). Ids the
+  // registry no longer knows are dropped — they can't be run either way.
+  const allTools = useTools().data
+  const attachedTools = useMemo(() => {
+    const byId = new Map((allTools ?? []).map((t) => [t.id, t]))
+    return config.toolIds
+      .map((id) => byId.get(id))
+      .filter((t): t is ToolOption => t !== undefined && t.kind === 'ai-tool')
+  }, [allTools, config.toolIds])
+
+  // Explicit per-tool choices only. Everything else falls back to the tool's
+  // default, so attaching a tool picks up the right mode without any bookkeeping
+  // here, and removing one leaves no stale entry behind that matters.
+  const [toolModes, setToolModes] = useState<Record<string, boolean>>({})
+  const liveTools = useMemo(() => {
+    const set = new Set<string>()
+    for (const t of attachedTools) {
+      if (toolModes[t.id] ?? defaultsToLive(t)) set.add(t.id)
+    }
+    return set
+  }, [attachedTools, toolModes])
   // Every run this session, newest first. Each keeps its own status, result and
   // config, so comparing two prompts is "run, edit, run" and both answers stay
   // on screen — the previous behaviour showed only the latest, which made the
@@ -123,6 +156,8 @@ export function PlaygroundPanel({
 
     const id = nextId.current++
     const snapshot = config
+    // Frozen with the config: the modes at submit time are what this run means.
+    const liveToolIds = [...liveTools]
     setRuns((prev) => [
       {
         id,
@@ -130,6 +165,7 @@ export function PlaygroundPanel({
         status: 'running',
         config: snapshot,
         input,
+        liveToolIds,
         result: null,
         error: null,
       },
@@ -143,8 +179,8 @@ export function PlaygroundPanel({
     void run
       .mutateAsync(
         hasVars
-          ? { config: snapshot, promptVariables: input }
-          : { config: snapshot, input: input.input },
+          ? { config: snapshot, promptVariables: input, liveToolIds }
+          : { config: snapshot, input: input.input, liveToolIds },
       )
       .then(
         (result) =>
@@ -180,11 +216,18 @@ export function PlaygroundPanel({
           into a workflow. Uses your current unsaved edits, and every run keeps
           the configuration it ran on so you can go back to it.
         </p>
-        {config.toolIds.length > 0 ? (
-          <p className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-700">
-            Tools are <strong>simulated</strong> here — the agent picks tools
-            and arguments as normal, but results are faked by the model. Nothing
-            real runs and no data is changed.
+        <ToolModeList
+          tools={attachedTools}
+          live={liveTools}
+          disabled={pending}
+          onToggle={(toolId, isLive) =>
+            setToolModes((m) => ({ ...m, [toolId]: isLive }))
+          }
+        />
+        {config.subAgents.targets.length > 0 && attachedTools.length > 0 ? (
+          <p className="text-[11px] text-neutral-400">
+            These switches cover this agent&rsquo;s own tools. Anything a
+            sub-agent calls is always simulated.
           </p>
         ) : null}
 
@@ -280,6 +323,8 @@ function PlaygroundRunCard({
             </dl>
           </div>
 
+          <RunToolModes run={run} />
+
           {run.status === 'running' ? (
             <div className="flex items-center gap-1.5 rounded-md border border-neutral-200 px-3 py-2 text-xs text-neutral-400">
               <Loader2 className="size-3.5 animate-spin" />
@@ -331,6 +376,45 @@ function PlaygroundRunCard({
         </div>
       ) : null}
     </section>
+  )
+}
+
+/**
+ * Which tools were real in this run. Worth a line of its own in the record: the
+ * same agent, the same input and the same prompt can answer differently
+ * depending on whether its search actually ran.
+ */
+function RunToolModes({ run }: { run: PlaygroundRun }) {
+  const tools = useTools().data
+  const attached = run.config.toolIds
+  if (attached.length === 0) return null
+  const name = (id: string) => tools?.find((t) => t.id === id)?.name ?? id
+  const liveNames = run.liveToolIds.filter((id) => attached.includes(id))
+
+  return (
+    <div className="space-y-1">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+        Tools
+      </div>
+      <p className="text-xs text-neutral-600">
+        {liveNames.length === 0 ? (
+          <span className="text-neutral-400">
+            All {attached.length} simulated — nothing real ran.
+          </span>
+        ) : (
+          <>
+            <span className="font-medium text-emerald-700">Live:</span>{' '}
+            {liveNames.map(name).join(', ')}
+            {liveNames.length < attached.length ? (
+              <span className="text-neutral-400">
+                {' · '}
+                {attached.length - liveNames.length} simulated
+              </span>
+            ) : null}
+          </>
+        )}
+      </p>
+    </div>
   )
 }
 

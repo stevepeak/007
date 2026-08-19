@@ -16,6 +16,14 @@ export type ToolOption = {
   color?: string
   kind: 'ai-tool' | 'function'
   /**
+   * Side-effect classification, when the tool declares one: `read` → it only
+   * looks at data, `write` → calling it can change real data or bill an external
+   * call. Drives the agent playground's live/simulated defaults and its warning
+   * before a write tool is run for real. Absent = unclassified (treated as
+   * unsafe: simulated by default).
+   */
+  sideEffect?: 'read' | 'write'
+  /**
    * JSON Schema of the tool's input arguments (converted from the tool's Zod
    * `inputSchema`). Drives the "requires" side of node data-mapping. Absent when
    * the tool didn't declare one.

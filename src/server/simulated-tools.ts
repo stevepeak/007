@@ -10,15 +10,21 @@ import { z } from 'zod'
 import type { JsonSchema } from '../engine/agent-output'
 import type { ToolRegistry, ToolRegistryEntry } from '../engine/tool-registry'
 
-// Playground tool simulation. The agent editor's playground runs an agent
-// against a *scratch* input with no real client data, so we must never execute
-// real tools — several of them mutate the vector store / DB (`embed_and_upsert`,
-// `update_document`), bill external calls (`tavily_search`), or need bindings
-// absent in the web worker. Instead we present the same tool *schemas* to the
-// model (so it still decides to call the right tool with the right arguments —
-// visible in the trace) but replace execution with an LLM that fabricates a
-// plausible result from the tool's description + the arguments the agent passed.
-// No real deps are ever constructed, so real data is untouchable by design.
+// Playground tool dispatch. Each tool an agent can call is either *simulated*
+// (an LLM fabricates a plausible result from the tool's description + the
+// arguments the agent passed) or *live* (the real implementation runs against
+// the host's real per-run deps).
+//
+// Simulation is the safe default and the only mode this file used to have: a
+// playground runs on scratch input with no real client context, and several
+// tools mutate the vector store / DB (`embed_and_upsert`, `update_document`) or
+// bill external calls (`tavily_search`). Either way the model sees the same tool
+// *schemas* and decides which to call with which arguments — only execution
+// differs, so the trace reads the same in both modes.
+//
+// Live tools are opt-in per tool from the playground UI, which defaults
+// `sideEffect: 'read'` tools on and everything else off. When nothing is live,
+// no deps are built at all and real data stays untouchable by construction.
 
 // Fallback stub when the simulator model call fails — keeps the agent loop alive
 // rather than surfacing an error for a tool the author only wanted to exercise.
@@ -72,38 +78,62 @@ async function simulateToolResult(
   }
 }
 
-// Wraps a host tool registry so every AI-tool builds a mock whose `execute`
-// calls the simulator instead of the real implementation. Deps are ignored (the
-// mock closes over the simulator model), so the caller can pass `{}` and skip
-// `buildRunDeps` entirely. Function tools aren't usable inside an agent node, so
-// they're dropped.
-export function buildSimulatedRegistry<TDeps>(
-  registry: ToolRegistry<TDeps>,
-  model: LanguageModel,
-): ToolRegistry<unknown> {
-  const simulated: ToolRegistry<unknown> = new Map()
+/**
+ * Wraps a host tool registry for a playground run. Every AI-tool is rebuilt as a
+ * mock whose `execute` calls the simulator, EXCEPT the ids in `liveToolIds`,
+ * which are bound to the real `deps` and execute for real.
+ *
+ * Both variants close over what they need, so the caller passes `{}` as the
+ * node's `toolDeps`. Function tools aren't usable inside an agent node, so
+ * they're dropped.
+ */
+export function buildPlaygroundRegistry<TDeps>(opts: {
+  registry: ToolRegistry<TDeps>
+  /** The model that fabricates results for simulated tools. */
+  model: LanguageModel
+  /** Tool ids the author opted into running FOR REAL. */
+  liveToolIds?: readonly string[]
+  /**
+   * The host's real per-run deps. Only built by the caller when at least one
+   * tool is live; a live id without deps falls back to simulation.
+   */
+  deps?: TDeps
+}): ToolRegistry<unknown> {
+  const { registry, model, deps } = opts
+  const live = new Set(opts.liveToolIds ?? [])
+  const built: ToolRegistry<unknown> = new Map()
   for (const [id, entry] of registry) {
     if (entry.kind !== 'ai-tool') continue
-    simulated.set(id, {
+    const isLive = live.has(id) && deps !== undefined
+    built.set(id, {
       id: entry.id,
       name: entry.name,
       description: entry.description,
       icon: entry.icon,
+      iconName: entry.iconName,
+      color: entry.color,
+      sideEffect: entry.sideEffect,
+      statusLabel: entry.statusLabel,
       inputSchema: entry.inputSchema,
       outputSchema: entry.outputSchema,
       kind: 'ai-tool',
-      build: () =>
-        tool({
-          description: entry.description,
-          inputSchema: entry.inputSchema ?? jsonSchema({ type: 'object' }),
-          execute: (args: unknown) =>
-            simulateToolResult(
-              model,
-              entry as Extract<ToolRegistryEntry<unknown>, { kind: 'ai-tool' }>,
-              args,
-            ),
-        }),
+      build: isLive
+        ? () => entry.build(deps)
+        : () =>
+            tool({
+              description: entry.description,
+              inputSchema: entry.inputSchema ?? jsonSchema({ type: 'object' }),
+              execute: (args: unknown) =>
+                simulateToolResult(
+                  model,
+                  entry as Extract<
+                    ToolRegistryEntry<unknown>,
+                    { kind: 'ai-tool' }
+                  >,
+                  args,
+                ),
+            }),
     })
   }
-  return simulated
+  return built
 }

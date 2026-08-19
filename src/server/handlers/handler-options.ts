@@ -109,6 +109,12 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
     config: AgentConfig
     input: string
     promptVariables: Record<string, string>
+    /**
+     * Tool ids the author asked to run FOR REAL; everything else is simulated.
+     * Forward this to `executeAgentPreview` — it's the only thing that makes a
+     * playground run touch live services or real data.
+     */
+    liveToolIds: string[]
     ctx: WfServerContext
     req: Request
   }) => Promise<AgentPreviewResult>

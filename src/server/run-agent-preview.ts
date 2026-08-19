@@ -4,7 +4,7 @@ import { executeAgentNode } from '../engine/nodes/agent'
 import { createMemorySink } from '../engine/stream-sink'
 
 import type { AgentPreviewResult } from './protocol'
-import { buildSimulatedRegistry } from './simulated-tools'
+import { buildPlaygroundRegistry } from './simulated-tools'
 
 // Playground seam — runs a *single* agent in isolation against a scratch input,
 // with no graph, no persistence, and no run record. It reuses the exact node
@@ -16,12 +16,17 @@ import { buildSimulatedRegistry } from './simulated-tools'
 // executor through a synthetic one-entry manifest under a fixed preview id —
 // the same mechanism a real run uses to freeze an agent's resolved config.
 //
-// Tools are *simulated*, never executed (see `buildSimulatedRegistry`): a
-// playground runs on scratch data with no real client context, and several
-// tools mutate the vector store / DB or bill external calls. The model still
-// sees the real tool schemas and decides which to call — only execution is
-// mocked. Because no real tool runs, `buildRunDeps` (and the clients it builds)
-// is skipped entirely, so real data is untouchable by construction.
+// Tools are simulated by default (see `buildPlaygroundRegistry`): a playground
+// runs on scratch data with no real client context, and several tools mutate the
+// vector store / DB or bill external calls. The model still sees the real tool
+// schemas and decides which to call — only execution is mocked.
+//
+// `liveToolIds` opts individual tools out of that: those execute for real,
+// against the host's real per-run deps, exactly as they would in a workflow run.
+// The UI defaults read-only tools to live and side-effecting ones to simulated,
+// and warns before a write tool is switched on. `buildRunDeps` (and the clients
+// it builds) is skipped entirely when nothing is live, so an all-simulated run
+// still cannot touch real data by construction.
 //
 // Like `summarizeChanges`, this is invoked from a host-injected handler so the
 // host can supply live bindings (`env`) via the RunContext; the SDK stays
@@ -39,6 +44,12 @@ export async function executeAgentPreview<TDeps>(opts: {
    * real run feeds upstream data into the node).
    */
   input: string
+  /**
+   * Registry ids of the tools to run FOR REAL rather than simulate. Everything
+   * else in the registry is mocked. Empty/omitted → the whole run is simulated
+   * and no deps are built.
+   */
+  liveToolIds?: readonly string[]
   /** The host's full SDK config (model provider, tools, deps builder). */
   wfConfig: WfSdkConfig<TDeps>
   /**
@@ -54,9 +65,22 @@ export async function executeAgentPreview<TDeps>(opts: {
   // real run keeps its own default. A model that can't reason simply emits none.
   const runContext: RunContext = { ...opts.runContext, reasoning: true }
   const sink = createMemorySink()
-  // Tools are simulated by the agent's own model — no real deps are built.
+  // Simulated tools are stood in for by the agent's own model.
   const simulator = wfConfig.getModel(config.modelId, runContext)
-  const toolRegistry = buildSimulatedRegistry(wfConfig.toolRegistry, simulator)
+  // Unknown ids are dropped so a stale toggle can't fail the run. Real deps are
+  // built ONLY when something is actually going to run live — an all-simulated
+  // playground never constructs a DB/vector client at all.
+  const liveToolIds = (opts.liveToolIds ?? []).filter((id) =>
+    wfConfig.toolRegistry.has(id),
+  )
+  const toolDeps =
+    liveToolIds.length > 0 ? await wfConfig.buildRunDeps(runContext) : undefined
+  const toolRegistry = buildPlaygroundRegistry({
+    registry: wfConfig.toolRegistry,
+    model: simulator,
+    liveToolIds,
+    deps: toolDeps,
+  })
 
   const promptVariables = runContext.promptVariables ?? {}
   // A variable-driven agent (e.g. a classifier reading `${title}`/`${text}`)
@@ -96,6 +120,8 @@ export async function executeAgentPreview<TDeps>(opts: {
         reasoning: runContext.reasoning ?? opts?.reasoning,
       }),
     toolRegistry,
+    // Every entry closes over what it needs (the simulator model, or the real
+    // deps bound above), so the node itself has nothing to thread through.
     toolDeps: {},
     sink,
     promptVariables,
