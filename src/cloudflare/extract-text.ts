@@ -126,11 +126,13 @@ export type CreateExtractTextToolOptions<TDeps> = {
   /** Custom page → text recognizer; defaults to Workers AI vision. */
   getRecognize?: (deps: TDeps) => OcrRecognize
   /**
-   * Directory URL the OCR page loads PDF.js from — it must serve
-   * `pdf.min.mjs` and `pdf.worker.min.mjs` for {@link PDFJS_VERSION}. Defaults
-   * to jsDelivr. Hosts extracting privileged documents should point this at
-   * their own origin: the script runs in a page holding the document's bytes,
-   * and an `import` specifier can't carry an integrity hash.
+   * URL the OCR page loads PDF.js from — a served copy of the `pdfjs-dist`
+   * package root for {@link PDFJS_VERSION}, exposing `legacy/build/` (the two
+   * `.min.mjs` bundles), `wasm/` (the JBIG2 / JPEG 2000 / colour-management
+   * decoders) and `iccs/`. Defaults to jsDelivr. Hosts extracting privileged
+   * documents should point this at their own origin: the script runs in a page
+   * holding the document's bytes, and an `import` specifier can't carry an
+   * integrity hash.
    */
   getPdfjsBaseUrl?: (deps: TDeps) => string
   /** Workers AI vision model for the default recognizer. */

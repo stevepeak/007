@@ -14,11 +14,19 @@ const OCR_PROMPT =
  * build a matching self-hosted asset path (and assert its pinned `pdfjs-dist`
  * dependency hasn't drifted from what the injected script expects).
  */
-export const PDFJS_VERSION = '4.7.76'
+export const PDFJS_VERSION = '6.2.108'
 
 /**
- * Where the injected page loads PDF.js from — a *directory* URL containing
- * `pdf.min.mjs` and `pdf.worker.min.mjs`.
+ * Where the injected page loads PDF.js from — the URL of a served *copy of the
+ * `pdfjs-dist` package root*, i.e. a directory holding `legacy/build/`,
+ * `wasm/` and `iccs/`.
+ *
+ * It is the package root rather than `legacy/build/` because since PDF.js 5
+ * the decoders are WebAssembly and live in a *sibling* directory of the
+ * bundles: JPEG 2000 (`openjpeg.wasm`), JBIG2/CCITT (`jbig2.wasm`, the
+ * encoding most scanned and faxed documents use) and ICC colour conversion
+ * (`qcms_bg.wasm`). Deriving every URL from one root keeps `wasmUrl`/`iccUrl`
+ * in {@link buildRendererHtml} from having to climb out of the build dir.
  *
  * Defaults to jsDelivr so the SDK works with zero wiring, but a host serving
  * privileged documents should override it (`getPdfjsBaseUrl` on the tool) to
@@ -26,7 +34,7 @@ export const PDFJS_VERSION = '4.7.76'
  * bytes, so whatever this URL returns executes against them, and an `import`
  * specifier cannot carry a subresource-integrity hash.
  */
-const DEFAULT_PDFJS_BASE_URL = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/legacy/build/`
+const DEFAULT_PDFJS_BASE_URL = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/`
 /** How long the page gets to fetch + evaluate the PDF.js module script. */
 const PDFJS_LOAD_TIMEOUT_MS = 15_000
 const PAGE_RENDER_SCALE = 1.5
@@ -138,8 +146,10 @@ export async function ocrPdf(
   recognize: OcrRecognize,
   opts?: {
     /**
-     * Directory URL holding `pdf.min.mjs` + `pdf.worker.min.mjs`. Defaults to
-     * jsDelivr; see {@link DEFAULT_PDFJS_BASE_URL} for why hosts should override.
+     * URL of a served copy of the `pdfjs-dist` package root — it must expose
+     * `legacy/build/`, `wasm/` and `iccs/`. Defaults to jsDelivr; see
+     * {@link DEFAULT_PDFJS_BASE_URL} for why hosts should override it, and why
+     * this is the package root rather than the build directory.
      */
     pdfjsBaseUrl?: string
   },
@@ -170,8 +180,16 @@ export async function ocrPdf(
   return { text, pages: pages.length }
 }
 
-function buildRendererHtml(pdfjsBaseUrl: string): string {
-  // A directory URL, so the two filenames concatenate cleanly.
+/**
+ * The page injected into Browser Rendering. Exported for
+ * `extract-text-ocr.test.ts`, which asserts the decoder URLs stay wired — a
+ * missing `wasmUrl` fails silently at runtime (see the comment on the
+ * `getDocument` call below), so it needs a build-time guard.
+ */
+export function buildRendererHtml(pdfjsBaseUrl: string): string {
+  // A directory URL, so the sub-paths below concatenate cleanly. PDF.js also
+  // rejects `wasmUrl`/`iccUrl` values that lack a trailing slash outright
+  // ("Invalid factory url"), so the normalisation is load-bearing, not tidiness.
   const base = pdfjsBaseUrl.endsWith('/') ? pdfjsBaseUrl : `${pdfjsBaseUrl}/`
   // `import()` rather than a static `import` so a failed fetch is catchable: a
   // static import that 404s kills the whole module, leaving neither
@@ -184,14 +202,23 @@ function buildRendererHtml(pdfjsBaseUrl: string): string {
 <div id="pages"></div>
 <script type="module">
 try {
-  const pdfjsLib = await import(${JSON.stringify(`${base}pdf.min.mjs`)});
-  pdfjsLib.GlobalWorkerOptions.workerSrc = ${JSON.stringify(`${base}pdf.worker.min.mjs`)};
+  const pdfjsLib = await import(${JSON.stringify(`${base}legacy/build/pdf.min.mjs`)});
+  pdfjsLib.GlobalWorkerOptions.workerSrc = ${JSON.stringify(`${base}legacy/build/pdf.worker.min.mjs`)};
 
   window.__renderPdf = async (b64) => {
     const bin = atob(b64);
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+    // \`wasmUrl\` is not optional for our workload: PDF.js 6 decodes JBIG2 and
+    // JPEG 2000 images through WebAssembly, and when it can't fetch the module
+    // it only \`warn()\`s and leaves the image undecoded. Scanned documents —
+    // exactly what reaches this OCR path — are overwhelmingly JBIG2, so
+    // omitting this yields blank pages and empty OCR text with no error.
+    const pdf = await pdfjsLib.getDocument({
+      data: bytes,
+      wasmUrl: ${JSON.stringify(`${base}wasm/`)},
+      iccUrl: ${JSON.stringify(`${base}iccs/`)},
+    }).promise;
     const container = document.getElementById('pages');
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
@@ -201,7 +228,10 @@ try {
       canvas.width = viewport.width;
       canvas.height = viewport.height;
       container.appendChild(canvas);
-      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+      // Hand PDF.js the canvas rather than a context we made: since 6.x it
+      // creates the context itself with \`{ alpha: false, willReadFrequently }\`,
+      // which is what we want for an opaque page we immediately screenshot.
+      await page.render({ canvas, viewport }).promise;
     }
     return pdf.numPages;
   };
