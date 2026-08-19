@@ -4,9 +4,9 @@ import { Scheduler, WorkflowBudgetError } from './scheduler'
 import { agent, drive, edge, output, trigger } from './scheduler-test-helpers'
 
 describe('Scheduler', () => {
-  test('nextBatch returns every ready sibling as one antichain batch', () => {
+  test('takeReady returns every ready sibling as one antichain claim', () => {
     // trigger fans out to a & b (independent), which converge on join. The
-    // first batch must contain BOTH siblings; join only becomes ready once both
+    // first claim must contain BOTH siblings; join only becomes ready once both
     // are reported.
     const s = new Scheduler({
       version: 1,
@@ -21,31 +21,23 @@ describe('Scheduler', () => {
     })
     s.seedTrigger({})
 
-    const first = s.nextBatch()
-    expect(first.type).toBe('execute')
-    if (first.type === 'execute') {
-      expect(first.nodes.map((n) => n.node.id).sort()).toEqual(['a', 'b'])
-      for (const n of first.nodes) {
-        s.report(n.node.id, { output: { ran: n.node.id } })
-      }
+    const first = s.takeReady()
+    expect(first.map((n) => n.node.id).sort()).toEqual(['a', 'b'])
+    expect(s.pollOutput()).toBeUndefined()
+    for (const n of first) {
+      s.report(n.node.id, { output: { ran: n.node.id } })
     }
 
-    const second = s.nextBatch()
-    expect(second.type).toBe('execute')
-    if (second.type === 'execute') {
-      expect(second.nodes.map((n) => n.node.id)).toEqual(['join'])
-      // join sees both predecessors keyed by source id.
-      expect(second.nodes[0].input).toEqual({
-        a: { ran: 'a' },
-        b: { ran: 'b' },
-      })
-      s.report('join', { output: {} })
-    }
+    const second = s.takeReady()
+    expect(second.map((n) => n.node.id)).toEqual(['join'])
+    // join sees both predecessors keyed by source id.
+    expect(second[0].input).toEqual({ a: { ran: 'a' }, b: { ran: 'b' } })
+    s.report('join', { output: {} })
 
-    expect(s.nextBatch().type).toBe('output')
+    expect(s.pollOutput()?.nodeId).toBe('o')
   })
 
-  test('a batch dispatches sibling nodes concurrently (they overlap)', async () => {
+  test('a claim dispatches sibling nodes concurrently (they overlap)', async () => {
     const s = new Scheduler({
       version: 1,
       nodes: [trigger('t'), agent('a'), agent('b'), agent('join'), output('o', 'join')],
@@ -75,13 +67,13 @@ describe('Scheduler', () => {
       return { output: { ran: id } }
     }
 
-    // Minimal batch driver mirroring the executor/graph-workflow loop.
+    // Minimal driver mirroring the executor/graph-workflow loop.
     while (true) {
-      const inst = s.nextBatch()
-      if (inst.type === 'output') break
-      if (inst.type === 'stall') throw new Error('stalled')
+      if (s.pollOutput()) break
+      const claimed = s.takeReady()
+      if (claimed.length === 0) throw new Error('stalled')
       const settled = await Promise.all(
-        inst.nodes.map(async (n) => ({
+        claimed.map(async (n) => ({
           id: n.node.id,
           result: await run(n.node.id),
         })),

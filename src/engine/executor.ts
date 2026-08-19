@@ -5,6 +5,7 @@ import type { ModelBudget } from './model-budget'
 import { emitNodeStartProgress } from './node-progress'
 import { endEntryOf, startEntryOf } from './run-log-entries'
 import { errorMessage, runNode } from './run-node'
+import { settleOf, type NodeSettlement } from './node-settlement'
 import { recordedBranchResult, type RunRecorder } from './run-recorder'
 import {
   Scheduler,
@@ -118,12 +119,19 @@ export type ExecuteWorkflowResult = {
  * exhausted, and only then resolves: the run is `completed`. Arms that don't
  * feed the Output (a `branch → tool` side effect, say) run in that drain phase,
  * behind the answer rather than instead of it.
+ *
+ * The walk is ROLLING, not batched: it starts every newly-ready node and then
+ * waits for the FIRST of them to settle, re-checking for a reachable Output on
+ * each one. The batched form it replaced could only see the Output at a
+ * barrier, so a slow background node sharing a fan-out with the answer arm
+ * added its whole duration to what the caller waited for — the exact case
+ * `done` exists to avoid.
  */
 export async function executeWorkflow<TDeps>(
   deps: ExecuteWorkflowDeps<TDeps>,
 ): Promise<ExecuteWorkflowResult> {
   const { config, runContext, recorder, sink } = deps
-  const scheduler = new Scheduler(deps.graph)
+  const scheduler = new Scheduler(deps.graph, config.limits?.nodeBudget)
   const trigger = scheduler.trigger
 
   // Per-node sink wrapper. A node handler emits entries knowing only what it
@@ -306,6 +314,10 @@ export async function executeWorkflow<TDeps>(
   // path reads differently on each side of it.
   let delivered: ExecuteWorkflowResult | null = null
 
+  // First failure from the drain phase, if any. Kept out of `delivered` so the
+  // answer and the fault stay separable right up to the return.
+  let drainError: string | undefined
+
   // Hand the answer over and release whoever is waiting on it. Runs BEFORE the
   // drain, so a background arm can never delay a reader — the whole point of
   // the `done` state.
@@ -313,11 +325,18 @@ export async function executeWorkflow<TDeps>(
     output: unknown,
     outputNodeId: string | null,
   ): Promise<ExecuteWorkflowResult> => {
-    await deps.onOutput?.({
-      output,
-      outputNodeId,
-      pendingWork: scheduler.hasReadyWork(),
-    })
+    // `hasPendingWork`, not `hasReadyWork`: the background arms are RUNNING at
+    // this point, not merely ready, and reporting nothing pending here would
+    // settle the run `completed` while its side effects were still executing.
+    const pendingWork = scheduler.hasPendingWork()
+    if (pendingWork) {
+      await sink?.log?.({
+        level: 'progress',
+        message: `Answer delivered — ${scheduler.inFlightCount()} background node(s) still running.`,
+        ts: Date.now(),
+      })
+    }
+    await deps.onOutput?.({ output, outputNodeId, pendingWork })
     if (config.onRunComplete) {
       await notifyHost(() =>
         config.onRunComplete!(runContext, { output, outputNodeId }),
@@ -326,11 +345,77 @@ export async function executeWorkflow<TDeps>(
     return { output, outputNodeId }
   }
 
+  // Nodes started but not yet settled, keyed by node id so the winner of the
+  // race below can be removed. Each promise is written never to reject — see
+  // `settleOf` — because a rejecting entry would tear down the whole race and
+  // lose the identity of which node broke.
+  const inflight = new Map<string, Promise<NodeSettlement>>()
+
+  // A node broke: stop starting NEW work but keep awaiting what is already
+  // running, since an in-flight node cannot be cancelled.
+  let stopDispatch = false
+
+  // Wait for every outstanding node without caring how any of them ends. Used
+  // on the failure paths, where the run's outcome is already decided but the
+  // in-flight work still has to land before we return.
+  const drainInflight = async (): Promise<void> => {
+    await Promise.allSettled(inflight.values())
+    inflight.clear()
+  }
+
   try {
     while (true) {
-      const instruction = scheduler.nextBatch()
+      // 1. The answer, the instant it becomes reachable. Polled on every settle
+      //    rather than at a batch barrier — this is what keeps a slow
+      //    background arm from delaying the caller.
+      const out = scheduler.pollOutput()
+      if (out) {
+        // The bound Output value must satisfy the trigger's output contract
+        // (e.g. a chat run must produce `{ text }`); this throws — failing the
+        // run via the surrounding catch — rather than letting the host read an
+        // empty result. Contract-less triggers pass through untouched.
+        // Only the FIRST Output answers to the contract: it is the one the host
+        // reads. A later arm reaching its own Output is recorded for the trace
+        // but changes nothing the caller already received.
+        const output = delivered
+          ? out.output
+          : enforceOutputContract(
+              config.triggers,
+              trigger.config.triggerKind,
+              out.output,
+            )
+        await recorder.record({
+          nodeId: out.nodeId,
+          nodeKind: 'output',
+          sequence: sequence++,
+          input: out.output,
+          status: 'completed',
+          output,
+        })
+        // Mark it settled so the walk moves past it to the arms that don't feed
+        // it, rather than being handed the same Output on every call.
+        scheduler.completeOutput(out.nodeId, output)
+        if (!delivered) {
+          delivered = await deliver(output, out.nodeId)
+        }
+        continue
+      }
 
-      if (instruction.type === 'stall') {
+      // 2. Start everything that has become ready, answer-critical nodes first.
+      //    Sequence numbers are assigned at dispatch, so the trace reads in
+      //    execution order.
+      if (!stopDispatch) {
+        for (const item of scheduler.takeReady()) {
+          const seq = sequence++
+          inflight.set(
+            item.node.id,
+            settleOf(item.node.id, dispatchNode(item.node, item.input, seq)),
+          )
+        }
+      }
+
+      // 3. Nothing ready and nothing running.
+      if (inflight.size === 0) {
         // Past the answer this is simply the end of the walk: every arm has run
         // itself out and the run is `completed`, not merely `done`.
         if (delivered) {
@@ -347,86 +432,46 @@ export async function executeWorkflow<TDeps>(
         break
       }
 
-      if (instruction.type === 'output') {
-        // The bound Output value must satisfy the trigger's output contract
-        // (e.g. a chat run must produce `{ text }`); this throws — failing the
-        // run via the surrounding catch — rather than letting the host read an
-        // empty result. Contract-less triggers pass through untouched.
-        // Only the FIRST Output answers to the contract: it is the one the host
-        // reads. A later arm reaching its own Output is recorded for the trace
-        // but changes nothing the caller already received.
-        const output = delivered
-          ? instruction.output
-          : enforceOutputContract(
-              config.triggers,
-              trigger.config.triggerKind,
-              instruction.output,
-            )
-        await recorder.record({
-          nodeId: instruction.nodeId,
-          nodeKind: 'output',
-          sequence: sequence++,
-          input: instruction.output,
-          status: 'completed',
-          output,
-        })
-        // Mark it settled so the walk moves past it to the arms that don't feed
-        // it, rather than being handed the same Output on every call.
-        scheduler.completeOutput(instruction.nodeId, output)
+      // 4. Wait for the FIRST node to settle, then loop — so the Output check
+      //    above runs again as soon as anything at all has changed.
+      const settled = await Promise.race(inflight.values())
+      inflight.delete(settled.nodeId)
+
+      if (!settled.ok) {
+        // The node is out of flight but never completed, so its arm stays dead
+        // and it is never re-selected.
+        scheduler.abandon(settled.nodeId)
+        // Before the answer, a failed node fails the run — but only after the
+        // work already running has landed, since it cannot be cancelled. After
+        // the answer, what the host received cannot be retracted, so the broken
+        // arm is reported alongside the result and the drain stops starting new
+        // work while its siblings finish.
         if (!delivered) {
-          delivered = await deliver(output, instruction.nodeId)
+          await drainInflight()
+          throw settled.error
         }
+        drainError ??= errorMessage(settled.error)
+        stopDispatch = true
         continue
       }
 
-      // Sequences assigned up front in stable batch order → deterministic trace
-      // regardless of settle order. Batch nodes are independent (antichain), so
-      // they run concurrently.
-      const batch = instruction.nodes.map((n) => ({
-        node: n.node,
-        input: n.input,
-        seq: sequence++,
-      }))
-
-      const settled = await Promise.allSettled(
-        batch.map((b) => dispatchNode(b.node, b.input, b.seq)),
-      )
-
-      const rejected = settled.find((s) => s.status === 'rejected')
-      if (rejected && rejected.status === 'rejected') {
-        // Before the answer, a failed node fails the run. After it, the answer
-        // has already been handed to the host and cannot be retracted, so the
-        // broken arm ends the drain and is reported alongside the result. We
-        // stop rather than continue because a node that failed was never marked
-        // completed — leaving it selectable would re-dispatch it forever.
-        if (!delivered) {
-          throw rejected.reason
-        }
-        return {
-          ...(delivered),
-          drainError: errorMessage(rejected.reason),
-        }
-      }
-
-      for (const s of settled) {
-        if (s.status === 'fulfilled') {
-          scheduler.report(s.value.nodeId, s.value.report)
-        }
-      }
+      scheduler.report(settled.nodeId, settled.report)
     }
 
-    return delivered
+    return drainError ? { ...delivered, drainError } : delivered
   } catch (err) {
     // Same rule as a rejected drain node, applied to everything else the drain
     // can throw (the node budget, a recorder write, a second Output's step):
     // once the answer is out, the run is not a failure. Report it as a drain
     // error and let the backend settle the run with the answer it already gave.
     if (delivered) {
+      await drainInflight()
       return {
         ...(delivered),
-        drainError: errorMessage(err),
+        drainError: drainError ?? errorMessage(err),
       }
     }
+    await drainInflight()
     if (config.onRunFailed) {
       await notifyHost(() =>
         config.onRunFailed!(runContext, { error: errorMessage(err) }),

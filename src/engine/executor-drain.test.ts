@@ -185,9 +185,20 @@ describe('executor — draining branches the Output does not feed', () => {
       },
     })
 
-    // Answer first, reader released second, background arm last — a waiting
-    // consumer never pays for work its answer didn't depend on.
-    expect(timeline).toEqual(['answer', 'delivered', 'side'])
+    // The answer's own node runs, then the reader is released. Both arms still
+    // run exactly once.
+    expect(timeline.indexOf('answer')).toBeLessThan(
+      timeline.indexOf('delivered'),
+    )
+    expect(timeline.filter((t) => t === 'side')).toHaveLength(1)
+    // Where 'side' lands relative to 'delivered' is deliberately NOT asserted.
+    // Under the old batched walk the side arm could not start until the whole
+    // ready-set had settled, which forced it after the delivery; the rolling
+    // walk starts it the moment its branch routes, so the two are concurrent
+    // and their start order is a genuine race. That is the improvement, not a
+    // regression — what matters is that the delivery does not WAIT on the side
+    // arm, which `executor-rolling.test.ts` pins with a side arm that cannot
+    // finish until the test lets it.
     expect(deliveries).toHaveLength(1)
     // `done`, not `completed`: there was still an arm to drain.
     expect(deliveries[0].pendingWork).toBe(true)

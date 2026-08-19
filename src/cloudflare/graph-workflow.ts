@@ -14,6 +14,7 @@ import {
 } from '../engine/graph'
 import { errorMessage } from '../engine/run-node'
 import type { RecordStepArgs } from '../engine/run-recorder'
+import { settleOf, type NodeSettlement } from '../engine/node-settlement'
 import { Scheduler, WorkflowStalledError } from '../engine/scheduler'
 import type { StreamSink } from '../engine/stream-sink'
 import { resolveTriggerInput } from '../engine/trigger-registry'
@@ -177,9 +178,12 @@ export type GraphWorkflowResult = {
  * ```
  *
  * `run()` drives the pure {@link Scheduler}, wrapping each node in `step.do` so
- * Cloudflare owns durability/retry while the engine owns node semantics. The
- * walk is deterministic (stable step names = node ids, replay-stable
- * `sequence`), so retries/hibernation don't corrupt the trace.
+ * Cloudflare owns durability/retry while the engine owns node semantics. Step
+ * names are derived from node ids and so are stable across replay, which is
+ * what keeps retries and hibernation from corrupting the trace. (`sequence` is
+ * NOT replay-stable under the rolling walk — see the note where it is assigned.
+ * It is a plain ordering index, and a node whose `record:` step already ran
+ * replays that step rather than rewriting it.)
  */
 export type GraphWorkflowClass<E extends GraphWorkflowEnv = GraphWorkflowEnv> =
   new (
@@ -343,8 +347,10 @@ export function makeGraphWorkflow<
         runStartedAtMs,
       }
 
-      // Deterministic sequence counter — lives in the orchestrator (replayed in
-      // order every time), never across an opaque step boundary.
+      // Trace ordering index. Lives in the orchestrator, never across an opaque
+      // step boundary. Assigned in dispatch order, so the trace reads in
+      // execution order; see the note in the walk about what that means for
+      // replay.
       let sequence = 0
       const triggerSeq = sequence++
       await stepDo(step, `step:${trigger.id}`, () =>
@@ -405,32 +411,33 @@ export function makeGraphWorkflow<
       // arms that never fed it" — the run is `done` but not yet `completed`.
       let delivered: GraphWorkflowResult | null = null
 
+      // Nodes started but not yet settled, keyed by node id. Each entry is
+      // written never to reject (see `settleOf`) so the race below always
+      // identifies WHICH node ended, and no sibling is left unhandled.
+      const inflight = new Map<string, Promise<NodeSettlement>>()
+      // A node broke: stop starting NEW work, but keep awaiting what is already
+      // running — a `step.do` in flight cannot be cancelled.
+      let stopDispatch = false
+      // First failure from the drain phase, if any.
+      let drainError: string | undefined
+
+      const drainInflight = async (): Promise<void> => {
+        await Promise.allSettled(inflight.values())
+        inflight.clear()
+      }
+
       try {
         while (true) {
-          const instruction = scheduler.nextBatch()
-
-          if (instruction.type === 'stall') {
-            // Past the answer, this is the ordinary end of the walk.
-            if (delivered) {
-              return await settleRun(ctx, delivered)
-            }
-            // A decision node whose taken arm has no outgoing edge ends that
-            // path quietly — an intentional "fizzle out", not a malformed graph.
-            // Finalize the run with no output. A stall with no decision ever
-            // fired is a genuinely unreachable Output, which stays an error.
-            if (!scheduler.hasRoutedDecision()) {
-              throw new WorkflowStalledError()
-            }
-            return await settleRun(
-              ctx,
-              await deliverOutput(ctx, undefined, null, false),
-            )
-          }
-
-          if (instruction.type === 'output') {
+          // 1. The answer, the instant it becomes reachable — polled per settle
+          //    rather than once per fully-settled ready-set. Under the batched
+          //    walk a slow background node dispatched beside the answer arm
+          //    delayed `done` by its own duration, which is precisely what the
+          //    `done` state exists to prevent.
+          const out = scheduler.pollOutput()
+          if (out) {
             const outSeq = sequence++
-            const outputNodeId = instruction.nodeId
-            const output = instruction.output
+            const outputNodeId = out.nodeId
+            const output = out.output
             await stepDo(step, `step:${outputNodeId}`, () =>
               recordOne({
                 nodeId: outputNodeId,
@@ -451,62 +458,97 @@ export function makeGraphWorkflow<
                 ctx,
                 output,
                 outputNodeId,
-                scheduler.hasReadyWork(),
+                // `hasPendingWork`, not `hasReadyWork`: the background arms are
+                // RUNNING here, not merely ready, and reporting nothing pending
+                // would settle the run `completed` while they were still going.
+                scheduler.hasPendingWork(),
               )
             }
             continue
           }
 
-          // Assign sequence numbers up front, in the batch's stable order, so
-          // the trace is deterministic no matter which step.do settles first.
-          // Every node in a batch is independent (the ready-set is an antichain),
-          // so they run concurrently and each drives its own durable steps.
-          const batch = instruction.nodes.map((n) => ({
-            node: n.node,
-            input: n.input,
-            seq: sequence++,
-          }))
-          counters.nodes += batch.length
+          // 2. Start everything newly ready, answer-critical nodes first. Every
+          //    node in a ready-set is independent, so they run concurrently and
+          //    each drives its own durable steps.
+          //
+          //    Sequence numbers are assigned at dispatch, so the trace reads in
+          //    execution order. A replay may assign different numbers to work it
+          //    has not yet recorded — harmless: `sequence` is a plain ordering
+          //    index, not unique, and any node whose `record:` step already ran
+          //    replays that step from the journal rather than rewriting it.
+          if (!stopDispatch) {
+            const ready = scheduler.takeReady()
+            counters.nodes += ready.length
+            for (const item of ready) {
+              const seq = sequence++
+              inflight.set(
+                item.node.id,
+                settleOf(
+                  item.node.id,
+                  dispatchNode(ctx, item.node, item.input, seq),
+                ),
+              )
+            }
+          }
 
-          // `allSettled` (not `all`): a running `step.do` can't be cancelled, so
-          // let every in-flight sibling finish before we surface a failure. Each
-          // failed node already recorded its own failed step inside dispatchNode.
-          const settled = await Promise.allSettled(
-            batch.map((b) => dispatchNode(ctx, b.node, b.input, b.seq)),
-          )
-
-          const rejected = settled.find((s) => s.status === 'rejected')
-          if (rejected && rejected.status === 'rejected') {
-            // Before the answer, a failed node fails the run. After it, the
-            // answer is already persisted and reported to the host/parent and
-            // cannot be retracted — so the broken arm ends the drain and is
-            // recorded beside the delivered result. Stopping (rather than
-            // continuing) is required: a failed node was never marked
-            // completed, so it would be re-selected forever.
-            if (!delivered) {
-              throw rejected.reason
+          // 3. Nothing ready and nothing running.
+          if (inflight.size === 0) {
+            // Past the answer, this is the ordinary end of the walk.
+            if (delivered) {
+              return await settleRun(ctx, delivered, drainError)
+            }
+            // A decision node whose taken arm has no outgoing edge ends that
+            // path quietly — an intentional "fizzle out", not a malformed graph.
+            // Finalize the run with no output. A stall with no decision ever
+            // fired is a genuinely unreachable Output, which stays an error.
+            if (!scheduler.hasRoutedDecision()) {
+              throw new WorkflowStalledError()
             }
             return await settleRun(
               ctx,
-              delivered,
-              errorMessage(rejected.reason),
+              await deliverOutput(ctx, undefined, null, false),
             )
           }
 
-          for (const s of settled) {
-            if (s.status === 'fulfilled') {
-              scheduler.report(s.value.nodeId, s.value.report)
+          // 4. Wait for the FIRST node to settle, then loop — so the Output
+          //    check above runs again as soon as anything has changed.
+          const settled = await Promise.race(inflight.values())
+          inflight.delete(settled.nodeId)
+
+          if (!settled.ok) {
+            // Out of flight but never completed, so this arm stays dead and the
+            // node is never re-selected.
+            scheduler.abandon(settled.nodeId)
+            // Before the answer, a failed node fails the run — but only once the
+            // work already running has landed, since a `step.do` cannot be
+            // cancelled. After the answer, what the host received cannot be
+            // retracted, so the broken arm is recorded beside the delivered
+            // result and the drain stops starting new work while its siblings
+            // finish. Each failed node already recorded its own failed step
+            // inside `dispatchNode`.
+            if (!delivered) {
+              await drainInflight()
+              throw settled.error
             }
+            drainError ??= errorMessage(settled.error)
+            stopDispatch = true
+            continue
           }
+
+          scheduler.report(settled.nodeId, settled.report)
         }
       } catch (err) {
         const message = errorMessage(err)
+        // Whatever the outcome, nothing may still be running when we settle or
+        // fail the run — an in-flight `step.do` cannot be cancelled, so the only
+        // option is to let it land.
+        await drainInflight()
         // Same rule as a rejected drain node, for everything else the drain can
         // throw (the node budget, a recorder step, a second Output's record):
         // once the answer is out the run is not a failure. Settle it with the
         // answer already given and record the broken arm.
         if (delivered) {
-          return await settleRun(ctx, delivered, message)
+          return await settleRun(ctx, delivered, drainError ?? message)
         }
         await stepDo(step, 'record-failure', async () => {
           await failRun(createWfDb(env.WF_DB), {

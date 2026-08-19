@@ -8,6 +8,7 @@ import {
   type WorkflowNode,
 } from './graph'
 import { buildAdjacency } from './graph-adjacency'
+import { answerCriticalIds } from './graph-answer-cone'
 
 // The Scheduler is the runtime-agnostic heart of workflow execution. It owns
 // the graph walk — which node is ready next, how branches route, how inputs
@@ -36,26 +37,20 @@ export type ExecuteInstruction = {
   input: unknown
 }
 
-/** One executable node + its resolved input, as carried in a batch. */
-export type BatchItem = { node: ExecutableNode; input: unknown }
-
 /**
- * Every currently-ready node, to run concurrently. For ordinary work nodes the
- * ready-set is an antichain — a node is ready only once ALL its predecessors are
- * `completed`, so no two have an edge between them and they run safely in
- * parallel. A `race` node is the one exception: it's ready on its FIRST completed
- * predecessor, so it can share a batch with a still-running predecessor. That's
- * harmless — its input is resolved from already-completed edges only and it fires
- * exactly once (a completed node is never re-selected), so the concurrency is
- * still safe; the not-yet-done predecessor's result is simply ignored.
+ * One executable node + its resolved input, as claimed by
+ * {@link Scheduler.takeReady}.
+ *
+ * A claim is an antichain: an ordinary work node is ready only once ALL its
+ * predecessors are `completed`, so no two claimed nodes have an edge between
+ * them and they run safely in parallel. A `race` node is the one exception —
+ * it's ready on its FIRST completed predecessor, so it can be claimed while
+ * another of its predecessors is still running. That is harmless: its input is
+ * resolved from already-completed edges only, and the in-flight bookkeeping
+ * makes it fire exactly once, so the not-yet-done predecessor's result is
+ * simply ignored.
  */
-export type BatchExecuteInstruction = {
-  type: 'execute'
-  nodes: BatchItem[]
-}
-
-export type BatchInstruction =
-  BatchExecuteInstruction | OutputInstruction | StallInstruction
+export type BatchItem = { node: ExecutableNode; input: unknown }
 
 /**
  * The run has reached an Output node — its answer is final.
@@ -131,6 +126,17 @@ export class Scheduler {
   private readonly aggregateIds = new Set<string>()
 
   private readonly completed = new Set<string>()
+  // Nodes handed to a backend by `takeReady` and not yet `report`ed. Under the
+  // old barrier walk this was unnecessary — the caller reported every node
+  // before asking again — but rolling dispatch asks for more work while nodes
+  // are still running, so readiness has to exclude what is already out.
+  private readonly inFlight = new Set<string>()
+  // Nodes whose execution failed. Neither completed (their outgoing edges must
+  // stay dead) nor selectable again — see `abandon`.
+  private readonly failed = new Set<string>()
+  // Nodes that can influence some Output's value. Derived once from the graph
+  // (see `answerCriticalIds`); drives dispatch order only, never readiness.
+  private readonly answerCritical: Set<string>
   private readonly branchResults = new Map<string, string>()
   // Seeded with the graph's node identities so a failed ref names the boxes the
   // author drew rather than their uuids. Assigned in the constructor — it needs
@@ -160,6 +166,7 @@ export class Scheduler {
       }
     }
     this.incoming = buildAdjacency(this.graph).incoming
+    this.answerCritical = answerCriticalIds(this.graph)
   }
 
   /**
@@ -195,7 +202,7 @@ export class Scheduler {
 
   /**
    * Settle an Output node the backend has just handled: record its value and
-   * mark it completed so `next()`/`nextBatch()` move PAST it to whatever else
+   * mark it completed so `next()`/`pollOutput()` move PAST it to whatever else
    * is still ready, instead of handing back the same Output forever.
    *
    * This is the hinge of the `done` / `completed` split. The run is `done` the
@@ -212,19 +219,29 @@ export class Scheduler {
   }
 
   /**
-   * Whether any executable node is ready RIGHT NOW. Callers use it at the
-   * moment an Output settles to tell "answer delivered, background arms still
-   * to run" from "answer delivered, nothing left" — the latter can go straight
-   * to `completed` and skip the extra status write.
-   *
-   * Sound only at a batch barrier (nothing in flight), which is exactly where
-   * the backends ask: with every dispatched node reported, a graph with no
-   * ready node has no way to produce one.
+   * Whether any executable node is ready RIGHT NOW — i.e. could be started on
+   * the next `takeReady`. Excludes nodes already in flight; see
+   * {@link hasPendingWork} for the question a backend actually wants answered.
    */
   hasReadyWork(): boolean {
     return this.graph.nodes.some(
       (n) => !isBookendKind(n) && this.isReady(n.id),
     )
+  }
+
+  /**
+   * Whether ANY work remains — a node still running, or one ready to start.
+   * This is the `done` vs `completed` predicate: a backend asks it the moment
+   * an Output settles, to tell "answer delivered, background arms still going"
+   * from "answer delivered, nothing left" (the latter settles in one write).
+   *
+   * The in-flight half is not optional. Under rolling dispatch the background
+   * arms are *running*, not merely ready, at the instant the Output surfaces —
+   * asking only `hasReadyWork()` there would report nothing pending and mark
+   * the run `completed` while its side effects were still executing.
+   */
+  hasPendingWork(): boolean {
+    return this.inFlight.size > 0 || this.hasReadyWork()
   }
 
   private isEdgeAlive = (e: WorkflowEdge): boolean => {
@@ -244,7 +261,11 @@ export class Scheduler {
   }
 
   private isReady(nodeId: string): boolean {
-    if (this.completed.has(nodeId)) {
+    if (
+      this.completed.has(nodeId) ||
+      this.inFlight.has(nodeId) ||
+      this.failed.has(nodeId)
+    ) {
       return false
     }
     const inc = this.incoming.get(nodeId) ?? []
@@ -374,42 +395,89 @@ export class Scheduler {
   }
 
   /**
-   * Like {@link next}, but returns EVERY ready node instead of the first, so a
-   * backend can dispatch them concurrently. A reachable Output is checked and
-   * returned FIRST — the answer path takes priority over any remaining
-   * background arm, so a reader waits only on the work its answer depends on.
-   * Once that Output is settled via `completeOutput`, the next call hands back
-   * the leftover ready-set and the walk drains normally.
-   * Because the ready-set is an antichain, the caller must `report()` every
-   * returned node before calling `nextBatch()` again — the same barrier `next()`
-   * relies on, which is why no in-flight bookkeeping is needed here.
+   * The reachable Output, if there is one, so a backend can ask at ANY moment
+   * rather than only when a whole ready-set has settled.
+   *
+   * That distinction is the whole point. Under the barrier walk the Output was
+   * not even *observable* until every node dispatched alongside the answer arm
+   * had settled, so a slow background node hung off the same fan-out added its
+   * full duration to what the caller waited for. Polled per settle, the answer
+   * is released the moment its own arm reports.
    */
-  nextBatch(): BatchInstruction {
+  pollOutput(): OutputInstruction | undefined {
     const out = this.reachableOutput()
-    if (out) {
-      return { type: 'output', nodeId: out.id, output: this.resolveOutputValue(out) }
+    if (!out) return undefined
+    return {
+      type: 'output',
+      nodeId: out.id,
+      output: this.resolveOutputValue(out),
     }
+  }
 
-    // `filter` preserves graph declaration order, so the batch — and any
-    // sequence numbers a backend assigns from it — is deterministic across
-    // replay. The bookend kinds never satisfy `isReady`, but we exclude them
-    // explicitly so the result narrows to `ExecutableNode`.
+  /**
+   * Claim every currently-ready node for execution, answer-critical nodes
+   * first, and mark them in flight so a later call cannot hand back the same
+   * node twice. Returns `[]` when nothing is ready — which, combined with
+   * "nothing in flight", is the caller's stall condition.
+   *
+   * There is NO barrier: a backend may call it
+   * again while earlier nodes are still running, and gets only what has become
+   * ready since. The `inFlight` bookkeeping is what makes that safe, and it is
+   * also what now guarantees a `race` node fires exactly once — under the
+   * barrier that fell out of "a completed node is never re-selected", which no
+   * longer holds while the race's own execution is outstanding.
+   *
+   * Ordering is answer-critical first, then graph declaration order within each
+   * group (`filter` preserves it), keeping dispatch deterministic across a
+   * durable replay. The ordering is a preference, never a gate: background
+   * nodes go out in the same call, so nothing is deferred behind the answer.
+   */
+  takeReady(): BatchItem[] {
     const ready = this.graph.nodes.filter(
       (n): n is ExecutableNode => !isBookendKind(n) && this.isReady(n.id),
     )
-    if (ready.length === 0) {
-      return { type: 'stall' }
-    }
+    if (ready.length === 0) return []
 
     this.nodesFired += ready.length
     if (this.nodesFired > this.nodeBudget) {
       throw new WorkflowBudgetError(this.nodeBudget)
     }
 
-    return {
-      type: 'execute',
-      nodes: ready.map((node) => ({ node, input: this.resolveInput(node.id) })),
-    }
+    const ordered = [
+      ...ready.filter((n) => this.answerCritical.has(n.id)),
+      ...ready.filter((n) => !this.answerCritical.has(n.id)),
+    ]
+    // Resolve inputs BEFORE marking anything in flight: `resolveInput` reads
+    // only `completed` state, but keeping the two phases apart means a future
+    // change to either can't quietly make a node's input depend on whether a
+    // sibling in the same call was claimed first.
+    const items = ordered.map((node) => ({
+      node,
+      input: this.resolveInput(node.id),
+    }))
+    for (const item of items) this.inFlight.add(item.node.id)
+    return items
+  }
+
+  /** How many nodes are dispatched but not yet reported. */
+  inFlightCount(): number {
+    return this.inFlight.size
+  }
+
+  /**
+   * Release a node claimed by {@link takeReady} WITHOUT completing it — for a
+   * node whose execution failed.
+   *
+   * Deliberately not `completed`: an edge is alive only from a completed
+   * source, so this arm stays dead and nothing downstream of it becomes ready
+   * (the node produced no output for them to consume). But it must leave
+   * `inFlight`, or `hasPendingWork` would report work forever, and it must not
+   * fall back into the ready set, or the next `takeReady` would re-dispatch it.
+   * The `failed` set is what holds that middle position.
+   */
+  abandon(nodeId: string): void {
+    this.inFlight.delete(nodeId)
+    this.failed.add(nodeId)
   }
 
   /**
@@ -419,6 +487,7 @@ export class Scheduler {
    * don't forward their input, so downstream reaches pre-decision data by ref.
    */
   report(nodeId: string, result: ReportResult): void {
+    this.inFlight.delete(nodeId)
     this.nodeOutputs.set(nodeId, result.output)
     if (result.branchResult) {
       this.branchResults.set(nodeId, result.branchResult)

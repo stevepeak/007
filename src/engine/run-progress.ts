@@ -23,11 +23,21 @@ export const NON_STEP_KINDS = new Set([
 // Step statuses that mean a node is done (any which way).
 export const TERMINAL_STEP_STATUSES = new Set(['completed', 'failed', 'skipped'])
 
-// Run statuses that mean the whole run has settled — progress pins to 100%.
-const TERMINAL_RUN_STATUSES = new Set(['completed', 'failed', 'cancelled'])
+// Run statuses that mean the run is finished as far as a progress bar is
+// concerned — it pins to 100%.
+//
+// `done` counts. The Output was reached and the answer is final; what remains
+// is background arms draining, which nobody is waiting on. Leaving it out left
+// a finished answer sitting under a bar that still read "working".
+const TERMINAL_RUN_STATUSES = new Set([
+  'done',
+  'completed',
+  'failed',
+  'cancelled',
+])
 
 export type WfRunProgress = {
-  /** The run's overall status (queued | running | completed | failed | cancelled). */
+  /** The run's overall status (queued | running | done | completed | failed | cancelled). */
   status: string
   /** Node id of the step currently running, else the most recent step. */
   activeNodeId: string | null

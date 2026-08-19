@@ -688,17 +688,28 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
 //
 // This makes the run `done`, NOT `completed`. Arms that don't feed the Output
 // keep executing behind it and `settleRun` closes the run out when they finish;
-// `pendingWork` (asked at the batch barrier, so nothing is in flight) is what
-// tells the two apart. Everyone waiting on an answer — the host callback, a
-// parent workflow parked on a callee — is released here rather than behind a
-// background arm they never depended on.
+// `pendingWork` is what tells the two apart, and under the rolling walk it must
+// count nodes that are RUNNING as well as ready (see `Scheduler.hasPendingWork`)
+// — the background arms are mid-flight at this exact moment. Everyone waiting on
+// an answer — the host callback, a parent workflow parked on a callee — is
+// released here rather than behind a background arm they never depended on.
 export async function deliverOutput<TDeps, E extends GraphWorkflowEnv>(
   ctx: RunCtx<TDeps, E>,
   rawOutput: unknown,
   outputNodeId: string | null,
   pendingWork: boolean,
 ): Promise<GraphWorkflowResult> {
-  const { step, env, config, p, room, scheduler } = ctx
+  const { step, env, config, p, room, scheduler, sink } = ctx
+  if (pendingWork) {
+    // Makes the two-phase finish legible in the run viewer: without it a run
+    // sitting in `done` looks indistinguishable from one still working on the
+    // answer.
+    await sink?.log?.({
+      level: 'progress',
+      message: `Answer delivered — ${scheduler.inFlightCount()} background node(s) still running.`,
+      ts: Date.now(),
+    })
+  }
   // Enforce the trigger's output contract (e.g. chat's `{ text }`) before we
   // persist anything: a run whose Output was bound to the wrong shape — or that
   // fizzled out with no result under a contract that requires one — fails here

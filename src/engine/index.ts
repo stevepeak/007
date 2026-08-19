@@ -91,6 +91,7 @@ export {
   type BlobRehydrate,
   type WfBlobRef,
 } from './blob-ref'
+export { answerCriticalIds } from './graph-answer-cone'
 export { ancestorIds, predecessorIds } from './graph-traverse'
 export {
   AI_NODE_TIMEOUT_MS,
@@ -110,8 +111,6 @@ export {
   Scheduler,
   WorkflowBudgetError,
   WorkflowStalledError,
-  type BatchExecuteInstruction,
-  type BatchInstruction,
   type BatchItem,
   type ExecutableNode,
   type ExecuteInstruction,

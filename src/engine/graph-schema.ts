@@ -26,6 +26,13 @@ export const nodeExecutionSchema = z.object({
   continueOnError: z.boolean().optional(),
   // Wall-clock budget for ONE attempt, in milliseconds.
   timeoutMs: z.number().int().positive().optional(),
+  // Demote this node out of the answer-critical set, so the walk starts it
+  // AFTER the nodes the Output depends on. It still runs, and still runs
+  // concurrently — this only yields dispatch order. The engine already derives
+  // "can this node influence the answer?" from the graph (see
+  // `answerCriticalIds`), so this is the escape hatch for a side-effect node
+  // that happens to sit inside the Output's ancestor cone.
+  background: z.boolean().optional(),
   // Retry policy for a failed attempt. `limit` is the number of retries AFTER
   // the first attempt (0 = no retry).
   retries: z
