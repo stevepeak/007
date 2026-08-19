@@ -113,6 +113,10 @@ export {
   agentIcon,
   type AgentColor,
 } from './agent-appearance'
+export {
+  AppearancePicker,
+  type AppearancePickerProps,
+} from './appearance-picker'
 export { ComingSoon, type ComingSoonProps } from './coming-soon'
 export { FeedbackList, type FeedbackListProps } from './feedback-list'
 export {

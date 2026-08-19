@@ -13,6 +13,7 @@ import { useMemo, useRef, useState } from 'react'
 
 import { inferPromptVariables, type AgentConfig } from '../../engine'
 import type {
+  AgentPreviewMessage,
   AgentPreviewResult,
   JsonSchema,
   ToolOption,
@@ -24,6 +25,10 @@ import { highlightJson } from '../data-view'
 import { useModels, useRunAgentPreview, useTools } from '../hooks'
 import { Tooltip } from '../tooltip'
 import { NoteMarkdown } from './note-markdown'
+import {
+  ConversationBuilder,
+  ConversationTranscript,
+} from './agent-editor-conversation'
 import { defaultsToLive, ToolModeList } from './agent-editor-tool-modes'
 
 // Playground — runs the editor's live draft config in isolation (no graph, no
@@ -35,7 +40,11 @@ import { defaultsToLive, ToolModeList } from './agent-editor-tool-modes'
 // `${title}`/`${text}` gets a field for each. An agent with no variables gets a
 // single free-form message box instead. Both are expressed as a JSON Schema and
 // rendered through the same AutoForm playground as tools.
-function agentInputSchema(variables: string[]): JsonSchema {
+function agentInputSchema(
+  variables: string[],
+  /** The agent works on a conversation, so this box is the newest turn. */
+  conversational: boolean,
+): JsonSchema {
   const names = variables.length > 0 ? variables : ['input']
   return {
     type: 'object',
@@ -45,7 +54,12 @@ function agentInputSchema(variables: string[]): JsonSchema {
         name,
         {
           type: 'string',
-          title: variables.length > 0 ? name : 'Test input',
+          title:
+            variables.length > 0
+              ? name
+              : conversational
+                ? 'New message'
+                : 'Test input',
           format: 'textarea',
         },
       ]),
@@ -67,6 +81,8 @@ type PlaygroundRun = {
   config: AgentConfig
   /** What was submitted — one entry per prompt variable, or `input`. */
   input: Record<string, string>
+  /** The prior turns this run was given, if the agent works on a conversation. */
+  messages: AgentPreviewMessage[]
   /**
    * The tools that ran FOR REAL in this run (everything else was faked). Part of
    * the record because "the agent found nothing" means something very different
@@ -111,7 +127,16 @@ export function PlaygroundPanel({
     [config.prompt],
   )
   const hasVars = variables.length > 0
-  const schema = useMemo(() => agentInputSchema(variables), [variables])
+  // An agent that declares it works on a conversation gets a thread to run
+  // against; everything else runs on a single message, as before.
+  const conversational = config.acceptsConversation
+  const schema = useMemo(
+    () => agentInputSchema(variables, conversational),
+    [variables, conversational],
+  )
+  // The turns BEFORE the message being sent. Kept across runs so you can send a
+  // follow-up without retyping the thread that set it up.
+  const [history, setHistory] = useState<AgentPreviewMessage[]>([])
 
   const run = useRunAgentPreview()
   // The agent's attached tools, resolved to their registry metadata (name, icon,
@@ -158,6 +183,12 @@ export function PlaygroundPanel({
     const snapshot = config
     // Frozen with the config: the modes at submit time are what this run means.
     const liveToolIds = [...liveTools]
+    // Empty turns are scaffolding, not context — drop them rather than feeding
+    // the model a blank message. Gated on the flag so a thread left over from
+    // toggling "works on a conversation" off can't silently reach the run.
+    const messages = conversational
+      ? history.filter((m) => m.text.trim().length > 0)
+      : []
     setRuns((prev) => [
       {
         id,
@@ -165,6 +196,7 @@ export function PlaygroundPanel({
         status: 'running',
         config: snapshot,
         input,
+        messages,
         liveToolIds,
         result: null,
         error: null,
@@ -179,8 +211,8 @@ export function PlaygroundPanel({
     void run
       .mutateAsync(
         hasVars
-          ? { config: snapshot, promptVariables: input, liveToolIds }
-          : { config: snapshot, input: input.input, liveToolIds },
+          ? { config: snapshot, promptVariables: input, liveToolIds, messages }
+          : { config: snapshot, input: input.input, liveToolIds, messages },
       )
       .then(
         (result) =>
@@ -216,6 +248,13 @@ export function PlaygroundPanel({
           into a workflow. Uses your current unsaved edits, and every run keeps
           the configuration it ran on so you can go back to it.
         </p>
+        {conversational ? (
+          <ConversationBuilder
+            messages={history}
+            onChange={setHistory}
+            disabled={pending}
+          />
+        ) : null}
         <ToolModeList
           tools={attachedTools}
           live={liveTools}
@@ -307,9 +346,11 @@ function PlaygroundRunCard({
 
       {expanded ? (
         <div className="space-y-3 border-t border-neutral-100 p-3">
+          <ConversationTranscript messages={run.messages} />
+
           <div className="space-y-1">
             <div className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">
-              Input
+              {run.messages.length > 0 ? 'New message' : 'Input'}
             </div>
             <dl className="space-y-1 rounded-md border border-neutral-200 bg-neutral-50 px-2.5 py-2 text-xs">
               {Object.entries(run.input).map(([k, v]) => (

@@ -75,6 +75,16 @@ export type WfAgentDetail = {
   } | null
 }
 
+/**
+ * One authored turn in the playground's scratch conversation. Only what a chat
+ * thread carries before the agent runs — a role and its text; tool calls belong
+ * to the run, not to the history you hand it.
+ */
+export type AgentPreviewMessage = {
+  role: 'user' | 'assistant'
+  text: string
+}
+
 // Playground: run one agent in isolation. `config` is the editor's live draft
 // (so unsaved edits are testable). An agent's inputs are its prompt `${…}`
 // variables (`promptVariables`); `input` is the free-form conversational message
@@ -91,6 +101,14 @@ export type AgentPreviewInput = {
    * simulated (the safe default): no live call is made and no real data moves.
    */
   liveToolIds?: string[]
+  /**
+   * Prior turns for an agent that works on a conversation
+   * (`AgentConfig.acceptsConversation`) — the history that precedes `input`, in
+   * order. Stands in for what a chat trigger's `messages` would supply in a real
+   * run; `input` (or the rendered `promptVariables`) is appended as the current
+   * user turn. Omitted/empty → the agent answers with no prior context.
+   */
+  messages?: AgentPreviewMessage[]
 }
 
 /**

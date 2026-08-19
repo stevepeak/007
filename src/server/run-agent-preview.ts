@@ -1,9 +1,11 @@
+import type { UIMessage } from 'ai'
+
 import type { RunContext, WfSdkConfig } from '../engine/config'
 import type { AgentConfig, AgentNode } from '../engine/graph'
 import { executeAgentNode } from '../engine/nodes/agent'
 import { createMemorySink } from '../engine/stream-sink'
 
-import type { AgentPreviewResult } from './protocol'
+import type { AgentPreviewMessage, AgentPreviewResult } from './protocol'
 import { buildPlaygroundRegistry } from './simulated-tools'
 
 // Playground seam — runs a *single* agent in isolation against a scratch input,
@@ -34,6 +36,19 @@ import { buildPlaygroundRegistry } from './simulated-tools'
 
 const PREVIEW_AGENT_ID = '__playground__'
 
+/**
+ * Turn the playground's authored turns into the AI-SDK messages the node binds
+ * as its conversation. Plain text parts only — a scratch history is what the
+ * agent is *given*, not a replay of a past run's tool traffic.
+ */
+function toUiMessages(messages: readonly AgentPreviewMessage[]): UIMessage[] {
+  return messages.map((m): UIMessage => ({
+    id: crypto.randomUUID(),
+    role: m.role,
+    parts: [{ type: 'text', text: m.text }],
+  }))
+}
+
 export async function executeAgentPreview<TDeps>(opts: {
   /** The agent config to run — typically the editor's live draft. */
   config: AgentConfig
@@ -44,6 +59,13 @@ export async function executeAgentPreview<TDeps>(opts: {
    * real run feeds upstream data into the node).
    */
   input: string
+  /**
+   * Prior turns for an agent that works on a conversation — the history that
+   * precedes `input`. Bound as the node's `conversation`, the same explicit
+   * source a real chat run uses, with `input` appended as the current user turn.
+   * Empty/omitted → the agent runs on `input` alone, with no prior context.
+   */
+  messages?: readonly AgentPreviewMessage[]
   /**
    * Registry ids of the tools to run FOR REAL rather than simulate. Everything
    * else in the registry is mocked. Empty/omitted → the whole run is simulated
@@ -93,6 +115,21 @@ export async function executeAgentPreview<TDeps>(opts: {
       .map(([name, value]) => `${name}: ${value}`)
       .join('\n\n')
 
+  // A scratch conversation is bound exactly where a real run binds the chat
+  // trigger's messages: the node's `conversation`. History in the engine is
+  // always explicit, so without this the agent would answer `message` with no
+  // prior context no matter what the author typed. The current turn is appended
+  // here (not on the client) so the variable-driven path — where the message is
+  // synthesized from promptVariables above — carries its turn too.
+  const history = opts.messages ?? []
+  const conversation =
+    history.length > 0
+      ? [
+          ...toUiMessages(history),
+          ...toUiMessages([{ role: 'user', text: message }]),
+        ]
+      : undefined
+
   const node: AgentNode = {
     id: 'playground',
     kind: 'agent',
@@ -106,6 +143,9 @@ export async function executeAgentPreview<TDeps>(opts: {
       version: null,
       inputs: {},
       imageInputs: {},
+      ...(conversation
+        ? { conversation: { kind: 'literal' as const, value: conversation } }
+        : {}),
     },
   }
 

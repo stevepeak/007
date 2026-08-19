@@ -7,6 +7,7 @@ import type {
 import type { WfDb } from '../../storage/client'
 import type { DashboardAnalytics } from '../../storage/data'
 import type {
+  AgentPreviewMessage,
   AgentPreviewResult,
   RetryRunMode,
   ToolContextField,
@@ -115,6 +116,12 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
      * playground run touch live services or real data.
      */
     liveToolIds: string[]
+    /**
+     * Prior turns for a conversational agent — the scratch history the author
+     * built in the playground, standing in for a chat trigger's `messages`.
+     * Empty for an agent that doesn't work on a conversation.
+     */
+    messages: AgentPreviewMessage[]
     ctx: WfServerContext
     req: Request
   }) => Promise<AgentPreviewResult>

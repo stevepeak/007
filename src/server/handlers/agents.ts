@@ -14,7 +14,11 @@ import {
   updateAgentDraft,
   updateAgentMeta,
 } from '../../storage/data'
-import type { WfAgentDetail, WfAgentSummary } from '../protocol'
+import type {
+  AgentPreviewMessage,
+  WfAgentDetail,
+  WfAgentSummary,
+} from '../protocol'
 
 import {
   parseAgentConfig,
@@ -26,6 +30,24 @@ import {
   type CreateWfSdkHandlersOptions,
   type WfHandlers,
 } from './shared'
+
+/**
+ * Reads the playground's scratch conversation off the wire. Each entry must be a
+ * `{ role, text }` pair with a known role; anything else is skipped, so a
+ * malformed history degrades the run's context instead of failing it.
+ */
+function parsePreviewMessages(value: unknown): AgentPreviewMessage[] {
+  if (!Array.isArray(value)) return []
+  const out: AgentPreviewMessage[] = []
+  for (const raw of value) {
+    if (typeof raw !== 'object' || raw === null) continue
+    const { role, text } = raw as { role?: unknown; text?: unknown }
+    if (role !== 'user' && role !== 'assistant') continue
+    if (typeof text !== 'string' || text.trim().length === 0) continue
+    out.push({ role, text })
+  }
+  return out
+}
 
 function agentSummary(
   a: {
@@ -241,12 +263,17 @@ export function buildAgentHandlers<TDeps>(
         input?: unknown
         promptVariables?: unknown
         liveToolIds?: unknown
+        messages?: unknown
       }
       const input = typeof p.input === 'string' ? p.input : ''
       const promptVariables = parseStringRecord(p.promptVariables)
       if (!input && Object.keys(promptVariables).length === 0) {
         throw new Error('Provide a test input or fill in the prompt variables.')
       }
+      // Prior turns for a conversational agent. Anything malformed is dropped
+      // rather than rejected — a broken history should not fail the run, it
+      // should just leave the agent with less context.
+      const messages = parsePreviewMessages(p.messages)
       // Which tools run for real. Anything not listed is simulated, so a
       // malformed/absent field degrades to the safe all-simulated run.
       const liveToolIds = Array.isArray(p.liveToolIds)
@@ -257,6 +284,7 @@ export function buildAgentHandlers<TDeps>(
         input,
         promptVariables,
         liveToolIds,
+        messages,
         ctx: c.ctx,
         req: c.req,
       })

@@ -5,7 +5,6 @@ import {
   Cpu,
   History,
   MessageSquareText,
-  Plus,
   Settings2,
   Users,
   Wallet,
@@ -15,12 +14,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { type AgentConfig } from '../../engine'
 import {
-  AGENT_COLORS,
   AGENT_ICONS,
-  agentColor,
-  agentIcon,
   DEFAULT_AGENT_COLOR,
 } from '../agent-appearance'
+import { AppearancePicker } from '../appearance-picker'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { Tabs } from '../filters'
@@ -42,7 +39,6 @@ import { AgentCallMetrics, AgentCallsList } from './agent-editor-calls'
 import { ArchiveAgentDialog } from './agent-editor-archive'
 import { EditorSection } from './editor-section'
 import { fmt, humanTokens, usd } from './format-tokens'
-import { IconPicker } from './icon-picker'
 import { PlaygroundPanel } from './agent-editor-playground'
 import { PublishAgentDialog } from './agent-editor-publish'
 import { ModelSelect } from './model-select'
@@ -52,8 +48,9 @@ import { ToolPicker } from './tool-picker'
 
 // The agent editor — same draft/version lifecycle as the prompt editor, but
 // over the whole AgentConfig (model, prompt, tools, expected output, advanced),
-// plus the entity's appearance (icon + color) which saves immediately. A
-// disabled Playground panel previews where isolated test runs will live.
+// plus the entity's appearance (icon + color), which lives in the header popover
+// behind the title icon and saves immediately. A disabled Playground panel
+// previews where isolated test runs will live.
 
 /**
  * The agent's research budget: one number, in tokens.
@@ -466,7 +463,6 @@ function AgentEditorInner({
   const [savedDescription, setSavedDescription] = useState(initialDescription)
   const [showPublish, setShowPublish] = useState(false)
   const [showArchive, setShowArchive] = useState(false)
-  const [showIconPicker, setShowIconPicker] = useState(false)
   // Transient "Published" confirmation shown in place of navigating away.
   const [justPublished, setJustPublished] = useState<number | null>(null)
   // Which half of the page you're on: authoring the agent (config + playground)
@@ -641,7 +637,8 @@ function AgentEditorInner({
     updateMeta.mutate({ agentId, description: trimmed })
   }
 
-  // Appearance saves immediately (it's entity metadata, not versioned).
+  // Appearance saves immediately (it's entity metadata, not versioned) — the
+  // header's `AppearancePicker` calls straight into these.
   function selectIcon(next: string) {
     setIcon(next)
     updateMeta.mutate({ agentId, icon: next })
@@ -684,19 +681,15 @@ function AgentEditorInner({
       <WfShell
         className={className}
         scroll
-        titleIcon={(() => {
-          const Icon = agentIcon(icon)
-          return (
-            <span
-              className={cn(
-                'flex size-7 items-center justify-center rounded-md',
-                agentColor(color).chip,
-              )}
-            >
-              <Icon className="size-4" />
-            </span>
-          )
-        })()}
+        titleIcon={
+          <AppearancePicker
+            icon={icon}
+            color={color}
+            onSelectIcon={selectIcon}
+            onSelectColor={selectColor}
+            label="Agent appearance"
+          />
+        }
         assetLabel="Agent"
         crumbs={[
           {
@@ -803,63 +796,6 @@ function AgentEditorInner({
           >
             {/* Left: configuration */}
             <div className="space-y-6">
-              {/* Appearance */}
-              <section className="space-y-2">
-                <Label>Appearance</Label>
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="flex flex-wrap gap-1.5">
-                    {/* Curated quick picks, plus the selected icon if it isn't
-                      one of them (e.g. chosen from the full picker). */}
-                    {(AGENT_ICONS.some((i) => i.name === icon)
-                      ? AGENT_ICONS
-                      : [{ name: icon, Icon: agentIcon(icon) }, ...AGENT_ICONS]
-                    ).map(({ name: iconName, Icon }) => (
-                      <button
-                        key={iconName}
-                        type="button"
-                        aria-label={iconName}
-                        onClick={() => selectIcon(iconName)}
-                        className={cn(
-                          'flex size-9 items-center justify-center rounded-md border transition',
-                          icon === iconName
-                            ? cn('border-transparent', agentColor(color).chip)
-                            : 'border-neutral-200 text-neutral-500 hover:border-neutral-300',
-                        )}
-                      >
-                        <Icon className="size-4" />
-                      </button>
-                    ))}
-                    <Tooltip content="Browse all icons" side="bottom">
-                      <button
-                        type="button"
-                        aria-label="Browse all icons"
-                        onClick={() => setShowIconPicker(true)}
-                        className="flex size-9 items-center justify-center rounded-md border border-dashed border-neutral-300 text-neutral-400 transition hover:border-neutral-400 hover:text-neutral-700"
-                      >
-                        <Plus className="size-4" />
-                      </button>
-                    </Tooltip>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {AGENT_COLORS.map((c) => (
-                      <button
-                        key={c.key}
-                        type="button"
-                        aria-label={c.key}
-                        onClick={() => selectColor(c.key)}
-                        className={cn(
-                          'size-6 rounded-full transition',
-                          c.swatch,
-                          color === c.key
-                            ? 'ring-2 ring-neutral-900 ring-offset-2'
-                            : 'opacity-70 hover:opacity-100',
-                        )}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </section>
-
               {/* Model */}
               <EditorSection
                 icon={Cpu}
@@ -1110,14 +1046,6 @@ function AgentEditorInner({
           onConfirm={onPublish}
         />
       ) : null}
-
-      <IconPicker
-        open={showIconPicker}
-        value={icon}
-        color={color}
-        onSelect={selectIcon}
-        onClose={() => setShowIconPicker(false)}
-      />
 
       {showArchive ? (
         <ArchiveAgentDialog

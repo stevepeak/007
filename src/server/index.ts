@@ -16,6 +16,7 @@ export {
 export type {
   AgentNodeMeta,
   AgentPreviewInput,
+  AgentPreviewMessage,
   AgentPreviewResult,
   CheckResult,
   CheckTree,
