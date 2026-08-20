@@ -164,3 +164,52 @@ export function errorStored(err: unknown): string {
   if (err instanceof Error) return cap(err.stack ?? err.message)
   return cap(String(err))
 }
+
+/** Readable text for a thrown value that isn't an Error (JS permits any). */
+function stringifyThrown(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (value == null || typeof value !== 'object') return String(value)
+  try {
+    // A circular object throws here; a function or symbol returns undefined.
+    return JSON.stringify(value) ?? Object.prototype.toString.call(value)
+  } catch {
+    return Object.prototype.toString.call(value)
+  }
+}
+
+/**
+ * The text to hand `console.error` for a caught server-side failure.
+ *
+ * Never pass the raw Error object. In production a caught `DrizzleQueryError`
+ * reached Cloudflare's log as BARE STACK FRAMES — no error name, no message,
+ * and no `cause` — which is precisely where the diagnosis lives: drizzle's own
+ * message is only the SQL it ran, and the D1 rejection hangs off `cause`. A
+ * `law-wf` outage on 2026-08-20 was therefore unattributable after the fact.
+ * (workerd's `err.stack` DOES carry the `Name: message` header, and so does its
+ * console — the loss happens somewhere in the deployed pipeline: minified
+ * bundle → OpenNext → log ingestion.) Composing the line ourselves means the
+ * text survives whatever serializer is downstream.
+ *
+ * Cause chain is depth-capped, matching `apiErrorDetail`, so a self-referential
+ * `cause` can't spin.
+ */
+export function errorLogText(err: unknown): string {
+  const chain: string[] = []
+  let current: unknown = err
+  for (let depth = 0; current != null && depth < 5; depth++) {
+    if (!(current instanceof Error)) {
+      // A non-Error thrown value, or a non-Error `cause`. Serialized rather
+      // than `String()`-ed so an object doesn't land as "[object Object]" —
+      // the whole point of this function is that the detail survives.
+      chain.push(stringifyThrown(current))
+      break
+    }
+    chain.push(`${current.name}: ${current.message}`)
+    current = current.cause
+  }
+  // The stack repeats the head line, which is the point — the head is the part
+  // that went missing, and keeping the frames intact costs one duplicated line.
+  const stack = err instanceof Error ? err.stack : undefined
+  const head = chain.join('\ncaused by: ')
+  return cap(stack ? `${head}\n${stack}` : head)
+}

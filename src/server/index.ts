@@ -1,5 +1,6 @@
 export {
   createWfSdkHandlers,
+  UnauthorizedError,
   type CreateWfSdkHandlersOptions,
   type WfServerContext,
 } from './handlers'

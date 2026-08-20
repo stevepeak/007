@@ -82,6 +82,34 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
    */
   sentryTraceUrl?: (traceId: string) => string | null
   /**
+   * Optional: report a handler's 500 to the host's error tracker.
+   *
+   * The dispatcher CATCHES every handler failure and answers a 500 JSON body,
+   * so a wrapper that only sees unhandled throws — `Sentry.withSentry` around
+   * the Worker's fetch, say — never learns the request failed at all. Without
+   * this hook a broken data-plane call is visible only as a console line, which
+   * is exactly how a `law-wf` D1 outage on 2026-08-20 produced zero Sentry
+   * issues. Only genuine faults arrive here: `BadRequestError` / `ZodError`
+   * (400), `NotFoundError` (404), and `UnauthorizedError` (403) all return
+   * before it.
+   *
+   * Called synchronously from the catch. Throwing from it is caught and logged,
+   * so an outage in the host's reporting path can never turn a 500 response
+   * into a dropped one.
+   */
+  onError?: (input: {
+    err: unknown
+    /** The `WfDataClient` method that failed, e.g. `listAgents`. */
+    method: string
+    /**
+     * The authenticated caller — so the report says WHO hit this, not just that
+     * someone did. Undefined when `resolveContext` itself was what threw, since
+     * there is no resolved identity to attribute in that case.
+     */
+    ctx?: WfServerContext
+    req: Request
+  }) => void
+  /**
    * Optional override for the built-in AI summarizer — supply this only to
    * replace the SDK's summarization entirely (most hosts don't need to). Returns
    * a git-style `{ short, long }`.

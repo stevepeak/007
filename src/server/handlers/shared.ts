@@ -117,6 +117,15 @@ export class BadRequestError extends Error {}
 // reads differently from "your params were malformed."
 export class NotFoundError extends Error {}
 
+// The caller isn't signed in, or isn't allowed to reach the editor — the
+// dispatcher answers 403 and, crucially, does NOT route it to `onError`. A
+// host's `resolveContext` rejects on every unauthenticated poll (an expired
+// session tab left open will do it indefinitely), and those are an access
+// outcome, not a server fault: reporting them would bury real 500s in the
+// host's error tracker. Hosts should throw this from `resolveContext` rather
+// than a bare `Error`.
+export class UnauthorizedError extends Error {}
+
 export function str(params: unknown, key: string): string {
   const v = (params as Record<string, unknown>)[key]
   if (typeof v !== 'string' || !v) {

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { errorLogText } from '../engine/error-detail'
 import { errorMessage } from '../engine/run-node'
 import type { DashboardAnalytics } from '../storage/data'
 
@@ -13,9 +14,11 @@ import {
   BadRequestError,
   json,
   NotFoundError,
+  UnauthorizedError,
   type CreateWfSdkHandlersOptions,
   type HandlerFn,
   type WfHandlers,
+  type WfServerContext,
 } from './handlers/shared'
 import { buildWorkflowHandlers } from './handlers/workflows'
 import type { WfDataClient } from './protocol'
@@ -24,6 +27,9 @@ export type {
   CreateWfSdkHandlersOptions,
   WfServerContext,
 } from './handlers/shared'
+// Re-exported (a value, not a type) because a host's `resolveContext` needs to
+// be able to throw it — it's the one dispatcher error class hosts author.
+export { UnauthorizedError } from './handlers/shared'
 
 // Per-method input schemas, validated in the dispatcher BEFORE the handler runs,
 // so a malformed body fails fast with a 400 instead of surfacing as an opaque
@@ -198,8 +204,11 @@ export function createWfSdkHandlers<TDeps>(
       params = parsed.data
     }
 
+    // Hoisted out of the `try` so the catch can attribute a failure to the
+    // caller who hit it. Stays undefined when `resolveContext` was what threw.
+    let ctx: WfServerContext | undefined
     try {
-      const ctx = await opts.resolveContext(req)
+      ctx = await opts.resolveContext(req)
       const db = await opts.resolveDb(req)
       // Resolve host bindings at most once per request, lazily — several
       // handlers never touch `env`, and the ones that do reference it once.
@@ -235,9 +244,26 @@ export function createWfSdkHandlers<TDeps>(
       if (err instanceof NotFoundError) {
         return json({ error: errorMessage(err) }, 404)
       }
+      // Not signed in / not staff — a 403 access outcome, not a fault. Answered
+      // before `onError` so a tab polling on a dead session can't fill the
+      // host's error tracker. See `UnauthorizedError`.
+      if (err instanceof UnauthorizedError) {
+        return json({ error: errorMessage(err) }, 403)
+      }
       // Surface the failure in the server log — otherwise a 500 from any
       // handler is invisible (the client only sees a generic error string).
-      console.error(`[wf] ${method} failed:`, err)
+      // `errorLogText`, not the raw error: the production log pipeline renders
+      // a caught Error as bare stack frames and drops the message AND `cause`.
+      console.error(`[wf] ${method} failed:`, errorLogText(err))
+      // Hand the fault to the host's error tracker as well. The log line above
+      // is not enough on its own — nothing in it is grouped, alerted, or
+      // attributable to a user.
+      try {
+        opts.onError?.({ err, method, ctx, req })
+      } catch (reportErr) {
+        // A reporting failure must never escalate into a dropped response.
+        console.error(`[wf] onError hook threw:`, errorLogText(reportErr))
+      }
       return json({ error: errorMessage(err) }, 500)
     }
   }
