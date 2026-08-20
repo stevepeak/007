@@ -7,18 +7,32 @@ import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { useEffect, useRef } from 'react'
 
+import {
+  PROMPT_TOKEN_RE,
+  promptVariableName,
+  unescapePromptVariables,
+} from '../../engine'
 import { cn } from '../cn'
 import { MarkdownHint } from './markdown-hint'
 
 // A focused prompt-body editor. The document is authored as rich text but
 // serialized to Markdown — headings, **bold**, lists, `code`, etc. round-trip
 // through the stored body (which is what the LLM receives). `${token}`
-// variables are rendered as inline chips via a decoration plugin; since they
-// use no Markdown-special characters they serialize back verbatim as
-// `${token}`. `onChange` reports the Markdown body; `registerSetBody` hands the
-// parent an imperative setter for restore / version-load.
+// variables are rendered as inline chips via a decoration plugin, and the
+// Markdown the editor emits is run through `unescapePromptVariables` so a name
+// containing `_` isn't stored as the serializer's `${my\_var}`. `onChange`
+// reports the Markdown body; `registerSetBody` hands the parent an imperative
+// setter for restore / version-load.
 
-const VARIABLE_RE = /\$\{(\w+)\}/g
+const VALID_CHIP_CLASS =
+  'rounded bg-indigo-100 px-1 py-0.5 font-medium text-indigo-700'
+// A `${…}` that is NOT a usable variable name — `${my var}`, `${}`. It reaches
+// the model as literal text and can never be bound, so say so here rather than
+// leaving it looking like ordinary prose.
+const INVALID_CHIP_CLASS =
+  'rounded bg-amber-100 px-1 py-0.5 font-medium text-amber-800 decoration-amber-500 underline decoration-wavy'
+const INVALID_CHIP_TITLE =
+  'Not a variable — names may use letters, numbers, “_” and “-”, but not spaces.'
 
 // Decorate every `${token}` run in the doc as a chip (purely visual — the text
 // underneath is unchanged).
@@ -32,13 +46,17 @@ const VariableChips = Extension.create({
             const decorations: Decoration[] = []
             state.doc.descendants((node, pos) => {
               if (!node.isText || !node.text) return
-              for (const m of node.text.matchAll(VARIABLE_RE)) {
+              for (const m of node.text.matchAll(PROMPT_TOKEN_RE)) {
                 const from = pos + (m.index ?? 0)
+                const valid = promptVariableName(m[1]) != null
                 decorations.push(
-                  Decoration.inline(from, from + m[0].length, {
-                    class:
-                      'rounded bg-indigo-100 px-1 py-0.5 font-medium text-indigo-700',
-                  }),
+                  Decoration.inline(
+                    from,
+                    from + m[0].length,
+                    valid
+                      ? { class: VALID_CHIP_CLASS }
+                      : { class: INVALID_CHIP_CLASS, title: INVALID_CHIP_TITLE },
+                  ),
                 )
               }
             })
@@ -125,7 +143,7 @@ export function PromptBodyEditor({
       attributes: { class: 'prompt-body-content outline-none' },
     },
     onUpdate: ({ editor }) => {
-      onChangeRef.current(editor.getMarkdown())
+      onChangeRef.current(unescapePromptVariables(editor.getMarkdown()))
     },
   })
 

@@ -49,7 +49,16 @@ export function MarkdownHint({
           <code className="rounded bg-neutral-100 px-1 py-0.5 font-mono text-[11px] text-neutral-600">
             {'${variable}'}
           </code>
-          , which the workflow editor flags before you can publish.
+          , which the workflow editor flags before you can publish. Names take
+          letters, numbers,{' '}
+          <code className="rounded bg-neutral-100 px-1 py-0.5 font-mono text-[11px] text-neutral-600">
+            _
+          </code>{' '}
+          and{' '}
+          <code className="rounded bg-neutral-100 px-1 py-0.5 font-mono text-[11px] text-neutral-600">
+            -
+          </code>{' '}
+          — not spaces.
         </p>
       ) : null}
     </div>
