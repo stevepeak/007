@@ -5,14 +5,15 @@ import { useWfComponents } from './context'
 import { cn } from './cn'
 import { formatDuration, formatTimestamp, formatUsd } from './cost'
 import { DeleteAllRunsButton } from './delete-all-runs-button'
-import { useRuns, useRunTriggerKinds, useWorkflows } from './hooks'
+import { FilterPill } from './filters'
+import { useRuns, useWorkflows } from './hooks'
 import { useWfNav } from './nav'
 import { RunStatusBadge } from './run-status'
 import { useModifierHold } from './use-modifier-hold'
 
 // Interface #2 — the runs explorer. A dense, server-filtered, paginated table
 // built for thousands of runs: search by workflow name / trigger / reference,
-// filter by trigger kind, status, and timeframe. Clicking a row opens that
+// filter by status, workflow, and timeframe. Clicking a row opens that
 // run's full-page viewer. All querying happens server-side (see `listRuns`), so
 // the browser only ever holds one page.
 
@@ -25,13 +26,13 @@ const STATUS_OPTIONS = [
   'cancelled',
 ] as const
 
-// Timeframe presets → a lookback window in milliseconds (null = all time).
-const TIMEFRAMES: { label: string; ms: number | null }[] = [
-  { label: 'All time', ms: null },
-  { label: 'Last hour', ms: 60 * 60 * 1000 },
-  { label: 'Last 24 hours', ms: 24 * 60 * 60 * 1000 },
-  { label: 'Last 7 days', ms: 7 * 24 * 60 * 60 * 1000 },
-  { label: 'Last 30 days', ms: 30 * 24 * 60 * 60 * 1000 },
+// Timeframe presets → a lookback window in milliseconds. `''` (all time) is the
+// unset state, so the Time pill renders dashed like the other three.
+const TIMEFRAMES: { value: string; label: string; ms: number }[] = [
+  { value: '1h', label: 'Last hour', ms: 60 * 60 * 1000 },
+  { value: '24h', label: 'Last 24 hours', ms: 24 * 60 * 60 * 1000 },
+  { value: '7d', label: 'Last 7 days', ms: 7 * 24 * 60 * 60 * 1000 },
+  { value: '30d', label: 'Last 30 days', ms: 30 * 24 * 60 * 60 * 1000 },
 ]
 
 function fmtDuration(run: WfRunSummary): string {
@@ -47,35 +48,6 @@ function useDebounced<T>(value: T, delayMs: number): T {
     return () => clearTimeout(id)
   }, [value, delayMs])
   return debounced
-}
-
-// A native <select> styled to match the injected Input primitive.
-function Select({
-  value,
-  onChange,
-  children,
-  className,
-  'aria-label': ariaLabel,
-}: {
-  value: string
-  onChange: (v: string) => void
-  children: React.ReactNode
-  className?: string
-  'aria-label'?: string
-}) {
-  return (
-    <select
-      aria-label={ariaLabel}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className={cn(
-        'h-9 rounded-md border border-neutral-300 bg-transparent px-2.5 text-sm outline-none focus:border-neutral-500',
-        className,
-      )}
-    >
-      {children}
-    </select>
-  )
 }
 
 export type RunsExplorerProps = {
@@ -103,18 +75,16 @@ export function RunsExplorer({
 
   const [searchRaw, setSearchRaw] = useState('')
   const search = useDebounced(searchRaw, 300)
-  const [triggerKind, setTriggerKind] = useState('')
   const [status, setStatus] = useState('')
   const [workflowFilter, setWorkflowFilter] = useState(initialWorkflowId ?? '')
-  const [timeframeIdx, setTimeframeIdx] = useState(0)
+  const [timeframe, setTimeframe] = useState('')
   const [page, setPage] = useState(0)
 
   // Any filter change returns to the first page.
   useEffect(() => {
     setPage(0)
-  }, [search, triggerKind, status, workflowFilter, timeframeIdx])
+  }, [search, status, workflowFilter, timeframe])
 
-  const triggerKinds = useRunTriggerKinds()
   const workflows = useWorkflows()
   // Cmd + Option reveals the purge control. A different combo from the everyday
   // Cmd + Control reveals, so an irreversible action can't surface by muscle
@@ -128,23 +98,21 @@ export function RunsExplorer({
   }, [purgeHeld])
 
   const input = useMemo<WfRunListInput>(() => {
-    const frame = TIMEFRAMES[timeframeIdx]
+    const frame = TIMEFRAMES.find((t) => t.value === timeframe)
     return {
       workflowId: workflowId ?? (workflowFilter || undefined),
-      triggerKind: triggerKind || undefined,
       status: status || undefined,
       search: search.trim() || undefined,
-      since: frame?.ms != null ? Date.now() - frame.ms : undefined,
+      since: frame ? Date.now() - frame.ms : undefined,
       limit: pageSize,
       offset: page * pageSize,
     }
   }, [
     workflowId,
     workflowFilter,
-    triggerKind,
     status,
     search,
-    timeframeIdx,
+    timeframe,
     page,
     pageSize,
   ])
@@ -160,17 +128,15 @@ export function RunsExplorer({
 
   const hasFilters =
     !!search.trim() ||
-    !!triggerKind ||
     !!status ||
     !!workflowFilter ||
-    timeframeIdx !== 0
+    !!timeframe
 
   function resetFilters() {
     setSearchRaw('')
-    setTriggerKind('')
     setStatus('')
     setWorkflowFilter('')
-    setTimeframeIdx(0)
+    setTimeframe('')
   }
 
   return (
@@ -183,51 +149,34 @@ export function RunsExplorer({
           placeholder="Search workflow, trigger, or reference…"
           className="h-9 w-64"
         />
-        <Select
-          aria-label="Trigger kind"
-          value={triggerKind}
-          onChange={setTriggerKind}
-        >
-          <option value="">All triggers</option>
-          {triggerKinds.data?.map((k) => (
-            <option key={k} value={k}>
-              {k}
-            </option>
-          ))}
-        </Select>
-        <Select aria-label="Status" value={status} onChange={setStatus}>
-          <option value="">All statuses</option>
-          {STATUS_OPTIONS.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </Select>
+        <FilterPill
+          label="Status"
+          value={status}
+          onChange={setStatus}
+          options={STATUS_OPTIONS.map((s) => ({
+            value: s,
+            label: s,
+            node: <RunStatusBadge status={s} />,
+          }))}
+        />
         {!workflowId ? (
-          <Select
-            aria-label="Workflow"
+          <FilterPill
+            label="Workflow"
             value={workflowFilter}
             onChange={setWorkflowFilter}
-          >
-            <option value="">All workflows</option>
-            {workflows.data?.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-              </option>
-            ))}
-          </Select>
+            searchPlaceholder="Search workflows…"
+            options={(workflows.data ?? []).map((w) => ({
+              value: w.id,
+              label: w.name,
+            }))}
+          />
         ) : null}
-        <Select
-          aria-label="Timeframe"
-          value={String(timeframeIdx)}
-          onChange={(v) => setTimeframeIdx(Number(v))}
-        >
-          {TIMEFRAMES.map((t, i) => (
-            <option key={t.label} value={i}>
-              {t.label}
-            </option>
-          ))}
-        </Select>
+        <FilterPill
+          label="Time"
+          value={timeframe}
+          onChange={setTimeframe}
+          options={TIMEFRAMES.map((t) => ({ value: t.value, label: t.label }))}
+        />
         {hasFilters ? (
           <button
             type="button"
@@ -259,7 +208,6 @@ export function RunsExplorer({
             <tr className="border-b border-neutral-200">
               <th className="px-3 py-2 font-medium">Status</th>
               <th className="px-3 py-2 font-medium">Workflow</th>
-              <th className="px-3 py-2 font-medium">Trigger</th>
               <th className="px-3 py-2 font-medium">Started</th>
               <th className="px-3 py-2 text-right font-medium">Duration</th>
               <th className="px-3 py-2 text-right font-medium">Cost</th>
@@ -276,17 +224,14 @@ export function RunsExplorer({
                   <RunStatusBadge status={r.status} />
                 </td>
                 <td className="px-3 py-2">
-                  <div className="font-medium text-neutral-800">
-                    {r.workflowName}
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="font-medium text-neutral-800">
+                      {r.workflowName}
+                    </span>
+                    <span className="text-xs text-neutral-400">
+                      v{r.versionNumber}
+                    </span>
                   </div>
-                  <div className="text-xs text-neutral-400">
-                    v{r.versionNumber}
-                  </div>
-                </td>
-                <td className="px-3 py-2">
-                  <span className="font-mono text-xs text-neutral-600">
-                    {r.triggerKind}
-                  </span>
                 </td>
                 <td className="whitespace-nowrap px-3 py-2 text-neutral-600">
                   {formatTimestamp(r.createdAt)}
@@ -314,7 +259,7 @@ export function RunsExplorer({
             {!runsQuery.isLoading && runs.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={5}
                   className="px-3 py-12 text-center text-sm text-neutral-400"
                 >
                   {hasFilters ? 'No runs match these filters.' : 'No runs yet.'}

@@ -16,12 +16,13 @@ import {
 import { useFeedbackForSubjects } from './hooks-feedback'
 import { useRetryRun, useRun } from './hooks'
 import { MessageFeedback } from './message-feedback'
-import { useWfNav } from './nav'
+import { useWfNav, WfLink } from './nav'
 import { QueryState } from './query-state'
 import { readIterationTotal } from './run-activity-tree'
 import { runAgentVersions } from './run-agent-versions'
 import { RunNodeDock } from './run-node-dock'
 import { runStatusClass } from './run-status'
+import { SentryIcon } from './sentry-icon'
 import { WfShell } from './shell'
 
 // Full-page run viewer. Clicking a row in the runs explorer lands here. The
@@ -331,7 +332,15 @@ export function RunPage({
             actions={
               <>
                 <span className="text-xs text-neutral-500">
-                  {run.workflowName}
+                  <WfLink
+                    to={`${run.workflowId}/edit`}
+                    className="hover:text-neutral-800 hover:underline"
+                    title={`Open ${run.workflowName} in the editor`}
+                  >
+                    {run.workflowName}
+                  </WfLink>
+                  {/* Outside the link on purpose: the editor opens the
+                      workflow's current draft, not the frozen version that ran. */}
                   {data.versionNumber != null ? (
                     <span className="text-neutral-400">
                       {' '}
@@ -350,7 +359,7 @@ export function RunPage({
                     className="inline-flex items-center gap-1 text-xs text-violet-600 hover:text-violet-700 hover:underline"
                     title="Open this run's distributed trace in Sentry"
                   >
-                    <Activity className="size-3.5" />
+                    <SentryIcon className="size-3.5" />
                     Trace
                     <ExternalLink className="size-3" />
                   </a>

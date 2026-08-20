@@ -212,9 +212,7 @@ export function RunNodeDock({
                 </button>
               </span>
             ) : null}
-            <span className="truncate text-[11px] text-neutral-400">
-              {node.label}
-            </span>
+            <NodeLabel node={node} step={step} />
             {step ? (
               <Badge className={cn('border', runStatusClass[step.status])}>
                 {step.status}
@@ -224,7 +222,6 @@ export function RunNodeDock({
                 {hasItemPicker ? 'no data for this item' : 'not run'}
               </span>
             )}
-            <OpenAgentLink node={node} step={step} />
             <CreateSampleFromRun node={node} step={step} steps={steps} />
           </span>
         ) : null}
@@ -282,21 +279,25 @@ export function RunNodeDock({
   )
 }
 
-// An agent node inspected here is a pointer at a reusable agent — this is the
-// jump back to it. Opens the agent editor in a NEW tab on purpose: you're
+// The dock's node title. An agent node inspected here is a pointer at a reusable
+// agent, so its title doubles as the jump back to that agent — every other kind
+// renders as plain text. Opens the agent editor in a NEW tab on purpose: you're
 // mid-investigation on a run and shouldn't lose it to a plain navigation. The
 // version is the one the run FROZE (stamped on the step by the run manifest),
 // falling back to the node's pin, so the link names what actually executed.
-function OpenAgentLink({
+function NodeLabel({
   node,
   step,
 }: {
   node: WorkflowNode
   step: WfRunStepDTO | null
 }) {
-  if (node.kind !== 'agent') return null
+  const plain = (
+    <span className="truncate text-[11px] text-neutral-400">{node.label}</span>
+  )
+  if (node.kind !== 'agent') return plain
   const agentId = node.config.agentId
-  if (!agentId) return null
+  if (!agentId) return plain
   // Prefer what the run froze; fall back to the node's own pin (null = it
   // floated, and an unrun step can't tell us where it would have landed).
   const version = stepAgentVersion(step) ?? node.config.version
@@ -304,16 +305,16 @@ function OpenAgentLink({
     <WfLink
       to={`agents/${agentId}/edit`}
       newTab
-      className="inline-flex shrink-0 items-center gap-1 rounded border border-neutral-200 px-1.5 py-0.5 text-[11px] font-medium text-neutral-600 hover:border-neutral-300 hover:bg-neutral-50 hover:text-neutral-800"
+      className="inline-flex min-w-0 items-center gap-1 text-[11px] text-neutral-500 hover:text-neutral-800 hover:underline"
       title="Open this agent in a new tab"
     >
-      <SquareArrowOutUpRight className="size-3" />
-      Open agent
+      <span className="truncate">{node.label}</span>
       {version != null ? (
-        <span className="font-normal text-neutral-400 tabular-nums">
+        <span className="shrink-0 text-neutral-400 tabular-nums">
           v{version}
         </span>
       ) : null}
+      <SquareArrowOutUpRight className="size-3 shrink-0" />
     </WfLink>
   )
 }

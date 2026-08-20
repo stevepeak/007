@@ -35,16 +35,21 @@ export const runStatusDotClass: Record<string, string> = {
 }
 
 // The canonical run-status badge: an animated pill while pending/active, else a
-// coloured border badge. Used by the runs explorer table.
+// coloured border badge. Used by the runs explorer table. Statuses are stored
+// lowercase; `capitalize` presents them as labels without forking the values.
 export function RunStatusBadge({ status }: { status: string }) {
   const { Badge } = useWfComponents()
   if (status === 'running' || status === 'queued') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700">
+      <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-medium capitalize text-sky-700">
         <CircleDashed className="size-3 animate-spin" />
         {status}
       </span>
     )
   }
-  return <Badge className={cn('border', runStatusClass[status])}>{status}</Badge>
+  return (
+    <Badge className={cn('border capitalize', runStatusClass[status])}>
+      {status}
+    </Badge>
+  )
 }

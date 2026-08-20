@@ -1,10 +1,16 @@
-import { cn } from './cn'
+import { Check } from 'lucide-react'
+import { type ReactNode, useState } from 'react'
 
-// The filter / segmented-control family. Three flavours of the same "pick one
+import { cn } from './cn'
+import { Popover } from './popover'
+
+// The filter / segmented-control family. Four flavours of the same "pick one
 // of N labelled options" data model, kept as distinct exports because their
 // affordances differ enough that one component with a variant union would be
-// less legible than three small ones:
+// less legible than four small ones:
 //   - `FilterSelect` — a compact native `<select>` dropdown (toolbar filters).
+//   - `FilterPill`   — a dashed-until-set pill + popover list (toolbar filters
+//                      that should read as removable facets rather than fields).
 //   - `Segmented`     — a pill/segmented button track (mutually-exclusive tabs).
 //   - `Tabs`          — an underline tab strip with optional count badges.
 // Previously `FilterSelect` was copy-pasted in the models list and the eval
@@ -130,5 +136,180 @@ export function Tabs({
         )
       })}
     </div>
+  )
+}
+
+// ── FilterPill ────────────────────────────────────────────────────────────────
+
+export type FilterPillOption = {
+  value: string
+  label: string
+  /**
+   * Rich rendering for the option — a run-status badge, a coloured dot, an
+   * icon + name. Used in place of the bare label on BOTH the option row and the
+   * trigger, so a picked option looks the same open or closed. `label` still
+   * drives search and the a11y name, so always give a real one.
+   */
+  node?: ReactNode
+}
+
+/**
+ * A pill filter trigger with a popover option list — the toolbar affordance the
+ * host uses for its data tables (`DataTableFilter`), mirrored here so the SDK's
+ * filter bars read the same. Unset it renders dashed + muted (`[Trigger]`); set
+ * it renders solid with the chosen option as a badge (`[Trigger  chat]`).
+ *
+ * Single-select: `value` is the chosen option's value, `''` meaning "no filter".
+ * Picking a row closes the panel; clicking the already-checked row unchecks it
+ * (back to `''`), as does "Clear" at the foot of the panel.
+ */
+export function FilterPill({
+  label,
+  options,
+  value,
+  onChange,
+  align = 'start',
+  searchPlaceholder,
+  className,
+}: {
+  label: string
+  options: FilterPillOption[]
+  /** Selected option value; `''` = unset (no filter applied). */
+  value: string
+  onChange: (next: string) => void
+  align?: 'start' | 'end'
+  /** Forces the in-panel search box on; it auto-appears past 8 options. */
+  searchPlaceholder?: string
+  className?: string
+}) {
+  const selected = options.find((o) => o.value === value)
+  const searchable = searchPlaceholder != null || options.length > 8
+
+  return (
+    <Popover
+      className={cn('relative', className)}
+      panelClassName={cn(
+        'absolute z-50 mt-1 max-h-80 w-56 overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg',
+        align === 'end' ? 'right-0' : 'left-0',
+      )}
+      trigger={({ open, toggle }) => (
+        <button
+          type="button"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          onClick={toggle}
+          className={cn(
+            'inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-sm font-medium outline-none transition-colors hover:bg-accent',
+            value
+              ? 'border-input'
+              : 'border-dashed border-input text-muted-foreground',
+          )}
+        >
+          {label}
+          {selected ? (
+            <>
+              <span className="mx-0.5 h-4 w-px bg-border" />
+              {selected.node ?? (
+                <span className="rounded-sm bg-accent px-1.5 py-0.5 text-xs font-normal">
+                  {selected.label}
+                </span>
+              )}
+            </>
+          ) : null}
+        </button>
+      )}
+    >
+      {({ close }) => (
+        <FilterPillPanel
+          label={label}
+          options={options}
+          value={value}
+          searchable={searchable}
+          searchPlaceholder={searchPlaceholder ?? `Search ${label.toLowerCase()}…`}
+          onPick={(next) => {
+            onChange(next)
+            close()
+          }}
+        />
+      )}
+    </Popover>
+  )
+}
+
+function FilterPillPanel({
+  label,
+  options,
+  value,
+  searchable,
+  searchPlaceholder,
+  onPick,
+}: {
+  label: string
+  options: FilterPillOption[]
+  value: string
+  searchable: boolean
+  searchPlaceholder: string
+  onPick: (next: string) => void
+}) {
+  const [query, setQuery] = useState('')
+  const q = query.trim().toLowerCase()
+  const shown = q
+    ? options.filter((o) => o.label.toLowerCase().includes(q))
+    : options
+
+  return (
+    <>
+      {searchable ? (
+        <input
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={searchPlaceholder}
+          className="mb-1 h-8 w-full rounded-sm bg-transparent px-2 text-sm outline-none placeholder:text-muted-foreground"
+        />
+      ) : (
+        <div className="px-2 py-1.5 text-xs font-normal uppercase tracking-wide text-muted-foreground">
+          {label}
+        </div>
+      )}
+      <div className="h-px bg-border" />
+      {shown.length === 0 ? (
+        <div className="px-2 py-3 text-xs text-muted-foreground">
+          No matches.
+        </div>
+      ) : null}
+      {shown.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          role="option"
+          aria-selected={opt.value === value}
+          // Re-picking the checked option clears the filter, so the row acts
+          // as a toggle rather than a dead click.
+          onClick={() => onPick(opt.value === value ? '' : opt.value)}
+          className={cn(
+            'mt-0.5 flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition hover:bg-accent',
+            opt.value === value && 'bg-accent',
+          )}
+        >
+          <span className="min-w-0 flex-1 truncate">
+            {opt.node ?? opt.label}
+          </span>
+          {opt.value === value ? <Check className="size-3.5 shrink-0" /> : null}
+        </button>
+      ))}
+      {value ? (
+        <>
+          <div className="mt-1 h-px bg-border" />
+          <button
+            type="button"
+            onClick={() => onPick('')}
+            className="mt-0.5 w-full rounded-sm px-2 py-1.5 text-left text-sm transition hover:bg-accent"
+          >
+            Clear
+          </button>
+        </>
+      ) : null}
+    </>
   )
 }
