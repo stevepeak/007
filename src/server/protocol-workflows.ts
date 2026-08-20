@@ -34,6 +34,12 @@ export type WfWorkflowListItem = WfWorkflowSummary & {
   runCount: number
   /** Distinct agents referenced by the latest published version's graph. */
   agents: WfWorkflowAgentRef[]
+  /**
+   * Trigger kind of the latest published version. Null before the first publish.
+   * The editor pairs it with the trigger catalog to know what input a Workflow
+   * node's callee accepts.
+   */
+  triggerKind: string | null
 }
 
 export type WfWorkflowDetail = {

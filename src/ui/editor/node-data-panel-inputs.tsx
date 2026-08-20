@@ -57,7 +57,13 @@ export function NodeInputsPanel({
     [node, graph, maps],
   )
   const bindings = bindingsOf(node)
-  if (node.kind !== 'agent' && node.kind !== 'tool') return null
+  if (
+    node.kind !== 'agent' &&
+    node.kind !== 'tool' &&
+    node.kind !== 'workflow'
+  ) {
+    return null
+  }
 
   const conversation =
     node.kind === 'agent' ? (node.config.conversation ?? null) : null
@@ -95,11 +101,23 @@ export function NodeInputsPanel({
   return (
     <InspectorSection>
       <SectionHeader>Needs</SectionHeader>
+      {node.kind === 'workflow' && !nothingToShow ? (
+        // Two modes, and which one is active is decided by whether ANY field is
+        // bound — see `buildCalleeTriggerInput`. Saying so here is the only way
+        // an author can tell that an empty panel is a working configuration.
+        <p className="text-muted-foreground text-xs">
+          {Object.keys(bindings).length === 0
+            ? 'Nothing mapped: the called workflow receives this step’s incoming data unchanged. Map a field to build its input explicitly instead.'
+            : 'Mapped fields build the called workflow’s input. Anything left unmapped is omitted — it is not filled in from the incoming data.'}
+        </p>
+      ) : null}
       {nothingToShow ? (
         <p className="text-muted-foreground text-xs">
           {node.kind === 'agent'
             ? 'This agent needs no variables.'
-            : 'This tool takes no arguments.'}
+            : node.kind === 'workflow'
+              ? 'Pick a workflow to call, and publish it, to see what it takes. Its trigger payload is what you map here.'
+              : 'This tool takes no arguments.'}
         </p>
       ) : null}
       {requiredInputs.length > 0 || showConversation ? (

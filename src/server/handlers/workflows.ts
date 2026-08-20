@@ -69,6 +69,7 @@ export function buildWorkflowHandlers<TDeps>(
         lastRunAt: w.lastRunAt,
         runCount: w.runCount,
         agents: w.agents,
+        triggerKind: w.triggerKind,
       }))
     },
 

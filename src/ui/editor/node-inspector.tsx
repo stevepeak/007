@@ -307,7 +307,7 @@ export function NodeInspector(props: NodeInspectorProps) {
       )}
 
       {/* What this step consumes — renders its own "Needs" section, and is a
-          no-op for every kind but agent/tool. */}
+          no-op for every kind but agent/tool/workflow. */}
       <NodeInputsPanel
         node={node}
         graph={graph}

@@ -3,6 +3,8 @@ import { describe, expect, test } from 'bun:test'
 import type { WorkflowGraph } from '../../engine'
 import {
   agentThreadSource,
+  missingRequiredInputs,
+  nodeRequires,
   outputContractIssue,
   type IoMaps,
 } from './node-io'
@@ -255,5 +257,96 @@ describe('outputContractIssue', () => {
     const out = node('o', 'output', 'Output', {})
     const g = graph([chatTrigger, agent, out], [edge('e', 'a', 'o')])
     expect(outputContractIssue(g, out as never, maps)).toBeUndefined()
+  })
+})
+
+// A Workflow node's bindable inputs are the CALLEE's trigger payload, resolved
+// through the callee's `triggerKind` on the workflow summary. Two modes decided
+// by whether anything is bound at all (see `buildCalleeTriggerInput`): none →
+// the upstream output passes through; some → the node builds an object, and the
+// callee's own required fields start to bite.
+describe('nodeRequires / missingRequiredInputs — workflow nodes', () => {
+  const callerMaps = {
+    ...maps,
+    triggersByKind: new Map([
+      [
+        'chat_message',
+        {
+          inputSchema: {
+            type: 'object',
+            properties: {
+              chatId: { type: 'string' },
+              userText: { type: 'string' },
+              draft: { type: 'string' },
+            },
+            required: ['chatId', 'userText'],
+          },
+        },
+      ],
+    ]),
+    workflowsById: new Map([
+      ['wf-chat', { id: 'wf-chat', triggerKind: 'chat_message' }],
+      // Never published, so there is nothing to say about its input.
+      ['wf-new', { id: 'wf-new', triggerKind: null }],
+    ]),
+  } as unknown as IoMaps
+
+  test("the callee's trigger fields are what the node offers to map", () => {
+    const call = node('w', 'workflow', 'Generate response', {
+      workflowId: 'wf-chat',
+      inputs: {},
+    })
+    expect(nodeRequires(call as never, callerMaps)).toEqual([
+      {
+        key: 'chatId',
+        label: 'chatId',
+        required: true,
+        description: undefined,
+        type: 'string',
+        enum: undefined,
+      },
+      {
+        key: 'userText',
+        label: 'userText',
+        required: true,
+        description: undefined,
+        type: 'string',
+        enum: undefined,
+      },
+      {
+        key: 'draft',
+        label: 'draft',
+        required: false,
+        description: undefined,
+        type: 'string',
+        enum: undefined,
+      },
+    ])
+  })
+
+  test('an unpublished callee offers nothing rather than guessing', () => {
+    const call = node('w', 'workflow', 'Call', {
+      workflowId: 'wf-new',
+      inputs: {},
+    })
+    expect(nodeRequires(call as never, callerMaps)).toEqual([])
+  })
+
+  test('binding nothing is passthrough, not a missing link', () => {
+    const call = node('w', 'workflow', 'Call', {
+      workflowId: 'wf-chat',
+      inputs: {},
+    })
+    expect(missingRequiredInputs(call as never, callerMaps)).toEqual([])
+  })
+
+  test('binding one field switches to object mode — the rest are then missing', () => {
+    const call = node('w', 'workflow', 'Call', {
+      workflowId: 'wf-chat',
+      inputs: { chatId: { kind: 'ref', nodeId: 't', path: 'chatId' } },
+    })
+    expect(missingRequiredInputs(call as never, callerMaps)).toEqual([
+      'userText',
+    ])
   })
 })

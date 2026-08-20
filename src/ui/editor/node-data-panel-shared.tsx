@@ -6,7 +6,7 @@ import type {
   WorkflowGraph,
   WorkflowNode,
 } from '../../engine'
-import { useAgents, useTools, useTriggerEvents } from '../hooks'
+import { useAgents, useTools, useTriggerEvents, useWorkflows } from '../hooks'
 import {
   accessibleData,
   buildIoMaps,
@@ -17,11 +17,12 @@ import {
 // bindable to an upstream node's output or a literal) and a read-only tree of
 // all data accessible to the node based on the graph.
 
-// Only agent (prompt variables → `inputs`) and tool (arguments → `args`) nodes
-// carry per-input bindings today.
+// Agent (prompt variables → `inputs`), tool (arguments → `args`) and workflow
+// (the callee's trigger payload → `inputs`) nodes carry per-input bindings.
 export function bindingsOf(node: WorkflowNode): Record<string, ArgBinding> {
   if (node.kind === 'agent') return node.config.inputs ?? {}
   if (node.kind === 'tool') return node.config.args ?? {}
+  if (node.kind === 'workflow') return node.config.inputs ?? {}
   return {}
 }
 
@@ -37,6 +38,8 @@ export function withBinding(
     return { ...node, config: { ...node.config, inputs: next } }
   if (node.kind === 'tool')
     return { ...node, config: { ...node.config, args: next } }
+  if (node.kind === 'workflow')
+    return { ...node, config: { ...node.config, inputs: next } }
   return node
 }
 
@@ -61,14 +64,19 @@ export function useIoMaps() {
   const tools = useTools()
   const agents = useAgents()
   const triggerEvents = useTriggerEvents()
+  // Workflows come along for the Workflow node: its bindable inputs are the
+  // CALLEE's trigger payload, and the callee's trigger kind rides on the list
+  // item (the same query the callee picker already uses, so it's cached).
+  const workflows = useWorkflows()
   return useMemo(
     () =>
       buildIoMaps(
         tools.data ?? [],
         agents.data ?? [],
         triggerEvents.data ?? [],
+        workflows.data ?? [],
       ),
-    [tools.data, agents.data, triggerEvents.data],
+    [tools.data, agents.data, triggerEvents.data, workflows.data],
   )
 }
 

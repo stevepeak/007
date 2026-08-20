@@ -33,6 +33,13 @@ export type WorkflowStats = {
   runCount: number
   /** Distinct agents referenced by the latest published version's graph. */
   agents: WorkflowAgentRef[]
+  /**
+   * The trigger kind of the latest published version's trigger node. Null when
+   * the workflow has never been published. Carried on the summary so a CALLER's
+   * editor can resolve what a Workflow node's callee expects as input without
+   * fetching the callee's whole graph.
+   */
+  triggerKind: string | null
 }
 
 /**
@@ -102,12 +109,20 @@ export async function listWorkflowsWithStats(
   // metadata.
   const agentIdsByWf = new Map<string, string[]>()
   const referencedAgentIds = new Set<string>()
+  // Same walk, second use: the graph's trigger kind, which is what a caller's
+  // Workflow node needs to know what input this workflow takes.
+  const triggerKindByWf = new Map<string, string | null>()
   for (const w of workflows) {
     // `graph` is stored JSON (loosely typed); the walk only reads node shapes.
     const graph = latestByWf.get(w.id)?.graph as WorkflowGraph | undefined
     const agentIds = graph ? agentIdsInGraph(graph) : []
     agentIdsByWf.set(w.id, agentIds)
     for (const id of agentIds) referencedAgentIds.add(id)
+    const trigger = graph?.nodes.find((n) => n.kind === 'trigger')
+    triggerKindByWf.set(
+      w.id,
+      trigger?.kind === 'trigger' ? trigger.config.triggerKind : null,
+    )
   }
   const agentRows = await selectChunked(
     [...referencedAgentIds],
@@ -152,6 +167,7 @@ export async function listWorkflowsWithStats(
       lastRunAt: secondsToMs(run?.lastRunAt),
       runCount: Number(run?.runCount ?? 0),
       agents,
+      triggerKind: triggerKindByWf.get(w.id) ?? null,
     }
   })
 }

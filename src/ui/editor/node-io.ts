@@ -13,6 +13,7 @@ import type {
   ToolOption,
   TriggerEventOption,
   WfAgentSummary,
+  WfWorkflowListItem,
 } from '../../server/protocol'
 
 // Pure data-flow model for the editor: what a node *requires* (its mappable
@@ -70,18 +71,52 @@ export type IoMaps = {
   toolsById: Map<string, ToolOption>
   agentsById: Map<string, WfAgentSummary>
   triggersByKind: Map<string, TriggerEventOption>
+  /** Callees of Workflow nodes — carries each one's trigger kind. */
+  workflowsById: Map<string, WfWorkflowListItem>
 }
 
 export function buildIoMaps(
   tools: ToolOption[],
   agents: WfAgentSummary[],
   triggers: TriggerEventOption[],
+  workflows: WfWorkflowListItem[] = [],
 ): IoMaps {
   return {
     toolsById: new Map(tools.map((t) => [t.id, t])),
     agentsById: new Map(agents.map((a) => [a.id, a])),
     triggersByKind: new Map(triggers.map((t) => [t.kind, t])),
+    workflowsById: new Map(workflows.map((w) => [w.id, w])),
   }
+}
+
+/**
+ * The trigger payload a Workflow node's callee accepts, as JSON Schema — the
+ * callee's own trigger `inputSchema`, looked up through the catalog. Undefined
+ * when the callee is unpicked, unpublished, or its trigger kind isn't a
+ * registered event (manual/periodic take no declared payload).
+ */
+function calleeInputSchema(
+  workflowId: string,
+  maps: IoMaps,
+): JsonSchema | undefined {
+  const kind = maps.workflowsById.get(workflowId)?.triggerKind
+  if (!kind) return undefined
+  return maps.triggersByKind.get(kind)?.inputSchema
+}
+
+/** Object-schema properties as bindable inputs. Shared by tool + workflow nodes. */
+function inputsOfSchema(schema: JsonSchema | undefined): NodeInput[] {
+  if (!schema || schema.type !== 'object') return []
+  const props = (schema.properties ?? {}) as Record<string, JsonSchema>
+  const required = new Set((schema.required as string[] | undefined) ?? [])
+  return Object.entries(props).map(([key, s]) => ({
+    key,
+    label: key,
+    required: required.has(key),
+    description: typeof s.description === 'string' ? s.description : undefined,
+    type: schemaType(s),
+    enum: Array.isArray(s.enum) ? s.enum : undefined,
+  }))
 }
 
 function schemaType(schema: JsonSchema | undefined): string {
@@ -185,19 +220,14 @@ export function nodeRequires(node: WorkflowNode, maps: IoMaps): NodeInput[] {
     }))
   }
   if (node.kind === 'tool') {
-    const schema = maps.toolsById.get(node.config.toolId)?.inputSchema
-    if (!schema || schema.type !== 'object') return []
-    const props = (schema.properties ?? {}) as Record<string, JsonSchema>
-    const required = new Set((schema.required as string[] | undefined) ?? [])
-    return Object.entries(props).map(([key, s]) => ({
-      key,
-      label: key,
-      required: required.has(key),
-      description:
-        typeof s.description === 'string' ? s.description : undefined,
-      type: schemaType(s),
-      enum: Array.isArray(s.enum) ? s.enum : undefined,
-    }))
+    return inputsOfSchema(maps.toolsById.get(node.config.toolId)?.inputSchema)
+  }
+  if (node.kind === 'workflow') {
+    // What the CALLEE's trigger takes. Binding none of these is legal and
+    // common — `buildCalleeTriggerInput` then passes this node's upstream
+    // output straight through — so the callee's own `required` is reported
+    // as-is and `missingRequiredInputs` decides when it actually bites.
+    return inputsOfSchema(calleeInputSchema(node.config.workflowId, maps))
   }
   return []
 }
@@ -214,8 +244,16 @@ export function missingRequiredInputs(
       ? (node.config.inputs ?? {})
       : node.kind === 'tool'
         ? (node.config.args ?? {})
-        : null
+        : node.kind === 'workflow'
+          ? (node.config.inputs ?? {})
+          : null
   if (!bindings) return []
+  // A Workflow node with NOTHING bound is the passthrough form: the callee
+  // receives this node's upstream output unchanged, which is a deliberate
+  // authoring choice and not a missing link. Bind one field and the node
+  // switches to building an object — from then on the callee's required fields
+  // really are missing if unbound.
+  if (node.kind === 'workflow' && Object.keys(bindings).length === 0) return []
   return nodeRequires(node, maps)
     .filter((input) => input.required && !bindings[input.key])
     .map((input) => input.key)
