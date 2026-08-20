@@ -7,9 +7,14 @@ import { and, eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 
 import type { WfDb } from '../client'
-import { wfRun, wfRunStep, wfSchema } from '../schema'
+import { wfRun, wfRunLog, wfRunStep, wfSchema } from '../schema'
 
-import { getRun, getRunForGrading, getRunRetrySource } from './runs-inspector'
+import {
+  getRun,
+  getRunForGrading,
+  getRunLastActivityAt,
+  getRunRetrySource,
+} from './runs-inspector'
 
 const MIGRATIONS_DIR = fileURLToPath(
   new URL('../../../migrations', import.meta.url),
@@ -69,6 +74,62 @@ async function addStep(
     output: s.output ?? {},
   })
 }
+
+// One feed entry. `ts` is the engine's emit time, which is what liveness reads.
+async function addLog(
+  db: WfDb,
+  l: { ts: number; nodeId?: string | null; level?: string },
+) {
+  await db.insert(wfRunLog).values({
+    runId: RUN,
+    nodeId: l.nodeId ?? 'a',
+    nodeKind: 'agent',
+    level: l.level ?? 'progress',
+    message: 'line',
+    ts: l.ts,
+  })
+}
+
+describe('getRunLastActivityAt', () => {
+  let db: WfDb
+
+  beforeEach(async () => {
+    db = freshDb()
+    await addRun(db)
+  })
+
+  test('returns the newest entry ts regardless of insert order', async () => {
+    await addLog(db, { ts: 3_000 })
+    await addLog(db, { ts: 9_000 })
+    // Out of order on purpose: entries are stamped by the emitting node, and
+    // parallel arms write theirs interleaved.
+    await addLog(db, { ts: 5_000 })
+
+    expect(await getRunLastActivityAt(db, RUN)).toBe(9_000)
+  })
+
+  test('is null for a run that has written nothing', async () => {
+    expect(await getRunLastActivityAt(db, RUN)).toBeNull()
+  })
+
+  test('is null for an unknown run, never borrowing another feed', async () => {
+    await addLog(db, { ts: 9_000 })
+
+    expect(await getRunLastActivityAt(db, 'nope')).toBeNull()
+  })
+
+  test('advances as a node emits, without the node finishing', async () => {
+    // The property the whole read exists for: a long agent node is visible as
+    // live WHILE it works. `appendRunLog` writes each entry as it is emitted,
+    // so an unfinished node still moves this clock.
+    await addLog(db, { ts: 1_000, level: 'node-start' })
+    const atStart = await getRunLastActivityAt(db, RUN)
+    await addLog(db, { ts: 240_000 })
+
+    expect(atStart).toBe(1_000)
+    expect(await getRunLastActivityAt(db, RUN)).toBe(240_000)
+  })
+})
 
 describe('getRun step cursor', () => {
   let db: WfDb

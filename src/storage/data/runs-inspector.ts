@@ -1,8 +1,14 @@
-import { and, asc, eq, getTableColumns, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, getTableColumns, isNull, sql } from 'drizzle-orm'
 
 import type { WfDb } from '../client'
 import { stepCost } from '../cost'
-import { wfRun, wfRunStep, wfWorkflow, wfWorkflowVersion } from '../schema'
+import {
+  wfRun,
+  wfRunLog,
+  wfRunStep,
+  wfWorkflow,
+  wfWorkflowVersion,
+} from '../schema'
 
 import { parseStoredGraph } from './authoring'
 import { loadModelPriceMap } from './runs-cost'
@@ -32,6 +38,43 @@ export async function getRunStatus(db: WfDb, runId: string) {
       .limit(1)
   )[0]
   return row ?? null
+}
+
+/**
+ * When this run last showed a sign of life: the newest `wf_run_log.ts`, or null
+ * for a run that has not written a single feed entry.
+ *
+ * The companion to {@link getRunStatus} for a waiter that has to decide whether
+ * a run still sitting at `running` is working or dead. `wf_run` cannot answer
+ * that — it has `createdAt` / `startedAt` / `finishedAt` and no `updatedAt`, so
+ * the only clock on it runs from the moment the run began, which says nothing
+ * about whether anything has happened since.
+ *
+ * `wf_run_log` can, because it is written THROUGHOUT a node rather than at its
+ * end: `appendRunLog` persists every entry as the node emits it (each model
+ * round-trip, each tool call), and `recordRunStateChange` drops a marker at
+ * every lifecycle transition. Its `(run_id, ts)` index makes this a reverse
+ * index scan stopping at the first row — `ORDER BY ts DESC LIMIT 1` rather than
+ * `MAX(ts)` to keep it that way.
+ *
+ * Beware the granularity: entries land per model round-trip, not continuously.
+ * A caller's idle threshold must therefore exceed the longest legitimate
+ * silence between two entries, which is a whole model round-trip
+ * (`MAX_ROUND_TRIP_MS`) and not a small number.
+ */
+export async function getRunLastActivityAt(
+  db: WfDb,
+  runId: string,
+): Promise<number | null> {
+  const row = (
+    await db
+      .select({ ts: wfRunLog.ts })
+      .from(wfRunLog)
+      .where(eq(wfRunLog.runId, runId))
+      .orderBy(desc(wfRunLog.ts))
+      .limit(1)
+  )[0]
+  return row?.ts ?? null
 }
 
 export type GetRunOptions = {
