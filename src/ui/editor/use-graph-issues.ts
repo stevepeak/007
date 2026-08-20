@@ -25,7 +25,26 @@ export function useGraphIssues(graph: WorkflowGraph): GraphIssue[] {
 
     const bindingIssues: GraphIssue[] = []
     const checkBindings = (node: WorkflowNode) => {
-      for (const key of missingRequiredInputs(node, maps)) {
+      const missing = missingRequiredInputs(node, maps)
+      if (missing.length === 0) return
+      // Every `${variable}` an agent declares — across its system prompt AND its
+      // user message — has to be bound on the node. Nothing fills a gap: an
+      // incoming edge is sequencing, not content, so an unmapped variable is
+      // sent to the model verbatim as `${name}`. All of them report as ONE issue
+      // naming the tokens and how to bind them; listing each key separately as
+      // well only showed the same gap twice.
+      if (node.kind === 'agent') {
+        bindingIssues.push({
+          nodeId: node.id,
+          nodeLabel: node.label,
+          severity: 'error',
+          message: `Unmapped ${missing.length === 1 ? 'input' : 'inputs'}: ${missing
+            .map((n) => `\${${n}}`)
+            .join(', ')}. Map each to an upstream value — bind a whole result by choosing the node with no field, which passes it as JSON.`,
+        })
+        return
+      }
+      for (const key of missing) {
         bindingIssues.push({
           nodeId: node.id,
           nodeLabel: node.label,
@@ -55,10 +74,10 @@ export function useGraphIssues(graph: WorkflowGraph): GraphIssue[] {
             'Inputs have different shapes — a race must join producers of the same shape so its consumer sees one consistent result.',
         })
       }
-      // An agent reads ONLY what this node binds. Two ways that goes wrong, both
-      // fatal at run time rather than merely degraded, so both are errors:
-      // a conversation agent with no thread bound (the engine throws), and a
-      // `${variable}` left unmapped (it reaches the model as the literal token).
+      // An agent reads ONLY what this node binds, and a conversation agent with
+      // no thread bound makes the engine throw — fatal at run time rather than
+      // merely degraded, so these are errors. (Unmapped `${variable}` bindings
+      // are the other way this goes wrong; `checkBindings` reports those.)
       if (node.kind === 'agent') {
         const thread = agentThreadSource(graph, node.id, maps)
         if (thread.status === 'unlinked') {
@@ -85,24 +104,6 @@ export function useGraphIssues(graph: WorkflowGraph): GraphIssue[] {
             severity: 'error',
             message:
               'This node links a conversation, but the agent it points at is a Task agent. Switch the agent to Conversation and publish it, or clear the link.',
-          })
-        }
-        // Every `${variable}` the agent declares — across its system prompt AND
-        // its user message — has to be bound here. Nothing fills a gap: an
-        // incoming edge is sequencing, not content, so an unmapped variable is
-        // sent to the model verbatim as `${name}`.
-        const declared = maps.agentsById.get(node.config.agentId)?.inputVariables
-        const unmapped = (declared ?? []).filter(
-          (name) => node.config.inputs[name] == null,
-        )
-        if (unmapped.length > 0) {
-          bindingIssues.push({
-            nodeId: node.id,
-            nodeLabel: node.label,
-            severity: 'error',
-            message: `Unmapped ${unmapped.length === 1 ? 'input' : 'inputs'}: ${unmapped
-              .map((n) => `\${${n}}`)
-              .join(', ')}. Map each to an upstream value — bind a whole result by choosing the node with no field, which passes it as JSON.`,
           })
         }
       }
