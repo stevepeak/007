@@ -16,8 +16,8 @@ import { StepsChart } from './steps-chart'
 
 // The home page's operational summary: is anything failing, what is it costing,
 // and is feedback piling up. It is the home tab's MAIN column — the section
-// cards sit beside it as a navigation rail — so the first thing an operator sees
-// is the state of the system rather than a menu.
+// cards sit in a rail to its left — so the first thing an operator sees is the
+// state of the system rather than a menu.
 
 const TIMEFRAMES = [
   { value: '24h', label: '24h', ms: 86_400_000, bucket: 'hour' },
@@ -85,17 +85,22 @@ export function WfDashboard({ className }: { className?: string }) {
           onOpenRuns={() => navigate('runs')}
           onOpenFeedback={() => navigate('feedback')}
         />
-        {/* items-start so a short panel (three failures) sizes to its content
-            instead of stretching to match a tall neighbour. */}
-        <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-2">
+        {/* Two bands rather than one ragged grid: the plots share an identical
+            200px chart body so a row of them lines up exactly, and the reading
+            panels are grouped separately. Mixing the two left a tall chart
+            setting the row height and a short list stranded beside it. Cards
+            stretch to their band's height — content still starts at the top. */}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">
           <RunsChart data={data} onOpenRuns={() => navigate('runs')} />
           <CostChart data={data} />
-          <FailuresPanel data={data} />
-          <FeedbackPanel data={data} />
           {/* Renders itself away when analytics is unconfigured — there is no
               D1 fallback for a step count, so the panel is absent rather than
               showing a zero nobody measured. */}
           <StepsChart data={data} />
+        </div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">
+          <FailuresPanel data={data} />
+          <FeedbackPanel data={data} />
           {/* Budgets are current, not windowed — the timeframe control above
               doesn't scope this one. */}
           <ProvidersPanel />

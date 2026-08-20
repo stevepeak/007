@@ -37,7 +37,10 @@ export function FailuresPanel({ data }: { data: WfDashboardResult }) {
           <p className="text-sm text-neutral-500">No failures in this window</p>
         </div>
       ) : (
-        <ul className="flex flex-col divide-y divide-neutral-100">
+        // Up to ten failures come back; left unbounded the list would tower
+        // over the panels beside it and set the whole row's height, so it
+        // scrolls past the fourth or so instead.
+        <ul className="-mr-2 flex max-h-[15rem] flex-col divide-y divide-neutral-100 overflow-y-auto pr-2">
           {failures.map((run) => (
             <li key={run.id}>
               <WfLink

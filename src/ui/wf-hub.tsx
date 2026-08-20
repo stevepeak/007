@@ -18,10 +18,10 @@ import { cn } from './cn'
 // to navigate. No data client / provider required.
 //
 // Two layouts, chosen by whether `children` (the operational dashboard) is
-// passed. With content, the page is a two-column working surface: the dashboard
-// takes the main column and the cards collapse into a navigation rail on the
-// right. Without it there is nothing to be secondary to, so the cards spread
-// back out into the full-width grid.
+// passed. With content, the page is a two-column working surface: the cards
+// collapse into a navigation rail on the LEFT — where a nav is looked for — and
+// the dashboard takes the whole remaining width. Without it there is nothing to
+// be secondary to, so the cards spread back out into the full-width grid.
 
 /** Per-card hover accent. Full literal Tailwind class strings (v4 scans them). */
 type WfHubAccent = {
@@ -143,21 +143,21 @@ export function WfHub({
 }: WfHubProps) {
   const asRail = children != null
   return (
-    <div className={cn('mx-auto w-full max-w-7xl p-6', className)}>
+    <div className={cn('w-full p-6', className)}>
       <div
         className={cn(
           asRail &&
-            'grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_19rem]',
+            'grid grid-cols-1 items-start gap-6 lg:grid-cols-[17rem_minmax(0,1fr)]',
         )}
       >
-        {/* min-w-0 so a wide chart can shrink instead of forcing the grid open. */}
-        {asRail ? <div className="min-w-0">{children}</div> : null}
+        {/* Rail first in the DOM so it lands in the left column; stacked (below
+            lg) the dashboard is the headline, so the nav drops beneath it. */}
         <nav
           aria-label="Sections"
           className={cn(
             asRail
-              ? 'flex flex-col gap-2'
-              : 'grid grid-cols-1 gap-4 sm:grid-cols-2',
+              ? 'order-last flex flex-col gap-2 lg:order-none'
+              : 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3',
           )}
         >
           {sections.map((section) => {
@@ -223,6 +223,8 @@ export function WfHub({
             )
           })}
         </nav>
+        {/* min-w-0 so a wide chart can shrink instead of forcing the grid open. */}
+        {asRail ? <div className="min-w-0">{children}</div> : null}
       </div>
     </div>
   )
