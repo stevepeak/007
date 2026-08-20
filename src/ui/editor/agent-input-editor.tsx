@@ -118,6 +118,7 @@ export function AgentInputEditor({
           onChange={(body) => onChange({ userPrompt: body })}
           registerSetBody={registerSetUserPrompt}
           minHeightClass={PROMPT_EDITOR_COMPACT_HEIGHT}
+          hint="formatting"
           placeholder={'The message this agent runs on — e.g. “Price this recipe: ${recipe}”'}
           className={cn(missingTurn && 'border-red-300 focus-within:border-red-400')}
         />

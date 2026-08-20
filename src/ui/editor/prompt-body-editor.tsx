@@ -8,6 +8,7 @@ import StarterKit from '@tiptap/starter-kit'
 import { useEffect, useRef } from 'react'
 
 import { cn } from '../cn'
+import { MarkdownHint } from './markdown-hint'
 
 // A focused prompt-body editor. The document is authored as rich text but
 // serialized to Markdown — headings, **bold**, lists, `code`, etc. round-trip
@@ -63,6 +64,13 @@ export type PromptBodyEditorProps = {
   minHeightClass?: string
   /** Receives an imperative setter so the parent can replace the body. */
   registerSetBody?: (setBody: (body: string) => void) => void
+  /**
+   * The grey guide under the box. `full` (the default) covers Markdown marks
+   * and `${variables}`; `formatting` drops the variable paragraph for a box
+   * whose surrounding copy already explains it; `none` for a caller that
+   * renders one shared hint below a stack of editors.
+   */
+  hint?: 'full' | 'formatting' | 'none'
 }
 
 export const PROMPT_EDITOR_COMPACT_HEIGHT =
@@ -95,6 +103,7 @@ export function PromptBodyEditor({
   className,
   minHeightClass = 'min-h-[12rem] [&_.ProseMirror]:min-h-[11rem]',
   registerSetBody,
+  hint = 'full',
 }: PromptBodyEditorProps) {
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
@@ -136,14 +145,17 @@ export function PromptBodyEditor({
   }, [editor, registerSetBody])
 
   return (
-    <EditorContent
-      editor={editor}
-      className={cn(
-        'rounded-md border border-neutral-300 px-3 py-2 text-sm leading-relaxed focus-within:border-neutral-500',
-        minHeightClass,
-        PROSE_CLASSES,
-        className,
-      )}
-    />
+    <div className="space-y-1.5">
+      <EditorContent
+        editor={editor}
+        className={cn(
+          'rounded-md border border-neutral-300 px-3 py-2 text-sm leading-relaxed focus-within:border-neutral-500',
+          minHeightClass,
+          PROSE_CLASSES,
+          className,
+        )}
+      />
+      {hint !== 'none' ? <MarkdownHint variables={hint === 'full'} /> : null}
+    </div>
   )
 }

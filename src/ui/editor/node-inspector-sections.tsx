@@ -8,6 +8,7 @@ import {
 import { AgentSelect } from '../agent-select'
 import { useWfComponents } from '../context'
 import { useAgents, useTools, useTriggerEvents, useWorkflows } from '../hooks'
+import { MarkdownHint } from './markdown-hint'
 import {
   field,
   ToolSelect,
@@ -277,6 +278,9 @@ export function NoteInspector({ node, onChange }: NodeInspectorProps) {
           })
         }
       />
+      {/* No `${variables}` here: a note is read by people on the canvas, never
+      rendered into a prompt. */}
+      <MarkdownHint variables={false} />
       <p className="text-muted-foreground text-xs">
         A sticky note for the canvas — it never affects the workflow. The Label
         field is the note’s title.

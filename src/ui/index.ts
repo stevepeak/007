@@ -167,6 +167,7 @@ export {
   PromptBodyEditor,
   type PromptBodyEditorProps,
 } from './editor/prompt-body-editor'
+export { MarkdownHint, type MarkdownHintProps } from './editor/markdown-hint'
 export {
   WorkflowCanvas,
   type WorkflowCanvasProps,
