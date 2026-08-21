@@ -124,8 +124,8 @@ export async function exportBundle(db: WfDb): Promise<SpecBundle> {
       rows: (full?.rows ?? []).map((r) => ({
         name: r.name,
         description: r.description ?? undefined,
-        initialCondition: r.initialCondition,
-        fixtures: r.fixtures,
+        input: r.input,
+        tools: r.tools,
         checks: r.checks,
         sortOrder: r.sortOrder,
       })),

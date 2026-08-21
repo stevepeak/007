@@ -70,6 +70,8 @@ export type ExecuteAgentNodeArgs<TDeps> = {
   simulate?: boolean
   /** Canned tool outputs consumed under `simulate`. */
   fixtures?: Record<string, unknown>
+  /** Eval integration signal — read tools run live. See RunContext.liveReads. */
+  liveReads?: boolean
   /**
    * Eval synthesis signal — run with an EMPTY tool set (no registry tools, no
    * delegation tools), forcing the model to answer from its seeded message
@@ -156,6 +158,7 @@ export async function executeAgentNode<TDeps>(
     rehydrate,
     simulate,
     fixtures,
+    liveReads,
     freezeTools,
     agentOverride,
     subAgentCtx,
@@ -196,6 +199,7 @@ export async function executeAgentNode<TDeps>(
     : buildAgentToolSet(toolRegistry, config.toolIds, toolDeps, {
         simulate,
         fixtures,
+        liveReads,
       })
   // Human-readable status templates, keyed by tool id (the ToolSet's own key, so
   // it matches `toolName` at call time). Only tools that declare a `statusLabel`

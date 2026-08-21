@@ -154,6 +154,14 @@ export type RunContext = {
    */
   fixtures?: Record<string, unknown>
   /**
+   * Eval integration signal. When true, tools tagged `sideEffect: 'read'`
+   * execute for real instead of returning their `fixtures` entry — write tools
+   * stay neutralized by `simulate`. Set by the eval runner for a Sample whose
+   * tools are `live`, which is how a goal grades the agent against real
+   * retrieval rather than a canned corpus.
+   */
+  liveReads?: boolean
+  /**
    * Eval synthesis signal. When true, EVERY agent node runs with an empty tool
    * set — no registry tools, no synthesized delegation tools — forcing the model
    * to answer from its seeded message history alone. Set only by the eval runner

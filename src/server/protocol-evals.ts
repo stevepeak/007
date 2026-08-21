@@ -1,24 +1,28 @@
 import type {
   CheckResult,
   CheckTree,
-  EvalFixtures,
-  EvalInitialCondition,
   EvalRowSnapshot,
+  EvalSampleInput,
+  EvalTools,
 } from '../eval/checks'
 
 // ── Evals ─────────────────────────────────────────────────────────────────
 // The UI vocabulary is Goal / Sample / Test; the wire keeps the code identifiers
-// set / row / check. The check tree, fixtures, and initial-condition shapes are
-// the pure zod-inferred types shared with the grader and the `bun:test` harness.
+// set / row / check. The check tree, input, and tools shapes are the pure
+// zod-inferred types shared with the grader and the `bun:test` harness.
 export type {
   CheckResult,
   CheckTree,
   EvalCheck,
   EvalCheckType,
   EvalFixtures,
-  EvalInitialCondition,
   EvalMatch,
   EvalRowSnapshot,
+  EvalSampleInput,
+  EvalSampleInputKind,
+  EvalSampleLayer,
+  EvalToolMode,
+  EvalTools,
   JudgeBar,
   JudgeVerdict,
   SeededMessage,
@@ -31,9 +35,12 @@ export {
   BINARY_CHECK_TYPES,
   EVAL_CHECK_TYPES,
   evalMatchSchema,
+  evalSampleLayer,
   JUDGE_VERDICT_SCORE,
   judgeVerdictPasses,
   resolveJudgeBar,
+  toolFixtures,
+  unavailableCheckTypes,
 } from '../eval/checks'
 
 // Wire enums for eval targets/verdicts, derived from the DB-schema `as const`
@@ -68,16 +75,16 @@ export type WfEvalSetSummary = {
   updatedAt: number | null
 }
 
-// A "Sample" — one test case: the initial condition (trigger input + prompt
-// variables), the fixtures that stub read tools, and the check tree that grades
-// the resulting run.
+// A "Sample" — one test case: the INPUT the target is invoked with (shaped like
+// the target's own contract), how its TOOLS behave for this case, and the check
+// tree that grades the resulting run.
 export type WfEvalRowDTO = {
   id: string
   setId: string
   name: string
   description: string | null
-  initialCondition: EvalInitialCondition
-  fixtures: EvalFixtures
+  input: EvalSampleInput
+  tools: EvalTools
   checks: CheckTree
   sortOrder: number
   archived: boolean

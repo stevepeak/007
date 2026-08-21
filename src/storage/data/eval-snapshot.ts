@@ -27,8 +27,8 @@ export function buildEvalSnapshot(
     row: {
       name: row.name,
       description: row.description,
-      initialCondition: row.initialCondition,
-      fixtures: row.fixtures,
+      input: row.input,
+      tools: row.tools,
       checks: row.checks,
     },
     target: {
@@ -68,7 +68,7 @@ function stableStringify(value: unknown): string {
 
 /**
  * sha256 (hex) over a snapshot's reproducibility-relevant fields: the Sample
- * inputs (initialCondition + fixtures), the checks, and the Goal target
+ * inputs (input + tools), the checks, and the Goal target
  * identity. Excludes cosmetic name/description so a rename isn't a "change".
  * Lets callers detect whether a Sample's effective definition changed between
  * two runs, and dedup identical snapshots — the job a version counter used to do.
@@ -77,8 +77,8 @@ export async function hashEvalSnapshot(
   snapshot: EvalRowSnapshot,
 ): Promise<string> {
   const semantic = {
-    initialCondition: snapshot.row.initialCondition,
-    fixtures: snapshot.row.fixtures,
+    input: snapshot.row.input,
+    tools: snapshot.row.tools,
     checks: snapshot.row.checks,
     targetKind: snapshot.target.targetKind,
     targetId: snapshot.target.targetId,

@@ -254,10 +254,17 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
     /** Canned read-tool outputs, keyed by tool id (consumed under `simulate`). */
     fixtures: Record<string, unknown>
     /**
+     * Integration mode — let read tools EXECUTE instead of returning a fixture
+     * (the host passes this into `startGraphRun` as `liveReads`). True when the
+     * Sample's tools are `live`, which is how a goal grades the agent against
+     * real retrieval. Write tools stay neutralized by `simulate` either way.
+     */
+    liveReads?: boolean
+    /**
      * Synthesis mode — run the agent with an empty tool set (the host passes this
-     * into `startGraphRun` as `freezeTools`). True when the Sample was authored
-     * with a seeded conversation + freeze; the `triggerInput` then already carries
-     * the seeded `{ messages }`. Undefined/false → the normal tool-calling path.
+     * into `startGraphRun` as `freezeTools`). True when the Sample's tools are
+     * `frozen`; a conversation Sample's `triggerInput` then already carries the
+     * seeded `{ messages }`. Undefined/false → the normal tool-calling path.
      */
     freezeTools?: boolean
     /**

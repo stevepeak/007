@@ -63,6 +63,8 @@ export type RunNodeContext<TDeps> = {
   simulate?: boolean
   /** Canned tool outputs consumed under `simulate`, keyed by tool id. */
   fixtures?: Record<string, unknown>
+  /** Eval integration signal — read tools run live. See RunContext. */
+  liveReads?: boolean
   /** Eval synthesis signal — run agent nodes with an empty tool set. See RunContext. */
   freezeTools?: boolean
   /** Eval matrix override — swaps an agent node's modelId/prompt. See RunContext. */
@@ -116,6 +118,7 @@ export async function runNode<TDeps>(
         rehydrate,
         simulate: ctx.simulate,
         fixtures: ctx.fixtures,
+        liveReads: ctx.liveReads,
         freezeTools: ctx.freezeTools,
         agentOverride: ctx.agentOverride,
         modelBudget: ctx.modelBudget,
@@ -144,6 +147,7 @@ export async function runNode<TDeps>(
         rehydrate,
         simulate: ctx.simulate,
         fixtures: ctx.fixtures,
+        liveReads: ctx.liveReads,
       })
       return {
         schedulerOutput: r.output,

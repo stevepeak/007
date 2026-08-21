@@ -143,6 +143,7 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
             resolveBlobRef: config.resolveBlobRef,
             simulate: p.runContext.simulate,
             fixtures: p.runContext.fixtures,
+            liveReads: p.runContext.liveReads,
             freezeTools: p.runContext.freezeTools,
             agentOverride: p.runContext.agentOverride,
           },
@@ -603,6 +604,7 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
                       resolveBlobRef: config.resolveBlobRef,
                       simulate: p.runContext.simulate,
                       fixtures: p.runContext.fixtures,
+                      liveReads: p.runContext.liveReads,
                       freezeTools: p.runContext.freezeTools,
                       agentOverride: p.runContext.agentOverride,
                       // Delegation: an agent node may spawn sub-agents/workflows

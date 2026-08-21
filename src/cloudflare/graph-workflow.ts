@@ -99,6 +99,11 @@ export type GraphRunContextInput = {
   isEval?: boolean
   /** Canned tool outputs consumed under `simulate`, keyed by tool id. */
   fixtures?: Record<string, unknown>
+  /**
+   * Eval integration signal — read tools execute for real instead of returning
+   * a fixture; write tools stay neutralized. See RunContext.
+   */
+  liveReads?: boolean
   /** Eval synthesis signal — run every agent node with an empty tool set. See RunContext. */
   freezeTools?: boolean
   /** Eval matrix override — swaps an agent node's modelId/prompt. See RunContext. */

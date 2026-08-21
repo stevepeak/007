@@ -33,6 +33,8 @@ export type ExecuteToolNodeArgs<TDeps> = {
   simulate?: boolean
   /** Canned tool outputs consumed under `simulate`. */
   fixtures?: Record<string, unknown>
+  /** Eval integration signal — read tools run live. See RunContext.liveReads. */
+  liveReads?: boolean
 }
 
 export async function executeToolNode<TDeps>(
@@ -71,6 +73,7 @@ export async function executeToolNode<TDeps>(
   const sim = simulatedToolOutput(entry, {
     simulate: deps.simulate,
     fixtures: deps.fixtures,
+    liveReads: deps.liveReads,
   })
   if (sim) {
     return { output: sim.output, meta: { toolId: entry.id, args } }

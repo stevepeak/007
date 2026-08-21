@@ -115,6 +115,7 @@ async function runAgentTarget<TDeps>(
   const tools = buildAgentToolSet(ctx.toolRegistry, config.toolIds, ctx.toolDeps, {
     simulate: ctx.simulate,
     fixtures: ctx.fixtures,
+    liveReads: ctx.liveReads,
   })
   const toolStatusLabels: Record<string, string> = {}
   for (const id of config.toolIds) {

@@ -38,6 +38,11 @@ export type StartGraphRunInput = {
   /** Canned tool outputs consumed under `simulate`, keyed by tool id. */
   fixtures?: Record<string, unknown>
   /**
+   * Eval integration signal — read tools execute for real instead of returning
+   * a fixture; writes stay neutralized. See RunContext.
+   */
+  liveReads?: boolean
+  /**
    * Eval synthesis signal — run every agent node with an empty tool set so the
    * model answers from its seeded message history alone. See RunContext.
    */

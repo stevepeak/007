@@ -4,12 +4,15 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type {
   CheckTree,
   EvalCheck,
-  EvalFixtures,
-  SeededMessage,
+  EvalSampleInput,
+  EvalSampleLayer,
+  EvalTools,
   WfEvalRowDTO,
 } from '../../server/protocol'
+import { evalSampleLayer } from '../../server/protocol'
 import { useWfComponents } from '../context'
 import {
+  useAgents,
   useDeleteEvalRow,
   useEvalSet,
   useUpsertEvalRow,
@@ -18,24 +21,38 @@ import { useWfNav } from '../nav'
 import { ArchiveButton } from '../archive-button'
 import { WfShell } from '../shell'
 import { sectionCrumb } from '../wf-crumbs'
-import { IdeaSpark } from '../idea-spark'
-import { ConversationEditor } from './eval-sample-conversation'
-import { GivenEditor } from './eval-sample-given'
-import { MockToolsPanel } from './eval-sample-mocks'
+import { emptyInputFor, SampleInputEditor } from './eval-sample-input'
+import { SampleToolsEditor, useTargetHasTools } from './eval-sample-tools'
 import { RunsForSample, ChecksList } from './eval-sample-checks'
 import { RunConfigDialog } from './run-config-dialog'
 import { EmptyState, Tabs, useTargetAgentCrumb } from './shared'
 import { StepFlow, type Step } from './step-flow'
 
 // The Sample view (route: evals/<setId>/samples/<sampleId>). A Sample IS a
-// wf_eval_row: a name, a GIVEN (its initialCondition.promptVariables — the
-// values the goal's agent is invoked with) and a set of CHECKS (its checks tree,
-// an AND/OR reduction of EvalChecks). The target agent is set on the Goal, not
-// here. Edits persist to the row on blur / on action (rows are mutable; no
-// version step). The three configuration steps (Given, Mocks, Checks) each live
-// in their own module (eval-sample-{given,mocks,checks}.tsx).
+// wf_eval_row, and it answers three questions in order:
+//
+//   1. INPUT  — what is the target invoked with? The editor is chosen by the
+//               TARGET's own contract (task variables / a conversation thread /
+//               a workflow's trigger payload), so there is exactly one input
+//               source per sample instead of several competing ones.
+//   2. TOOLS  — how do its tools behave? One tri-state: mocked, none, or live.
+//   3. CHECKS — what has to be true of the run? Gated by the tools setting, so a
+//               trajectory check can't be authored where no tool step will exist.
+//
+// Which TESTING LAYER that adds up to (synthesis, trajectory, integration) is
+// derived and shown in the header — never stored, so it can't drift from the
+// settings it names. Edits persist to the row on blur / on action (rows are
+// mutable; no version step).
 
+// The check "Add check" starts from. A tool assertion is the most common one to
+// want — except against an agent that has no tools, where it is unsatisfiable by
+// construction, so that target starts from an assertion about the answer.
 const DEFAULT_CHECK: EvalCheck = { type: 'tool_called', toolId: '', called: true }
+const DEFAULT_CHECK_NO_TOOLS: EvalCheck = {
+  type: 'output_match',
+  match: 'contains',
+  value: '',
+}
 
 type SampleTab = 'config' | 'runs'
 
@@ -48,10 +65,8 @@ export type EvalSampleProps = {
 type Draft = {
   name: string
   description: string
-  promptVariables: Record<string, string>
-  seededMessages: SeededMessage[]
-  freezeTools: boolean
-  fixtures: EvalFixtures
+  input: EvalSampleInput
+  tools: EvalTools
   checks: CheckTree
 }
 
@@ -59,12 +74,35 @@ function draftFromRow(row: WfEvalRowDTO): Draft {
   return {
     name: row.name,
     description: row.description ?? '',
-    promptVariables: { ...(row.initialCondition.promptVariables ?? {}) },
-    seededMessages: row.initialCondition.seededMessages ?? [],
-    freezeTools: row.initialCondition.freezeTools ?? false,
-    fixtures: { ...row.fixtures },
+    input: row.input,
+    tools: row.tools,
     checks: row.checks,
   }
+}
+
+// The header badge for the derived testing layer. `io` gets no badge — a plain
+// input → output test is the baseline, not a mode worth naming.
+const LAYERS: Record<
+  Exclude<EvalSampleLayer, 'io'>,
+  { label: string; className: string; title: string }
+> = {
+  synthesis: {
+    label: 'Synthesis',
+    className: 'bg-amber-100 text-amber-700',
+    title:
+      'A staged conversation with no tools — grades the final response in isolation.',
+  },
+  trajectory: {
+    label: 'Trajectory',
+    className: 'bg-violet-100 text-violet-700',
+    title:
+      'Mocked tools — grades which tools the agent reached for, and with what.',
+  },
+  integration: {
+    label: 'Integration',
+    className: 'bg-sky-100 text-sky-700',
+    title: 'Live read tools — grades the agent against real retrieval.',
+  },
 }
 
 export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
@@ -73,7 +111,7 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
   const [tab, setTab] = useState<SampleTab>('config')
   const [runOpen, setRunOpen] = useState(false)
   // Whether the "add mock" tool picker is open — lifted here so its trigger can
-  // live in the Mocks step's header (far right) while the picker renders in the
+  // live in the Tools step's header (far right) while the picker renders in the
   // step body.
   const [addMockOpen, setAddMockOpen] = useState(false)
 
@@ -86,6 +124,17 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
   const targetAgentCrumb = useTargetAgentCrumb(set?.targetId, set?.targetVersion)
   const upsertRow = useUpsertEvalRow()
   const deleteRow = useDeleteEvalRow(setId)
+
+  // The target's own input contract decides which input editor this sample gets.
+  const agentsQuery = useAgents()
+  const targetAgent = agentsQuery.data?.find((a) => a.id === set?.targetId)
+  // …and whether it HAS tools decides whether the Tools card exists at all. An
+  // agent with none behaves identically under all three modes, so the card would
+  // be asking a question with no answer.
+  const hasTools = useTargetHasTools(
+    set?.targetId ?? '',
+    set?.targetKind ?? 'agent',
+  )
 
   // Local draft, synced once per row id so background refetches don't clobber an
   // in-progress edit. Every mutation persists the whole row.
@@ -106,16 +155,8 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
       setId,
       name: next.name.trim() || 'Untitled sample',
       description: next.description.trim() || null,
-      initialCondition: {
-        triggerInput: row.initialCondition.triggerInput,
-        promptVariables: next.promptVariables,
-        // Synthesis mode — a seeded conversation + freeze flag. Omit empty
-        // arrays so a plain sample's initialCondition stays clean.
-        seededMessages:
-          next.seededMessages.length > 0 ? next.seededMessages : undefined,
-        freezeTools: next.freezeTools || undefined,
-      },
-      fixtures: next.fixtures,
+      input: next.input,
+      tools: next.tools,
       checks: next.checks,
     })
   }
@@ -126,13 +167,32 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
     if (!draft) return
     const checks = {
       ...draft.checks,
-      checks: [...draft.checks.checks, DEFAULT_CHECK],
+      checks: [
+        ...draft.checks.checks,
+        hasTools ? DEFAULT_CHECK : DEFAULT_CHECK_NO_TOOLS,
+      ],
     }
     persist({ ...draft, checks })
     navigate(
       `evals/${setId}/samples/${sampleId}/checks/${checks.checks.length - 1}`,
     )
   }
+
+  // A sample authored before its goal's target changed input kind still holds
+  // the old variant. Offer the swap rather than silently rewriting an author's
+  // work — the old input's values are what they'd have to retype.
+  const expectedKind =
+    draft?.input.kind === 'trigger'
+      ? 'trigger'
+      : (targetAgent?.inputKind ?? 'task')
+  const kindMismatch = !!draft && draft.input.kind !== expectedKind
+
+  const layer = draft ? evalSampleLayer(draft.input, draft.tools) : 'io'
+  const badge = layer === 'io' ? null : LAYERS[layer]
+  const stagedToolResults =
+    draft?.input.kind === 'conversation'
+      ? draft.input.turns.reduce((n, t) => n + (t.toolCalls?.length ?? 0), 0)
+      : 0
 
   return (
     <WfShell
@@ -178,6 +238,14 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
       actions={
         row && draft ? (
           <>
+            {badge ? (
+              <span
+                title={badge.title}
+                className={`rounded-full px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide ${badge.className}`}
+              >
+                {badge.label}
+              </span>
+            ) : null}
             <ArchiveButton
               description={
                 <>
@@ -227,142 +295,82 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
                 steps={
                   [
                     {
-                      key: 'given',
-                      title: 'Given',
-                      aside: (
-                        <span className="text-[11px] uppercase tracking-wide text-neutral-400">
-                          Initial state
-                        </span>
-                      ),
+                      key: 'input',
+                      title: INPUT_TITLES[draft.input.kind],
                       content: (
-                        <GivenEditor
-                          targetId={set?.targetId ?? ''}
-                          value={draft.promptVariables}
-                          onChange={(promptVariables) =>
-                            persist({ ...draft, promptVariables })
-                          }
-                        />
+                        <div className="space-y-3">
+                          {kindMismatch ? (
+                            <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+                              <p className="text-[11px] text-amber-700">
+                                This sample holds a{' '}
+                                <strong>{draft.input.kind}</strong> input, but{' '}
+                                {targetAgent?.name ?? 'the target agent'} now
+                                takes a <strong>{expectedKind}</strong> one — the
+                                run will ignore what&apos;s below.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  persist({
+                                    ...draft,
+                                    input: emptyInputFor(
+                                      expectedKind === 'conversation'
+                                        ? 'conversation'
+                                        : 'task',
+                                    ),
+                                  })
+                                }
+                                className="ml-auto shrink-0 text-[11px] font-medium text-amber-800 underline"
+                              >
+                                Switch to {expectedKind}
+                              </button>
+                            </div>
+                          ) : null}
+                          <SampleInputEditor
+                            targetId={set?.targetId ?? ''}
+                            value={draft.input}
+                            onChange={(input) => persist({ ...draft, input })}
+                          />
+                        </div>
                       ),
                     },
-                    {
-                      key: 'conversation',
-                      title: 'Conversation',
-                      aside: (
-                        <span className="flex items-center gap-1.5">
-                          <span className="text-[11px] uppercase tracking-wide text-neutral-400">
-                            Synthesis mode
-                          </span>
-                          <IdeaSpark
-                            title="Synthesis mode — grading the final response in isolation"
-                            hint="How synthesis mode works, and what's still to come"
-                          >
-                            <p>
-                              A seeded conversation + <strong>Freeze tools</strong>{' '}
-                              runs the agent with <strong>no tools</strong>, so it
-                              answers from the transcript above and you grade only
-                              its final reply — cutting out RAG / tool-selection
-                              nondeterminism.
-                            </p>
-                            <p className="font-medium text-neutral-700">
-                              Use it as a lens, not a replacement
-                            </p>
-                            <p>
-                              For a tool-calling agent the tool calls are often the
-                              product, and fully seeding retrieval hides the most
-                              common failure (a bad query, or nothing retrieved).
-                              Layer three kinds of check:
-                            </p>
-                            <ul className="list-disc space-y-1 pl-5">
-                              <li>
-                                <strong>Trajectory</strong> — mock the tools, assert{' '}
-                                <code>tool_called</code> /{' '}
-                                <code>tool_args_match</code> on the query.
-                              </li>
-                              <li>
-                                <strong>Synthesis</strong> (this step) — seed +
-                                freeze, then judge the answer. The judge now also
-                                sees the seeded tool <em>results</em>, so a rubric
-                                can grade groundedness.
-                              </li>
-                              <li>
-                                <strong>Integration</strong> — real tools against a
-                                frozen corpus snapshot.
-                              </li>
-                            </ul>
-                            <p className="font-medium text-neutral-700">
-                              Authoring tip
-                            </p>
-                            <p>
-                              End the transcript on a <strong>user turn</strong> or
-                              an <strong>assistant turn that carries a tool
-                              result</strong>. Ending on a plain assistant message
-                              makes the model generate a second assistant turn.
-                            </p>
-                            <p className="font-medium text-neutral-700">
-                              Not built yet
-                            </p>
-                            <ul className="list-disc space-y-1 pl-5">
-                              <li>
-                                Arg-keyed fixtures — a different query returns
-                                different canned chunks (better for the trajectory
-                                layer).
-                              </li>
-                              <li>
-                                pass@k across the model × prompt matrix, so one
-                                noisy judged run isn&apos;t the whole signal.
-                              </li>
-                              <li>
-                                Split <em>faithfulness</em> vs.{' '}
-                                <em>helpfulness</em> judges (now unblocked, since the
-                                judge sees context).
-                              </li>
-                            </ul>
-                          </IdeaSpark>
-                        </span>
-                      ),
-                      content: (
-                        <ConversationEditor
-                          messages={draft.seededMessages}
-                          freezeTools={draft.freezeTools}
-                          onMessagesChange={(seededMessages) =>
-                            persist({ ...draft, seededMessages })
-                          }
-                          onFreezeToolsChange={(freezeTools) =>
-                            persist({ ...draft, freezeTools })
-                          }
-                        />
-                      ),
-                    },
-                    {
-                      key: 'mocks',
-                      title:
-                        set?.targetKind === 'workflow'
-                          ? 'Mocked Nodes'
-                          : 'Mocked Tools',
-                      aside:
-                        (set?.targetKind ?? 'agent') === 'agent' ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setAddMockOpen((o) => !o)}
-                          >
-                            <Plus className="size-4" />
-                            Add mock
-                          </Button>
-                        ) : undefined,
-                      content: (
-                        <MockToolsPanel
-                          targetId={set?.targetId ?? ''}
-                          targetKind={set?.targetKind ?? 'agent'}
-                          fixtures={draft.fixtures}
-                          addOpen={addMockOpen}
-                          onAddOpenChange={setAddMockOpen}
-                          onChange={(fixtures) =>
-                            persist({ ...draft, fixtures })
-                          }
-                        />
-                      ),
-                    },
+                    // Only when the target actually has tools. `null` = still
+                    // resolving the agent, so nothing renders yet rather than a
+                    // card that flashes in and back out.
+                    ...(hasTools
+                      ? [
+                          {
+                            key: 'tools',
+                            title:
+                              set?.targetKind === 'workflow' ? 'Nodes' : 'Tools',
+                            aside:
+                              draft.tools.mode === 'mocked' &&
+                              (set?.targetKind ?? 'agent') === 'agent' ? (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => setAddMockOpen((o) => !o)}
+                                >
+                                  <Plus className="size-4" />
+                                  Add mock
+                                </Button>
+                              ) : undefined,
+                            content: (
+                              <SampleToolsEditor
+                                targetId={set?.targetId ?? ''}
+                                targetKind={set?.targetKind ?? 'agent'}
+                                value={draft.tools}
+                                onChange={(tools) =>
+                                  persist({ ...draft, tools })
+                                }
+                                addOpen={addMockOpen}
+                                onAddOpenChange={setAddMockOpen}
+                                stagedToolResults={stagedToolResults}
+                              />
+                            ),
+                          },
+                        ]
+                      : []),
                     {
                       key: 'checks',
                       title: 'Checks',
@@ -377,6 +385,7 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
                           setId={setId}
                           sampleId={sampleId}
                           checks={draft.checks}
+                          tools={draft.tools}
                           onChange={(checks) => persist({ ...draft, checks })}
                         />
                       ),
@@ -392,4 +401,12 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
       </div>
     </WfShell>
   )
+}
+
+// The Input card names the shape it is actually editing — which is also what
+// says, without a second label, what kind of agent this goal targets.
+const INPUT_TITLES: Record<EvalSampleInput['kind'], string> = {
+  task: 'Input',
+  conversation: 'Conversation',
+  trigger: 'Trigger payload',
 }

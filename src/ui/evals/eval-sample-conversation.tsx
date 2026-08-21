@@ -1,32 +1,27 @@
-import { MessagesSquare, Plus, Wrench, X } from 'lucide-react'
+import { AlertTriangle, MessagesSquare, Plus, Wrench, X } from 'lucide-react'
 
 import type { SeededMessage, SeededToolCall } from '../../server/protocol'
 import { useWfComponents } from '../context'
 import { useCommittedField } from '../use-committed-field'
 
-// Synthesis mode. A "seeded conversation" pre-bakes the turns an agent starts
-// from — user prompts plus assistant turns that already carry their tool calls
-// and canned results — so a run begins mid-conversation and only the model's
-// NEXT (final) reply is produced and graded. Paired with "Freeze tools", the
-// agent gets NO tools and must answer from this transcript alone, isolating
-// response quality from retrieval / tool-selection nondeterminism.
+// The thread a CONVERSATION agent answers — user turns plus assistant turns that
+// already carry their tool calls and canned results. These become the agent's
+// message history, so a run begins mid-conversation and only the model's NEXT
+// (final) reply is produced and graded.
 //
-// The transcript maps 1:1 to `initialCondition.seededMessages`; the freeze flag
-// to `initialCondition.freezeTools`. When a conversation is present it REPLACES
-// the Given's trigger input as the agent's message history.
+// Tools are NOT configured here. Whether the agent may call any (and what they
+// return) is the Sample's Tools setting, one card down — pairing this transcript
+// with `frozen` tools is what makes a pure synthesis test, but the transcript
+// stands on its own without it.
 export function ConversationEditor({
-  messages,
-  freezeTools,
-  onMessagesChange,
-  onFreezeToolsChange,
+  turns,
+  onChange,
 }: {
-  messages: SeededMessage[]
-  freezeTools: boolean
-  onMessagesChange: (next: SeededMessage[]) => void
-  onFreezeToolsChange: (next: boolean) => void
+  turns: SeededMessage[]
+  onChange: (next: SeededMessage[]) => void
 }) {
-  const { Button, Checkbox } = useWfComponents()
-  const field = useCommittedField(messages, onMessagesChange, JSON.stringify)
+  const { Button } = useWfComponents()
+  const field = useCommittedField(turns, onChange, JSON.stringify)
 
   const update = (i: number, patch: Partial<SeededMessage>) =>
     field.onChange(field.value.map((m, j) => (j === i ? { ...m, ...patch } : m)))
@@ -35,6 +30,16 @@ export function ConversationEditor({
   const add = (role: SeededMessage['role']) =>
     field.commit([...field.value, { role, text: '' }])
 
+  // A transcript ending on a plain assistant message leaves the model nothing to
+  // answer, so it generates a SECOND assistant turn — and the sample grades that
+  // instead of the reply the author meant. Cheap to spot, expensive to debug.
+  const last = field.value[field.value.length - 1]
+  const endsOnAssistantText =
+    !!last &&
+    last.role === 'assistant' &&
+    (last.toolCalls ?? []).length === 0 &&
+    !!last.text?.trim()
+
   return (
     <div className="space-y-3">
       <p className="px-1 text-xs text-neutral-400">
@@ -42,23 +47,6 @@ export function ConversationEditor({
         with a tool result to seed retrieved context, then grade only the reply
         it produces next.
       </p>
-
-      <label className="flex items-start gap-2 rounded-lg border border-neutral-200 px-3 py-2.5">
-        <Checkbox
-          checked={freezeTools}
-          onChange={(e) => onFreezeToolsChange(e.target.checked)}
-          className="mt-0.5"
-        />
-        <span className="min-w-0">
-          <span className="block text-sm font-medium text-neutral-800">
-            Freeze tools
-          </span>
-          <span className="block text-xs text-neutral-400">
-            Run the agent with no tools — it must answer from the conversation
-            above. Turns a run into a pure test of the final response.
-          </span>
-        </span>
-      </label>
 
       {field.value.length > 0 ? (
         <div className="space-y-2">
@@ -75,9 +63,21 @@ export function ConversationEditor({
       ) : (
         <div className="flex items-center gap-2 rounded-lg border border-dashed border-neutral-200 px-3 py-4 text-xs text-neutral-400">
           <MessagesSquare className="size-4" />
-          No seeded turns — this sample runs from the Given instead.
+          No turns yet — add the thread this agent should answer.
         </div>
       )}
+
+      {endsOnAssistantText ? (
+        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600" />
+          <p className="text-[11px] text-amber-700">
+            This transcript ends on an assistant message, so the model will
+            generate <strong>another</strong> assistant turn — and that is what
+            gets graded. End on a user turn, or on an assistant turn carrying a
+            tool result.
+          </p>
+        </div>
+      ) : null}
 
       <div className="flex gap-2">
         <Button size="sm" variant="ghost" onClick={() => add('user')}>

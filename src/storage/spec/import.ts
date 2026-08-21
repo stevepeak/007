@@ -19,6 +19,11 @@ import {
   workflowGraphShapeSchema,
   type WorkflowGraph,
 } from '../../engine'
+import {
+  legacyFreezeTools,
+  parseEvalSampleInput,
+  parseEvalTools,
+} from '../../eval/checks'
 import type { WfDb } from '../client'
 import {
   assignWorkflow,
@@ -441,8 +446,7 @@ async function writeEvalRows(
       setId,
       name: row.name,
       description: row.description ?? null,
-      initialCondition: row.initialCondition as never,
-      fixtures: row.fixtures as never,
+      ...readEvalRowSpec(row),
       checks: row.checks as never,
       sortOrder: row.sortOrder ?? order++,
     })
@@ -470,18 +474,40 @@ async function evalUnchanged(
   const currentRows = current.rows.map((r) => ({
     name: r.name,
     description: r.description ?? null,
-    initialCondition: r.initialCondition,
-    fixtures: r.fixtures,
+    input: r.input,
+    tools: r.tools,
     checks: r.checks,
   }))
+  // Normalize the spec side through the same upgrade the DB side already went
+  // through, so a spec file still carrying the pre-split payloads compares equal
+  // to the row it produced instead of re-importing on every run.
   const specRows = spec.rows.map((r) => ({
     name: r.name,
     description: r.description ?? null,
-    initialCondition: r.initialCondition ?? {},
-    fixtures: r.fixtures ?? {},
+    ...readEvalRowSpec(r),
     checks: r.checks ?? { op: 'and', checks: [] },
   }))
   return payloadEqual(currentRows, specRows)
+}
+
+/**
+ * The Input/Tools pair a spec row describes, upgrading the LEGACY
+ * `initialCondition` / `fixtures` payloads that spec files written before the
+ * split still carry. Shared by the write and the compare paths so an unchanged
+ * legacy file never looks like a change.
+ */
+function readEvalRowSpec(row: {
+  input?: unknown
+  tools?: unknown
+  initialCondition?: unknown
+  fixtures?: unknown
+}) {
+  const rawInput = row.input ?? row.initialCondition ?? {}
+  const rawTools = row.tools ?? row.fixtures ?? {}
+  return {
+    input: parseEvalSampleInput(rawInput),
+    tools: parseEvalTools(rawTools, legacyFreezeTools(rawInput)),
+  }
 }
 
 // ── Prune ────────────────────────────────────────────────────────────────────

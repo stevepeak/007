@@ -117,8 +117,8 @@ export function EvalCheckPage({
       id: row.id,
       setId,
       name: row.name,
-      initialCondition: row.initialCondition,
-      fixtures: row.fixtures,
+      input: row.input,
+      tools: row.tools,
       checks: { ...row.checks, checks },
     })
   }
@@ -171,8 +171,8 @@ export function EvalCheckPage({
       id: row.id,
       setId,
       name: row.name,
-      initialCondition: row.initialCondition,
-      fixtures: row.fixtures,
+      input: row.input,
+      tools: row.tools,
       checks: { ...row.checks, checks },
     })
     navigate(`evals/${setId}/samples/${sampleId}`)

@@ -38,8 +38,8 @@ export const wfEvalSet = sqliteTable(
   (t) => [index('wf_eval_set_created_idx').on(t.createdAt)],
 )
 
-// One case ("Sample"): an initial condition, the canned fixtures reads return
-// under simulate, and the AND/OR check tree. Shapes are validated by
+// One case ("Sample"): the INPUT the target is invoked with, how its TOOLS
+// behave for this case, and the AND/OR check tree. Shapes are validated by
 // `src/eval/checks.ts` at the data-access boundary.
 export const wfEvalRow = sqliteTable(
   'wf_eval_row',
@@ -51,12 +51,23 @@ export const wfEvalRow = sqliteTable(
     name: text('name').notNull(),
     // Optional free-text description of the sample, authored by the user.
     description: text('description'),
-    // { triggerInput, promptVariables } — see EvalInitialCondition.
-    initialCondition: text('initial_condition', { mode: 'json' })
+    // A tagged input variant matching the target's own contract — see
+    // EvalSampleInput ({ kind: 'task' | 'conversation' | 'trigger', … }). Rows
+    // written before the split hold the legacy `{ triggerInput,
+    // promptVariables, seededMessages, freezeTools }` shape and are upgraded on
+    // read by `parseEvalSampleInput`.
+    // Default stays the bare `'{}'` this column was created with: an empty
+    // object is a legacy shape, and `parseEvalSampleInput` reads it as an empty
+    // `task` input. Keeping it avoids a SQLite table rebuild for a default that
+    // no insert path ever relies on.
+    input: text('input', { mode: 'json' })
       .notNull()
       .default(sql`'{}'`),
-    // Canned tool outputs keyed by toolId — see EvalFixtures.
-    fixtures: text('fixtures', { mode: 'json' })
+    // How the target's tools behave for this sample — see EvalTools ({ mode:
+    // 'live' | 'mocked' | 'frozen' }). Legacy rows hold a bare fixtures record
+    // here; `parseEvalTools` folds it (plus the legacy freeze flag, which lived
+    // on the other column) into a mode.
+    tools: text('tools', { mode: 'json' })
       .notNull()
       .default(sql`'{}'`),
     // { op, checks[] } — see CheckTree.

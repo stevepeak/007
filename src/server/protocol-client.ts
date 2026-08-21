@@ -8,8 +8,8 @@ import type { AgentConfig, WorkflowGraph } from '../engine/graph'
 import type { TriggerEventOption } from '../engine/trigger-registry'
 import type {
   CheckTree,
-  EvalFixtures,
-  EvalInitialCondition,
+  EvalSampleInput,
+  EvalTools,
 } from '../eval/checks'
 
 import type {
@@ -327,8 +327,8 @@ export interface WfDataClient {
     setId: string
     name: string
     description?: string | null
-    initialCondition?: EvalInitialCondition
-    fixtures?: EvalFixtures
+    input?: EvalSampleInput
+    tools?: EvalTools
     checks?: CheckTree
     sortOrder?: number
   }): Promise<{ rowId: string }>
@@ -352,7 +352,7 @@ export interface WfDataClient {
   }): Promise<{ evalRunId: string }>
   /**
    * Start ONE row's run for real — a `simulate: true, isEval: true` graph run
-   * against the set's target, stubbing read tools with the row's fixtures. This
+   * against the set's target, applying the row's tool setting. This
    * is a host-wired hook (mirrors `retryRun`): the SDK resolves the row + target
    * and hands the host a descriptor; the host owns the workflow-instance start
    * (it has the runtime bindings) and returns the new `wf_run` id. Without the

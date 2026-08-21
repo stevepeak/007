@@ -83,6 +83,7 @@ export async function startGraphRun(
       simulate: input.simulate,
       isEval: input.isEval,
       fixtures: input.fixtures,
+      liveReads: input.liveReads,
       freezeTools: input.freezeTools,
       agentOverride: input.agentOverride,
       executionOverride: input.executionOverride,

@@ -1,6 +1,7 @@
-import { Check, ChevronRight } from 'lucide-react'
+import { AlertTriangle, Check, ChevronRight } from 'lucide-react'
 
-import type { CheckTree } from '../../server/protocol'
+import type { CheckTree, EvalTools } from '../../server/protocol'
+import { unavailableCheckTypes } from '../../server/protocol'
 import { cn } from '../cn'
 import { useEvalRuns } from '../hooks'
 import { useOpenAsset } from '../nav'
@@ -18,14 +19,21 @@ export function ChecksList({
   setId,
   sampleId,
   checks,
+  tools,
   onChange,
 }: {
   setId: string
   sampleId: string
   checks: CheckTree
+  /** The Sample's tool setting — decides which check types can grade at all. */
+  tools: EvalTools
   onChange: (next: CheckTree) => void
 }) {
   const open = useOpenAsset()
+  // A check the tool setting has made ungradeable is still SHOWN — deleting an
+  // author's assertion because they flipped a mode would be worse — but it is
+  // marked, because it will fail on an absence rather than on the agent.
+  const ungradeable = new Set<string>(unavailableCheckTypes(tools))
 
   return (
     <div className="space-y-3">
@@ -65,6 +73,7 @@ export function ChecksList({
         <div className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-neutral-200">
           {checks.checks.map((c, i) => {
             const unnamed = isUnnamed(c)
+            const dead = ungradeable.has(c.type)
             return (
               <button
                 key={i}
@@ -97,6 +106,15 @@ export function ChecksList({
                     </div>
                   ) : null}
                 </div>
+                {dead ? (
+                  <span
+                    title="The agent runs with no tools, so no tool step will exist in the trace — this check grades an absence."
+                    className="mt-0.5 flex shrink-0 items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-700"
+                  >
+                    <AlertTriangle className="size-3" />
+                    Can&apos;t grade
+                  </span>
+                ) : null}
                 <code className="mt-0.5 shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-[11px] text-neutral-500">
                   {c.type}
                 </code>

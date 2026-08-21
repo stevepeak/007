@@ -10,19 +10,20 @@ import { buildEvalSnapshot, hashEvalSnapshot } from './eval-snapshot'
 // `storage/spec/util.ts`'s `stableStringify`, which handles nested `undefined`
 // differently — fails loudly instead of silently invalidating stored hashes.
 
-// A representative row whose fixtures contain a nested `undefined`, which is
-// exactly where this stringify diverges from the spec/util one (`undefined` →
-// the literal text `undefined` here, vs `"null"` there).
+// A representative row whose input variables and tool fixtures both contain a
+// nested `undefined`, which is exactly where this stringify diverges from the
+// spec/util one (`undefined` → the literal text `undefined` here, vs `"null"`
+// there).
 const row = {
   id: 'row-1',
   setId: 'set-1',
   name: 'Sample name',
   description: 'desc',
-  initialCondition: {
-    triggerInput: { text: 'hello' },
-    promptVariables: { topic: 'law', empty: undefined },
+  input: {
+    kind: 'task',
+    variables: { topic: 'law', empty: undefined },
   },
-  fixtures: { toolA: { nested: undefined, keep: 1 } },
+  tools: { mode: 'mocked', fixtures: { toolA: { nested: undefined, keep: 1 } } },
   checks: { op: 'and', checks: [] },
   sortOrder: 0,
   archived: false,
@@ -38,7 +39,7 @@ const set = {
 }
 
 const KNOWN_DIGEST =
-  '171a5f7225a4c11990c30316652e29698c124f1b002e1dc8fe965705374e780b'
+  'e59cd963b4c209a3fd50ee4e5c8965af941d4394a5cd0d452f1e6b7c248de057'
 
 describe('hashEvalSnapshot', () => {
   test('produces the frozen digest for a known snapshot', async () => {
@@ -49,9 +50,9 @@ describe('hashEvalSnapshot', () => {
   test('is stable across object key ordering', async () => {
     const reordered = {
       ...row,
-      initialCondition: {
-        promptVariables: { empty: undefined, topic: 'law' },
-        triggerInput: { text: 'hello' },
+      input: {
+        variables: { empty: undefined, topic: 'law' },
+        kind: 'task',
       },
     } as unknown as EvalRowRecord
     const hash = await hashEvalSnapshot(buildEvalSnapshot(reordered, set))

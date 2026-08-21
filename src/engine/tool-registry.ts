@@ -87,6 +87,14 @@ export type ToolSideEffect = 'read' | 'write'
 export type SimulateContext = {
   simulate?: boolean
   fixtures?: Record<string, unknown>
+  /**
+   * Eval integration signal — let tools tagged `sideEffect: 'read'` execute for
+   * REAL instead of returning a fixture, while write tools stay neutralized.
+   * This is the only way a Sample grades the agent against live retrieval, so a
+   * bad query or an empty corpus fails instead of being papered over by a canned
+   * result. Never re-enables writes: `simulate` still governs those.
+   */
+  liveReads?: boolean
 }
 
 /**
@@ -101,6 +109,9 @@ export function simulatedToolOutput(
 ): { output: unknown } | undefined {
   if (!ctx?.simulate || !meta.sideEffect) return undefined
   if (meta.sideEffect === 'write') return { output: { simulated: true } }
+  // Reads run live only when explicitly asked to; the default stays the canned
+  // fixture, so `simulate` on its own never touches real data.
+  if (ctx.liveReads) return undefined
   return { output: ctx.fixtures?.[meta.id] ?? {} }
 }
 

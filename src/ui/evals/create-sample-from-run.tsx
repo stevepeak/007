@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import type { AgentNode, ArgBinding, WorkflowNode } from '../../engine'
 import { resolvePath } from '../../engine/binding'
-import type { EvalInitialCondition, WfRunStepDTO } from '../../server/protocol'
+import type { EvalSampleInput, WfRunStepDTO } from '../../server/protocol'
 import { useWfComponents } from '../context'
 import {
   useAgents,
@@ -78,12 +78,12 @@ function Control({
     [setsQuery.data, agentId],
   )
 
-  // The Given, reconstructed from what this node actually ran with.
+  // The sample's input, reconstructed from what this node actually ran with.
   const given = useMemo(
     () => seedGiven(agentNode, step, steps, inputVariables),
     [agentNode, step, steps, inputVariables],
   )
-  const givenEntries = Object.entries(given.promptVariables ?? {})
+  const givenEntries = Object.entries(given.variables)
 
   const createSet = useCreateEvalSet()
   const upsertRow = useUpsertEvalRow()
@@ -136,7 +136,11 @@ function Control({
       const { rowId } = await upsertRow.mutateAsync({
         setId,
         name: title.trim() || 'Untitled sample',
-        initialCondition: given,
+        input: given,
+        // Mocked with nothing mocked: the sample replays the call with its tools
+        // stubbed out, which is the safe default. The author picks Live or None
+        // on the sample itself.
+        tools: { mode: 'mocked', fixtures: {} },
         checks: { op: 'and', checks: [] },
       })
       setOpen(false)
@@ -321,14 +325,17 @@ function SparkNote({
 // matching field on the node's routed input. Vars supplied by run-level prompt
 // variables (not bound on the node) aren't persisted per-step, so they stay
 // blank for the author to fill. Free-form agents (no declared vars) capture the
-// routed input's own fields. `triggerInput` preserves the routed input verbatim
-// so the sample reproduces the same call.
+// routed input's own fields.
+//
+// Always a `task` input: this button only offers itself for an agent node, and
+// the values it recovers are that agent's prompt variables. A conversation
+// target's thread isn't reconstructible from one node's recorded step.
 function seedGiven(
   node: AgentNode,
   step: WfRunStepDTO,
   steps: WfRunStepDTO[],
   inputVariables: string[],
-): EvalInitialCondition {
+): Extract<EvalSampleInput, { kind: 'task' }> {
   const inputs = node.config.inputs ?? {}
   const promptVariables: Record<string, string> = {}
 
@@ -353,10 +360,7 @@ function seedGiven(
     }
   }
 
-  return {
-    triggerInput: isPlainRecord(step.input) ? step.input : undefined,
-    promptVariables,
-  }
+  return { kind: 'task', variables: promptVariables }
 }
 
 // The recorded output for `nodeId`, preferring a sibling within the same
@@ -394,10 +398,10 @@ function asText(value: unknown): string {
 // else a glimpse of the routed input, else the agent's name.
 function deriveTitle(
   agentName: string,
-  given: EvalInitialCondition,
+  given: Extract<EvalSampleInput, { kind: 'task' }>,
   step: WfRunStepDTO,
 ): string {
-  const firstGiven = Object.values(given.promptVariables ?? {})[0]
+  const firstGiven = Object.values(given.variables)[0]
   const raw =
     (typeof firstGiven === 'string' && firstGiven) ||
     previewText(step.input) ||

@@ -207,29 +207,207 @@ export const seededMessageSchema = z.object({
 })
 export type SeededMessage = z.infer<typeof seededMessageSchema>
 
-/** A row's initial condition — what the target is invoked with. */
-export const evalInitialConditionSchema = z.object({
-  triggerInput: z.record(z.string(), z.unknown()).optional(),
-  promptVariables: z.record(z.string(), z.string()).optional(),
-  /**
-   * Synthesis mode. A pre-baked conversation the agent starts from. When set
-   * (non-empty), it REPLACES `triggerInput` as the agent's message history — the
-   * run begins with these turns already in context. Pair with `freezeTools` to
-   * grade only the model's final response, not its tool-calling trajectory.
-   */
-  seededMessages: z.array(seededMessageSchema).optional(),
-  /**
-   * Synthesis mode. Run every agent node with an EMPTY tool set, forcing the
-   * model to answer from `seededMessages` alone. Isolates response quality from
-   * retrieval / tool-selection nondeterminism. Default false.
-   */
-  freezeTools: z.boolean().optional(),
+// ── A Sample's INPUT ────────────────────────────────────────────────────────
+// What the target is invoked with — one variant per shape of target, mirroring
+// the target's OWN input contract (`AgentConfig.inputKind`) rather than offering
+// every field to every sample. A task agent is graded on input → output; a
+// conversation agent is graded on the reply it produces next, given a thread.
+// Exactly one variant applies to a given Sample, so the editor never renders two
+// competing input sources and the runner never has to guess which one wins.
+
+/** A Sample's input for a `task` agent — the values its `${vars}` resolve to. */
+export const taskInputSchema = z.object({
+  kind: z.literal('task'),
+  /** Values for the target's declared prompt variables, keyed by name. */
+  variables: z.record(z.string(), z.string()).default({}),
 })
-export type EvalInitialCondition = z.infer<typeof evalInitialConditionSchema>
+
+/**
+ * A Sample's input for a `conversation` agent — the thread it answers. `turns`
+ * become the agent's message history, so the run begins mid-conversation and
+ * only the model's NEXT (final) reply is produced. A conversation agent's system
+ * prompt can still interpolate `${vars}`, so `variables` rides along.
+ */
+export const conversationInputSchema = z.object({
+  kind: z.literal('conversation'),
+  turns: z.array(seededMessageSchema).default([]),
+  variables: z.record(z.string(), z.string()).default({}),
+})
+
+/**
+ * A Sample's input for a WORKFLOW target — the raw trigger payload, verbatim.
+ * A workflow has no single prompt to fill in; what it receives is whatever its
+ * trigger routed, so the Sample preserves that object as-is.
+ */
+export const triggerInputSchema = z.object({
+  kind: z.literal('trigger'),
+  payload: z.record(z.string(), z.unknown()).default({}),
+  /** Run-level prompt variables, for agents nested inside the workflow. */
+  variables: z.record(z.string(), z.string()).default({}),
+})
+
+export const evalSampleInputSchema = z.discriminatedUnion('kind', [
+  taskInputSchema,
+  conversationInputSchema,
+  triggerInputSchema,
+])
+export type EvalSampleInput = z.infer<typeof evalSampleInputSchema>
+export type EvalSampleInputKind = EvalSampleInput['kind']
 
 /** Canned tool outputs keyed by tool id, consumed by read tools under simulate. */
 export const evalFixturesSchema = z.record(z.string(), z.unknown())
 export type EvalFixtures = z.infer<typeof evalFixturesSchema>
+
+// ── A Sample's TOOLS ────────────────────────────────────────────────────────
+// How the target's tools behave for this Sample. One tri-state, because the
+// three settings are mutually exclusive in the engine and were previously
+// authorable as contradictory combinations: `freezeTools` (an empty tool set)
+// silently made every fixture below it dead, and every trajectory check
+// ungradeable, with nothing in the UI saying so.
+//
+// Write tools are neutralized in ALL three modes — an eval never writes.
+
+export const evalToolsSchema = z.discriminatedUnion('mode', [
+  /**
+   * Read tools execute for real. The integration layer: grades the agent
+   * against live retrieval, so a bad query or an empty corpus shows up as a
+   * failure instead of being papered over by a fixture.
+   */
+  z.object({ mode: z.literal('live') }),
+  /**
+   * Read tools return their canned `fixtures` entry (a tool with no entry
+   * returns `{}`). The trajectory layer: deterministic, side-effect free, and
+   * the only mode where `tool_called` / `tool_args_match` mean anything.
+   */
+  z.object({ mode: z.literal('mocked'), fixtures: evalFixturesSchema.default({}) }),
+  /**
+   * The agent runs with NO tools and must answer from its input alone. The
+   * synthesis layer: isolates response quality from retrieval / tool-selection
+   * nondeterminism. Pair with a `conversation` input that already stages the
+   * retrieved context as an assistant turn's tool result.
+   */
+  z.object({ mode: z.literal('frozen') }),
+])
+export type EvalTools = z.infer<typeof evalToolsSchema>
+export type EvalToolMode = EvalTools['mode']
+
+/** The canned outputs this tool setting supplies — empty outside `mocked`. */
+export function toolFixtures(tools: EvalTools): EvalFixtures {
+  return tools.mode === 'mocked' ? tools.fixtures : {}
+}
+
+// ── Derived: what kind of test is this? ─────────────────────────────────────
+// The testing LAYER a Sample belongs to is a function of its input and its
+// tools, never a stored field — so it can't drift from the settings it names.
+// See the three layers in `docs`: trajectory, synthesis, integration.
+
+export type EvalSampleLayer =
+  | 'io'
+  | 'trajectory'
+  | 'synthesis'
+  | 'integration'
+
+export function evalSampleLayer(
+  input: EvalSampleInput,
+  tools: EvalTools,
+): EvalSampleLayer {
+  // Synthesis needs BOTH halves: staged context to answer from, and no tools to
+  // go get more. Freezing a task agent's (nonexistent) tools isn't synthesis —
+  // it's the plain input → output test it already was.
+  if (tools.mode === 'frozen') {
+    return input.kind === 'conversation' ? 'synthesis' : 'io'
+  }
+  if (tools.mode === 'live') return 'integration'
+  // Mocked tools with something actually mocked = a trajectory test; mocked
+  // with nothing mocked is just an input → output test.
+  return Object.keys(toolFixtures(tools)).length > 0 ? 'trajectory' : 'io'
+}
+
+/**
+ * Check types that cannot produce a meaningful verdict under a tool setting.
+ * Under `frozen` the agent calls nothing, so the trace has no tool step and a
+ * trajectory check grades an absence — which is a false failure, not a signal.
+ */
+export function unavailableCheckTypes(tools: EvalTools): EvalCheckType[] {
+  return tools.mode === 'frozen' ? ['tool_called', 'tool_args_match'] : []
+}
+
+// ── Legacy row upgrade ──────────────────────────────────────────────────────
+// Samples authored before the Input/Tools split stored `{ triggerInput,
+// promptVariables, seededMessages, freezeTools }` in one column and a bare
+// fixtures record in another. The two columns were renamed in place (migration
+// `wf_eval_row` → `input` / `tools`) rather than rewritten with JSON surgery in
+// SQL, so the upgrade happens HERE, at the single read boundary, and the new
+// shape is what gets written back on the next save.
+//
+// This mirrors `migrateLegacyAgentConfig` — same reason: one normalizing parse
+// beats a shim at every consumer.
+
+type LegacyInitialCondition = {
+  triggerInput?: Record<string, unknown>
+  promptVariables?: Record<string, string>
+  seededMessages?: SeededMessage[]
+  freezeTools?: boolean
+}
+
+function isLegacyInput(value: unknown): value is LegacyInitialCondition {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    !('kind' in value)
+  )
+}
+
+/**
+ * Parse a row's stored `input` column, upgrading the legacy initial-condition
+ * shape on the way through. A legacy row becomes a `conversation` input when it
+ * seeded turns, a `trigger` input when it carried only a routed payload, and a
+ * `task` input otherwise — which is what every agent-target Sample authored so
+ * far actually is.
+ */
+export function parseEvalSampleInput(value: unknown): EvalSampleInput {
+  if (isLegacyInput(value)) {
+    const legacy = value
+    const variables = legacy.promptVariables ?? {}
+    if (legacy.seededMessages && legacy.seededMessages.length > 0) {
+      return { kind: 'conversation', turns: legacy.seededMessages, variables }
+    }
+    const payload = legacy.triggerInput ?? {}
+    if (Object.keys(variables).length === 0 && Object.keys(payload).length > 0) {
+      return { kind: 'trigger', payload, variables }
+    }
+    return { kind: 'task', variables }
+  }
+  return evalSampleInputSchema.parse(value)
+}
+
+/**
+ * Parse a row's stored `tools` column. A legacy row stored a bare fixtures
+ * record there, and its freeze flag on the OTHER column — so the legacy freeze
+ * has to be passed in alongside. Freeze wins: it was the setting that actually
+ * took effect, silently making any fixtures beside it dead.
+ */
+export function parseEvalTools(
+  value: unknown,
+  legacyFreezeTools?: boolean,
+): EvalTools {
+  if (
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    !('mode' in value)
+  ) {
+    if (legacyFreezeTools) return { mode: 'frozen' }
+    return { mode: 'mocked', fixtures: evalFixturesSchema.parse(value) }
+  }
+  return evalToolsSchema.parse(value ?? { mode: 'mocked', fixtures: {} })
+}
+
+/** The legacy `freezeTools` flag on a row's stored `input` column, if any. */
+export function legacyFreezeTools(input: unknown): boolean | undefined {
+  return isLegacyInput(input) ? input.freezeTools : undefined
+}
 
 /** One graded check. `verdict`/`score`/`reason` are judge-check only. */
 export const checkResultSchema = z.object({
@@ -260,8 +438,8 @@ export type EvalRowSnapshot = {
   row: {
     name: string
     description: string | null
-    initialCondition: EvalInitialCondition
-    fixtures: EvalFixtures
+    input: EvalSampleInput
+    tools: EvalTools
     checks: CheckTree
   }
   /** The Goal ("set") target identity + trigger the row ran under. */

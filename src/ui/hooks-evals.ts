@@ -7,8 +7,8 @@ import {
 import type {
   AgentConfig,
   CheckTree,
-  EvalFixtures,
-  EvalInitialCondition,
+  EvalSampleInput,
+  EvalTools,
   WfDataClient,
   WfEvalTargetKind,
 } from '../server/protocol'
@@ -133,8 +133,8 @@ export function useUpsertEvalRow() {
         setId: string
         name: string
         description?: string | null
-        initialCondition?: EvalInitialCondition
-        fixtures?: EvalFixtures
+        input?: EvalSampleInput
+        tools?: EvalTools
         checks?: CheckTree
         sortOrder?: number
       },

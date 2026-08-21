@@ -68,6 +68,15 @@ export type WorkflowSpec = z.infer<typeof workflowSpecSchema>
 export const evalRowSpecSchema = z.object({
   name: z.string().min(1),
   description: z.string().nullish(),
+  /** The target-shaped input — see EvalSampleInput. */
+  input: z.unknown().optional(),
+  /** The tool setting — see EvalTools. */
+  tools: z.unknown().optional(),
+  /**
+   * LEGACY pre-split payloads, still read from spec files written before the
+   * Input/Tools split. `readEvalRowSpec` folds them into `input`/`tools`;
+   * export never writes them again.
+   */
   initialCondition: z.unknown().optional(),
   fixtures: z.unknown().optional(),
   checks: z.unknown().optional(),

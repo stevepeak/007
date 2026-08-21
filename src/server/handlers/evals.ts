@@ -5,8 +5,8 @@ import {
   EVAL_NODE_EXECUTION,
   gradeRow,
   resolveEvalTarget,
+  evalInvocation,
   rollup,
-  seededMessagesToUiMessages,
   type GradeModelFactory,
   type GradeStep,
 } from '../../eval'
@@ -168,8 +168,8 @@ export function buildEvalHandlers<TDeps>(
       const p = c.params as {
         id?: string
         description?: string | null
-        initialCondition?: WfEvalRowDTO['initialCondition']
-        fixtures?: WfEvalRowDTO['fixtures']
+        input?: WfEvalRowDTO['input']
+        tools?: WfEvalRowDTO['tools']
         checks?: WfEvalRowDTO['checks']
         sortOrder?: number
       }
@@ -179,8 +179,8 @@ export function buildEvalHandlers<TDeps>(
         setId,
         name,
         description: p.description,
-        initialCondition: p.initialCondition,
-        fixtures: p.fixtures,
+        input: p.input,
+        tools: p.tools,
         checks: p.checks,
         sortOrder: p.sortOrder,
       })
@@ -282,26 +282,21 @@ export function buildEvalHandlers<TDeps>(
         set.triggerKind,
         { createdBy: c.ctx.userId },
       )
-      // Synthesis mode: when the Sample seeds a conversation, that transcript
-      // (converted to UIMessages) BECOMES the agent's input, replacing the
-      // trigger input — the run starts mid-conversation and, with `freezeTools`,
-      // the model only produces its final reply. Absent a seed, the normal
-      // trigger input flows through.
-      const seeded = row.initialCondition.seededMessages
-      const triggerInput =
-        seeded && seeded.length > 0
-          ? { messages: seededMessagesToUiMessages(seeded) }
-          : (row.initialCondition.triggerInput ?? {})
+      // The Sample's authored input + tools become the engine's run signals.
+      // One translation, in `evalInvocation` — the handler no longer decides
+      // which of several overlapping fields wins.
+      const invocation = evalInvocation(row.input, row.tools)
       const started = await startEvalRun({
         evalRunId,
         rowId,
         target: { kind: set.targetKind, id: set.targetId },
         workflowVersionId: resolved.workflowVersionId,
         triggerKind: resolved.triggerKind,
-        triggerInput,
-        promptVariables: row.initialCondition.promptVariables ?? {},
-        fixtures: row.fixtures,
-        freezeTools: row.initialCondition.freezeTools ?? false,
+        triggerInput: invocation.triggerInput,
+        promptVariables: invocation.promptVariables,
+        fixtures: invocation.fixtures,
+        freezeTools: invocation.freezeTools,
+        liveReads: invocation.liveReads,
         modelId: cell.modelId,
         promptBody: cell.promptBody,
         configOverride,
@@ -362,7 +357,9 @@ export function buildEvalHandlers<TDeps>(
         // the Sample's seeded conversation, not the run trace. Hand those staged
         // tool results to the judge so it can grade the answer's groundedness.
         seededToolCalls: collectSeededToolCalls(
-          found.row.initialCondition.seededMessages,
+          found.row.input.kind === 'conversation'
+            ? found.row.input.turns
+            : undefined,
         ),
       })
       // Freeze the Sample + Goal target this result was graded against, so

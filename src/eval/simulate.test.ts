@@ -39,6 +39,8 @@ const toolRegistry: ToolRegistry<Deps> = new Map([
       sideEffect: 'read',
       build: (deps) => () => {
         deps.calls.push('search_kb')
+        // Named for the DEFAULT expectation (a simulated read must not reach
+        // it). The `liveReads` test below is the one case where it should.
         return Promise.resolve({ docs: ['LIVE — should not appear'] })
       },
     },
@@ -154,6 +156,44 @@ describe('simulate signal + fixtures', () => {
     })
 
     expect(run.output).toEqual({})
+  })
+
+  // Integration mode. `liveReads` re-opens the READ side only — the whole point
+  // is grading an agent against real retrieval, and the whole risk is that it
+  // must not also re-open writes.
+  test('liveReads lets a read tool execute for real', async () => {
+    const deps: Deps = { calls: [] }
+    const run = await runWorkflowUnderConditions({
+      name: 'read-live',
+      graph: graph('search_kb', {}),
+      triggerInput: { text: 'hi' },
+      config: config(deps),
+      runContext: {
+        simulate: true,
+        liveReads: true,
+        // Present, and deliberately ignored: a live read hits real data.
+        fixtures: { search_kb: { docs: ['CANNED'] } },
+      },
+    })
+
+    expect(deps.calls).toEqual(['search_kb'])
+    expect(run.output).toEqual({ docs: ['LIVE — should not appear'] })
+  })
+
+  test('liveReads NEVER re-enables a write tool', async () => {
+    const deps: Deps = { calls: [] }
+    const run = await runWorkflowUnderConditions({
+      name: 'write-still-noop',
+      graph: graph('update_document', {
+        title: { kind: 'literal', value: 'x' },
+      }),
+      triggerInput: { text: 'hi' },
+      config: config(deps),
+      runContext: { simulate: true, liveReads: true },
+    })
+
+    expect(deps.calls).toEqual([])
+    expect(run.output).toEqual({ simulated: true })
   })
 
   test('untagged (pure) tool runs for real even under simulate', async () => {

@@ -2,13 +2,16 @@ import { and, asc, desc, eq, sql } from 'drizzle-orm'
 
 import {
   checkTreeSchema,
-  evalFixturesSchema,
-  evalInitialConditionSchema,
+  evalSampleInputSchema,
+  evalToolsSchema,
+  legacyFreezeTools,
+  parseEvalSampleInput,
+  parseEvalTools,
   type CheckResult,
   type CheckTree,
-  type EvalFixtures,
-  type EvalInitialCondition,
   type EvalRowSnapshot,
+  type EvalSampleInput,
+  type EvalTools,
 } from '../../eval/checks'
 import type { WfDb } from '../client'
 import type {
@@ -40,8 +43,8 @@ export type EvalRowRecord = {
   setId: string
   name: string
   description: string | null
-  initialCondition: EvalInitialCondition
-  fixtures: EvalFixtures
+  input: EvalSampleInput
+  tools: EvalTools
   checks: CheckTree
   sortOrder: number
   archived: boolean
@@ -53,8 +56,10 @@ function toEvalRow(r: typeof wfEvalRow.$inferSelect): EvalRowRecord {
     setId: r.setId,
     name: r.name,
     description: r.description,
-    initialCondition: r.initialCondition as EvalInitialCondition,
-    fixtures: r.fixtures as EvalFixtures,
+    // Both columns are upgraded from the pre-split shape on the way out; the
+    // legacy freeze flag lived on the input column, so `tools` needs it too.
+    input: parseEvalSampleInput(r.input),
+    tools: parseEvalTools(r.tools, legacyFreezeTools(r.input)),
     checks: r.checks as CheckTree,
     sortOrder: r.sortOrder,
     archived: r.archived,
@@ -203,48 +208,52 @@ export async function deleteEvalSet(db: WfDb, setId: string) {
 /** Create (no id) or update (id given) a row. Validates the JSON payloads. */
 export async function upsertEvalRow(
   db: WfDb,
-  input: {
+  row: {
     id?: string
     setId: string
     name: string
     description?: string | null
-    initialCondition?: EvalInitialCondition
-    fixtures?: EvalFixtures
+    input?: EvalSampleInput
+    tools?: EvalTools
     checks?: CheckTree
     sortOrder?: number
   },
 ): Promise<string> {
-  const initialCondition = evalInitialConditionSchema.parse(
-    input.initialCondition ?? {},
+  // Writes are always the new shape — the legacy upgrade is read-side only, so
+  // a row normalizes permanently the first time it is saved.
+  const sampleInput = evalSampleInputSchema.parse(
+    row.input ?? { kind: 'task', variables: {} },
   )
-  const fixtures = evalFixturesSchema.parse(input.fixtures ?? {})
+  const tools = evalToolsSchema.parse(
+    row.tools ?? { mode: 'mocked', fixtures: {} },
+  )
   const checks = checkTreeSchema.parse(
-    input.checks ?? { op: 'and', checks: [] },
+    row.checks ?? { op: 'and', checks: [] },
   )
-  if (input.id) {
+  if (row.id) {
     await db
       .update(wfEvalRow)
       .set({
-        name: input.name,
-        initialCondition,
-        fixtures,
+        name: row.name,
+        input: sampleInput,
+        tools,
         checks,
         updatedAt: new Date(),
-        ...pickDefined(input, ['description', 'sortOrder']),
+        ...pickDefined(row, ['description', 'sortOrder']),
       })
-      .where(eq(wfEvalRow.id, input.id))
-    return input.id
+      .where(eq(wfEvalRow.id, row.id))
+    return row.id
   }
   const id = crypto.randomUUID()
   await db.insert(wfEvalRow).values({
     id,
-    setId: input.setId,
-    name: input.name,
-    description: input.description ?? null,
-    initialCondition,
-    fixtures,
+    setId: row.setId,
+    name: row.name,
+    description: row.description ?? null,
+    input: sampleInput,
+    tools,
     checks,
-    sortOrder: input.sortOrder ?? 0,
+    sortOrder: row.sortOrder ?? 0,
   })
   return id
 }
