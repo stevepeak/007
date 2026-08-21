@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { TRANSFORM_OUTPUT_SHAPES } from './graph-kinds'
 import { PERIODIC_TRIGGER_KIND } from './trigger-registry'
 
 // Discriminated union for nodes. Each kind carries `id` + `position` (editor
@@ -286,6 +287,19 @@ export const BRANCH_OPERATORS = [
 ] as const
 export type BranchOperator = (typeof BRANCH_OPERATORS)[number]
 
+// The operators that test the value alone. They ignore `config.value`, so the
+// editor hides its input and the executor leaves it out of the trace — one list
+// here rather than an `op === 'is_empty' || op === 'is_not_empty'` repeated at
+// every site that has to know.
+export const VALUELESS_BRANCH_OPERATORS: readonly BranchOperator[] = [
+  'is_empty',
+  'is_not_empty',
+]
+
+export function branchOperatorTakesValue(operator: BranchOperator): boolean {
+  return !VALUELESS_BRANCH_OPERATORS.includes(operator)
+}
+
 const branchNodeSchema = baseNode.extend({
   kind: z.literal('branch'),
   // Deterministic yes/no routing: a predicate over an upstream value, run in
@@ -303,24 +317,64 @@ const branchNodeSchema = baseNode.extend({
 })
 
 // Reserved case key for a Switch node's fallback edge — taken when no case
-// matches. Not usable as a user-defined case key.
-export const SWITCH_DEFAULT_CASE = 'default' as const
+// matches. Not usable as a user-defined case key. It reads as 'else' because
+// that is the word the author sees on the inspector row and on the canvas edge,
+// and a routing key the engine matches on should not be spelled one way in code
+// and another on screen.
+export const SWITCH_DEFAULT_CASE = 'else' as const
+
+/**
+ * The next case key for a Switch: 'A', 'B', … 'Z', 'AA', 'AB', … skipping any
+ * key already in use. Case keys are edge labels, so they must be stable — a
+ * removed case must NOT re-letter the ones after it, or every downstream edge
+ * would silently re-point. Minting the next UNUSED letter (rather than indexing
+ * by position) is what keeps that true, and it means the author never has to
+ * invent a key at all.
+ */
+export function nextSwitchCaseKey(existing: readonly string[]): string {
+  const taken = new Set<string>([...existing, SWITCH_DEFAULT_CASE])
+  for (let i = 0; ; i++) {
+    const key = spreadsheetLetters(i)
+    if (!taken.has(key)) {
+      return key
+    }
+  }
+}
+
+// 0 → 'A', 25 → 'Z', 26 → 'AA' — the spreadsheet-column alphabet, bijective
+// base-26 so there is no zero-width gap between 'Z' and 'AA'.
+function spreadsheetLetters(index: number): string {
+  let n = index + 1
+  let out = ''
+  while (n > 0) {
+    const rem = (n - 1) % 26
+    out = String.fromCharCode(65 + rem) + out
+    n = Math.floor((n - 1) / 26)
+  }
+  return out
+}
 
 const switchNodeSchema = baseNode.extend({
   kind: z.literal('switch'),
   // Multi-way deterministic routing: the code sibling of the binary Branch.
-  // Selects the value at `path` (dotted, '' = whole input) and picks the FIRST
-  // case whose `value` loosely-equals it (same type-loose compare as Branch's
-  // `equals`); if none match, the reserved `default` edge is taken. Each case
-  // `key` labels one outgoing edge (`edge.condition === key`), plus one edge
-  // with `condition === 'default'`.
+  // `source` is a `ref` binding into an upstream node's output (the same data
+  // picker Branch/Output use); undefined tests the whole incoming input. The
+  // selected value is compared against each case in order and the FIRST whose
+  // `value` loosely-equals it wins (same type-loose compare as Branch's
+  // `equals`); if none match, the reserved `default` edge is taken.
+  //
+  // A case's `value` is a full binding, so a case is either a literal the
+  // author typed or another upstream value the input must equal. Its `key` is
+  // the edge label (`edge.condition === key`) — the editor mints stable letters
+  // (A, B, C…) so the author never invents one — plus one edge with
+  // `condition === 'else'`.
   config: z.object({
-    path: z.string().default(''),
+    source: refBindingSchema.optional(),
     cases: z
       .array(
         z.object({
           key: z.string().min(1),
-          value: z.unknown(),
+          value: argBindingSchema,
         }),
       )
       .default([]),
@@ -410,6 +464,41 @@ const passthroughNodeSchema = baseNode.extend({
       (c) => !(c.value && c.fields && Object.keys(c.fields).length > 0),
       'A passthrough node sets either `value` or `fields`, not both.',
     ),
+})
+
+// A Transform is a deterministic reshape step: it runs a JSONata expression over
+// an upstream value and emits the result. It exists because the binding language
+// can only ADDRESS data, never rework it — `resolvePath` walks dotted keys and
+// positional indices, so "map every row to a different shape" has no expression
+// anywhere in the graph. That gap bites hardest at a node boundary where two
+// contracts disagree: a tool that returns database records feeding an agent that
+// wants AI-SDK messages.
+//
+// JSONata rather than JavaScript, and not by preference: nodes execute inside
+// workerd, which forbids code generation from strings, so `eval`/`new Function`
+// throw `EvalError` at runtime. JSONata is a tree-walking interpreter over data
+// with no host-language escape hatch, which makes it both the option that RUNS
+// and the option that is safe to hand an author.
+const transformNodeSchema = baseNode.extend({
+  kind: z.literal('transform'),
+  config: z
+    .object({
+      // The value the expression runs over, addressed as `$`. A `ref` into any
+      // upstream node's output (the same picker every other input uses). Unset
+      // → the incoming edge's value, matching passthrough's identity fallback,
+      // so a one-parent reshape needs no binding at all.
+      source: argBindingSchema.optional(),
+      // Additional upstream values, exposed to the expression as `$name`. Lets
+      // one transform combine several producers without a join node.
+      inputs: z.record(z.string(), argBindingSchema).default({}),
+      // The JSONata expression. Compiled (and so syntax-checked) at author time
+      // by the editor, and again here on every run.
+      expression: z.string().default(''),
+      // Optional shape assertion on the RESULT. See `TRANSFORM_OUTPUT_SHAPES`
+      // in nodes/transform.ts for why this is worth declaring.
+      outputShape: z.enum(TRANSFORM_OUTPUT_SHAPES).optional(),
+    })
+    .default({ inputs: {}, expression: '' }),
 })
 
 // A Race is a first-to-finish join. Where every other work node fires only once
@@ -551,6 +640,7 @@ export const workflowNodeSchema = z.discriminatedUnion('kind', [
   workflowCallNodeSchema,
   featureRequestNodeSchema,
   passthroughNodeSchema,
+  transformNodeSchema,
   raceNodeSchema,
   aggregateNodeSchema,
   iterationNodeSchema,
@@ -573,6 +663,7 @@ export type SwitchNode = z.infer<typeof switchNodeSchema>
 export type WorkflowCallNode = z.infer<typeof workflowCallNodeSchema>
 export type FeatureRequestNode = z.infer<typeof featureRequestNodeSchema>
 export type PassthroughNode = z.infer<typeof passthroughNodeSchema>
+export type TransformNode = z.infer<typeof transformNodeSchema>
 export type RaceNode = z.infer<typeof raceNodeSchema>
 export type AggregateNode = z.infer<typeof aggregateNodeSchema>
 export type NoteNode = z.infer<typeof noteNodeSchema>
@@ -606,6 +697,7 @@ export type WorkflowNode =
   | WorkflowCallNode
   | FeatureRequestNode
   | PassthroughNode
+  | TransformNode
   | RaceNode
   | AggregateNode
   | IterationNode
@@ -614,7 +706,7 @@ export type WorkflowNode =
 
 // Edges connect node outputs to node inputs. `condition` is only meaningful
 // when `source` is a decision node (branch → 'yes'|'no'; switch → a case
-// key or 'default'); `null` on every non-decision edge. Kept a free string so
+// key or 'else'); `null` on every non-decision edge. Kept a free string so
 // switch case keys fit; validation constrains the allowed values per source
 // kind.
 export const workflowEdgeSchema = z.object({

@@ -11,6 +11,7 @@ import { useCopilotEndpoint, type WfAssistantContext } from '../context'
 import { useModels } from '../hooks'
 import { REQUIREMENT_REASON, unmetRequirements } from '../model-capabilities'
 import { Popover } from '../popover'
+import { registerCopilotSeed } from './ask'
 
 // The copilot runs an agentic tool-calling loop server-side (see
 // `handleCopilotRequest` → `runCopilot`), so a model without tool support can't
@@ -118,6 +119,27 @@ export function CopilotAssistant({
   })
 
   const busy = status === 'submitted' || status === 'streaming'
+
+  // Accept a pre-written question from elsewhere in the app (see `ask.ts`) — the
+  // Transform inspector's "have the Copilot write this expression" link is the
+  // first caller. It lands in the composer rather than being sent: the user
+  // reads and edits it, and chooses to spend the turn.
+  useEffect(
+    () =>
+      registerCopilotSeed((prompt) => {
+        setInput(prompt)
+        // The rail may be expanding in the same commit, so focus on the next
+        // frame — the textarea isn't laid out yet. Put the caret at the end so
+        // the user can keep typing.
+        requestAnimationFrame(() => {
+          const el = inputRef.current
+          if (!el) return
+          el.focus()
+          el.setSelectionRange(prompt.length, prompt.length)
+        })
+      }),
+    [],
+  )
 
   // Auto-grow the composer to fit its content, up to a cap (then it scrolls).
   useEffect(() => {

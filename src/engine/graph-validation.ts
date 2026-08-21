@@ -49,8 +49,9 @@ function checkGraphShape(g: GraphShape, ctx: GraphCheckCtx): void {
   }
 }
 
-// Ref bindings must point at real nodes. Tool `args`, Workflow `inputs`, and the
-// Branch/Output `source` all share the ArgBinding shape. A binary decision
+// Ref bindings must point at real nodes. Tool `args`, Workflow/Transform
+// `inputs`, and the Branch/Output/Transform `source` all share the ArgBinding
+// shape. A binary decision
 // (branch) may still leave one arm unconnected — it "fizzles out" at run time —
 // so a missing yes/no edge is deliberately not flagged here. (An Output with no
 // `source` at all is a distinct, softer author-time concern handled elsewhere.)
@@ -62,22 +63,35 @@ function checkRefBindings(g: GraphShape, ctx: GraphCheckCtx): void {
         ? n.config.args
         : n.kind === 'workflow'
           ? n.config.inputs
-          : null
+          : n.kind === 'transform'
+            ? n.config.inputs
+            : null
     if (bindings) {
       const label = n.kind === 'tool' ? 'arg' : 'input'
+      const kindLabel =
+        n.kind === 'tool'
+          ? 'Tool'
+          : n.kind === 'workflow'
+            ? 'Workflow'
+            : 'Transform'
       for (const [argName, binding] of Object.entries(bindings)) {
         if (binding.kind === 'ref' && !ids.has(binding.nodeId)) {
           ctx.addIssue({
             code: 'custom',
-            message: `${n.kind === 'tool' ? 'Tool' : 'Workflow'} node ${n.id} ${label} '${argName}' references missing node ${binding.nodeId}.`,
+            message: `${kindLabel} node ${n.id} ${label} '${argName}' references missing node ${binding.nodeId}.`,
           })
         }
       }
     }
-    if (n.kind === 'branch' || n.kind === 'output') {
+    if (n.kind === 'branch' || n.kind === 'output' || n.kind === 'transform') {
       const src = n.config.source
-      if (src && !ids.has(src.nodeId)) {
-        const label = n.kind === 'branch' ? 'Branch' : 'Output'
+      if (src && src.kind === 'ref' && !ids.has(src.nodeId)) {
+        const label =
+          n.kind === 'branch'
+            ? 'Branch'
+            : n.kind === 'output'
+              ? 'Output'
+              : 'Transform'
         ctx.addIssue({
           code: 'custom',
           message: `${label} node ${n.id} source references missing node ${src.nodeId}.`,
@@ -88,8 +102,8 @@ function checkRefBindings(g: GraphShape, ctx: GraphCheckCtx): void {
 }
 
 // Switch nodes: unique, non-reserved case keys; an outgoing edge per case; a
-// single 'default' fallback edge; and no outgoing edge whose condition matches
-// neither a declared case nor 'default'.
+// single 'else' fallback edge; and no outgoing edge whose condition matches
+// neither a declared case nor 'else'.
 function checkSwitchNodes(g: GraphShape, ctx: GraphCheckCtx): void {
   for (const n of g.nodes) {
     if (n.kind !== 'switch') continue

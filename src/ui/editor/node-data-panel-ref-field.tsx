@@ -19,6 +19,20 @@ export type DataRefFieldProps = {
   onChange: (ref: RefBinding | undefined) => void
   /** Element schema of the enclosing loop's list, if any (see NodeInputsPanel). */
   itemSchema?: JsonSchema
+  /** What an unbound field reads as. Defaults to "the whole incoming input",
+   * which is what a Branch/Output source means — a Switch case means nothing of
+   * the sort, so it names its own empty state. */
+  emptyLabel?: string
+  /**
+   * Turns the field into "type a value OR link one": while no ref is bound the
+   * label is replaced by this text input, in the SAME box, so the author sees
+   * one control with two ways to fill it rather than two stacked controls.
+   */
+  literal?: {
+    value: string
+    onChange: (value: string) => void
+    placeholder?: string
+  }
 }
 
 // A single "connect to upstream data" selector — the same accessible-data picker
@@ -31,6 +45,8 @@ export function DataRefField({
   value,
   onChange,
   itemSchema,
+  emptyLabel,
+  literal,
 }: DataRefFieldProps) {
   const { accessible } = useAccessibleData(node, graph, itemSchema)
   const [open, setOpen] = useState(false)
@@ -39,19 +55,23 @@ export function DataRefField({
     : undefined
   const label = value
     ? `${src?.label ?? value.nodeId} · ${value.path || 'whole output'}`
-    : 'Whole input'
+    : (emptyLabel ?? 'Whole input')
 
   return (
     <div className="rounded-md border border-input">
       <div className="flex items-center gap-2 px-2 py-1.5">
-        <span
-          className={cn(
-            'min-w-0 flex-1 truncate text-xs',
-            value ? 'text-muted-foreground' : 'text-muted-foreground',
-          )}
-        >
-          {label}
-        </span>
+        {literal && !value ? (
+          <input
+            className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+            value={literal.value}
+            placeholder={literal.placeholder ?? label}
+            onChange={(e) => literal.onChange(e.target.value)}
+          />
+        ) : (
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+            {label}
+          </span>
+        )}
         {value ? (
           <button
             type="button"

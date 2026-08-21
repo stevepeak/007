@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { cn } from '../cn'
 import { useWfAssistant, type WfAssistantContext } from '../context'
+import { registerCopilotOpen } from './ask'
 import { CopilotAssistant } from './copilot-assistant'
 
 // The persistent right-rail Copilot. Mounted ONCE at the workflow app shell (see
@@ -53,6 +54,10 @@ export function CopilotPanel({ context }: { context: WfAssistantContext }) {
     if (typeof window === 'undefined') return
     window.localStorage.setItem(OPEN_STORAGE_KEY, open ? '1' : '0')
   }, [open])
+
+  // Let anywhere in the app hand the Copilot a question (see `ask.ts`). Only the
+  // expand is owned here; the composer's text belongs to the assistant below.
+  useEffect(() => registerCopilotOpen(() => setOpen(true)), [])
 
   useEffect(() => {
     if (typeof window === 'undefined') return

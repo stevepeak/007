@@ -1,14 +1,24 @@
-import { useState } from 'react'
+import { Sparkles } from 'lucide-react'
+import { useMemo, useState, type ReactNode } from 'react'
 
 import {
-  BRANCH_OPERATORS,
+  branchOperatorTakesValue,
   ITERATION_MAX_ITEMS_CEILING,
+  TRANSFORM_OUTPUT_SHAPES,
+  nextSwitchCaseKey,
+  SWITCH_DEFAULT_CASE,
   type ArgBinding,
   type IterationItemExecution,
+  type TransformOutputShape,
 } from '../../engine'
 import { useWfComponents } from '../context'
+import { askCopilot, useCopilotSeedAvailable } from '../copilot/ask'
+import { BranchOperatorSelect } from './branch-operator-select'
 import { DataRefField, IterationListField } from './node-data-panel'
+import { useAccessibleData } from './node-data-panel-shared'
 import { field, type NodeInspectorProps } from './node-inspector-shared'
+import { transformSourceShape } from './node-io'
+import { buildTransformCopilotPrompt } from './transform-copilot-prompt'
 
 // What the choice means for the author, in their terms. The trade is per-item
 // startup cost against how much work is lost when one item fails partway — and
@@ -26,7 +36,7 @@ export function BranchInspector({
   onChange,
   itemSchema,
 }: NodeInspectorProps) {
-  const { Input, Label, Select } = useWfComponents()
+  const { Input, Label } = useWfComponents()
   if (node.kind !== 'branch') return null
   return (
     <>
@@ -51,43 +61,36 @@ export function BranchInspector({
       </div>
       <div className={field}>
         <Label>Condition</Label>
-        <Select
-          value={node.config.operator}
-          onChange={(e) =>
-            onChange({
-              ...node,
-              config: {
-                ...node.config,
-                operator: e.target
-                  .value as (typeof BRANCH_OPERATORS)[number],
-              },
-            })
-          }
-        >
-          {BRANCH_OPERATORS.map((op) => (
-            <option key={op} value={op}>
-              {op.replace(/_/g, ' ')}
-            </option>
-          ))}
-        </Select>
-      </div>
-      {node.config.operator !== 'is_empty' &&
-      node.config.operator !== 'is_not_empty' ? (
-        <div className={field}>
-          <Label>Value</Label>
-          <Input
-            value={
-              node.config.value == null ? '' : String(node.config.value)
-            }
-            onChange={(e) =>
-              onChange({
-                ...node,
-                config: { ...node.config, value: e.target.value },
-              })
+        {/* Operator + operand on ONE row: they're two halves of one sentence
+            ("kind = image"), and the operator collapses to its glyph so the
+            operand gets the width instead. */}
+        <div className="flex items-center gap-1.5">
+          <BranchOperatorSelect
+            value={node.config.operator}
+            onChange={(operator) =>
+              onChange({ ...node, config: { ...node.config, operator } })
             }
           />
+          {branchOperatorTakesValue(node.config.operator) ? (
+            <div className="min-w-0 flex-1">
+              <Input
+                placeholder="value…"
+                value={scalarText(node.config.value)}
+                onChange={(e) =>
+                  onChange({
+                    ...node,
+                    config: { ...node.config, value: e.target.value },
+                  })
+                }
+              />
+            </div>
+          ) : (
+            <p className="text-muted-foreground flex-1 text-xs">
+              Tests the value on its own — nothing to compare against.
+            </p>
+          )}
         </div>
-      ) : null}
+      </div>
       <p className="text-muted-foreground text-xs">
         Deterministic — no model call. The <strong>yes</strong> edge is
         taken when the condition holds.
@@ -124,84 +127,130 @@ export function OutputInspector({
   )
 }
 
-export function SwitchInspector({ node, onChange }: NodeInspectorProps) {
-  const { Input, Label } = useWfComponents()
+// What an authored value shows in its text box. Only a scalar has a sensible
+// text form — an object (which no picker in these editors produces) reads as
+// empty rather than as '[object Object]'.
+function scalarText(value: unknown): string {
+  return typeof value === 'object' || value == null ? '' : String(value)
+}
+
+function literalText(binding: ArgBinding): string {
+  return binding.kind === 'literal' ? scalarText(binding.value) : ''
+}
+
+// One leading marker per case — the key the author sees on the row, on the
+// node's outgoing handle, and on the edge. Rendered as a badge rather than an
+// editable field: the key is bookkeeping the graph needs, not a decision the
+// author should have to make.
+function CaseMarker({ children }: { children: ReactNode }) {
+  return (
+    <span className="border-input bg-muted text-muted-foreground min-w-9 shrink-0 rounded-md border px-2 py-1.5 text-center font-mono text-xs">
+      {children}
+    </span>
+  )
+}
+
+// The Switch inspector. A Switch matches ONE upstream value against a list of
+// cases, so the editor asks for exactly that: pick the value with the same data
+// picker every other node uses, then per case type the value it must equal — or
+// link a second upstream value to compare against. Each case's key is minted as
+// a letter (A, B, C…) and never re-lettered, so it stays a stable edge label.
+export function SwitchInspector({
+  node,
+  graph,
+  onChange,
+  itemSchema,
+}: NodeInspectorProps) {
+  const { Label } = useWfComponents()
   if (node.kind !== 'switch') return null
+
+  const cases = node.config.cases
+  const setCases = (next: typeof cases) =>
+    onChange({ ...node, config: { ...node.config, cases: next } })
+  const setCaseValue = (index: number, value: ArgBinding) =>
+    setCases(cases.map((c, i) => (i === index ? { ...c, value } : c)))
+
   return (
     <>
       <div className={field}>
-        <Label>Input path</Label>
-        <Input
-          value={node.config.path}
-          placeholder="e.g. source  ·  empty = whole input"
-          onChange={(e) =>
-            onChange({
-              ...node,
-              config: { ...node.config, path: e.target.value },
-            })
+        <Label>Input</Label>
+        <DataRefField
+          node={node}
+          graph={graph}
+          value={node.config.source}
+          itemSchema={itemSchema}
+          onChange={(source) =>
+            onChange({ ...node, config: { ...node.config, source } })
           }
         />
         <p className="text-muted-foreground text-xs">
-          The value at this path is matched against each case in order.
+          Connect the upstream value to match. Leave unset to match the whole
+          incoming input.
         </p>
       </div>
       <div className={field}>
         <Label>Cases</Label>
-        {node.config.cases.map((c, i) => (
-          <div key={i} className="flex items-center gap-1.5">
-            <Input
-              value={c.key}
-              placeholder="key (edge label)"
-              onChange={(e) => {
-                const cases = node.config.cases.map((x, j) =>
-                  j === i ? { ...x, key: e.target.value } : x,
-                )
-                onChange({ ...node, config: { ...node.config, cases } })
-              }}
-            />
-            <Input
-              value={c.value == null ? '' : String(c.value)}
-              placeholder="equals value"
-              onChange={(e) => {
-                const cases = node.config.cases.map((x, j) =>
-                  j === i ? { ...x, value: e.target.value } : x,
-                )
-                onChange({ ...node, config: { ...node.config, cases } })
-              }}
-            />
+        {cases.map((c, i) => (
+          <div key={c.key} className="flex items-start gap-1.5">
+            <CaseMarker>{c.key}</CaseMarker>
+            <div className="min-w-0 flex-1">
+              <DataRefField
+                node={node}
+                graph={graph}
+                itemSchema={itemSchema}
+                // A ref-valued case shows as a link; anything else is the
+                // author's typed literal, editable in place.
+                value={c.value.kind === 'ref' ? c.value : undefined}
+                emptyLabel="equals…"
+                literal={{
+                  value: literalText(c.value),
+                  placeholder: 'equals…',
+                  onChange: (value) =>
+                    setCaseValue(i, { kind: 'literal', value }),
+                }}
+                // Clearing the link drops back to an empty typed value, so the
+                // row is never left without a binding.
+                onChange={(ref) =>
+                  setCaseValue(i, ref ?? { kind: 'literal', value: '' })
+                }
+              />
+            </div>
             <button
               type="button"
-              className="text-muted-foreground hover:text-foreground shrink-0 rounded px-1.5 py-1 text-xs"
-              aria-label="Remove case"
-              onClick={() => {
-                const cases = node.config.cases.filter((_, j) => j !== i)
-                onChange({ ...node, config: { ...node.config, cases } })
-              }}
+              className="text-muted-foreground hover:text-foreground shrink-0 rounded px-1.5 py-1.5 text-xs"
+              aria-label={`Remove case ${c.key}`}
+              onClick={() => setCases(cases.filter((_, j) => j !== i))}
             >
               ✕
             </button>
           </div>
         ))}
+        <div className="flex items-start gap-1.5">
+          <CaseMarker>{SWITCH_DEFAULT_CASE}</CaseMarker>
+          <p className="text-muted-foreground flex-1 py-1.5 text-xs">
+            No case matched.
+          </p>
+        </div>
         <button
           type="button"
           className="border-input hover:bg-accent self-start rounded-md border px-2 py-1 text-xs"
           onClick={() =>
-            onChange({
-              ...node,
-              config: {
-                ...node.config,
-                cases: [...node.config.cases, { key: '', value: '' }],
+            setCases([
+              ...cases,
+              {
+                key: nextSwitchCaseKey(cases.map((c) => c.key)),
+                value: { kind: 'literal', value: '' },
               },
-            })
+            ])
           }
         >
           + Add case
         </button>
       </div>
       <p className="text-muted-foreground text-xs">
-        Deterministic — no model call. Each case grows an outgoing edge; a
-        value matching none takes the always-present <strong>default</strong>{' '}
-        edge.
+        Deterministic — no model call. Cases are matched in order, and each one
+        grows its own outgoing edge; a value matching none takes the
+        always-present <strong>else</strong> edge.
       </p>
     </>
   )
@@ -379,6 +428,229 @@ function RefOrLiteralField({
         />
       ) : null}
     </>
+  )
+}
+
+// What declaring an output shape buys, in the author's terms. The cost of NOT
+// declaring one is paid late and far away — inside the AI SDK, after a retry
+// schedule — so the help text has to earn the checkbox here.
+const OUTPUT_SHAPE_HELP: Record<TransformOutputShape, string> = {
+  conversation:
+    'Checks the result really is a list of messages before an agent sees it. Worth setting: an agent only verifies that its conversation is an array, so a wrong shape fails deep inside the model call instead of here.',
+}
+
+// The Transform inspector. A Transform reworks a value with a JSONata
+// expression — the one place in the graph where data changes shape rather than
+// merely being addressed, which is what a boundary between two disagreeing
+// contracts needs (database records in, agent messages out).
+export function TransformInspector({
+  node,
+  graph,
+  onChange,
+  itemSchema,
+}: NodeInspectorProps) {
+  const { Label, Select, Textarea } = useWfComponents()
+  // Resolving the upstream shape needs the tool/agent catalogs, so these hooks
+  // run before the kind guard below — hooks cannot sit after an early return.
+  const { maps } = useAccessibleData(node, graph, itemSchema)
+  const copilotAvailable = useCopilotSeedAvailable()
+  const sourceShape = useMemo(
+    () => transformSourceShape(node, graph, maps),
+    [node, graph, maps],
+  )
+  if (node.kind !== 'transform') return null
+
+  const { source, inputs, expression, outputShape } = node.config
+  const entries = Object.entries(inputs)
+
+  // Hand the Copilot the question already written, carrying the real shape of
+  // the data this step will receive. Writing JSONata against a remembered field
+  // list is the slow, error-prone part; the editor already knows that list.
+  const askForExpression = () =>
+    askCopilot(
+      buildTransformCopilotPrompt({
+        nodeLabel: node.label || 'Transform',
+        sourceLabel: sourceShape?.label ?? null,
+        sourceFields: sourceShape?.fields ?? [],
+        sourceType: sourceShape?.type ?? 'unknown',
+        outputShape,
+        currentExpression: expression,
+      }),
+    )
+
+  const patch = (config: Partial<typeof node.config>) =>
+    onChange({ ...node, config: { ...node.config, ...config } })
+
+  const setInputs = (next: Record<string, ArgBinding>) => patch({ inputs: next })
+
+  // Rename a variable by index, preserving order and the bound value.
+  const renameInput = (index: number, nextKey: string) => {
+    const next: Record<string, ArgBinding> = {}
+    entries.forEach(([k, v], i) => {
+      next[i === index ? nextKey : k] = v
+    })
+    setInputs(next)
+  }
+
+  return (
+    <>
+      <div className={field}>
+        <Label>Input</Label>
+        <RefOrLiteralField
+          node={node}
+          graph={graph}
+          itemSchema={itemSchema}
+          binding={source}
+          onChange={(binding) => patch({ source: binding })}
+        />
+        <p className="text-muted-foreground text-xs">
+          The value the expression runs over, written as <code>$</code>. Leave it
+          unset to use whatever the incoming step produced.
+        </p>
+      </div>
+
+      <div className={field}>
+        <Label>Expression</Label>
+        <Textarea
+          className="font-mono text-xs"
+          rows={8}
+          spellCheck={false}
+          value={expression}
+          placeholder={'[$.{\n  "role": role,\n  "parts": [{ "type": "text", "text": body }]\n}]'}
+          onChange={(e) => patch({ expression: e.target.value })}
+        />
+        <p className="text-muted-foreground text-xs">
+          JSONata. <code>$</code> is the input above; any extra values below are{' '}
+          <code>$name</code>. A result with one element still needs the outer{' '}
+          <code>[ ]</code> — without it JSONata returns the bare element instead
+          of a list.
+        </p>
+        {copilotAvailable ? (
+          <button
+            type="button"
+            onClick={askForExpression}
+            className="inline-flex w-fit items-center gap-1.5 text-xs text-violet-600 underline underline-offset-2 hover:text-violet-700"
+          >
+            <Sparkles className="size-3" />
+            {expression.trim()
+              ? 'Ask the Copilot to fix this expression'
+              : 'Ask the Copilot to write this expression'}
+          </button>
+        ) : null}
+      </div>
+
+      <div className={field}>
+        <Label>Emits</Label>
+        <Select
+          value={outputShape ?? ''}
+          onChange={(e) =>
+            patch({
+              outputShape:
+                e.target.value === ''
+                  ? undefined
+                  : (e.target.value as TransformOutputShape),
+            })
+          }
+        >
+          <option value="">Anything (not checked)</option>
+          {TRANSFORM_OUTPUT_SHAPES.map((shape) => (
+            <option key={shape} value={shape}>
+              {shape}
+            </option>
+          ))}
+        </Select>
+        {outputShape ? (
+          <p className="text-muted-foreground text-xs">
+            {OUTPUT_SHAPE_HELP[outputShape]}
+          </p>
+        ) : null}
+      </div>
+
+      <div className={field}>
+        <Label>Extra values</Label>
+        {entries.length === 0 ? (
+          <p className="text-muted-foreground text-xs">
+            Optional. Add one to pull in a second upstream node without a join
+            in front of this one.
+          </p>
+        ) : null}
+        {entries.map(([key, binding], i) => (
+          <TransformInputRow
+            key={i}
+            node={node}
+            graph={graph}
+            itemSchema={itemSchema}
+            name={key}
+            binding={binding}
+            onRename={(next) => renameInput(i, next)}
+            onBind={(next) => setInputs({ ...inputs, [key]: next })}
+            onRemove={() =>
+              setInputs(
+                Object.fromEntries(entries.filter((_, j) => j !== i)),
+              )
+            }
+          />
+        ))}
+        <button
+          type="button"
+          className="text-muted-foreground hover:text-foreground w-fit text-xs underline"
+          onClick={() =>
+            setInputs({ ...inputs, '': { kind: 'literal', value: '' } })
+          }
+        >
+          Add a value
+        </button>
+      </div>
+    </>
+  )
+}
+
+// One `$name` → binding row. Split out so the variable name and its ref picker
+// stay adjacent; the name is what the expression actually types, so it reads as
+// the label rather than as an afterthought.
+function TransformInputRow({
+  node,
+  graph,
+  itemSchema,
+  name,
+  binding,
+  onRename,
+  onBind,
+  onRemove,
+}: Pick<NodeInspectorProps, 'node' | 'graph' | 'itemSchema'> & {
+  name: string
+  binding: ArgBinding
+  onRename: (next: string) => void
+  onBind: (next: ArgBinding) => void
+  onRemove: () => void
+}) {
+  const { Input } = useWfComponents()
+  return (
+    <div className="flex flex-col gap-1 rounded border p-2">
+      <div className="flex items-center gap-2">
+        <span className="text-muted-foreground font-mono text-xs">$</span>
+        <Input
+          value={name}
+          placeholder="name"
+          onChange={(e) => onRename(e.target.value)}
+        />
+        <button
+          type="button"
+          className="text-muted-foreground hover:text-foreground text-xs"
+          onClick={onRemove}
+          aria-label={`Remove ${name || 'value'}`}
+        >
+          Remove
+        </button>
+      </div>
+      <RefOrLiteralField
+        node={node}
+        graph={graph}
+        itemSchema={itemSchema}
+        binding={binding}
+        onChange={(next) => onBind(next ?? { kind: 'literal', value: '' })}
+      />
+    </div>
   )
 }
 

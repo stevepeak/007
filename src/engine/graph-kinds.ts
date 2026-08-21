@@ -12,6 +12,7 @@ export const WF_NODE_KINDS = [
   'workflow',
   'feature-request',
   'passthrough',
+  'transform',
   'race',
   'aggregate',
   'iteration',
@@ -19,6 +20,15 @@ export const WF_NODE_KINDS = [
   'output',
 ] as const
 export type WfNodeKind = (typeof WF_NODE_KINDS)[number]
+
+// Shapes a Transform node can assert its result against. A transform's output
+// is an expression's return value, so nothing upstream of the run knows what it
+// will be — declaring a shape is how an author buys back a real error message
+// and a real output type for the downstream binding picker. The zod schemas
+// these name live in nodes/transform.ts; this list is here so the graph schema
+// can reference it without importing the engine's node layer.
+export const TRANSFORM_OUTPUT_SHAPES = ['conversation'] as const
+export type TransformOutputShape = (typeof TRANSFORM_OUTPUT_SHAPES)[number]
 
 // Node kinds that route via a conditional outgoing edge (`edge.condition`
 // selects the live arm). The binary `branch` (predicate) emits 'yes'/'no'; the

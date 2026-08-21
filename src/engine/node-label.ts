@@ -17,6 +17,7 @@ const KIND_LABELS: Record<string, string> = {
   workflow: 'Workflow',
   iteration: 'Iteration',
   passthrough: 'Passthrough',
+  transform: 'Transform',
   race: 'Race',
   aggregate: 'Aggregate',
   'feature-request': 'Feature Request',

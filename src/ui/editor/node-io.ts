@@ -317,6 +317,30 @@ function decisionOutputFields(node: WorkflowNode): DataField[] {
 // reaches pre-routing data by ref-ing the producer directly. The remaining
 // pass-through kind (feature-request, an unbuilt placeholder) still resolves its
 // shape from its predecessor(s); `seen` guards against a malformed cycle.
+// The field tree for a `conversation`-shaped transform result: AI-SDK
+// `UIMessage[]`. Written out rather than derived because the AI SDK ships types,
+// not a JSON Schema, and the read-only data tree only needs the parts an author
+// would reference.
+function conversationOutput(): { fields: DataField[]; items: DataField[] } {
+  const items: DataField[] = [
+    {
+      key: 'role',
+      label: 'role',
+      path: 'role',
+      type: 'string',
+      description: '"user", "assistant" or "system".',
+    },
+    {
+      key: 'parts',
+      label: 'parts',
+      path: 'parts',
+      type: 'array',
+      description: 'Message content — text parts carry `text`.',
+    },
+  ]
+  return { fields: [], items }
+}
+
 function nodeOutput(
   node: WorkflowNode,
   maps: IoMaps,
@@ -388,6 +412,20 @@ function nodeOutput(
     // Routing nodes emit their decision, not a forwarded input.
     return { fields: decisionOutputFields(node), type: 'object' }
   }
+  if (node.kind === 'transform') {
+    // A Transform emits whatever its expression returns, which nothing can know
+    // statically — so the ONLY honest answer is the shape the author declared.
+    // Declared, we can describe the elements and the picker works normally;
+    // undeclared, report `unknown` so the whole value binds as one leaf rather
+    // than advertising fields that may not exist. (Falling through to the
+    // pass-through resolution below would be actively wrong: it would report the
+    // predecessor's shape, which is precisely the shape a transform exists to
+    // discard.)
+    if (node.config.outputShape === 'conversation') {
+      return { ...conversationOutput(), type: 'array' }
+    }
+    return { fields: [], type: 'unknown' }
+  }
   if (node.kind === 'passthrough') {
     // A Passthrough emits an AUTHORED shape, not its predecessor's: `value`
     // forwards one binding UNWRAPPED, `fields` builds an object keyed by the
@@ -445,6 +483,67 @@ function nodeOutput(
     return { fields, type: 'object' }
   }
   return { fields: [], type: 'passthrough' }
+}
+
+/**
+ * The shape of the value a Transform's expression will actually receive.
+ *
+ * Mirrors what `executeTransformNode` does at run time — an explicit `source`
+ * binding wins, and with none the node reads its incoming edge — so the outline
+ * the author is shown matches the data they will get. Narrows to the bound path
+ * (`messages` rather than the whole tool result) because that, not the producer's
+ * full output, is what `$` refers to inside the expression.
+ *
+ * Returns `null` when there is nothing to describe: no binding and no single
+ * predecessor to fall back on.
+ */
+export function transformSourceShape(
+  node: WorkflowNode,
+  graph: WorkflowGraph,
+  maps: IoMaps,
+): { label: string; fields: DataField[]; type: string } | null {
+  if (node.kind !== 'transform') return null
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]))
+  const binding = node.config.source
+
+  // A literal source is its own answer — the author typed the value, so there is
+  // no upstream shape to look up.
+  if (binding?.kind === 'literal') {
+    return {
+      label: 'a literal value you typed',
+      fields: [],
+      type: jsonTypeOf(binding.value),
+    }
+  }
+
+  const producerId = binding?.nodeId ?? singlePredecessorId(graph, node.id)
+  if (!producerId) return null
+  const producer = byId.get(producerId)
+  if (!producer) return null
+
+  const out = nodeOutput(producer, maps, graph, byId, new Set())
+  const path = binding?.path ?? ''
+  const label = `${producer.label} · ${path || 'whole output'}`
+  if (!path) return { label, fields: out.fields, type: out.type }
+
+  const field = findField(out.fields, path)
+  if (!field) return { label, fields: [], type: 'unknown' }
+  // For an array it is the ELEMENT shape the expression maps over, which
+  // `items` holds; `children` is empty on arrays.
+  return {
+    label,
+    fields: field.type === 'array' ? (field.items ?? []) : (field.children ?? []),
+    type: field.type,
+  }
+}
+
+/** The lone incoming node, or null when there are zero or several. */
+function singlePredecessorId(
+  graph: WorkflowGraph,
+  nodeId: string,
+): string | null {
+  const preds = predecessorIds(graph, nodeId)
+  return preds.length === 1 ? preds[0] : null
 }
 
 // Return a maps copy whose iteration `Item` trigger resolves to `itemSchema`, so
@@ -625,7 +724,10 @@ function coarseCompatible(want: string, got: string): boolean {
 
 // Depth-first lookup of a field by its dotted `path` (returns the field itself,
 // not just its type — so callers can descend into its children).
-function findField(fields: DataField[], path: string): DataField | undefined {
+export function findField(
+  fields: DataField[],
+  path: string,
+): DataField | undefined {
   for (const f of fields) {
     if (f.path === path) return f
     if (f.children) {

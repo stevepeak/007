@@ -46,14 +46,20 @@ export {
   type BranchNode,
   type BranchOperator,
   BRANCH_OPERATORS,
+  VALUELESS_BRANCH_OPERATORS,
+  branchOperatorTakesValue,
   DECISION_NODE_KINDS,
   type InformUser,
   isBookendKind,
   isDecisionKind,
   SWITCH_DEFAULT_CASE,
+  nextSwitchCaseKey,
   type SwitchNode,
   type FeatureRequestNode,
   type PassthroughNode,
+  type TransformNode,
+  TRANSFORM_OUTPUT_SHAPES,
+  type TransformOutputShape,
   type AggregateNode,
   type IterationNode,
   nodeExecutionSchema,
@@ -223,6 +229,10 @@ export {
   executePassthroughNode,
   type PassthroughNodeResult,
 } from './nodes/passthrough'
+export {
+  executeTransformNode,
+  type TransformNodeResult,
+} from './nodes/transform'
 export { executeRaceNode, type RaceNodeResult } from './nodes/race'
 export {
   executeAggregateNode,

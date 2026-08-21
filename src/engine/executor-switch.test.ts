@@ -8,8 +8,11 @@ import { createMemoryRunRecorder } from './run-recorder'
 import type { ToolRegistry } from './tool-registry'
 import type { Deps } from './executor-test-helpers'
 
-// trigger → switch(on `kind`) → [text|image|default] tool → its own output.
-// Each arm routes to a distinct output so the run returns the arm that fired.
+// trigger → switch(on the trigger's `kind`) → [A|B|else] tool → its own
+// output. Each arm routes to a distinct output so the run returns the arm that
+// fired. Case A is a literal the author typed; case B is a REF — it matches when
+// `kind` equals another upstream value (here the trigger's own `expected`),
+// which is the second way the editor lets a case be filled in.
 function switchGraph() {
   const armTool = (id: string, toolId: string, x: number) => ({
     id,
@@ -23,7 +26,7 @@ function switchGraph() {
     kind: 'output' as const,
     label: id,
     position: { x, y: 0 },
-    // Each arm's Output returns its own producing tool (text-out ← text-tool …).
+    // Each arm's Output returns its own producing tool (a-out ← a-tool …).
     config: {
       source: {
         kind: 'ref' as const,
@@ -48,50 +51,38 @@ function switchGraph() {
         label: 'By kind',
         position: { x: 200, y: 0 },
         config: {
-          path: 'kind',
+          source: { kind: 'ref' as const, nodeId: 't', path: 'kind' },
           cases: [
-            { key: 'text', value: 'text' },
-            { key: 'image', value: 'image' },
+            { key: 'A', value: { kind: 'literal' as const, value: 'image' } },
+            {
+              key: 'B',
+              value: { kind: 'ref' as const, nodeId: 't', path: 'expected' },
+            },
           ],
         },
       },
-      armTool('text-tool', 'label-text', 400),
-      armTool('image-tool', 'label-image', 400),
-      armTool('default-tool', 'label-default', 400),
-      armOut('text-out', 600),
-      armOut('image-out', 600),
-      armOut('default-out', 600),
+      armTool('a-tool', 'label-a', 400),
+      armTool('b-tool', 'label-b', 400),
+      armTool('else-tool', 'label-else', 400),
+      armOut('a-out', 600),
+      armOut('b-out', 600),
+      armOut('else-out', 600),
     ],
     edges: [
       { id: 'e0', source: 't', target: 'sw', condition: null },
-      { id: 'e-text', source: 'sw', target: 'text-tool', condition: 'text' },
-      { id: 'e-image', source: 'sw', target: 'image-tool', condition: 'image' },
-      {
-        id: 'e-def',
-        source: 'sw',
-        target: 'default-tool',
-        condition: 'default',
-      },
-      { id: 'e-to', source: 'text-tool', target: 'text-out', condition: null },
-      {
-        id: 'e-io',
-        source: 'image-tool',
-        target: 'image-out',
-        condition: null,
-      },
-      {
-        id: 'e-do',
-        source: 'default-tool',
-        target: 'default-out',
-        condition: null,
-      },
+      { id: 'e-a', source: 'sw', target: 'a-tool', condition: 'A' },
+      { id: 'e-b', source: 'sw', target: 'b-tool', condition: 'B' },
+      { id: 'e-else', source: 'sw', target: 'else-tool', condition: 'else' },
+      { id: 'e-ao', source: 'a-tool', target: 'a-out', condition: null },
+      { id: 'e-bo', source: 'b-tool', target: 'b-out', condition: null },
+      { id: 'e-eo', source: 'else-tool', target: 'else-out', condition: null },
     ],
   }
 }
 
 // Distinct constant per arm so the returned output identifies the arm that ran.
 const switchTools: ToolRegistry<Deps> = new Map(
-  (['text', 'image', 'default'] as const).map((k) => [
+  (['a', 'b', 'else'] as const).map((k) => [
     `label-${k}`,
     {
       id: `label-${k}`,
@@ -112,7 +103,10 @@ function switchConfig(): WfSdkConfig<Deps> {
     listProviders: () => [],
     toolRegistry: switchTools,
     triggers: {
-      go: { description: 'Go', inputSchema: z.object({ kind: z.string() }) },
+      go: {
+        description: 'Go',
+        inputSchema: z.object({ kind: z.string(), expected: z.string() }),
+      },
     },
     buildRunDeps: (ctx) => ({ subject: ctx.subjectId ?? '' }),
   }
@@ -123,43 +117,56 @@ describe('executor — switch (multi-way routing)', () => {
     const recorder = createMemoryRunRecorder()
     const result = await executeWorkflow({
       graph: switchGraph(),
-      triggerInput: { kind: 'image' },
+      triggerInput: { kind: 'image', expected: 'audio' },
       config: switchConfig(),
       runContext: { subjectId: 'acme', triggerKind: 'go' },
       recorder,
     })
-    expect(result.output).toEqual({ arm: 'image' })
-    expect(result.outputNodeId).toBe('image-out')
+    expect(result.output).toEqual({ arm: 'a' })
+    expect(result.outputNodeId).toBe('a-out')
     // The switch step records its decision as the winning case key.
     const sw = recorder.steps.find((s) => s.nodeId === 'sw')
-    expect(sw?.branchResult?.result).toBe('image')
+    expect(sw?.branchResult?.result).toBe('A')
     // The other arms never ran.
-    expect(recorder.steps.some((s) => s.nodeId === 'text-tool')).toBe(false)
-    expect(recorder.steps.some((s) => s.nodeId === 'default-tool')).toBe(false)
+    expect(recorder.steps.some((s) => s.nodeId === 'b-tool')).toBe(false)
+    expect(recorder.steps.some((s) => s.nodeId === 'else-tool')).toBe(false)
   })
 
-  test('falls back to the default arm when no case matches', async () => {
+  test('matches a case bound to another upstream value', async () => {
     const result = await executeWorkflow({
       graph: switchGraph(),
-      triggerInput: { kind: 'audio' },
+      // Case B compares `kind` against the trigger's `expected` — equal here.
+      triggerInput: { kind: 'audio', expected: 'audio' },
       config: switchConfig(),
       runContext: { subjectId: 'acme', triggerKind: 'go' },
       recorder: createMemoryRunRecorder(),
     })
-    expect(result.output).toEqual({ arm: 'default' })
-    expect(result.outputNodeId).toBe('default-out')
+    expect(result.output).toEqual({ arm: 'b' })
+    expect(result.outputNodeId).toBe('b-out')
   })
 
-  test('rejects a switch missing its default edge', () => {
+  test('falls back to the else arm when no case matches', async () => {
+    const result = await executeWorkflow({
+      graph: switchGraph(),
+      triggerInput: { kind: 'audio', expected: 'video' },
+      config: switchConfig(),
+      runContext: { subjectId: 'acme', triggerKind: 'go' },
+      recorder: createMemoryRunRecorder(),
+    })
+    expect(result.output).toEqual({ arm: 'else' })
+    expect(result.outputNodeId).toBe('else-out')
+  })
+
+  test('rejects a switch missing its else edge', () => {
     const g = switchGraph()
-    g.edges = g.edges.filter((e) => e.id !== 'e-def')
-    expect(() => workflowGraphSchema.parse(g)).toThrow(/default/)
+    g.edges = g.edges.filter((e) => e.id !== 'e-else')
+    expect(() => workflowGraphSchema.parse(g)).toThrow(/else/)
   })
 
   test('rejects an outgoing edge matching no declared case', () => {
     const g = switchGraph()
     g.edges = g.edges.map((e) =>
-      e.id === 'e-text' ? { ...e, condition: 'nope' } : e,
+      e.id === 'e-a' ? { ...e, condition: 'nope' } : e,
     )
     expect(() => workflowGraphSchema.parse(g)).toThrow(/matches no declared case/)
   })

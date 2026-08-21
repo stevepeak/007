@@ -1,4 +1,5 @@
 import { resolveBinding } from '../binding'
+import { branchOperatorTakesValue } from '../graph'
 import type { BranchNode, BranchOperator } from '../graph'
 
 // Deterministic yes/no routing. The Branch node evaluates a predicate over its
@@ -134,10 +135,9 @@ export function executeBranchNode(
       ? `${source.nodeId}.${source.path}`
       : source.nodeId
     : 'input'
-  const operand =
-    operator === 'is_empty' || operator === 'is_not_empty'
-      ? ''
-      : ` ${JSON.stringify(value ?? null)}`
+  const operand = branchOperatorTakesValue(operator)
+    ? ` ${JSON.stringify(value ?? null)}`
+    : ''
   return {
     result: pass ? 'yes' : 'no',
     reasoning: `${subject} ${operator}${operand} → ${pass ? 'yes' : 'no'}`,

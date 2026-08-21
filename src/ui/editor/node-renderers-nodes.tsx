@@ -200,6 +200,22 @@ export const PassthroughNodeRenderer = defineNode({
   },
 })
 
+// A Transform node: a deterministic reshape. One upstream wires into its target
+// handle; the JSONata result flows out the source handle. The subtitle leads with
+// the declared output shape when there is one, since that is the fact a reader
+// scanning the canvas wants — what comes OUT — and falls back to a one-line
+// preview of the expression itself.
+export const TransformNodeRenderer = defineNode({
+  kind: 'transform',
+  subtitle: (data) => {
+    const { expression, outputShape } = data.config
+    if (!expression.trim()) return 'No expression yet'
+    if (outputShape) return `Emits a ${outputShape}`
+    const oneLine = expression.replace(/\s+/g, ' ').trim()
+    return oneLine.length > 48 ? `${oneLine.slice(0, 47)}…` : oneLine
+  },
+})
+
 // A Race node: a first-to-finish join. Many upstreams wire into its single target
 // handle; whichever finishes first wins and flows out the source handle.
 export const RaceNodeRenderer = defineNode({
@@ -228,7 +244,7 @@ export const OutputNodeRenderer = defineNode({
       : null,
 })
 
-// Multi-way routing: one source handle per case key plus the `default` fallback,
+// Multi-way routing: one source handle per case key plus the `else` fallback,
 // stacked down the right edge. Each handle's `id` is the case key, so xyflow
 // lands an edge's `sourceHandle` on the arm whose `edge.condition` matches — the
 // same id↔condition contract the yes/no DecisionHandles use.
@@ -237,7 +253,10 @@ export function SwitchNodeRenderer(props: NodeProps) {
   if (!r) return null
   const { data, invalid, status } = r
   const arms = [...data.config.cases.map((c) => c.key), SWITCH_DEFAULT_CASE]
-  const subject = data.config.path || 'input'
+  // Same subject wording as a Branch: the picked field path when the author
+  // drilled in, 'upstream' for a whole-output ref, 'input' when unbound.
+  const { source } = data.config
+  const subject = source?.path || (source ? 'upstream' : 'input')
   return (
     <>
       <Handle type="target" position={Position.Left} />

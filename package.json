@@ -63,6 +63,7 @@
     "ai": "^7.0.71",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
+    "jsonata": "^2.2.2",
     "lucide-react": "^1.33.0",
     "react-hook-form": "^7.85.0",
     "react-is": "^19.2.0",

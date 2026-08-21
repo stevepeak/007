@@ -7,6 +7,7 @@ import {
   Repeat,
   Sparkles,
   Split,
+  Shuffle,
   StickyNote,
   Workflow,
   Wrench,
@@ -29,6 +30,7 @@ type PaletteItem = {
     | 'workflow'
     | 'feature-request'
     | 'passthrough'
+    | 'transform'
     | 'race'
     | 'aggregate'
     | 'note'
@@ -107,6 +109,14 @@ const PALETTE: PaletteItem[] = [
     description:
       'Re-shape a value so a branch arm can feed a Race the same shape as its sibling.',
     icon: Forward,
+  },
+  {
+    kind: 'transform',
+    category: 'Logic',
+    label: 'Transform',
+    description:
+      'Reshape a value with a JSONata expression — e.g. turn records into the messages an agent expects.',
+    icon: Shuffle,
   },
   {
     kind: 'feature-request',

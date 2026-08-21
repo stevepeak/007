@@ -1,3 +1,5 @@
+import jsonata from 'jsonata'
+
 import {
   ITERATION_MAX_ITEMS_CEILING,
   SWITCH_DEFAULT_CASE,
@@ -105,8 +107,54 @@ function configIssue(node: WorkflowNode): GraphIssue | null {
         }
       }
       return null
+    case 'transform': {
+      // An expression is the node's entire behaviour — without one there is
+      // nothing to run, so this is an error rather than a warning.
+      if (!node.config.expression.trim()) {
+        return {
+          ...base,
+          severity: 'error',
+          message: 'No expression — write one for the shape this should emit.',
+        }
+      }
+      // Compile it. JSONata's parser is the cheapest real check available and it
+      // runs everywhere this module does, which turns a typo from a mid-run
+      // failure (after a retry schedule, on the durable backend) into a red mark
+      // on the canvas before the graph is ever published.
+      const parseError = jsonataParseError(node.config.expression)
+      if (parseError) {
+        return {
+          ...base,
+          severity: 'error',
+          message: `Invalid JSONata expression: ${parseError}`,
+        }
+      }
+      return null
+    }
     default:
       return null
+  }
+}
+
+/**
+ * Compiles an expression purely to learn whether it parses, returning the
+ * complaint or `null`. JSONata throws a plain object (`{code, position, token,
+ * message}`) rather than an Error, so the message has to be dug out by hand.
+ */
+function jsonataParseError(expression: string): string | null {
+  try {
+    jsonata(expression)
+    return null
+  } catch (err) {
+    if (err instanceof Error) return err.message
+    if (err && typeof err === 'object') {
+      const e = err as { code?: string; message?: string; position?: number }
+      const detail = e.message ?? e.code ?? 'could not be parsed'
+      return typeof e.position === 'number'
+        ? `${detail} (at position ${e.position})`
+        : detail
+    }
+    return String(err)
   }
 }
 
@@ -336,6 +384,24 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
           ...base,
           severity: 'error',
           message: `Switch needs a "${SWITCH_DEFAULT_CASE}" (fallback) path.`,
+        })
+      }
+      // A case the author added but never filled in. It isn't inert — an empty
+      // literal MATCHES an empty input, so the arm can fire for a reason nobody
+      // intended, which reads as a routing bug rather than an unfinished case.
+      const blank = node.config.cases.filter(
+        (c) =>
+          c.value.kind === 'literal' &&
+          (c.value.value == null || c.value.value === ''),
+      )
+      if (blank.length > 0) {
+        const many = blank.length > 1
+        issues.push({
+          ...base,
+          severity: 'error',
+          message: `Switch case${many ? 's' : ''} ${blank
+            .map((c) => `"${c.key}"`)
+            .join(', ')} ${many ? 'have' : 'has'} no value to match — type the value, or link the upstream data it should equal.`,
         })
       }
     }

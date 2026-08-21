@@ -56,7 +56,7 @@ function nodeConfigForKind(
     return {
       kind: 'switch',
       label: 'New switch',
-      config: { path: '', cases: [] },
+      config: { cases: [] },
     }
   }
   if (kind === 'iteration') {
@@ -105,6 +105,17 @@ function nodeConfigForKind(
     // inspector to switch it to `value` (one binding, unwrapped) or `fields`
     // (build an object) — the shape a converging branch arm needs.
     return { kind: 'passthrough', label: 'Passthrough', config: {} }
+  }
+  if (kind === 'transform') {
+    // Drops in empty, which reads as a blocking "no expression" issue until the
+    // author writes one — deliberate, since an expressionless transform has no
+    // behaviour at all and silently forwarding its input would be a different
+    // node (that node is Passthrough).
+    return {
+      kind: 'transform',
+      label: 'Transform',
+      config: { inputs: {}, expression: '' },
+    }
   }
   if (kind === 'race') {
     // A config-less first-to-finish join. The author wires several upstreams into

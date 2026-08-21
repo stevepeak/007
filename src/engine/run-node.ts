@@ -15,6 +15,7 @@ import { executePassthroughNode } from './nodes/passthrough'
 import { executeRaceNode } from './nodes/race'
 import { executeSwitchNode } from './nodes/switch'
 import { executeToolNode } from './nodes/tool'
+import { executeTransformNode } from './nodes/transform'
 import { executeWorkflowNode } from './nodes/workflow'
 import type { RunRecorder } from './run-recorder'
 import type { ExecuteInstruction } from './scheduler'
@@ -36,7 +37,7 @@ export type NodeRunResult = {
   /**
    * Decision nodes only (branch/switch) — the routing decision that selects
    * the live outgoing edge. A branch emits 'yes'|'no'; a switch emits a case
-   * key or 'default'. Matched against `edge.condition`.
+   * key or 'else'. Matched against `edge.condition`.
    */
   branchResult?: string
   branchReasoning?: string
@@ -168,8 +169,8 @@ export async function runNode<TDeps>(
     case 'switch': {
       // Multi-way sibling of `branch`: like Branch it emits its decision
       // (`{ result, reasoning }`, where result is the winning case key or
-      // 'default') rather than forwarding its input, and routes its case edges.
-      const r = executeSwitchNode({ node, input })
+      // 'else') rather than forwarding its input, and routes its case edges.
+      const r = executeSwitchNode({ node, input, nodeOutputs: ctx.nodeOutputs })
       const decision = { result: r.result, reasoning: r.reasoning }
       return {
         schedulerOutput: decision,
@@ -204,6 +205,22 @@ export async function runNode<TDeps>(
       // "data already exists" branch arm can feed a Race the same shape its
       // sibling arm produces. Resolves refs against the global output cache.
       const r = await executePassthroughNode({
+        node,
+        input,
+        nodeOutputs: ctx.nodeOutputs,
+        rehydrate,
+      })
+      return {
+        schedulerOutput: r.output,
+        recordedOutput: r.output,
+      }
+    }
+    case 'transform': {
+      // Deterministic reshape: runs the node's JSONata expression over an
+      // upstream value and emits the result. Bindings can only ADDRESS data, so
+      // this is the only place in the graph where one contract's shape becomes
+      // another's — e.g. database rows becoming AI-SDK messages.
+      const r = await executeTransformNode({
         node,
         input,
         nodeOutputs: ctx.nodeOutputs,

@@ -10,6 +10,7 @@ import {
   LogOut,
   Repeat,
   Sparkles,
+  Shuffle,
   Split,
   StickyNote,
   Workflow,
@@ -24,7 +25,11 @@ import {
   type ReactNode,
 } from 'react'
 
-import { type WorkflowNode } from '../../engine'
+import {
+  branchOperatorTakesValue,
+  type BranchOperator,
+  type WorkflowNode,
+} from '../../engine'
 import { cn } from '../cn'
 import { runStatusDotClass } from '../run-status'
 
@@ -243,6 +248,11 @@ export const KIND_STYLE: Record<
     accent: 'border-l-lime-400',
     label: 'Passthrough',
   },
+  transform: {
+    icon: Shuffle,
+    accent: 'border-l-rose-400',
+    label: 'Transform',
+  },
   race: { icon: Flag, accent: 'border-l-teal-400', label: 'Race' },
   aggregate: {
     icon: Layers,
@@ -430,10 +440,14 @@ export function branchConditionLabel(config: {
   // Show the picked field path when the author drilled in, else a generic
   // 'upstream' for a whole-output ref, else 'input' for the passthrough.
   const subject = config.source?.path || (config.source ? 'upstream' : 'input')
-  if (config.operator === 'is_empty' || config.operator === 'is_not_empty') {
-    return `${subject} ${config.operator}`
+  // A structurally-typed operator (this helper takes a loose config), so an
+  // unrecognised string still prints itself rather than vanishing.
+  const operator = config.operator as BranchOperator
+  const name = operator.replace(/_/g, ' ')
+  if (!branchOperatorTakesValue(operator)) {
+    return `${subject} ${name}`
   }
-  return `${subject} ${config.operator} ${JSON.stringify(config.value ?? null)}`
+  return `${subject} ${name} ${JSON.stringify(config.value ?? null)}`
 }
 
 // ── defineNode ────────────────────────────────────────────────────────────────

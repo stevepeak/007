@@ -17,6 +17,7 @@ import {
   IterationInspector,
   OutputInspector,
   PassthroughInspector,
+  TransformInspector,
   SwitchInspector,
 } from './node-inspector-control-flow'
 import {
@@ -59,6 +60,7 @@ const NODE_INSPECTORS: Partial<
   workflow: WorkflowInspector,
   'feature-request': FeatureRequestInspector,
   passthrough: PassthroughInspector,
+  transform: TransformInspector,
   race: RaceInspector,
   aggregate: AggregateInspector,
   note: NoteInspector,

@@ -6,6 +6,15 @@ export {
   type WfAssistantComponent,
   type WfAssistantContext,
 } from './context'
+// A host that replaces the built-in assistant can opt back into the "ask the
+// Copilot this" affordances (the Transform inspector's expression helper today)
+// by registering a seed handler; without one those links stay hidden rather than
+// opening a chat that ignores the question.
+export {
+  askCopilot,
+  registerCopilotSeed,
+  useCopilotSeedAvailable,
+} from './copilot/ask'
 export {
   defaultComponents,
   type WfBadgeProps,
