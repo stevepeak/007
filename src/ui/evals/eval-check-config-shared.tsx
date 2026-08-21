@@ -67,7 +67,7 @@ export function defaultCheck(type: EvalCheck['type']): EvalCheck {
       return { type, match: 'contains', value: '' }
     case 'llm_judge':
       // modelId is filled in by JudgeConfig once the model list loads.
-      return { type, rubric: '', threshold: 0.7, weight: 1 }
+      return { type, rubric: '', bar: 'close_enough' }
   }
 }
 

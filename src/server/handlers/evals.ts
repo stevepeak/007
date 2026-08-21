@@ -271,7 +271,14 @@ export function buildEvalHandlers<TDeps>(
       // the trigger kind to start under, before handing the host the run.
       const resolved = await resolveEvalTarget(
         c.db,
-        { kind: set.targetKind, id: set.targetId },
+        {
+          kind: set.targetKind,
+          id: set.targetId,
+          // The Goal's pin. Passing it is what makes "pinned v3" in the UI and
+          // `targetVersion: 3` in the frozen snapshot true statements about the
+          // version that actually ran.
+          version: set.targetVersion,
+        },
         set.triggerKind,
         { createdBy: c.ctx.userId },
       )
@@ -373,6 +380,12 @@ export function buildEvalHandlers<TDeps>(
         status: graded.status,
         score: graded.score,
         checkResults: graded.checkResults,
+        // The grader's own explanation for an errored verdict — an empty check
+        // tree, or a judge that threw. Same column `recordEvalFailure` writes
+        // and the report already renders, so an errored GRADED cell stops
+        // showing up as a red row above an empty banner. Capped identically to
+        // that path: the cap is a storage concern, not a grading one.
+        error: graded.error?.slice(0, MAX_RECORDED_ERROR_CHARS) ?? null,
         snapshot,
         snapshotHash,
         modelId: cell.modelId,

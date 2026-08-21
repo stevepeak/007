@@ -361,7 +361,20 @@ function SamplesTable({
             ) : null}
           </div>
           <div className="w-16 text-right text-sm tabular-nums text-neutral-500">
-            {r.checks.checks.length}
+            {r.checks.checks.length === 0 ? (
+              // Every new sample starts with zero checks, so this is the state a
+              // half-finished sample sits in — and it now grades as an error.
+              // The pill makes it findable from the list without opening each
+              // one; the tooltip carries the why without widening the column.
+              <span
+                title="No checks — this sample will report as an error"
+                className="inline-flex items-center rounded-md bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700"
+              >
+                0
+              </span>
+            ) : (
+              r.checks.checks.length
+            )}
           </div>
         </button>
       ))}

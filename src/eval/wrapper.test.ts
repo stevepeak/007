@@ -10,9 +10,10 @@ import {
   EVAL_WRAPPER_NAME_PREFIX,
 } from './wrapper'
 
-// Phase 5 — the wrapper graph builder is pure; the db-backed `ensureAgentEvalWrapper`
-// / `resolveEvalTarget` are covered by typecheck + the handler path (no db test
-// harness in this repo).
+// Phase 5 — the wrapper graph builder is pure. The db-backed
+// `ensureAgentEvalWrapper` / `resolveEvalTarget` (including version-pin
+// resolution) are covered in `wrapper-pin.test.ts` against a migrated
+// in-memory database.
 
 describe('buildAgentWrapperGraph', () => {
   test('produces a runnable trigger → agent → output graph', () => {
@@ -76,6 +77,26 @@ describe('buildAgentWrapperGraph', () => {
     expect(parseStoredGraph(JSON.parse(JSON.stringify(fresh)))).toEqual(fresh)
   })
 
+  test('a PINNED graph survives the zod round-trip too', () => {
+    // The pinned twin of the round-trip above. `config.version` is the one key a
+    // pinned wrapper adds, and it is exactly the sort of field a `.default()`
+    // could silently normalize — which would make every pinned eval cell
+    // republish its wrapper forever.
+    const fresh = buildAgentWrapperGraph('agent-123', 3)
+    expect(parseStoredGraph(JSON.parse(JSON.stringify(fresh)))).toEqual(fresh)
+  })
+
+  test('the pin reaches the agent node, which is what the manifest reads', () => {
+    const nodeOf = (g: ReturnType<typeof buildAgentWrapperGraph>) =>
+      g.nodes.find((n) => n.kind === 'agent')
+    expect(nodeOf(buildAgentWrapperGraph('x', 3))?.config).toMatchObject({
+      version: 3,
+    })
+    expect(nodeOf(buildAgentWrapperGraph('x'))?.config).toMatchObject({
+      version: null,
+    })
+  })
+
   test('different agents and pins get distinct node ids', () => {
     const x = buildAgentWrapperGraph('x')
     const y = buildAgentWrapperGraph('y')
@@ -90,5 +111,20 @@ describe('evalWrapperName', () => {
     expect(evalWrapperName('agent-abc')).toBe(
       `${EVAL_WRAPPER_NAME_PREFIX}agent-abc`,
     )
+  })
+
+  test('a pin gets its own key, so pins cannot share a cached wrapper', () => {
+    expect(evalWrapperName('agent-abc', 3)).toBe(
+      `${EVAL_WRAPPER_NAME_PREFIX}agent-abc@v3`,
+    )
+    expect(evalWrapperName('agent-abc', 3)).not.toBe(
+      evalWrapperName('agent-abc', 4),
+    )
+  })
+
+  test('an explicit null pin keeps the historic unpinned name', () => {
+    // Backward compatibility: wrappers created before pins existed are stored
+    // under the bare name. Changing it would orphan every one of them.
+    expect(evalWrapperName('agent-abc', null)).toBe(evalWrapperName('agent-abc'))
   })
 })

@@ -2,20 +2,28 @@ import type { WorkflowGraph } from '../engine/graph'
 import { MANUAL_TRIGGER_KIND } from '../engine/trigger-registry'
 import type { WfDb } from '../storage/client'
 import {
+  agentVersionByNumber,
   createWorkflow,
   findWorkflowByName,
   getLatestVersionId,
   getVersionGraph,
   saveVersion,
+  versionByNumber,
 } from '../storage/data'
 
 // Phase 5 — target resolution. An eval always runs through the same
 // GraphWorkflow path, so both target kinds must resolve to a `workflowVersionId`:
-//   • workflow target → its own latest published version.
+//   • workflow target → the version the Goal pins, or its latest when unpinned.
 //   • agent target    → a hidden, auto-generated `trigger(manual) → agent → output`
-//     wrapper workflow (created once per agent, cached by name). The agent node
-//     floats to the agent's latest version, so the eval grades the identical
-//     trace shape a real workflow agent-node would produce.
+//     wrapper workflow (created once per agent+pin, cached by name). The agent
+//     node carries the Goal's pin, so the eval grades the identical trace shape
+//     a real workflow agent-node would produce — against the version the Goal
+//     actually names. An unpinned Goal floats to latest, as before.
+//
+// A pin that resolves to nothing THROWS rather than falling back to latest. The
+// UI renders "pinned v3" and `buildEvalSnapshot` freezes `targetVersion: 3` into
+// the immutable result, so a silent float would make the stored record a lie
+// about what was graded — which is exactly the bug this path used to have.
 
 /** Stable name of an agent's wrapper workflow — also its cache key. */
 export const EVAL_WRAPPER_NAME_PREFIX = 'eval-wrapper:'
@@ -139,11 +147,12 @@ function stableStringify(value: unknown): string {
 }
 
 /**
- * Ensure the hidden wrapper workflow for `agentId` exists and is CURRENT,
- * returning its id and latest version id. Idempotent: created once (cached by
- * {@link evalWrapperName}), reused thereafter. The wrapper floats to the
- * agent's latest version through the agent node, so it needs no re-publishing
- * when the agent itself changes.
+ * Ensure the hidden wrapper workflow for `agentId` (at the Goal's `version` pin,
+ * if any) exists and is CURRENT, returning its id and latest version id.
+ * Idempotent: created once per agent+pin (cached by {@link evalWrapperName}),
+ * reused thereafter. An UNPINNED wrapper floats to the agent's latest version
+ * through the agent node, so it needs no re-publishing when the agent itself
+ * changes; a pinned one keeps grading the version it names.
  *
  * It DOES need re-publishing when the wrapper's own shape changes, and that is
  * the subtle part. A cached wrapper is a frozen copy of whatever
@@ -157,10 +166,22 @@ function stableStringify(value: unknown): string {
  */
 export async function ensureAgentEvalWrapper(
   db: WfDb,
-  input: { agentId: string; createdBy?: string },
+  input: { agentId: string; version?: number | null; createdBy?: string },
 ): Promise<{ workflowId: string; workflowVersionId: string }> {
-  const name = evalWrapperName(input.agentId)
-  const graph = buildAgentWrapperGraph(input.agentId)
+  const version = input.version ?? null
+  // Validate the pin BEFORE building or caching anything. Left to run time this
+  // surfaces as a bare "references agent … not in the run manifest" from
+  // `resolveRunManifest`, which names neither the Goal nor its pin — and worse,
+  // a wrapper naming a phantom version would be cached under that name forever,
+  // so every later eval would fail the same opaque way.
+  if (version != null && !(await agentVersionByNumber(db, input.agentId, version))) {
+    throw new Error(
+      `This goal pins v${version} of agent ${input.agentId}, which has no published version ${version}. ` +
+        'Repoint the goal at Latest, or at a version that exists.',
+    )
+  }
+  const name = evalWrapperName(input.agentId, version)
+  const graph = buildAgentWrapperGraph(input.agentId, version)
   const existing = await findWorkflowByName(db, name)
   if (existing) {
     const versionId = await getLatestVersionId(db, existing.id)
@@ -199,20 +220,35 @@ export async function ensureAgentEvalWrapper(
 /**
  * Resolve an eval set's target to the concrete `workflowVersionId` + the
  * trigger kind to start it under. Agent targets run their manual wrapper;
- * workflow targets run their latest version under the set's trigger kind.
+ * workflow targets run the version the set pins, or their latest when unpinned.
+ * An unresolvable pin throws — see the module header for why it must not float.
  */
 export async function resolveEvalTarget(
   db: WfDb,
-  target: { kind: 'agent' | 'workflow'; id: string },
+  target: { kind: 'agent' | 'workflow'; id: string; version?: number | null },
   setTriggerKind: string,
   opts?: { createdBy?: string },
 ): Promise<{ workflowVersionId: string; triggerKind: string }> {
+  const version = target.version ?? null
   if (target.kind === 'agent') {
     const { workflowVersionId } = await ensureAgentEvalWrapper(db, {
       agentId: target.id,
+      version,
       createdBy: opts?.createdBy,
     })
     return { workflowVersionId, triggerKind: MANUAL_TRIGGER_KIND }
+  }
+  if (version != null) {
+    // Same contract as the agent path: grade the exact version the Goal names,
+    // or fail saying so.
+    const pinned = await versionByNumber(db, target.id, version)
+    if (!pinned) {
+      throw new Error(
+        `This goal pins v${version} of workflow ${target.id}, which has no published version ${version}. ` +
+          'Repoint the goal at Latest, or at a version that exists.',
+      )
+    }
+    return { workflowVersionId: pinned.id, triggerKind: setTriggerKind }
   }
   const workflowVersionId = await getLatestVersionId(db, target.id)
   if (!workflowVersionId) {

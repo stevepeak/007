@@ -26,6 +26,56 @@ const checkMeta = {
   description: z.string().optional(),
 }
 
+// ── Judge verdicts ──────────────────────────────────────────────────────────
+// An LLM judge returns one of THREE anchored verdicts, never a free float. A
+// model asked for "a score from 0 to 1" produces numbers it cannot defend —
+// 0.72 vs 0.68 is noise, and two runs of the same output drift by more than the
+// cutoff separating pass from fail. Three buckets with written anchors is a
+// judgment a model can actually make repeatably, and one an author can read.
+
+export const judgeVerdictSchema = z.enum(['strong', 'partial', 'weak'])
+export type JudgeVerdict = z.infer<typeof judgeVerdictSchema>
+
+/** What each verdict contributes to the row's 0..1 quality score. */
+export const JUDGE_VERDICT_SCORE: Record<JudgeVerdict, number> = {
+  strong: 1,
+  partial: 0.5,
+  weak: 0,
+}
+
+/**
+ * How good the verdict has to be for the check to pass. `score_only` never
+ * fails a sample — the verdict still feeds the quality score, which is how you
+ * track a soft quality bar (tone, concision) without it gating the suite.
+ */
+export const judgeBarSchema = z.enum(['nails_it', 'close_enough', 'score_only'])
+export type JudgeBar = z.infer<typeof judgeBarSchema>
+
+/** The verdicts that clear each bar. */
+const BAR_PASSING_VERDICTS: Record<JudgeBar, readonly JudgeVerdict[]> = {
+  nails_it: ['strong'],
+  close_enough: ['strong', 'partial'],
+  score_only: ['strong', 'partial', 'weak'],
+}
+
+export function judgeVerdictPasses(bar: JudgeBar, verdict: JudgeVerdict): boolean {
+  return BAR_PASSING_VERDICTS[bar].includes(verdict)
+}
+
+/**
+ * The bar a judge check grades against. Prefers the authored `bar`; falls back
+ * to the LEGACY `threshold` by INTENT rather than arithmetic — the old default
+ * of 0.7 was documented as "clearly good, minor flaws OK", which is
+ * `close_enough`, even though 0.7 would mechanically reject a `partial` (0.5).
+ * Mapping it arithmetically would silently make every saved check stricter.
+ */
+export function resolveJudgeBar(check: { bar?: JudgeBar; threshold?: number }): JudgeBar {
+  if (check.bar) return check.bar
+  if (check.threshold == null) return 'close_enough'
+  if (check.threshold <= 0) return 'score_only'
+  return check.threshold > 0.8 ? 'nails_it' : 'close_enough'
+}
+
 // A single assertion. Two families, split by how they produce a verdict:
 //   • binary/deterministic — pass|fail read straight off the run trace.
 //   • subjective/scored    — an LLM judge returns pass|fail AND a 0..1 score.
@@ -83,9 +133,20 @@ export const evalCheckSchema = z.discriminatedUnion('type', [
     path: z.string().optional(),
     /** Judge model; falls back to a suite/run default when omitted. */
     modelId: z.string().optional(),
-    /** 0..1 score cutoff mapping the judge's score to pass/fail. Default 0.7. */
+    /** How good the judge's verdict must be to pass. Default `close_enough`. */
+    bar: judgeBarSchema.optional(),
+    /**
+     * LEGACY 0..1 cutoff from when the judge returned a free float. Superseded
+     * by {@link judgeBarSchema}; still read by {@link resolveJudgeBar} so saved
+     * checks keep grading the way their author meant. Never written anymore.
+     */
     threshold: z.number().min(0).max(1).optional(),
-    /** Relative weight of this judge's score in the row's mean. Default 1. */
+    /**
+     * LEGACY relative weight of this judge's score in the row's mean. Still
+     * honored by the grader for saved checks, but no longer authorable: a
+     * weighted mean of judge scores was a knob nobody could predict the effect
+     * of. Add or drop a check instead of re-weighting one.
+     */
     weight: z.number().min(0).optional(),
   }),
 ])
@@ -170,9 +231,11 @@ export type EvalInitialCondition = z.infer<typeof evalInitialConditionSchema>
 export const evalFixturesSchema = z.record(z.string(), z.unknown())
 export type EvalFixtures = z.infer<typeof evalFixturesSchema>
 
-/** One graded check. `score`/`reason` are present only for judge checks. */
+/** One graded check. `verdict`/`score`/`reason` are judge-check only. */
 export const checkResultSchema = z.object({
   pass: z.boolean(),
+  /** The judge's anchored verdict; absent on binary checks (and legacy rows). */
+  verdict: judgeVerdictSchema.optional(),
   score: z.number().min(0).max(1).optional(),
   reason: z.string().optional(),
 })

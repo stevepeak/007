@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import type { SQLiteColumn, SQLiteTable } from 'drizzle-orm/sqlite-core'
 
 import type { WfDb } from './client'
@@ -79,6 +79,17 @@ export interface VersionedEntity<
 > {
   /** The latest immutable version row, or undefined when none exist yet. */
   latest(db: WfDb, ownerId: string): Promise<VRow | undefined>
+  /**
+   * One specific published version by its NUMBER, or undefined when that number
+   * was never published — the pinned counterpart to {@link latest}. A `null`
+   * pin floats to latest; a number resolves exactly this. Backed by the
+   * `(ownerId, versionNumber)` unique index both version tables carry.
+   */
+  byNumber(
+    db: WfDb,
+    ownerId: string,
+    versionNumber: number,
+  ): Promise<VRow | undefined>
   /** Cheap existence check — one indexed `SELECT id LIMIT 1`. */
   exists(db: WfDb, ownerId: string): Promise<boolean>
   /**
@@ -172,8 +183,27 @@ export function createVersionedEntity<
     return rows[0] as VRow | undefined
   }
 
+  const byNumber = async (
+    db: WfDb,
+    ownerId: string,
+    versionNumber: number,
+  ) => {
+    const rows = await db
+      .select()
+      .from(cfg.versionTable)
+      .where(
+        and(
+          eq(cfg.versionOwnerCol, ownerId),
+          eq(cfg.versionNumberCol, versionNumber),
+        ),
+      )
+      .limit(1)
+    return rows[0] as VRow | undefined
+  }
+
   return {
     latest,
+    byNumber,
 
     async exists(db, ownerId) {
       const row = (

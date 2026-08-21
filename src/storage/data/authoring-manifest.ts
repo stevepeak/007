@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 
 import {
   agentConfigSchema,
@@ -6,9 +6,9 @@ import {
   type WorkflowGraph,
 } from '../../engine/graph'
 import type { WfDb } from '../client'
-import { wfAgent, wfAgentVersion, wfModel, wfWorkflow } from '../schema'
+import { wfAgent, wfModel, wfWorkflow } from '../schema'
 
-import { latestAgentVersion } from './authoring-agents'
+import { agentVersionByNumber, latestAgentVersion } from './authoring-agents'
 import {
   agentPinsInGraph,
   MAX_WORKFLOW_DEPTH,
@@ -19,25 +19,6 @@ import { latestVersion } from './authoring-workflows'
 // ---------------------------------------------------------------------------
 // Run manifest resolution
 // ---------------------------------------------------------------------------
-
-/** A specific published version by its number (for pinned agent references). */
-async function agentVersionByNumber(
-  db: WfDb,
-  agentId: string,
-  versionNumber: number,
-) {
-  const rows = await db
-    .select()
-    .from(wfAgentVersion)
-    .where(
-      and(
-        eq(wfAgentVersion.agentId, agentId),
-        eq(wfAgentVersion.versionNumber, versionNumber),
-      ),
-    )
-    .limit(1)
-  return rows[0]
-}
 
 /**
  * Resolve every floating reference reachable from a graph — its agents AND the

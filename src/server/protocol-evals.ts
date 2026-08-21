@@ -19,6 +19,8 @@ export type {
   EvalInitialCondition,
   EvalMatch,
   EvalRowSnapshot,
+  JudgeBar,
+  JudgeVerdict,
   SeededMessage,
   SeededToolCall,
 } from '../eval/checks'
@@ -29,6 +31,9 @@ export {
   BINARY_CHECK_TYPES,
   EVAL_CHECK_TYPES,
   evalMatchSchema,
+  JUDGE_VERDICT_SCORE,
+  judgeVerdictPasses,
+  resolveJudgeBar,
 } from '../eval/checks'
 
 // Wire enums for eval targets/verdicts, derived from the DB-schema `as const`

@@ -3,6 +3,7 @@ import { ArrowUpRight, ChevronRight } from 'lucide-react'
 import type {
   CheckResult,
   EvalCheck,
+  JudgeVerdict,
   WfEvalResultRunStats,
 } from '../../../server/protocol'
 import { cn } from '../../cn'
@@ -101,6 +102,18 @@ function RunStatsLine({ stats }: { stats: WfEvalResultRunStats | null }) {
   )
 }
 
+const VERDICT_LABEL: Record<JudgeVerdict, string> = {
+  strong: 'Nailed it',
+  partial: 'Close enough',
+  weak: 'Missed it',
+}
+
+const VERDICT_TONE: Record<JudgeVerdict, string> = {
+  strong: 'bg-emerald-50 text-emerald-700',
+  partial: 'bg-amber-50 text-amber-700',
+  weak: 'bg-red-50 text-red-700',
+}
+
 function CheckRow({
   result,
   check,
@@ -135,10 +148,22 @@ function CheckRow({
           ) : (
             <span className="group flex min-w-0 items-center">{label}</span>
           )}
-          {result.score != null && (
-            <span className="tabular-nums text-xs text-neutral-400">
-              {result.score.toFixed(2)}
+          {result.verdict ? (
+            <span
+              className={cn(
+                'shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-medium',
+                VERDICT_TONE[result.verdict],
+              )}
+            >
+              {VERDICT_LABEL[result.verdict]}
             </span>
+          ) : (
+            // Legacy rows graded before verdicts existed carry only the float.
+            result.score != null && (
+              <span className="tabular-nums text-xs text-neutral-400">
+                {result.score.toFixed(2)}
+              </span>
+            )
           )}
         </div>
         {result.reason && (

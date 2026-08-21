@@ -47,9 +47,20 @@ export function ChecksList({
       ) : null}
 
       {checks.checks.length === 0 ? (
-        <p className="px-1 py-1 text-xs text-neutral-400">
-          No checks yet. Add one to assert an outcome.
-        </p>
+        // Amber, not neutral: a sample with no checks is not a neutral
+        // in-progress state, it's a sample that will REPORT as an error. Saying
+        // so here is the difference between a user discovering it now and
+        // discovering it in a run report. Never blocks the save — same policy as
+        // the mock-mismatch warnings.
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+          <p className="text-xs font-medium text-amber-700">
+            This sample has no checks.
+          </p>
+          <p className="mt-1 text-[11px] text-amber-600">
+            It will report as an <strong>error</strong>, not a pass — a run needs
+            at least one check to verify. Add one to assert an outcome.
+          </p>
+        </div>
       ) : (
         <div className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-neutral-200">
           {checks.checks.map((c, i) => {

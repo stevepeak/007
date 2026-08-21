@@ -1,16 +1,29 @@
-import { generateObject, type LanguageModel } from 'ai'
+import { generateObject, NoObjectGeneratedError, type LanguageModel } from 'ai'
 import { z } from 'zod'
 
+import { errorFeedLine } from '../engine/error-detail'
 import type { AgentNodeMeta } from '../engine/nodes/agent'
 import type { ToolNodeMeta } from '../engine/nodes/tool'
 
-import type { CheckResult, CheckTree, EvalCheck, EvalMatch } from './checks'
+import {
+  JUDGE_VERDICT_SCORE,
+  judgeVerdictPasses,
+  judgeVerdictSchema,
+  resolveJudgeBar,
+  type CheckResult,
+  type CheckTree,
+  type EvalCheck,
+  type EvalMatch,
+  type JudgeVerdict,
+} from './checks'
 
 // Phase 3 — the pure grading engine. Given a row's `checks` tree and a run's
 // trace (`wf_run_step[]` + `wf_run.output`), produce a verdict:
 //   • status — AND/OR reduction of EVERY check's pass flag (binary + judge).
-//   • score  — weighted mean of the JUDGE checks' 0..1 scores ONLY (binary
-//              checks never enter the score); null when a row has no judge check.
+//   • score  — mean of the JUDGE checks' verdict scores (strong 1 / partial .5
+//              / weak 0) ONLY — binary checks never enter the score; null when a
+//              row has no judge check. Saved checks may still carry a legacy
+//              `weight`, which scales their share of that mean.
 // Deterministic checks read the trace synchronously; only `llm_judge` needs a
 // model (via `getModel`). No database, no Cloudflare — unit-testable with plain
 // fixtures. Shared by the server's `gradeEvalResult` (Phase 4) and `bun:test`.
@@ -51,9 +64,18 @@ export type GradeRowResult = {
   status: 'pass' | 'fail' | 'error'
   score: number | null
   checkResults: CheckResult[]
+  /**
+   * Human explanation for an `error` status, destined for the `error` column
+   * `recordEvalFailure` already writes and the run report already renders.
+   *
+   * An errored row is the one case with no per-check verdict that explains
+   * ITSELF: an empty tree has no checks at all, and a judge that threw buries
+   * its reason inside `checkResults[i].reason`, which the report's summary never
+   * surfaces. Without this the reader sees a red cell and an empty banner.
+   * Undefined for pass/fail, where `checkResults` already tells the story.
+   */
+  error?: string
 }
-
-const DEFAULT_JUDGE_THRESHOLD = 0.7
 
 // ── trace helpers ───────────────────────────────────────────────────────────
 
@@ -224,15 +246,45 @@ function gradeBinary(check: EvalCheck, input: GradeRowInput): CheckResult {
 
 // ── judge check ─────────────────────────────────────────────────────────────
 
+// `reason` is declared FIRST on purpose: `generateObject` emits the object's
+// keys in schema order, so the judge has to write its justification before it
+// commits to a verdict. Reversed, the verdict comes out first and the reason is
+// a post-hoc rationalization of a number the model already guessed.
 const judgeSchema = z.object({
-  score: z.number().min(0).max(1),
   reason: z.string(),
+  verdict: judgeVerdictSchema,
 })
+
+// The written anchors that make the three verdicts repeatable. These, not the
+// rubric, are what stop one judge run from saying `strong` and the next
+// `partial` on identical output.
+const VERDICT_ANCHORS: Record<JudgeVerdict, string> = {
+  strong: 'satisfies the rubric — any shortfall is cosmetic and a reviewer would not ask for a change.',
+  partial: 'substantially satisfies the rubric but a reviewer would ask for one concrete fix (a gap, a hedge, an unsupported claim).',
+  weak: 'does not satisfy the rubric, or satisfies it only by accident.',
+}
+
+/**
+ * How many times one judge call may be issued before giving up.
+ *
+ * `generateObject` already defaults to `maxRetries: 2`, but that only covers
+ * RETRYABLE provider rejections (429, 503) — it fires inside the call, before a
+ * response exists. A response that arrives intact and simply isn't the
+ * `{reason, verdict}` object the schema asked for throws
+ * `NoObjectGeneratedError` on the FIRST occurrence and is never retried, so a
+ * judge that merely fumbled its JSON used to cost the whole cell its verdict.
+ * One extra attempt turns that formatting flake into a graded row. Same bound
+ * and same reasoning as `STRUCTURED_MAX_ATTEMPTS` on the structured agent path
+ * (`engine/nodes/agent-generation.ts`). Anything else — a provider rejection, a
+ * missing model — has either already been retried or will never succeed, so it
+ * propagates untouched rather than being tried again here.
+ */
+const JUDGE_MAX_ATTEMPTS = 2
 
 async function gradeJudge(
   check: Extract<EvalCheck, { type: 'llm_judge' }>,
   input: GradeRowInput,
-): Promise<CheckResult & { score: number }> {
+): Promise<CheckResult & { score: number; verdict: JudgeVerdict }> {
   const modelId = check.modelId ?? input.defaultJudgeModelId
   if (!input.getModel || !modelId) {
     throw new Error(
@@ -252,71 +304,159 @@ async function gradeJudge(
   // the value at that path, so a rubric can target one known field.
   const graded = valueAtPath(input.output, check.path)
   const outputLabel = check.path ? `RUN OUTPUT (at \`${check.path}\`)` : 'RUN OUTPUT'
-  const { object } = await generateObject({
-    model: input.getModel(modelId),
-    schema: judgeSchema,
-    prompt: [
-      'You are grading an AI system’s run against a rubric. Score how well',
-      'the run satisfies the rubric from 0 (fails) to 1 (fully satisfies), and',
-      'explain briefly. Judge ONLY against the rubric. The TOOL CALLS & RESULTS',
-      'below are the context the model was given — use them to judge whether the',
-      'output is grounded in (and consistent with) that context.',
-      '',
-      `RUBRIC:\n${check.rubric}`,
-      '',
-      `${outputLabel}:\n${JSON.stringify(graded)}`,
-      '',
-      `TOOL CALLS & RESULTS:\n${JSON.stringify(toolCalls)}`,
-    ].join('\n'),
-  })
-  const threshold = check.threshold ?? DEFAULT_JUDGE_THRESHOLD
-  return { pass: object.score >= threshold, score: object.score, reason: object.reason }
+  // Built once, outside the retry loop, so a re-issue re-sends an IDENTICAL
+  // request — a retry that also changed the prompt would be a different
+  // experiment, not a second attempt at the same one.
+  const prompt = [
+    'You are grading an AI system’s run against a rubric. Write a one- or',
+    'two-sentence justification citing the specific part of the output you are',
+    'reacting to, THEN pick exactly one verdict:',
+    ...judgeVerdictSchema.options.map(
+      (v) => `  • ${v} — the output ${VERDICT_ANCHORS[v]}`,
+    ),
+    '',
+    'Judge ONLY against the rubric — ignore anything the rubric does not ask',
+    'about, however good or bad. The TOOL CALLS & RESULTS below are the context',
+    'the model was given; use them to judge whether the output is grounded in',
+    '(and consistent with) that context.',
+    '',
+    `RUBRIC:\n${check.rubric}`,
+    '',
+    `${outputLabel}:\n${JSON.stringify(graded)}`,
+    '',
+    `TOOL CALLS & RESULTS:\n${JSON.stringify(toolCalls)}`,
+  ].join('\n')
+  // The model factory is resolved once: `getModel` is a host seam and may build
+  // a client, which the retry has no reason to redo.
+  const model = input.getModel(modelId)
+  let object: z.infer<typeof judgeSchema>
+  for (let attempt = 1; ; attempt++) {
+    try {
+      ;({ object } = await generateObject({ model, schema: judgeSchema, prompt }))
+      break
+    } catch (err) {
+      if (attempt >= JUDGE_MAX_ATTEMPTS || !NoObjectGeneratedError.isInstance(err)) {
+        throw err
+      }
+    }
+  }
+  return {
+    pass: judgeVerdictPasses(resolveJudgeBar(check), object.verdict),
+    verdict: object.verdict,
+    score: JUDGE_VERDICT_SCORE[object.verdict],
+    reason: object.reason,
+  }
 }
 
 // ── row grading ─────────────────────────────────────────────────────────────
 
 /**
+ * A check's verdict during reduction, before it is flattened back to the stored
+ * {@link CheckResult}. `unknown` is the third value: a judge that THREW reached
+ * no verdict at all, which is a different thing from a judge that returned a
+ * poor one. Internal only — `CheckResult.pass` stays a plain boolean, so the
+ * persisted `checkResults` JSON and its DTO are untouched by this distinction.
+ */
+type GradedCheck = { result: CheckResult; verdict: boolean | 'unknown' }
+
+/**
  * Grade one row's checks against its run trace. Deterministic checks resolve
- * synchronously; judge checks are awaited (concurrently). A judge failure marks
- * the whole row `error`. Otherwise `status` is the AND/OR reduction of every
- * check's pass flag and `score` is the weighted mean of the judge scores.
+ * synchronously; judge checks are awaited (concurrently). `status` is a
+ * three-valued reduction over every check (see below) and `score` is the
+ * weighted mean of the judge scores that were actually reached.
  */
 export async function gradeRow(input: GradeRowInput): Promise<GradeRowResult> {
   const { op, checks } = input.checks
 
+  // A sample that asserts nothing used to report `pass` — the most confident
+  // green cell in the report and the least earned, inflating every pass rate it
+  // appeared in. It isn't a `fail` either (the target may be perfectly fine);
+  // it's an unanswerable question, which is what `error` already means here.
+  // Returned BEFORE the reducer on purpose: the Kleene rules below would land an
+  // empty `and` on `pass` and an empty `or` on `fail`, and neither is true.
+  if (checks.length === 0) {
+    return {
+      status: 'error',
+      score: null,
+      checkResults: [],
+      error:
+        'This sample has no checks — nothing was asserted. Add at least one check so the run has something to verify.',
+    }
+  }
+
   // Weighted judge accumulator, filled as judge checks resolve.
   let weightedScore = 0
   let weightSum = 0
-  let judgeErrored = false
+  // Every judge that threw, so an errored row can explain itself rather than
+  // rendering as a red cell above an empty banner.
+  const judgeErrors: string[] = []
 
-  const results = await Promise.all(
-    checks.map(async (check): Promise<CheckResult> => {
-      if (check.type !== 'llm_judge') return gradeBinary(check, input)
+  const graded = await Promise.all(
+    checks.map(async (check): Promise<GradedCheck> => {
+      if (check.type !== 'llm_judge') {
+        const result = gradeBinary(check, input)
+        return { result, verdict: result.pass }
+      }
       try {
         const r = await gradeJudge(check, input)
         const weight = check.weight ?? 1
         weightedScore += r.score * weight
         weightSum += weight
-        return r
+        return { result: r, verdict: r.pass }
       } catch (err) {
-        judgeErrored = true
-        return { pass: false, reason: `judge error: ${(err as Error).message}` }
+        // `errorFeedLine`, not `err.message`: a bare message on an APICallError
+        // is "Bad Request" and on a RetryError it's "Failed after N attempts",
+        // both useless. The helper keeps the status code, the attempt count and
+        // — for a structured failure — the finish reason, which is the whole
+        // diagnosis: it says whether the judge's answer was TRUNCATED or merely
+        // malformed.
+        const reason = `judge error: ${errorFeedLine(err)}`
+        judgeErrors.push(reason)
+        // Stored `pass: false` keeps the check rendering as not-passing, which
+        // is honest; only the reduction below treats it as unknown.
+        return { result: { pass: false, reason }, verdict: 'unknown' }
       }
     }),
   )
 
-  const passFlags = results.map((r) => r.pass)
-  const reduced =
-    op === 'and' ? passFlags.every(Boolean) : passFlags.some(Boolean)
-  // An empty tree passes (nothing asserted) — matches `every`/`some` on [] only
-  // for `and`; normalize `or` over no checks to pass too.
-  const status: GradeRowResult['status'] = judgeErrored
-    ? 'error'
-    : checks.length === 0 || reduced
-      ? 'pass'
-      : 'fail'
+  const results = graded.map((g) => g.result)
+  // Three-valued (Kleene) reduction. A judge that errored is UNKNOWN, not false:
+  // its verdict was never reached, so it can neither fail an AND nor pass an OR
+  // — but it must not silently vanish either. A definite answer wins; failing
+  // that, an unknown makes the whole row unknown:
+  //
+  //   and — any definite FALSE decides it (`fail`): one broken check cannot
+  //         rescue a row that another check already sank. Otherwise an unknown
+  //         leaves the row undecidable (`error`). All definite true → `pass`.
+  //   or  — any definite TRUE decides it (`pass`), for the mirror reason: the
+  //         row's verdict IS knowable even though a judge blew up. Otherwise an
+  //         unknown → `error`. All definite false → `fail`.
+  //
+  // The `or` case is the bug this replaces: a row with a passing deterministic
+  // check used to report `error` just because a judge beside it timed out.
+  const verdicts = graded.map((g) => g.verdict)
+  const hasUnknown = verdicts.includes('unknown')
+  const status: GradeRowResult['status'] =
+    op === 'and'
+      ? verdicts.includes(false)
+        ? 'fail'
+        : hasUnknown
+          ? 'error'
+          : 'pass'
+      : verdicts.includes(true)
+        ? 'pass'
+        : hasUnknown
+          ? 'error'
+          : 'fail'
+  // A judge that threw contributes no weight, so the mean is over the judges
+  // that actually answered.
   const score = weightSum > 0 ? weightedScore / weightSum : null
-  return { status, score, checkResults: results }
+  return {
+    status,
+    score,
+    checkResults: results,
+    error: status === 'error' && judgeErrors.length > 0 ? judgeErrors.join('; ') : undefined,
+  }
 }
 
 // ── aggregation ─────────────────────────────────────────────────────────────

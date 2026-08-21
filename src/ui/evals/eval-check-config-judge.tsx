@@ -1,7 +1,9 @@
-import { HelpCircle } from 'lucide-react'
+import { Frown, HelpCircle, type LucideIcon, Meh, Smile } from 'lucide-react'
 import { type ReactNode, useEffect, useState } from 'react'
 
-import type { EvalCheck } from '../../server/protocol'
+import type { EvalCheck, JudgeBar } from '../../server/protocol'
+import { resolveJudgeBar } from '../../server/protocol'
+import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { ModelSelect } from '../editor/model-select'
 import { useModels } from '../hooks'
@@ -77,71 +79,118 @@ export function JudgeConfig({
           onBlur={pathField.onBlur}
         />
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <div className="flex items-center gap-1">
-            <Label>Threshold</Label>
-            <FieldHelp title="Threshold">
-              <p>
-                The pass/fail cutoff for this scored check. The judge rates the
-                run on a <strong>0–1</strong> scale against your rubric; a score
-                at or above the threshold <strong>passes</strong>, below it{' '}
-                <strong>fails</strong>.
-              </p>
-              <p>
-                Raise it to demand higher-quality answers (stricter), lower it
-                to be more forgiving. <strong>0.7</strong> is a sensible default
-                — roughly “clearly good, minor flaws OK”. The threshold only
-                decides pass/fail; the raw 0–1 score still feeds the weighted
-                quality score.
-              </p>
-            </FieldHelp>
-          </div>
-          <Input
-            type="number"
-            step="0.05"
-            min="0"
-            max="1"
-            value={String(check.threshold ?? 0.7)}
-            onChange={(e) =>
-              persist({ ...check, threshold: Number(e.target.value) })
-            }
-          />
+      <div className="space-y-1">
+        <div className="flex items-center gap-1">
+          <Label>Pass bar</Label>
+          <FieldHelp title="Pass bar">
+            <p>
+              The judge doesn’t hand back a number — it picks one of three
+              anchored verdicts: <strong>nails it</strong>,{' '}
+              <strong>close enough</strong>, or <strong>misses it</strong>. This
+              setting decides which of those you’re willing to accept.
+            </p>
+            <p>
+              <strong>Close enough</strong> is the right default for most
+              rubrics. Reach for <strong>nails it</strong> only when a
+              one-concrete-fix answer is genuinely a failure, and{' '}
+              <strong>just score it</strong> when you want to watch a soft
+              quality bar (tone, concision) trend over time without it failing
+              the suite.
+            </p>
+          </FieldHelp>
         </div>
-        <div className="space-y-1">
-          <div className="flex items-center gap-1">
-            <Label>Weight</Label>
-            <FieldHelp title="Weight">
-              <p>
-                How much this check counts toward the sample’s overall quality
-                score. Every scored check’s 0–1 judge score is combined as a{' '}
-                <strong>weighted mean</strong>, and weight scales this check’s
-                share of that mean relative to the others.
-              </p>
-              <p>
-                A weight of <strong>2</strong> makes a check count twice as much
-                as a weight-<strong>1</strong> check; <strong>0.5</strong> counts
-                half. Leave it at the default <strong>1</strong> to weigh all
-                scored checks equally. Weight affects the aggregate score only —
-                not whether this individual check passes.
-              </p>
-            </FieldHelp>
-          </div>
-          <Input
-            type="number"
-            step="0.5"
-            min="0"
-            value={String(check.weight ?? 1)}
-            onChange={(e) =>
-              persist({ ...check, weight: Number(e.target.value) })
-            }
-          />
-        </div>
+        <BarScale
+          value={resolveJudgeBar(check)}
+          onSelect={(bar) => persist({ ...check, bar, threshold: undefined })}
+        />
       </div>
       <p className="text-xs text-neutral-400">
-        Scored checks contribute to the goal/sample score; the threshold maps the
-        0–1 judge score to pass/fail, weight scales its share of the mean.
+        One rubric, one question — a rubric that asks about accuracy{' '}
+        <em>and</em> tone gets a mushy “close enough” on both. Add a second
+        scored test instead; each verdict counts toward the goal’s score.
       </p>
+    </div>
+  )
+}
+
+// The three verdicts, worst → best, as a single horizontal scale the author
+// reads bottom-up: picking a tile means "this verdict and anything better
+// passes", so the tiles to its right light up with it and the ones to its left
+// stay greyed as the failing band. That's the same cutoff the old 0–1 threshold
+// box encoded, minus the pretense that a judge can tell 0.65 from 0.75.
+const BARS: {
+  value: JudgeBar
+  icon: LucideIcon
+  label: string
+  desc: string
+  tone: { on: string; icon: string }
+}[] = [
+  {
+    value: 'nails_it',
+    icon: Smile,
+    label: 'Nails it',
+    desc: 'Only a clean answer passes.',
+    tone: { on: 'border-emerald-400 bg-emerald-50/60', icon: 'bg-emerald-100 text-emerald-700' },
+  },
+  {
+    value: 'close_enough',
+    icon: Meh,
+    label: 'Close enough',
+    desc: 'Good, with one nit, still passes.',
+    tone: { on: 'border-amber-400 bg-amber-50/60', icon: 'bg-amber-100 text-amber-700' },
+  },
+  {
+    value: 'score_only',
+    icon: Frown,
+    label: 'Just score it',
+    desc: 'Never fails — only moves the score.',
+    tone: { on: 'border-neutral-400 bg-neutral-50', icon: 'bg-neutral-200 text-neutral-600' },
+  },
+]
+
+function BarScale({
+  value,
+  onSelect,
+}: {
+  value: JudgeBar
+  onSelect: (bar: JudgeBar) => void
+}) {
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {BARS.map((b) => {
+        const Icon = b.icon
+        const on = b.value === value
+        return (
+          <button
+            key={b.value}
+            type="button"
+            aria-pressed={on}
+            onClick={() => onSelect(b.value)}
+            className={cn(
+              'flex flex-col items-center gap-2 rounded-xl border-2 px-2 py-3 text-center transition',
+              on ? b.tone.on : 'border-neutral-200 bg-white hover:border-neutral-300',
+            )}
+          >
+            <span
+              className={cn(
+                'flex size-9 items-center justify-center rounded-lg',
+                on ? b.tone.icon : 'bg-neutral-100 text-neutral-400',
+              )}
+            >
+              <Icon className="size-5" />
+            </span>
+            <span
+              className={cn(
+                'text-sm font-semibold',
+                on ? 'text-neutral-900' : 'text-neutral-500',
+              )}
+            >
+              {b.label}
+            </span>
+            <span className="text-xs leading-snug text-neutral-500">{b.desc}</span>
+          </button>
+        )
+      })}
     </div>
   )
 }

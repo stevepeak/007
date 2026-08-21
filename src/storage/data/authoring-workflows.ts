@@ -164,6 +164,18 @@ export function latestVersion(db: WfDb, workflowId: string) {
   return workflowVersions.latest(db, workflowId)
 }
 
+/**
+ * A specific published workflow version by NUMBER — the pinned counterpart to
+ * {@link latestVersion}. Undefined when that number was never published.
+ */
+export function versionByNumber(
+  db: WfDb,
+  workflowId: string,
+  versionNumber: number,
+) {
+  return workflowVersions.byNumber(db, workflowId, versionNumber)
+}
+
 /** One workflow's latest published version, as {@link latestVersionGraphs} returns it. */
 export type LatestVersionGraph = {
   id: string

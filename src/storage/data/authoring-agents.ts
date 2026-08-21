@@ -107,6 +107,19 @@ export function latestAgentVersion(db: WfDb, agentId: string) {
   return agentVersions.latest(db, agentId)
 }
 
+/**
+ * A specific published agent version by NUMBER — how a pinned reference (a
+ * graph node's `config.version`, or an eval Goal's `targetVersion`) resolves.
+ * Undefined when that number was never published.
+ */
+export function agentVersionByNumber(
+  db: WfDb,
+  agentId: string,
+  versionNumber: number,
+) {
+  return agentVersions.byNumber(db, agentId, versionNumber)
+}
+
 /** Cheap existence check (see `workflowExists`) — one indexed `SELECT id`. */
 export function agentExists(db: WfDb, agentId: string): Promise<boolean> {
   return agentVersions.exists(db, agentId)
