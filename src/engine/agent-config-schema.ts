@@ -239,7 +239,9 @@ function migrateInputKind(raw: unknown): unknown {
   let userPrompt = config.userPrompt
   if (typeof userPrompt !== 'string' || userPrompt.length === 0) {
     const vars =
-      typeof config.prompt === 'string' ? inferPromptVariables(config.prompt) : []
+      typeof config.prompt === 'string'
+        ? inferPromptVariables(config.prompt)
+        : []
     // A conversation agent needs no turn of its own — the thread is its input.
     userPrompt =
       inputKind === 'conversation'
@@ -285,4 +287,28 @@ export function agentInputVariables(
       ...inferPromptVariables(config.userPrompt),
     ]),
   ]
+}
+
+/**
+ * What an eval run may swap out on an agent node, applied AFTER the frozen run
+ * manifest is read and never written back to it.
+ *
+ * Three fields, layered in this order:
+ *   • `config`  — the whole AgentConfig, replacing the published version the
+ *     manifest resolved. This is what lets the agent editor run its goals
+ *     against an UNSAVED draft: nothing has been published, so there is no
+ *     version to point a manifest at, and every field the author is editing
+ *     (tools, output, turns, budget, user message) has to travel with the run —
+ *     not just the prompt.
+ *   • `modelId` / `prompt` — the model × prompt matrix axes, layered on top of
+ *     whichever config won above, so a draft run can still sweep models and A/B
+ *     alternate system prompts exactly like a published one.
+ *
+ * Set only by the eval runner, whose target is always the single-agent eval
+ * wrapper — so "every agent node in the run" is exactly the one node under test.
+ */
+export type AgentOverride = {
+  modelId?: string
+  prompt?: string
+  config?: AgentConfig
 }

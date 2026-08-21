@@ -1,6 +1,6 @@
 import { rehydrateBlobRefs } from './blob-ref'
 import type { BlobRefResolver, ModelFactory } from './config'
-import type { WfRunManifestEntry } from './graph'
+import type { AgentOverride, WfRunManifestEntry } from './graph'
 import type { ModelBudget } from './model-budget'
 import { executeAgentNode } from './nodes/agent'
 import { executeAggregateNode } from './nodes/aggregate'
@@ -66,7 +66,7 @@ export type RunNodeContext<TDeps> = {
   /** Eval synthesis signal — run agent nodes with an empty tool set. See RunContext. */
   freezeTools?: boolean
   /** Eval matrix override — swaps an agent node's modelId/prompt. See RunContext. */
-  agentOverride?: { modelId?: string; prompt?: string }
+  agentOverride?: AgentOverride
   /**
    * Time budget for this node's model work, derived by the backend from the
    * node's durable step timeout. Bounds the whole agent loop, each model

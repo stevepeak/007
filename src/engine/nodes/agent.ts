@@ -3,6 +3,7 @@ import {
   agentFromManifest,
   type AgentConfig,
   type AgentNode,
+  type AgentOverride,
   substitutePromptVariables,
   type WfRunManifestEntry,
 } from '../graph'
@@ -76,13 +77,16 @@ export type ExecuteAgentNodeArgs<TDeps> = {
    */
   freezeTools?: boolean
   /**
-   * Eval matrix override. When set, `modelId` swaps the model this node runs on
-   * and `prompt` REPLACES the system-prompt template (still `${var}`-interpolated
-   * against the run's promptVariables). Either omitted → the agent's saved value.
-   * The override is not persisted to `wf_run.manifest`; only the effective model
-   * is reflected in `AgentNodeMeta.model` so cost prices against the model used.
+   * Eval override. `config` REPLACES the whole agent config the manifest froze
+   * (how a goal is run against an author's unsaved draft); `modelId` swaps the
+   * model this node runs on and `prompt` REPLACES the system-prompt template
+   * (still `${var}`-interpolated against the run's promptVariables), both
+   * layered on top of whichever config won. Any field omitted → the agent's
+   * saved value. The override is not persisted to `wf_run.manifest`; only the
+   * effective model is reflected in `AgentNodeMeta.model` so cost prices against
+   * the model used.
    */
-  agentOverride?: { modelId?: string; prompt?: string }
+  agentOverride?: AgentOverride
   /**
    * Time budget for this node's model work (see `../model-budget`). Bounds the
    * agent loop from inside the step so an overrun is catchable. Omitted →
@@ -102,20 +106,36 @@ export type ExecuteAgentNodeArgs<TDeps> = {
 // manifest is populated at run start from the version the node pinned (or its
 // latest published version when unpinned), so a run is reproducible even as the
 // agent drifts.
+//
+// `override` (an eval running an unsaved draft) wins over the frozen config, and
+// is also the one case where a MISSING manifest entry isn't fatal: an agent that
+// has never been published has no version for the manifest to freeze, and the
+// whole point of the draft path is to evaluate it before it has one. The entry
+// is still consulted when present — for `contextLength` (a model fact, not a
+// config one) and to stamp which published version the draft diverged from.
 function resolveAgentConfig(
   node: AgentNode,
   manifest: WfRunManifestEntry[],
-): { config: AgentConfig; contextLength?: number; versionNumber: number } {
+  override?: AgentConfig,
+): {
+  config: AgentConfig
+  contextLength?: number
+  /** null when the agent has no published version at all — draft runs only. */
+  versionNumber: number | null
+} {
   const pin = node.config.version ?? null
   const entry = agentFromManifest(manifest, node.config.agentId, pin)
   if (!entry) {
+    if (override) {
+      return { config: override, versionNumber: null }
+    }
     const at = pin == null ? 'latest' : `v${pin}`
     throw new Error(
       `Agent node ${node.id} references agent ${node.config.agentId || '(none)'} (${at}), which is not in the run manifest.`,
     )
   }
   return {
-    config: entry.config,
+    config: override ?? entry.config,
     contextLength: entry.contextLength,
     versionNumber: entry.versionNumber,
   }
@@ -143,10 +163,12 @@ export async function executeAgentNode<TDeps>(
   const { config, contextLength, versionNumber } = resolveAgentConfig(
     node,
     manifest,
+    agentOverride?.config,
   )
   // Eval matrix override: swap the model and/or the system-prompt template. Left
-  // undefined → the agent's saved value. `modelId` drives both `getModel` and the
-  // meta below (so run cost prices against the model actually used).
+  // undefined → the (possibly overridden) config's own value. `modelId` drives
+  // both `getModel` and the meta below (so run cost prices against the model
+  // actually used).
   const modelId = agentOverride?.modelId ?? config.modelId
   const promptTemplate = agentOverride?.prompt ?? config.prompt
   // "Inform user → Dynamic" streams the agent's live activity to the user. The
@@ -263,7 +285,10 @@ export async function executeAgentNode<TDeps>(
     meta: {
       ...result.meta,
       agentId: node.config.agentId,
-      agentVersion: versionNumber,
+      // Absent when a draft ran against an agent with no published version —
+      // the field is optional precisely so "no version" stays distinguishable
+      // from "version 0".
+      agentVersion: versionNumber ?? undefined,
     },
   }
 }

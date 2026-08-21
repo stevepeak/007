@@ -1,4 +1,8 @@
-import type { NodeExecution, WfEngine } from './graph-schema'
+import type {
+  AgentOverride,
+  NodeExecution,
+  WfEngine,
+} from './graph-schema'
 
 // What it takes to START a run, and what starting one gives back.
 //
@@ -41,10 +45,11 @@ export type StartGraphRunInput = {
   /** Marks the produced `wf_run` as eval-owned (hidden from the Runs explorer). */
   isEval?: boolean
   /**
-   * Eval matrix override — swaps the modelId and/or system prompt on every agent
-   * node for this run (the eval wrapper's single agent). See RunContext.
+   * Eval override — swaps the whole agent config (an unsaved draft), and/or the
+   * modelId and system prompt (the matrix axes), on every agent node for this
+   * run (the eval wrapper's single agent). See RunContext.
    */
-  agentOverride?: { modelId?: string; prompt?: string }
+  agentOverride?: AgentOverride
   /**
    * Run-scoped step policy layered onto every node's own, TIGHTENING only.
    * Bounds what this one run may spend without touching the published graph —

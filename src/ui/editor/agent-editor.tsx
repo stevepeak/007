@@ -34,6 +34,7 @@ import { QueryState } from '../query-state'
 import { WfShell } from '../shell'
 import { SaveStateBadge } from '../save-state-badge'
 import { Tooltip } from '../tooltip'
+import { AgentEvalsPanel } from './agent-editor-evals'
 import { AgentInputEditor } from './agent-input-editor'
 import { AgentOutputEditor } from './agent-output-editor'
 import { AgentCallInspect } from './agent-editor-call-inspect'
@@ -52,8 +53,9 @@ import { ToolPicker } from './tool-picker'
 // The agent editor — same draft/version lifecycle as the prompt editor, but
 // over the whole AgentConfig (model, prompt, tools, expected output, advanced),
 // plus the entity's appearance (icon + color), which lives in the header popover
-// behind the title icon and saves immediately. A disabled Playground panel
-// previews where isolated test runs will live.
+// behind the title icon and saves immediately. The right-hand column is the
+// evidence half: the agent's eval goals and an isolated Playground, both running
+// the live DRAFT so a change can be judged before it is published.
 
 /**
  * The agent's research budget: one number, in tokens.
@@ -1125,10 +1127,21 @@ function AgentEditorInner({
                   </EditorSection>
                 </div>
 
-                {/* Right: the experiment. Not a setting, so it stays out of the
-                configuration column — and at half the page it finally has room
-                for a real transcript. */}
+                {/* Right: the evidence. Neither of these is a setting, so both
+                stay out of the configuration column — and at half the page the
+                playground finally has room for a real transcript.
+
+                Evals sit above the playground because they are the stronger of
+                the two answers to "did my edit work?": the playground shows one
+                answer to one input you just made up, while a goal grades every
+                sample you have written checks for. Both run the same unsaved
+                draft, so neither asks you to publish to find out. */}
                 <div className="space-y-6">
+                  <AgentEvalsPanel
+                    agentId={agentId}
+                    config={config}
+                    onRestore={restoreConfig}
+                  />
                   <PlaygroundPanel config={config} onRestore={restoreConfig} />
                 </div>
               </div>

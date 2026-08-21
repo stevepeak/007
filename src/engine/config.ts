@@ -3,7 +3,11 @@ import type { LanguageModel } from 'ai'
 import type { TelemetrySink } from '../analytics/sink'
 
 import type { WfBlobRef } from './blob-ref'
-import type { NodeExecution, WfRunManifestEntry } from './graph'
+import type {
+  AgentOverride,
+  NodeExecution,
+  WfRunManifestEntry,
+} from './graph'
 import type {
   ModelCatalogEntry,
   ModelOption,
@@ -159,15 +163,16 @@ export type RunContext = {
    */
   freezeTools?: boolean
   /**
-   * Eval matrix override — swaps the `modelId` and/or the system prompt on
-   * EVERY agent node for this run. Set only by the eval matrix runner, whose
-   * target is always the single-agent eval wrapper, so "every agent node" is
-   * exactly the one node under test. Applied at point-of-use in the agent node
-   * (after the frozen `manifest` is read), so it never rewrites `wf_run.manifest`
-   * — the override is recorded on `wf_eval_result`, not the run's frozen config.
-   * A `modelId`/`prompt` left undefined falls through to the agent's saved value.
+   * Eval override — swaps the whole agent `config` (an unsaved draft) and/or the
+   * `modelId` / system prompt (the matrix axes) on EVERY agent node for this
+   * run. Set only by the eval runner, whose target is always the single-agent
+   * eval wrapper, so "every agent node" is exactly the one node under test.
+   * Applied at point-of-use in the agent node (after the frozen `manifest` is
+   * read), so it never rewrites `wf_run.manifest` — the override is recorded on
+   * `wf_eval_result`, not the run's frozen config. Any field left undefined
+   * falls through to the agent's saved value. See {@link AgentOverride}.
    */
-  agentOverride?: { modelId?: string; prompt?: string }
+  agentOverride?: AgentOverride
   /**
    * Stable 32-hex trace id for the whole run. Minted at run start, persisted to
    * `wf_run`, and used to (a) seed every per-node Sentry span so the run groups

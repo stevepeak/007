@@ -10,6 +10,7 @@ import { BrandMark, inferModelBrand } from './shared'
 // before launch — which is why the speed control lives here and not on the
 // configure step: it's a cost/pressure decision, not part of the matrix.
 export function ConfirmStep({
+  baselineLabel,
   selectedModels,
   counts,
   promptCount,
@@ -19,6 +20,8 @@ export function ConfirmStep({
   matrixBlocked,
   runError,
 }: {
+  /** Name of the always-present first prompt row — saved prompt, or the draft. */
+  baselineLabel: string
   selectedModels: ModelOption[]
   counts: Record<string, number>
   promptCount: number
@@ -32,7 +35,7 @@ export function ConfirmStep({
   const { Button } = useWfComponents()
   // Row per prompt variation: the baseline plus each extra prompt.
   const promptRows = [
-    'Agent’s saved prompt',
+    baselineLabel,
     ...Array.from({ length: promptCount }, (_, i) => `Test prompt ${i + 1}`),
   ]
 

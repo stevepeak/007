@@ -268,6 +268,14 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
     modelId?: string
     promptBody?: string
     /**
+     * Draft override — run against this whole agent config instead of the
+     * published version the run manifest would resolve. Set when the agent
+     * editor tests its goals against unsaved edits; the host passes it into
+     * `startGraphRun` as `agentOverride.config`. Undefined → the published
+     * version (the normal path).
+     */
+    configOverride?: AgentConfig
+    /**
      * Run-scoped step policy the host must forward to `startGraphRun`. The SDK
      * always sets it for evals, so a host that drops it silently restores the
      * 20-minute / 3-retry production policy — the exact condition that made a

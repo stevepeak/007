@@ -8,6 +8,7 @@ import type { WfSdkConfig } from '../engine/config'
 import {
   isDecisionKind,
   workflowGraphSchema,
+  type AgentOverride,
   type NodeExecution,
   type WfNodeKind,
   type WfRunManifestEntry,
@@ -101,7 +102,7 @@ export type GraphRunContextInput = {
   /** Eval synthesis signal — run every agent node with an empty tool set. See RunContext. */
   freezeTools?: boolean
   /** Eval matrix override — swaps an agent node's modelId/prompt. See RunContext. */
-  agentOverride?: { modelId?: string; prompt?: string }
+  agentOverride?: AgentOverride
   /**
    * Run-scoped step policy, tightening only. Caps what this run may spend
    * without editing anybody's published graph. See `RunContext`.

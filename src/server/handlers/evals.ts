@@ -1,3 +1,4 @@
+import { agentConfigSchema } from '../../engine/graph'
 import {
   collectSeededToolCalls,
   EVAL_NODE_EXECUTION,
@@ -214,7 +215,18 @@ export function buildEvalHandlers<TDeps>(
       const rowId = str(c.params, 'rowId')
       // Matrix cell overrides — swap the target agent's model / system prompt for
       // this run. Absent → the agent's own saved model/prompt (the plain path).
-      const cell = c.params as { modelId?: string; promptBody?: string }
+      const cell = c.params as {
+        modelId?: string
+        promptBody?: string
+        config?: unknown
+      }
+      // Draft override: the agent editor sends its unsaved config so a goal can
+      // be run before publishing. Parsed HERE, at the API boundary, so a
+      // malformed draft fails as a 400-shaped error the editor can show rather
+      // than as a zod throw halfway through a run that already exists.
+      const configOverride = cell.config
+        ? agentConfigSchema.parse(cell.config)
+        : undefined
       const run = await getEvalRun(c.db, evalRunId)
       if (!run) {
         throw new NotFoundError('Eval run not found.')
@@ -254,6 +266,7 @@ export function buildEvalHandlers<TDeps>(
         freezeTools: row.initialCondition.freezeTools ?? false,
         modelId: cell.modelId,
         promptBody: cell.promptBody,
+        configOverride,
         // Cap this run's nodes. Applied per-run rather than baked into the
         // graph so it covers workflow targets (whose graphs we must not
         // rewrite) and agent targets whose hidden wrapper was cached long ago.

@@ -3,6 +3,7 @@ import {
   ArrowRight,
   ChevronDown,
   ChevronRight,
+  FlaskConical,
   Play,
   Plus,
   ShieldCheck,
@@ -11,6 +12,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { agentInputVariables, type AgentConfig } from '../../engine'
 import { useWfComponents } from '../context'
 import { groupModelsByProvider } from '../editor/model-grouping'
 import { MarkdownHint } from '../editor/markdown-hint'
@@ -61,6 +63,23 @@ export type RunConfigDialogProps = {
   targetName: string
   /** The eval set(s) to run. Empty = nothing to launch (button disabled). */
   setIds: string[]
+  /**
+   * Run every cell against this agent config instead of the target's published
+   * version — set by the agent editor so a goal can be run against UNSAVED
+   * edits. It changes three things here: the baseline prompt column is the
+   * DRAFT's prompt (not the saved one), the model axis starts pre-selected on
+   * the draft's model so the dialog is one click from launching, and the
+   * variable hints come from the draft rather than the saved agent.
+   * Omitted → the published version (the Goal / Sample / catalog callers).
+   */
+  draftConfig?: AgentConfig
+  /**
+   * Take over what happens once the umbrella run row exists. The default
+   * navigates to the full report — which the agent editor must NOT do, since
+   * leaving the page is exactly how the unsaved draft under test gets lost. It
+   * passes a handler that shows the run inline instead.
+   */
+  onLaunched?: (evalRunId: string) => void
 }
 
 // One extra system prompt authored for the test matrix. `id` is a client-only
@@ -73,6 +92,8 @@ export function RunConfigDialog({
   scope,
   targetName,
   setIds,
+  draftConfig,
+  onLaunched,
 }: RunConfigDialogProps) {
   const { Button } = useWfComponents()
   const { navigate } = useWfNav()
@@ -90,10 +111,13 @@ export function RunConfigDialog({
 
   // The `${variables}` the targeted goals' agents already define — the only
   // tokens that mean anything in a test prompt. Resolved from the eval sets in
-  // scope → their target agents → each agent's inferred input variables.
+  // scope → their target agents → each agent's inferred input variables. A draft
+  // run reads them off the draft instead: the whole point is that it hasn't been
+  // saved, so a variable the author just typed wouldn't be in the stored agent.
   const evalSetsQuery = useEvalSets()
   const agentsQuery = useAgents()
   const availableVariables = useMemo(() => {
+    if (draftConfig) return agentInputVariables(draftConfig)
     const sets = evalSetsQuery.data ?? []
     const agentById = new Map((agentsQuery.data ?? []).map((a) => [a.id, a]))
     const vars = new Set<string>()
@@ -105,7 +129,9 @@ export function RunConfigDialog({
       }
     }
     return [...vars]
-  }, [evalSetsQuery.data, agentsQuery.data, setIds])
+  }, [draftConfig, evalSetsQuery.data, agentsQuery.data, setIds])
+
+  const draftModelId = draftConfig?.modelId
 
   // modelId → run count (0 = unselected). One shared map across all groups.
   const [counts, setCounts] = useState<Record<string, number>>({})
@@ -120,16 +146,22 @@ export function RunConfigDialog({
   const [concurrency, setConcurrency] = useState<number>(DEFAULT_EVAL_CONCURRENCY)
 
   // Reset the selection each time the dialog opens so a stale pick from a prior
-  // target doesn't leak in.
+  // target doesn't leak in. A draft run opens with the draft's OWN model already
+  // picked: "does my edit still pass?" is the question being asked, and it is
+  // answered on the model the author is editing against — anything else makes
+  // them re-select the status quo before they can ask it.
   useEffect(() => {
     if (open) {
-      setCounts({})
+      setCounts(draftModelId ? { [draftModelId]: 1 } : {})
       setCollapsed({})
       setPrompts([])
       setStep('configure')
       setConcurrency(DEFAULT_EVAL_CONCURRENCY)
     }
-  }, [open])
+    // Keyed on the model id rather than the config object: the editor replaces
+    // `config` wholesale on every keystroke, and depending on it would reset the
+    // matrix mid-dialog every time something changed behind the modal.
+  }, [open, draftModelId])
 
   if (!open) return null
 
@@ -161,34 +193,49 @@ export function RunConfigDialog({
   // while it lacks a model selection or is mid-launch — never by matrix size.
   const matrixBlocked = SUPPORTS_MATRIX ? false : selectedIds.length > 1
 
+  // What the always-present first prompt column IS. A draft run's baseline is
+  // the unsaved prompt in the editor, and calling that "the agent's saved
+  // prompt" in the report would be a lie about the only thing under test.
+  const baselineLabel = draftConfig
+    ? 'Unsaved draft prompt'
+    : 'Agent’s saved prompt'
+
+  // "Run this goal" is wrong the moment a caller hands in several — the agent
+  // editor runs every goal that targets the agent, usually more than one.
+  const scopeLabel = scope === 'goal' && setIds.length > 1 ? 'goals' : scope
+
   const canConfigure = setIds.length > 0 && selectedIds.length > 0
   const canRun = canConfigure && !matrixBlocked && !runEval.isPending
 
   const launch = () => {
     if (!canRun) return
-    // Build the model × prompt sweep. Baseline (the agent's saved prompt) is
-    // always the first prompt column and carries no `body` so the engine falls
-    // through to the saved prompt; each extra prompt overrides it.
+    // Build the model × prompt sweep. Baseline is always the first prompt column
+    // and carries no `body`, so the engine falls through to whichever config is
+    // in play — the agent's saved prompt normally, the DRAFT's prompt when one
+    // was handed in. Each extra prompt overrides that. The label says which,
+    // because the report shows it long after the draft is gone.
     const matrix = {
       models: selectedIds.map((id) => ({
         modelId: id,
         attempts: counts[id] ?? 1,
       })),
       prompts: [
-        { label: 'Agent’s saved prompt' },
+        { label: baselineLabel },
         ...prompts.map((p, i) => ({ label: `Test prompt ${i + 1}`, body: p.body })),
       ],
     }
     // Don't await the whole matrix — as soon as the run row exists (`onStart`),
-    // close and redirect to the live report. The fan-out keeps running in the
-    // background mutation and the report polls it.
+    // close and hand the caller the run id. The fan-out keeps running in the
+    // background mutation and whatever is watching the run polls it.
     runEval.mutate({
       setIds,
       matrix,
       concurrency,
+      configOverride: draftConfig,
       onStart: (evalRunId) => {
         onClose()
-        navigate(`evals/runs/${evalRunId}`)
+        if (onLaunched) onLaunched(evalRunId)
+        else navigate(`evals/runs/${evalRunId}`)
       },
     })
   }
@@ -242,7 +289,7 @@ export function RunConfigDialog({
                 : 'Run this '}
               {step === 'configure' ? (
                 <>
-                  {scope} in simulation ·{' '}
+                  {scopeLabel} in simulation ·{' '}
                   <span className="font-medium text-neutral-700">
                     {targetName}
                   </span>
@@ -261,6 +308,22 @@ export function RunConfigDialog({
 
         {step === 'configure' ? (
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+            {/* What is actually under test. Stated first and unmissably, because
+                every other line in this dialog reads the same whether the run
+                grades a published agent or a draft that exists only in one
+                browser tab — and the verdicts are worth very different things. */}
+            {draftConfig ? (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+                <FlaskConical className="mt-0.5 size-4 shrink-0 text-amber-600" />
+                <p>
+                  Testing your <strong>unsaved edits</strong> — the whole draft,
+                  not just the prompt: model, tools, expected output, turns and
+                  budget all run as they stand in the editor. Nothing is saved
+                  or published by running this.
+                </p>
+              </div>
+            ) : null}
+
             {/* ── Models axis ── */}
             <div>
               <div className="mb-1.5 flex items-baseline justify-between">
@@ -390,7 +453,7 @@ export function RunConfigDialog({
                     Baseline
                   </span>
                   <span className="min-w-0 flex-1 truncate text-neutral-700">
-                    Agent&apos;s saved prompt
+                    {baselineLabel}
                   </span>
                   <span className="shrink-0 text-xs text-neutral-400">
                     always included
@@ -477,6 +540,7 @@ export function RunConfigDialog({
           </div>
         ) : (
           <ConfirmStep
+            baselineLabel={baselineLabel}
             selectedModels={selectedModels}
             counts={counts}
             promptCount={prompts.length}

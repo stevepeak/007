@@ -828,7 +828,7 @@ retryRun: async ({ mode, source }) => {
 },
 startEvalRun: async ({
   workflowVersionId, triggerKind, triggerInput, promptVariables,
-  fixtures, freezeTools, modelId, promptBody,
+  fixtures, freezeTools, modelId, promptBody, configOverride,
 }) => {
   const started = await getWorkflowsClient().startGraphRun({
     workflowVersionId, triggerKind, triggerInput, promptVariables,
@@ -837,7 +837,11 @@ startEvalRun: async ({
     fixtures,         // stub read tools
     freezeTools,      // synthesis mode (agent answers from seeded messages)
     label: 'Eval run',
-    agentOverride: modelId || promptBody ? { modelId, prompt: promptBody } : undefined,
+    // `modelId`/`prompt` are the matrix axes; `config` is the agent editor
+    // running its goals against an UNSAVED draft (nothing published).
+    agentOverride: modelId || promptBody || configOverride
+      ? { modelId, prompt: promptBody, config: configOverride }
+      : undefined,
   })
   return { wfRunId: started.workflowRunId }
 },

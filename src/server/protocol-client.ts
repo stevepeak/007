@@ -355,6 +355,13 @@ export interface WfDataClient {
     modelId?: string
     /** Matrix cell: replace the target agent's system prompt (baseline omits it). */
     promptBody?: string
+    /**
+     * Run against this whole agent config instead of the target's published
+     * version — how the agent editor tests its goals against an UNSAVED draft.
+     * Nothing is persisted: the config travels with this one run. Omitted → the
+     * published version the run manifest resolves (the normal path).
+     */
+    config?: AgentConfig
   }): Promise<{ wfRunId: string }>
   /**
    * Grade a finished row run: load the `wf_run` trace, evaluate the row's check

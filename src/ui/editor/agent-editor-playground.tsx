@@ -32,6 +32,7 @@ import {
 } from '../hooks'
 import { Tooltip } from '../tooltip'
 import { ContextField } from '../tool-context-field'
+import { changedFields } from './agent-config-diff'
 import { NoteMarkdown } from './note-markdown'
 import {
   contextFieldsFor,
@@ -111,28 +112,6 @@ type PlaygroundRun = {
   liveToolIds: string[]
   result: AgentPreviewResult | null
   error: string | null
-}
-
-// The fields a restore actually moves, in the order the editor shows them.
-// Used to tell you what a run's snapshot would change before you take it.
-const CONFIG_FIELDS: { key: keyof AgentConfig; label: string }[] = [
-  { key: 'modelId', label: 'model' },
-  { key: 'prompt', label: 'system prompt' },
-  { key: 'userPrompt', label: 'user message' },
-  { key: 'toolIds', label: 'tools' },
-  { key: 'subAgents', label: 'sub-agents' },
-  { key: 'output', label: 'output' },
-  { key: 'maxTurns', label: 'max turns' },
-  { key: 'toolTokenBudget', label: 'token budget' },
-  { key: 'answerReservePercent', label: 'answer reserve' },
-  { key: 'requireToolFirstTurn', label: 'tool-first' },
-  { key: 'inputKind', label: 'input kind' },
-]
-
-function changedFields(a: AgentConfig, b: AgentConfig): string[] {
-  return CONFIG_FIELDS.filter(
-    (f) => JSON.stringify(a[f.key]) !== JSON.stringify(b[f.key]),
-  ).map((f) => f.label)
 }
 
 export function PlaygroundPanel({

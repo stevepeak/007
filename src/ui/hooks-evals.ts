@@ -5,6 +5,7 @@ import {
 } from '@tanstack/react-query'
 
 import type {
+  AgentConfig,
   CheckTree,
   EvalFixtures,
   EvalInitialCondition,
@@ -251,6 +252,15 @@ export type EvalMatrixModel = { modelId: string; attempts: number }
 export type RunEvalInput = {
   setIds: string[]
   /**
+   * Run every cell against this agent config instead of the target's published
+   * version — the agent editor testing its goals against UNSAVED edits. Nothing
+   * is persisted; the config rides along on each cell's `startEvalRun`. The
+   * matrix's `modelId` / `promptBody` still layer on top of it, so a draft can
+   * be swept across models and alternate prompts exactly like a published agent.
+   * Omitted → the published version (every other caller).
+   */
+  configOverride?: AgentConfig
+  /**
    * The model × prompt sweep. Omitted → a single plain run per sample on the
    * target's own saved model + prompt (preserves the pre-matrix behavior). When
    * present, every sample is run for each (model × prompt × attempt) cell.
@@ -358,6 +368,7 @@ export async function runEval(
         rowId: job.rowId,
         modelId: job.modelId,
         promptBody: job.promptBody,
+        config: input.configOverride,
       }))
       const outcome = await waitForRun(client, wfRunId, wait)
 
