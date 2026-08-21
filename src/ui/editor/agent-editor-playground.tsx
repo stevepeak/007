@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  Blocks,
   Brain,
   Check,
   ChevronDown,
@@ -276,8 +277,15 @@ export function PlaygroundPanel({
   return (
     <div className="space-y-3">
       <aside className="h-fit space-y-3 rounded-xl border border-neutral-200 bg-neutral-50/60 p-4">
+        {/* Toy blocks, not a play button. The Play glyph is spoken for twice
+            over in this panel — the "Run agent" submit and every run's status —
+            so as a heading it read as another control rather than a name.
+            Blocks says what the panel is FOR: snap the agent together, knock it
+            down, try it again, nothing here is permanent. It also keeps the
+            right column's two headers legible apart at a glance — the evals
+            goal above is a target you either hit or miss, this is the sandbox. */}
         <div className="flex items-center gap-2 text-sm font-medium text-neutral-700">
-          <Play className="size-4" />
+          <Blocks className="size-4 text-violet-500" />
           Playground
         </div>
         <p className="text-xs text-neutral-500">
