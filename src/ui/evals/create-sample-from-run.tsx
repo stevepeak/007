@@ -19,7 +19,7 @@ import { firstLine, previewText } from '../text-preview'
 // "Create Sample" — turn a completed agent node's execution into an eval Sample
 // (wf_eval_row) under a Goal (wf_eval_set) that targets that agent. Lives in the
 // run viewer's Inspect header. v1 only captures the sample title + Given (its
-// initial condition, reconstructed from the run); mock tools and tests are noted
+// initial condition, reconstructed from the run); mock tools and checks are noted
 // as ✨ follow-ons. On create it opens the new sample in a new tab.
 //
 // The component self-gates: it renders nothing unless the selected node is an
@@ -258,7 +258,7 @@ function Control({
             )}
           </div>
 
-          {/* ✨ Follow-ons: mocks + tests seeded from the run, later. */}
+          {/* ✨ Follow-ons: mocks + checks seeded from the run, later. */}
           <div className="space-y-2 rounded-md bg-neutral-50 p-3">
             <SparkNote
               title="Auto-generate mock tools from this run"
@@ -272,12 +272,12 @@ function Control({
               </p>
             </SparkNote>
             <SparkNote
-              title="Auto-generate tests from this output"
-              blurb="Tests, generated from the agent's output"
+              title="Auto-generate checks from this output"
+              blurb="Checks, generated from the agent's output"
             >
               <p>
                 The agent&apos;s output is the obvious oracle. We could propose{' '}
-                <strong>tests</strong> from it automatically — binary assertions
+                <strong>checks</strong> from it automatically — binary assertions
                 on what it produced plus a scored judge on the response — so the
                 sample starts graded instead of empty.
               </p>

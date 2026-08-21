@@ -116,6 +116,7 @@ export function createHttpWfDataClient(
     deleteEvalSet: (setId) => call('deleteEvalSet', { setId }),
     upsertEvalRow: bind('upsertEvalRow'),
     deleteEvalRow: (rowId) => call('deleteEvalRow', { rowId }),
+    suggestCheckName: bind('suggestCheckName'),
     createEvalRun: bind('createEvalRun'),
     // Launching a real (simulated) run can outrun the default 20s backstop.
     startEvalRun: bind('startEvalRun', 120000),

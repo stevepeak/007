@@ -112,8 +112,8 @@ export function NewGoalDialog({ open, onClose, onCreated }: NewGoalDialogProps) 
             <div className="flex items-center gap-1.5">
               <Label>Description</Label>
               <IdeaSpark
-                title="Let AI seed samples & tests from the description"
-                hint="Idea: generate sample data + tests from this description"
+                title="Let AI seed samples & checks from the description"
+                hint="Idea: generate sample data + checks from this description"
               >
                 <p>
                   What if this description did more than document intent? On
@@ -126,7 +126,7 @@ export function NewGoalDialog({ open, onClose, onCreated }: NewGoalDialogProps) 
                     (the “Given” inputs) that match the outcome described
                   </li>
                   <li>
-                    candidate <strong>tests</strong> — the binary assertions and
+                    candidate <strong>checks</strong> — the binary assertions and
                     scored judges that would prove the goal holds
                   </li>
                 </ul>

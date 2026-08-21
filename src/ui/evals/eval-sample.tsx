@@ -22,18 +22,18 @@ import { IdeaSpark } from '../idea-spark'
 import { ConversationEditor } from './eval-sample-conversation'
 import { GivenEditor } from './eval-sample-given'
 import { MockToolsPanel } from './eval-sample-mocks'
-import { RunsForSample, TestsList } from './eval-sample-tests'
+import { RunsForSample, ChecksList } from './eval-sample-checks'
 import { RunConfigDialog } from './run-config-dialog'
 import { EmptyState, Tabs, useTargetAgentCrumb } from './shared'
 import { StepFlow, type Step } from './step-flow'
 
 // The Sample view (route: evals/<setId>/samples/<sampleId>). A Sample IS a
 // wf_eval_row: a name, a GIVEN (its initialCondition.promptVariables — the
-// values the goal's agent is invoked with) and a set of TESTS (its checks tree,
+// values the goal's agent is invoked with) and a set of CHECKS (its checks tree,
 // an AND/OR reduction of EvalChecks). The target agent is set on the Goal, not
 // here. Edits persist to the row on blur / on action (rows are mutable; no
-// version step). The three configuration steps (Given, Mocks, Tests) each live
-// in their own module (eval-sample-{given,mocks,tests}.tsx).
+// version step). The three configuration steps (Given, Mocks, Checks) each live
+// in their own module (eval-sample-{given,mocks,checks}.tsx).
 
 const DEFAULT_CHECK: EvalCheck = { type: 'tool_called', toolId: '', called: true }
 
@@ -120,9 +120,9 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
     })
   }
 
-  // Append a test and open it. Lifted here so its trigger can live in the Tests
+  // Append a check and open it. Lifted here so its trigger can live in the Checks
   // step's header (far right).
-  const addTest = () => {
+  const addCheck = () => {
     if (!draft) return
     const checks = {
       ...draft.checks,
@@ -130,7 +130,7 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
     }
     persist({ ...draft, checks })
     navigate(
-      `evals/${setId}/samples/${sampleId}/tests/${checks.checks.length - 1}`,
+      `evals/${setId}/samples/${sampleId}/checks/${checks.checks.length - 1}`,
     )
   }
 
@@ -182,7 +182,7 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
               description={
                 <>
                   Archive <strong>{draft.name || 'this sample'}</strong>? It’ll
-                  be removed from the goal, along with its tests.
+                  be removed from the goal, along with its checks.
                 </>
               }
               onConfirm={() => {
@@ -192,7 +192,7 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
             />
             <Button size="sm" variant="outline" onClick={() => setRunOpen(true)}>
               <Play className="size-4" />
-              Run Tests
+              Run Sample
             </Button>
           </>
         ) : undefined
@@ -270,7 +270,7 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
                               For a tool-calling agent the tool calls are often the
                               product, and fully seeding retrieval hides the most
                               common failure (a bad query, or nothing retrieved).
-                              Layer three kinds of test:
+                              Layer three kinds of check:
                             </p>
                             <ul className="list-disc space-y-1 pl-5">
                               <li>
@@ -364,16 +364,16 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
                       ),
                     },
                     {
-                      key: 'tests',
-                      title: 'Tests',
+                      key: 'checks',
+                      title: 'Checks',
                       aside: (
-                        <Button size="sm" variant="ghost" onClick={addTest}>
+                        <Button size="sm" variant="ghost" onClick={addCheck}>
                           <Plus className="size-4" />
-                          Add test
+                          Add check
                         </Button>
                       ),
                       content: (
-                        <TestsList
+                        <ChecksList
                           setId={setId}
                           sampleId={sampleId}
                           checks={draft.checks}

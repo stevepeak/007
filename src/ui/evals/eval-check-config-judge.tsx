@@ -83,7 +83,7 @@ export function JudgeConfig({
             <Label>Threshold</Label>
             <FieldHelp title="Threshold">
               <p>
-                The pass/fail cutoff for this scored test. The judge rates the
+                The pass/fail cutoff for this scored check. The judge rates the
                 run on a <strong>0–1</strong> scale against your rubric; a score
                 at or above the threshold <strong>passes</strong>, below it{' '}
                 <strong>fails</strong>.
@@ -113,17 +113,17 @@ export function JudgeConfig({
             <Label>Weight</Label>
             <FieldHelp title="Weight">
               <p>
-                How much this test counts toward the sample’s overall quality
-                score. Every scored test’s 0–1 judge score is combined as a{' '}
-                <strong>weighted mean</strong>, and weight scales this test’s
+                How much this check counts toward the sample’s overall quality
+                score. Every scored check’s 0–1 judge score is combined as a{' '}
+                <strong>weighted mean</strong>, and weight scales this check’s
                 share of that mean relative to the others.
               </p>
               <p>
-                A weight of <strong>2</strong> makes a test count twice as much
-                as a weight-<strong>1</strong> test; <strong>0.5</strong> counts
+                A weight of <strong>2</strong> makes a check count twice as much
+                as a weight-<strong>1</strong> check; <strong>0.5</strong> counts
                 half. Leave it at the default <strong>1</strong> to weigh all
-                scored tests equally. Weight affects the aggregate score only —
-                not whether this individual test passes.
+                scored checks equally. Weight affects the aggregate score only —
+                not whether this individual check passes.
               </p>
             </FieldHelp>
           </div>
@@ -139,7 +139,7 @@ export function JudgeConfig({
         </div>
       </div>
       <p className="text-xs text-neutral-400">
-        Scored tests contribute to the goal/sample score; the threshold maps the
+        Scored checks contribute to the goal/sample score; the threshold maps the
         0–1 judge score to pass/fail, weight scales its share of the mean.
       </p>
     </div>

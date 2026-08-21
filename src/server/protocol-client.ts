@@ -335,6 +335,16 @@ export interface WfDataClient {
   /** Soft-delete a row (drops out of the set + its row count). */
   deleteEvalRow(rowId: string): Promise<{ ok: true }>
 
+  /**
+   * Suggest an assertion-voice name for a judge Check from its rubric — the
+   * ghost text offered in the Check title field ("Has correct title").
+   *
+   * Never rejects on a model or provider failure: it answers `{ name: null }`
+   * and the field falls back to its example placeholder. A naming convenience
+   * must not surface as an error the author has to deal with.
+   */
+  suggestCheckName(input: { rubric: string }): Promise<{ name: string | null }>
+
   /** Create the umbrella eval run over one or more sets (status `queued`). */
   createEvalRun(input: {
     setIds: string[]

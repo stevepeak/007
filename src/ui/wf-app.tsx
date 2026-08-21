@@ -11,7 +11,7 @@ import { WorkflowEditor } from './editor/workflow-editor'
 import { EvalRunReport } from './evals/eval-run-report'
 import { EvalSample } from './evals/eval-sample'
 import { EvalSet } from './evals/eval-set'
-import { EvalTest } from './evals/eval-test'
+import { EvalCheckPage } from './evals/eval-check'
 import { EvalsList } from './evals/evals-list'
 import { FeedbackDetail } from './feedback-detail'
 import { FeedbackList } from './feedback-list'
@@ -283,13 +283,13 @@ function AssetRoute({ path }: { path: string }) {
 
     case 'tool':
       return <ToolDetailPage toolId={asset.toolId} />
-    case 'evalTest':
+    case 'evalCheck':
       return (
-        <EvalTest
-          key={asset.testId}
+        <EvalCheckPage
+          key={asset.checkId}
           setId={asset.setId}
           sampleId={asset.sampleId}
-          testId={asset.testId}
+          checkId={asset.checkId}
           className="h-full"
         />
       )

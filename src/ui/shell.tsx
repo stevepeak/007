@@ -29,6 +29,20 @@ export type WfCrumbEditable = {
   ariaLabel?: string
   /** Shown when the value is empty (e.g. a derived default title). */
   placeholder?: string
+  /**
+   * DOM id for the input, so a page can focus its own title from elsewhere
+   * (e.g. the Check page's naming chips).
+   */
+  inputId?: string
+  /**
+   * Accept the placeholder as the value, on Tab, while the field is empty.
+   *
+   * This turns the placeholder into ghost text: when a page can propose a real
+   * name (not just an example), the proposal is one keystroke away instead of
+   * something to retype. Commit is separate from `onCommit` because the
+   * accepted text isn't in `value` yet — the page gets it as an argument.
+   */
+  onAcceptPlaceholder?: (text: string) => void
 }
 
 type WfShellDescriptionEditable = {
@@ -227,13 +241,25 @@ function TrailCrumb({ crumb, isLast }: { crumb: WfCrumb; isLast: boolean }) {
 const TITLE_MAX_CHARS = 50
 
 function EditableTitle({ editable }: { editable: WfCrumbEditable }) {
-  const { value, onChange, onCommit, ariaLabel, placeholder } = editable
+  const {
+    value,
+    onChange,
+    onCommit,
+    ariaLabel,
+    placeholder,
+    inputId,
+    onAcceptPlaceholder,
+  } = editable
   const size = Math.min(
     TITLE_MAX_CHARS,
     Math.max((value || placeholder || '').length + 1, 8),
   )
+  // Tab accepts the placeholder only while the field is empty — once there's
+  // typed text, Tab has to keep meaning "leave this field".
+  const canAccept = Boolean(onAcceptPlaceholder && placeholder && !value)
   return (
     <input
+      id={inputId}
       value={value}
       size={size}
       aria-label={ariaLabel}
@@ -241,6 +267,11 @@ function EditableTitle({ editable }: { editable: WfCrumbEditable }) {
       onChange={(e) => onChange(e.target.value)}
       onBlur={onCommit}
       onKeyDown={(e) => {
+        if (canAccept && e.key === 'Tab' && !e.shiftKey) {
+          e.preventDefault()
+          onAcceptPlaceholder?.(placeholder as string)
+          return
+        }
         if (e.key === 'Enter' || e.key === 'Escape') e.currentTarget.blur()
       }}
       className="min-w-0 rounded border border-transparent bg-transparent px-1 py-0.5 text-base font-semibold text-neutral-900 outline-none placeholder:font-normal placeholder:text-neutral-400 hover:border-neutral-200 focus:border-neutral-300 focus:bg-neutral-50"

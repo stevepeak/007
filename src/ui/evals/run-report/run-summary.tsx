@@ -62,7 +62,7 @@ export function RunHeader({
             </span>
           </Metric>
         )}
-        <Metric label="Tests">
+        <Metric label="Results">
           <span className="tabular-nums text-neutral-700">{run.total}</span>
         </Metric>
         {agent.count > 0 && (

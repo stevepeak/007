@@ -19,7 +19,7 @@ import {
   type BinaryType,
   defaultCheck,
   withMeta,
-} from './eval-test-config-shared'
+} from './eval-check-config-shared'
 
 // ── Binary check config ──────────────────────────────────────────────────────
 

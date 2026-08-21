@@ -129,7 +129,7 @@ export function EvalSet({ setId, className }: EvalSetProps) {
               onClick={() => setRunOpen(true)}
             >
               <Play className="size-4" />
-              Run Tests
+              Run Goal
             </Button>
             <IdeaSpark
               title="Recommend the models most likely to pass"
@@ -138,7 +138,7 @@ export function EvalSet({ setId, className }: EvalSetProps) {
               <p>
                 Choosing which models to run is a guess today. When you open the
                 run dialog, AI could first read this goal&apos;s{' '}
-                <strong>requirements</strong> — its samples, tests, and the
+                <strong>requirements</strong> — its samples, checks, and the
                 behavior they demand — and predict which models are{' '}
                 <strong>most likely to perform best</strong>.
               </p>
@@ -330,14 +330,14 @@ function SamplesTable({
   const open = useOpenAsset()
   if (rows.length === 0) {
     return (
-      <EmptyState message="No samples yet. Add one to define a Given (initial state) and its Tests." />
+      <EmptyState message="No samples yet. Add one to define a Given (initial state) and its Checks." />
     )
   }
   return (
     <div className="overflow-hidden rounded-lg border border-neutral-200">
       <div className="grid grid-cols-[1fr_auto] items-center gap-4 border-b border-neutral-100 bg-neutral-50 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-neutral-400">
         <span>Sample</span>
-        <span className="w-16 text-right">Tests</span>
+        <span className="w-16 text-right">Checks</span>
       </div>
       {rows.map((r) => (
         <button

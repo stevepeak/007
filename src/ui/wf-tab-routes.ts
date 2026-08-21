@@ -14,7 +14,7 @@ export type WfAsset =
   | { type: 'tool'; toolId: string }
   | { type: 'evalSet'; setId: string }
   | { type: 'evalSample'; setId: string; sampleId: string }
-  | { type: 'evalTest'; setId: string; sampleId: string; testId: string }
+  | { type: 'evalCheck'; setId: string; sampleId: string; checkId: string }
   | { type: 'evalRun'; evalRunId: string }
   | { type: 'feedbackItem'; subjectId: string }
 
@@ -54,18 +54,18 @@ export function classifyAssetPath(path: string): WfAsset | null {
     return { type: 'feedbackItem', subjectId: parts[1] }
   }
 
-  // `evals/<setId>/samples/<sampleId>/tests/<testId>` — a single test.
+  // `evals/<setId>/samples/<sampleId>/checks/<checkId>` — a single test.
   if (
     parts.length === 6 &&
     parts[0] === 'evals' &&
     parts[2] === 'samples' &&
-    parts[4] === 'tests'
+    parts[4] === 'checks'
   ) {
     return {
-      type: 'evalTest',
+      type: 'evalCheck',
       setId: parts[1],
       sampleId: parts[3],
-      testId: parts[5],
+      checkId: parts[5],
     }
   }
 
@@ -161,7 +161,7 @@ export function tabGroup(path: string): WfTabGroup {
       return 'tool'
     case 'evalSet':
     case 'evalSample':
-    case 'evalTest':
+    case 'evalCheck':
     case 'evalRun':
       return 'evals'
     case 'feedbackItem':

@@ -9,7 +9,7 @@ import {
 
 import { BINARY_CHECK_TYPES, type EvalCheck } from '../../server/protocol'
 
-export type TestFamily = 'binary' | 'scored'
+export type CheckFamily = 'binary' | 'scored'
 
 // The deterministic (non-judge) check type ids, derived from the check schema in
 // `checks.ts` so a new binary check kind surfaces in this picker automatically.
@@ -49,7 +49,7 @@ export const BINARY_TYPE_META: Record<
   },
 }
 
-export function familyOf(check: EvalCheck): TestFamily {
+export function familyOf(check: EvalCheck): CheckFamily {
   return check.type === 'llm_judge' ? 'scored' : 'binary'
 }
 

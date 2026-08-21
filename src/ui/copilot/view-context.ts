@@ -31,7 +31,7 @@ export function deriveCopilotContext(
       return { subject: 'eval', runId: asset.evalRunId }
     case 'evalSet':
     case 'evalSample':
-    case 'evalTest':
+    case 'evalCheck':
       return { subject: 'eval', subjectId: asset.setId }
     case 'feedbackItem':
       return { subject: 'feedback', subjectId: asset.subjectId }

@@ -58,11 +58,11 @@ describe('classifyAssetPath — asset routes', () => {
   })
 
   test('eval test', () => {
-    expect(classifyAssetPath('evals/set_1/samples/row_1/tests/0')).toEqual({
-      type: 'evalTest',
+    expect(classifyAssetPath('evals/set_1/samples/row_1/checks/0')).toEqual({
+      type: 'evalCheck',
       setId: 'set_1',
       sampleId: 'row_1',
-      testId: '0',
+      checkId: '0',
     })
   })
 
@@ -112,7 +112,7 @@ describe('tabGroup', () => {
     ['tools/tavily', 'tool'],
     ['evals/set_1', 'evals'],
     ['evals/set_1/samples/s_1', 'evals'],
-    ['evals/set_1/samples/s_1/tests/0', 'evals'],
+    ['evals/set_1/samples/s_1/checks/0', 'evals'],
     ['evals/runs/er_1', 'evals'],
     ['feedback/fb_1', 'feedback'],
   ])('%s → %s', (path, group) => {

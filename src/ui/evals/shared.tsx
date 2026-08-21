@@ -2,7 +2,6 @@ import { Braces, Eye, Sparkles, Wrench } from 'lucide-react'
 import type { MouseEvent, ReactNode } from 'react'
 
 import type {
-  EvalCheck,
   ModelCapabilities,
   WfEvalRunSummary,
 } from '../../server/protocol'
@@ -16,7 +15,7 @@ import { Tooltip } from '../tooltip'
 import { getProvider, ProviderLogo } from './provider-logos'
 
 // Small presentational bits shared across the Evals catalog, set, sample, and
-// test pages. All real-data — nothing here depends on the (deleted) mock store.
+// check pages. All real-data — nothing here depends on the (deleted) mock store.
 
 export function PassRate({
   passed,
@@ -179,29 +178,6 @@ export { Tabs, type TabDef } from '../filters'
 // modules; re-exported here so the Evals surfaces keep importing them from one
 // place and can't drift from the rest of the app.
 export { formatTimestamp, RunStatusBadge }
-
-// A short human phrasing of what a check asserts — the label shown for a Test in
-// the sample's test list and in the run report. Kept here so both surfaces agree.
-export function describeCheck(check: EvalCheck | undefined): string {
-  if (!check) return 'check'
-  if (check.label?.trim()) return check.label.trim()
-  switch (check.type) {
-    case 'tool_called':
-      return `${check.toolId || 'tool'} ${check.called ? 'called' : 'not called'}`
-    case 'tool_args_match':
-      return `${check.toolId || 'tool'} args${check.path ? `.${check.path}` : ''} ${check.match}`
-    case 'node_visited':
-      return `node ${check.nodeId || '?'} ${check.visited ? 'visited' : 'not visited'}`
-    case 'node_input_match':
-      return `node ${check.nodeId || '?'} input${check.path ? `.${check.path}` : ''} ${check.match}`
-    case 'output_match':
-      return `output${check.path ? `.${check.path}` : ''} ${check.match}`
-    case 'llm_judge':
-      return check.rubric
-        ? `judge: ${check.rubric.slice(0, 60)}${check.rubric.length > 60 ? '…' : ''}`
-        : 'judge'
-  }
-}
 
 // Shared "test runs" table: When / Pass / Score columns over a list of eval
 // runs. Clicking a row opens its report via `onOpenRun`. The first cell defaults

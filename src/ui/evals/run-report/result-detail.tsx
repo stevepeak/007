@@ -8,7 +8,7 @@ import type {
 import { cn } from '../../cn'
 import { formatDurationMs, formatTokens, formatUsd } from '../../cost'
 import { WfLink } from '../../nav'
-import { describeCheck } from '../shared'
+import { describeCheck } from '../check-naming'
 
 import type { ResultRow } from './model'
 
@@ -69,7 +69,7 @@ export function ResultDetail({ row }: { row: ResultRow }) {
               key={i}
               result={cr}
               check={row.checks[i]}
-              to={setId ? `evals/${setId}/samples/${result.rowId}/tests/${i}` : undefined}
+              to={setId ? `evals/${setId}/samples/${result.rowId}/checks/${i}` : undefined}
             />
           ))}
         </ul>
@@ -108,7 +108,7 @@ function CheckRow({
 }: {
   result: CheckResult
   check: EvalCheck | undefined
-  /** Editor route for this Test, when its snapshot resolves a setId. */
+  /** Editor route for this Check, when its snapshot resolves a setId. */
   to?: string
 }) {
   const label = (
@@ -129,7 +129,7 @@ function CheckRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           {to ? (
-            <WfLink to={to} newTab className="group flex min-w-0 items-center" title="Open this Test">
+            <WfLink to={to} newTab className="group flex min-w-0 items-center" title="Open this Check">
               {label}
             </WfLink>
           ) : (

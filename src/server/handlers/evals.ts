@@ -1,4 +1,5 @@
 import { agentConfigSchema } from '../../engine/graph'
+import { errorMessage } from '../../engine/run-node'
 import {
   collectSeededToolCalls,
   EVAL_NODE_EXECUTION,
@@ -29,6 +30,7 @@ import {
   upsertEvalRow,
 } from '../../storage/data'
 import type { WfEvalRowDTO, WfEvalTargetKind } from '../protocol'
+import { suggestCheckNameFromRubric } from '../suggest-check-name'
 
 import { evalResultDTO, evalRunSummary, evalSetSummary } from './eval-dto'
 import {
@@ -77,6 +79,7 @@ export function buildEvalHandlers<TDeps>(
   | 'deleteEvalSet'
   | 'upsertEvalRow'
   | 'deleteEvalRow'
+  | 'suggestCheckName'
   | 'createEvalRun'
   | 'startEvalRun'
   | 'gradeEvalResult'
@@ -188,6 +191,34 @@ export function buildEvalHandlers<TDeps>(
       const rowId = str(c.params, 'rowId')
       await deleteEvalRow(c.db, rowId)
       return { ok: true }
+    },
+
+    // Ghost text for the Check title field. Same never-fail posture as the
+    // publish change summaries: a suggestion nobody asked for must not turn a
+    // provider outage into an error in front of an author who is mid-sentence.
+    // Every failure path answers `{ name: null }` and the field keeps its
+    // example placeholder.
+    suggestCheckName: async (c) => {
+      const rubric = str(c.params, 'rubric').trim()
+      if (!rubric) return { name: null }
+      const env = await c.env()
+      const modelId =
+        opts.summaryModelId ??
+        (await opts.config.listModels({ env }))[0]?.id ??
+        null
+      if (!modelId) return { name: null }
+      try {
+        const name = await suggestCheckNameFromRubric({
+          getModel: opts.config.getModel,
+          modelId,
+          env,
+          rubric,
+        })
+        return { name: name || null }
+      } catch (err) {
+        console.warn('[wf] check-name suggestion failed:', errorMessage(err))
+        return { name: null }
+      }
     },
 
     createEvalRun: async (c) => {

@@ -31,7 +31,7 @@ import { IdeaSpark } from '../idea-spark'
 import { ConfirmStep } from './run-config-dialog-confirm'
 import { ModelMatrixRow } from './run-config-dialog-model-row'
 
-// The "Run" confirm, shared by the catalog / Goal / Sample / Test Run buttons.
+// The "Run" confirm, shared by the catalog / Goal / Sample / Check Run buttons.
 // A run always executes in SIMULATION (write tools no-op, read tools return the
 // row's fixtures) and is marked `is_eval` so it stays out of the Runs explorer.
 //
@@ -58,7 +58,7 @@ export type RunConfigDialogProps = {
   open: boolean
   onClose: () => void
   /** What this run targets, for the subtitle copy. */
-  scope: 'goal' | 'sample' | 'test'
+  scope: 'goal' | 'sample' | 'check'
   /** Display name of the thing being run (shown in the subtitle). */
   targetName: string
   /** The eval set(s) to run. Empty = nothing to launch (button disabled). */
@@ -528,7 +528,7 @@ export function RunConfigDialog({
                 Every sample runs with <strong>simulation on</strong> — write
                 tools (e.g. send email) no-op and read tools return the
                 sample&apos;s fixtures, so no real data is touched. The run is
-                graded against each sample&apos;s tests.
+                graded against each sample&apos;s checks.
               </p>
             </div>
 

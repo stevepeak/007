@@ -3,47 +3,64 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { agentOutputJsonSchema, type JsonSchema } from '../../engine'
 import type { EvalCheck } from '../../server/protocol'
-import { useWfComponents } from '../context'
-import { useAgents, useEvalSet, useUpsertEvalRow } from '../hooks'
-import { useWfNav } from '../nav'
 import { ArchiveButton } from '../archive-button'
+import { useWfComponents } from '../context'
+import {
+  useAgents,
+  useEvalSet,
+  useSuggestedCheckName,
+  useUpsertEvalRow,
+} from '../hooks'
+import { useWfNav } from '../nav'
 import { WfShell } from '../shell'
 import { sectionCrumb } from '../wf-crumbs'
+import { CheckNameHint } from './check-name-hint'
+import {
+  describeCheck,
+  exampleCheckName,
+  heuristicCheckName,
+  isUnnamed,
+} from './check-naming'
 import {
   ConfigForm,
   defaultCheck,
   familyOf,
-  type TestFamily,
+  type CheckFamily,
   withMeta,
-} from './eval-test-config'
+} from './eval-check-config'
 import { RunConfigDialog } from './run-config-dialog'
-import { describeCheck, EmptyState, useTargetAgentCrumb } from './shared'
+import { EmptyState, useTargetAgentCrumb } from './shared'
 
-// The single-test view
-// (route: evals/<setId>/samples/<sampleId>/tests/<testIndex>). A "Test" is one
-// EvalCheck inside the sample row's `checks` tree, addressed by its index. The
-// Configuration flow picks the family (binary vs scored) and its type, then the
-// type-specific fields. Every edit persists the whole row (rows are mutable).
+// The single-Check view
+// (route: evals/<setId>/samples/<sampleId>/checks/<checkIndex>). A "Check" is
+// one EvalCheck inside the sample row's `checks` tree, addressed by its index.
+// The Configuration flow picks the family (binary vs scored) and its type, then
+// the type-specific fields. Every edit persists the whole row (rows are
+// mutable).
 
-export type EvalTestProps = {
+// The Check title lives in the shell header, so the naming chips reach it by
+// id rather than by threading a ref up through the crumb contract.
+const TITLE_INPUT_ID = 'wf-check-title'
+
+export type EvalCheckPageProps = {
   setId: string
   sampleId: string
   /** The check's index within the sample row's checks tree (as a string). */
-  testId: string
+  checkId: string
   className?: string
 }
 
-export function EvalTest({
+export function EvalCheckPage({
   setId,
   sampleId,
-  testId,
+  checkId,
   className,
-}: EvalTestProps) {
+}: EvalCheckPageProps) {
   const { Button } = useWfComponents()
   const { navigate } = useWfNav()
   const [runOpen, setRunOpen] = useState(false)
 
-  const index = Number(testId)
+  const index = Number(checkId)
   const { data, isLoading } = useEvalSet(setId)
   const set = data?.set
   const row = useMemo(
@@ -112,7 +129,42 @@ export function EvalTest({
     persist({ ...draft, ...patch } as EvalCheck)
   }
 
-  const removeTest = () => {
+  // ── Naming ────────────────────────────────────────────────────────────────
+  // A deterministic Check can name itself off its own fields; a judge's
+  // assertion is prose, so its name comes from the model (never blocking, and
+  // only once the rubric is worth naming). What's left is an example, varied by
+  // position so a sample full of unnamed Checks shows the range of the
+  // convention rather than the same name repeated.
+  const derivedName = draft ? heuristicCheckName(draft) : null
+  const judgeRubric =
+    draft?.type === 'llm_judge' && !derivedName ? draft.rubric : null
+  const suggestQuery = useSuggestedCheckName(judgeRubric)
+  const suggestion = derivedName ?? suggestQuery.data?.name ?? null
+  // What the (empty) title field shows. A real suggestion when we have one —
+  // Tab accepts it — and otherwise a well-formed example, which teaches the
+  // shape even though it's not this Check's name.
+  const titlePlaceholder = suggestion ?? exampleCheckName(index)
+
+  const acceptName = (name: string) => {
+    setTitle(name)
+    commitMeta({ label: name })
+  }
+
+  // Seed the title with a verb and put the cursor after it, so the chip is a
+  // head start on typing rather than a name in itself.
+  const startWithVerb = (verb: string) => {
+    const seeded = `${verb} `
+    setTitle(seeded)
+    const input = document.getElementById(TITLE_INPUT_ID)
+    if (input instanceof HTMLInputElement) {
+      input.focus()
+      requestAnimationFrame(() =>
+        input.setSelectionRange(seeded.length, seeded.length),
+      )
+    }
+  }
+
+  const removeCheck = () => {
     if (!row) return
     const checks = row.checks.checks.filter((_, i) => i !== index)
     upsertRow.mutate({
@@ -126,7 +178,7 @@ export function EvalTest({
     navigate(`evals/${setId}/samples/${sampleId}`)
   }
 
-  const setFamily = (family: TestFamily) => {
+  const setFamily = (family: CheckFamily) => {
     if (family === familyOf(draft ?? defaultCheck('tool_called'))) return
     persist(
       withMeta(
@@ -141,7 +193,7 @@ export function EvalTest({
       className={className}
       scroll
       titleIcon={<FlaskConical className="size-5 shrink-0 text-rose-500" />}
-      assetLabel="Test"
+      assetLabel="Check"
       crumbs={[
         sectionCrumb('evals'),
         {
@@ -169,11 +221,13 @@ export function EvalTest({
                   if ((title.trim() || undefined) !== draft.label)
                     commitMeta({ label: title.trim() || undefined })
                 },
-                ariaLabel: 'Test title',
-                placeholder: describeCheck({ ...draft, label: undefined }),
+                ariaLabel: 'Check name',
+                placeholder: titlePlaceholder,
+                inputId: TITLE_INPUT_ID,
+                onAcceptPlaceholder: acceptName,
               },
             }
-          : { label: 'Test' },
+          : { label: 'Check' },
       ]}
       descriptionEditable={
         row && draft
@@ -184,7 +238,7 @@ export function EvalTest({
                 if ((desc.trim() || undefined) !== draft.description)
                   commitMeta({ description: desc.trim() || undefined })
               },
-              ariaLabel: 'Test description',
+              ariaLabel: 'Check description',
             }
           : undefined
       }
@@ -192,15 +246,15 @@ export function EvalTest({
         row && draft ? (
           <>
             <ArchiveButton
-              title="Delete test"
+              title="Delete check"
               confirmLabel="Hold to delete"
               description={
                 <>
                   Delete <strong>{describeCheck(draft)}</strong>? It’ll be
-                  removed from this sample&apos;s tests.
+                  removed from this sample&apos;s checks.
                 </>
               }
-              onConfirm={removeTest}
+              onConfirm={removeCheck}
             />
             <Button
               size="sm"
@@ -208,7 +262,7 @@ export function EvalTest({
               onClick={() => setRunOpen(true)}
             >
               <Play className="size-4" />
-              Run Test
+              Run Check
             </Button>
           </>
         ) : undefined
@@ -216,18 +270,27 @@ export function EvalTest({
     >
       <div className="mx-auto max-w-5xl space-y-5 p-6">
         {isLoading && !row ? (
-          <EmptyState message="Loading test…" />
+          <EmptyState message="Loading check…" />
         ) : !row || !draft ? (
-          <EmptyState message="This test doesn't exist, or was removed." />
+          <EmptyState message="This check doesn't exist, or was removed." />
         ) : (
           <>
             <RunConfigDialog
               open={runOpen}
               onClose={() => setRunOpen(false)}
-              scope="test"
+              scope="check"
               targetName={set?.name || 'goal'}
               setIds={[setId]}
             />
+
+            {isUnnamed(draft) && (
+              <CheckNameHint
+                suggestion={suggestion}
+                isSuggesting={suggestQuery.isFetching}
+                onPickVerb={startWithVerb}
+                onAccept={acceptName}
+              />
+            )}
 
             <ConfigForm
               draft={draft}

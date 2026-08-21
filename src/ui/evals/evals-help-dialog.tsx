@@ -3,7 +3,7 @@ import { type ReactNode } from 'react'
 
 import { Modal } from '../modal'
 
-// Explains the Evals → Goals → Samples → Tests hierarchy and why it exists.
+// Explains the Evals → Goals → Samples → Checks hierarchy and why it exists.
 // Opened from the (?) button on the Evals catalog. Purely informational.
 
 export type EvalsHelpDialogProps = {
@@ -49,20 +49,26 @@ export function EvalsHelpDialog({ open, onClose }: EvalsHelpDialogProps) {
             >
               A real-world case: a <strong>Given</strong> (the starting inputs),{' '}
               <strong>what runs</strong> (an agent or a workflow), and the{' '}
-              <strong>Tests</strong> it must satisfy. Samples pin behavior to
+              <strong>Checks</strong> it must satisfy. Samples pin behavior to
               actual situations instead of vibes.
             </Level>
 
             <Level
               icon={<ListChecks className="size-4" />}
               accent="bg-emerald-50 text-emerald-600"
-              title="Test"
+              title="Check"
               subtitle="One thing that must be true"
             >
               A single assertion on the run — <strong>binary</strong> (a tool was
               called, a node ran, the output matches) or <strong>scored</strong>{' '}
-              (a judge rates quality from 0–1). Binary tests catch regressions;
-              scored tests measure how <em>good</em> the answer was.
+              (a judge rates quality from 0–1). Binary checks catch regressions;
+              scored checks measure how <em>good</em> the answer was.
+              <span className="mt-2 block text-neutral-500">
+                Name one for what must be true, not what it&apos;s about —{' '}
+                <em>Has correct title</em>, <em>Avoids legal advice</em>,{' '}
+                <em>Never calls send_email</em>. A column of Checks should read
+                as a checklist.
+              </span>
             </Level>
           </div>
 

@@ -29,8 +29,8 @@ import {
 } from './model'
 import { ResultDetail } from './result-detail'
 
-// The results table: one row per test, with group-by, sort, filters, an
-// expandable per-check detail, and crowns on the best / fastest / cheapest tests.
+// The results table: one row per graded sample, with group-by, sort, filters,
+// an expandable per-check detail, and crowns on the best / fastest / cheapest.
 export function ResultsTable({
   results,
   runStatus,
@@ -88,7 +88,7 @@ export function ResultsTable({
 
   // Crown markers, each a stable property of the whole run (computed over every
   // result, not the current filter) and shown only when there's more than one
-  // test to rank: the best overall beside the test name, the fastest beside
+  // row to rank: the best overall beside the sample name, the fastest beside
   // Speed, the cheapest beside Cost.
   const multi = rows.length > 1
   const bestId = multi ? pickBest(rows) : null
@@ -115,7 +115,7 @@ export function ResultsTable({
 
   const sortOptions: { value: SortKey; label: string }[] = [
     { value: 'status', label: 'Status' },
-    { value: 'sample', label: 'Test' },
+    { value: 'sample', label: 'Sample' },
     ...(isMatrix
       ? ([
           { value: 'model', label: 'Model' },
@@ -128,7 +128,7 @@ export function ResultsTable({
     { value: 'tokens', label: 'Tokens' },
   ]
 
-  // One test row + its expandable detail, shared by the flat and grouped views.
+  // One result row + its expandable detail, shared by the flat and grouped views.
   const renderRow = (r: ResultRow) => {
     const open = expanded.has(r.result.id)
     // Does this row belong to the matrix cell a summary card is hovering?
@@ -209,7 +209,7 @@ export function ResultsTable({
     )
   }
 
-  const subtitle = `${filtered.length}${filtered.length !== rows.length ? ` of ${rows.length}` : ''} test${rows.length === 1 ? '' : 's'}`
+  const subtitle = `${filtered.length}${filtered.length !== rows.length ? ` of ${rows.length}` : ''} result${rows.length === 1 ? '' : 's'}`
 
   return (
     <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
@@ -226,7 +226,7 @@ export function ResultsTable({
           onChange={(v) => setGroupBy(v as GroupBy)}
           options={[
             { value: 'none', label: 'None' },
-            { value: 'sample', label: 'Test name' },
+            { value: 'sample', label: 'Sample name' },
             { value: 'status', label: 'Pass / fail' },
             ...(isMatrix
               ? [
@@ -319,7 +319,7 @@ export function ResultsTable({
               <tr className="border-b border-neutral-200 text-left text-[11px] uppercase tracking-wide text-neutral-400">
                 <th className="w-6" />
                 <Th label="Status" k="status" sort={sort} setSort={setSort} />
-                <Th label="Test" k="sample" sort={sort} setSort={setSort} />
+                <Th label="Sample" k="sample" sort={sort} setSort={setSort} />
                 {isMatrix && <Th label="Model" k="model" sort={sort} setSort={setSort} />}
                 {isMatrix && <Th label="Prompt" k="prompt" sort={sort} setSort={setSort} />}
                 <Th label="Score" k="score" sort={sort} setSort={setSort} align="right" />

@@ -2,17 +2,17 @@ import { Binary, Gauge } from 'lucide-react'
 
 import type { JsonSchema } from '../../engine'
 import type { EvalCheck, WfEvalTargetKind } from '../../server/protocol'
-import { BinaryConfig } from './eval-test-config-binary'
-import { JudgeConfig } from './eval-test-config-judge'
-import { familyOf, type TestFamily } from './eval-test-config-shared'
+import { BinaryConfig } from './eval-check-config-binary'
+import { JudgeConfig } from './eval-check-config-judge'
+import { familyOf, type CheckFamily } from './eval-check-config-shared'
 import { PickerCards, StepFlow, type Step } from './step-flow'
 
 export {
   defaultCheck,
   familyOf,
-  type TestFamily,
+  type CheckFamily,
   withMeta,
-} from './eval-test-config-shared'
+} from './eval-check-config-shared'
 
 export function ConfigForm({
   draft,
@@ -24,7 +24,7 @@ export function ConfigForm({
 }: {
   draft: EvalCheck
   persist: (next: EvalCheck) => void
-  setFamily: (family: TestFamily) => void
+  setFamily: (family: CheckFamily) => void
   targetKind?: WfEvalTargetKind
   outputSchema?: JsonSchema | null
   /** Scope the tool pickers to the target agent's wired tools (undefined = all). */
