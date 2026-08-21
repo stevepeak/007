@@ -11,7 +11,7 @@ import {
   Wallet,
   Wrench,
 } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { type AgentConfig, inferPromptVariables } from '../../engine'
 import type { WfAgentCall } from '../../server/protocol'
@@ -497,6 +497,21 @@ function AgentEditorInner({
   const modelLacksStructuredOutput =
     modelCaps != null && !modelCaps.structuredOutput
 
+  // What the Copilot needs to talk about this agent's output shape: what it is
+  // told to do, and what it can call. Tool IDS are resolved to names because the
+  // name is what an author (and the Copilot) reasons about.
+  const schemaCopilotContext = useMemo(
+    () => ({
+      agentName: name,
+      agentDescription: description,
+      instructions: config.prompt,
+      toolNames: config.toolIds.map(
+        (id) => aiTools.find((t) => t.id === id)?.name ?? id,
+      ),
+    }),
+    [name, description, config.prompt, config.toolIds, aiTools],
+  )
+
   // A turn is a round of calling SOMETHING, and delegation synthesizes
   // `spawn_*` / `await_subagents` into the tool set — so an agent with only
   // sub-agents runs just as real a multi-turn loop as one with only tools.
@@ -963,6 +978,7 @@ function AgentEditorInner({
                       onChange={(output) => patch({ output })}
                       structuredDisabled={modelLacksStructuredOutput}
                       structuredDisabledReason={`${selectedModel?.label ?? 'The selected model'} doesn’t support structured output — only a Text result is available.`}
+                      copilotContext={schemaCopilotContext}
                     />
                   </EditorSection>
 

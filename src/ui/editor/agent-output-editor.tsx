@@ -1,4 +1,4 @@
-import { AlertTriangle, Check } from 'lucide-react'
+import { AlertTriangle, Check, Sparkles } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import {
@@ -8,6 +8,11 @@ import {
   type AgentOutput,
 } from '../../engine'
 import { cn } from '../cn'
+import { askCopilot, useCopilotSeedAvailable } from '../copilot/ask'
+import {
+  buildAgentSchemaCopilotPrompt,
+  type AgentSchemaPromptInput,
+} from './agent-schema-copilot-prompt'
 import { ZodCodeEditor } from './zod-code-editor'
 
 // Editor for an agent's "expected output" contract. Three shapes:
@@ -48,6 +53,12 @@ export type AgentOutputEditorProps = {
   structuredDisabled?: boolean
   /** Why the structured shapes are disabled; shown as a hint. */
   structuredDisabledReason?: string
+  /**
+   * What the agent is and does, used to seed the Copilot when the author asks
+   * for help with the schema. Omit it and the help link simply isn't offered —
+   * a Copilot handed no context would only be guessing.
+   */
+  copilotContext?: Omit<AgentSchemaPromptInput, 'currentSource'>
 }
 
 export function AgentOutputEditor({
@@ -55,7 +66,9 @@ export function AgentOutputEditor({
   onChange,
   structuredDisabled = false,
   structuredDisabledReason,
+  copilotContext,
 }: AgentOutputEditorProps) {
+  const copilotAvailable = useCopilotSeedAvailable()
   // Local source state for the structured editor so keystrokes stay smooth even
   // when a given keystroke doesn't compile. Reconstructed from the stored schema
   // (the single source of truth) so the author always sees the real shape; never
@@ -109,6 +122,17 @@ export function AgentOutputEditor({
     if (!source.trim() || !compileZodSource(source).ok) return
     const formatted = formatZodSource(source)
     if (formatted !== source) setSource(formatted)
+  }
+
+  // Hand the Copilot the agent's own context and let it ask the author what the
+  // result should contain. Offered whether or not a schema exists — an empty box
+  // is the hardest place to start, and an existing shape is the thing most worth
+  // talking through changes to.
+  const askForSchema = () => {
+    if (!copilotContext) return
+    askCopilot(
+      buildAgentSchemaCopilotPrompt({ ...copilotContext, currentSource: source }),
+    )
   }
 
   const options: { kind: Kind; label: string; hint: string }[] = [
@@ -222,6 +246,18 @@ export function AgentOutputEditor({
                 {compiled.fields.join(', ')}
               </span>
             </div>
+          ) : null}
+          {copilotAvailable && copilotContext ? (
+            <button
+              type="button"
+              onClick={askForSchema}
+              className="inline-flex w-fit items-center gap-1.5 text-xs text-violet-600 underline underline-offset-2 hover:text-violet-700"
+            >
+              <Sparkles className="size-3" />
+              {source.trim()
+                ? 'Ask the Copilot to change this schema'
+                : 'Ask the Copilot to help write this schema'}
+            </button>
           ) : null}
         </div>
       ) : null}
