@@ -24,7 +24,7 @@ import { GivenEditor } from './eval-sample-given'
 import { MockToolsPanel } from './eval-sample-mocks'
 import { RunsForSample, TestsList } from './eval-sample-tests'
 import { RunConfigDialog } from './run-config-dialog'
-import { EmptyState, Tabs } from './shared'
+import { EmptyState, Tabs, useTargetAgentCrumb } from './shared'
 import { StepFlow, type Step } from './step-flow'
 
 // The Sample view (route: evals/<setId>/samples/<sampleId>). A Sample IS a
@@ -83,6 +83,7 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
     () => data?.rows.find((r) => r.id === sampleId),
     [data?.rows, sampleId],
   )
+  const targetAgentCrumb = useTargetAgentCrumb(set?.targetId, set?.targetVersion)
   const upsertRow = useUpsertEvalRow()
   const deleteRow = useDeleteEvalRow(setId)
 
@@ -148,6 +149,7 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
           icon: Goal,
           iconClassName: 'text-rose-500',
         },
+        ...(targetAgentCrumb ? [targetAgentCrumb] : []),
         row && draft
           ? {
               editable: {

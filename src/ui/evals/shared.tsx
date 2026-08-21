@@ -6,9 +6,12 @@ import type {
   ModelCapabilities,
   WfEvalRunSummary,
 } from '../../server/protocol'
+import { agentColor, agentIcon } from '../agent-appearance'
 import { cn } from '../cn'
 import { formatTimestamp } from '../cost'
+import { useAgents } from '../hooks'
 import { RunStatusBadge } from '../run-status'
+import type { WfCrumb } from '../shell'
 import { Tooltip } from '../tooltip'
 import { getProvider, ProviderLogo } from './provider-logos'
 
@@ -255,4 +258,26 @@ export function EvalRunsTable({
       ))}
     </div>
   )
+}
+
+// The goal's target agent, as a breadcrumb crumb sitting right after the Goal
+// crumb on the Sample / Test pages. The target lives on the goal (see the
+// TargetRow on the goal page), but every sample and test is authored against
+// it, so the trail names it too. Returns null until the agent list resolves.
+export function useTargetAgentCrumb(
+  targetId: string | undefined,
+  targetVersion: number | null | undefined,
+): WfCrumb | null {
+  const agents = useAgents()
+  const agent = agents.data?.find((a) => a.id === targetId)
+  if (!targetId || !agent) return null
+  return {
+    separator: 'for',
+    assetLabel: 'Agent',
+    label:
+      targetVersion == null ? agent.name : `${agent.name} v${targetVersion}`,
+    to: `agents/${targetId}/edit`,
+    icon: agentIcon(agent.icon),
+    iconClassName: agentColor(agent.color).text,
+  }
 }

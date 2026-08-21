@@ -54,6 +54,11 @@ export type WfCrumb = {
   icon?: LucideIcon
   /** Tailwind color class for `icon`, e.g. "text-rose-500". */
   iconClassName?: string
+  /**
+   * Connector word shown before this crumb instead of the default "/", so a
+   * trail can read as a sentence ("Goal X for Agent Y using Sample Z").
+   */
+  separator?: ReactNode
 }
 
 // True inside an asset tab pane. Set by wf-app.tsx around each asset route so
@@ -132,7 +137,17 @@ export function WfShell({
           <div className="flex items-center gap-1.5">
             {ancestors.map((crumb, i) => (
               <Fragment key={i}>
-                {i > 0 ? <span className="text-neutral-300">/</span> : null}
+                {i > 0 ? (
+                  <span
+                    className={cn(
+                      crumb.separator
+                        ? 'text-xs text-neutral-400'
+                        : 'text-neutral-300',
+                    )}
+                  >
+                    {crumb.separator ?? '/'}
+                  </span>
+                ) : null}
                 <TrailCrumb crumb={crumb} isLast={false} />
               </Fragment>
             ))}

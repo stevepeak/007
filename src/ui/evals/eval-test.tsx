@@ -17,7 +17,7 @@ import {
   withMeta,
 } from './eval-test-config'
 import { RunConfigDialog } from './run-config-dialog'
-import { describeCheck, EmptyState } from './shared'
+import { describeCheck, EmptyState, useTargetAgentCrumb } from './shared'
 
 // The single-test view
 // (route: evals/<setId>/samples/<sampleId>/tests/<testIndex>). A "Test" is one
@@ -53,6 +53,7 @@ export function EvalTest({
   const stored =
     row && Number.isInteger(index) ? row.checks.checks[index] : undefined
   const upsertRow = useUpsertEvalRow()
+  const targetAgentCrumb = useTargetAgentCrumb(set?.targetId, set?.targetVersion)
 
   // When the goal targets an agent, the agent's declared output contract lets us
   // offer its fields (with descriptions) as the "output path" instead of a raw
@@ -150,7 +151,9 @@ export function EvalTest({
           icon: Goal,
           iconClassName: 'text-rose-500',
         },
+        ...(targetAgentCrumb ? [targetAgentCrumb] : []),
         {
+          separator: targetAgentCrumb ? 'using' : undefined,
           assetLabel: 'Sample',
           label: row?.name ?? 'Sample',
           to: `evals/${setId}/samples/${sampleId}`,
