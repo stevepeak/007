@@ -212,8 +212,9 @@ export function EvalSample({
     })
   }
 
-  // Append a check and expand it. Lifted here so its trigger can live in the
-  // Checks step's header (far right).
+  // Append a check and expand it. Lifted here because the draft and the
+  // accordion state both live here; the trigger is the last row of the
+  // checklist itself.
   const addCheck = () => {
     if (!draft) return
     const checks = {
@@ -423,12 +424,6 @@ export function EvalSample({
                     {
                       key: 'checks',
                       title: 'Checks',
-                      aside: (
-                        <Button size="sm" variant="ghost" onClick={addCheck}>
-                          <Plus className="size-4" />
-                          Add check
-                        </Button>
-                      ),
                       content: (
                         <ChecksList
                           checks={draft.checks}
@@ -440,6 +435,7 @@ export function EvalSample({
                           openIndex={openCheck}
                           onOpenChange={setOpenCheck}
                           onChange={(checks) => persist({ ...draft, checks })}
+                          onAdd={addCheck}
                         />
                       ),
                     },

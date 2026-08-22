@@ -1,4 +1,4 @@
-import { ChevronDown } from 'lucide-react'
+import { AlertTriangle, ChevronDown } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -73,7 +73,10 @@ export function BinaryConfig({
 // they're only offered when the goal targets a workflow; `tool_*` checks are
 // unsatisfiable by construction against an agent wired to no tools, so an agent
 // with none is never asked about them. Both are hidden rather than disabled —
-// an option you can't pick is a question you shouldn't have been asked.
+// an option you can't pick is a question you shouldn't have been asked. That
+// holds even when the check ALREADY is one of them (authored before the target
+// lost its tools, or via the family toggle): the type stays visible in the
+// trigger, but it isn't offered, and a line underneath says why.
 const NODE_TYPES: readonly BinaryType[] = ['node_visited', 'node_input_match']
 const TOOL_TYPES: readonly BinaryType[] = ['tool_called', 'tool_args_match']
 
@@ -89,15 +92,18 @@ function BinaryTypePicker({
   hasTools?: boolean | null
 }) {
   const [open, setOpen] = useState(false)
-  const types = BINARY_TYPES.filter(
-    (t) =>
-      // A stored type always stays listed, whatever the target now looks like,
-      // so an existing check can still show its own name in the trigger instead
-      // of reading "Select a check…" over a config it plainly has.
-      t === value ||
-      ((targetKind !== 'agent' || !NODE_TYPES.includes(t)) &&
-        (hasTools !== false || !TOOL_TYPES.includes(t))),
-  )
+  const applies = (t: BinaryType) =>
+    (targetKind !== 'agent' || !NODE_TYPES.includes(t)) &&
+    (hasTools !== false || !TOOL_TYPES.includes(t))
+  const types = BINARY_TYPES.filter(applies)
+  // The stored type can be one this target can't satisfy. The trigger still
+  // names it — reading "Select a check…" over a config it plainly has would be
+  // worse — but it's not in the menu, so the only way out is a type that works.
+  const staleReason = applies(value)
+    ? null
+    : TOOL_TYPES.includes(value)
+      ? 'This agent has no tools, so this check can never pass.'
+      : 'This goal targets an agent, which has no workflow nodes, so this check can never pass.'
   const [rect, setRect] = useState<DOMRect | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -211,6 +217,13 @@ function BinaryTypePicker({
             document.body,
           )
         : null}
+
+      {staleReason ? (
+        <p className="mt-1 flex items-start gap-1 text-xs text-amber-600">
+          <AlertTriangle className="mt-px size-3 shrink-0" />
+          <span>{staleReason} Pick another check.</span>
+        </p>
+      ) : null}
     </>
   )
 }

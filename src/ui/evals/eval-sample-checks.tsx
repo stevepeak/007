@@ -3,6 +3,7 @@ import {
   Binary,
   ChevronDown,
   Gauge,
+  Plus,
   Trash2,
 } from 'lucide-react'
 
@@ -52,6 +53,7 @@ export function ChecksList({
   openIndex,
   onOpenChange,
   onChange,
+  onAdd,
 }: {
   checks: CheckTree
   /** The Sample's tool setting — decides which check types can grade at all. */
@@ -68,6 +70,8 @@ export function ChecksList({
   openIndex: number | null
   onOpenChange: (index: number | null) => void
   onChange: (next: CheckTree) => void
+  /** Append a check and expand it — the row at the end of the list. */
+  onAdd: () => void
 }) {
   // A check the tool setting has made ungradeable is still SHOWN — deleting an
   // author's assertion because they flipped a mode would be worse — but it is
@@ -92,10 +96,14 @@ export function ChecksList({
 
   // Switching family can't preserve anything — a rubric isn't a tool id — so it
   // starts the other family from its default rather than pretending to migrate.
+  // The binary default is a tool assertion, which only means anything when the
+  // target HAS tools: against a toolless agent it lands on an assertion the
+  // picker won't even offer, so that case starts from the output instead.
   const setFamily = (index: number, family: CheckFamily) => {
     const current = checks.checks[index]
     if (!current || familyOf(current) === family) return
-    replace(index, defaultCheck(family === 'scored' ? 'llm_judge' : 'tool_called'))
+    const binaryDefault = hasTools === false ? 'output_match' : 'tool_called'
+    replace(index, defaultCheck(family === 'scored' ? 'llm_judge' : binaryDefault))
   }
 
   return (
@@ -206,6 +214,20 @@ export function ChecksList({
           })}
         </div>
       )}
+
+      {/* The add affordance is the last row of the checklist, not a control in
+          the card's header: a check is appended to the END of the list, so the
+          button that does it belongs where the new row will appear. Outlined
+          rather than filled — it's the same weight as the rows above it, and a
+          solid button here would out-shout the checks themselves. */}
+      <button
+        type="button"
+        onClick={onAdd}
+        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-2.5 text-sm font-medium text-neutral-500 transition hover:border-neutral-400 hover:bg-neutral-50 hover:text-neutral-700"
+      >
+        <Plus className="size-4" />
+        Add check
+      </button>
     </div>
   )
 }

@@ -2,14 +2,22 @@ import { HelpCircle } from 'lucide-react'
 import { type ReactNode, useEffect, useState } from 'react'
 
 import type { JsonSchema } from '../../engine'
+import type { ModelCapabilities } from '../../engine/config'
 import type { EvalCheck } from '../../server/protocol'
 import { useWfComponents } from '../context'
 import { ModelSelect } from '../editor/model-select'
 import { useModels } from '../hooks'
 import { Modal } from '../modal'
+import { unmetRequirements } from '../model-capabilities'
 import { useCommittedField } from '../use-committed-field'
 
 import { outputPathOptions } from './fields'
+
+// A judge grades by emitting a JSON verdict (`generateObject` in eval/grade),
+// so a model that can't do structured output can't be a judge at all. Rather
+// than hide those models — which reads as "my provider is missing" — the picker
+// shows them greyed out with the reason.
+const JUDGE_REQUIREMENTS: ModelCapabilities = { structuredOutput: true }
 
 // ── Scored (judge) config ────────────────────────────────────────────────────
 //
@@ -47,11 +55,13 @@ export function JudgeConfig({
   )
 
   // The judge model is required, so keep one selected: as soon as the model list
-  // loads, seed an empty selection with the first available model.
+  // loads, seed an empty selection with the first model that can actually judge.
   const models = useModels()
   useEffect(() => {
     if (check.modelId) return
-    const first = models.data?.[0]?.id
+    const first = models.data?.find(
+      (m) => unmetRequirements(m, JUDGE_REQUIREMENTS).length === 0,
+    )?.id
     if (first) persist({ ...check, modelId: first })
   }, [check, models.data, persist])
 
@@ -68,10 +78,22 @@ export function JudgeConfig({
     <div className="space-y-3">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1">
-          <Label>Model</Label>
+          <div className="flex items-center gap-1">
+            <Label>Model</Label>
+            <FieldHelp title="Model">
+              <p>
+                The model that does the grading. A judge has to return a
+                structured verdict — a pass/fail with a reason — so models that
+                don’t support structured output can’t be picked. They’re still
+                listed, greyed out with the reason, so it’s clear they exist and
+                why they’re unavailable.
+              </p>
+            </FieldHelp>
+          </div>
           <ModelSelect
             value={check.modelId ?? ''}
             onChange={(modelId) => persist({ ...check, modelId })}
+            requirements={JUDGE_REQUIREMENTS}
           />
         </div>
         <div className="space-y-1">

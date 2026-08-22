@@ -99,7 +99,7 @@ export function ModelSelect({
               <AlertTriangle className="size-3 shrink-0" />
               <span>
                 This model has {selectedUnmet.map((k) => REQUIREMENT_REASON[k]).join(', ')}
-                {' '}— pick one that meets the agent's needs.
+                {' '}— pick one that meets what's required here.
               </span>
             </div>
           ) : null}
