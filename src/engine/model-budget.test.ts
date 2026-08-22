@@ -1,7 +1,5 @@
 import { describe, expect, test } from 'bun:test'
 
-import { AI_STEP_OPTS } from '../cloudflare/graph-workflow-dispatch-step-opts'
-
 import {
   MAX_ROUND_TRIP_MS,
   MAX_TOOL_MS,
@@ -55,16 +53,6 @@ describe('modelBudgetFor', () => {
       const b = modelBudgetFor(defaultNodeTimeoutMs(kind))
       expect(b.totalMs).toBeGreaterThan(MIN_TOTAL_MS)
     }
-  })
-
-  test('the shipped agent step timeout leaves a usable budget', () => {
-    // Guards the two constants drifting apart: if the step timeout were ever
-    // lowered to at-or-below the slack, every agent node would silently collapse
-    // to the floor budget.
-    expect(AI_STEP_OPTS.timeout).toBeGreaterThan(STEP_TIMEOUT_SLACK_MS)
-    const b = modelBudgetFor(AI_STEP_OPTS.timeout)
-    expect(b.totalMs).toBeGreaterThan(MIN_TOTAL_MS)
-    expect(b.stepMs).toBe(MAX_ROUND_TRIP_MS)
   })
 })
 

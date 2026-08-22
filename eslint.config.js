@@ -18,7 +18,7 @@ const config = await defineESLintConfig(
       ],
     },
   },
-  { ignores: ['knip.ts', 'eslint.config.js'] },
+  { ignores: ['eslint.config.js'] },
 )
 
 /** @type {import("eslint").Linter.Config[]} */
@@ -122,6 +122,63 @@ export default [
       'react-hooks/purity': 'off',
       'react-hooks/immutability': 'off',
       'react-hooks/preserve-manual-memoization': 'off',
+    },
+  },
+  // The one-way dependency rule, enforced instead of merely documented.
+  // README.md states it (`ui → server → storage → engine`, `cloudflare →
+  // storage → engine`) and the package's whole claim to being publishable rests
+  // on `engine` depending only on `ai` + `zod`. Prose can't fail CI; this can.
+  // Two engine TESTS had already drifted across the boundary before this rule
+  // existed — see cloudflare/engine-contract.test.ts, where they now live.
+  {
+    files: ['src/engine/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/storage/**', '**/cloudflare/**', '**/server/**', '**/ui/**'],
+              message:
+                'engine must not import other layers — it depends only on `ai` + `zod`, which is what makes it publishable. Move the shared value into engine, or put the test in the higher layer.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/storage/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/cloudflare/**', '**/server/**', '**/ui/**'],
+              message:
+                'storage sits below cloudflare/server/ui — depend downward (engine) only.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/server/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/cloudflare/**', '**/ui/**'],
+              message:
+                'server sits below ui and beside cloudflare — depend on storage/engine only.',
+            },
+          ],
+        },
+      ],
     },
   },
   { ignores: ['migrations/**'] },

@@ -47,15 +47,18 @@ cycles (`ui → server → storage → engine`, `cloudflare → storage → engi
 | ------------------------------------- | ----------------------- | ----------------------------------------------- |
 | `@stevepeak/007`                         | any                     | barrel: engine + storage + eval                 |
 | `@stevepeak/007/engine`                  | any (only `ai` + `zod`) | custom backends, graph types                    |
+| `@stevepeak/007/analytics`               | any server route        | `AnalyticsQuery` + dashboard aggregates over the telemetry dataset |
 | `@stevepeak/007/storage`                 | Workers (D1)            | `createWfDb`, data access, schema               |
 | `@stevepeak/007/storage/schema`          | build-time              | drizzle-kit / migrations                        |
 | `@stevepeak/007/cloudflare`              | any server route²       | `startGraphRun`, `createHttpGraphRunClient`, `createR2BlobResolver`, `createExtractTextTool` |
 | `@stevepeak/007/cloudflare/runtime`      | Workers **only**        | `makeGraphWorkflow`, `RunRoom` (durable classes — import `cloudflare:workers`) |
 | `@stevepeak/007/cloudflare/blob-resolver`| any server route        | `createR2BlobResolver` (engine-only leaf)       |
 | `@stevepeak/007/cloudflare/extract-text` | any server route¹       | `createExtractTextTool` (R2/Vision OCR tool)    |
+| `@stevepeak/007/cloudflare/analytics-engine` | Workers (AE binding) | `createAnalyticsEngineTelemetry` — the write half of run telemetry (§7b) |
 | `@stevepeak/007/server`                  | any server route        | `createWfSdkHandlers`, `createHttpWfDataClient` |
 | `@stevepeak/007/tools`                   | any (fetch + deps)      | built-in tools (`createTavilyTool`)             |
 | `@stevepeak/007/ui`                      | browser (React 19)      | `WfApp`, `WfSdkProvider`, `RunViewer`, hooks    |
+| `@stevepeak/007/ui/run-progress`         | browser (React 19)      | `WorkflowRunProgress` + the progress source, without pulling the editor |
 | `@stevepeak/007/ui/styles.css`           | host CSS (Tailwind v4)  | `@import` once — emits the SDK's utilities + xyflow CSS (§6) |
 | `@stevepeak/007/eval`                    | test                    | `runWorkflowUnderConditions`                    |
 

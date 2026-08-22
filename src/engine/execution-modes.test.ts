@@ -1,7 +1,5 @@
 import { describe, expect, test } from 'bun:test'
 
-import { calleeEventType, toCalleeWire } from '../cloudflare/callee-protocol'
-
 import {
   backfillIterationLimits,
   ITERATION_MAX_ITEMS_CEILING,
@@ -95,23 +93,6 @@ describe('execution modes', () => {
     expect(() => parse([workflowNode({ calleeExecution: 'spawn' })])).toThrow()
   })
 
-  // A parent can have several durable callees parked at once. Keying the event
-  // type on the node id is what stops one node's completion waking a sibling —
-  // which would hand that sibling the wrong workflow's output.
-  test('each calling node parks on its own event type', () => {
-    expect(calleeEventType('a')).not.toBe(calleeEventType('b'))
-    expect(calleeEventType('a')).toBe(calleeEventType('a'))
-  })
-
-  // `undefined` is what a callee whose Output fizzled out returns. It must
-  // survive as a JSON `null` rather than an absent field, or the parent's
-  // `JSON.parse` gets an empty string and throws — turning a legitimately
-  // empty result into a crash in the caller.
-  test('an empty callee result crosses the wire as null', () => {
-    const wire = toCalleeWire({ ok: true, output: undefined })
-    expect(wire).toEqual({ ok: true, outputJson: 'null' })
-    expect(JSON.parse((wire as { outputJson: string }).outputJson)).toBeNull()
-  })
 })
 
 // The fan-out bound rides the same lifecycle as `itemExecution` — stored in the
