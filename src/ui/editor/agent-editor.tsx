@@ -1139,6 +1139,7 @@ function AgentEditorInner({
                 <div className="space-y-6">
                   <AgentEvalsPanel
                     agentId={agentId}
+                    agentName={name}
                     config={config}
                     onRestore={restoreConfig}
                   />

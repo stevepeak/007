@@ -6,6 +6,7 @@ import {
   History,
   Loader2,
   Play,
+  Plus,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
@@ -14,11 +15,12 @@ import type { WfEvalResultDTO, WfEvalSetSummary } from '../../server/protocol'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { formatRelative, formatTimestamp } from '../cost'
+import { uniqueGoalName } from '../evals/new-goal-dialog'
 import { RunConfigDialog } from '../evals/run-config-dialog'
 import { StatusDot } from '../evals/run-report/atoms'
 import { buildResultRows } from '../evals/run-report/model'
-import { useEvalRun, useEvalSets, useModels } from '../hooks'
-import { WfLink } from '../nav'
+import { useCreateEvalSet, useEvalRun, useEvalSets, useModels } from '../hooks'
+import { useOpenAsset, WfLink } from '../nav'
 import { Tooltip } from '../tooltip'
 import { changedFields } from './agent-config-diff'
 
@@ -46,11 +48,14 @@ import { changedFields } from './agent-config-diff'
 
 export function AgentEvalsPanel({
   agentId,
+  agentName,
   config,
   /** Load a run's frozen config back into the editor (same contract as the playground). */
   onRestore,
 }: {
   agentId: string
+  /** The editor's live name — seeds the name of a goal created from here. */
+  agentName: string
   config: AgentConfig
   onRestore?: (config: AgentConfig) => void
 }) {
@@ -111,7 +116,11 @@ export function AgentEvalsPanel({
         {setsQuery.isLoading && goals.length === 0 ? (
           <p className="text-xs text-neutral-400">Loading goals…</p>
         ) : goals.length === 0 ? (
-          <EmptyGoals />
+          <EmptyGoals
+            agentId={agentId}
+            agentName={agentName}
+            existingNames={(setsQuery.data ?? []).map((s) => s.name)}
+          />
         ) : (
           <ul className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
             {goals.map((g) => (
@@ -185,20 +194,71 @@ export function AgentEvalsPanel({
   )
 }
 
-function EmptyGoals() {
+/**
+ * No goals yet — so make one, here.
+ *
+ * The only decision the new-goal dialog blocks on is which agent to grade, and
+ * standing in this editor has already answered it. Sending the author to Evals
+ * to pick this agent out of a list is a detour through a question they've
+ * implicitly answered, so the button creates the goal outright: this agent,
+ * floating to its latest version, named after it.
+ *
+ * It opens in a NEW tab for the same reason every link out of this panel does —
+ * the unsaved draft under test lives in this editor, and unmounting it to go add
+ * samples would take the draft with it.
+ */
+function EmptyGoals({
+  agentId,
+  agentName,
+  existingNames,
+}: {
+  agentId: string
+  agentName: string
+  existingNames: string[]
+}) {
+  const { Button } = useWfComponents()
+  const createSet = useCreateEvalSet()
+  const openAsset = useOpenAsset()
+
+  const create = async () => {
+    const res = await createSet.mutateAsync({
+      name: uniqueGoalName(agentName, existingNames),
+      targetKind: 'agent',
+      targetId: agentId,
+      targetVersion: null,
+      triggerKind: 'manual',
+    })
+    openAsset(`evals/${res.setId}`, { newTab: true })
+  }
+
   return (
     <div className="rounded-lg border border-dashed border-neutral-300 bg-white px-3 py-4 text-center">
       <p className="text-xs text-neutral-500">
         No goals target this agent yet.
       </p>
-      <WfLink
-        to="evals"
-        newTab
-        className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-neutral-600 transition hover:text-neutral-900"
+      <Button
+        size="sm"
+        variant="outline"
+        className="mt-2"
+        disabled={createSet.isPending}
+        onClick={() => void create()}
       >
-        Create one in Evals
-        <ArrowUpRight className="size-3.5" />
-      </WfLink>
+        {createSet.isPending ? (
+          <Loader2 className="size-3.5 animate-spin" />
+        ) : (
+          <Plus className="size-3.5" />
+        )}
+        {createSet.isPending ? 'Creating…' : 'Create a goal'}
+      </Button>
+      {createSet.isError ? (
+        <p className="mt-1 text-xs text-red-600">
+          Couldn&rsquo;t create the goal. Try again.
+        </p>
+      ) : null}
+      <p className="mt-1.5 text-[11px] text-neutral-400">
+        Grades this agent, floating to its latest version — opens in a new tab so
+        you can add samples without losing your draft.
+      </p>
     </div>
   )
 }
