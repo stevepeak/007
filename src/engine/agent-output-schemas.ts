@@ -3,15 +3,37 @@
 
 import type { JsonSchema } from './agent-output-scan'
 
-// A stable JSON Schema for the YES/NO output kind — a boolean `answer` plus a
-// short `reason` explaining the decision (surfaced for routing/gate audits).
+// A stable JSON Schema for the YES/NO output kind — the decision itself, how
+// sure the agent is of it, why, and what would have made it surer. `confidence`
+// and `feedback` exist so a gate can be more than a coin flip: a low score with
+// a concrete "I'd need the signed copy of the lease" is the difference between
+// a decision you can route on and one you should escalate. The descriptions are
+// the agent's only instructions for these fields, so they carry the contract
+// (including the 0–1 range, which JSON Schema bounds can't express through the
+// editor's Zod subset).
 export const BOOLEAN_OUTPUT_SCHEMA: JsonSchema = {
   type: 'object',
   properties: {
-    answer: { type: 'boolean' },
-    reason: { type: 'string' },
+    answer: {
+      type: 'boolean',
+      description: 'The decision: true for yes, false for no.',
+    },
+    confidence: {
+      type: 'number',
+      description:
+        'How sure you are of the answer, from 0 (a guess) to 1 (certain).',
+    },
+    reason: {
+      type: 'string',
+      description: 'A short justification for the decision.',
+    },
+    feedback: {
+      type: 'string',
+      description:
+        'What information or access would have raised your confidence. Empty if nothing would.',
+    },
   },
-  required: ['answer', 'reason'],
+  required: ['answer', 'confidence', 'reason', 'feedback'],
   additionalProperties: false,
 }
 

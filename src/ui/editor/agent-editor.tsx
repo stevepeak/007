@@ -995,7 +995,7 @@ function AgentEditorInner({
                   can't do anything. Opening it still shows the reason. */}
                   <EditorSection
                     icon={Wallet}
-                    title="Budget"
+                    title="Tool Calling Budget"
                     collapsible
                     defaultCollapsed={!!budgetIrrelevantReason}
                     badge={

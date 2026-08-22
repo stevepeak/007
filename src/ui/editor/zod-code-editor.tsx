@@ -1,6 +1,8 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { HelpCircle } from 'lucide-react'
+import { type ReactNode, useLayoutEffect, useRef, useState } from 'react'
 
 import { cn } from '../cn'
+import { Popover } from '../popover'
 
 // A lightweight, dependency-free code editor for authoring an agent's structured
 // output as a Zod schema. It's a styled textarea plus a token-aware autocomplete
@@ -174,6 +176,20 @@ export type ZodCodeEditorProps = {
   placeholder?: string
   /** Fired when the field loses focus — used to auto-format the source. */
   onBlur?: () => void
+  /**
+   * Show the source but don't let it be edited — used for the built-in output
+   * shapes, where the schema is the SDK's, not the author's. The same editor
+   * (same highlighting, same box) so a fixed contract reads as the same kind of
+   * thing as one you write, just not yours to change.
+   */
+  readOnly?: boolean
+  /**
+   * Syntax reference for this editor, reachable from a `?` inside the field
+   * itself. Set above the box it explains, that prose reads as loud as the
+   * editor and is in the way once you've read it; here it's one glyph, opened
+   * only by the author who wants it.
+   */
+  help?: ReactNode
 }
 
 export function ZodCodeEditor({
@@ -183,6 +199,8 @@ export function ZodCodeEditor({
   rows = 9,
   placeholder,
   onBlur,
+  readOnly = false,
+  help,
 }: ZodCodeEditorProps) {
   const ref = useRef<HTMLTextAreaElement>(null)
   const pendingCaret = useRef<number | null>(null)
@@ -246,7 +264,11 @@ export function ZodCodeEditor({
             of space when empty; the trailing newline keeps the last line clear. */}
         <pre
           aria-hidden
-          style={{ minHeight: `calc(${rows} * 1.625em + 1rem + 2px)` }}
+          style={
+            readOnly
+              ? undefined
+              : { minHeight: `calc(${rows} * 1.625em + 1rem + 2px)` }
+          }
           className={cn(
             'pointer-events-none m-0 whitespace-pre-wrap break-words rounded-md border border-transparent bg-neutral-50 px-3 py-2 font-mono text-xs leading-relaxed text-neutral-800',
           )}
@@ -270,7 +292,9 @@ export function ZodCodeEditor({
           ref={ref}
           value={value}
           spellCheck={false}
+          readOnly={readOnly}
           onChange={(e) => {
+            if (readOnly) return
             onChange(e.target.value)
             refresh(e.target)
           }}
@@ -299,12 +323,43 @@ export function ZodCodeEditor({
             }, 120)
           }
           className={cn(
-            'absolute inset-0 h-full w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded-md border bg-transparent px-3 py-2 font-mono text-xs leading-relaxed text-transparent caret-neutral-800 outline-none',
-            invalid
-              ? 'border-amber-400 focus:border-amber-500'
-              : 'border-neutral-300 focus:border-neutral-500',
+            'absolute inset-0 h-full w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded-md border bg-transparent px-3 py-2 font-mono text-xs leading-relaxed text-transparent outline-none',
+            readOnly
+              ? 'cursor-default border-neutral-200 caret-transparent'
+              : 'caret-neutral-800',
+            readOnly
+              ? undefined
+              : invalid
+                ? 'border-amber-400 focus:border-amber-500'
+                : 'border-neutral-300 focus:border-neutral-500',
           )}
         />
+        {/* Sits above the (inset-0) textarea, so it stays clickable over the
+            editing surface. */}
+        {help ? (
+          <Popover
+            className="absolute right-1.5 top-1.5 z-20"
+            panelClassName="absolute right-0 top-full z-30 mt-1 w-80 rounded-md border border-neutral-200 bg-white p-3 text-xs leading-relaxed text-neutral-500 shadow-lg"
+            trigger={(api) => (
+              <button
+                type="button"
+                aria-label="Schema syntax help"
+                aria-expanded={api.open}
+                onClick={api.toggle}
+                className={cn(
+                  'flex size-5 items-center justify-center rounded transition',
+                  api.open
+                    ? 'bg-neutral-200 text-neutral-700'
+                    : 'text-neutral-300 hover:bg-neutral-200 hover:text-neutral-600',
+                )}
+              >
+                <HelpCircle className="size-3.5" />
+              </button>
+            )}
+          >
+            {() => help}
+          </Popover>
+        ) : null}
       </div>
       {open ? (
         <ul className="absolute left-0 top-full z-10 mt-1 max-h-48 w-60 overflow-auto rounded-md border border-neutral-200 bg-white py-1 shadow-lg">

@@ -10,8 +10,8 @@ import { inferPromptVariables } from './prompt-variables'
 
 // An agent's "expected output" contract, versioned with the rest of its config.
 //   • text    — the tool-calling loop's final text (`{ text }`).
-//   • boolean — a YES/NO decision (`{ answer: boolean, reason: string }` via
-//               generateObject).
+//   • boolean — a YES/NO decision (`{ answer, confidence, reason, feedback }`
+//               via generateObject; see BOOLEAN_OUTPUT_SCHEMA).
 //   • object  — a structured object matching a JSON Schema (`schema`). The
 //               author writes it as a Zod schema in the editor, which compiles
 //               to `schema`; only `schema` is persisted.

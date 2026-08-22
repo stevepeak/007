@@ -1,7 +1,15 @@
-import { AlertTriangle, Check, Sparkles } from 'lucide-react'
+import {
+  AlertTriangle,
+  Braces,
+  Sparkles,
+  ToggleLeft,
+  Type,
+  type LucideIcon,
+} from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import {
+  BOOLEAN_OUTPUT_SCHEMA,
   compileZodSource,
   formatZodSource,
   zodSourceFromJsonSchema,
@@ -34,6 +42,36 @@ const STRUCTURED_PLACEHOLDER = `z.object({
   summary: z.string(),
   isUrgent: z.boolean(),
 })`
+
+// The supported syntax, reachable from the `?` inside the editor rather than
+// set as a wall of prose above it.
+const SCHEMA_HELP = (
+  <>
+    <p>
+      Describe the output as a Zod schema. Type{' '}
+      <code className="rounded bg-neutral-100 px-1">z.</code> for suggestions.
+      The schema is parsed, never executed.
+    </p>
+    <p className="mt-2">
+      Supported:{' '}
+      <code className="rounded bg-neutral-100 px-1">z.string()</code>,{' '}
+      <code className="rounded bg-neutral-100 px-1">z.number()</code>,{' '}
+      <code className="rounded bg-neutral-100 px-1">z.boolean()</code>,{' '}
+      <code className="rounded bg-neutral-100 px-1">z.enum([…])</code>,{' '}
+      <code className="rounded bg-neutral-100 px-1">z.array(…)</code>, nested{' '}
+      <code className="rounded bg-neutral-100 px-1">z.object({'{…}'})</code>, and
+      the <code className="rounded bg-neutral-100 px-1">.optional()</code> /{' '}
+      <code className="rounded bg-neutral-100 px-1">.nullable()</code> /{' '}
+      <code className="rounded bg-neutral-100 px-1">.int()</code> /{' '}
+      <code className="rounded bg-neutral-100 px-1">.describe("…")</code> chains.
+    </p>
+  </>
+)
+
+// The YES/NO shape, shown read-only in the same editor the author writes a
+// structured schema in. Decompiled from the engine's own schema rather than
+// typed out here, so the contract on screen is the one that actually runs.
+const BOOLEAN_SOURCE = zodSourceFromJsonSchema(BOOLEAN_OUTPUT_SCHEMA)
 
 const EMPTY_SCHEMA = {
   type: 'object',
@@ -135,10 +173,20 @@ export function AgentOutputEditor({
     )
   }
 
-  const options: { kind: Kind; label: string; hint: string }[] = [
-    { kind: 'text', label: 'Text', hint: 'Free-form answer' },
-    { kind: 'boolean', label: 'Yes / No', hint: 'A single decision' },
-    { kind: 'object', label: 'Structured', hint: 'A typed object' },
+  const options: {
+    kind: Kind
+    label: string
+    hint: string
+    Icon: LucideIcon
+  }[] = [
+    { kind: 'text', label: 'Text', hint: 'Free-form answer', Icon: Type },
+    {
+      kind: 'boolean',
+      label: 'Yes / No',
+      hint: 'A single decision',
+      Icon: ToggleLeft,
+    },
+    { kind: 'object', label: 'Structured', hint: 'A typed object', Icon: Braces },
   ]
 
   return (
@@ -164,7 +212,10 @@ export function AgentOutputEditor({
                     : 'border-neutral-300 text-neutral-700 hover:border-neutral-400',
               )}
             >
-              <div className="font-medium">{o.label}</div>
+              <div className="flex items-center gap-1.5 font-medium">
+                <o.Icon className="size-3.5 shrink-0" />
+                {o.label}
+              </div>
               <div
                 className={cn(
                   'mt-0.5 text-xs',
@@ -193,58 +244,29 @@ export function AgentOutputEditor({
       ) : null}
 
       {value.kind === 'boolean' ? (
-        <p className="text-xs text-neutral-500">
-          The agent returns{' '}
-          <code className="rounded bg-neutral-100 px-1">
-            {'{ answer: boolean, reason: string }'}
-          </code>{' '}
-          — the decision plus a short justification, useful for routing and
-          gates.
-        </p>
+        <div className="space-y-1.5">
+          <p className="text-xs text-neutral-500">
+            The agent returns this fixed shape — the decision routes the node's
+            yes/no edges, and the rest flows downstream.
+          </p>
+          <ZodCodeEditor value={BOOLEAN_SOURCE} onChange={() => {}} readOnly />
+        </div>
       ) : null}
 
       {value.kind === 'object' ? (
         <div className="space-y-2">
-          <div className="text-xs text-neutral-500">
-            Describe the output as a Zod schema. Supported:{' '}
-            <code className="rounded bg-neutral-100 px-1">z.string()</code>,{' '}
-            <code className="rounded bg-neutral-100 px-1">z.number()</code>,{' '}
-            <code className="rounded bg-neutral-100 px-1">z.boolean()</code>,{' '}
-            <code className="rounded bg-neutral-100 px-1">z.enum([…])</code>,{' '}
-            <code className="rounded bg-neutral-100 px-1">z.array(…)</code>,
-            nested{' '}
-            <code className="rounded bg-neutral-100 px-1">
-              z.object({'{…}'})
-            </code>
-, and the{' '}
-            <code className="rounded bg-neutral-100 px-1">.optional()</code> /{' '}
-            <code className="rounded bg-neutral-100 px-1">.nullable()</code> /{' '}
-            <code className="rounded bg-neutral-100 px-1">.int()</code> /{' '}
-            <code className="rounded bg-neutral-100 px-1">.describe("…")</code>{' '}
-            chains. The schema is parsed, never executed. Type{' '}
-            <code className="rounded bg-neutral-100 px-1">z.</code> for
-            suggestions.
-          </div>
           <ZodCodeEditor
             value={source}
             onChange={onSourceChange}
             onBlur={formatSource}
             placeholder={STRUCTURED_PLACEHOLDER}
             invalid={!!compiled && !compiled.ok}
+            help={SCHEMA_HELP}
           />
           {compiled && !compiled.ok ? (
             <div className="flex items-start gap-1.5 text-xs text-amber-700">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
               <span>{compiled.error}</span>
-            </div>
-          ) : compiled && compiled.ok ? (
-            <div className="flex items-center gap-1.5 text-xs text-emerald-600">
-              <Check className="size-3.5 shrink-0" />
-              <span>
-                {compiled.fields.length} field
-                {compiled.fields.length === 1 ? '' : 's'}:{' '}
-                {compiled.fields.join(', ')}
-              </span>
             </div>
           ) : null}
           {copilotAvailable && copilotContext ? (

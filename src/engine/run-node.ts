@@ -133,7 +133,7 @@ export async function runNode<TDeps>(
         meta: r.meta,
         // A YES/NO agent routes its outgoing yes/no edges like a Branch. Its
         // output still flows downstream unchanged (unlike branch/switch, which
-        // pass their input through) — the `{ answer, reason }` is the value.
+        // pass their input through) — the whole decision object is the value.
         branchResult: r.decision,
         branchReasoning: r.decisionReasoning,
       }

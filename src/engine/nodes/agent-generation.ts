@@ -405,7 +405,7 @@ async function runStructuredGeneration(
   const obj = result.object as Record<string, unknown>
   // A YES/NO agent doubles as a decision: its `answer` routes the node's
   // yes/no edges (the `object` kind produces data only, never routes). The
-  // full `{ answer, reason }` still flows downstream as the node's output.
+  // full decision object still flows downstream as the node's output.
   if (output.kind === 'boolean') {
     return {
       output: obj,
