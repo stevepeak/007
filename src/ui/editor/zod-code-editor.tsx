@@ -204,7 +204,7 @@ export function ZodCodeEditor({
   help,
 }: ZodCodeEditorProps) {
   const ref = useRef<HTMLTextAreaElement>(null)
-  const pendingCaret = useRef<number | null>(null)
+  const pendingCaretRef = useRef<number | null>(null)
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<Completion[]>([])
   const [active, setActive] = useState(0)
@@ -212,10 +212,10 @@ export function ZodCodeEditor({
   // After an accept, `onChange` re-renders the (controlled) textarea; restore the
   // caret to where the completion left it once the new value is painted.
   useLayoutEffect(() => {
-    if (pendingCaret.current != null && ref.current) {
-      const at = pendingCaret.current
+    if (pendingCaretRef.current != null && ref.current) {
+      const at = pendingCaretRef.current
       ref.current.selectionStart = ref.current.selectionEnd = at
-      pendingCaret.current = null
+      pendingCaretRef.current = null
     }
   })
 
@@ -249,7 +249,7 @@ export function ZodCodeEditor({
     const { start } = tokenBeforeCaret(el)
     const caret = el.selectionStart
     const next = el.value.slice(0, start) + c.insert + el.value.slice(caret)
-    pendingCaret.current = start + c.insert.length - (c.caretBack ?? 0)
+    pendingCaretRef.current = start + c.insert.length - (c.caretBack ?? 0)
     setOpen(false)
     onChange(next)
   }
