@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { type AgentConfig, inferPromptVariables } from '../../engine'
+import { type AgentConfig } from '../../engine'
 import type { WfAgentCall } from '../../server/protocol'
 import { AGENT_ICONS, DEFAULT_AGENT_COLOR } from '../agent-appearance'
 import { AppearancePicker } from '../appearance-picker'
@@ -916,7 +916,6 @@ function AgentEditorInner({
                       initialUserPrompt={initialConfig.userPrompt}
                       onChange={patch}
                       registerSetUserPrompt={registerSetUserPrompt}
-                      systemPromptVariables={inferPromptVariables(config.prompt)}
                     />
                   </EditorSection>
 

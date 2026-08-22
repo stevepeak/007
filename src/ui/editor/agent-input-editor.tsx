@@ -1,6 +1,6 @@
 import { AlertTriangle } from 'lucide-react'
 
-import { type AgentConfig, inferPromptVariables } from '../../engine'
+import { type AgentConfig } from '../../engine'
 import { cn } from '../cn'
 import { Hint } from '../hint'
 import {
@@ -32,8 +32,6 @@ export type AgentInputEditorProps = {
   userPrompt: string
   initialUserPrompt: string
   onChange: (patch: Partial<Pick<AgentConfig, 'inputKind' | 'userPrompt'>>) => void
-  /** `${vars}` already declared by the system prompt, to show the shared bag. */
-  systemPromptVariables: string[]
   /** Imperative setter for the template body, for a version restore. */
   registerSetUserPrompt?: (setBody: (body: string) => void) => void
 }
@@ -48,15 +46,8 @@ export function AgentInputEditor({
   userPrompt,
   initialUserPrompt,
   onChange,
-  systemPromptVariables,
   registerSetUserPrompt,
 }: AgentInputEditorProps) {
-  const userVariables = inferPromptVariables(userPrompt)
-  // Both templates interpolate from one bag, so a name is listed once no matter
-  // where it appears — this is exactly the set a node has to bind.
-  const allVariables = [
-    ...new Set([...systemPromptVariables, ...userVariables]),
-  ]
   const missingTurn = inputKind === 'task' && userPrompt.trim().length === 0
 
   return (
@@ -103,7 +94,7 @@ export function AgentInputEditor({
 
       <div className="space-y-1.5">
         <span className="text-foreground block text-sm font-medium">
-          User message
+          {inputKind === 'task' ? 'Input' : 'User message'}
           {inputKind === 'conversation' ? (
             <span className="ml-1.5 text-xs font-normal text-neutral-400">
               optional
@@ -127,8 +118,8 @@ export function AgentInputEditor({
           <p className="flex items-start gap-1.5 text-xs text-red-600">
             <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
             <span>
-              A task agent needs a user message — it's the only way data reaches
-              it. Reference the data with{' '}
+              A task agent needs an input message — it's the only way data
+              reaches it. Reference the data with{' '}
               <code className="rounded bg-red-50 px-1">{'${variables}'}</code>{' '}
               you map on each workflow node.
             </span>
@@ -144,24 +135,6 @@ export function AgentInputEditor({
           </Hint>
         )}
       </div>
-
-      {allVariables.length > 0 ? (
-        <div className="space-y-1.5">
-          <div className="text-[10px] font-medium tracking-wide text-neutral-400 uppercase">
-            Inputs to map on every node
-          </div>
-          <div className="flex flex-wrap gap-1">
-            {allVariables.map((name) => (
-              <code
-                key={name}
-                className="rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] text-neutral-600"
-              >
-                {name}
-              </code>
-            ))}
-          </div>
-        </div>
-      ) : null}
     </div>
   )
 }
