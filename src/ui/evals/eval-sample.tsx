@@ -1,6 +1,7 @@
 import { Goal, Microscope, Play, Plus } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { agentOutputJsonSchema, type JsonSchema } from '../../engine'
 import type {
   CheckTree,
   EvalCheck,
@@ -36,8 +37,10 @@ import { StepFlow, type Step } from './step-flow'
 //               a workflow's trigger payload), so there is exactly one input
 //               source per sample instead of several competing ones.
 //   2. TOOLS  — how do its tools behave? One tri-state: mocked, none, or live.
-//   3. CHECKS — what has to be true of the run? Gated by the tools setting, so a
-//               trajectory check can't be authored where no tool step will exist.
+//   3. CHECKS — what has to be true of the run? Each check is a collapsible row
+//               authored in place (there is no separate Check page), and gated
+//               by the tools setting, so a trajectory check can't be authored
+//               where no tool step will exist.
 //
 // Which TESTING LAYER that adds up to (synthesis, trajectory, integration) is
 // derived and shown in the header — never stored, so it can't drift from the
@@ -59,6 +62,12 @@ type SampleTab = 'config' | 'runs'
 export type EvalSampleProps = {
   setId: string
   sampleId: string
+  /**
+   * Open with this check already expanded — how a run report's per-check link
+   * (`?check=<i>`) hands an investigation over, instead of dropping you on the
+   * sample and making you find the check in it again.
+   */
+  initialCheckIndex?: number | null
   className?: string
 }
 
@@ -105,11 +114,21 @@ const LAYERS: Record<
   },
 }
 
-export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
+export function EvalSample({
+  setId,
+  sampleId,
+  initialCheckIndex,
+  className,
+}: EvalSampleProps) {
   const { Button } = useWfComponents()
   const { navigate } = useWfNav()
   const [tab, setTab] = useState<SampleTab>('config')
   const [runOpen, setRunOpen] = useState(false)
+  // Which check row is expanded — the accordion state lives here so "Add check"
+  // can open the row it just appended.
+  const [openCheck, setOpenCheck] = useState<number | null>(
+    initialCheckIndex ?? null,
+  )
   // Whether the "add mock" tool picker is open — lifted here so its trigger can
   // live in the Tools step's header (far right) while the picker renders in the
   // step body.
@@ -136,6 +155,25 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
     set?.targetKind ?? 'agent',
   )
 
+  // When the goal targets an agent, the agent's declared output contract lets us
+  // offer its fields (with descriptions) as the "output path" in a check instead
+  // of a raw free-form path. Only agents have a single known output schema;
+  // workflows keep the free-form path.
+  const outputSchema = useMemo<JsonSchema | null>(() => {
+    if (set?.targetKind !== 'agent') return null
+    const output = targetAgent?.output
+    return output ? agentOutputJsonSchema(output) : null
+  }, [set?.targetKind, targetAgent?.output])
+
+  // The target agent's wired tools — the only tools a run could ever call, so a
+  // check's tool pickers are scoped to them. Undefined for workflow targets
+  // (tools are spread across nodes), where the picker keeps offering every host
+  // tool.
+  const allowToolIds = useMemo<string[] | undefined>(
+    () => (set?.targetKind === 'agent' ? targetAgent?.toolIds : undefined),
+    [set?.targetKind, targetAgent?.toolIds],
+  )
+
   // Local draft, synced once per row id so background refetches don't clobber an
   // in-progress edit. Every mutation persists the whole row.
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -146,6 +184,18 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
       syncedId.current = row.id
     }
   }, [row])
+
+  // A deep link expands the check it names. This has to be an effect, not just
+  // the initial state above: walking a run report's check rows means several
+  // `?check=<i>` links landing on the SAME sample, which shares one tab and so
+  // never remounts. Arriving with no `?check` leaves the accordion alone rather
+  // than collapsing what the author was editing.
+  const linkedCheck = useRef<number | null | undefined>(undefined)
+  useEffect(() => {
+    if (linkedCheck.current === initialCheckIndex) return
+    linkedCheck.current = initialCheckIndex
+    if (initialCheckIndex != null) setOpenCheck(initialCheckIndex)
+  }, [initialCheckIndex])
 
   const persist = (next: Draft) => {
     if (!row) return
@@ -161,8 +211,8 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
     })
   }
 
-  // Append a check and open it. Lifted here so its trigger can live in the Checks
-  // step's header (far right).
+  // Append a check and expand it. Lifted here so its trigger can live in the
+  // Checks step's header (far right).
   const addCheck = () => {
     if (!draft) return
     const checks = {
@@ -173,9 +223,7 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
       ],
     }
     persist({ ...draft, checks })
-    navigate(
-      `evals/${setId}/samples/${sampleId}/checks/${checks.checks.length - 1}`,
-    )
+    setOpenCheck(checks.checks.length - 1)
   }
 
   // A sample authored before its goal's target changed input kind still holds
@@ -382,10 +430,14 @@ export function EvalSample({ setId, sampleId, className }: EvalSampleProps) {
                       ),
                       content: (
                         <ChecksList
-                          setId={setId}
-                          sampleId={sampleId}
                           checks={draft.checks}
                           tools={draft.tools}
+                          targetKind={set?.targetKind}
+                          hasTools={hasTools}
+                          outputSchema={outputSchema}
+                          allowToolIds={allowToolIds}
+                          openIndex={openCheck}
+                          onOpenChange={setOpenCheck}
                           onChange={(checks) => persist({ ...draft, checks })}
                         />
                       ),

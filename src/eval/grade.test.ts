@@ -2,7 +2,7 @@ import { APICallError } from 'ai'
 import { MockLanguageModelV3 } from 'ai/test'
 import { describe, expect, test } from 'bun:test'
 
-import type { CheckTree, JudgeVerdict } from './checks'
+import type { CheckTree } from './checks'
 import {
   gradeRow,
   rollup,
@@ -150,15 +150,19 @@ describe('gradeRow — AND/OR reduction', () => {
   })
 })
 
-// A judge model that returns a fixed verdict/reason as JSON (generateObject
-// reads the text content as the object).
-function judgeModel(verdict: JudgeVerdict) {
+// A judge model that returns a fixed decision as JSON (generateObject reads the
+// text content as the object).
+function judgeModel(pass: boolean, confidence = 8) {
   return new MockLanguageModelV3({
     doGenerate: async () => ({
       content: [
         {
           type: 'text',
-          text: JSON.stringify({ reason: `judged ${verdict}`, verdict }),
+          text: JSON.stringify({
+            reason: `judged ${pass ? 'pass' : 'fail'}`,
+            pass,
+            confidence,
+          }),
         },
       ],
       finishReason: 'stop',
@@ -169,8 +173,8 @@ function judgeModel(verdict: JudgeVerdict) {
 }
 
 // A judge that hands back `replies` in order, one per call, counting them. A
-// reply that isn't the {reason, verdict} object makes generateObject throw
-// NoObjectGeneratedError — the one failure the grader re-issues.
+// reply that isn't the {reason, pass, confidence} object makes generateObject
+// throw NoObjectGeneratedError — the one failure the grader re-issues.
 function sequencedJudge(replies: string[]) {
   const calls = { count: 0 }
   const model = new MockLanguageModelV3({
@@ -190,7 +194,7 @@ function sequencedJudge(replies: string[]) {
 
 // Like judgeModel, but captures the prompt the judge was actually handed, so a
 // test can assert WHAT the judge saw (full output vs. a plucked field).
-function capturingJudge(verdict: JudgeVerdict) {
+function capturingJudge(pass: boolean, confidence = 8) {
   const seen: { prompt: string } = { prompt: '' }
   const model = new MockLanguageModelV3({
     doGenerate: async (options) => {
@@ -199,7 +203,11 @@ function capturingJudge(verdict: JudgeVerdict) {
         content: [
           {
             type: 'text',
-            text: JSON.stringify({ reason: `judged ${verdict}`, verdict }),
+            text: JSON.stringify({
+              reason: `judged ${pass ? 'pass' : 'fail'}`,
+              pass,
+              confidence,
+            }),
           },
         ],
         finishReason: 'stop',
@@ -216,7 +224,7 @@ describe('gradeRow — judge checks', () => {
     // A value far past the old 120-char cap must still reach the judge — this is
     // the regression guard for the truncated-judge-prompt bug.
     const tail = 'z'.repeat(500)
-    const { model, seen } = capturingJudge('strong')
+    const { model, seen } = capturingJudge(true)
     await gradeRow({
       checks: { op: 'and', checks: [{ type: 'llm_judge', rubric: 'r' }] },
       steps: workflowSteps,
@@ -229,7 +237,7 @@ describe('gradeRow — judge checks', () => {
   })
 
   test('llm_judge `path` pins the judge to one output value', async () => {
-    const { model, seen } = capturingJudge('strong')
+    const { model, seen } = capturingJudge(true)
     const r = await gradeRow({
       checks: {
         op: 'and',
@@ -256,7 +264,7 @@ describe('gradeRow — judge checks', () => {
     // The retrieved context lives in a tool's OUTPUT. A judge grading
     // faithfulness must be shown it; this guards the fix that started passing
     // tool outputs (previously only `{ tool, args }` reached the judge).
-    const { model, seen } = capturingJudge('strong')
+    const { model, seen } = capturingJudge(true)
     await gradeRow({
       checks: { op: 'and', checks: [{ type: 'llm_judge', rubric: 'grounded' }] },
       steps: [
@@ -291,7 +299,7 @@ describe('gradeRow — judge checks', () => {
   test('synthesis mode: seeded tool calls are shown to the judge even with no run steps', async () => {
     // Under freezeTools the agent calls nothing, so the trace has no tool step.
     // The seeded context must still reach the judge for a groundedness rubric.
-    const { model, seen } = capturingJudge('strong')
+    const { model, seen } = capturingJudge(true)
     await gradeRow({
       checks: { op: 'and', checks: [{ type: 'llm_judge', rubric: 'grounded' }] },
       steps: [{ nodeId: 'a', nodeKind: 'agent', output: { text: 'final reply' } }],
@@ -310,94 +318,70 @@ describe('gradeRow — judge checks', () => {
     expect(seen.prompt).toContain('filing deadline')
   })
 
-  test('a verdict clearing the bar passes; score comes from the verdict', async () => {
-    const r = await grade(
-      {
-        op: 'and',
-        checks: [{ type: 'llm_judge', rubric: 'polite', bar: 'close_enough' }],
-      },
-      { getModel: () => judgeModel('strong'), defaultJudgeModelId: 'mock' },
+  test('the judge decides pass/fail directly — there is no bar to clear', async () => {
+    const passed = await grade(
+      { op: 'and', checks: [{ type: 'llm_judge', rubric: 'polite' }] },
+      { getModel: () => judgeModel(true, 9), defaultJudgeModelId: 'mock' },
     )
-    expect(r.status).toBe('pass')
-    expect(r.score).toBe(1)
-    expect(r.checkResults[0]?.verdict).toBe('strong')
+    expect(passed.status).toBe('pass')
+    expect(passed.score).toBe(1)
+    expect(passed.checkResults[0]?.pass).toBe(true)
+    expect(passed.checkResults[0]?.confidence).toBe(9)
+    expect(passed.checkResults[0]?.reason).toBe('judged pass')
+
+    const failed = await grade(
+      { op: 'and', checks: [{ type: 'llm_judge', rubric: 'polite' }] },
+      { getModel: () => judgeModel(false, 10), defaultJudgeModelId: 'mock' },
+    )
+    expect(failed.status).toBe('fail')
+    expect(failed.score).toBe(0)
+    // A CONFIDENT fail is still a fail — confidence says how clear-cut the call
+    // was, never which way it went.
+    expect(failed.checkResults[0]?.confidence).toBe(10)
   })
 
-  test('a verdict below the bar fails the row', async () => {
-    const r = await grade(
-      {
-        op: 'and',
-        checks: [{ type: 'llm_judge', rubric: 'polite', bar: 'nails_it' }],
-      },
-      { getModel: () => judgeModel('partial'), defaultJudgeModelId: 'mock' },
+  test('an out-of-scale confidence is clamped, not thrown away', async () => {
+    // A model that answers 42 for emphasis (or 7.5 for precision) must not cost
+    // the check its verdict — the number is read as N/10 downstream, so it is
+    // pulled onto that scale rather than rejected.
+    const high = await grade(
+      { op: 'and', checks: [{ type: 'llm_judge', rubric: 'x' }] },
+      { getModel: () => judgeModel(true, 42), defaultJudgeModelId: 'mock' },
     )
-    expect(r.status).toBe('fail')
-    // Still scores 0.5 — the bar decides pass/fail, the verdict decides score.
-    expect(r.score).toBe(0.5)
+    expect(high.status).toBe('pass')
+    expect(high.checkResults[0]?.confidence).toBe(10)
+
+    const fractional = await grade(
+      { op: 'and', checks: [{ type: 'llm_judge', rubric: 'x' }] },
+      { getModel: () => judgeModel(true, 7.5), defaultJudgeModelId: 'mock' },
+    )
+    expect(fractional.checkResults[0]?.confidence).toBe(8)
   })
 
-  test('`close_enough` accepts `partial`; `score_only` never fails', async () => {
-    const lenient = await grade(
-      {
-        op: 'and',
-        checks: [{ type: 'llm_judge', rubric: 'polite', bar: 'close_enough' }],
-      },
-      { getModel: () => judgeModel('partial'), defaultJudgeModelId: 'mock' },
-    )
-    expect(lenient.status).toBe('pass')
-
-    const scoreOnly = await grade(
-      {
-        op: 'and',
-        checks: [{ type: 'llm_judge', rubric: 'polite', bar: 'score_only' }],
-      },
-      { getModel: () => judgeModel('weak'), defaultJudgeModelId: 'mock' },
-    )
-    // The weakest possible verdict, and the sample still passes — the score is
-    // the only thing a `score_only` check moves.
-    expect(scoreOnly.status).toBe('pass')
-    expect(scoreOnly.score).toBe(0)
-  })
-
-  test('a LEGACY threshold maps to a bar by intent, not arithmetic', async () => {
-    // 0.7 meant "clearly good, minor flaws OK" — a `partial` must keep passing
-    // even though 0.5 < 0.7. Mapping the old number arithmetically would have
-    // silently failed every saved check that used the default.
-    const legacy = await grade(
-      {
-        op: 'and',
-        checks: [{ type: 'llm_judge', rubric: 'polite', threshold: 0.7 }],
-      },
-      { getModel: () => judgeModel('partial'), defaultJudgeModelId: 'mock' },
-    )
-    expect(legacy.status).toBe('pass')
-
-    const strict = await grade(
-      {
-        op: 'and',
-        checks: [{ type: 'llm_judge', rubric: 'polite', threshold: 0.9 }],
-      },
-      { getModel: () => judgeModel('partial'), defaultJudgeModelId: 'mock' },
-    )
-    expect(strict.status).toBe('fail')
-  })
-
-  test('score is the WEIGHTED mean of judge checks, binary excluded', async () => {
-    // `weight` is legacy and no longer authorable, but saved checks carry it.
-    const verdicts: Record<string, JudgeVerdict> = { a: 'strong', b: 'weak' }
+  test('score is the judge PASS RATE, binary checks excluded', async () => {
+    const verdicts: Record<string, boolean> = { a: true, b: false }
     const r = await grade(
       {
         op: 'or',
         checks: [
+          // Passes, and is still absent from the score.
           { type: 'tool_called', toolId: 'issue_refund', called: true },
-          { type: 'llm_judge', rubric: 'a', modelId: 'a', weight: 3 },
-          { type: 'llm_judge', rubric: 'b', modelId: 'b', weight: 1 },
+          { type: 'llm_judge', rubric: 'a', modelId: 'a' },
+          { type: 'llm_judge', rubric: 'b', modelId: 'b' },
         ],
       },
-      { getModel: (id) => judgeModel(verdicts[id] ?? 'weak') },
+      { getModel: (id) => judgeModel(verdicts[id] ?? false) },
     )
-    // (1*3 + 0*1) / 4 = 0.75
-    expect(r.score).toBeCloseTo(0.75, 5)
+    expect(r.score).toBeCloseTo(0.5, 5)
+  })
+
+  test('a row of only binary checks has no score at all', async () => {
+    const r = await grade({
+      op: 'and',
+      checks: [{ type: 'tool_called', toolId: 'issue_refund', called: true }],
+    })
+    expect(r.status).toBe('pass')
+    expect(r.score).toBeNull()
   })
 
   test('AND: an errored judge with no definite failure leaves the row undecidable', async () => {
@@ -497,7 +481,10 @@ describe('gradeRow — judge checks', () => {
   })
 
   test('a malformed judge response is re-issued once and can recover', async () => {
-    const judge = sequencedJudge(['{ not json', JSON.stringify({ reason: 'ok', verdict: 'strong' })])
+    const judge = sequencedJudge([
+      '{ not json',
+      JSON.stringify({ reason: 'ok', pass: true, confidence: 8 }),
+    ])
     const r = await grade(
       { op: 'and', checks: [{ type: 'llm_judge', rubric: 'x' }] },
       { getModel: () => judge.model, defaultJudgeModelId: 'mock' },

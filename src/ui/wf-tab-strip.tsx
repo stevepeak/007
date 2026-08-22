@@ -1,7 +1,6 @@
 import {
   Activity,
   BrushCleaning,
-  FlaskConical,
   Goal,
   Home,
   Microscope,
@@ -15,7 +14,6 @@ import { Fragment, useMemo, type ReactNode } from 'react'
 
 import { agentColor, agentIcon } from './agent-appearance'
 import { cn } from './cn'
-import { describeCheck } from './evals/check-naming'
 import { useAgent, useEvalSet, useRun, useTools, useWorkflow } from './hooks'
 import { useFeedbackForSubjects } from './hooks-feedback'
 import { WfLink } from './nav'
@@ -238,8 +236,6 @@ function TabItem({
       return <EvalSetTab asset={asset} {...common} />
     case 'evalSample':
       return <EvalSampleTab asset={asset} {...common} />
-    case 'evalCheck':
-      return <EvalCheckTab asset={asset} {...common} />
     case 'evalRun':
       return <EvalRunTab asset={asset} {...common} />
     case 'feedbackItem':
@@ -346,26 +342,6 @@ function EvalSampleTab({ asset, ...rest }: KindProps<'evalSample'>) {
       icon={sectionIcon(Microscope, 'text-rose-500')}
       label={sampleName}
       trail={[setName, sampleName]}
-      {...rest}
-    />
-  )
-}
-
-function EvalCheckTab({ asset, ...rest }: KindProps<'evalCheck'>) {
-  const { data } = useEvalSet(asset.setId)
-  const setName = data?.set.name || 'Goal'
-  const row = data?.rows.find((r) => r.id === asset.sampleId)
-  const sampleName = row?.name || 'Sample'
-  // A Check is addressed by its index within the row's check tree.
-  const index = Number(asset.checkId)
-  const checkName = describeCheck(
-    row && Number.isInteger(index) ? row.checks.checks[index] : undefined,
-  )
-  return (
-    <TabChrome
-      icon={sectionIcon(FlaskConical, 'text-rose-500')}
-      label={checkName}
-      trail={[setName, sampleName, checkName]}
       {...rest}
     />
   )

@@ -2,48 +2,28 @@ import type { EvalCheck, EvalMatch } from '../../server/protocol'
 
 // How a Check gets its name.
 //
-// A Check's name is an *assertion about the run* — "Has correct title",
-// "Never calls send_email" — not a topic ("Alimony test"). The name completes
-// the sentence "this run…", which makes it falsifiable and makes a column of
-// Checks read as a checklist.
+// It doesn't have one. A Check has no title field — its name is *derived*, every
+// time, from what it actually asserts: "Calls send_email", "Output.status is
+// “filed”". That's the whole point. A hand-written title duplicates what the
+// config already says and then drifts from it the moment the config changes,
+// and it has to be nagged into existence with hint UI. A derived name can't lie.
 //
-// Nothing here validates or enforces that; a name is free text. What this
-// module does is make the convention the path of least resistance: every name
-// the UI derives, suggests, or offers as an example is written in that voice,
-// so an author sees it before they read a word of documentation.
+// The voice is an assertion about the run — the name completes the sentence
+// "this run…", which is what makes a column of Checks read as a checklist.
 
 /**
- * Verb starters offered as one-click chips when a Check has no name. Ordered
- * presence → absence → behavior, since the negative forms ("Avoids", "Never
- * calls") are the ones authors rarely think of unprompted.
+ * The human-readable name of each check `type`. The last-resort summary for a
+ * check too empty to describe itself ("Tool called" before a tool is picked),
+ * and the label the type pickers show so authors never see a raw `snake_case`
+ * id.
  */
-export const CHECK_NAME_VERBS = [
-  'Has',
-  'Mentions',
-  'Cites',
-  'Avoids',
-  'Never',
-  'Asks for',
-  'Calls',
-] as const
-
-// Exemplar names, rotated by the Check's index within its sample, so a sample
-// with several unnamed Checks shows several *different* well-formed names
-// rather than the same one repeated — which teaches the range of the
-// convention (presence, absence, behavior, quality) rather than one instance.
-const EXAMPLE_CHECK_NAMES = [
-  'Has correct title',
-  'Mentions alimony',
-  'Avoids legal advice',
-  'Asks for the filing date',
-  'Cites the right statute',
-  'Stays under 200 words',
-]
-
-/** A well-formed example name, varied by position. */
-export function exampleCheckName(index: number): string {
-  const i = Number.isFinite(index) ? Math.abs(Math.trunc(index)) : 0
-  return EXAMPLE_CHECK_NAMES[i % EXAMPLE_CHECK_NAMES.length]
+export const CHECK_TYPE_LABELS: Record<EvalCheck['type'], string> = {
+  tool_called: 'Tool called',
+  tool_args_match: 'Tool arguments',
+  node_visited: 'Node visited',
+  node_input_match: 'Node input',
+  output_match: 'Output matches',
+  llm_judge: 'Judge',
 }
 
 // Third-person verb for each comparison, so a derived name reads as a sentence
@@ -69,12 +49,11 @@ function truncate(text: string, max: number): string {
 }
 
 /**
- * A name derived from what the Check actually asserts, in the assertion voice —
- * the suggestion offered for a deterministic Check.
+ * A name derived from what the Check actually asserts, in the assertion voice.
  *
  * `null` when the check can't name itself: a judge (whose assertion lives in
- * free-text prose, so naming it needs a model — see `suggestCheckName` on the
- * data client) or a half-configured check with no tool/node picked yet.
+ * free-text prose — {@link describeCheck} quotes the rubric instead) or a
+ * half-configured check with no tool/node picked yet.
  */
 export function heuristicCheckName(check: EvalCheck): string | null {
   switch (check.type) {
@@ -98,26 +77,21 @@ export function heuristicCheckName(check: EvalCheck): string | null {
 }
 
 /**
- * What to render for a Check wherever one is listed — its name if the author
- * wrote one, else the best stand-in.
+ * What to render for a Check wherever one is listed — the collapsed summary of
+ * its config, in three tiers: the derived assertion, else a judge's rubric *in
+ * quotes*, else the bare type name.
  *
- * An unnamed judge falls back to its rubric *in quotes* rather than to a
- * derived title. That's deliberate: a quoted fragment sitting in a column of
- * assertions looks unfinished, which is the nudge. A label that looked like a
- * name would remove the reason to write one.
+ * The quotes on a rubric are deliberate. A quoted fragment sitting in a column
+ * of assertions reads as the prose it is, rather than passing itself off as a
+ * title someone wrote. The bare type name is what a just-added check shows
+ * until it's configured — "Tool called" says exactly how far along it is.
  */
 export function describeCheck(check: EvalCheck | undefined): string {
   if (!check) return 'check'
-  if (check.label?.trim()) return check.label.trim()
   const derived = heuristicCheckName(check)
   if (derived) return derived
   if (check.type === 'llm_judge' && check.rubric.trim()) {
     return `“${truncate(check.rubric, 60)}”`
   }
-  return 'Unnamed check'
-}
-
-/** True when a Check is still leaning on a derived stand-in for its name. */
-export function isUnnamed(check: EvalCheck | undefined): boolean {
-  return !check?.label?.trim()
+  return CHECK_TYPE_LABELS[check.type]
 }

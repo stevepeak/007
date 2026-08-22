@@ -57,12 +57,16 @@ describe('classifyAssetPath — asset routes', () => {
     })
   })
 
-  test('eval test', () => {
-    expect(classifyAssetPath('evals/set_1/samples/row_1/checks/0')).toEqual({
-      type: 'evalCheck',
+  test('a check is not an asset — it lives inside its sample', () => {
+    // Checks are collapsible rows on the Sample page, deep-linked with
+    // `?check=<i>`. The old six-segment route resolves to nothing, so a stale
+    // link falls through to the hub instead of opening a page that's gone.
+    expect(classifyAssetPath('evals/set_1/samples/row_1/checks/0')).toBeNull()
+    // …and the query form is still the sample, one tab.
+    expect(classifyAssetPath('evals/set_1/samples/row_1?check=2')).toEqual({
+      type: 'evalSample',
       setId: 'set_1',
       sampleId: 'row_1',
-      checkId: '0',
     })
   })
 
@@ -112,7 +116,7 @@ describe('tabGroup', () => {
     ['tools/tavily', 'tool'],
     ['evals/set_1', 'evals'],
     ['evals/set_1/samples/s_1', 'evals'],
-    ['evals/set_1/samples/s_1/checks/0', 'evals'],
+    ['evals/set_1/samples/s_1?check=0', 'evals'],
     ['evals/runs/er_1', 'evals'],
     ['feedback/fb_1', 'feedback'],
   ])('%s → %s', (path, group) => {

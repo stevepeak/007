@@ -11,7 +11,6 @@ import { WorkflowEditor } from './editor/workflow-editor'
 import { EvalRunReport } from './evals/eval-run-report'
 import { EvalSample } from './evals/eval-sample'
 import { EvalSet } from './evals/eval-set'
-import { EvalCheckPage } from './evals/eval-check'
 import { EvalsList } from './evals/evals-list'
 import { FeedbackDetail } from './feedback-detail'
 import { FeedbackList } from './feedback-list'
@@ -283,16 +282,6 @@ function AssetRoute({ path }: { path: string }) {
 
     case 'tool':
       return <ToolDetailPage toolId={asset.toolId} />
-    case 'evalCheck':
-      return (
-        <EvalCheckPage
-          key={asset.checkId}
-          setId={asset.setId}
-          sampleId={asset.sampleId}
-          checkId={asset.checkId}
-          className="h-full"
-        />
-      )
     case 'evalRun':
       return (
         <EvalRunReport
@@ -301,15 +290,25 @@ function AssetRoute({ path }: { path: string }) {
           className="h-full"
         />
       )
-    case 'evalSample':
+    case 'evalSample': {
+      // Optional `?check=<i>` opens the sample with that check already
+      // expanded — how a run report's per-check row hands an investigation
+      // over, instead of dropping you on the sample and making you find the
+      // check in it again.
+      const rawCheck = query.get('check')
+      const check = rawCheck == null ? Number.NaN : Number(rawCheck)
       return (
         <EvalSample
           key={asset.sampleId}
           setId={asset.setId}
           sampleId={asset.sampleId}
+          initialCheckIndex={
+            Number.isInteger(check) && check >= 0 ? check : null
+          }
           className="h-full"
         />
       )
+    }
     case 'evalSet':
       return (
         <EvalSet key={asset.setId} setId={asset.setId} className="h-full" />

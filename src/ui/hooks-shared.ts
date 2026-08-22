@@ -52,10 +52,6 @@ export const keys = {
   // Prefix key: invalidates every limit variant of the eval runs list.
   evalRunsAll: ['wf', 'eval-runs'] as const,
   evalRun: (id: string) => ['wf', 'eval-run', id] as const,
-  // One cached suggestion per rubric text — typing can't spam the model, and
-  // returning to a Check the author already saw re-renders instantly.
-  checkNameSuggestion: (rubric: string) =>
-    ['wf', 'check-name', rubric] as const,
   feedback: (input: WfFeedbackListInput) => ['wf', 'feedback', input] as const,
   // Prefix key: invalidates every filter variant of the feedback list.
   feedbackAll: ['wf', 'feedback'] as const,

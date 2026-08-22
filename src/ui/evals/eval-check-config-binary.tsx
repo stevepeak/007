@@ -18,7 +18,6 @@ import {
   BINARY_TYPES,
   type BinaryType,
   defaultCheck,
-  withMeta,
 } from './eval-check-config-shared'
 
 // ── Binary check config ──────────────────────────────────────────────────────
@@ -27,12 +26,15 @@ export function BinaryConfig({
   check,
   persist,
   targetKind,
+  hasTools,
   outputSchema,
   allowToolIds,
 }: {
   check: EvalCheck
   persist: (next: EvalCheck) => void
   targetKind?: WfEvalTargetKind
+  /** Whether the target has any tools at all (null = still resolving). */
+  hasTools?: boolean | null
   outputSchema?: JsonSchema | null
   allowToolIds?: string[]
 }) {
@@ -44,7 +46,8 @@ export function BinaryConfig({
         <BinaryTypePicker
           value={check.type as BinaryType}
           targetKind={targetKind}
-          onChange={(t) => persist(withMeta(defaultCheck(t), check))}
+          hasTools={hasTools}
+          onChange={(t) => persist(defaultCheck(t))}
         />
       </div>
       <BinaryFields
@@ -64,24 +67,36 @@ export function BinaryConfig({
 // (icon + label + blurb). The open menu is portaled to <body> and fixed-positioned
 // under the trigger so it overlays the content below instead of pushing it down
 // (and so the StepFlow card's `overflow-hidden` can't clip it).
+// Two kinds of assertion are offered only where they could ever hold:
 // `node_*` checks read the workflow step trace, which agents don't produce, so
-// they're only offered when the goal targets a workflow.
+// they're only offered when the goal targets a workflow; `tool_*` checks are
+// unsatisfiable by construction against an agent wired to no tools, so an agent
+// with none is never asked about them. Both are hidden rather than disabled —
+// an option you can't pick is a question you shouldn't have been asked.
 const NODE_TYPES: readonly BinaryType[] = ['node_visited', 'node_input_match']
+const TOOL_TYPES: readonly BinaryType[] = ['tool_called', 'tool_args_match']
 
 function BinaryTypePicker({
   value,
   onChange,
   targetKind,
+  hasTools,
 }: {
   value: BinaryType
   onChange: (type: BinaryType) => void
   targetKind?: WfEvalTargetKind
+  hasTools?: boolean | null
 }) {
   const [open, setOpen] = useState(false)
-  const types =
-    targetKind === 'agent'
-      ? BINARY_TYPES.filter((t) => !NODE_TYPES.includes(t))
-      : BINARY_TYPES
+  const types = BINARY_TYPES.filter(
+    (t) =>
+      // A stored type always stays listed, whatever the target now looks like,
+      // so an existing check can still show its own name in the trigger instead
+      // of reading "Select a check…" over a config it plainly has.
+      t === value ||
+      ((targetKind !== 'agent' || !NODE_TYPES.includes(t)) &&
+        (hasTools !== false || !TOOL_TYPES.includes(t))),
+  )
   const [rect, setRect] = useState<DOMRect | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)

@@ -34,29 +34,6 @@ export function useEvalSet(setId: string | null) {
   })
 }
 
-/**
- * The AI-suggested name for a judge Check, derived from its rubric — the ghost
- * text in the Check title field.
- *
- * Keyed on the rubric itself and never stale, so the model is asked once per
- * distinct rubric no matter how many times the author revisits the Check. It
- * stays disabled until the rubric is long enough to be worth naming, and never
- * retries: a suggestion that didn't arrive is a non-event, and the field
- * already has a well-formed example in it.
- */
-export function useSuggestedCheckName(rubric: string | null | undefined) {
-  const client = useWfClient()
-  const text = (rubric ?? '').trim()
-  return useQuery({
-    queryKey: keys.checkNameSuggestion(text),
-    queryFn: () => client.suggestCheckName({ rubric: text }),
-    enabled: text.length >= 12,
-    staleTime: Infinity,
-    gcTime: Infinity,
-    retry: false,
-  })
-}
-
 export function useEvalRuns(limit?: number) {
   const client = useWfClient()
   return useQuery({

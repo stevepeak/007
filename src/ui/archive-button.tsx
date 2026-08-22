@@ -1,6 +1,7 @@
-import { Archive } from 'lucide-react'
+import { Archive, type LucideIcon } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
+import { cn } from './cn'
 import { useWfComponents } from './context'
 import { HoldButton } from './hold-button'
 import { Modal } from './modal'
@@ -9,12 +10,18 @@ import { Tooltip } from './tooltip'
 // Icon-only archive control used across 007 toolbars. Click opens a dialog that
 // spells out what's about to happen; confirming requires a deliberate press-and-
 // hold (HoldButton) so archiving is never a one-click accident.
+//
+// A caller that really *deletes* (a check, which is spliced out of its sample's
+// array rather than flagged) passes a trash `icon`, so the control doesn't
+// promise a recoverable archive it isn't doing.
 
 export function ArchiveButton({
   onConfirm,
   description,
   title = 'Archive',
   confirmLabel = 'Hold to archive',
+  icon: Icon = Archive,
+  className,
 }: {
   /** Fired once the hold-to-confirm completes. */
   onConfirm: () => void
@@ -23,6 +30,10 @@ export function ArchiveButton({
   /** Tooltip + dialog heading. */
   title?: string
   confirmLabel?: string
+  /** Glyph for the trigger and the dialog. Defaults to the archive box. */
+  icon?: LucideIcon
+  /** Extra classes for the trigger button (sizing inside a dense row). */
+  className?: string
 }) {
   const { Button } = useWfComponents()
   const [open, setOpen] = useState(false)
@@ -34,9 +45,12 @@ export function ArchiveButton({
           type="button"
           aria-label={title}
           onClick={() => setOpen(true)}
-          className="inline-flex size-8 items-center justify-center rounded-md text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-800"
+          className={cn(
+            'inline-flex size-8 items-center justify-center rounded-md text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-800',
+            className,
+          )}
         >
-          <Archive className="size-4" />
+          <Icon className="size-4" />
         </button>
       </Tooltip>
 
@@ -45,7 +59,7 @@ export function ArchiveButton({
         onClose={() => setOpen(false)}
         title={
           <span className="flex items-center gap-1.5">
-            <Archive className="size-4 text-neutral-500" />
+            <Icon className="size-4 text-neutral-500" />
             {title}
           </span>
         }
@@ -68,7 +82,7 @@ export function ArchiveButton({
               onConfirm()
             }}
           >
-            <Archive className="size-4" />
+            <Icon className="size-4" />
             {confirmLabel}
           </HoldButton>
         </div>

@@ -1,77 +1,45 @@
-import { Binary, Gauge } from 'lucide-react'
-
 import type { JsonSchema } from '../../engine'
 import type { EvalCheck, WfEvalTargetKind } from '../../server/protocol'
 import { BinaryConfig } from './eval-check-config-binary'
 import { JudgeConfig } from './eval-check-config-judge'
-import { familyOf, type CheckFamily } from './eval-check-config-shared'
-import { PickerCards, StepFlow, type Step } from './step-flow'
 
 export {
   defaultCheck,
   familyOf,
   type CheckFamily,
-  withMeta,
 } from './eval-check-config-shared'
 
-export function ConfigForm({
-  draft,
+// The body of an expanded Check row — the fields for whichever family the check
+// is in. The family itself is chosen by the toggle in the row's header, and the
+// row is the card, so there's no picker and no step chrome here: this is only
+// the switch between the two editors.
+export function CheckConfigBody({
+  check,
   persist,
-  setFamily,
   targetKind,
+  hasTools,
   outputSchema,
   allowToolIds,
 }: {
-  draft: EvalCheck
+  check: EvalCheck
   persist: (next: EvalCheck) => void
-  setFamily: (family: CheckFamily) => void
   targetKind?: WfEvalTargetKind
+  /** Whether the target has any tools at all (null = still resolving). */
+  hasTools?: boolean | null
   outputSchema?: JsonSchema | null
   /** Scope the tool pickers to the target agent's wired tools (undefined = all). */
   allowToolIds?: string[]
 }) {
-  const family = familyOf(draft)
-  const steps: Step[] = [
-    {
-      key: 'config',
-      title: 'Configuration',
-      content:
-        draft.type === 'llm_judge' ? (
-          <JudgeConfig check={draft} persist={persist} />
-        ) : (
-          <BinaryConfig
-            check={draft}
-            persist={persist}
-            targetKind={targetKind}
-            outputSchema={outputSchema}
-            allowToolIds={allowToolIds}
-          />
-        ),
-    },
-  ]
-  return (
-    <div className="space-y-3">
-      <PickerCards
-        value={family}
-        onSelect={(f) => setFamily(f)}
-        options={[
-          {
-            value: 'binary',
-            icon: Binary,
-            label: 'Binary',
-            desc: 'A deterministic pass/fail check.',
-            accent: 'sky',
-          },
-          {
-            value: 'scored',
-            icon: Gauge,
-            label: 'Scored',
-            desc: 'An LLM judge grades the output against a rubric.',
-            accent: 'amber',
-          },
-        ]}
-      />
-      <StepFlow steps={steps} />
-    </div>
+  return check.type === 'llm_judge' ? (
+    <JudgeConfig check={check} persist={persist} outputSchema={outputSchema} />
+  ) : (
+    <BinaryConfig
+      check={check}
+      persist={persist}
+      targetKind={targetKind}
+      hasTools={hasTools}
+      outputSchema={outputSchema}
+      allowToolIds={allowToolIds}
+    />
   )
 }

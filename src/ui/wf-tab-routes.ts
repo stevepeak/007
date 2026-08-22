@@ -14,7 +14,6 @@ export type WfAsset =
   | { type: 'tool'; toolId: string }
   | { type: 'evalSet'; setId: string }
   | { type: 'evalSample'; setId: string; sampleId: string }
-  | { type: 'evalCheck'; setId: string; sampleId: string; checkId: string }
   | { type: 'evalRun'; evalRunId: string }
   | { type: 'feedbackItem'; subjectId: string }
 
@@ -52,21 +51,6 @@ export function classifyAssetPath(path: string): WfAsset | null {
   // copilot). `feedback` alone (len 1) is the triage list, a home route.
   if (parts.length === 2 && parts[0] === 'feedback') {
     return { type: 'feedbackItem', subjectId: parts[1] }
-  }
-
-  // `evals/<setId>/samples/<sampleId>/checks/<checkId>` — a single test.
-  if (
-    parts.length === 6 &&
-    parts[0] === 'evals' &&
-    parts[2] === 'samples' &&
-    parts[4] === 'checks'
-  ) {
-    return {
-      type: 'evalCheck',
-      setId: parts[1],
-      sampleId: parts[3],
-      checkId: parts[5],
-    }
   }
 
   // `evals/runs/<evalRunId>` — a run report. Must precede `evals/<setId>`
@@ -113,8 +97,8 @@ export function assetTabId(path: string): string {
 //
 // The strip lays tabs out as one labelled row per kind ("Workflows: [wf 1] …"),
 // so a dozen open tabs stay scannable. Grouping is coarser than `WfAsset`: the
-// four eval shapes (set / sample / test / run report) share one "Evals" row,
-// since they're one workflow to the user.
+// three eval shapes (set / sample / run report) share one "Evals" row, since
+// they're one workflow to the user.
 
 /** A row in the tab strip. */
 export type WfTabGroup =
@@ -161,7 +145,6 @@ export function tabGroup(path: string): WfTabGroup {
       return 'tool'
     case 'evalSet':
     case 'evalSample':
-    case 'evalCheck':
     case 'evalRun':
       return 'evals'
     case 'feedbackItem':

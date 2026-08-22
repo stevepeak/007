@@ -6,24 +6,22 @@ import type { AgentNodeMeta } from '../engine/nodes/agent'
 import type { ToolNodeMeta } from '../engine/nodes/tool'
 
 import {
-  JUDGE_VERDICT_SCORE,
-  judgeVerdictPasses,
-  judgeVerdictSchema,
-  resolveJudgeBar,
+  JUDGE_CONFIDENCE_MAX,
   type CheckResult,
   type CheckTree,
   type EvalCheck,
   type EvalMatch,
-  type JudgeVerdict,
 } from './checks'
 
 // Phase 3 — the pure grading engine. Given a row's `checks` tree and a run's
 // trace (`wf_run_step[]` + `wf_run.output`), produce a verdict:
 //   • status — AND/OR reduction of EVERY check's pass flag (binary + judge).
-//   • score  — mean of the JUDGE checks' verdict scores (strong 1 / partial .5
-//              / weak 0) ONLY — binary checks never enter the score; null when a
-//              row has no judge check. Saved checks may still carry a legacy
-//              `weight`, which scales their share of that mean.
+//   • score  — the JUDGE checks' pass rate ONLY — binary checks never enter the
+//              score; null when a row has no judge check. Judges answer
+//              pass/fail, so a row's quality number is simply how many of those
+//              judgements went its way; the confidence each judge reports is
+//              kept per-check rather than folded in, because how SURE a judge
+//              was is not a statement about how GOOD the output was.
 // Deterministic checks read the trace synchronously; only `llm_judge` needs a
 // model (via `getModel`). No database, no Cloudflare — unit-testable with plain
 // fixtures. Shared by the server's `gradeEvalResult` (Phase 4) and `bun:test`.
@@ -249,20 +247,37 @@ function gradeBinary(check: EvalCheck, input: GradeRowInput): CheckResult {
 // `reason` is declared FIRST on purpose: `generateObject` emits the object's
 // keys in schema order, so the judge has to write its justification before it
 // commits to a verdict. Reversed, the verdict comes out first and the reason is
-// a post-hoc rationalization of a number the model already guessed.
+// a post-hoc rationalization of a decision the model already guessed at.
+//
+// `confidence` comes last, after the decision it is about: asked for first, the
+// model picks a number and then reasons toward a verdict that matches it. It is
+// also deliberately UNBOUNDED here and clamped below instead — a min/max would
+// turn "9.5" or "95" into a `NoObjectGeneratedError` that costs the whole check
+// its verdict, and the verdict is the part worth having. The prompt states the
+// scale; the code enforces it.
 const judgeSchema = z.object({
   reason: z.string(),
-  verdict: judgeVerdictSchema,
+  pass: z.boolean(),
+  confidence: z
+    .number()
+    .describe(`Confidence in the verdict, 0 to ${JUDGE_CONFIDENCE_MAX}.`),
 })
 
-// The written anchors that make the three verdicts repeatable. These, not the
-// rubric, are what stop one judge run from saying `strong` and the next
-// `partial` on identical output.
-const VERDICT_ANCHORS: Record<JudgeVerdict, string> = {
-  strong: 'satisfies the rubric — any shortfall is cosmetic and a reviewer would not ask for a change.',
-  partial: 'substantially satisfies the rubric but a reviewer would ask for one concrete fix (a gap, a hedge, an unsupported claim).',
-  weak: 'does not satisfy the rubric, or satisfies it only by accident.',
-}
+// The written anchors that make the decision repeatable. These, not the rubric,
+// are what stop one judge run from passing output that the next one fails.
+const PASS_ANCHOR =
+  'the output satisfies the rubric. Cosmetic shortfalls a reviewer would not ask to change still pass.'
+const FAIL_ANCHOR =
+  'the output does not satisfy the rubric, satisfies it only by accident, or a reviewer would ask for a concrete fix (a gap, a hedge, an unsupported claim).'
+
+// Anchors for the confidence number, so it means the same thing across runs and
+// across models. It measures how far from the line the call was — NOT how good
+// the output is. A confident fail and a confident pass both report 10.
+const CONFIDENCE_ANCHORS = [
+  '0–3 — a coin flip: the rubric is ambiguous here, or the output sits right on the line.',
+  '4–7 — a defensible call, but a careful reviewer could reach the other verdict.',
+  '8–10 — no real doubt: the output clearly does, or clearly does not, satisfy the rubric.',
+]
 
 /**
  * How many times one judge call may be issued before giving up.
@@ -270,7 +285,7 @@ const VERDICT_ANCHORS: Record<JudgeVerdict, string> = {
  * `generateObject` already defaults to `maxRetries: 2`, but that only covers
  * RETRYABLE provider rejections (429, 503) — it fires inside the call, before a
  * response exists. A response that arrives intact and simply isn't the
- * `{reason, verdict}` object the schema asked for throws
+ * `{reason, pass, confidence}` object the schema asked for throws
  * `NoObjectGeneratedError` on the FIRST occurrence and is never retried, so a
  * judge that merely fumbled its JSON used to cost the whole cell its verdict.
  * One extra attempt turns that formatting flake into a graded row. Same bound
@@ -284,7 +299,7 @@ const JUDGE_MAX_ATTEMPTS = 2
 async function gradeJudge(
   check: Extract<EvalCheck, { type: 'llm_judge' }>,
   input: GradeRowInput,
-): Promise<CheckResult & { score: number; verdict: JudgeVerdict }> {
+): Promise<CheckResult & { confidence: number }> {
   const modelId = check.modelId ?? input.defaultJudgeModelId
   if (!input.getModel || !modelId) {
     throw new Error(
@@ -310,10 +325,14 @@ async function gradeJudge(
   const prompt = [
     'You are grading an AI system’s run against a rubric. Write a one- or',
     'two-sentence justification citing the specific part of the output you are',
-    'reacting to, THEN pick exactly one verdict:',
-    ...judgeVerdictSchema.options.map(
-      (v) => `  • ${v} — the output ${VERDICT_ANCHORS[v]}`,
-    ),
+    'reacting to, THEN decide whether it passes:',
+    `  • pass — ${PASS_ANCHOR}`,
+    `  • fail — ${FAIL_ANCHOR}`,
+    '',
+    `Finally, rate your CONFIDENCE in that decision from 0 to ${JUDGE_CONFIDENCE_MAX}.`,
+    'Confidence is about how clear-cut the call was, not about how good the',
+    'output is — a clear failure is a 10, not a 0:',
+    ...CONFIDENCE_ANCHORS.map((a) => `  • ${a}`),
     '',
     'Judge ONLY against the rubric — ignore anything the rubric does not ask',
     'about, however good or bad. The TOOL CALLS & RESULTS below are the context',
@@ -341,9 +360,14 @@ async function gradeJudge(
     }
   }
   return {
-    pass: judgeVerdictPasses(resolveJudgeBar(check), object.verdict),
-    verdict: object.verdict,
-    score: JUDGE_VERDICT_SCORE[object.verdict],
+    pass: object.pass,
+    // Clamped and rounded rather than trusted: the stored value is read as
+    // "N out of 10" everywhere downstream, so a model that answers 11 for
+    // emphasis or 7.5 for precision must not put a number on that scale that
+    // it can't carry.
+    confidence: Math.round(
+      Math.min(Math.max(object.confidence, 0), JUDGE_CONFIDENCE_MAX),
+    ),
     reason: object.reason,
   }
 }
@@ -362,8 +386,8 @@ type GradedCheck = { result: CheckResult; verdict: boolean | 'unknown' }
 /**
  * Grade one row's checks against its run trace. Deterministic checks resolve
  * synchronously; judge checks are awaited (concurrently). `status` is a
- * three-valued reduction over every check (see below) and `score` is the
- * weighted mean of the judge scores that were actually reached.
+ * three-valued reduction over every check (see below) and `score` is the pass
+ * rate across the judges that actually answered.
  */
 export async function gradeRow(input: GradeRowInput): Promise<GradeRowResult> {
   const { op, checks } = input.checks
@@ -384,9 +408,10 @@ export async function gradeRow(input: GradeRowInput): Promise<GradeRowResult> {
     }
   }
 
-  // Weighted judge accumulator, filled as judge checks resolve.
-  let weightedScore = 0
-  let weightSum = 0
+  // Judge pass-rate accumulator, filled as judge checks resolve. A judge that
+  // threw increments neither: the row's score is over the judges that answered.
+  let judgesPassed = 0
+  let judgesAnswered = 0
   // Every judge that threw, so an errored row can explain itself rather than
   // rendering as a red cell above an empty banner.
   const judgeErrors: string[] = []
@@ -399,9 +424,8 @@ export async function gradeRow(input: GradeRowInput): Promise<GradeRowResult> {
       }
       try {
         const r = await gradeJudge(check, input)
-        const weight = check.weight ?? 1
-        weightedScore += r.score * weight
-        weightSum += weight
+        judgesAnswered += 1
+        if (r.pass) judgesPassed += 1
         return { result: r, verdict: r.pass }
       } catch (err) {
         // `errorFeedLine`, not `err.message`: a bare message on an APICallError
@@ -448,9 +472,10 @@ export async function gradeRow(input: GradeRowInput): Promise<GradeRowResult> {
         : hasUnknown
           ? 'error'
           : 'fail'
-  // A judge that threw contributes no weight, so the mean is over the judges
-  // that actually answered.
-  const score = weightSum > 0 ? weightedScore / weightSum : null
+  // A judge that threw reached no verdict, so the rate is over the judges that
+  // actually answered. `null` when no judge answered at all — a row of purely
+  // binary checks has a pass/fail, not a score.
+  const score = judgesAnswered > 0 ? judgesPassed / judgesAnswered : null
   return {
     status,
     score,

@@ -55,14 +55,20 @@ describe('eval checks schema', () => {
     ).toThrow()
   })
 
-  test('rejects a judge threshold out of 0..1', () => {
-    expect(() =>
+  test('a judge is rubric + where to look + who looks — nothing else', () => {
+    // The old `bar` / `threshold` / `weight` knobs are gone; a stored one is an
+    // unknown key, so zod drops it rather than failing a saved row.
+    expect(
       evalCheckSchema.parse({
         type: 'llm_judge',
         rubric: 'x',
-        threshold: 1.5,
+        path: 'title',
+        modelId: 'm1',
+        bar: 'nails_it',
+        threshold: 0.7,
+        weight: 2,
       }),
-    ).toThrow()
+    ).toEqual({ type: 'llm_judge', rubric: 'x', path: 'title', modelId: 'm1' })
   })
 
   test('check tree reduces an op over a list', () => {
@@ -70,7 +76,7 @@ describe('eval checks schema', () => {
       op: 'or',
       checks: [
         { type: 'tool_called', toolId: 't', called: true },
-        { type: 'llm_judge', rubric: 'good', threshold: 0.7, weight: 2 },
+        { type: 'llm_judge', rubric: 'good', modelId: 'm1' },
       ],
     }
     expect(checkTreeSchema.parse(tree)).toEqual(tree)
@@ -189,10 +195,15 @@ describe('derived sample layer', () => {
     expect(unavailableCheckTypes({ mode: 'live' })).toEqual([])
   })
 
-  test('check result carries an optional score + reason', () => {
+  test('check result carries an optional confidence + reason', () => {
+    // A binary check has nothing to add to its own pass flag.
     expect(checkResultSchema.parse({ pass: true })).toEqual({ pass: true })
     expect(
-      checkResultSchema.parse({ pass: false, score: 0.55, reason: 'nope' }),
-    ).toEqual({ pass: false, score: 0.55, reason: 'nope' })
+      checkResultSchema.parse({ pass: false, confidence: 9, reason: 'nope' }),
+    ).toEqual({ pass: false, confidence: 9, reason: 'nope' })
+    // Confidence is out of 10, not a 0..1 float.
+    expect(() =>
+      checkResultSchema.parse({ pass: true, confidence: 11 }),
+    ).toThrow()
   })
 })

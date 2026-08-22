@@ -57,7 +57,7 @@ export type RunConfigDialogProps = {
   open: boolean
   onClose: () => void
   /** What this run targets, for the subtitle copy. */
-  scope: 'goal' | 'sample' | 'check'
+  scope: 'goal' | 'sample'
   /** Display name of the thing being run (shown in the subtitle). */
   targetName: string
   /** The eval set(s) to run. Empty = nothing to launch (button disabled). */

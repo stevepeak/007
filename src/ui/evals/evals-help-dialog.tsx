@@ -61,13 +61,15 @@ export function EvalsHelpDialog({ open, onClose }: EvalsHelpDialogProps) {
             >
               A single assertion on the run — <strong>binary</strong> (a tool was
               called, a node ran, the output matches) or <strong>scored</strong>{' '}
-              (a judge rates quality from 0–1). Binary checks catch regressions;
-              scored checks measure how <em>good</em> the answer was.
+              (a judge reads the output against a statement you write and
+              answers pass/fail, how confident it is out of 10, and why). Binary
+              checks catch regressions; scored checks judge the things only
+              prose can describe.
               <span className="mt-2 block text-neutral-500">
-                Name one for what must be true, not what it&apos;s about —{' '}
-                <em>Has correct title</em>, <em>Avoids legal advice</em>,{' '}
-                <em>Never calls send_email</em>. A column of Checks should read
-                as a checklist.
+                Checks have no titles — each one names itself from what it
+                asserts (<em>Never calls send_email</em>), so the label can
+                never drift from the check. Assert one thing per Check: a judge
+                asked about accuracy <em>and</em> tone hedges on both.
               </span>
             </Level>
           </div>
@@ -83,7 +85,7 @@ export function EvalsHelpDialog({ open, onClose }: EvalsHelpDialogProps) {
                 moment you re-run, not in production.
               </li>
               <li>
-                <strong>Comparable scores</strong> — the judge-only score lets
+                <strong>Comparable scores</strong> — the judge pass rate lets
                 you rank models and track quality over time.
               </li>
               <li>

@@ -2,12 +2,7 @@ import { describe, expect, test } from 'bun:test'
 
 import type { EvalCheck } from '../../server/protocol'
 
-import {
-  describeCheck,
-  exampleCheckName,
-  heuristicCheckName,
-  isUnnamed,
-} from './check-naming'
+import { describeCheck, heuristicCheckName } from './check-naming'
 
 // The naming convention is only worth anything if every derived name actually
 // lands in the assertion voice — these lock the voice in, since a regression
@@ -62,42 +57,41 @@ describe('heuristicCheckName', () => {
 })
 
 describe('describeCheck', () => {
-  test('prefers the author’s name over anything derived', () => {
+  test('summarizes a configured check from its assertion', () => {
     const check: EvalCheck = {
       type: 'tool_called',
       toolId: 'search_statutes',
       called: true,
-      label: '  Cites the statute  ',
     }
-    expect(describeCheck(check)).toBe('Cites the statute')
-    expect(isUnnamed(check)).toBe(false)
+    expect(describeCheck(check)).toBe('Calls search_statutes')
   })
 
-  test('an unnamed judge quotes its rubric rather than posing as named', () => {
+  test('ignores a stray label left over from when checks had titles', () => {
+    // Old rows still carry one in their JSON (and in frozen run snapshots).
+    // The summary is derived, always — a title can't override what it says.
+    const legacy = {
+      type: 'tool_called',
+      toolId: 'search_statutes',
+      called: true,
+      label: 'Cites the statute',
+    } as unknown as EvalCheck
+    expect(describeCheck(legacy)).toBe('Calls search_statutes')
+  })
+
+  test('a judge quotes its rubric — prose, not a name', () => {
     const check: EvalCheck = {
       type: 'llm_judge',
       rubric: 'The title should be something mentioning alimony',
     }
-    // Quoted, not title-cased: it has to look unfinished in a checklist.
     expect(describeCheck(check)).toBe(
       '“The title should be something mentioning alimony”',
     )
-    expect(isUnnamed(check)).toBe(true)
   })
 
-  test('falls back to a plain marker when there is nothing to say', () => {
-    expect(describeCheck({ type: 'llm_judge', rubric: '' })).toBe(
-      'Unnamed check',
-    )
-  })
-})
-
-describe('exampleCheckName', () => {
-  test('varies by position so a list of unnamed checks shows the range', () => {
-    expect(exampleCheckName(0)).not.toBe(exampleCheckName(1))
-    // Stable for a given index, and defined for any index.
-    expect(exampleCheckName(0)).toBe(exampleCheckName(0))
-    expect(exampleCheckName(99)).toBeTruthy()
-    expect(exampleCheckName(Number.NaN)).toBeTruthy()
+  test('falls back to the type name while a check is still empty', () => {
+    expect(describeCheck({ type: 'llm_judge', rubric: '' })).toBe('Judge')
+    expect(
+      describeCheck({ type: 'tool_called', toolId: '', called: true }),
+    ).toBe('Tool called')
   })
 })

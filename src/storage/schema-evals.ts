@@ -121,9 +121,9 @@ export const wfEvalResult = sqliteTable(
     // The wf_run produced for this row (null until the run is started).
     wfRunId: text('wf_run_id'),
     status: text('status', { enum: WF_EVAL_RESULT_STATUSES }).notNull(),
-    // Weighted mean of the row's judge scores; null when the row has none.
+    // The row's judge PASS RATE; null when the row has no judge check.
     score: real('score'),
-    // Per-check verdicts: [{ pass, score?, reason? }] — see CheckResult.
+    // Per-check verdicts: [{ pass, confidence?, reason? }] — see CheckResult.
     checkResults: text('check_results', { mode: 'json' })
       .notNull()
       .default(sql`'[]'`),

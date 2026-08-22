@@ -3,9 +3,9 @@ import { ArrowUpRight, ChevronRight } from 'lucide-react'
 import type {
   CheckResult,
   EvalCheck,
-  JudgeVerdict,
   WfEvalResultRunStats,
 } from '../../../server/protocol'
+import { JUDGE_CONFIDENCE_MAX } from '../../../server/protocol'
 import { cn } from '../../cn'
 import { formatDurationMs, formatTokens, formatUsd } from '../../cost'
 import { WfLink } from '../../nav'
@@ -70,7 +70,11 @@ export function ResultDetail({ row }: { row: ResultRow }) {
               key={i}
               result={cr}
               check={row.checks[i]}
-              to={setId ? `evals/${setId}/samples/${result.rowId}/checks/${i}` : undefined}
+              to={
+                setId
+                  ? `evals/${setId}/samples/${result.rowId}?check=${i}`
+                  : undefined
+              }
             />
           ))}
         </ul>
@@ -102,18 +106,6 @@ function RunStatsLine({ stats }: { stats: WfEvalResultRunStats | null }) {
   )
 }
 
-const VERDICT_LABEL: Record<JudgeVerdict, string> = {
-  strong: 'Nailed it',
-  partial: 'Close enough',
-  weak: 'Missed it',
-}
-
-const VERDICT_TONE: Record<JudgeVerdict, string> = {
-  strong: 'bg-emerald-50 text-emerald-700',
-  partial: 'bg-amber-50 text-amber-700',
-  weak: 'bg-red-50 text-red-700',
-}
-
 function CheckRow({
   result,
   check,
@@ -121,7 +113,7 @@ function CheckRow({
 }: {
   result: CheckResult
   check: EvalCheck | undefined
-  /** Editor route for this Check, when its snapshot resolves a setId. */
+  /** The sample, deep-linked to expand this Check, when the snapshot resolves a setId. */
   to?: string
 }) {
   const label = (
@@ -148,23 +140,23 @@ function CheckRow({
           ) : (
             <span className="group flex min-w-0 items-center">{label}</span>
           )}
-          {result.verdict ? (
+          {/* Judge checks only — a binary check's ✓/✗ IS the whole verdict, so
+              a confidence chip beside it would be noise. */}
+          {result.confidence != null ? (
             <span
+              title="How sure the judge was of this call — not how good the output is."
               className={cn(
-                'shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-medium',
-                VERDICT_TONE[result.verdict],
+                'shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums',
+                result.confidence >= 8
+                  ? 'bg-neutral-100 text-neutral-600'
+                  : // A hedged call is the one worth a second look, whichever
+                    // way it went, so only low confidence gets color.
+                    'bg-amber-50 text-amber-700',
               )}
             >
-              {VERDICT_LABEL[result.verdict]}
+              {result.confidence}/{JUDGE_CONFIDENCE_MAX}
             </span>
-          ) : (
-            // Legacy rows graded before verdicts existed carry only the float.
-            result.score != null && (
-              <span className="tabular-nums text-xs text-neutral-400">
-                {result.score.toFixed(2)}
-              </span>
-            )
-          )}
+          ) : null}
         </div>
         {result.reason && (
           <p className="mt-0.5 text-xs text-neutral-500">{result.reason}</p>

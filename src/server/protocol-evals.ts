@@ -23,8 +23,6 @@ export type {
   EvalSampleLayer,
   EvalToolMode,
   EvalTools,
-  JudgeBar,
-  JudgeVerdict,
   SeededMessage,
   SeededToolCall,
 } from '../eval/checks'
@@ -36,9 +34,7 @@ export {
   EVAL_CHECK_TYPES,
   evalMatchSchema,
   evalSampleLayer,
-  JUDGE_VERDICT_SCORE,
-  judgeVerdictPasses,
-  resolveJudgeBar,
+  JUDGE_CONFIDENCE_MAX,
   toolFixtures,
   unavailableCheckTypes,
 } from '../eval/checks'

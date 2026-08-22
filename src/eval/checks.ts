@@ -16,65 +16,22 @@ export const evalMatchSchema = z.enum([
 ])
 export type EvalMatch = z.infer<typeof evalMatchSchema>
 
-// Common, presentation-only metadata carried by every check. Authored in the
-// Test editor; ignored by the grader. Kept optional so pre-existing checks (and
-// the bun:test harness) validate without them.
-const checkMeta = {
-  /** User-facing title; when absent the UI derives one from the assertion. */
-  label: z.string().optional(),
-  /** Longer free-text explanation of what this check asserts. */
-  description: z.string().optional(),
-}
+// A check carries NO human-authored metadata — no title, no description. Its
+// name is always derived from what it asserts (see `describeCheck` in the UI),
+// so the two can't drift apart. Rows saved before that decision still hold a
+// stray `label`/`description` in their JSON; zod strips unknown keys, so they
+// validate on read and disappear on the next write.
 
-// ── Judge verdicts ──────────────────────────────────────────────────────────
-// An LLM judge returns one of THREE anchored verdicts, never a free float. A
-// model asked for "a score from 0 to 1" produces numbers it cannot defend —
-// 0.72 vs 0.68 is noise, and two runs of the same output drift by more than the
-// cutoff separating pass from fail. Three buckets with written anchors is a
-// judgment a model can actually make repeatably, and one an author can read.
+// ── Judge output ────────────────────────────────────────────────────────────
+// An LLM judge returns a DECISION and how sure it is of it, never a quality
+// float. A model asked for "a score from 0 to 1" produces numbers it cannot
+// defend — 0.72 vs 0.68 is noise, and two runs of the same output drift by more
+// than the cutoff separating pass from fail. Pass/fail is a judgement a model
+// can actually make repeatably; confidence says how close to the line it was,
+// without pretending that closeness is a measure of quality.
 
-export const judgeVerdictSchema = z.enum(['strong', 'partial', 'weak'])
-export type JudgeVerdict = z.infer<typeof judgeVerdictSchema>
-
-/** What each verdict contributes to the row's 0..1 quality score. */
-export const JUDGE_VERDICT_SCORE: Record<JudgeVerdict, number> = {
-  strong: 1,
-  partial: 0.5,
-  weak: 0,
-}
-
-/**
- * How good the verdict has to be for the check to pass. `score_only` never
- * fails a sample — the verdict still feeds the quality score, which is how you
- * track a soft quality bar (tone, concision) without it gating the suite.
- */
-export const judgeBarSchema = z.enum(['nails_it', 'close_enough', 'score_only'])
-export type JudgeBar = z.infer<typeof judgeBarSchema>
-
-/** The verdicts that clear each bar. */
-const BAR_PASSING_VERDICTS: Record<JudgeBar, readonly JudgeVerdict[]> = {
-  nails_it: ['strong'],
-  close_enough: ['strong', 'partial'],
-  score_only: ['strong', 'partial', 'weak'],
-}
-
-export function judgeVerdictPasses(bar: JudgeBar, verdict: JudgeVerdict): boolean {
-  return BAR_PASSING_VERDICTS[bar].includes(verdict)
-}
-
-/**
- * The bar a judge check grades against. Prefers the authored `bar`; falls back
- * to the LEGACY `threshold` by INTENT rather than arithmetic — the old default
- * of 0.7 was documented as "clearly good, minor flaws OK", which is
- * `close_enough`, even though 0.7 would mechanically reject a `partial` (0.5).
- * Mapping it arithmetically would silently make every saved check stricter.
- */
-export function resolveJudgeBar(check: { bar?: JudgeBar; threshold?: number }): JudgeBar {
-  if (check.bar) return check.bar
-  if (check.threshold == null) return 'close_enough'
-  if (check.threshold <= 0) return 'score_only'
-  return check.threshold > 0.8 ? 'nails_it' : 'close_enough'
-}
+/** How sure the judge is of its own verdict, 0 (a coin flip) to 10 (certain). */
+export const JUDGE_CONFIDENCE_MAX = 10
 
 // A single assertion. Two families, split by how they produce a verdict:
 //   • binary/deterministic — pass|fail read straight off the run trace.
@@ -82,14 +39,12 @@ export function resolveJudgeBar(check: { bar?: JudgeBar; threshold?: number }): 
 export const evalCheckSchema = z.discriminatedUnion('type', [
   // ── binary / deterministic ────────────────────────────────────────────────
   z.object({
-    ...checkMeta,
     type: z.literal('tool_called'),
     toolId: z.string(),
     /** Assert the tool WAS (true) or was NOT (false) called during the run. */
     called: z.boolean(),
   }),
   z.object({
-    ...checkMeta,
     type: z.literal('tool_args_match'),
     toolId: z.string(),
     /** Optional JSON path into the recorded `meta.args`; omit = whole object. */
@@ -98,13 +53,11 @@ export const evalCheckSchema = z.discriminatedUnion('type', [
     value: z.unknown(),
   }),
   z.object({
-    ...checkMeta,
     type: z.literal('node_visited'),
     nodeId: z.string(),
     visited: z.boolean(),
   }),
   z.object({
-    ...checkMeta,
     type: z.literal('node_input_match'),
     nodeId: z.string(),
     /** Optional JSON path into the node's recorded `input`; omit = whole. */
@@ -113,7 +66,6 @@ export const evalCheckSchema = z.discriminatedUnion('type', [
     value: z.unknown(),
   }),
   z.object({
-    ...checkMeta,
     type: z.literal('output_match'),
     /** Optional JSON path into the run `output`; omit = whole object. */
     path: z.string().optional(),
@@ -122,7 +74,6 @@ export const evalCheckSchema = z.discriminatedUnion('type', [
   }),
   // ── subjective / scored ───────────────────────────────────────────────────
   z.object({
-    ...checkMeta,
     type: z.literal('llm_judge'),
     rubric: z.string(),
     /**
@@ -133,21 +84,6 @@ export const evalCheckSchema = z.discriminatedUnion('type', [
     path: z.string().optional(),
     /** Judge model; falls back to a suite/run default when omitted. */
     modelId: z.string().optional(),
-    /** How good the judge's verdict must be to pass. Default `close_enough`. */
-    bar: judgeBarSchema.optional(),
-    /**
-     * LEGACY 0..1 cutoff from when the judge returned a free float. Superseded
-     * by {@link judgeBarSchema}; still read by {@link resolveJudgeBar} so saved
-     * checks keep grading the way their author meant. Never written anymore.
-     */
-    threshold: z.number().min(0).max(1).optional(),
-    /**
-     * LEGACY relative weight of this judge's score in the row's mean. Still
-     * honored by the grader for saved checks, but no longer authorable: a
-     * weighted mean of judge scores was a knob nobody could predict the effect
-     * of. Add or drop a check instead of re-weighting one.
-     */
-    weight: z.number().min(0).optional(),
   }),
 ])
 export type EvalCheck = z.infer<typeof evalCheckSchema>
@@ -409,17 +345,21 @@ export function legacyFreezeTools(input: unknown): boolean | undefined {
   return isLegacyInput(input) ? input.freezeTools : undefined
 }
 
-/** One graded check. `verdict`/`score`/`reason` are judge-check only. */
+/**
+ * One graded check. A binary check has nothing but `pass`; a judge also reports
+ * how sure it was and why, which is what a reader needs to tell "wrong" from
+ * "arguable" without re-reading the whole run.
+ */
 export const checkResultSchema = z.object({
   pass: z.boolean(),
-  /** The judge's anchored verdict; absent on binary checks (and legacy rows). */
-  verdict: judgeVerdictSchema.optional(),
-  score: z.number().min(0).max(1).optional(),
+  /** The judge's confidence in its own verdict, 0..10. Judge checks only. */
+  confidence: z.number().min(0).max(JUDGE_CONFIDENCE_MAX).optional(),
+  /** The judge's stated reason for the verdict. Judge checks only. */
   reason: z.string().optional(),
 })
 export type CheckResult = z.infer<typeof checkResultSchema>
 
-/** Binary checks affect pass/fail only; judge checks also carry a score. */
+/** Only judge checks are subjective — binary ones read straight off the trace. */
 export function isJudgeCheck(check: EvalCheck): boolean {
   return check.type === 'llm_judge'
 }
