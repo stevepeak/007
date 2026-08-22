@@ -97,10 +97,16 @@ export function RunNodeDock({
   // it without re-subscribing.
   const [height, setHeight] = useState(DEFAULT_DOCK_H)
   const [dragging, setDragging] = useState(false)
+  // `abort` cancels both document listeners at once. They used to be removed by
+  // name, which meant `endDrag` had to reference itself inside its own
+  // definition — a read-before-declaration React's compiler rejects, and a live
+  // hazard besides: a listener removed by a stale function identity is a
+  // listener that stays attached.
   const dragRef = useRef<{
     startY: number
     startH: number
     moved: boolean
+    abort: AbortController
   } | null>(null)
   const openRef = useRef(open)
   openRef.current = open
@@ -116,25 +122,31 @@ export function RunNodeDock({
 
   const endDrag = useCallback(() => {
     const d = dragRef.current
-    document.removeEventListener('mousemove', onDrag)
-    document.removeEventListener('mouseup', endDrag)
+    d?.abort.abort()
     document.body.style.userSelect = ''
     document.body.style.cursor = ''
     setDragging(false)
     // A click with no meaningful drag toggles the panel, like the chevron.
     if (d && !d.moved) setOpen((o) => !o)
     dragRef.current = null
-  }, [onDrag])
+  }, [])
 
   const startDrag = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault()
-      dragRef.current = { startY: e.clientY, startH: height, moved: false }
+      const abort = new AbortController()
+      dragRef.current = {
+        startY: e.clientY,
+        startH: height,
+        moved: false,
+        abort,
+      }
       setDragging(true)
       document.body.style.userSelect = 'none'
       document.body.style.cursor = 'ns-resize'
-      document.addEventListener('mousemove', onDrag)
-      document.addEventListener('mouseup', endDrag)
+      const { signal } = abort
+      document.addEventListener('mousemove', onDrag, { signal })
+      document.addEventListener('mouseup', endDrag, { signal })
     },
     [height, onDrag, endDrag],
   )

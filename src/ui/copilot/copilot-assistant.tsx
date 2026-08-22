@@ -80,6 +80,7 @@ export function CopilotAssistant({
   // still-valid explicit choice.
   useEffect(() => {
     if (selectable.length === 0) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- heal a stored model id once the list loads; never overrides a valid choice
     setModelId((current) => {
       if (current && selectable.some((m) => m.id === current)) return current
       return selectable[0]?.id

@@ -201,6 +201,7 @@ export function WfTabsProvider({
     if (path === expectedPathRef.current) return
     expectedPathRef.current = path
     if (!isAssetPath(path)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reconcile browser history — an external store
       setHomePath(path)
       setActiveId(HOME_TAB_ID)
       return

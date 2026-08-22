@@ -154,6 +154,7 @@ export function RunConfigDialog({
   // them re-select the status quo before they can ask it.
   useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset the form each time the dialog opens
       setCounts(draftModelId ? { [draftModelId]: 1 } : {})
       setCollapsed({})
       setPrompts([])

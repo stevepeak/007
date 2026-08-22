@@ -107,21 +107,13 @@ export default [
       '@eslint-react/exhaustive-deps': 'off',
       '@eslint-react/set-state-in-effect': 'off',
 
-      // React Compiler diagnostics. These are NOT bugs found — every
-      // `set-state-in-effect` site was checked and each is a pattern React
-      // sanctions: resetting state when an identity prop changes, re-syncing to
-      // a refetched server value, `useLayoutEffect` measurement that cannot be
-      // derived, and reconciling browser history (an external store). The
-      // `purity` ones are `Date.now()` read during render to build a query
-      // window — real, but fixing them means restructuring how those windows are
-      // captured, which is its own change with its own review.
-      //
-      // Making src/ui React-Compiler-clean is tracked separately; suppressing
-      // here keeps the signal honest rather than pretending the code is clean.
-      'react-hooks/set-state-in-effect': 'off',
-      'react-hooks/purity': 'off',
-      'react-hooks/immutability': 'off',
-      'react-hooks/preserve-manual-memoization': 'off',
+      // NOTE: the React Compiler diagnostics — `purity`, `immutability`,
+      // `preserve-manual-memoization`, `set-state-in-effect` — are all ON.
+      // They used to be suppressed as a class here. The eleven remaining
+      // `set-state-in-effect` sites carry an `eslint-disable-next-line` with
+      // the reason inline, so each is a decision on the record and a NEW
+      // violation still fails the build.
+
     },
   },
   // The one-way dependency rule, enforced instead of merely documented.

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 
 import type { WfDashboardBucket } from '../../server/protocol'
 import { cn } from '../cn'
@@ -6,6 +6,7 @@ import { Segmented } from '../filters'
 import { useDashboard } from '../hooks-dashboard'
 import { useWfNav } from '../nav'
 import { QueryState } from '../query-state'
+import { usePickedAt } from '../use-now'
 
 import { CostChart } from './cost-chart'
 import { FailuresPanel } from './failures-panel'
@@ -35,16 +36,16 @@ const TIMEFRAMES = [
 type TimeframeValue = (typeof TIMEFRAMES)[number]['value']
 
 export function WfDashboard({ className }: { className?: string }) {
-  const [timeframe, setTimeframe] = useState<TimeframeValue>('7d')
+  const [timeframe, pickedAt, setTimeframe] = usePickedAt<TimeframeValue>('7d')
   const { navigate } = useWfNav()
 
   const frame = TIMEFRAMES.find((t) => t.value === timeframe) ?? TIMEFRAMES[1]
-  // Pinned to the selected frame rather than a live clock: a `since` that moved
-  // every render would be a new query key each time and refetch forever.
+  // Pinned to the instant the frame was picked rather than a live clock: a
+  // `since` that moved every render would be a new query key each time and
+  // refetch forever.
   const input = useMemo(
-    () => ({ since: Date.now() - frame.ms, bucket: frame.bucket }),
-     
-    [frame.ms, frame.bucket],
+    () => ({ since: pickedAt - frame.ms, bucket: frame.bucket }),
+    [pickedAt, frame.ms, frame.bucket],
   )
   const { data, isLoading, isFetching, error } = useDashboard(input)
 

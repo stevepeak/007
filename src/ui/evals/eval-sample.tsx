@@ -196,6 +196,7 @@ export function EvalSample({
   useEffect(() => {
     if (linkedCheckRef.current === initialCheckIndex) return
     linkedCheckRef.current = initialCheckIndex
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- apply a deep link once per `?check` value, guarded by a ref
     if (initialCheckIndex != null) setOpenCheck(initialCheckIndex)
   }, [initialCheckIndex])
 

@@ -37,6 +37,7 @@ export function NewGoalDialog({ open, onClose, onCreated }: NewGoalDialogProps) 
 
   useEffect(() => {
     if (!open) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset the form each time the dialog opens
     setTarget({ agentId: '', version: null })
   }, [open])
 

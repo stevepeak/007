@@ -118,6 +118,7 @@ export function MarkdownHint({
   // Measure before paint so the panel never shows at the wrong spot first.
   useLayoutEffect(() => {
     if (open) reposition()
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- useLayoutEffect measurement — the position cannot be derived before paint
     else setPos(null)
   }, [open, reposition])
 

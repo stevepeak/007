@@ -25,6 +25,7 @@ import { RunNodeDock } from './run-node-dock'
 import { runStatusClass } from './run-status'
 import { SentryIcon } from './sentry-icon'
 import { WfShell } from './shell'
+import { useTickingNow } from './use-now'
 
 // Full-page run viewer. Clicking a row in the runs explorer lands here. The
 // centerpiece is the workflow rendered read-only at the exact version that ran,
@@ -148,6 +149,10 @@ export function RunPage({
   const { Badge } = useWfComponents()
   const { navigate } = useWfNav()
   const { data, isLoading, error } = useRun(runId)
+  // A live run's elapsed time has to keep moving, so this one clock ticks — and
+  // stops the moment the run settles, since a finished run's duration is fixed
+  // and re-rendering the page every second for an unchanging number is waste.
+  const now = useTickingNow(isRunLive(data?.run.status ?? '') ? 1000 : null)
   const retry = useRetryRun()
   // Run-level thumbs feedback. Namespaced so a run's rating never collides with a
   // message/document sharing the same host id in the globally-unique subject key.
@@ -180,8 +185,9 @@ export function RunPage({
         .filter((s) => !s.parentNodeId)
         .map((s) => [s.nodeId, s.status]),
     )
-    if (data?.graph && data.run && !isRunLive(data.run.status)) {
-      for (const n of data.graph.nodes) {
+    const graph = data?.graph
+    if (graph && data.run && !isRunLive(data.run.status)) {
+      for (const n of graph.nodes) {
         // A Note is a canvas annotation, never executed — dimming it would
         // report a non-event.
         if (n.kind === 'note' || map.has(n.id)) continue
@@ -189,7 +195,7 @@ export function RunPage({
       }
     }
     return map
-  }, [data?.steps, data?.graph, data?.run])
+  }, [data])
 
   // A deep link's node is selected once, as soon as the canvas exists: going
   // through the canvas's own selector (rather than state alone) also tints the
@@ -235,7 +241,7 @@ export function RunPage({
         const { run } = data
         const start = run.startedAt ?? run.createdAt
         const end =
-          run.finishedAt ?? (run.status === 'running' ? Date.now() : null)
+          run.finishedAt ?? (run.status === 'running' ? now : null)
         const live = isRunLive(run.status)
         // Any terminal run can be re-run from scratch on the latest version — including
         // ones that completed successfully. "Resume from failed step" (canResume below)

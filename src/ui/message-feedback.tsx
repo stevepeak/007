@@ -141,6 +141,7 @@ export function MessageFeedback({
 
   // Re-sync when the host's hydrated value changes (e.g. after a refetch).
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- re-sync to the host's refetched value
     setLocal({ rating, note })
   }, [rating, note])
 

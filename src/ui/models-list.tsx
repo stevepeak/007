@@ -20,6 +20,7 @@ import {
   type ChosenFilter,
 } from './models-list-shared'
 import { QueryState } from './query-state'
+import { usePickedAt } from './use-now'
 
 // The Models admin page (hub → Models). Staff see each wired-up provider, refresh
 // its catalog from the provider's `/models` endpoint, and enable/disable which
@@ -41,7 +42,7 @@ export function ModelsList({ className }: ModelsListProps) {
     () => new Set(),
   )
   const [chosen, setChosen] = useState<ChosenFilter>('all')
-  const [age, setAge] = useState<AgeFilter>('any')
+  const [age, pickedAt, setAge] = usePickedAt<AgeFilter>('any')
 
   const modelsByProvider = useMemo(() => {
     const map = new Map<string, ModelCatalogEntry[]>()
@@ -58,11 +59,10 @@ export function ModelsList({ className }: ModelsListProps) {
     [budgets.data],
   )
 
-  // One predicate for all filters. `now` is captured once per render so age
-  // buckets are stable across the pass.
+  // One predicate for all filters. Ages are measured against the instant the
+  // bucket was picked, so every model in a pass is aged the same way.
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const now = Date.now()
     return (m: ModelCatalogEntry): boolean => {
       if (
         q &&
@@ -79,7 +79,7 @@ export function ModelsList({ className }: ModelsListProps) {
       if (age !== 'any') {
         // A model with no known release date can't be aged — exclude it.
         if (m.releasedAt == null) return false
-        const days = (now - m.releasedAt) / DAY_MS
+        const days = (pickedAt - m.releasedAt) / DAY_MS
         if (age === 'older') {
           if (days <= AGE_MAX_DAYS.recent) return false
         } else if (days > AGE_MAX_DAYS[age]) {
@@ -88,7 +88,7 @@ export function ModelsList({ className }: ModelsListProps) {
       }
       return true
     }
-  }, [query, caps, chosen, age])
+  }, [pickedAt, query, caps, chosen, age])
 
   const anyActive =
     query.trim() !== '' || caps.size > 0 || chosen !== 'all' || age !== 'any'

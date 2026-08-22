@@ -170,6 +170,7 @@ function TeamNote({
 
   // Re-sync to the persisted value when it changes and there's no pending edit.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- re-sync to a refetched server value
     setValue(initialNote ?? '')
   }, [initialNote])
 

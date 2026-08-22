@@ -40,6 +40,7 @@ export function AgentCallInspect({
   const [position, setPosition] = useState(0)
   // A different call site starts at its first execution rather than inheriting
   // the previous row's position, which the new one may not even have.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- reset position when the inspected call changes identity
   useEffect(() => setPosition(0), [call.runId, call.nodeId])
 
   const itemIndexes = call.itemIndexes

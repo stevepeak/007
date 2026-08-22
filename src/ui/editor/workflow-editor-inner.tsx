@@ -36,6 +36,54 @@ import { useWorkflowSimulation } from './use-workflow-simulation'
 import { WorkflowCanvas, type NodeDefaults } from './workflow-canvas'
 import { PublishDialog } from './workflow-editor-publish'
 
+type NodeSelection = {
+  node: WorkflowGraph['nodes'][number]
+  graph: WorkflowGraph
+  /**
+   * Element schema of the loop's list when the node is inside an iteration —
+   * lets its inputs bind to the current `Item`'s fields.
+   */
+  itemSchema?: Record<string, unknown>
+  insideIteration?: boolean
+}
+
+/**
+ * Resolve the selected node — which may be a top-level node OR a node nested
+ * inside an iteration container's subgraph (the canvas flattens those onto one
+ * surface, but they live in `config.subgraph.nodes`). The returned `graph` is
+ * the scope the inspector and data panel reason about: the main graph for a
+ * top-level node, the iteration's subgraph for a child.
+ *
+ * A plain function rather than an inline `useMemo` body: the search has three
+ * exits and React's compiler could not preserve the memoization around them, so
+ * the whole component was dropped from optimization. Out here it is also
+ * testable without a canvas.
+ */
+function resolveSelection(
+  graph: WorkflowGraph,
+  selectedId: string | null,
+): NodeSelection | null {
+  if (!selectedId) return null
+  const top = graph.nodes.find((n) => n.id === selectedId)
+  if (top) return { node: top, graph }
+  for (const n of graph.nodes) {
+    if (n.kind !== 'iteration') continue
+    const child = n.config.subgraph.nodes.find((c) => c.id === selectedId)
+    if (child) {
+      return {
+        node: child,
+        graph: n.config.subgraph,
+        itemSchema: n.config.itemSchema,
+        // Carried explicitly rather than inferred from `itemSchema` — that is
+        // undefined until the author binds a list, which would read as
+        // "top-level" for every child of an unbound iteration.
+        insideIteration: true,
+      }
+    }
+  }
+  return null
+}
+
 export function EditorInner({
   workflowId,
   initialGraph,
@@ -97,38 +145,10 @@ export function EditorInner({
       '',
   }
 
-  // Resolve the selected node — which may be a top-level node OR a node nested
-  // inside an iteration container's subgraph (the canvas flattens those onto one
-  // surface, but they live in `config.subgraph.nodes`). `graph` is the scope the
-  // inspector/data-panel reason about: the main graph for top-level nodes, the
-  // iteration's subgraph for a child.
-  const selection = useMemo((): {
-    node: WorkflowGraph['nodes'][number]
-    graph: WorkflowGraph
-    // Element schema of the loop's list when the node is inside an iteration —
-    // lets its inputs bind to the current `Item`'s fields.
-    itemSchema?: Record<string, unknown>
-    insideIteration?: boolean
-  } | null => {
-    if (!selectedId) return null
-    const top = graph.nodes.find((n) => n.id === selectedId)
-    if (top) return { node: top, graph }
-    for (const n of graph.nodes) {
-      if (n.kind !== 'iteration') continue
-      const child = n.config.subgraph.nodes.find((c) => c.id === selectedId)
-      if (child)
-        return {
-          node: child,
-          graph: n.config.subgraph,
-          itemSchema: n.config.itemSchema,
-          // Carried explicitly rather than inferred from `itemSchema` — that is
-          // undefined until the author binds a list, which would read as
-          // "top-level" for every child of an unbound iteration.
-          insideIteration: true,
-        }
-    }
-    return null
-  }, [selectedId, graph])
+  const selection = useMemo(
+    () => resolveSelection(graph, selectedId),
+    [graph, selectedId],
+  )
   const selected = selection?.node ?? null
 
   // Author-time issues (misconfigured nodes, missing data links, bad joins).

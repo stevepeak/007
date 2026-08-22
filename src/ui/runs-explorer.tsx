@@ -11,6 +11,7 @@ import { useRuns, useWorkflows } from './hooks'
 import { useWfNav } from './nav'
 import { RunStatusBadge } from './run-status'
 import { useModifierHold } from './use-modifier-hold'
+import { usePickedAt } from './use-now'
 
 // Interface #2 — the runs explorer. A dense, server-filtered, paginated table
 // built for thousands of runs: search by workflow name / trigger / reference,
@@ -78,11 +79,12 @@ export function RunsExplorer({
   const search = useDebounced(searchRaw, 300)
   const [status, setStatus] = useState('')
   const [workflowFilter, setWorkflowFilter] = useState(initialWorkflowId ?? '')
-  const [timeframe, setTimeframe] = useState('')
+  const [timeframe, pickedAt, setTimeframe] = usePickedAt('')
   const [page, setPage] = useState(0)
 
   // Any filter change returns to the first page.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- return to page 1 when a filter changes
     setPage(0)
   }, [search, status, workflowFilter, timeframe])
 
@@ -95,20 +97,25 @@ export function RunsExplorer({
   const purgeHeld = useModifierHold('meta+alt')
   const [purgeRevealed, setPurgeRevealed] = useState(false)
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- latch on a transient external input (a held modifier)
     if (purgeHeld) setPurgeRevealed(true)
   }, [purgeHeld])
 
+  // Anchored to the instant the timeframe was picked, not read per render —
+  // paging through results must not quietly slide the window out from under the
+  // offsets.
   const input = useMemo<WfRunListInput>(() => {
     const frame = TIMEFRAMES.find((t) => t.value === timeframe)
     return {
       workflowId: workflowId ?? (workflowFilter || undefined),
       status: status || undefined,
       search: search.trim() || undefined,
-      since: frame ? Date.now() - frame.ms : undefined,
+      since: frame ? pickedAt - frame.ms : undefined,
       limit: pageSize,
       offset: page * pageSize,
     }
   }, [
+    pickedAt,
     workflowId,
     workflowFilter,
     status,
