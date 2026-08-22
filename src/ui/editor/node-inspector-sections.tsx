@@ -8,7 +8,7 @@ import {
 import { AgentSelect } from '../agent-select'
 import { useWfComponents } from '../context'
 import { useAgents, useTools, useTriggerEvents, useWorkflows } from '../hooks'
-import { MarkdownHint } from './markdown-hint'
+import { MarkdownField } from './markdown-hint'
 import {
   field,
   ToolSelect,
@@ -266,21 +266,22 @@ export function NoteInspector({ node, onChange }: NodeInspectorProps) {
   return (
     <div className={field}>
       <Label>Markdown</Label>
-      <Textarea
-        rows={12}
-        className="font-mono text-xs"
-        value={node.config.text}
-        placeholder={'# Title\n\nNotes with **bold**, `code`, and\n- lists'}
-        onChange={(e) =>
-          onChange({
-            ...node,
-            config: { ...node.config, text: e.target.value },
-          })
-        }
-      />
       {/* No `${variables}` here: a note is read by people on the canvas, never
       rendered into a prompt. */}
-      <MarkdownHint variables={false} />
+      <MarkdownField variables={false}>
+        <Textarea
+          rows={12}
+          className="pr-9 font-mono text-xs"
+          value={node.config.text}
+          placeholder={'# Title\n\nNotes with **bold**, `code`, and\n- lists'}
+          onChange={(e) =>
+            onChange({
+              ...node,
+              config: { ...node.config, text: e.target.value },
+            })
+          }
+        />
+      </MarkdownField>
       <p className="text-muted-foreground text-xs">
         A sticky note for the canvas — it never affects the workflow. The Label
         field is the note’s title.

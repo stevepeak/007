@@ -83,10 +83,10 @@ export type PromptBodyEditorProps = {
   /** Receives an imperative setter so the parent can replace the body. */
   registerSetBody?: (setBody: (body: string) => void) => void
   /**
-   * The grey guide under the box. `full` (the default) covers Markdown marks
-   * and `${variables}`; `formatting` drops the variable paragraph for a box
-   * whose surrounding copy already explains it; `none` for a caller that
-   * renders one shared hint below a stack of editors.
+   * The Markdown mark floating in the box's corner. `full` (the default)
+   * opens a guide covering Markdown marks and `${variables}`; `formatting`
+   * drops the variable paragraph for a box whose surrounding copy already
+   * explains it; `none` hides the mark entirely.
    */
   hint?: 'full' | 'formatting' | 'none'
 }
@@ -163,11 +163,13 @@ export function PromptBodyEditor({
   }, [editor, registerSetBody])
 
   return (
-    <div className="space-y-1.5">
+    // `relative` so the Markdown mark can float in the box's bottom-right
+    // corner; the extra right padding keeps text from running under it.
+    <div className="relative">
       <EditorContent
         editor={editor}
         className={cn(
-          'rounded-md border border-neutral-300 px-3 py-2 text-sm leading-relaxed focus-within:border-neutral-500',
+          'rounded-md border border-neutral-300 py-2 pl-3 pr-9 text-sm leading-relaxed focus-within:border-neutral-500',
           minHeightClass,
           PROSE_CLASSES,
           className,

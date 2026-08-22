@@ -2,6 +2,7 @@ import { AlertTriangle } from 'lucide-react'
 
 import { type AgentConfig, inferPromptVariables } from '../../engine'
 import { cn } from '../cn'
+import { Hint } from '../hint'
 import {
   PROMPT_EDITOR_COMPACT_HEIGHT,
   PromptBodyEditor,
@@ -133,12 +134,14 @@ export function AgentInputEditor({
             </span>
           </p>
         ) : (
-          <p className="text-xs text-neutral-500">
-            Put the per-call data here rather than in the system prompt: the
-            system prompt is the provider's cache prefix, so keeping it identical
-            across calls is what makes prompt caching pay off when a workflow runs
-            this agent once per item.
-          </p>
+          <Hint summary="Put the per-call data here, not in the system prompt">
+            The system prompt is the provider&apos;s cache prefix: keeping it
+            identical across calls is what makes prompt caching pay off when a
+            workflow runs this agent once per item. Anything that changes per
+            run belongs in this message, as a{' '}
+            <code className="rounded bg-neutral-100 px-1">{'${variable}'}</code>{' '}
+            each node maps.
+          </Hint>
         )}
       </div>
 

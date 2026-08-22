@@ -176,7 +176,13 @@ export {
   PromptBodyEditor,
   type PromptBodyEditorProps,
 } from './editor/prompt-body-editor'
-export { MarkdownHint, type MarkdownHintProps } from './editor/markdown-hint'
+export { Hint, type HintProps } from './hint'
+export {
+  MarkdownField,
+  MarkdownHint,
+  type MarkdownFieldProps,
+  type MarkdownHintProps,
+} from './editor/markdown-hint'
 export {
   WorkflowCanvas,
   type WorkflowCanvasProps,

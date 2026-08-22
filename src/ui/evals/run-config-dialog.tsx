@@ -15,7 +15,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { agentInputVariables, type AgentConfig } from '../../engine'
 import { useWfComponents } from '../context'
 import { groupModelsByProvider } from '../editor/model-grouping'
-import { MarkdownHint } from '../editor/markdown-hint'
 import { PromptBodyEditor } from '../editor/prompt-body-editor'
 import {
   DEFAULT_EVAL_CONCURRENCY,
@@ -484,7 +483,7 @@ export function RunConfigDialog({
                       onChange={(body) => setPromptBody(p.id, body)}
                       placeholder="Write an alternate system prompt… use ${variable} for values."
                       className="min-h-[6rem] [&_.ProseMirror]:min-h-[5rem]"
-                      hint="none"
+                      hint="formatting"
                     />
                   </div>
                 ))}
@@ -497,8 +496,6 @@ export function RunConfigDialog({
                   <Plus className="size-4" />
                   Add test prompt
                 </button>
-
-                <MarkdownHint variables={false} />
 
                 <p className="text-xs text-neutral-400">
                   {availableVariables.length > 0 ? (
