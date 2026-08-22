@@ -1,20 +1,13 @@
 import { FlaskConical } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
-import type { AgentNode, ArgBinding, WorkflowNode } from '../../engine'
-import { resolvePath } from '../../engine/binding'
-import type { EvalSampleInput, WfRunStepDTO } from '../../server/protocol'
+import type { AgentNode, WorkflowNode } from '../../engine'
+import type { WfRunStepDTO } from '../../server/protocol'
 import { useWfComponents } from '../context'
-import {
-  useAgents,
-  useCreateEvalSet,
-  useEvalSets,
-  useUpsertEvalRow,
-} from '../hooks'
 import { IdeaSpark } from '../idea-spark'
 import { Modal } from '../modal'
-import { useOpenAsset } from '../nav'
-import { firstLine, previewText } from '../text-preview'
+
+import { NEW_GOAL, useCreateSampleForm } from './use-create-sample-form'
 
 // "Create Sample" — turn a completed agent node's execution into an eval Sample
 // (wf_eval_row) under a Goal (wf_eval_set) that targets that agent. Lives in the
@@ -25,8 +18,6 @@ import { firstLine, previewText } from '../text-preview'
 // The component self-gates: it renders nothing unless the selected node is an
 // agent pointer with a completed step, so the run page can mount it
 // unconditionally.
-
-const NEW_GOAL = '__new__'
 
 export type CreateSampleFromRunProps = {
   /** The node selected on the run graph. */
@@ -58,243 +49,185 @@ function Control({
   step: WfRunStepDTO
   steps: WfRunStepDTO[]
 }) {
-  const { Button, Input, Label, Select } = useWfComponents()
-  const openAsset = useOpenAsset()
-
-  const agentId = agentNode.config.agentId
-  const agentsQuery = useAgents()
-  const agent = agentsQuery.data?.find((a) => a.id === agentId)
-  const agentName = agent?.name ?? 'this agent'
-  const inputVariables = useMemo(
-    () => agent?.inputVariables ?? [],
-    [agent?.inputVariables],
-  )
-
-  // Goals that already test this agent — the sample lands under one of them, or a
-  // brand-new goal the author names here.
-  const setsQuery = useEvalSets()
-  const goals = useMemo(
-    () =>
-      (setsQuery.data ?? []).filter(
-        (s) => s.targetKind === 'agent' && s.targetId === agentId,
-      ),
-    [setsQuery.data, agentId],
-  )
-
-  // The sample's input, reconstructed from what this node actually ran with.
-  const given = useMemo(
-    () => seedGiven(agentNode, step, steps, inputVariables),
-    [agentNode, step, steps, inputVariables],
-  )
-  const givenEntries = Object.entries(given.variables)
-
-  const createSet = useCreateEvalSet()
-  const upsertRow = useUpsertEvalRow()
-
-  const [open, setOpen] = useState(false)
-  // `null` = "auto" (follow the first existing goal); a string is the author's
-  // explicit pick. Kept as auto until they choose, so goals loading in after the
-  // dialog opens still default sensibly without clobbering a selection.
-  const [goalChoice, setGoalChoice] = useState<string | null>(null)
-  const [newGoalName, setNewGoalName] = useState('')
-  const [title, setTitle] = useState('')
-  const [error, setError] = useState<string | null>(null)
-
-  // Reset the form only on the open→true edge, so a background refetch (goals /
-  // agents) while the dialog is open never clobbers in-progress edits.
-  const wasOpenRef = useRef(false)
-  useEffect(() => {
-    if (open && !wasOpenRef.current) {
-      wasOpenRef.current = true
-      setGoalChoice(null)
-      setNewGoalName(`${agentName} goal`)
-      setTitle(deriveTitle(agentName, given, step))
-      setError(null)
-    } else if (!open) {
-      wasOpenRef.current = false
-    }
-  }, [open, agentName, given, step])
-
-  const effectiveGoal = goalChoice ?? goals[0]?.id ?? NEW_GOAL
-  const creatingNewGoal = effectiveGoal === NEW_GOAL
-  const pending = createSet.isPending || upsertRow.isPending
-  const canSubmit =
-    !pending && (!creatingNewGoal || !!newGoalName.trim())
-
-  const submit = async () => {
-    if (!canSubmit) return
-    setError(null)
-    try {
-      let setId = effectiveGoal
-      if (creatingNewGoal) {
-        const res = await createSet.mutateAsync({
-          name: newGoalName.trim(),
-          targetKind: 'agent',
-          targetId: agentId,
-          targetVersion: agentNode.config.version ?? null,
-          triggerKind: 'manual',
-        })
-        setId = res.setId
-      }
-      const { rowId } = await upsertRow.mutateAsync({
-        setId,
-        name: title.trim() || 'Untitled sample',
-        input: given,
-        // Mocked with nothing mocked: the sample replays the call with its tools
-        // stubbed out, which is the safe default. The author picks Live or None
-        // on the sample itself.
-        tools: { mode: 'mocked', fixtures: {} },
-        checks: { op: 'and', checks: [] },
-      })
-      setOpen(false)
-      // Open the fresh sample in its own tab so the run stays put behind it.
-      openAsset(`evals/${setId}/samples/${rowId}`, { newTab: true })
-    } catch {
-      setError("Couldn't create the sample. Try again.")
-    }
-  }
+  const { Button } = useWfComponents()
+  const form = useCreateSampleForm({ agentNode, step, steps })
 
   return (
     <>
       <Button
         size="sm"
         variant="outline"
-        onClick={() => setOpen(true)}
-        title={`Create an eval sample from ${agentName}'s run`}
+        onClick={() => form.setOpen(true)}
+        title={`Create an eval sample from ${form.agentName}'s run`}
       >
         <FlaskConical className="size-3.5" />
         Create Sample
       </Button>
 
       <Modal
-        open={open}
-        onClose={() => setOpen(false)}
+        open={form.open}
+        onClose={() => form.setOpen(false)}
         title="Create sample"
         panelClassName="w-full max-w-md rounded-lg border border-neutral-200 bg-white shadow-xl"
         footer={
           <>
-            <Button variant="outline" size="sm" onClick={() => setOpen(false)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => form.setOpen(false)}
+            >
               Cancel
             </Button>
-            <Button size="sm" disabled={!canSubmit} onClick={() => void submit()}>
-              {pending ? 'Creating…' : 'Create sample'}
+            <Button
+              size="sm"
+              disabled={!form.canSubmit}
+              onClick={() => void form.submit()}
+            >
+              {form.pending ? 'Creating…' : 'Create sample'}
             </Button>
           </>
         }
       >
         <div className="space-y-4 px-5 py-4">
-          {/* Goal — the sample tests this agent, so only goals aimed at it apply. */}
-          <div className="space-y-1">
-            <Label>Goal</Label>
-            {goals.length > 0 ? (
-              <Select
-                value={effectiveGoal}
-                onChange={(e) => setGoalChoice(e.target.value)}
-              >
-                {goals.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
-                <option value={NEW_GOAL}>＋ New goal…</option>
-              </Select>
-            ) : (
-              <p className="text-xs text-neutral-400">
-                No goals test{' '}
-                <span className="font-medium text-neutral-500">
-                  {agentName}
-                </span>{' '}
-                yet — name a new one:
-              </p>
-            )}
-            {creatingNewGoal ? (
-              <Input
-                autoFocus={goals.length === 0}
-                value={newGoalName}
-                placeholder="New goal name"
-                onChange={(e) => setNewGoalName(e.target.value)}
-              />
-            ) : null}
-            <p className="text-xs text-neutral-400">
-              The agent this sample runs against — {agentName}.
-            </p>
-          </div>
+          <GoalField form={form} />
 
-          {/* Title. */}
-          <div className="space-y-1">
-            <Label>Sample title</Label>
-            <Input
-              value={title}
-              placeholder="Untitled sample"
-              onChange={(e) => setTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && canSubmit) void submit()
-              }}
-            />
-          </div>
+          <TitleField form={form} />
 
-          {/* Given — reconstructed from the execution (read-only preview). */}
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-1.5">
-              <Label>Given</Label>
-              <span className="text-[11px] uppercase tracking-wide text-neutral-400">
-                captured from this run
-              </span>
-            </div>
-            {givenEntries.length > 0 ? (
-              <dl className="divide-y divide-neutral-100 rounded-md border border-neutral-200">
-                {givenEntries.map(([k, v]) => (
-                  <div key={k} className="flex gap-2 px-2.5 py-1.5">
-                    <dt
-                      title={k}
-                      className="w-32 shrink-0 truncate font-mono text-xs text-neutral-500"
-                    >
-                      {k}
-                    </dt>
-                    <dd className="min-w-0 flex-1 truncate font-mono text-xs text-neutral-700">
-                      {v}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            ) : (
-              <p className="text-xs text-neutral-400">
-                Couldn&apos;t recover input values from this run — you can fill
-                the Given in on the sample.
-              </p>
-            )}
-          </div>
+          <GivenPreview entries={form.givenEntries} />
+          <FollowOnNotes />
 
-          {/* ✨ Follow-ons: mocks + checks seeded from the run, later. */}
-          <div className="space-y-2 rounded-md bg-neutral-50 p-3">
-            <SparkNote
-              title="Auto-generate mock tools from this run"
-              blurb="Mock tools, built from this run's tool calls"
-            >
-              <p>
-                This run already recorded every tool call the agent made — the
-                inputs it sent and the outputs it got back. We could turn those
-                into <strong>mock tools</strong> (fixtures) on the sample, so it
-                replays deterministically without hitting live tools.
-              </p>
-            </SparkNote>
-            <SparkNote
-              title="Auto-generate checks from this output"
-              blurb="Checks, generated from the agent's output"
-            >
-              <p>
-                The agent&apos;s output is the obvious oracle. We could propose{' '}
-                <strong>checks</strong> from it automatically — binary assertions
-                on what it produced plus a scored judge on the response — so the
-                sample starts graded instead of empty.
-              </p>
-            </SparkNote>
-          </div>
-
-          {error ? <p className="text-xs text-red-600">{error}</p> : null}
+          {form.error ? (
+            <p className="text-xs text-red-600">{form.error}</p>
+          ) : null}
         </div>
       </Modal>
     </>
+  )
+}
+
+type Form = ReturnType<typeof useCreateSampleForm>
+
+/** The sample tests this agent, so only goals aimed at it apply. */
+function GoalField({ form }: { form: Form }) {
+  const { Input, Label, Select } = useWfComponents()
+  return (
+    <div className="space-y-1">
+      <Label>Goal</Label>
+      {form.goals.length > 0 ? (
+        <Select
+          value={form.effectiveGoal}
+          onChange={(e) => form.setGoalChoice(e.target.value)}
+        >
+          {form.goals.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.name}
+            </option>
+          ))}
+          <option value={NEW_GOAL}>＋ New goal…</option>
+        </Select>
+      ) : (
+        <p className="text-xs text-neutral-400">
+          No goals test{' '}
+          <span className="font-medium text-neutral-500">{form.agentName}</span>{' '}
+          yet — name a new one:
+        </p>
+      )}
+      {form.creatingNewGoal ? (
+        <Input
+          autoFocus={form.goals.length === 0}
+          value={form.newGoalName}
+          placeholder="New goal name"
+          onChange={(e) => form.setNewGoalName(e.target.value)}
+        />
+      ) : null}
+      <p className="text-xs text-neutral-400">
+        The agent this sample runs against — {form.agentName}.
+      </p>
+    </div>
+  )
+}
+
+function TitleField({ form }: { form: Form }) {
+  const { Input, Label } = useWfComponents()
+  return (
+    <div className="space-y-1">
+      <Label>Sample title</Label>
+      <Input
+        value={form.title}
+        placeholder="Untitled sample"
+        onChange={(e) => form.setTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && form.canSubmit) void form.submit()
+        }}
+      />
+    </div>
+  )
+}
+
+/** The Given, reconstructed from the execution — read-only. */
+function GivenPreview({ entries }: { entries: [string, string][] }) {
+  const { Label } = useWfComponents()
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-1.5">
+        <Label>Given</Label>
+        <span className="text-[11px] uppercase tracking-wide text-neutral-400">
+          captured from this run
+        </span>
+      </div>
+      {entries.length > 0 ? (
+        <dl className="divide-y divide-neutral-100 rounded-md border border-neutral-200">
+          {entries.map(([k, v]) => (
+            <div key={k} className="flex gap-2 px-2.5 py-1.5">
+              <dt
+                title={k}
+                className="w-32 shrink-0 truncate font-mono text-xs text-neutral-500"
+              >
+                {k}
+              </dt>
+              <dd className="min-w-0 flex-1 truncate font-mono text-xs text-neutral-700">
+                {v}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="text-xs text-neutral-400">
+          Couldn&apos;t recover input values from this run — you can fill the
+          Given in on the sample.
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** ✨ Follow-ons: mocks + checks seeded from the run, later. */
+function FollowOnNotes() {
+  return (
+    <div className="space-y-2 rounded-md bg-neutral-50 p-3">
+      <SparkNote
+        title="Auto-generate mock tools from this run"
+        blurb="Mock tools, built from this run's tool calls"
+      >
+        <p>
+          This run already recorded every tool call the agent made — the inputs
+          it sent and the outputs it got back. We could turn those into{' '}
+          <strong>mock tools</strong> (fixtures) on the sample, so it replays
+          deterministically without hitting live tools.
+        </p>
+      </SparkNote>
+      <SparkNote
+        title="Auto-generate checks from this output"
+        blurb="Checks, generated from the agent's output"
+      >
+        <p>
+          The agent&apos;s output is the obvious oracle. We could propose{' '}
+          <strong>checks</strong> from it automatically — binary assertions on
+          what it produced plus a scored judge on the response — so the sample
+          starts graded instead of empty.
+        </p>
+      </SparkNote>
+    </div>
   )
 }
 
@@ -316,100 +249,4 @@ function SparkNote({
       <span className="text-xs text-neutral-500">{blurb}</span>
     </div>
   )
-}
-
-// ── Given reconstruction ──────────────────────────────────────────────────────
-
-// Rebuild the sample's initial condition from the node's execution. The Given
-// the sample editor shows is `promptVariables`; we recover a value for each of
-// the agent's declared `${vars}` from the node's input bindings resolved against
-// the run's recorded outputs (a `literal` is its own value; a `ref` reads the
-// referenced node's recorded output at the binding path), falling back to a
-// matching field on the node's routed input. Vars supplied by run-level prompt
-// variables (not bound on the node) aren't persisted per-step, so they stay
-// blank for the author to fill. Free-form agents (no declared vars) capture the
-// routed input's own fields.
-//
-// Always a `task` input: this button only offers itself for an agent node, and
-// the values it recovers are that agent's prompt variables. A conversation
-// target's thread isn't reconstructible from one node's recorded step.
-function seedGiven(
-  node: AgentNode,
-  step: WfRunStepDTO,
-  steps: WfRunStepDTO[],
-  inputVariables: string[],
-): Extract<EvalSampleInput, { kind: 'task' }> {
-  const inputs = node.config.inputs ?? {}
-  const promptVariables: Record<string, string> = {}
-
-  const resolveBinding = (binding: ArgBinding): unknown => {
-    if (binding.kind === 'literal') return binding.value
-    const source = outputForNode(steps, step, binding.nodeId)
-    return source === undefined ? undefined : resolvePath(source, binding.path)
-  }
-
-  for (const v of inputVariables) {
-    const binding = inputs[v]
-    let value = binding ? resolveBinding(binding) : undefined
-    if (value === undefined) value = flatField(step.input, v)
-    if (value !== undefined && value !== null) promptVariables[v] = asText(value)
-  }
-
-  // Free-form agent: no declared vars → surface the routed input's own fields so
-  // the Given isn't empty.
-  if (inputVariables.length === 0 && isPlainRecord(step.input)) {
-    for (const [k, value] of Object.entries(step.input)) {
-      if (value !== undefined && value !== null) promptVariables[k] = asText(value)
-    }
-  }
-
-  return { kind: 'task', variables: promptVariables }
-}
-
-// The recorded output for `nodeId`, preferring a sibling within the same
-// iteration item when the selected step ran inside one, else the top-level step.
-function outputForNode(
-  steps: WfRunStepDTO[],
-  step: WfRunStepDTO,
-  nodeId: string,
-): unknown {
-  if (step.parentNodeId != null) {
-    const sibling = steps.find(
-      (s) =>
-        s.nodeId === nodeId &&
-        s.parentNodeId === step.parentNodeId &&
-        s.itemIndex === step.itemIndex,
-    )
-    if (sibling) return sibling.output
-  }
-  return steps.find((s) => s.nodeId === nodeId && s.parentNodeId == null)?.output
-}
-
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function flatField(input: unknown, key: string): unknown {
-  return isPlainRecord(input) ? input[key] : undefined
-}
-
-function asText(value: unknown): string {
-  return typeof value === 'string' ? value : JSON.stringify(value)
-}
-
-// A short, one-line title seeded from the run: the first captured Given value,
-// else a glimpse of the routed input, else the agent's name.
-function deriveTitle(
-  agentName: string,
-  given: Extract<EvalSampleInput, { kind: 'task' }>,
-  step: WfRunStepDTO,
-): string {
-  const firstGiven = Object.values(given.variables)[0]
-  const raw =
-    (typeof firstGiven === 'string' && firstGiven) ||
-    previewText(step.input) ||
-    ''
-  const line = firstLine(raw, 60)
-  if (!line) return `${agentName} sample`
-  return line
 }
