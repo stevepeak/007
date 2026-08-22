@@ -1,3 +1,4 @@
+import { nodeKindLabel } from './graph-kinds'
 import {
   agentFromManifest,
   workflowFromManifest,
@@ -7,28 +8,6 @@ import {
 // Human-facing node labels, used to name a node's Sentry span (and any other
 // place a run node needs a readable title). Kept pure and manifest-driven so it
 // can be unit-tested without a live run.
-
-// Pretty kind prefixes. Anything unlisted falls back to its raw kind string.
-const KIND_LABELS: Record<string, string> = {
-  agent: 'Agent',
-  tool: 'Tool',
-  branch: 'Branch',
-  switch: 'Switch',
-  workflow: 'Workflow',
-  iteration: 'Iteration',
-  passthrough: 'Passthrough',
-  transform: 'Transform',
-  race: 'Race',
-  aggregate: 'Aggregate',
-  'feature-request': 'Feature Request',
-  trigger: 'Trigger',
-  output: 'Output',
-  note: 'Note',
-}
-
-function prettyKind(kind: string): string {
-  return KIND_LABELS[kind] ?? kind
-}
 
 // The minimal node shape this needs — a kind, its editor label, and (for
 // entity-backed nodes) the config pointing at the manifest entry. Structural so
@@ -72,5 +51,5 @@ export function nodeSpanLabel(
     return `Workflow: ${name ?? label ?? 'workflow'}`
   }
 
-  return label ? `${prettyKind(node.kind)}: ${label}` : prettyKind(node.kind)
+  return label ? `${nodeKindLabel(node.kind)}: ${label}` : nodeKindLabel(node.kind)
 }

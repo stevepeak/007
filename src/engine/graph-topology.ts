@@ -1,5 +1,5 @@
 import { buildAdjacency } from './graph-adjacency'
-import { DECISION_NODE_KINDS } from './graph-kinds'
+import { isDecisionKind } from './graph-kinds'
 import type { WorkflowEdge, WorkflowGraph } from './graph-schema'
 
 // The join/cone topology analysis shared by the strict runtime gate
@@ -7,16 +7,8 @@ import type { WorkflowEdge, WorkflowGraph } from './graph-schema'
 // (`collectGraphIssues`). Both must agree on which fan-ins are illegal — a graph
 // the editor reports clean must run, and one it flags must be the one the schema
 // rejects — so the graph-walk reasoning lives here ONCE and each caller supplies
-// only its own severity/message. (graph.ts imports this module at runtime, so the
-// back-import of `DECISION_NODE_KINDS` forms a value cycle — safe here because the
-// const is only read inside `isDecisionNodeKind` at call time, never at module
-// init, so its binding is initialized by the time any graph is validated.)
-
-// Decision *kinds* — nodes that route via a conditional outgoing edge. Derived
-// from the single `DECISION_NODE_KINDS` source in graph.ts so it can't drift.
-function isDecisionNodeKind(kind: string): boolean {
-  return (DECISION_NODE_KINDS as readonly string[]).includes(kind)
-}
+// only its own severity/message. (`isDecisionKind` comes straight from
+// `graph-kinds`, which imports nothing, so there is no cycle to reason about.)
 
 export type JoinTopology = {
   /** Incoming edges keyed by target node id. */
@@ -47,7 +39,7 @@ export function analyzeJoinTopology(graph: WorkflowGraph): JoinTopology {
   const { incoming, outgoing } = buildAdjacency(graph)
 
   const decisionIds = new Set(
-    graph.nodes.filter((n) => isDecisionNodeKind(n.kind)).map((n) => n.id),
+    graph.nodes.filter((n) => isDecisionKind(n.kind)).map((n) => n.id),
   )
   for (const e of graph.edges) {
     if (e.condition != null) decisionIds.add(e.source)

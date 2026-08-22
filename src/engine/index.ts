@@ -49,9 +49,11 @@ export {
   VALUELESS_BRANCH_OPERATORS,
   branchOperatorTakesValue,
   DECISION_NODE_KINDS,
+  BOOKEND_NODE_KINDS,
   type InformUser,
   isBookendKind,
   isDecisionKind,
+  isWfNodeKind,
   SWITCH_DEFAULT_CASE,
   nextSwitchCaseKey,
   type SwitchNode,
@@ -112,6 +114,24 @@ export {
   resolveNodeTimeoutMs,
 } from './node-timeout'
 export { nodeSpanLabel } from './node-label'
+// The node-kind registry — one descriptor per kind (label, icon name, timeout
+// class, palette copy) plus the matching seed table. Adding a kind is an entry
+// in each; every consumer that must react fails to compile until then.
+export {
+  NODE_KIND_REGISTRY,
+  NODE_KIND_CATEGORY_ORDER,
+  nodeKindDescriptor,
+  nodeKindLabel,
+  type NodeKindCategory,
+  type NodeKindDescriptor,
+  type NodeKindIconName,
+  type NodeKindPalette,
+} from './graph-kinds'
+export {
+  NODE_KIND_SEEDS,
+  type NodeSeedDefaults,
+  type WorkflowNodeSeed,
+} from './node-kind-seeds'
 export { nodeProgressMessage } from './node-progress'
 export {
   collectGraphIssues,

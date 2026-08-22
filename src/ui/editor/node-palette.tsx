@@ -1,138 +1,35 @@
 import {
-  Flag,
-  Forward,
-  GitBranch,
-  Layers,
-  Lightbulb,
-  Repeat,
-  Sparkles,
-  Split,
-  Shuffle,
-  StickyNote,
-  Workflow,
-  Wrench,
-  type LucideIcon,
-} from 'lucide-react'
-
+  NODE_KIND_CATEGORY_ORDER,
+  NODE_KIND_REGISTRY,
+  WF_NODE_KINDS,
+  type NodeKindCategory,
+  type NodeKindIconName,
+  type WfNodeKind,
+} from '../../engine'
 import { cn } from '../cn'
+
+import { nodeKindIcon } from './node-kind-icons'
 
 export const PALETTE_DATA_TYPE = 'application/x-workflow-node'
 
-type PaletteCategory = 'Steps' | 'Logic' | 'Other'
-
 type PaletteItem = {
-  kind:
-    | 'agent'
-    | 'tool'
-    | 'branch'
-    | 'switch'
-    | 'iteration'
-    | 'workflow'
-    | 'feature-request'
-    | 'passthrough'
-    | 'transform'
-    | 'race'
-    | 'aggregate'
-    | 'note'
-  category: PaletteCategory
+  kind: WfNodeKind
+  category: NodeKindCategory
   label: string
   description: string
-  icon: LucideIcon
+  icon: NodeKindIconName
 }
 
-// Section order in the palette. Nodes are grouped by role: Steps do the actual
-// work, Logic handles routing/flow control, Other holds non-executing annotations.
-const CATEGORY_ORDER: PaletteCategory[] = ['Steps', 'Logic', 'Other']
-
-const PALETTE: PaletteItem[] = [
-  {
-    kind: 'agent',
-    category: 'Steps',
-    label: 'Agent',
-    description: 'Run an agent.',
-    icon: Sparkles,
-  },
-  {
-    kind: 'tool',
-    category: 'Steps',
-    label: 'Tool',
-    description: 'Direct call to a registered tool — no LLM in the loop.',
-    icon: Wrench,
-  },
-  {
-    kind: 'workflow',
-    category: 'Steps',
-    label: 'Workflow',
-    description: 'Call another workflow and wait for its result.',
-    icon: Workflow,
-  },
-  {
-    kind: 'branch',
-    category: 'Logic',
-    label: 'Branch',
-    description: 'Yes / no routing from a deterministic condition — no LLM.',
-    icon: GitBranch,
-  },
-  {
-    kind: 'switch',
-    category: 'Logic',
-    label: 'Switch',
-    description: 'Multi-way routing — match a value to one of many cases.',
-    icon: Split,
-  },
-  {
-    kind: 'iteration',
-    category: 'Logic',
-    label: 'Iteration',
-    description: 'Run a subgraph once per item in a list, in parallel.',
-    icon: Repeat,
-  },
-  {
-    kind: 'race',
-    category: 'Logic',
-    label: 'Race',
-    description: 'First-to-finish join — fires as soon as any upstream completes.',
-    icon: Flag,
-  },
-  {
-    kind: 'aggregate',
-    category: 'Logic',
-    label: 'Aggregate',
-    description:
-      'Wait-for-all join — collects every upstream result into one list.',
-    icon: Layers,
-  },
-  {
-    kind: 'passthrough',
-    category: 'Logic',
-    label: 'Passthrough',
-    description:
-      'Re-shape a value so a branch arm can feed a Race the same shape as its sibling.',
-    icon: Forward,
-  },
-  {
-    kind: 'transform',
-    category: 'Logic',
-    label: 'Transform',
-    description:
-      'Reshape a value with a JSONata expression — e.g. turn records into the messages an agent expects.',
-    icon: Shuffle,
-  },
-  {
-    kind: 'feature-request',
-    category: 'Other',
-    label: 'Feature Request',
-    description: 'Placeholder for a future idea — passes through unchanged.',
-    icon: Lightbulb,
-  },
-  {
-    kind: 'note',
-    category: 'Other',
-    label: 'Note',
-    description: 'A sticky note with Markdown — never affects the workflow.',
-    icon: StickyNote,
-  },
-]
+// Derived from the node-kind registry, in registry order. A kind with no
+// `palette` entry is one the author cannot drag in (trigger/output are
+// template-owned), so it is simply absent here — no second table to keep in
+// sync, and a new kind shows up the moment it declares its palette copy.
+const PALETTE: PaletteItem[] = WF_NODE_KINDS.flatMap((kind) => {
+  const { label, icon, palette } = NODE_KIND_REGISTRY[kind]
+  return palette
+    ? [{ kind, label, icon, category: palette.category, description: palette.description }]
+    : []
+})
 
 // Drag-add: stash the kind in the dataTransfer payload; the canvas's drop
 // handler reads it and inserts a new node at the drop coordinates.
@@ -143,7 +40,7 @@ export function NodePalette() {
         Add a node
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-3">
-        {CATEGORY_ORDER.map((category) => {
+        {NODE_KIND_CATEGORY_ORDER.map((category) => {
           const items = PALETTE.filter((item) => item.category === category)
           if (items.length === 0) return null
           return (
@@ -152,7 +49,7 @@ export function NodePalette() {
                 {category}
               </div>
               {items.map((item) => {
-                const Icon = item.icon
+                const Icon = nodeKindIcon(item.icon)
                 return (
                   <div
                     key={item.kind}

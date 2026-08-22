@@ -1,3 +1,4 @@
+import { nodeKindDescriptor } from './graph-kinds'
 import type { NodeExecution } from './graph-schema'
 
 // How long a node is allowed to run, in ms — the author's declared intent,
@@ -14,24 +15,24 @@ export const AI_NODE_TIMEOUT_MS = 20 * 60_000
 /** Everything else — deterministic branches, tools, joins. */
 export const DEFAULT_NODE_TIMEOUT_MS = 60_000
 
-/** True for a node that runs a whole subgraph as one unit of execution. */
-function isSubgraphContainer(kind: string): boolean {
-  return kind === 'workflow' || kind === 'iteration'
-}
-
-/** The per-kind default before any `execution` override. */
+/**
+ * The per-kind default before any `execution` override, read from the node-kind
+ * registry's `timeout` column.
+ *
+ * `agent` waits on a provider; `workflow` and `iteration` are CONTAINERS, each
+ * running a whole subgraph — usually several LLM nodes — as one unit of
+ * execution, so they carry the AI budget too. For `iteration` the unit is ONE
+ * ITEM (the fan-out is many such units), which is why the wide default is not
+ * multiplied by the item count.
+ *
+ * Marking a container `'default'` in the registry is not a smaller budget, it is
+ * a broken one: the container's timeout is what the item subgraph's model budget
+ * derives from, and 60s minus `STEP_TIMEOUT_SLACK_MS` floors at `MIN_TOTAL_MS`,
+ * so every agent inside every iteration would silently run under a 30-second cap
+ * while its enclosing step was allowed 20 minutes.
+ */
 export function defaultNodeTimeoutMs(kind: string): number {
-  // `workflow` and `iteration` are CONTAINERS: each runs a whole subgraph —
-  // usually several LLM nodes — as one unit, so they need the AI budget too. For
-  // `iteration` the unit is ONE ITEM (the fan-out is many such units), which is
-  // why the wide default is not multiplied by the item count.
-  //
-  // Omitting `iteration` here is not a smaller budget, it is a broken one: the
-  // container's timeout is what the item subgraph's model budget derives from,
-  // and 60s minus `STEP_TIMEOUT_SLACK_MS` floors at `MIN_TOTAL_MS`, so every
-  // agent inside every iteration silently ran under a 30-second cap while its
-  // enclosing step was allowed 20 minutes.
-  return kind === 'agent' || isSubgraphContainer(kind)
+  return nodeKindDescriptor(kind)?.timeout === 'ai'
     ? AI_NODE_TIMEOUT_MS
     : DEFAULT_NODE_TIMEOUT_MS
 }

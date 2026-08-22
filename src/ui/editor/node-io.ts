@@ -209,27 +209,49 @@ function fieldsOf(
 }
 
 // The inputs a node needs supplied via bindings.
+//
+// Exhaustive on purpose: the `satisfies never` makes a new node kind a compile
+// error here rather than silently reporting "no inputs", which would leave the
+// inspector showing an empty binding list for a node that needs data.
 export function nodeRequires(node: WorkflowNode, maps: IoMaps): NodeInput[] {
-  if (node.kind === 'agent') {
-    const agent = maps.agentsById.get(node.config.agentId)
-    return (agent?.inputVariables ?? []).map((v) => ({
-      key: v,
-      label: v,
-      required: true,
-      type: 'string',
-    }))
+  switch (node.kind) {
+    case 'agent': {
+      const agent = maps.agentsById.get(node.config.agentId)
+      return (agent?.inputVariables ?? []).map((v) => ({
+        key: v,
+        label: v,
+        required: true,
+        type: 'string',
+      }))
+    }
+    case 'tool':
+      return inputsOfSchema(maps.toolsById.get(node.config.toolId)?.inputSchema)
+    case 'workflow':
+      // What the CALLEE's trigger takes. Binding none of these is legal and
+      // common — `buildCalleeTriggerInput` then passes this node's upstream
+      // output straight through — so the callee's own `required` is reported
+      // as-is and `missingRequiredInputs` decides when it actually bites.
+      return inputsOfSchema(calleeInputSchema(node.config.workflowId, maps))
+    // Kinds with nothing to bind. Transform and Passthrough DO carry bindings,
+    // but theirs are author-declared (`inputs`/`fields`) rather than a schema
+    // the node must satisfy, so they are edited in their own inspector panels
+    // and never appear as required inputs.
+    case 'trigger':
+    case 'branch':
+    case 'switch':
+    case 'feature-request':
+    case 'passthrough':
+    case 'transform':
+    case 'race':
+    case 'aggregate':
+    case 'iteration':
+    case 'note':
+    case 'output':
+      return []
+    default:
+      node satisfies never
+      return []
   }
-  if (node.kind === 'tool') {
-    return inputsOfSchema(maps.toolsById.get(node.config.toolId)?.inputSchema)
-  }
-  if (node.kind === 'workflow') {
-    // What the CALLEE's trigger takes. Binding none of these is legal and
-    // common — `buildCalleeTriggerInput` then passes this node's upstream
-    // output straight through — so the callee's own `required` is reported
-    // as-is and `missingRequiredInputs` decides when it actually bites.
-    return inputsOfSchema(calleeInputSchema(node.config.workflowId, maps))
-  }
-  return []
 }
 
 // The required inputs a node has left unbound — an agent prompt variable or a
@@ -341,127 +363,16 @@ function conversationOutput(): { fields: DataField[]; items: DataField[] } {
   return { fields: [], items }
 }
 
-function nodeOutput(
+// Pass-through resolution: a node that emits exactly what it received. Shared by
+// feature-request (an unbuilt placeholder), an unconfigured identity Passthrough,
+// and Note (which has no predecessors, so this reports nothing).
+function passThroughOutput(
   node: WorkflowNode,
   maps: IoMaps,
   graph: WorkflowGraph,
   byId: Map<string, WorkflowNode>,
   seen: Set<string>,
 ): { fields: DataField[]; type: string } {
-  if (seen.has(node.id)) return { fields: [], type: 'unknown' }
-  seen.add(node.id)
-
-  if (node.kind === 'agent') {
-    const output = maps.agentsById.get(node.config.agentId)?.output
-    if (!output) return { fields: [], type: 'unknown' }
-    return {
-      fields: fieldsOf(agentOutputJsonSchema(output), ''),
-      type: output.kind,
-    }
-  }
-  if (node.kind === 'tool') {
-    const schema = maps.toolsById.get(node.config.toolId)?.outputSchema
-    // Reflect the schema's real container type (object/array/…) instead of
-    // always claiming "object" — a tool that returns an array or scalar was
-    // being mislabeled.
-    return { fields: fieldsOf(schema, ''), type: schema ? schemaType(schema) : 'unknown' }
-  }
-  if (node.kind === 'trigger') {
-    const schema = maps.triggersByKind.get(node.config.triggerKind)?.inputSchema
-    // The iteration `Item` trigger emits one list element; its shape is injected
-    // into the maps (from the parent iteration's inferred `itemSchema`).
-    if (node.config.triggerKind === ITERATION_ITEM_TRIGGER_KIND) {
-      const t = typeof schema?.type === 'string' ? schema.type : 'item'
-      return { fields: fieldsOf(schema, ''), type: schema ? t : 'item' }
-    }
-    // Only host-declared events carry a payload shape; manual/periodic don't.
-    return { fields: fieldsOf(schema, ''), type: schema ? 'event' : 'trigger' }
-  }
-  if (node.kind === 'output') return { fields: [], type: 'none' }
-  if (node.kind === 'workflow') {
-    // A workflow node emits the CALLEE's output, whose shape isn't known here
-    // (it's the other workflow's Output value). Surface it as one opaque leaf
-    // rather than guessing — and never fall through to the pass-through branch,
-    // which would wrongly show this node's INPUT shape as its output.
-    return { fields: [], type: 'workflow' }
-  }
-  if (node.kind === 'iteration') {
-    // A collection of per-item results. The element shape isn't known at author
-    // time, so surface the whole array as one bindable leaf rather than guessing.
-    return { fields: [], type: 'array' }
-  }
-  if (node.kind === 'race') {
-    // A race passes the winning upstream's output through untouched. Its inputs
-    // all share one shape, so downstream sees that single shape — resolve from
-    // the first predecessor rather than the multi-keyed object a fan-in yields.
-    const preds = predecessorIds(graph, node.id)
-      .map((id) => byId.get(id))
-      .filter((n): n is WorkflowNode => Boolean(n))
-    return preds.length > 0
-      ? nodeOutput(preds[0], maps, graph, byId, seen)
-      : { fields: [], type: 'passthrough' }
-  }
-  if (node.kind === 'aggregate') {
-    // A wait-for-all join: collects each producer's output into an ordered list.
-    // The element shapes vary by producer, so surface the whole array as one
-    // bindable leaf (like iteration) rather than inventing a uniform element
-    // shape — a downstream iteration can still pick it as its list.
-    return { fields: [], type: 'array' }
-  }
-  if (node.kind === 'branch' || node.kind === 'switch') {
-    // Routing nodes emit their decision, not a forwarded input.
-    return { fields: decisionOutputFields(node), type: 'object' }
-  }
-  if (node.kind === 'transform') {
-    // A Transform emits whatever its expression returns, which nothing can know
-    // statically — so the ONLY honest answer is the shape the author declared.
-    // Declared, we can describe the elements and the picker works normally;
-    // undeclared, report `unknown` so the whole value binds as one leaf rather
-    // than advertising fields that may not exist. (Falling through to the
-    // pass-through resolution below would be actively wrong: it would report the
-    // predecessor's shape, which is precisely the shape a transform exists to
-    // discard.)
-    if (node.config.outputShape === 'conversation') {
-      return { ...conversationOutput(), type: 'array' }
-    }
-    return { fields: [], type: 'unknown' }
-  }
-  if (node.kind === 'passthrough') {
-    // A Passthrough emits an AUTHORED shape, not its predecessor's: `value`
-    // forwards one binding UNWRAPPED, `fields` builds an object keyed by the
-    // author's names. Resolve each binding's type from the node it points at so
-    // downstream pickers can bind into it and the race shape-match check
-    // (`raceInputShapeCount`) sees the shape this arm really contributes. With
-    // neither set it's a pure identity — fall through to the shared pass-through
-    // resolution below so it reports its predecessor's shape.
-    const bindingType = (binding: ArgBinding): string => {
-      if (binding.kind === 'literal') return jsonTypeOf(binding.value)
-      const src = byId.get(binding.nodeId)
-      if (!src) return 'unknown'
-      const out = nodeOutput(src, maps, graph, byId, new Set(seen))
-      return binding.path
-        ? (fieldTypeAtPath(out.fields, binding.path) ?? 'unknown')
-        : out.type
-    }
-    const { value, fields } = node.config
-    if (value) return { fields: [], type: bindingType(value) }
-    const entries = Object.entries(fields ?? {})
-    if (entries.length > 0) {
-      return {
-        fields: entries.map(([key, binding]) => ({
-          key,
-          label: key,
-          path: key,
-          type: bindingType(binding),
-        })),
-        type: 'object',
-      }
-    }
-    // identity → fall through to the pass-through resolution below.
-  }
-
-  // Pass-through: feature-request (an unbuilt placeholder) and an unconfigured
-  // Passthrough emit exactly what they received.
   const preds = predecessorIds(graph, node.id)
     .map((id) => byId.get(id))
     .filter((n): n is WorkflowNode => Boolean(n))
@@ -483,6 +394,153 @@ function nodeOutput(
     return { fields, type: 'object' }
   }
   return { fields: [], type: 'passthrough' }
+}
+
+// What a node makes available to everything downstream of it.
+//
+// Exhaustive on purpose. This dispatch decides what the binding picker offers,
+// and the old if-chain had no closing `else`: a node kind it didn't recognize
+// fell through to the pass-through branch and advertised its PREDECESSOR's
+// shape as its own — not an empty picker, but a confidently wrong one. The
+// `satisfies never` turns that into a compile error.
+function nodeOutput(
+  node: WorkflowNode,
+  maps: IoMaps,
+  graph: WorkflowGraph,
+  byId: Map<string, WorkflowNode>,
+  seen: Set<string>,
+): { fields: DataField[]; type: string } {
+  if (seen.has(node.id)) return { fields: [], type: 'unknown' }
+  seen.add(node.id)
+
+  switch (node.kind) {
+    case 'agent': {
+      const output = maps.agentsById.get(node.config.agentId)?.output
+      if (!output) return { fields: [], type: 'unknown' }
+      return {
+        fields: fieldsOf(agentOutputJsonSchema(output), ''),
+        type: output.kind,
+      }
+    }
+
+    case 'tool': {
+      const schema = maps.toolsById.get(node.config.toolId)?.outputSchema
+      // Reflect the schema's real container type (object/array/…) instead of
+      // always claiming "object" — a tool that returns an array or scalar was
+      // being mislabeled.
+      return {
+        fields: fieldsOf(schema, ''),
+        type: schema ? schemaType(schema) : 'unknown',
+      }
+    }
+
+    case 'trigger': {
+      const schema = maps.triggersByKind.get(node.config.triggerKind)?.inputSchema
+      // The iteration `Item` trigger emits one list element; its shape is injected
+      // into the maps (from the parent iteration's inferred `itemSchema`).
+      if (node.config.triggerKind === ITERATION_ITEM_TRIGGER_KIND) {
+        const t = typeof schema?.type === 'string' ? schema.type : 'item'
+        return { fields: fieldsOf(schema, ''), type: schema ? t : 'item' }
+      }
+      // Only host-declared events carry a payload shape; manual/periodic don't.
+      return { fields: fieldsOf(schema, ''), type: schema ? 'event' : 'trigger' }
+    }
+
+    case 'output':
+      return { fields: [], type: 'none' }
+
+    case 'workflow':
+      // A workflow node emits the CALLEE's output, whose shape isn't known here
+      // (it's the other workflow's Output value). Surface it as one opaque leaf
+      // rather than guessing — and never fall through to the pass-through branch,
+      // which would wrongly show this node's INPUT shape as its output.
+      return { fields: [], type: 'workflow' }
+
+    case 'iteration':
+      // A collection of per-item results. The element shape isn't known at author
+      // time, so surface the whole array as one bindable leaf rather than guessing.
+      return { fields: [], type: 'array' }
+
+    case 'race': {
+      // A race passes the winning upstream's output through untouched. Its inputs
+      // all share one shape, so downstream sees that single shape — resolve from
+      // the first predecessor rather than the multi-keyed object a fan-in yields.
+      const preds = predecessorIds(graph, node.id)
+        .map((id) => byId.get(id))
+        .filter((n): n is WorkflowNode => Boolean(n))
+      return preds.length > 0
+        ? nodeOutput(preds[0], maps, graph, byId, seen)
+        : { fields: [], type: 'passthrough' }
+    }
+
+    case 'aggregate':
+      // A wait-for-all join: collects each producer's output into an ordered list.
+      // The element shapes vary by producer, so surface the whole array as one
+      // bindable leaf (like iteration) rather than inventing a uniform element
+      // shape — a downstream iteration can still pick it as its list.
+      return { fields: [], type: 'array' }
+
+    case 'branch':
+    case 'switch':
+      // Routing nodes emit their decision, not a forwarded input.
+      return { fields: decisionOutputFields(node), type: 'object' }
+
+    case 'transform':
+      // A Transform emits whatever its expression returns, which nothing can know
+      // statically — so the ONLY honest answer is the shape the author declared.
+      // Declared, we can describe the elements and the picker works normally;
+      // undeclared, report `unknown` so the whole value binds as one leaf rather
+      // than advertising fields that may not exist. (Falling through to the
+      // pass-through resolution would be actively wrong: it would report the
+      // predecessor's shape, which is precisely the shape a transform exists to
+      // discard.)
+      if (node.config.outputShape === 'conversation') {
+        return { ...conversationOutput(), type: 'array' }
+      }
+      return { fields: [], type: 'unknown' }
+
+    case 'passthrough': {
+      // A Passthrough emits an AUTHORED shape, not its predecessor's: `value`
+      // forwards one binding UNWRAPPED, `fields` builds an object keyed by the
+      // author's names. Resolve each binding's type from the node it points at so
+      // downstream pickers can bind into it and the race shape-match check
+      // (`raceInputShapeCount`) sees the shape this arm really contributes. With
+      // neither set it's a pure identity — fall back to the shared pass-through
+      // resolution so it reports its predecessor's shape.
+      const bindingType = (binding: ArgBinding): string => {
+        if (binding.kind === 'literal') return jsonTypeOf(binding.value)
+        const src = byId.get(binding.nodeId)
+        if (!src) return 'unknown'
+        const out = nodeOutput(src, maps, graph, byId, new Set(seen))
+        return binding.path
+          ? (fieldTypeAtPath(out.fields, binding.path) ?? 'unknown')
+          : out.type
+      }
+      const { value, fields } = node.config
+      if (value) return { fields: [], type: bindingType(value) }
+      const entries = Object.entries(fields ?? {})
+      if (entries.length > 0) {
+        return {
+          fields: entries.map(([key, binding]) => ({
+            key,
+            label: key,
+            path: key,
+            type: bindingType(binding),
+          })),
+          type: 'object',
+        }
+      }
+      return passThroughOutput(node, maps, graph, byId, seen)
+    }
+
+    case 'feature-request':
+    case 'note':
+      return passThroughOutput(node, maps, graph, byId, seen)
+
+    default:
+      node satisfies never
+      return { fields: [], type: 'unknown' }
+  }
 }
 
 /**
