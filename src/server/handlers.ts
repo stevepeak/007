@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { errorLogText } from '../engine/error-detail'
 import { errorMessage } from '../engine/run-node'
 import type { DashboardAnalytics } from '../storage/data'
+import { WF_EVAL_TARGET_KINDS } from '../storage/schema'
 
 import { buildAgentHandlers } from './handlers/agents'
 import { buildDashboardHandlers } from './handlers/dashboard'
@@ -34,24 +35,100 @@ export { UnauthorizedError } from './handlers/shared'
 // Per-method input schemas, validated in the dispatcher BEFORE the handler runs,
 // so a malformed body fails fast with a 400 instead of surfacing as an opaque
 // 500 deep in a handler or a DB query (the flagged risk: an untyped `since` /
-// `limit` / `enabled` cast straight into logic). This is the single source of
-// truth for a method's wire input; add an entry as methods gain non-trivial
-// params. Objects are non-strict (unknown keys pass), so a schema only asserts
-// the fields it names — declaring one can't reject an otherwise-valid call.
-// Methods with no entry are passed through unchanged (validated by their own
-// `parseGraph`/`parseAgentConfig`/`requireStr`, whose failures the dispatcher still
-// maps to 400).
-const wfInputSchemas: Partial<Record<keyof WfDataClient, z.ZodType>> = {
+// `limit` / `enabled` cast straight into logic).
+//
+// The table is TOTAL — `Record<keyof WfDataClient, …>`, not `Partial<…>`. It
+// used to be partial, which meant a method with no entry silently skipped
+// dispatcher validation, and a forgotten entry was indistinguishable from a
+// deliberate one. Now adding a method to `WfDataClient` fails to compile until
+// it declares how its wire input is checked, and `NO_INPUT` records "nothing to
+// validate" as an explicit decision.
+//
+// Two properties worth keeping in mind when adding one:
+//
+//   * The schema describes the WIRE shape, not the TS signature. Methods that
+//     take a positional id (`getWorkflow(workflowId)`) are wrapped into
+//     `{ workflowId }` by `createHttpWfDataClient`, so that is what to declare.
+//   * `z.object` STRIPS unknown keys, and the dispatcher forwards `parsed.data`.
+//     So a schema must name every field its handler reads — an unnamed one is
+//     not merely unvalidated, it is deleted before the handler sees it. Rich
+//     payloads (`graph`, `config`, eval `checks`) are therefore named as
+//     `z.unknown()`: they pass through intact and their real validation stays
+//     where it already lives, in `parseGraph` / `parseAgentConfig` / the eval
+//     schemas, whose failures the dispatcher still maps to 400.
+
+/**
+ * A method that takes no wire params, or whose entire payload is validated
+ * downstream. Deliberately unable to reject anything — it exists so the total
+ * table can record "checked elsewhere" rather than leaving a hole.
+ */
+const NO_INPUT = z.unknown()
+
+/** Free-form JSON validated downstream (`parseGraph`, `parseAgentConfig`, …). */
+const PASSED_THROUGH = z.unknown()
+
+const wfInputSchemas: Record<keyof WfDataClient, z.ZodType> = {
+  // ---- models -------------------------------------------------------------
+  listModels: NO_INPUT,
+  listProviders: NO_INPUT,
+  getModelCatalog: NO_INPUT,
+  getProviderBudgets: NO_INPUT,
   refreshModels: z.object({ providerId: z.string() }),
   setModelEnabled: z.object({ modelId: z.string(), enabled: z.boolean() }),
+
+  // ---- tools --------------------------------------------------------------
+  listTools: NO_INPUT,
+  listToolContextFields: NO_INPUT,
   listToolInvocations: z.object({
     toolId: z.string(),
     limit: z.number().optional(),
   }),
+  runToolPreview: z.object({
+    toolId: z.string(),
+    // The tool's own `inputSchema` is what really checks these; here they only
+    // have to survive the trip as an object.
+    args: z.record(z.string(), z.unknown()),
+    context: z.record(z.string(), z.string()).optional(),
+  }),
+
+  // ---- triggers -----------------------------------------------------------
+  listTriggerEvents: NO_INPUT,
+
+  // ---- workflows ----------------------------------------------------------
+  listWorkflows: NO_INPUT,
   getWorkflow: z.object({ workflowId: z.string() }),
   discardDraft: z.object({ workflowId: z.string() }),
   listVersions: z.object({ workflowId: z.string() }),
   getVersion: z.object({ versionId: z.string() }),
+  createWorkflow: z.object({
+    name: z.string(),
+    description: z.string().optional(),
+    graph: PASSED_THROUGH,
+  }),
+  updateDraft: z.object({
+    workflowId: z.string(),
+    graph: PASSED_THROUGH,
+  }),
+  saveVersion: z.object({
+    workflowId: z.string(),
+    graph: PASSED_THROUGH,
+    changeNote: z.string().optional(),
+    aiSummary: PASSED_THROUGH.optional(),
+  }),
+  summarizeChanges: z.object({
+    workflowId: z.string(),
+    graph: PASSED_THROUGH,
+  }),
+  updateWorkflow: z.object({
+    workflowId: z.string(),
+    name: z.string().optional(),
+    description: z.string().nullable().optional(),
+    archived: z.boolean().optional(),
+  }),
+
+  // ---- runs ---------------------------------------------------------------
+  listRunTriggerKinds: NO_INPUT,
+  deleteAllRuns: NO_INPUT,
   listRuns: z.object({
     workflowVersionId: z.string().optional(),
     workflowId: z.string().optional(),
@@ -75,29 +152,135 @@ const wfInputSchemas: Partial<Record<keyof WfDataClient, z.ZodType>> = {
     settledStepCursor: z.number().int().nonnegative().optional(),
   }),
   getRunStatus: z.object({ runId: z.string() }),
+  retryRun: z.object({
+    runId: z.string(),
+    mode: z.enum(['restart', 'resume']).optional(),
+  }),
+
+  // ---- dashboard ----------------------------------------------------------
   getDashboard: z.object({
     since: z.number().optional(),
     until: z.number().optional(),
     bucket: z.enum(['hour', 'day']).optional(),
   }),
-  retryRun: z.object({
-    runId: z.string(),
-    mode: z.enum(['restart', 'resume']).optional(),
-  }),
+
+  // ---- agents -------------------------------------------------------------
+  listAgents: NO_INPUT,
   getAgent: z.object({ agentId: z.string() }),
   listAgentVersions: z.object({ agentId: z.string() }),
   getAgentVersion: z.object({ versionId: z.string() }),
   countAgentReferences: z.object({ agentId: z.string() }),
   listAgentReferences: z.object({ agentId: z.string() }),
   archiveAgent: z.object({ agentId: z.string() }),
+  discardAgentDraft: z.object({ agentId: z.string() }),
   listAgentCalls: z.object({
     agentId: z.string(),
     limit: z.number().optional(),
   }),
+  createAgent: z.object({
+    name: z.string(),
+    description: z.string().optional(),
+    icon: z.string().optional(),
+    color: z.string().optional(),
+    config: PASSED_THROUGH,
+  }),
+  updateAgentDraft: z.object({
+    agentId: z.string(),
+    config: PASSED_THROUGH,
+  }),
+  publishAgent: z.object({
+    agentId: z.string(),
+    config: PASSED_THROUGH,
+    changeNote: z.string().optional(),
+    aiSummary: PASSED_THROUGH.optional(),
+  }),
+  summarizeAgentChanges: z.object({
+    agentId: z.string(),
+    config: PASSED_THROUGH,
+  }),
+  updateAgentMeta: z.object({
+    agentId: z.string(),
+    name: z.string().optional(),
+    description: z.string().optional(),
+    icon: z.string().optional(),
+    color: z.string().optional(),
+  }),
+  // The whole payload is an `AgentPreviewInput` the preview runner validates as
+  // one unit (it has to build a real agent config out of it), so naming the
+  // fields here would only risk stripping one.
+  runAgentPreview: NO_INPUT,
+
+  // ---- evals --------------------------------------------------------------
   getEvalSet: z.object({ setId: z.string() }),
   deleteEvalSet: z.object({ setId: z.string() }),
   deleteEvalRow: z.object({ rowId: z.string() }),
   getEvalRun: z.object({ evalRunId: z.string() }),
+  finalizeEvalRun: z.object({ evalRunId: z.string() }),
+  listEvalSets: z.object({ includeArchived: z.boolean().optional() }),
+  listEvalRuns: z.object({ limit: z.number().optional() }),
+  createEvalSet: z.object({
+    name: z.string(),
+    description: z.string().optional(),
+    targetKind: z.enum(WF_EVAL_TARGET_KINDS),
+    targetId: z.string(),
+    targetVersion: z.number().nullable().optional(),
+    triggerKind: z.string(),
+  }),
+  updateEvalSet: z.object({
+    setId: z.string(),
+    name: z.string().optional(),
+    description: z.string().nullable().optional(),
+    targetKind: z.enum(WF_EVAL_TARGET_KINDS).optional(),
+    targetId: z.string().optional(),
+    targetVersion: z.number().nullable().optional(),
+    triggerKind: z.string().optional(),
+    archived: z.boolean().optional(),
+  }),
+  upsertEvalRow: z.object({
+    id: z.string().optional(),
+    setId: z.string(),
+    name: z.string(),
+    description: z.string().nullable().optional(),
+    // Sample input, tool overrides and the check tree each have their own
+    // schema in `eval/checks`; they ride through as-is.
+    input: PASSED_THROUGH.optional(),
+    tools: PASSED_THROUGH.optional(),
+    checks: PASSED_THROUGH.optional(),
+    sortOrder: z.number().optional(),
+  }),
+  createEvalRun: z.object({
+    setIds: z.array(z.string()),
+    total: z.number().optional(),
+  }),
+  startEvalRun: z.object({
+    evalRunId: z.string(),
+    rowId: z.string(),
+    modelId: z.string().optional(),
+    promptBody: z.string().optional(),
+    // The unsaved-draft override — a whole AgentConfig, parsed by the runner.
+    config: PASSED_THROUGH.optional(),
+  }),
+  gradeEvalResult: z.object({
+    evalRunId: z.string(),
+    rowId: z.string(),
+    wfRunId: z.string(),
+    modelId: z.string().optional(),
+    promptLabel: z.string().optional(),
+    promptBody: z.string().optional(),
+    attempt: z.number().optional(),
+  }),
+  recordEvalFailure: z.object({
+    evalRunId: z.string(),
+    rowId: z.string(),
+    wfRunId: z.string().optional(),
+    error: z.string(),
+    modelId: z.string().optional(),
+    promptLabel: z.string().optional(),
+    promptBody: z.string().optional(),
+    attempt: z.number().optional(),
+  }),
+
+  // ---- feedback -----------------------------------------------------------
   submitFeedback: z.object({
     subjectId: z.string(),
     rating: z.enum(['up', 'down']).nullable(),
