@@ -12,21 +12,22 @@ import {
   Wrench,
   X,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { WorkflowGraph } from '../engine'
 import type { WfRunLogDTO, WfRunStepDTO } from '../server/protocol'
+
 import { cn } from './cn'
 import { formatClock, formatDurationMs, formatUsd } from './cost'
 import { KIND_STYLE } from './editor/node-renderers-shared'
-import { runStatusDotClass } from './run-status'
 import {
   buildActivityTree,
   flattenTree,
   type ActivityStatus,
   type FlatRow,
 } from './run-activity-tree'
+import { runStatusDotClass } from './run-status'
 
 // The run viewer's run-wide progress feed — the "Activity" tab of the dock. A
 // living, tree-shaped view of the run: every workflow node is a row (spinner

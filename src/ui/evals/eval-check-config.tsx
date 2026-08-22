@@ -1,5 +1,6 @@
 import type { JsonSchema } from '../../engine'
 import type { EvalCheck, WfEvalTargetKind } from '../../server/protocol'
+
 import { BinaryConfig } from './eval-check-config-binary'
 import { JudgeConfig } from './eval-check-config-judge'
 

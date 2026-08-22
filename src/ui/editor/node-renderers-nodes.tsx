@@ -18,7 +18,7 @@ import { cn } from '../cn'
 import { useAgents, useTools, useTriggerEvents, useWorkflows } from '../hooks'
 import { toolChip } from '../tool-appearance'
 import { ToolIcon } from '../tool-icon'
-import { NoteMarkdown } from './note-markdown'
+
 import {
   branchConditionLabel,
   defineNode,
@@ -29,6 +29,7 @@ import {
   useNodeRenderer,
   useRunAgentVersions,
 } from './node-renderers-shared'
+import { NoteMarkdown } from './note-markdown'
 
 // Most nodes are a card with target/source handles — see `defineNode`. Only the
 // three canvas-container / dynamic-handle nodes (Switch, Iteration, Note) below
@@ -211,7 +212,7 @@ export const TransformNodeRenderer = defineNode({
     const { expression, outputShape } = data.config
     if (!expression.trim()) return 'No expression yet'
     if (outputShape) return `Emits a ${outputShape}`
-    const oneLine = expression.replace(/\s+/g, ' ').trim()
+    const oneLine = expression.replaceAll(/\s+/g, ' ').trim()
     return oneLine.length > 48 ? `${oneLine.slice(0, 47)}…` : oneLine
   },
 })
@@ -311,7 +312,7 @@ export function IterationNodeRenderer(props: NodeProps) {
                 ? {
                     ...n,
                     data: {
-                      ...(n.data as Record<string, unknown>),
+                      ...(n.data),
                       config: {
                         ...((n.data as { config: Record<string, unknown> })
                           .config ?? {}),
@@ -394,7 +395,7 @@ export function NoteNodeRenderer(props: NodeProps) {
                 ? {
                     ...n,
                     data: {
-                      ...(n.data as Record<string, unknown>),
+                      ...(n.data),
                       config: {
                         ...((n.data as { config: Record<string, unknown> })
                           .config ?? {}),

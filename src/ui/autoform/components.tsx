@@ -13,6 +13,7 @@ import { useController } from 'react-hook-form'
 
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
+import { toText } from '../to-text'
 
 // AutoForm is headless: it walks the parsed schema and defers every piece of
 // rendering to the components handed in here. We map that contract onto the
@@ -42,14 +43,22 @@ function TypeHint({ type }: { type: string }) {
 function StringField({ id, inputProps }: AutoFormFieldProps) {
   const { Input } = useWfComponents()
   const { field } = useController({ name: id })
-  const { ref: _ref, ...bind } = field
+  // `field.value` is `any` from react-hook-form; pin it to `unknown` at the
+  // boundary so the `any` doesn't leak into every field below.
+  const { ref: _ref, ...bind } = field as Omit<typeof field, 'value'> & {
+    value: unknown
+  }
   return <Input id={id} {...inputProps} {...bind} value={bind.value ?? ''} />
 }
 
 function TextareaField({ id, inputProps }: AutoFormFieldProps) {
   const { Textarea } = useWfComponents()
   const { field } = useController({ name: id })
-  const { ref: _ref, ...bind } = field
+  // `field.value` is `any` from react-hook-form; pin it to `unknown` at the
+  // boundary so the `any` doesn't leak into every field below.
+  const { ref: _ref, ...bind } = field as Omit<typeof field, 'value'> & {
+    value: unknown
+  }
   return (
     <Textarea id={id} rows={4} {...inputProps} {...bind} value={bind.value ?? ''} />
   )
@@ -58,7 +67,11 @@ function TextareaField({ id, inputProps }: AutoFormFieldProps) {
 function NumberField({ id, inputProps }: AutoFormFieldProps) {
   const { Input } = useWfComponents()
   const { field } = useController({ name: id })
-  const { ref: _ref, ...bind } = field
+  // `field.value` is `any` from react-hook-form; pin it to `unknown` at the
+  // boundary so the `any` doesn't leak into every field below.
+  const { ref: _ref, ...bind } = field as Omit<typeof field, 'value'> & {
+    value: unknown
+  }
   return (
     <Input
       id={id}
@@ -90,7 +103,11 @@ function BooleanField({ id, inputProps }: AutoFormFieldProps) {
 
 function SelectField({ id, inputProps, parsedField }: AutoFormFieldProps) {
   const { field } = useController({ name: id })
-  const { ref: _ref, ...bind } = field
+  // `field.value` is `any` from react-hook-form; pin it to `unknown` at the
+  // boundary so the `any` doesn't leak into every field below.
+  const { ref: _ref, ...bind } = field as Omit<typeof field, 'value'> & {
+    value: unknown
+  }
   const options = parsedField.options ?? []
   return (
     <select
@@ -113,7 +130,11 @@ function SelectField({ id, inputProps, parsedField }: AutoFormFieldProps) {
 function JsonField({ id, inputProps }: AutoFormFieldProps) {
   const { Textarea } = useWfComponents()
   const { field } = useController({ name: id })
-  const { ref: _ref, ...bind } = field
+  // `field.value` is `any` from react-hook-form; pin it to `unknown` at the
+  // boundary so the `any` doesn't leak into every field below.
+  const { ref: _ref, ...bind } = field as Omit<typeof field, 'value'> & {
+    value: unknown
+  }
   return (
     <Textarea
       id={id}
@@ -163,7 +184,7 @@ function FieldWrapper({
         </p>
       ) : null}
       {children}
-      {error ? <ErrorMessage error={String(error)} /> : null}
+      {error ? <ErrorMessage error={toText(error)} /> : null}
     </div>
   )
 }
@@ -200,7 +221,7 @@ function ArrayWrapper({
   const { Button } = useWfComponents()
   // AutoForm slips a `key` into inputProps for the legend ref target — strip it
   // so React doesn't warn about spreading `key`.
-  const { key: _key, ...legendProps } = inputProps ?? {}
+  const { key: _key, ...legendProps } = (inputProps ?? {}) as Record<string, unknown>
   return (
     <fieldset className="space-y-2 rounded-lg border border-neutral-200 p-3">
       <legend
@@ -210,7 +231,7 @@ function ArrayWrapper({
         {label}
         <RequiredMark required={parsedField.required} />
       </legend>
-      {error ? <ErrorMessage error={String(error)} /> : null}
+      {error ? <ErrorMessage error={toText(error)} /> : null}
       <div className="space-y-2">{children}</div>
       <Button type="button" variant="outline" size="sm" onClick={onAddItem}>
         <Plus className="size-3.5" />

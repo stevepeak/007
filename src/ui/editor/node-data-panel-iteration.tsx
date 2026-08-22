@@ -8,8 +8,9 @@ import type {
   WorkflowNode,
 } from '../../engine'
 import { cn } from '../cn'
-import { type AccessibleNode, type DataField } from './node-io'
+
 import { useAccessibleData } from './node-data-panel-shared'
+import type { AccessibleNode, DataField } from './node-io'
 
 export type IterationListFieldProps = {
   node: WorkflowNode

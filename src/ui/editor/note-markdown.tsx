@@ -12,7 +12,7 @@ import { Fragment, type ReactNode } from 'react'
 // left-to-right; the first matching token at each position wins. Unmatched
 // markers render literally.
 const INLINE_RE =
-  /(\*\*|__)(.+?)\1|(\*|_)(.+?)\3|`([^`]+?)`|\[([^\]]+?)\]\(([^)\s]+?)\)/
+  /(\*\*|__)(.+?)\1|(\*|_)(.+?)\3|`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\)/
 
 function renderInline(text: string, keyPrefix: string): ReactNode[] {
   const out: ReactNode[] = []
@@ -64,7 +64,7 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
 // Group consecutive lines into block elements. A single pass over the lines is
 // enough for the supported grammar.
 export function NoteMarkdown({ text }: { text: string }) {
-  const lines = text.replace(/\r\n?/g, '\n').split('\n')
+  const lines = text.replaceAll(/\r\n?/g, '\n').split('\n')
   const blocks: ReactNode[] = []
   let key = 0
 
@@ -72,10 +72,10 @@ export function NoteMarkdown({ text }: { text: string }) {
     const line = lines[i]
 
     // Fenced code block.
-    if (/^```/.test(line.trim())) {
+    if (line.trimStart().startsWith('```')) {
       const code: string[] = []
       i++
-      while (i < lines.length && !/^```/.test(lines[i].trim())) {
+      while (i < lines.length && !lines[i].trimStart().startsWith('```')) {
         code.push(lines[i])
         i++
       }
@@ -91,15 +91,16 @@ export function NoteMarkdown({ text }: { text: string }) {
     }
 
     // Horizontal rule.
-    if (/^(-{3,}|\*{3,}|_{3,})$/.test(line.trim())) {
+    if (/^(?:-{3,}|\*{3,}|_{3,})$/.test(line.trim())) {
       blocks.push(<hr key={key++} className="my-2 border-black/10" />)
       continue
     }
 
     // Heading (#..######).
-    const heading = /^(#{1,6})\s+(.*)$/.exec(line)
+    const heading = /^(#{1,6})[ \t]+([^ \t\n][^\n]*)?$/.exec(line)
     if (heading) {
       const level = heading[1].length
+      const headingText = heading[2] ?? ''
       const sizes = [
         'text-lg font-semibold',
         'text-base font-semibold',
@@ -111,7 +112,7 @@ export function NoteMarkdown({ text }: { text: string }) {
       const Tag = `h${level}` as 'h1'
       blocks.push(
         <Tag key={key++} className={`mt-1 mb-0.5 ${sizes[level - 1]}`}>
-          {renderInline(heading[2], `h${key}`)}
+          {renderInline(headingText, `h${key}`)}
         </Tag>,
       )
       continue
@@ -137,7 +138,7 @@ export function NoteMarkdown({ text }: { text: string }) {
     }
 
     // Lists — a run of bullet (-, *, +) or ordered (1.) items.
-    if (/^\s*([-*+]|\d+\.)\s+/.test(line)) {
+    if (/^\s*(?:[-*+]|\d+\.)\s+/.test(line)) {
       const ordered = /^\s*\d+\.\s+/.test(line)
       const items: string[] = []
       const itemRe = ordered ? /^\s*\d+\.\s+/ : /^\s*[-*+]\s+/
@@ -171,7 +172,7 @@ export function NoteMarkdown({ text }: { text: string }) {
     while (
       i + 1 < lines.length &&
       lines[i + 1].trim() !== '' &&
-      !/^(#{1,6}\s|```|\s*>\s?|\s*([-*+]|\d+\.)\s+|(-{3,}|\*{3,}|_{3,})$)/.test(
+      !/^(?:#{1,6}\s|```|\s*>\s?|\s*(?:[-*+]|\d+\.)\s+|(?:-{3,}|\*{3,}|_{3,})$)/.test(
         lines[i + 1],
       )
     ) {

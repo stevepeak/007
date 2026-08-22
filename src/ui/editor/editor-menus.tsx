@@ -2,6 +2,7 @@ import { GitBranch, History, Sparkles } from 'lucide-react'
 
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
+
 import type { EditSnapshot } from './use-edit-history'
 
 // Commit-graph node for a change-history row: a dot on a connecting rail. The

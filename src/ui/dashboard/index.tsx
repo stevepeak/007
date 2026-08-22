@@ -42,7 +42,7 @@ export function WfDashboard({ className }: { className?: string }) {
   // every render would be a new query key each time and refetch forever.
   const input = useMemo(
     () => ({ since: Date.now() - frame.ms, bucket: frame.bucket }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-pin only on frame change
+     
     [frame.ms, frame.bucket],
   )
   const { data, isLoading, isFetching, error } = useDashboard(input)

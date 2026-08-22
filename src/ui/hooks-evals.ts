@@ -12,6 +12,7 @@ import type {
   WfDataClient,
   WfEvalTargetKind,
 } from '../server/protocol'
+
 import { useWfClient } from './context'
 import { keys, useWfMutation } from './hooks-shared'
 
@@ -185,8 +186,9 @@ const MAX_EVAL_CONCURRENCY = Math.max(...EVAL_CONCURRENCY_CHOICES)
  */
 const MAX_CONSECUTIVE_CELL_ERRORS = 3
 
-const clampConcurrency = (n?: number) =>
-  Math.max(1, Math.min(n ?? DEFAULT_EVAL_CONCURRENCY, MAX_EVAL_CONCURRENCY))
+function clampConcurrency (n?: number) {
+  return Math.max(1, Math.min(n ?? DEFAULT_EVAL_CONCURRENCY, MAX_EVAL_CONCURRENCY))
+}
 
 /**
  * What became of one cell's run. Returning the outcome rather than throwing on
@@ -234,7 +236,7 @@ async function pool<T>(
       for (;;) {
         const i = cursor++
         if (i >= items.length) return
-        await worker(items[i] as T)
+        await worker(items[i])
       }
     },
   )

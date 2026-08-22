@@ -4,14 +4,15 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { WfEvalRowDTO } from '../../server/protocol'
 import { agentColor, agentIcon } from '../agent-appearance'
 import { AgentSelect, type AgentSelectValue } from '../agent-select'
+import { ArchiveButton } from '../archive-button'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { useAgents, useEvalRuns, useEvalSet, useUpdateEvalSet, useUpsertEvalRow } from '../hooks'
-import { useOpenAsset, useWfNav, WfLink } from '../nav'
-import { ArchiveButton } from '../archive-button'
 import { IdeaSpark } from '../idea-spark'
+import { useOpenAsset, useWfNav, WfLink } from '../nav'
 import { WfShell } from '../shell'
 import { sectionCrumb } from '../wf-crumbs'
+
 import { RunConfigDialog } from './run-config-dialog'
 import { EmptyState, EvalRunsTable, Tabs } from './shared'
 
@@ -45,12 +46,12 @@ export function EvalSet({ setId, className }: EvalSetProps) {
   // clobber an in-progress edit (persisted on blur).
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const syncedId = useRef<string | null>(null)
+  const syncedIdRef = useRef<string | null>(null)
   useEffect(() => {
-    if (set && syncedId.current !== set.id) {
+    if (set && syncedIdRef.current !== set.id) {
       setName(set.name)
       setDescription(set.description ?? '')
-      syncedId.current = set.id
+      syncedIdRef.current = set.id
     }
   }, [set])
 

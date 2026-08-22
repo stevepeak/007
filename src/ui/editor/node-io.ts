@@ -255,7 +255,7 @@ export function missingRequiredInputs(
   // really are missing if unbound.
   if (node.kind === 'workflow' && Object.keys(bindings).length === 0) return []
   return nodeRequires(node, maps)
-    .filter((input) => input.required && !bindings[input.key])
+    .filter((input) => input.required && bindings[input.key] == null)
     .map((input) => input.key)
 }
 
@@ -397,7 +397,7 @@ function nodeOutput(
     const preds = predecessorIds(graph, node.id)
       .map((id) => byId.get(id))
       .filter((n): n is WorkflowNode => Boolean(n))
-    return preds.length >= 1
+    return preds.length > 0
       ? nodeOutput(preds[0], maps, graph, byId, seen)
       : { fields: [], type: 'passthrough' }
   }
@@ -791,8 +791,8 @@ function describeContract(contract: JsonSchema): string {
   }
   const t = typeof contract.type === 'string' ? contract.type : 'a value'
   if (t === 'object') {
-    const keys = Object.keys((contract.properties ?? {}) as object)
-    return keys.length ? `a { ${keys.join(', ')} } value` : 'an object'
+    const keys = Object.keys((contract.properties ?? {}))
+    return keys.length > 0 ? `a { ${keys.join(', ')} } value` : 'an object'
   }
   return t === 'string' ? 'text' : t
 }

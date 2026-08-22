@@ -2,6 +2,7 @@ import { AlertTriangle, Layers, Play, SlidersHorizontal } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import type { ToolOption, WfToolInvocation } from '../server/protocol'
+
 import { WfAutoForm } from './autoform/wf-auto-form'
 import { cn } from './cn'
 import { useWfComponents } from './context'
@@ -43,7 +44,7 @@ export function ToolDetail({ toolId, className }: ToolDetailProps) {
     return (
       <div className="p-6">
         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {(error as Error).message}
+          {(error).message}
         </div>
       </div>
     )
@@ -105,7 +106,7 @@ function Playground({ tool }: { tool: ToolOption }) {
   const contextFields = useToolContextFields()
   const run = useRunToolPreview(tool.id)
 
-  const fields = contextFields.data ?? []
+  const fields = useMemo(() => contextFields.data ?? [], [contextFields.data])
   // Required context (e.g. which client to scope to) must be filled before a
   // real run — otherwise the tool would silently run against the wrong scope.
   const missingContext = useMemo(
@@ -214,7 +215,7 @@ function Playground({ tool }: { tool: ToolOption }) {
 
       {run.error ? (
         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {(run.error as Error).message}
+          {(run.error).message}
         </div>
       ) : null}
 
@@ -263,7 +264,7 @@ function RecentCalls({ toolId }: { toolId: string }) {
       ) : null}
       {error ? (
         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {(error as Error).message}
+          {(error).message}
         </div>
       ) : null}
       {data && data.length === 0 ? (

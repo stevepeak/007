@@ -13,6 +13,8 @@ import {
 } from '../../engine'
 import { useWfComponents } from '../context'
 import { askCopilot, useCopilotSeedAvailable } from '../copilot/ask'
+import { toText } from '../to-text'
+
 import { BranchOperatorSelect } from './branch-operator-select'
 import { DataRefField, IterationListField } from './node-data-panel'
 import { useAccessibleData } from './node-data-panel-shared'
@@ -131,7 +133,7 @@ export function OutputInspector({
 // text form — an object (which no picker in these editors produces) reads as
 // empty rather than as '[object Object]'.
 function scalarText(value: unknown): string {
-  return typeof value === 'object' || value == null ? '' : String(value)
+  return toText(value)
 }
 
 function literalText(binding: ArgBinding): string {
@@ -422,7 +424,7 @@ function RefOrLiteralField({
       />
       {binding?.kind !== 'ref' ? (
         <Input
-          value={binding?.kind === 'literal' ? String(binding.value ?? '') : ''}
+          value={binding?.kind === 'literal' ? toText(binding.value) : ''}
           placeholder="or a literal value…"
           onChange={(e) => onChange({ kind: 'literal', value: e.target.value })}
         />
@@ -486,9 +488,9 @@ export function TransformInspector({
   // Rename a variable by index, preserving order and the bound value.
   const renameInput = (index: number, nextKey: string) => {
     const next: Record<string, ArgBinding> = {}
-    entries.forEach(([k, v], i) => {
+    for (const [i, [k, v]] of entries.entries()) {
       next[i === index ? nextKey : k] = v
-    })
+    }
     setInputs(next)
   }
 
@@ -697,9 +699,9 @@ export function PassthroughInspector({
   // Rename a field key by index, preserving order and the bound value.
   const renameField = (index: number, nextKey: string) => {
     const next: Record<string, ArgBinding> = {}
-    entries.forEach(([k, v], i) => {
+    for (const [i, [k, v]] of entries.entries()) {
       next[i === index ? nextKey : k] = v
-    })
+    }
     setFields(next)
   }
 

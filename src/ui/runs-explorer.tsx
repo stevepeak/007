@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import type { WfRunListInput, WfRunSummary } from '../server/protocol'
-import { useWfComponents } from './context'
+
 import { cn } from './cn'
+import { useWfComponents } from './context'
 import { formatDuration, formatTimestamp, formatUsd } from './cost'
 import { DeleteAllRunsButton } from './delete-all-runs-button'
 import { FilterPill } from './filters'

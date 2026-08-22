@@ -110,7 +110,7 @@ function liveTotals(results: WfEvalResultDTO[]) {
     // because "0% pass, all errored" and "0% pass, all genuinely failed" are
     // completely different problems and used to look identical here.
     errored: results.filter((r) => r.status === 'error').length,
-    score: scores.length ? mean(scores) : null,
+    score: scores.length > 0 ? mean(scores) : null,
   }
 }
 
@@ -147,7 +147,7 @@ function agentAverages(results: WfEvalResultDTO[]) {
     count: stats.length,
     avgDurationMs: mean(nums((s) => s.durationMs)),
     avgCostUsd: mean(costs),
-    totalCostUsd: costs.length ? costs.reduce((a, b) => a + b, 0) : null,
+    totalCostUsd: costs.length > 0 ? costs.reduce((a, b) => a + b, 0) : null,
   }
 }
 

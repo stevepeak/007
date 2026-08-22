@@ -7,8 +7,18 @@ import type {
   WorkflowGraph,
   WorkflowNode,
 } from '../../engine'
-import { useWfComponents } from '../context'
 import { cn } from '../cn'
+import { useWfComponents } from '../context'
+import { toText } from '../to-text'
+
+import { BindingSourceNode } from './node-data-panel-picker'
+import {
+  bindingsOf,
+  useAccessibleData,
+  withBinding,
+  withConversation,
+} from './node-data-panel-shared'
+import { InspectorSection, SectionHeader } from './node-inspector-shared'
 import {
   agentThreadSource,
   nodeRequires,
@@ -16,14 +26,6 @@ import {
   type NodeInput,
   type ThreadStatus,
 } from './node-io'
-import {
-  bindingsOf,
-  useAccessibleData,
-  withBinding,
-  withConversation,
-} from './node-data-panel-shared'
-import { BindingSourceNode } from './node-data-panel-picker'
-import { InspectorSection, SectionHeader } from './node-inspector-shared'
 import { useHoverHighlightSetter } from './node-renderers-shared'
 
 export type NodeInputsPanelProps = {
@@ -49,11 +51,11 @@ export function NodeInputsPanel({
   // How the prior conversation reaches this agent: whether the AGENT declares it
   // takes a thread at all, and — if so — where this node links it from. Drives
   // the editable "conversation" field below. See `agentThreadSource`.
-  const thread = useMemo(
+  const thread = useMemo<ThreadStatus>(
     () =>
       node.kind === 'agent'
         ? agentThreadSource(graph, node.id, maps)
-        : ({ status: 'none' } as ThreadStatus),
+        : { status: 'none' },
     [node, graph, maps],
   )
   const bindings = bindingsOf(node)
@@ -268,8 +270,8 @@ function BindingField({
   const { Input, Select } = useWfComponents()
   const setHovered = useHoverHighlightSetter()
   const [open, setOpen] = useState(false)
-  const [literal, setLiteral] = useState(
-    binding?.kind === 'literal' ? String(binding.value ?? '') : '',
+  const [literal, setLiteral] = useState(() =>
+    binding?.kind === 'literal' ? toText(binding.value) : '',
   )
   const mapped = Boolean(binding)
   // The full (untruncated) text shown in the row — surfaced as the hover title so
@@ -354,7 +356,7 @@ function BindingField({
               <Pencil className="size-3 shrink-0 text-muted-foreground" />
               <Select
                 value={
-                  binding?.kind === 'literal' ? String(binding.value ?? '') : ''
+                  binding?.kind === 'literal' ? toText(binding.value) : ''
                 }
                 onChange={(e) => {
                   const picked = enumValues.find(

@@ -10,7 +10,7 @@ import { asObject, isPlainObject } from './json-schema-helpers'
 // — instead of a bare `{}`. Leaves become `"<type>"` hints; a schema-provided
 // default/example wins when present.
 
-function firstBranch(list: unknown): unknown | undefined {
+function firstBranch(list: unknown): unknown {
   if (!Array.isArray(list)) return undefined
   // Prefer a non-null branch so `T | null` samples as a T.
   return list.find((b) => asObject(b)?.type !== 'null') ?? list[0]
@@ -36,7 +36,8 @@ function sampleForProp(raw: unknown): unknown {
   if (branch !== undefined) return sampleForProp(branch)
 
   // `type: ['string','null']` → sample the non-null member.
-  const t = Array.isArray(p.type) ? p.type.find((x) => x !== 'null') : p.type
+  const pType = p.type as string | string[] | undefined
+  const t = Array.isArray(pType) ? pType.find((x) => x !== 'null') : pType
 
   if (t === 'boolean') return '<boolean>'
   if (t === 'integer' || t === 'number') return '<number>'

@@ -2,6 +2,7 @@ import { Check, Minus, Plus } from 'lucide-react'
 
 import type { ModelOption } from '../../engine/config'
 import { cn } from '../cn'
+
 import { BrandMark, inferModelBrand } from './shared'
 
 export function ModelMatrixRow({

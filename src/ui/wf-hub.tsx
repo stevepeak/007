@@ -1,5 +1,3 @@
-import type { ReactNode } from 'react'
-
 import {
   Activity,
   Bot,
@@ -10,6 +8,7 @@ import {
   Workflow as WorkflowIcon,
   type LucideIcon,
 } from 'lucide-react'
+import type { ReactNode } from 'react'
 
 import { cn } from './cn'
 

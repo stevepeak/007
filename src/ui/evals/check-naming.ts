@@ -1,4 +1,5 @@
 import type { EvalCheck, EvalMatch } from '../../server/protocol'
+import { toText } from '../to-text'
 
 // How a Check gets its name.
 //
@@ -40,7 +41,7 @@ function formatValue(value: unknown): string {
   if (typeof value === 'string') return `“${truncate(value, 30)}”`
   if (value == null) return 'nothing'
   if (typeof value === 'object') return truncate(JSON.stringify(value), 30)
-  return String(value)
+  return toText(value)
 }
 
 function truncate(text: string, max: number): string {

@@ -44,7 +44,7 @@ type ProgressContext = {
   maxDurationMs: number
 }
 
-const Ctx = createContext<ProgressContext | null>(null)
+const RunProgressContext = createContext<ProgressContext | null>(null)
 
 /**
  * Defaults for the poll loop's self-limiting behavior — see {@link nextPollDelay}.
@@ -114,11 +114,11 @@ export function WorkflowProgressProvider({
     () => ({ fetch, pollMs, maxFailures, maxBackoffMs, maxDurationMs }),
     [fetch, pollMs, maxFailures, maxBackoffMs, maxDurationMs],
   )
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
+  return <RunProgressContext.Provider value={value}>{children}</RunProgressContext.Provider>
 }
 
 function useProgressContext(): ProgressContext {
-  const ctx = useContext(Ctx)
+  const ctx = useContext(RunProgressContext)
   if (!ctx) {
     throw new Error(
       'useRunProgress requires a <WorkflowProgressProvider> above it.',

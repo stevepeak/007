@@ -6,6 +6,13 @@ import type { JsonSchema } from '../../engine'
 import type { EvalCheck, WfEvalTargetKind } from '../../server/protocol'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
+
+import {
+  BINARY_TYPE_META,
+  BINARY_TYPES,
+  type BinaryType,
+  defaultCheck,
+} from './eval-check-config-shared'
 import {
   BoolPicker,
   MatchRow,
@@ -13,12 +20,6 @@ import {
   TextField,
   ToolPicker,
 } from './fields'
-import {
-  BINARY_TYPE_META,
-  BINARY_TYPES,
-  type BinaryType,
-  defaultCheck,
-} from './eval-check-config-shared'
 
 // ── Binary check config ──────────────────────────────────────────────────────
 
@@ -109,7 +110,7 @@ function BinaryTypePicker({
     if (!open) return
     reposition()
     const onScroll = () => reposition()
-    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('scroll', onScroll, {capture: true})
     window.addEventListener('resize', onScroll)
     return () => {
       window.removeEventListener('scroll', onScroll, true)

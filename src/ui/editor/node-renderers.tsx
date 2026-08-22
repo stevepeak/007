@@ -1,4 +1,5 @@
-import { type WorkflowNode } from '../../engine'
+import type { WorkflowNode } from '../../engine'
+
 import {
   AggregateNodeRenderer,
   AgentNodeRenderer,

@@ -1,4 +1,5 @@
 import type { ToolContextField } from '../server/protocol'
+
 import { useWfComponents } from './context'
 
 // One host-declared context input — the ambient run scope a tool is given rather

@@ -1,5 +1,5 @@
 import { FlaskConical, Layers, ListChecks, Target } from 'lucide-react'
-import { type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 import { Modal } from '../modal'
 

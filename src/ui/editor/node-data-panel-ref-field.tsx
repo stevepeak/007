@@ -8,8 +8,9 @@ import type {
   WorkflowNode,
 } from '../../engine'
 import { cn } from '../cn'
-import { useAccessibleData } from './node-data-panel-shared'
+
 import { BindingSourceNode } from './node-data-panel-picker'
+import { useAccessibleData } from './node-data-panel-shared'
 
 export type DataRefFieldProps = {
   node: WorkflowNode

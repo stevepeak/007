@@ -124,8 +124,8 @@ export function MatrixSummary({
   const modelAxis: (string | null)[] = []
   const promptAxis: (string | null)[] = []
   for (const c of cells) {
-    if (!modelAxis.some((m) => m === c.modelId)) modelAxis.push(c.modelId)
-    if (!promptAxis.some((p) => p === c.promptLabel)) promptAxis.push(c.promptLabel)
+    if (!modelAxis.includes(c.modelId)) modelAxis.push(c.modelId)
+    if (!promptAxis.includes(c.promptLabel)) promptAxis.push(c.promptLabel)
   }
 
   // The "best of" cards: one per winning column, each pointing at the cell that

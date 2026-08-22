@@ -5,9 +5,10 @@ import type {
   SchemaType,
   SchemaValidation,
 } from '@autoform/core'
-import { z } from 'zod'
+import type { z } from 'zod'
 
 import type { JsonSchema } from '../../server/protocol'
+import { toText } from '../to-text'
 
 import { asObject, type FieldKind } from './json-schema-helpers'
 import { defaultsFor, parseFields } from './json-schema-parse'
@@ -121,7 +122,8 @@ function coerceObject(
   return out
 }
 
-function coerceField(v: unknown, f: ParsedField): unknown | typeof OMIT {
+// `unknown` already absorbs the OMIT sentinel; the union was decorative.
+function coerceField(v: unknown, f: ParsedField): unknown {
   switch (f.type as FieldKind) {
     case 'boolean':
       return v === true
@@ -138,7 +140,7 @@ function coerceField(v: unknown, f: ParsedField): unknown | typeof OMIT {
       const enumValues = f.fieldConfig?.customData?.enumValues as
         | unknown[]
         | undefined
-      const match = enumValues?.find((e) => String(e) === String(v))
+      const match = enumValues?.find((e) => toText(e) === toText(v))
       return match ?? v
     }
 

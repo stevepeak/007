@@ -1,11 +1,12 @@
 import { Clock, GitBranch, History, Play, Plus } from 'lucide-react'
 import { useState } from 'react'
 
+import type { WfWorkflowAgentRef } from '../server/protocol'
+
 import { agentColor, agentIcon } from './agent-appearance'
 import { cn } from './cn'
-import { formatRelative, formatTimestamp, formatTokens } from './cost'
-import type { WfWorkflowAgentRef } from '../server/protocol'
 import { useWfComponents } from './context'
+import { formatRelative, formatTimestamp, formatTokens } from './cost'
 import { useWorkflows } from './hooks'
 import { useWfNav, WfLink } from './nav'
 import { NewWorkflowDialog } from './new-workflow-dialog'
@@ -59,7 +60,7 @@ export function WorkflowsList({ className }: WorkflowsListProps) {
       ) : null}
       {error ? (
         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {(error as Error).message} — are you signed in?
+          {(error).message} — are you signed in?
         </div>
       ) : null}
       {data?.length === 0 ? (

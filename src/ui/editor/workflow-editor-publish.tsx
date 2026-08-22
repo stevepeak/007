@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from 'react'
 
 import type { WorkflowGraph } from '../../engine'
 import { useWfComponents } from '../context'
-import { Modal } from '../modal'
 import { useSummarizeChanges } from '../hooks'
+import { Modal } from '../modal'
 
 // Publish flow — the human writes their own note; an AI summary of the changes
 // is generated alongside (shown when ready) but NEVER blocks publishing. If the
@@ -78,7 +78,7 @@ export function PublishDialog({
           ) : summarize.error ? (
             <span className="text-amber-600">
               Couldn't generate a summary (
-              {(summarize.error as Error).message}). It'll be generated after
+              {(summarize.error).message}). It'll be generated after
               you publish.
             </span>
           ) : aiSummary ? (

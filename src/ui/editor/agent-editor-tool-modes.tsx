@@ -5,6 +5,7 @@ import { cn } from '../cn'
 import { toolChip } from '../tool-appearance'
 import { ToolIcon } from '../tool-icon'
 import { Tooltip } from '../tooltip'
+
 import { contextLabelsFor } from './agent-editor-context'
 
 // Per-tool live/simulated switches for the agent playground.

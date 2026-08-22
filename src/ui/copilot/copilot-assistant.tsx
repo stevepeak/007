@@ -11,6 +11,7 @@ import { useCopilotEndpoint, type WfAssistantContext } from '../context'
 import { useModels } from '../hooks'
 import { REQUIREMENT_REASON, unmetRequirements } from '../model-capabilities'
 import { Popover } from '../popover'
+
 import { registerCopilotSeed } from './ask'
 
 // The copilot runs an agentic tool-calling loop server-side (see

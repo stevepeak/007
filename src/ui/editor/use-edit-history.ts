@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useReducer } from 'react'
 
 import type { WorkflowGraph, WorkflowNode } from '../../engine'
 
@@ -25,7 +25,7 @@ function nodeName(node: WorkflowNode): string {
 
 // Human-friendly node kind (the schema uses a few hyphenated kinds).
 function kindLabel(kind: string): string {
-  return kind.replace(/-/g, ' ')
+  return kind.replaceAll('-', ' ')
 }
 
 // Best-effort short description of a graph edit, for the change-history log.
@@ -119,8 +119,7 @@ export function useEditHistory(
   // Which history index reflects the last-saved state (drives the dirty flag).
   const [savedIndex, setSavedIndex] = useState(0)
   // Bumped on any history mutation so the toolbar re-renders (refs alone don't).
-  const [, forceRender] = useState(0)
-  const bump = () => forceRender((n) => n + 1)
+  const [, bump] = useReducer((n: number) => n + 1, 0)
 
   // Push a new snapshot onto the history stack, truncating any redo tail and
   // forgetting the oldest entries once the stack exceeds MAX_HISTORY.

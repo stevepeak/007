@@ -11,8 +11,8 @@ import type { WfDashboardResult } from '../../server/protocol'
 import { cn } from '../cn'
 import { formatTokens, formatUsd } from '../cost'
 
-import { CHROME, STATUS, formatCount } from './chart-theme'
 import { SPARK_NEUTRAL, Sparkline } from './chart-parts'
+import { CHROME, STATUS, formatCount } from './chart-theme'
 
 // The headline row. Four numbers is a KPI row of stat tiles, not a chart — a
 // grouped bar of four unrelated measures would be unreadable and a one-bar chart

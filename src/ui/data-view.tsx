@@ -3,6 +3,7 @@ import { Fragment, type ReactNode, useState } from 'react'
 
 import { cn } from './cn'
 import { NoteMarkdown } from './editor/note-markdown'
+import { toText } from './to-text'
 
 // A small, dependency-free viewer for a step's Input / Logs / Output value. Two
 // display "tags":
@@ -62,7 +63,7 @@ function Pill({ label, value }: { label: string; value: unknown }) {
         {label}
       </span>
       <span className="truncate border-l border-neutral-200 bg-white px-2 py-0.5 font-mono text-neutral-700">
-        {value === null ? 'null' : String(value)}
+        {value === null ? 'null' : toText(value)}
       </span>
     </span>
   )
@@ -176,7 +177,7 @@ function TextView({ value }: { value: unknown }) {
     const textBlocks = entries.filter(([, v]) => isTextBody(v))
     return (
       <div className="space-y-3">
-        {pills.length || listPills.length ? (
+        {pills.length > 0 || listPills.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {pills.map(([k, v]) => (
               <Pill key={k} label={k} value={v} />
@@ -190,7 +191,7 @@ function TextView({ value }: { value: unknown }) {
             ))}
           </div>
         ) : null}
-        {textBlocks.length ? (
+        {textBlocks.length > 0 ? (
           <div className="space-y-3">
             {textBlocks.map(([k, v]) => (
               <TextBlock key={k} label={k} text={v as string} />
@@ -213,7 +214,7 @@ export type DataViewProps = {
 export function DataView({ value, className }: DataViewProps) {
   // Default to Text only when there's a real text body to show; otherwise the
   // JSON view is more useful than a lone row of pills.
-  const [mode, setMode] = useState<Mode>(hasTextBody(value) ? 'text' : 'json')
+  const [mode, setMode] = useState<Mode>(() => (hasTextBody(value) ? 'text' : 'json'))
   const [copied, setCopied] = useState(false)
 
   if (value === null || value === undefined) {
@@ -221,8 +222,9 @@ export function DataView({ value, className }: DataViewProps) {
   }
 
   const copy = () => {
+    if (!navigator.clipboard) return
     void navigator.clipboard
-      ?.writeText(JSON.stringify(value, null, 2))
+      .writeText(JSON.stringify(value, null, 2))
       .then(() => {
         setCopied(true)
         setTimeout(() => setCopied(false), 1500)

@@ -25,9 +25,15 @@ const SAMPLE_ITERATION_ITEMS = 3
 function orderedExecutableNodes(graph: WorkflowGraph): WorkflowNode[] {
   const byId = new Map(graph.nodes.map((n) => [n.id, n]))
   const indegree = new Map<string, number>()
+  // Index the edges by source once, instead of re-scanning every edge for each
+  // node dequeued below (which made the walk quadratic on wide graphs).
+  const outgoing = new Map<string, typeof graph.edges>()
   for (const n of graph.nodes) indegree.set(n.id, 0)
   for (const e of graph.edges) {
     indegree.set(e.target, (indegree.get(e.target) ?? 0) + 1)
+    const from = outgoing.get(e.source)
+    if (from) from.push(e)
+    else outgoing.set(e.source, [e])
   }
   const queue = graph.nodes.filter((n) => (indegree.get(n.id) ?? 0) === 0)
   const order: WorkflowNode[] = []
@@ -37,11 +43,11 @@ function orderedExecutableNodes(graph: WorkflowGraph): WorkflowNode[] {
     if (seen.has(n.id)) continue
     seen.add(n.id)
     order.push(n)
-    for (const e of graph.edges.filter((e) => e.source === n.id)) {
-      const d = (indegree.get(e.target) ?? 0) - 1
-      indegree.set(e.target, d)
-      const target = byId.get(e.target)
-      if (target && d <= 0 && !seen.has(e.target)) queue.push(target)
+    for (const edge of outgoing.get(n.id) ?? []) {
+      const d = (indegree.get(edge.target) ?? 0) - 1
+      indegree.set(edge.target, d)
+      const target = byId.get(edge.target)
+      if (target && d <= 0 && !seen.has(edge.target)) queue.push(target)
     }
   }
   // Any node the walk missed (cycle) appended in declaration order.
@@ -103,12 +109,12 @@ export function useWorkflowSimulation(
   const [status, setStatus] = useState<RunSurfaceStatus>('completed')
   const [active, setActive] = useState(false)
   const [total, setTotal] = useState(0)
-  const timer = useRef<ReturnType<typeof setInterval> | null>(null)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const stop = useCallback(() => {
-    if (timer.current) {
-      clearInterval(timer.current)
-      timer.current = null
+    if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
     }
     setActive(false)
   }, [])
@@ -126,7 +132,7 @@ export function useWorkflowSimulation(
       return
     }
     let i = 0
-    timer.current = setInterval(() => {
+    timerRef.current = setInterval(() => {
       i += 1
       setItems(all.slice(0, i))
       if (i >= all.length) {
@@ -143,7 +149,7 @@ export function useWorkflowSimulation(
     setStatus('completed')
   }, [stop])
 
-  // Clear the timer if the editor unmounts mid-preview.
+  // Clear the timerRef if the editor unmounts mid-preview.
   useEffect(() => stop, [stop])
 
   return {

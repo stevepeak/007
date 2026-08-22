@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { cn } from '../cn'
 import { useWfAssistant, type WfAssistantContext } from '../context'
+
 import { registerCopilotOpen } from './ask'
 import { CopilotAssistant } from './copilot-assistant'
 

@@ -129,8 +129,8 @@ const HoverHighlightContext = createContext<{
 }>({ id: null, setHovered: () => {} })
 
 export function HoverHighlightProvider({ children }: { children: ReactNode }) {
-  const [id, setHovered] = useState<string | null>(null)
-  const value = useMemo(() => ({ id, setHovered }), [id])
+  const [hovered, setHovered] = useState<string | null>(null)
+  const value = useMemo(() => ({ id: hovered, setHovered }), [hovered])
   return (
     <HoverHighlightContext.Provider value={value}>
       {children}
@@ -443,7 +443,7 @@ export function branchConditionLabel(config: {
   // A structurally-typed operator (this helper takes a loose config), so an
   // unrecognised string still prints itself rather than vanishing.
   const operator = config.operator as BranchOperator
-  const name = operator.replace(/_/g, ' ')
+  const name = operator.replaceAll('_', ' ')
   if (!branchOperatorTakesValue(operator)) {
     return `${subject} ${name}`
   }

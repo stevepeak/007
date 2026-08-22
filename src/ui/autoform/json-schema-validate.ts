@@ -21,7 +21,7 @@ const NUMERIC = new Set(['number', 'integer'])
 // message reads "Age is required." for the field shown as "Age".
 function labelFor(name: string, prop: Record<string, unknown>): string {
   if (typeof prop.title === 'string' && prop.title) return prop.title
-  const out = name.replace(/([A-Z])/g, ' $1').trim()
+  const out = name.replaceAll(/([A-Z])/g, ' $1').trim()
   return out.charAt(0).toUpperCase() + out.slice(1)
 }
 
@@ -66,10 +66,11 @@ function zodForProp(
   }
 
   // `type: ['string','null']` → take the non-null type, allow null.
-  const rawType = Array.isArray(p.type)
-    ? p.type.find((t) => t !== 'null')
-    : p.type
-  const nullable = Array.isArray(p.type) && p.type.includes('null')
+  const pType = p.type as string | string[] | undefined
+  const rawType = Array.isArray(pType)
+    ? pType.find((t) => t !== 'null')
+    : pType
+  const nullable = Array.isArray(pType) && pType.includes('null')
 
   let base: z.ZodType
   if (rawType === 'boolean') {
@@ -88,7 +89,7 @@ function zodForProp(
       n = n.multipleOf(p.multipleOf, `${label} must be a multiple of ${p.multipleOf}.`)
     base =
       rawType === 'integer'
-        ? n.refine((x) => Number.isInteger(x), `${label} must be a whole number.`)
+        ? n.refine((x) => Number.isSafeInteger(x), `${label} must be a whole number.`)
         : n
   } else if (rawType === 'string') {
     let s = z.string()
@@ -132,18 +133,13 @@ function applyStringFormat(
   // Zod's evolving format API and can keep any length/pattern checks above.
   if (format === 'email') {
     return s.refine(
-      (v) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v),
+      (v) => /^[^@\s]+@[^\s@][^\s.@]*\.[^\s@]+$/.test(v),
       `${label} must be a valid email.`,
     )
   }
   if (format === 'url' || format === 'uri') {
     return s.refine((v) => {
-      try {
-        new URL(v)
-        return true
-      } catch {
-        return false
-      }
+      return URL.canParse(v);
     }, `${label} must be a valid URL.`)
   }
   return s

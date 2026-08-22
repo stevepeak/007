@@ -7,6 +7,7 @@ import type {
   ModelProviderStatus,
   ProviderBudget,
 } from '../server/protocol'
+
 import { agentColor, agentIcon } from './agent-appearance'
 import { cn } from './cn'
 import {
@@ -60,7 +61,7 @@ export function ProviderCard({
       list.push(m)
       map.set(key, list)
     }
-    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+    return [...map].sort((a, b) => a[0].localeCompare(b[0]))
   }, [filtered])
 
   return (
@@ -103,7 +104,7 @@ export function ProviderCard({
 
       {refresh.isError && refresh.variables?.providerId === provider.id ? (
         <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700">
-          Refresh failed: {(refresh.error as Error).message}
+          Refresh failed: {(refresh.error).message}
         </div>
       ) : null}
 

@@ -8,6 +8,7 @@ import { useRun } from '../hooks'
 import { WfLink } from '../nav'
 import { RunLog } from '../run-log'
 import { runStatusClass } from '../run-status'
+
 import { BottomTray, type TrayTab } from './bottom-dock'
 
 // The agent editor's bottom dock: the ONE call site selected in "Recent calls",
@@ -104,7 +105,7 @@ export function AgentCallInspect({
       body: run.isLoading ? (
         <p className="text-xs text-neutral-500">Loading run…</p>
       ) : run.error ? (
-        <p className="text-xs text-red-600">{(run.error as Error).message}</p>
+        <p className="text-xs text-red-600">{(run.error).message}</p>
       ) : !step ? (
         <p className="text-xs text-neutral-500">
           This call&rsquo;s step is no longer recorded — the run&rsquo;s steps

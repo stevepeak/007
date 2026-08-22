@@ -18,13 +18,15 @@ const FIELDS: ToolContextField[] = [
   { key: 'userId', label: 'Acting user' },
 ]
 
-const tool = (id: string, requiresContext?: string[]): ToolOption => ({
+function tool (id: string, requiresContext?: string[]): ToolOption {
+  return {
   id,
   name: id,
   description: id,
   kind: 'ai-tool',
   requiresContext,
-})
+}
+}
 
 const TOOLS = [
   tool('search', ['clientOrgId']),

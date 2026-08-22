@@ -29,35 +29,35 @@ export function HoldButton({
   className?: string
 }) {
   const [progress, setProgress] = useState(0)
-  const raf = useRef<number | null>(null)
-  const startedAt = useRef(0)
+  const rafRef = useRef<number | null>(null)
+  const startedAtRef = useRef(0)
 
   const cancel = () => {
-    if (raf.current != null) {
-      cancelAnimationFrame(raf.current)
-      raf.current = null
+    if (rafRef.current != null) {
+      cancelAnimationFrame(rafRef.current)
+      rafRef.current = null
     }
-    startedAt.current = 0
+    startedAtRef.current = 0
     setProgress(0)
   }
 
   const begin = () => {
-    if (raf.current != null) return
-    startedAt.current = 0
+    if (rafRef.current != null) return
+    startedAtRef.current = 0
     const loop = (now: number) => {
-      if (startedAt.current === 0) startedAt.current = now
-      const p = Math.min(1, (now - startedAt.current) / duration)
+      if (startedAtRef.current === 0) startedAtRef.current = now
+      const p = Math.min(1, (now - startedAtRef.current) / duration)
       setProgress(p)
       if (p >= 1) {
-        raf.current = null
-        startedAt.current = 0
+        rafRef.current = null
+        startedAtRef.current = 0
         setProgress(0)
         onHold()
         return
       }
-      raf.current = requestAnimationFrame(loop)
+      rafRef.current = requestAnimationFrame(loop)
     }
-    raf.current = requestAnimationFrame(loop)
+    rafRef.current = requestAnimationFrame(loop)
   }
 
   // Stop the loop if we unmount mid-hold (e.g. the action navigates away).

@@ -5,6 +5,8 @@ import { useMemo, useState } from 'react'
 
 import type { JsonSchema } from '../../server/protocol'
 import { useWfComponents } from '../context'
+import { toText } from '../to-text'
+
 import { wfFormComponents, wfUiComponents } from './components'
 import {
   coerceValues,
@@ -74,7 +76,7 @@ function schemaSignature(schema: JsonSchema | undefined): string {
   try {
     return JSON.stringify(schema ?? null)
   } catch {
-    return String(schema)
+    return toText(schema)
   }
 }
 

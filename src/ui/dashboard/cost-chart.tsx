@@ -35,8 +35,9 @@ import {
 
 type Row = Record<string, number | string> & { bucket: number; __top: string }
 
-const axisUsd = (v: number) =>
-  v >= 1 ? `$${v.toFixed(0)}` : v > 0 ? `$${v.toFixed(2)}` : '$0'
+function axisUsd (v: number) {
+  return v >= 1 ? `$${v.toFixed(0)}` : v > 0 ? `$${v.toFixed(2)}` : '$0'
+}
 
 export function CostChart({ data }: { data: WfDashboardResult }) {
   const { series, totalUsd, totalTokens, unpricedTokens } = data.cost

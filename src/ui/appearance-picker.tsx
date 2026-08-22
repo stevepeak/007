@@ -29,8 +29,8 @@ const MAX_ICON_RESULTS = 120
 // "FileSearch" / "AArrowDown" → "file search" / "a arrow down" for matching.
 function searchable(name: string): string {
   return name
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .replaceAll(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replaceAll(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
     .toLowerCase()
 }
 

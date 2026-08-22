@@ -2,6 +2,7 @@ import { Check, Minus, Plus } from 'lucide-react'
 import { useMemo } from 'react'
 
 import type { WfAgentSummary } from '../server/protocol'
+
 import { agentColor, agentIcon } from './agent-appearance'
 import { cn } from './cn'
 import { useAgents, useAgentVersions } from './hooks'

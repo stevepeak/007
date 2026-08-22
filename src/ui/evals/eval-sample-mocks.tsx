@@ -87,10 +87,13 @@ function AgentToolMocks({
   // Which tool's output editor is open (a toolId; null = none).
   const [editing, setEditing] = useState<string | null>(null)
 
-  const toolIds =
-    detail.data?.currentVersion?.config.toolIds ??
-    detail.data?.draft?.config.toolIds ??
-    []
+  const toolIds = useMemo(
+    () =>
+      detail.data?.currentVersion?.config.toolIds ??
+      detail.data?.draft?.config.toolIds ??
+      [],
+    [detail.data],
+  )
   const byId = useMemo(
     () => new Map((toolsQuery.data ?? []).map((t) => [t.id, t])),
     [toolsQuery.data],

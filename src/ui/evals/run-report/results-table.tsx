@@ -74,8 +74,8 @@ export function ResultsTable({
   const [goal, setGoal] = useState('all')
   const [groupBy, setGroupBy] = useState<GroupBy>('sample')
   const [sort, setSort] = useState<SortState>({ key: 'status', dir: 'asc' })
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
 
   const filtered = rows.filter(
     (r) =>

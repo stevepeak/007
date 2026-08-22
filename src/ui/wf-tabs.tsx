@@ -110,7 +110,7 @@ function writeStored(state: StoredTabs): void {
 function maxIdNum(tabs: WfTab[]): number {
   return tabs.reduce((max, t) => {
     const n = Number(t.id.replace(/^t/, ''))
-    return Number.isInteger(n) && n > max ? n : max
+    return Number.isSafeInteger(n) && n > max ? n : max
   }, 0)
 }
 
@@ -179,10 +179,10 @@ export function WfTabsProvider({
   const [tabs, setTabs] = useState<WfTab[]>(init.tabs)
   const [homePath, setHomePath] = useState<string>(init.homePath)
   const [activeId, setActiveId] = useState<string>(init.activeId)
-  const idCounter = useRef(init.counter)
+  const idCounterRef = useRef(init.counter)
   // The URL we last drove ourselves — lets the reconcile effect ignore our own
   // navigations and react only to external ones (initial load, back/forward).
-  const expectedPath = useRef(path)
+  const expectedPathRef = useRef(path)
   // Latest tabs/active read inside the path-only effect without making it a dep
   // (else our own tab mutations would re-fire it before the URL catches up).
   const tabsRef = useRef(tabs)
@@ -191,15 +191,15 @@ export function WfTabsProvider({
   activeIdRef.current = activeId
 
   const genId = useCallback(() => {
-    idCounter.current += 1
-    return `t${idCounter.current}`
+    idCounterRef.current += 1
+    return `t${idCounterRef.current}`
   }, [])
 
   // Reconcile external URL changes only (browser back/forward, deep links). Our
-  // own navigations set `expectedPath` first and are skipped here.
+  // own navigations set `expectedPathRef` first and are skipped here.
   useEffect(() => {
-    if (path === expectedPath.current) return
-    expectedPath.current = path
+    if (path === expectedPathRef.current) return
+    expectedPathRef.current = path
     if (!isAssetPath(path)) {
       setHomePath(path)
       setActiveId(HOME_TAB_ID)
@@ -228,7 +228,7 @@ export function WfTabsProvider({
 
   const openAsset = useCallback(
     (to: string, opts?: { newTab?: boolean }) => {
-      expectedPath.current = to
+      expectedPathRef.current = to
       if (!isAssetPath(to)) {
         // Home navigation.
         setHomePath(to)
@@ -267,7 +267,7 @@ export function WfTabsProvider({
     (id: string) => {
       if (id === HOME_TAB_ID) {
         // 007 always returns to the hub root.
-        expectedPath.current = ''
+        expectedPathRef.current = ''
         setHomePath('')
         setActiveId(HOME_TAB_ID)
         navigate('')
@@ -275,7 +275,7 @@ export function WfTabsProvider({
       }
       const tab = tabs.find((t) => t.id === id)
       if (!tab) return
-      expectedPath.current = tab.path
+      expectedPathRef.current = tab.path
       setActiveId(id)
       navigate(tab.path)
     },
@@ -291,11 +291,11 @@ export function WfTabsProvider({
       if (id !== activeId) return
       const fallback = next[idx - 1] ?? next[idx] ?? null
       if (fallback) {
-        expectedPath.current = fallback.path
+        expectedPathRef.current = fallback.path
         setActiveId(fallback.id)
         navigate(fallback.path)
       } else {
-        expectedPath.current = homePath
+        expectedPathRef.current = homePath
         setActiveId(HOME_TAB_ID)
         navigate(homePath)
       }
@@ -310,7 +310,7 @@ export function WfTabsProvider({
     const keep = tabs.filter((t) => t.id === activeId)
     setTabs(keep)
     if (keep.length > 0) return
-    expectedPath.current = homePath
+    expectedPathRef.current = homePath
     setActiveId(HOME_TAB_ID)
     navigate(homePath)
   }, [tabs, activeId, homePath, navigate])

@@ -2,7 +2,8 @@ import {
   buildIterationSubgraph,
   ITERATION_MAX_ITEMS_DEFAULT,
 } from '../../engine'
-import { type EditorNodeData } from './node-renderers'
+
+import type { EditorNodeData } from './node-renderers'
 
 /** Defaults for freshly-dragged nodes — sourced from the host's models/tools. */
 export type NodeDefaults = { toolId: string }

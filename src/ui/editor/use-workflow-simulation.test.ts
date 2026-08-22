@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import type { WorkflowGraph } from '../../engine'
+
 import { buildSimulatedItems } from './use-workflow-simulation'
 
 // The simulate preview walks the graph topologically and emits one synthetic
@@ -8,19 +9,19 @@ import { buildSimulatedItems } from './use-workflow-simulation'
 // nodes stay silent (no derived-title fallback) — plus sample `item i of n` ticks
 // for iterations. Bookends never appear.
 
-const node = (
-  id: string,
+function node (id: string,
   kind: string,
   label: string,
-  extra: Record<string, unknown> = {},
-) => ({
+  extra: Record<string, unknown> = {}) {
+  return {
   id,
   kind,
   label,
   position: { x: 0, y: 0 },
   informUser: { mode: 'off' },
   ...extra,
-})
+}
+}
 
 describe('buildSimulatedItems', () => {
   test('emits progress lines in topological order, skipping bookends', () => {

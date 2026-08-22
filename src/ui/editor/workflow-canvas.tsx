@@ -23,9 +23,11 @@ import {
   type DragEvent as ReactDragEvent,
 } from 'react'
 
-import { type WorkflowGraph, type WorkflowNode } from '../../engine'
+import type { WorkflowGraph, WorkflowNode } from '../../engine'
 import { useWfComponents } from '../context'
 import { Tooltip } from '../tooltip'
+
+import { PALETTE_DATA_TYPE } from './node-palette'
 import {
   editorTypeForKind,
   InvalidNodesProvider,
@@ -34,7 +36,6 @@ import {
   RunStatusProvider,
   type EditorNodeData,
 } from './node-renderers'
-import { PALETTE_DATA_TYPE } from './node-palette'
 import {
   BOOKEND_KINDS,
   DEFAULT_ITER_H,
@@ -188,7 +189,7 @@ function CanvasInner({
     if (!registerSelectNode) return
     registerSelectNode((nodeId) => {
       setNodes((ns) => ns.map((n) => ({ ...n, selected: n.id === nodeId })))
-      fitView({ nodes: [{ id: nodeId }], duration: 400, maxZoom: 1.2 })
+      void fitView({ nodes: [{ id: nodeId }], duration: 400, maxZoom: 1.2 })
     })
   }, [registerSelectNode, setNodes, fitView])
 

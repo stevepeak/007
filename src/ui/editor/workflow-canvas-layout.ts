@@ -1,6 +1,6 @@
 import Dagre from '@dagrejs/dagre'
 
-import { type EditorEdge, type EditorNode } from './workflow-canvas-graph'
+import type { EditorEdge, EditorNode } from './workflow-canvas-graph'
 
 // Layered left-to-right auto-layout ("Tidy layout"). The graph is a near-DAG
 // (trigger → … → output). We delegate to dagre's Sugiyama pipeline (rank →
@@ -58,7 +58,8 @@ export function layoutNodes(
   // dagre positions nodes by their centre; React Flow positions by top-left.
   const positions = new Map<string, { x: number; y: number }>()
   for (const n of nodes) {
-    const p = g.node(n.id)
+    // dagre is untyped here — name the shape we actually read.
+    const p = g.node(n.id) as { x: number; y: number } | undefined
     const d = dims.get(n.id)
     if (!p || !d) continue
     positions.set(n.id, { x: p.x - d.width / 2, y: p.y - d.height / 2 })

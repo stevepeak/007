@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import type { WfRunDetail, WfRunStepDTO } from '../server/protocol'
+
 import { mergeStepBlock, mergeVersionBlock, settledStepCursor } from './hooks-runs'
 
 // The five fields `getRun` derives from the workflow version row. If the server
@@ -164,7 +165,7 @@ describe('mergeStepBlock', () => {
     // makes it the merge key: keying on anything that changes would leave the
     // stale copy behind.
     expect(merged.steps).toHaveLength(1)
-    expect(merged.steps[0]!.status).toBe('completed')
+    expect(merged.steps[0].status).toBe('completed')
   })
 
   test('orders by sequence first, cursor only to break ties', () => {

@@ -1,8 +1,9 @@
 import { AlertTriangle } from 'lucide-react'
 
-import { type AgentConfig } from '../../engine'
+import type { AgentConfig } from '../../engine'
 import { cn } from '../cn'
 import { Hint } from '../hint'
+
 import {
   PROMPT_EDITOR_COMPACT_HEIGHT,
   PromptBodyEditor,

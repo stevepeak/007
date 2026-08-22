@@ -8,6 +8,7 @@ import type {
 } from '../../server/protocol'
 import { cn } from '../cn'
 import { useAgent } from '../hooks'
+
 import { MockToolsPanel } from './eval-sample-mocks'
 
 // A Sample's TOOLS — one tri-state, because the three settings are mutually

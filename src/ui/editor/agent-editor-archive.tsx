@@ -2,8 +2,8 @@ import { AlertTriangle, Archive, Loader2 } from 'lucide-react'
 
 import { useWfComponents } from '../context'
 import { HoldButton } from '../hold-button'
-import { Modal } from '../modal'
 import { useAgentReferences, useArchiveAgent } from '../hooks'
+import { Modal } from '../modal'
 import { useOpenAsset } from '../nav'
 
 // Archive flow — before letting the user retire an agent, check whether any
@@ -28,7 +28,7 @@ export function ArchiveAgentDialog({
 
   const workflows = refs.data?.workflows ?? []
   const blocked = workflows.length > 0
-  const archiveError = (archive.error as Error | null)?.message ?? null
+  const archiveError = (archive.error)?.message ?? null
 
   return (
     <Modal
@@ -49,7 +49,7 @@ export function ArchiveAgentDialog({
             Checking for workflows using this agent…
           </span>
         ) : refs.error ? (
-          <span className="text-red-600">{(refs.error as Error).message}</span>
+          <span className="text-red-600">{(refs.error).message}</span>
         ) : blocked ? (
           <div className="space-y-3">
             <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">

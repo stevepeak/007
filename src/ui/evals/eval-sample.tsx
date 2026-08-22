@@ -11,6 +11,7 @@ import type {
   WfEvalRowDTO,
 } from '../../server/protocol'
 import { evalSampleLayer } from '../../server/protocol'
+import { ArchiveButton } from '../archive-button'
 import { useWfComponents } from '../context'
 import {
   useAgents,
@@ -19,12 +20,12 @@ import {
   useUpsertEvalRow,
 } from '../hooks'
 import { useWfNav } from '../nav'
-import { ArchiveButton } from '../archive-button'
 import { WfShell } from '../shell'
 import { sectionCrumb } from '../wf-crumbs'
+
+import { RunsForSample, ChecksList } from './eval-sample-checks'
 import { emptyInputFor, SampleInputEditor } from './eval-sample-input'
 import { SampleToolsEditor, useTargetHasTools } from './eval-sample-tools'
-import { RunsForSample, ChecksList } from './eval-sample-checks'
 import { RunConfigDialog } from './run-config-dialog'
 import { EmptyState, Tabs, useTargetAgentCrumb } from './shared'
 import { StepFlow, type Step } from './step-flow'
@@ -177,11 +178,11 @@ export function EvalSample({
   // Local draft, synced once per row id so background refetches don't clobber an
   // in-progress edit. Every mutation persists the whole row.
   const [draft, setDraft] = useState<Draft | null>(null)
-  const syncedId = useRef<string | null>(null)
+  const syncedIdRef = useRef<string | null>(null)
   useEffect(() => {
-    if (row && syncedId.current !== row.id) {
+    if (row && syncedIdRef.current !== row.id) {
       setDraft(draftFromRow(row))
-      syncedId.current = row.id
+      syncedIdRef.current = row.id
     }
   }, [row])
 
@@ -190,10 +191,10 @@ export function EvalSample({
   // `?check=<i>` links landing on the SAME sample, which shares one tab and so
   // never remounts. Arriving with no `?check` leaves the accordion alone rather
   // than collapsing what the author was editing.
-  const linkedCheck = useRef<number | null | undefined>(undefined)
+  const linkedCheckRef = useRef<number | null | undefined>(undefined)
   useEffect(() => {
-    if (linkedCheck.current === initialCheckIndex) return
-    linkedCheck.current = initialCheckIndex
+    if (linkedCheckRef.current === initialCheckIndex) return
+    linkedCheckRef.current = initialCheckIndex
     if (initialCheckIndex != null) setOpenCheck(initialCheckIndex)
   }, [initialCheckIndex])
 

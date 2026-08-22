@@ -1,10 +1,11 @@
-import { type Edge, type Node } from '@xyflow/react'
+import type { Edge, Node } from '@xyflow/react'
 
-import {
-  type WorkflowEdge,
-  type WorkflowGraph,
-  type WorkflowNode,
+import type {
+  WorkflowEdge,
+  WorkflowGraph,
+  WorkflowNode,
 } from '../../engine'
+
 import { editorTypeForKind, type EditorNodeData } from './node-renderers'
 
 export type EditorNode = Node<EditorNodeData>
@@ -109,7 +110,7 @@ export function extractEditorData(n: WorkflowNode): EditorNodeData {
   // like `informUser` and `execution` survive the graph→flow→graph round-trip,
   // not just kind/label/config.
   const { id: _id, position: _position, ...data } = n
-  return data as EditorNodeData
+  return data
 }
 
 function edgeToEngine(e: EditorEdge): WorkflowEdge {
@@ -129,7 +130,7 @@ function engineNodeOf(n: EditorNode): WorkflowNode {
     id: n.id,
     position: { x: n.position.x, y: n.position.y },
     ...n.data,
-  } as WorkflowNode
+  }
 }
 
 // Reverse of engineToFlow: re-nest each iteration container's children back into

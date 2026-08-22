@@ -11,11 +11,6 @@ import { useMemo, useRef, useState } from 'react'
 import type { WorkflowGraph } from '../../engine'
 import { ArchiveButton } from '../archive-button'
 import { useWfClient, useWfComponents } from '../context'
-import { WorkflowRunProgress } from '../run-progress-view'
-import { SaveStateBadge } from '../save-state-badge'
-import { Tooltip } from '../tooltip'
-import { useWorkflowSimulation } from './use-workflow-simulation'
-import { useModifierHold } from '../use-modifier-hold'
 import {
   useSaveDraft,
   useSaveVersion,
@@ -23,15 +18,21 @@ import {
   useUpdateWorkflow,
   useVersions,
 } from '../hooks'
+import { WorkflowRunProgress } from '../run-progress-view'
+import { SaveStateBadge } from '../save-state-badge'
 import { WfShell } from '../shell'
+import { Tooltip } from '../tooltip'
+import { useModifierHold } from '../use-modifier-hold'
+
 import { BottomDock } from './bottom-dock'
 import { HistoryMenu, VersionsMenu } from './editor-menus'
 import { NodeInspector } from './node-inspector'
-import { HoverHighlightProvider } from './node-renderers-shared'
 import { NodePalette } from './node-palette'
+import { HoverHighlightProvider } from './node-renderers-shared'
 import { useEditHistory } from './use-edit-history'
-import { useStoredEdit } from './use-stored-edit'
 import { invalidNodeIdsOf, useGraphIssues } from './use-graph-issues'
+import { useStoredEdit } from './use-stored-edit'
+import { useWorkflowSimulation } from './use-workflow-simulation'
 import { WorkflowCanvas, type NodeDefaults } from './workflow-canvas'
 import { PublishDialog } from './workflow-editor-publish'
 
@@ -61,7 +62,7 @@ export function EditorInner({
   // The workflow's description — a plain field, committed to the server on blur
   // (not part of the graph/undo history or the unsaved-draft dirty state).
   const [description, setDescription] = useState(initialDescription)
-  const committedDesc = useRef(initialDescription)
+  const committedDescRef = useRef(initialDescription)
   const [showVersions, setShowVersions] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [showPublish, setShowPublish] = useState(false)
@@ -160,8 +161,8 @@ export function EditorInner({
   // Blurring the description commits it to the server (no undo history entry).
   function commitDescription() {
     const next = description.trim()
-    if (next === committedDesc.current) return
-    committedDesc.current = next
+    if (next === committedDescRef.current) return
+    committedDescRef.current = next
     setDescription(next)
     update.mutate({ workflowId, description: next || null })
   }
@@ -429,7 +430,7 @@ export function EditorInner({
           workflowId={workflowId}
           graph={graph}
           publishing={saveVersion.isPending}
-          error={(saveVersion.error as Error | null)?.message ?? null}
+          error={(saveVersion.error)?.message ?? null}
           onCancel={() => setShowPublish(false)}
           onConfirm={publishVersion}
         />

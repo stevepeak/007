@@ -65,7 +65,10 @@ function Control({
   const agentsQuery = useAgents()
   const agent = agentsQuery.data?.find((a) => a.id === agentId)
   const agentName = agent?.name ?? 'this agent'
-  const inputVariables = agent?.inputVariables ?? []
+  const inputVariables = useMemo(
+    () => agent?.inputVariables ?? [],
+    [agent?.inputVariables],
+  )
 
   // Goals that already test this agent — the sample lands under one of them, or a
   // brand-new goal the author names here.
@@ -99,16 +102,16 @@ function Control({
 
   // Reset the form only on the open→true edge, so a background refetch (goals /
   // agents) while the dialog is open never clobbers in-progress edits.
-  const wasOpen = useRef(false)
+  const wasOpenRef = useRef(false)
   useEffect(() => {
-    if (open && !wasOpen.current) {
-      wasOpen.current = true
+    if (open && !wasOpenRef.current) {
+      wasOpenRef.current = true
       setGoalChoice(null)
       setNewGoalName(`${agentName} goal`)
       setTitle(deriveTitle(agentName, given, step))
       setError(null)
     } else if (!open) {
-      wasOpen.current = false
+      wasOpenRef.current = false
     }
   }, [open, agentName, given, step])
 

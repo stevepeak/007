@@ -18,8 +18,9 @@ import {
 // behaviour we're compensating for, and the round trip staying intact once we
 // compensate. They drive the serializer directly — a real `Editor` needs a DOM.
 const md = new MarkdownManager({ extensions: [StarterKit] })
-const roundTrip = (body: string) =>
-  unescapePromptVariables(md.serialize(md.parse(body)))
+function roundTrip (body: string) {
+  return unescapePromptVariables(md.serialize(md.parse(body)))
+}
 
 describe('prompt body Markdown round trip', () => {
   test('the serializer still escapes `_`, which is why we unescape', () => {

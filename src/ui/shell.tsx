@@ -1,10 +1,10 @@
+import type { LucideIcon } from 'lucide-react'
 import {
   createContext,
   Fragment,
   useContext,
   type ReactNode,
 } from 'react'
-import { type LucideIcon } from 'lucide-react'
 
 import { cn } from './cn'
 import { WfLink } from './nav'

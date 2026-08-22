@@ -8,8 +8,9 @@ import { useCallback, useRef, useState } from 'react'
 
 import type { WorkflowGraph, WorkflowNode } from '../engine'
 import type { WfRunLogDTO, WfRunStepDTO } from '../server/protocol'
-import { useWfComponents } from './context'
+
 import { cn } from './cn'
+import { useWfComponents } from './context'
 import { CreateSampleFromRun } from './evals/create-sample-from-run'
 import { WfLink } from './nav'
 import { RunActivityLog } from './run-activity-log'
@@ -192,20 +193,20 @@ export function RunNodeDock({
                 <button
                   type="button"
                   aria-label="Previous item"
-                  disabled={itemIndex! <= 0}
-                  onClick={() => onSelectItem?.(itemIndex! - 1)}
+                  disabled={itemIndex <= 0}
+                  onClick={() => onSelectItem?.(itemIndex - 1)}
                   className="rounded p-0.5 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700 disabled:opacity-30 disabled:hover:bg-transparent"
                 >
                   <ChevronLeft className="size-3.5" />
                 </button>
                 <span className="px-1 text-[11px] font-medium text-neutral-600 tabular-nums">
-                  item {itemIndex! + 1}/{itemCount}
+                  item {itemIndex + 1}/{itemCount}
                 </span>
                 <button
                   type="button"
                   aria-label="Next item"
-                  disabled={itemIndex! >= itemCount - 1}
-                  onClick={() => onSelectItem?.(itemIndex! + 1)}
+                  disabled={itemIndex >= itemCount - 1}
+                  onClick={() => onSelectItem?.(itemIndex + 1)}
                   className="rounded p-0.5 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700 disabled:opacity-30 disabled:hover:bg-transparent"
                 >
                   <ChevronRight className="size-3.5" />

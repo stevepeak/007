@@ -5,6 +5,7 @@ import type {
   ModelCapabilities,
   ModelCatalogEntry,
 } from '../server/protocol'
+
 import { cn } from './cn'
 import { EmptyState } from './evals/shared'
 import { FilterSelect } from './filters'
@@ -74,7 +75,7 @@ export function ModelsList({ className }: ModelsListProps) {
       if (chosen === 'enabled' && !m.enabled) return false
       if (chosen === 'disabled' && m.enabled) return false
       // Type filter matches ALL selected capabilities.
-      for (const k of caps) if (!m.capabilities?.[k]) return false
+      for (const k of caps) if (m.capabilities?.[k] !== true) return false
       if (age !== 'any') {
         // A model with no known release date can't be aged — exclude it.
         if (m.releasedAt == null) return false

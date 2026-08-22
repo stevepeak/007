@@ -84,7 +84,7 @@ export function PublishAgentDialog({
           ) : summarize.error ? (
             <span className="text-amber-600">
               Couldn't generate a summary (
-              {(summarize.error as Error).message}). It'll be generated after
+              {(summarize.error).message}). It'll be generated after
               you publish.
             </span>
           ) : aiSummary ? (

@@ -24,6 +24,6 @@ export function unmetRequirements(
 ): (keyof ModelCapabilities)[] {
   if (!requirements || !model.capabilities) return []
   return (Object.keys(requirements) as (keyof ModelCapabilities)[]).filter(
-    (k) => requirements[k] && !model.capabilities?.[k],
+    (k) => requirements[k] === true && model.capabilities?.[k] !== true,
   )
 }

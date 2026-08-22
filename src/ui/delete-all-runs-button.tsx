@@ -2,10 +2,11 @@ import { Trash2 } from 'lucide-react'
 import { useState } from 'react'
 
 import type { WfRunPurgeResult } from '../server/protocol'
+
 import { cn } from './cn'
 import { useWfComponents } from './context'
-import { useDeleteAllRuns } from './hooks'
 import { HoldButton } from './hold-button'
+import { useDeleteAllRuns } from './hooks'
 import { Modal } from './modal'
 
 // The runs explorer's nuclear option: wipe every run and everything derived
@@ -89,7 +90,7 @@ export function DeleteAllRunsButton({ className }: { className?: string }) {
           <p className="text-red-600">This cannot be undone.</p>
           {purge.error ? (
             <p className="rounded-md border border-red-200 bg-red-50 p-2 text-red-700">
-              {(purge.error as Error).message}
+              {(purge.error).message}
             </p>
           ) : null}
           {result ? (

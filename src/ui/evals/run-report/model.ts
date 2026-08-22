@@ -44,7 +44,7 @@ export type GroupEntry = { key: string; label: string; rows: ResultRow[] }
 export const STATUS_RANK: Record<string, number> = { fail: 0, error: 1, pass: 2 }
 
 export function mean(vals: number[]): number | null {
-  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null
+  return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null
 }
 
 // Stable identity for a matrix cell — one {model × prompt} combination. Shared
@@ -151,7 +151,7 @@ export function groupRows(rows: ResultRow[], by: GroupBy): GroupEntry[] {
     if (bucket) bucket.push(r)
     else map.set(key, [r])
   }
-  const entries = [...map.entries()].map(([key, rs]) => ({
+  const entries = [...map].map(([key, rs]) => ({
     key,
     label: key,
     rows: rs,

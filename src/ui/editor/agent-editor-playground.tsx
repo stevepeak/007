@@ -31,10 +31,11 @@ import {
   useToolContextFields,
   useTools,
 } from '../hooks'
-import { Tooltip } from '../tooltip'
+import { toText } from '../to-text'
 import { ContextField } from '../tool-context-field'
+import { Tooltip } from '../tooltip'
+
 import { changedFields } from './agent-config-diff'
-import { NoteMarkdown } from './note-markdown'
 import {
   contextFieldsFor,
   filledContext,
@@ -46,6 +47,7 @@ import {
   ConversationTranscript,
 } from './agent-editor-conversation'
 import { defaultsToLive, ToolModeList } from './agent-editor-tool-modes'
+import { NoteMarkdown } from './note-markdown'
 
 // Playground — runs the editor's live draft config in isolation (no graph, no
 // persistence) and shows the final answer plus the per-step thinking/tool-call
@@ -191,17 +193,17 @@ export function PlaygroundPanel({
   // Accordion: a new run opens itself and collapses the rest, so the column
   // doesn't grow without bound as runs pile up.
   const [expandedId, setExpandedId] = useState<number | null>(null)
-  const nextId = useRef(1)
+  const nextIdRef = useRef(1)
   const pending = runs.some((r) => r.status === 'running')
 
   function onRun(values: Record<string, unknown>) {
     const input: Record<string, string> = hasVars
       ? Object.fromEntries(
-          variables.map((v) => [v, String(values[v] ?? '').trim()]),
+          variables.map((v) => [v, toText(values[v]).trim()]),
         )
-      : { input: String(values.input ?? '').trim() }
+      : { input: toText(values.input).trim() }
 
-    const id = nextId.current++
+    const id = nextIdRef.current++
     const snapshot = config
     // Frozen with the config: the modes at submit time are what this run means.
     const liveToolIds = [...liveTools]
@@ -632,7 +634,7 @@ function StatusDot({ status }: { status: PlaygroundRun['status'] }) {
 function summarizeInput(input: Record<string, string>): string {
   const values = Object.values(input).filter(Boolean)
   if (values.length === 0) return '(no input)'
-  const joined = values.join(' · ').replace(/\s+/g, ' ')
+  const joined = values.join(' · ').replaceAll(/\s+/g, ' ')
   return joined.length > 80 ? `${joined.slice(0, 80)}…` : joined
 }
 
@@ -650,7 +652,9 @@ function asVerdict(text: string): { label: string; truthy: boolean } | null {
     .trim()
     .toLowerCase()
     .replace(/[.!]+$/, '')
-  return t in VERDICTS ? { label: text.trim(), truthy: VERDICTS[t] } : null
+  return Object.hasOwn(VERDICTS, t)
+    ? { label: text.trim(), truthy: VERDICTS[t] }
+    : null
 }
 
 // Blended-price cost of a run, USD. Tiny for a single preview, so keep enough
@@ -689,7 +693,8 @@ function PlaygroundResult({
   const copyText =
     textOutput != null ? textOutput : JSON.stringify(output, null, 2)
   const copy = () => {
-    void navigator.clipboard?.writeText(copyText).then(() => {
+    if (!navigator.clipboard) return
+    void navigator.clipboard.writeText(copyText).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     })

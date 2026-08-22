@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 
 import type { WorkflowGraph } from '../engine'
-import type { WfRunLogDTO, WfRunStepDTO } from '../server/protocol'
 import { RUN_STATE_LEVEL } from '../engine/stream-sink'
+import type { WfRunLogDTO, WfRunStepDTO } from '../server/protocol'
+
 import {
   buildActivityTree,
   flattenTree,
@@ -30,8 +31,9 @@ function node(
  * ever produced; this states that expectation once instead of casting at each
  * assertion.
  */
-const nodeRows = (rows: ActivityTopRow[]): ActivityNodeRow[] =>
-  rows.filter((r): r is ActivityNodeRow => r.kind === 'node')
+function nodeRows (rows: ActivityTopRow[]): ActivityNodeRow[] {
+  return rows.filter((r): r is ActivityNodeRow => r.kind === 'node')
+}
 
 function graphOf(nodes: ReturnType<typeof node>[]): WorkflowGraph {
   return { version: 1, nodes, edges: [] } as unknown as WorkflowGraph
@@ -334,7 +336,7 @@ describe('buildActivityTree — run lifecycle markers', () => {
       ],
     })
     expect(
-      rows.map((r) => (isState(r) ? `@${r.status}` : (r as ActivityNodeRow).nodeId)),
+      rows.map((r) => (isState(r) ? `@${r.status}` : (r).nodeId)),
     ).toEqual(['@queued', '@running', 'read', '@done', 'draft', '@completed'])
   })
 
@@ -354,7 +356,7 @@ describe('buildActivityTree — run lifecycle markers', () => {
       logs: [stateLog('queued', 9_000_000), stateLog('running', 9_000_001)],
     })
     expect(
-      rows.map((r) => (isState(r) ? `@${r.status}` : (r as ActivityNodeRow).nodeId)),
+      rows.map((r) => (isState(r) ? `@${r.status}` : (r).nodeId)),
     ).toEqual(['@queued', '@running', 'read', 'draft'])
   })
 
@@ -372,7 +374,7 @@ describe('buildActivityTree — run lifecycle markers', () => {
       logs: [stateLog('completed', 1_500_000)],
     })
     expect(
-      rows.map((r) => (isState(r) ? `@${r.status}` : (r as ActivityNodeRow).nodeId)),
+      rows.map((r) => (isState(r) ? `@${r.status}` : (r).nodeId)),
     ).toEqual(['read', 'draft', '@completed'])
   })
 
@@ -396,7 +398,8 @@ describe('buildActivityTree — run lifecycle markers', () => {
       logs: [stateLog('done', 5)],
     })
     expect(rows.filter(isState)).toHaveLength(1)
-    for (const r of rows.filter(isNode)) {
+    for (const r of rows) {
+      if (!isNode(r)) continue
       expect(r.children.some((c) => c.kind === 'log' && c.level === RUN_STATE_LEVEL)).toBe(false)
     }
   })
@@ -445,8 +448,9 @@ describe('buildActivityTree — marker timing', () => {
       steps: [step('read', 'tool', 1, 'completed')],
       logs: [stateLog('completed', 1_100_000, { message: 'Workflow completed' })],
     })
-    const marker = rows.filter(isState)[0]
-    expect(marker.elapsedMs).toBeNull()
-    expect(marker.message).toBe('Workflow completed')
+    const marker = rows.find(isState)
+    expect(marker).toBeDefined()
+    expect(marker?.elapsedMs).toBeNull()
+    expect(marker?.message).toBe('Workflow completed')
   })
 })

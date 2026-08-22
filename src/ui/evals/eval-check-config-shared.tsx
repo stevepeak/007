@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 
 import { BINARY_CHECK_TYPES, type EvalCheck } from '../../server/protocol'
+
 import { CHECK_TYPE_LABELS } from './check-naming'
 
 export type CheckFamily = 'binary' | 'scored'

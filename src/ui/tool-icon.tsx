@@ -25,14 +25,17 @@ export function ToolIcon({ icon, iconName, className }: ToolIconProps) {
           'inline-flex shrink-0 items-center justify-center',
           className,
         )}
-        // Trusted markup: tool icons are defined by the SDK or the host, never
-        // by user input.
+        // Trusted markup: tool icons come from the host's own `toolRegistry`
+        // metadata (see `WfTool.icon` in server/protocol-tools.ts), authored in
+        // code and never derived from user input. Sanitising would strip the
+        // brand marks this exists to render.
+        // eslint-disable-next-line @eslint-react/dom-no-dangerously-set-innerhtml
         dangerouslySetInnerHTML={{ __html: icon }}
       />
     )
   }
-  if (iconName && ALL_AGENT_ICONS[iconName]) {
-    const Icon = ALL_AGENT_ICONS[iconName]
+  const Icon = iconName ? ALL_AGENT_ICONS[iconName] : undefined
+  if (Icon) {
     // No color of its own — inherits the chip's `text-*` (or ambient color).
     return <Icon className={className} />
   }

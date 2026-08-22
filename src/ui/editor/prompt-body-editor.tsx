@@ -1,9 +1,8 @@
-import { Extension } from '@tiptap/react'
-import { Plugin } from '@tiptap/pm/state'
-import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import Placeholder from '@tiptap/extension-placeholder'
 import { Markdown } from '@tiptap/markdown'
-import { EditorContent, useEditor } from '@tiptap/react'
+import { Plugin } from '@tiptap/pm/state'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import { EditorContent, Extension, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { useEffect, useRef } from 'react'
 
@@ -13,6 +12,7 @@ import {
   unescapePromptVariables,
 } from '../../engine'
 import { cn } from '../cn'
+
 import { MarkdownHint } from './markdown-hint'
 
 // A focused prompt-body editor. The document is authored as rich text but

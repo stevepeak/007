@@ -1,7 +1,6 @@
+import type { WorkflowGraph, WorkflowNode } from '../engine'
 import { NON_STEP_KINDS, TERMINAL_STEP_STATUSES } from '../engine/run-progress'
 import { RUN_STATE_LEVEL } from '../engine/stream-sink'
-
-import type { WorkflowGraph, WorkflowNode } from '../engine'
 import type { WfRunLogDTO, WfRunStepDTO } from '../server/protocol'
 
 // Pure derivation for the run viewer's "Activity" tree — the living,
@@ -485,7 +484,7 @@ export function buildActivityTree(input: {
   // that never ran — so a marker lands before the nodes an early branch
   // skipped rather than after them.
   const startTsOf = (nodeId: string, step?: WfRunStepDTO | null): number =>
-    step?.startedAt ?? timingFor(nodeId)?.start ?? Number.POSITIVE_INFINITY
+    step?.startedAt ?? timingFor(nodeId)?.start ?? Infinity
 
   // Second granularity on both sides, since that is all `started_at` carries.
   const toSeconds = (ms: number): number =>
@@ -520,8 +519,8 @@ export function buildActivityTree(input: {
         .filter((n) => !NON_STEP_KINDS.has(n.kind))
         .map((n, i) => ({ n, i }))
         .sort((a, b) => {
-          const sa = topSteps.get(a.n.id)?.sequence ?? Number.POSITIVE_INFINITY
-          const sb = topSteps.get(b.n.id)?.sequence ?? Number.POSITIVE_INFINITY
+          const sa = topSteps.get(a.n.id)?.sequence ?? Infinity
+          const sb = topSteps.get(b.n.id)?.sequence ?? Infinity
           return sa - sb || a.i - b.i
         })
         .map(({ n }) => ({

@@ -11,6 +11,7 @@ import { isBookendKind, type InformUser, type WorkflowNode } from '../../engine'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { WfLink } from '../nav'
+
 import { NodeInputsPanel } from './node-data-panel'
 import {
   BranchInspector,

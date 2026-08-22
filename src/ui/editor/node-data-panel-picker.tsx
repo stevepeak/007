@@ -1,4 +1,4 @@
-import { type AccessibleNode, type DataField } from './node-io'
+import type { AccessibleNode, DataField } from './node-io'
 
 // One upstream node inside the binding picker: pick its whole output or drill
 // into a specific field.

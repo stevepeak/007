@@ -7,12 +7,13 @@ import type {
   WorkflowNode,
 } from '../../engine'
 import { cn } from '../cn'
+
+import { useAccessibleData } from './node-data-panel-shared'
 import {
   nodeProvides,
   type AccessibleNode,
   type DataField,
 } from './node-io'
-import { useAccessibleData } from './node-data-panel-shared'
 
 export type AccessibleDataViewProps = {
   node: WorkflowNode

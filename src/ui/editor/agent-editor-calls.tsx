@@ -10,12 +10,13 @@ import {
   formatUsd,
 } from '../cost'
 import { useAgentCalls, useTools } from '../hooks'
-import { runLinkFor } from './agent-editor-call-inspect'
 import { WfLink } from '../nav'
 import { runStatusDotClass } from '../run-status'
 import { toolChip } from '../tool-appearance'
 import { ToolIcon } from '../tool-icon'
 import { Tooltip } from '../tooltip'
+
+import { runLinkFor } from './agent-editor-call-inspect'
 
 // This agent's last real executions, as METRICS only: how many turns it took,
 // what it spent, and which tools it reached for. Deliberately no inputs/outputs
@@ -186,7 +187,7 @@ export function AgentCallsList({
   if (calls.error) {
     return (
       <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-        {(calls.error as Error).message}
+        {(calls.error).message}
       </p>
     )
   }

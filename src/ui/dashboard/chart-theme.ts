@@ -85,7 +85,7 @@ export function assignSeriesColors(keys: string[]): Map<string, string> {
       slot = (slot + 1) % SERIES_COLORS.length
     }
     taken.add(slot)
-    out.set(key, SERIES_COLORS[slot] as string)
+    out.set(key, SERIES_COLORS[slot])
   }
   return out
 }

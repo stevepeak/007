@@ -4,8 +4,8 @@ import { AgentsList } from './agents-list'
 import { cn } from './cn'
 import { ComingSoon } from './coming-soon'
 import { CopilotPanel } from './copilot/copilot-panel'
-import { WfDashboard } from './dashboard'
 import { deriveCopilotContext } from './copilot/view-context'
+import { WfDashboard } from './dashboard'
 import { AgentEditor } from './editor/agent-editor'
 import { WorkflowEditor } from './editor/workflow-editor'
 import { EvalRunReport } from './evals/eval-run-report'
@@ -24,11 +24,11 @@ import { toolText } from './tool-appearance'
 import { ToolDetail } from './tool-detail'
 import { ToolIcon } from './tool-icon'
 import { ToolsList } from './tools-list'
+import { sectionCrumb } from './wf-crumbs'
+import { DEFAULT_WF_SECTIONS, WfHub, type WfHubSection } from './wf-hub'
 import { classifyAssetPath } from './wf-tab-routes'
 import { WfTabStrip } from './wf-tab-strip'
 import { HOME_TAB_ID, useWfTabs, WfTabsProvider } from './wf-tabs'
-import { sectionCrumb } from './wf-crumbs'
-import { DEFAULT_WF_SECTIONS, WfHub, type WfHubSection } from './wf-hub'
 import { WorkflowsList } from './workflows-list'
 
 // The whole workflow interface behind one component. The host mounts this at a
@@ -265,12 +265,12 @@ function AssetRoute({ path }: { path: string }) {
       // hands an investigation over, instead of dropping you on a run and
       // making you find the agent in it again.
       const rawItem = query.get('item')
-      const item = rawItem == null ? Number.NaN : Number(rawItem)
+      const item = rawItem == null ? NaN : Number(rawItem)
       return (
         <RunPage
           runId={asset.runId}
           initialNodeId={query.get('node')}
-          initialItemIndex={Number.isInteger(item) && item >= 0 ? item : null}
+          initialItemIndex={Number.isSafeInteger(item) && item >= 0 ? item : null}
           className="h-full"
         />
       )
@@ -296,14 +296,14 @@ function AssetRoute({ path }: { path: string }) {
       // over, instead of dropping you on the sample and making you find the
       // check in it again.
       const rawCheck = query.get('check')
-      const check = rawCheck == null ? Number.NaN : Number(rawCheck)
+      const check = rawCheck == null ? NaN : Number(rawCheck)
       return (
         <EvalSample
           key={asset.sampleId}
           setId={asset.setId}
           sampleId={asset.sampleId}
           initialCheckIndex={
-            Number.isInteger(check) && check >= 0 ? check : null
+            Number.isSafeInteger(check) && check >= 0 ? check : null
           }
           className="h-full"
         />

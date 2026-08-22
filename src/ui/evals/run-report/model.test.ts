@@ -57,8 +57,8 @@ describe('buildResultRows', () => {
 
 describe('status ordering', () => {
   test('errors sort above passes, below outright failures', () => {
-    expect(STATUS_RANK.fail).toBeLessThan(STATUS_RANK.error as number)
-    expect(STATUS_RANK.error).toBeLessThan(STATUS_RANK.pass as number)
+    expect(STATUS_RANK.fail).toBeLessThan(STATUS_RANK.error)
+    expect(STATUS_RANK.error).toBeLessThan(STATUS_RANK.pass)
   })
 
   test('sorting by status surfaces problems first', () => {

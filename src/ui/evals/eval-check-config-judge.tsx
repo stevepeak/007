@@ -8,6 +8,7 @@ import { ModelSelect } from '../editor/model-select'
 import { useModels } from '../hooks'
 import { Modal } from '../modal'
 import { useCommittedField } from '../use-committed-field'
+
 import { outputPathOptions } from './fields'
 
 // ── Scored (judge) config ────────────────────────────────────────────────────

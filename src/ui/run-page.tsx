@@ -3,18 +3,19 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { WorkflowGraph, WorkflowNode } from '../engine'
 import type { RetryRunMode, WfRunStepDTO } from '../server/protocol'
-import { useWfComponents } from './context'
+
 import { cn } from './cn'
-import { WorkflowCanvas } from './editor/workflow-canvas'
-import { NOT_RUN_STATUS } from './editor/node-renderers-shared'
+import { useWfComponents } from './context'
 import {
   formatDuration,
   formatTimestamp,
   formatTokens,
   formatUsd,
 } from './cost'
-import { useFeedbackForSubjects } from './hooks-feedback'
+import { NOT_RUN_STATUS } from './editor/node-renderers-shared'
+import { WorkflowCanvas } from './editor/workflow-canvas'
 import { useRetryRun, useRun } from './hooks'
+import { useFeedbackForSubjects } from './hooks-feedback'
 import { MessageFeedback } from './message-feedback'
 import { useWfNav, WfLink } from './nav'
 import { QueryState } from './query-state'
@@ -177,7 +178,7 @@ export function RunPage({
     const map = new Map(
       (data?.steps ?? [])
         .filter((s) => !s.parentNodeId)
-        .map((s) => [s.nodeId, s.status as string]),
+        .map((s) => [s.nodeId, s.status]),
     )
     if (data?.graph && data.run && !isRunLive(data.run.status)) {
       for (const n of data.graph.nodes) {
@@ -195,10 +196,10 @@ export function RunPage({
   // card and pans to it, so the node the link named is the one you're looking
   // at. Once only — after that the selection is yours.
   const selectNodeRef = useRef<((nodeId: string) => void) | null>(null)
-  const appliedInitialNode = useRef(false)
+  const appliedInitialNodeRef = useRef(false)
   useEffect(() => {
-    if (appliedInitialNode.current || !initialNodeId || !data?.graph) return
-    appliedInitialNode.current = true
+    if (appliedInitialNodeRef.current || !initialNodeId || !data?.graph) return
+    appliedInitialNodeRef.current = true
     setSelectedId(initialNodeId)
     selectNodeRef.current?.(initialNodeId)
   }, [initialNodeId, data?.graph])
@@ -415,7 +416,7 @@ export function RunPage({
               ) : null}
               {retry.error ? (
                 <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-700">
-                  Retry failed: {(retry.error as Error).message}
+                  Retry failed: {(retry.error).message}
                 </div>
               ) : null}
 

@@ -1,4 +1,5 @@
-import { AlertTriangle, ChevronDown, Info, Sparkles, X } from 'lucide-react'
+import type { Sparkles} from 'lucide-react';
+import { AlertTriangle, ChevronDown, Info, X } from 'lucide-react'
 import { useCallback, useRef, useState, type ReactNode } from 'react'
 
 import type {
@@ -8,6 +9,7 @@ import type {
   WorkflowNode,
 } from '../../engine'
 import { cn } from '../cn'
+
 import { AccessibleDataView } from './node-data-panel'
 
 // A DevTools-style dock pinned to the bottom of an editor/detail surface. A tab

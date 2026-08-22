@@ -7,6 +7,7 @@ import { BrandMark, CapabilityBadges, inferModelBrand } from '../evals/shared'
 import { useModels, useProviders } from '../hooks'
 import { REQUIREMENT_REASON, unmetRequirements } from '../model-capabilities'
 import { Popover } from '../popover'
+
 import { groupModelsByProvider } from './model-grouping'
 
 // A single-select model picker that mirrors the Evals "Run configuration"

@@ -137,7 +137,7 @@ export function MarkdownHint({
     window.addEventListener('keydown', onKey)
     window.addEventListener('resize', reposition)
     // Capture: the box may sit in a scrolling inspector, not just the window.
-    window.addEventListener('scroll', reposition, true)
+    window.addEventListener('scroll', reposition, {capture: true})
     return () => {
       window.removeEventListener('mousedown', onDown)
       window.removeEventListener('keydown', onKey)

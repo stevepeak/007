@@ -24,9 +24,10 @@ import {
   useProviders,
   useRunEval,
 } from '../hooks'
+import { IdeaSpark } from '../idea-spark'
 import { Modal } from '../modal'
 import { useWfNav } from '../nav'
-import { IdeaSpark } from '../idea-spark'
+
 import { ConfirmStep } from './run-config-dialog-confirm'
 import { ModelMatrixRow } from './run-config-dialog-model-row'
 
@@ -137,7 +138,7 @@ export function RunConfigDialog({
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   // Extra prompts to A/B against the agent's saved prompt (always included).
   const [prompts, setPrompts] = useState<TestPrompt[]>([])
-  const promptSeq = useRef(0)
+  const promptSeqRef = useRef(0)
   // Two-step flow: pick the matrix, then confirm it.
   const [step, setStep] = useState<'configure' | 'confirm'>('configure')
   // How many tests run at once. Chosen on the confirm step, since it's a
@@ -175,7 +176,7 @@ export function RunConfigDialog({
     })
 
   const addPrompt = () =>
-    setPrompts((prev) => [...prev, { id: `p${promptSeq.current++}`, body: '' }])
+    setPrompts((prev) => [...prev, { id: `p${promptSeqRef.current++}`, body: '' }])
   const removePrompt = (id: string) =>
     setPrompts((prev) => prev.filter((p) => p.id !== id))
   const setPromptBody = (id: string, body: string) =>

@@ -1,11 +1,12 @@
-import { useWfComponents } from './context'
+import { deriveRunProgress } from '../engine/run-progress'
+import type { WfRunStepDTO } from '../server/protocol'
+
 import { cn } from './cn'
+import { useWfComponents } from './context'
 import { DataView } from './data-view'
 import { useRun } from './hooks'
 import { QueryState } from './query-state'
 import { runStatusClass } from './run-status'
-import { deriveRunProgress } from '../engine/run-progress'
-import type { WfRunStepDTO } from '../server/protocol'
 
 // Coarse progress bar for the run header: the currently-active node's label plus
 // a completed/total node count. Derived from the graph + step trace, so it moves

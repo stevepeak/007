@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import type { WorkflowGraph } from '../../engine'
+
 import { describeChange } from './use-edit-history'
 
 // Minimal builders — describeChange only reads node id/kind/label/position/config

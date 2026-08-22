@@ -2,6 +2,7 @@ import { CalendarClock, Hand, Webhook } from 'lucide-react'
 import { useState } from 'react'
 
 import { buildStarterGraph, type NewWorkflowTrigger } from '../engine/graph'
+
 import { cn } from './cn'
 import { useWfComponents } from './context'
 import { useCreateWorkflow, useTriggerEvents } from './hooks'
@@ -224,7 +225,7 @@ export function NewWorkflowDialog({
 
           {create.error ? (
             <div className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
-              {(create.error as Error).message}
+              {(create.error).message}
             </div>
           ) : null}
         </div>

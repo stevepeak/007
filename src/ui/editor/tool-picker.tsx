@@ -77,7 +77,7 @@ export function ToolPicker({
   const { Input } = useWfComponents()
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
-  const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const byId = useMemo(() => new Map(tools.map((t) => [t.id, t])), [tools])
   const selected = selectedIds
@@ -192,12 +192,12 @@ export function ToolPicker({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => {
-            if (blurTimer.current) clearTimeout(blurTimer.current)
+            if (blurTimerRef.current) clearTimeout(blurTimerRef.current)
             setOpen(true)
           }}
           onBlur={() => {
             // Delay so a result click lands before the list unmounts.
-            blurTimer.current = setTimeout(() => setOpen(false), 120)
+            blurTimerRef.current = setTimeout(() => setOpen(false), 120)
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && results[0]) {

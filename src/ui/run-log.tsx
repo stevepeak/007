@@ -14,6 +14,7 @@ import {
 import type { ReactNode } from 'react'
 
 import type { AgentNodeMeta, WfRunStepDTO } from '../server/protocol'
+
 import { cn } from './cn'
 import { formatDurationMs, formatTokens, formatUsd } from './cost'
 import { DataView } from './data-view'
@@ -440,11 +441,11 @@ export function RunLog({ step }: { step: WfRunStepDTO }) {
       step.output && typeof step.output === 'object'
         ? (step.output as { text?: unknown }).text
         : step.output
-    agentMeta.steps.forEach((s) => {
+    for (const s of agentMeta.steps) {
       if (s.reasoning) steps.push(thinkingStep(s.reasoning))
       if (s.text && s.text !== responseText) steps.push(thinkingStep(s.text))
-      s.toolCalls.forEach((tc) => steps.push(toolStep(tc)))
-    })
+      for (const tc of s.toolCalls) steps.push(toolStep(tc))
+    }
   }
 
   // Branch decision.
@@ -515,7 +516,7 @@ function IterationTrace({ meta }: { meta: IterationMeta }) {
     <div className="space-y-2">
       <div className="text-[11px] text-neutral-500">
         {meta.total} items · concurrency {meta.concurrency}
-        {failed.length ? ` · ${failed.length} failed` : ''}
+        {failed.length > 0 ? ` · ${failed.length} failed` : ''}
       </div>
       <div className="flex flex-wrap gap-1">
         {meta.items.map((i) => (

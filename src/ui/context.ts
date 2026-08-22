@@ -1,6 +1,7 @@
 import { createContext, useContext, type FC } from 'react'
 
 import type { WfDataClient } from '../server/protocol'
+
 import type { WfComponents } from './primitives'
 
 // The context passed to the host-injected assistant slot: what the user is

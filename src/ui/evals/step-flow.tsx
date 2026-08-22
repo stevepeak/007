@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 // A top-to-bottom flow of full-width cards — one per step of "choose something →
 // configure the next thing". Every card is always open: the header names the step

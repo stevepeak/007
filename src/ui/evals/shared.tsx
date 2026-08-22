@@ -12,6 +12,7 @@ import { useAgents } from '../hooks'
 import { RunStatusBadge } from '../run-status'
 import type { WfCrumb } from '../shell'
 import { Tooltip } from '../tooltip'
+
 import { getProvider, ProviderLogo } from './provider-logos'
 
 // Small presentational bits shared across the Evals catalog, set, sample, and
