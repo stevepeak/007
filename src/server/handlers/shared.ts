@@ -126,7 +126,7 @@ export class NotFoundError extends Error {}
 // than a bare `Error`.
 export class UnauthorizedError extends Error {}
 
-export function str(params: unknown, key: string): string {
+export function requireStr(params: unknown, key: string): string {
   const v = (params as Record<string, unknown>)[key]
   if (typeof v !== 'string' || !v) {
     throw new BadRequestError(`Missing '${key}' parameter.`)
@@ -134,7 +134,7 @@ export function str(params: unknown, key: string): string {
   return v
 }
 
-// `str`'s optional sibling: absent, empty, or wrong-typed all read as "not
+// `requireStr`'s optional sibling: absent, empty, or wrong-typed all read as "not
 // supplied" rather than as an error. For params that only ever narrow what the
 // server does (a cache hint, a filter) — never for anything load-bearing.
 export function optStr(params: unknown, key: string): string | undefined {

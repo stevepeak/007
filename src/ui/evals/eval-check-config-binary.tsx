@@ -18,7 +18,7 @@ import {
   MatchRow,
   outputPathOptions,
   TextField,
-  ToolPicker,
+  EvalToolPicker,
 } from './fields'
 
 // ── Binary check config ──────────────────────────────────────────────────────
@@ -230,7 +230,7 @@ function BinaryFields({
     case 'tool_called':
       return (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <ToolPicker
+          <EvalToolPicker
             value={check.toolId}
             onChange={(toolId) => persist({ ...check, toolId })}
             allowToolIds={allowToolIds}
@@ -247,7 +247,7 @@ function BinaryFields({
     case 'tool_args_match':
       return (
         <div className="space-y-3">
-          <ToolPicker
+          <EvalToolPicker
             value={check.toolId}
             onChange={(toolId) => persist({ ...check, toolId })}
             allowToolIds={allowToolIds}

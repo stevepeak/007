@@ -1,4 +1,4 @@
-import { num, str, type AnalyticsQuery } from './query'
+import { num, coerceStr, type AnalyticsQuery } from './query'
 import {
   runVolumeSql,
   spendSql,
@@ -42,7 +42,7 @@ export async function loadRunVolume(
 ): Promise<AnalyticsVolumeRow[]> {
   const rows = await query.run(runVolumeSql(dataset, window))
   return rows.map((r) => ({
-    workflowId: str(r.workflow_id),
+    workflowId: coerceStr(r.workflow_id),
     ordinal: num(r.ordinal),
     runs: num(r.runs),
     failed: num(r.failed),
@@ -72,7 +72,7 @@ export async function loadSpend(
   const rows = await query.run(spendSql(dataset, window))
   return rows.map((r) => ({
     ordinal: num(r.ordinal),
-    model: str(r.model) || null,
+    model: coerceStr(r.model) || null,
     inputTokens: num(r.input_tokens),
     outputTokens: num(r.output_tokens),
     costUsd: num(r.cost_usd),
@@ -97,7 +97,7 @@ export async function loadWorkflowSteps(
 ): Promise<AnalyticsStepsRow[]> {
   const rows = await query.run(workflowStepsSql(dataset, window))
   return rows.map((r) => ({
-    workflowId: str(r.workflow_id),
+    workflowId: coerceStr(r.workflow_id),
     ordinal: num(r.ordinal),
     runs: num(r.runs),
     workflowSteps: num(r.workflow_steps),

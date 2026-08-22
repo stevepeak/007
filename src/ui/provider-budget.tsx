@@ -12,8 +12,14 @@ import { Tooltip } from './tooltip'
 // formatting and the thresholds below, so the two surfaces can't drift into
 // disagreeing about when a balance counts as "low".
 
-/** USD, always two decimals — this is money, so `$5` reads as unfinished. */
-export function formatUsd(amount: number): string {
+/**
+ * USD, always two decimals — this is money, so `$5` reads as unfinished.
+ *
+ * Deliberately NOT `cost.ts`'s `formatBudgetUsd`, which scales precision with
+ * magnitude (`$0.00042`) because it renders per-node run costs. A budget is a
+ * cap the user typed; it should read back the way they typed it.
+ */
+function formatBudgetUsd(amount: number): string {
   return `$${amount.toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -103,7 +109,7 @@ function BudgetNotice({ budget }: { budget?: ProviderBudget }) {
 /** Secondary line: all-time spend, key label, expiry — whatever is known. */
 function budgetFootnotes(budget: ProviderBudget): string[] {
   const parts: string[] = []
-  if (budget.usage != null) parts.push(`${formatUsd(budget.usage)} all time`)
+  if (budget.usage != null) parts.push(`${formatBudgetUsd(budget.usage)} all time`)
   if (budget.isFreeTier) parts.push('free tier')
   if (budget.expiresAt != null) {
     parts.push(`expires ${new Date(budget.expiresAt).toLocaleDateString()}`)
@@ -153,7 +159,7 @@ export function ProviderBudgetBar({
           {budget.remaining != null ? (
             <>
               <span className={cn('font-medium', tone(fraction).text)}>
-                {formatUsd(budget.remaining)}
+                {formatBudgetUsd(budget.remaining)}
               </span>
               <span className="text-neutral-500"> remaining</span>
             </>
@@ -162,7 +168,7 @@ export function ProviderBudgetBar({
           )}
         </div>
         <div className="text-xs tabular-nums text-neutral-500">
-          {budget.limit != null ? `of ${formatUsd(budget.limit)}` : null}
+          {budget.limit != null ? `of ${formatBudgetUsd(budget.limit)}` : null}
           {budget.limit != null && reset ? ' · ' : null}
           {reset}
         </div>
@@ -176,7 +182,7 @@ export function ProviderBudgetBar({
 
       {(spent != null || footnotes.length > 0) && (
         <div className="mt-1.5 text-[11px] tabular-nums text-neutral-400">
-          {spent != null ? `${formatUsd(spent)} used this period` : null}
+          {spent != null ? `${formatBudgetUsd(spent)} used this period` : null}
           {spent != null && footnotes.length > 0 ? ' · ' : null}
           {footnotes.join(' · ')}
         </div>
@@ -233,9 +239,9 @@ export function ProviderBudgetCard({
               )}
             >
               {budget.remaining != null
-                ? formatUsd(budget.remaining)
+                ? formatBudgetUsd(budget.remaining)
                 : budget.usage != null
-                  ? formatUsd(budget.usage)
+                  ? formatBudgetUsd(budget.usage)
                   : '—'}
             </span>
             <span className="truncate text-xs text-neutral-500">
@@ -244,7 +250,7 @@ export function ProviderBudgetCard({
           </div>
           <BudgetMeter budget={budget} />
           <div className="truncate text-[11px] tabular-nums text-neutral-400">
-            {budget.limit != null ? `of ${formatUsd(budget.limit)}` : 'No cap set'}
+            {budget.limit != null ? `of ${formatBudgetUsd(budget.limit)}` : 'No cap set'}
             {reset ? ` · ${reset}` : null}
           </div>
           {budget.keyLabel ? (

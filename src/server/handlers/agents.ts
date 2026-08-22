@@ -30,7 +30,7 @@ import {
   parseStringRecord,
   requireAgentExists,
   requireHook,
-  str,
+  requireStr,
   toEpoch,
   type CreateWfSdkHandlersOptions,
   type WfHandlers,
@@ -126,7 +126,7 @@ export function buildAgentHandlers<TDeps>(
     },
 
     getAgent: async (c) => {
-      const agentId = str(c.params, 'agentId')
+      const agentId = requireStr(c.params, 'agentId')
       const result = await getAgent(c.db, agentId)
       if (!result) {
         return null
@@ -153,7 +153,7 @@ export function buildAgentHandlers<TDeps>(
     },
 
     createAgent: async (c) => {
-      const name = str(c.params, 'name')
+      const name = requireStr(c.params, 'name')
       const config = parseAgentConfig(c.params)
       const p = c.params as {
         description?: string
@@ -171,7 +171,7 @@ export function buildAgentHandlers<TDeps>(
     },
 
     updateAgentDraft: async (c) => {
-      const agentId = str(c.params, 'agentId')
+      const agentId = requireStr(c.params, 'agentId')
       const config = parseAgentConfig(c.params)
       await requireAgentExists(c.db, agentId)
       await updateAgentDraft(c.db, {
@@ -183,7 +183,7 @@ export function buildAgentHandlers<TDeps>(
     },
 
     publishAgent: async (c) => {
-      const agentId = str(c.params, 'agentId')
+      const agentId = requireStr(c.params, 'agentId')
       const config = parseAgentConfig(c.params)
       const p = c.params as {
         changeNote?: string
@@ -239,7 +239,7 @@ export function buildAgentHandlers<TDeps>(
     },
 
     summarizeAgentChanges: async (c) => {
-      const agentId = str(c.params, 'agentId')
+      const agentId = requireStr(c.params, 'agentId')
       const nextConfig = parseAgentConfig(c.params)
       const owner = await getAgent(c.db, agentId)
       if (!owner) {
@@ -258,7 +258,7 @@ export function buildAgentHandlers<TDeps>(
     },
 
     getAgentVersion: async (c) => {
-      const versionId = str(c.params, 'versionId')
+      const versionId = requireStr(c.params, 'versionId')
       const v = await getAgentVersionConfig(c.db, versionId)
       if (!v) {
         return null
@@ -267,7 +267,7 @@ export function buildAgentHandlers<TDeps>(
     },
 
     listAgentVersions: async (c) => {
-      const agentId = str(c.params, 'agentId')
+      const agentId = requireStr(c.params, 'agentId')
       await requireAgentExists(c.db, agentId)
       const rows = await listAgentVersions(c.db, agentId)
       return rows.map((v) => ({
@@ -282,7 +282,7 @@ export function buildAgentHandlers<TDeps>(
     },
 
     updateAgentMeta: async (c) => {
-      const agentId = str(c.params, 'agentId')
+      const agentId = requireStr(c.params, 'agentId')
       await requireAgentExists(c.db, agentId)
       const p = c.params as {
         name?: string
@@ -301,35 +301,35 @@ export function buildAgentHandlers<TDeps>(
     },
 
     discardAgentDraft: async (c) => {
-      const agentId = str(c.params, 'agentId')
+      const agentId = requireStr(c.params, 'agentId')
       await requireAgentExists(c.db, agentId)
       await discardAgentDraft(c.db, { agentId })
       return { ok: true }
     },
 
     countAgentReferences: async (c) => {
-      const agentId = str(c.params, 'agentId')
+      const agentId = requireStr(c.params, 'agentId')
       await requireAgentExists(c.db, agentId)
       const workflows = await countWorkflowsReferencingAgent(c.db, { agentId })
       return { workflows }
     },
 
     listAgentReferences: async (c) => {
-      const agentId = str(c.params, 'agentId')
+      const agentId = requireStr(c.params, 'agentId')
       await requireAgentExists(c.db, agentId)
       const workflows = await listWorkflowsReferencingAgent(c.db, { agentId })
       return { workflows }
     },
 
     archiveAgent: async (c) => {
-      const agentId = str(c.params, 'agentId')
+      const agentId = requireStr(c.params, 'agentId')
       await requireAgentExists(c.db, agentId)
       await archiveAgent(c.db, { agentId })
       return { ok: true }
     },
 
     listAgentCalls: async (c) => {
-      const agentId = str(c.params, 'agentId')
+      const agentId = requireStr(c.params, 'agentId')
       await requireAgentExists(c.db, agentId)
       const p = c.params as { limit?: number }
       return await listAgentCalls(c.db, { agentId, limit: p.limit })
@@ -382,7 +382,7 @@ export function buildAgentHandlers<TDeps>(
         opts.runToolPreview,
         'The tool playground is not configured on this host.',
       )
-      const toolId = str(c.params, 'toolId')
+      const toolId = requireStr(c.params, 'toolId')
       // Guard against calling an unregistered tool before we build real deps.
       if (!opts.config.toolRegistry.has(toolId)) {
         throw new Error(`Tool '${toolId}' is not registered.`)

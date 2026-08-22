@@ -86,7 +86,7 @@ export function num(value: unknown): number {
  * number becomes '' rather than "[object Object]" — a dimension that arrived in
  * an unexpected shape should read as absent, not as a bogus group key.
  */
-export function str(value: unknown): string {
+export function coerceStr(value: unknown): string {
   if (typeof value === 'string') return value
   if (typeof value === 'number' || typeof value === 'bigint') {
     return String(value)

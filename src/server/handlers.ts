@@ -39,7 +39,7 @@ export { UnauthorizedError } from './handlers/shared'
 // params. Objects are non-strict (unknown keys pass), so a schema only asserts
 // the fields it names — declaring one can't reject an otherwise-valid call.
 // Methods with no entry are passed through unchanged (validated by their own
-// `parseGraph`/`parseAgentConfig`/`str`, whose failures the dispatcher still
+// `parseGraph`/`parseAgentConfig`/`requireStr`, whose failures the dispatcher still
 // maps to 400).
 const wfInputSchemas: Partial<Record<keyof WfDataClient, z.ZodType>> = {
   refreshModels: z.object({ providerId: z.string() }),
@@ -235,7 +235,7 @@ export function createWfSdkHandlers<TDeps>(
       const result = await handler({ params, ctx, db, req, env, analytics })
       return json(result)
     } catch (err) {
-      // Bad client input (a `str()` guard or a handler-level zod parse) is a
+      // Bad client input (a `requireStr()` guard or a handler-level zod parse) is a
       // 400, not a server fault — don't log it as a 500.
       if (err instanceof BadRequestError || err instanceof z.ZodError) {
         return json({ error: errorMessage(err) }, 400)

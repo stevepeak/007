@@ -35,7 +35,7 @@ function parseValue(s: string): unknown {
 // can't be clipped by the StepFlow card's `overflow-hidden`. When `allowToolIds`
 // is given (an agent target's wired tools), the list is scoped to just those —
 // a tool the agent can't call would never fire, so it's never worth offering.
-export function ToolPicker({
+export function EvalToolPicker({
   value,
   onChange,
   allowToolIds,

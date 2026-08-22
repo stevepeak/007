@@ -18,7 +18,7 @@ import {
 import type { WfToolInvocation } from '../protocol'
 
 import {
-  str,
+  requireStr,
   toEpoch,
   toJsonSchema,
   type CreateWfSdkHandlersOptions,
@@ -202,7 +202,7 @@ export function buildModelHandlers<TDeps>(
     },
 
     refreshModels: async (c) => {
-      const providerId = str(c.params, 'providerId')
+      const providerId = requireStr(c.params, 'providerId')
       const fetchCatalog = opts.config.fetchModelCatalog
       if (!fetchCatalog) {
         throw new Error(
@@ -231,7 +231,7 @@ export function buildModelHandlers<TDeps>(
     },
 
     setModelEnabled: async (c) => {
-      const modelId = str(c.params, 'modelId')
+      const modelId = requireStr(c.params, 'modelId')
       const enabled = (c.params as { enabled?: boolean }).enabled === true
       // A model in use by an agent cannot be disabled — it would break that
       // agent's model resolution. The UI locks the toggle; enforce it here too.
@@ -252,7 +252,7 @@ export function buildModelHandlers<TDeps>(
     listTools: () => toolList,
 
     listToolInvocations: async (c) => {
-      const toolId = str(c.params, 'toolId')
+      const toolId = requireStr(c.params, 'toolId')
       const limit = (c.params as { limit?: number }).limit
       const rows = await listToolInvocations(c.db, { toolId, limit })
       const invocations: WfToolInvocation[] = rows.map((r) => {

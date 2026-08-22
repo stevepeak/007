@@ -34,7 +34,7 @@ import { evalResultDTO, evalRunSummary, evalSetSummary } from './eval-dto'
 import {
   NotFoundError,
   requireHook,
-  str,
+  requireStr,
   type CreateWfSdkHandlersOptions,
   type WfHandlers,
 } from './shared'
@@ -94,7 +94,7 @@ export function buildEvalHandlers<TDeps>(
     },
 
     getEvalSet: async (c) => {
-      const setId = str(c.params, 'setId')
+      const setId = requireStr(c.params, 'setId')
       const result = await getEvalSet(c.db, setId)
       if (!result) {
         return null
@@ -107,9 +107,9 @@ export function buildEvalHandlers<TDeps>(
     },
 
     createEvalSet: async (c) => {
-      const name = str(c.params, 'name')
-      const targetId = str(c.params, 'targetId')
-      const triggerKind = str(c.params, 'triggerKind')
+      const name = requireStr(c.params, 'name')
+      const targetId = requireStr(c.params, 'targetId')
+      const triggerKind = requireStr(c.params, 'triggerKind')
       const p = c.params as {
         description?: string
         targetKind?: WfEvalTargetKind
@@ -130,7 +130,7 @@ export function buildEvalHandlers<TDeps>(
     },
 
     updateEvalSet: async (c) => {
-      const setId = str(c.params, 'setId')
+      const setId = requireStr(c.params, 'setId')
       const p = c.params as {
         name?: string
         description?: string | null
@@ -154,14 +154,14 @@ export function buildEvalHandlers<TDeps>(
     },
 
     deleteEvalSet: async (c) => {
-      const setId = str(c.params, 'setId')
+      const setId = requireStr(c.params, 'setId')
       await deleteEvalSet(c.db, setId)
       return { ok: true }
     },
 
     upsertEvalRow: async (c) => {
-      const setId = str(c.params, 'setId')
-      const name = str(c.params, 'name')
+      const setId = requireStr(c.params, 'setId')
+      const name = requireStr(c.params, 'name')
       const p = c.params as {
         id?: string
         description?: string | null
@@ -185,7 +185,7 @@ export function buildEvalHandlers<TDeps>(
     },
 
     deleteEvalRow: async (c) => {
-      const rowId = str(c.params, 'rowId')
+      const rowId = requireStr(c.params, 'rowId')
       await deleteEvalRow(c.db, rowId)
       return { ok: true }
     },
@@ -211,8 +211,8 @@ export function buildEvalHandlers<TDeps>(
         opts.startEvalRun,
         'Eval runs are not configured for this host.',
       )
-      const evalRunId = str(c.params, 'evalRunId')
-      const rowId = str(c.params, 'rowId')
+      const evalRunId = requireStr(c.params, 'evalRunId')
+      const rowId = requireStr(c.params, 'rowId')
       // Matrix cell overrides — swap the target agent's model / system prompt for
       // this run. Absent → the agent's own saved model/prompt (the plain path).
       const cell = c.params as {
@@ -288,9 +288,9 @@ export function buildEvalHandlers<TDeps>(
     },
 
     gradeEvalResult: async (c) => {
-      const evalRunId = str(c.params, 'evalRunId')
-      const rowId = str(c.params, 'rowId')
-      const wfRunId = str(c.params, 'wfRunId')
+      const evalRunId = requireStr(c.params, 'evalRunId')
+      const rowId = requireStr(c.params, 'rowId')
+      const wfRunId = requireStr(c.params, 'wfRunId')
       // Matrix cell identity to stamp on the result — all absent for a plain run.
       const cell = c.params as {
         modelId?: string
@@ -371,9 +371,9 @@ export function buildEvalHandlers<TDeps>(
     },
 
     recordEvalFailure: async (c) => {
-      const evalRunId = str(c.params, 'evalRunId')
-      const rowId = str(c.params, 'rowId')
-      const error = str(c.params, 'error')
+      const evalRunId = requireStr(c.params, 'evalRunId')
+      const rowId = requireStr(c.params, 'rowId')
+      const error = requireStr(c.params, 'error')
       const p = c.params as {
         wfRunId?: string
         modelId?: string
@@ -416,7 +416,7 @@ export function buildEvalHandlers<TDeps>(
     },
 
     finalizeEvalRun: async (c) => {
-      const evalRunId = str(c.params, 'evalRunId')
+      const evalRunId = requireStr(c.params, 'evalRunId')
       const found = await getEvalRun(c.db, evalRunId)
       if (!found) {
         throw new NotFoundError('Eval run not found.')
@@ -444,7 +444,7 @@ export function buildEvalHandlers<TDeps>(
     },
 
     getEvalRun: async (c) => {
-      const evalRunId = str(c.params, 'evalRunId')
+      const evalRunId = requireStr(c.params, 'evalRunId')
       const result = await getEvalRun(c.db, evalRunId)
       if (!result) {
         return null

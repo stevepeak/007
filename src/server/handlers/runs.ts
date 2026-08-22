@@ -21,7 +21,7 @@ import {
   optStr,
   requireHook,
   runSummary,
-  str,
+  requireStr,
   toEpoch,
   type CreateWfSdkHandlersOptions,
   type WfHandlers,
@@ -82,7 +82,7 @@ export function buildRunHandlers<TDeps>(
     // this is one indexed row, and the whole point is that a poll loop never
     // touches the step, log, graph or price-map reads to learn a run finished.
     getRunStatus: async (c) => {
-      const runId = str(c.params, 'runId')
+      const runId = requireStr(c.params, 'runId')
       const row = await getRunStatus(c.db, runId)
       if (!row) {
         return null
@@ -98,7 +98,7 @@ export function buildRunHandlers<TDeps>(
     },
 
     getRun: async (c) => {
-      const runId = str(c.params, 'runId')
+      const runId = requireStr(c.params, 'runId')
       const knownVersionId = optStr(c.params, 'knownVersionId')
       const settledStepCursor = optNum(c.params, 'settledStepCursor')
       const result = await getRun(c.db, runId, {
@@ -163,7 +163,7 @@ export function buildRunHandlers<TDeps>(
         opts.retryRun,
         'Retry is not configured for this host.',
       )
-      const runId = str(c.params, 'runId')
+      const runId = requireStr(c.params, 'runId')
       const mode: RetryRunMode =
         (c.params as { mode?: string }).mode === 'resume' ? 'resume' : 'restart'
       // The narrow read, not `getRun`: retry needs four run columns and one

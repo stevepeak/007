@@ -14,7 +14,7 @@ import type {
 } from '../protocol'
 
 import {
-  str,
+  requireStr,
   toEpoch,
   type CreateWfSdkHandlersOptions,
   type WfHandlers,
@@ -58,7 +58,7 @@ export function buildFeedbackHandlers<TDeps>(
     // `raterLabel` is just the display snapshot for triage.
     submitFeedback: async (c) => {
       const input = c.params as WfFeedbackSubmitInput
-      const subjectId = str(input, 'subjectId')
+      const subjectId = requireStr(input, 'subjectId')
       if (input.rating == null) {
         await deleteFeedback(c.db, subjectId)
         return { ok: true as const }
@@ -96,7 +96,7 @@ export function buildFeedbackHandlers<TDeps>(
     },
 
     setFeedbackAcknowledged: async (c) => {
-      const subjectId = str(c.params, 'subjectId')
+      const subjectId = requireStr(c.params, 'subjectId')
       const acknowledged =
         (c.params as { acknowledged?: boolean }).acknowledged === true
       await setFeedbackAck(c.db, {
@@ -108,7 +108,7 @@ export function buildFeedbackHandlers<TDeps>(
     },
 
     setFeedbackInternalNote: async (c) => {
-      const subjectId = str(c.params, 'subjectId')
+      const subjectId = requireStr(c.params, 'subjectId')
       const raw = (c.params as { note?: unknown }).note
       const note = typeof raw === 'string' && raw.trim() ? raw.trim() : null
       await setFeedbackInternalNote(c.db, { subjectId, note })

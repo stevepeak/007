@@ -22,7 +22,7 @@ import {
   NotFoundError,
   parseGraph,
   requireExists,
-  str,
+  requireStr,
   toEpoch,
   type CreateWfSdkHandlersOptions,
   type WfHandlers,
@@ -74,7 +74,7 @@ export function buildWorkflowHandlers<TDeps>(
     },
 
     getWorkflow: async (c) => {
-      const workflowId = str(c.params, 'workflowId')
+      const workflowId = requireStr(c.params, 'workflowId')
       const result = await getWorkflow(c.db, workflowId)
       if (!result) {
         return null
@@ -96,7 +96,7 @@ export function buildWorkflowHandlers<TDeps>(
     },
 
     createWorkflow: async (c) => {
-      const name = str(c.params, 'name')
+      const name = requireStr(c.params, 'name')
       const graph = parseGraph(c.params)
       const description = (c.params as { description?: string }).description
       return await createWorkflow(c.db, {
@@ -108,7 +108,7 @@ export function buildWorkflowHandlers<TDeps>(
     },
 
     updateDraft: async (c) => {
-      const workflowId = str(c.params, 'workflowId')
+      const workflowId = requireStr(c.params, 'workflowId')
       const graph = parseGraph(c.params)
       await requireExists(c.db, workflowId)
       await updateDraft(c.db, { workflowId, graph, lastEditedBy: c.ctx.userId })
@@ -116,7 +116,7 @@ export function buildWorkflowHandlers<TDeps>(
     },
 
     saveVersion: async (c) => {
-      const workflowId = str(c.params, 'workflowId')
+      const workflowId = requireStr(c.params, 'workflowId')
       const graph = parseGraph(c.params)
       const p = c.params as {
         changeNote?: string
@@ -173,7 +173,7 @@ export function buildWorkflowHandlers<TDeps>(
     },
 
     summarizeChanges: async (c) => {
-      const workflowId = str(c.params, 'workflowId')
+      const workflowId = requireStr(c.params, 'workflowId')
       const nextGraph = parseGraph(c.params)
       const owner = await getWorkflow(c.db, workflowId)
       if (!owner) {
@@ -192,7 +192,7 @@ export function buildWorkflowHandlers<TDeps>(
     },
 
     updateWorkflow: async (c) => {
-      const workflowId = str(c.params, 'workflowId')
+      const workflowId = requireStr(c.params, 'workflowId')
       const p = c.params as {
         name?: string
         description?: string | null
@@ -209,14 +209,14 @@ export function buildWorkflowHandlers<TDeps>(
     },
 
     discardDraft: async (c) => {
-      const workflowId = str(c.params, 'workflowId')
+      const workflowId = requireStr(c.params, 'workflowId')
       await requireExists(c.db, workflowId)
       await discardDraft(c.db, { workflowId })
       return { ok: true }
     },
 
     listVersions: async (c) => {
-      const workflowId = str(c.params, 'workflowId')
+      const workflowId = requireStr(c.params, 'workflowId')
       await requireExists(c.db, workflowId)
       const rows = await listVersions(c.db, workflowId)
       return rows.map((v) => ({
@@ -231,7 +231,7 @@ export function buildWorkflowHandlers<TDeps>(
     },
 
     getVersion: async (c) => {
-      const versionId = str(c.params, 'versionId')
+      const versionId = requireStr(c.params, 'versionId')
       const v = await getVersionGraph(c.db, versionId)
       if (!v) {
         return null
