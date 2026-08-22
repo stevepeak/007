@@ -12,6 +12,9 @@ change in the host's `getModel`.
 
 > **Integrating it into a project?** See [`guide.md`](./guide.md) — the practical
 > step-by-step. This README explains what the SDK _is_ and how it works.
+>
+> **Changing the SDK itself?** See [`AGENTS.md`](./AGENTS.md) — where things
+> live, what the compiler will and won't catch, and the conventions.
 
 ---
 
