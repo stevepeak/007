@@ -47,13 +47,11 @@ export function WfTabStrip() {
     closable < tabs.length ? 'Close other tabs' : 'Close all tabs'
 
   return (
-    // Tabs wrap (never scroll) so the strip stays a fixed height. Each tab's
-    // hover tooltip is an always-mounted, absolutely-positioned bubble (hidden
-    // via opacity, not display) — so it still counts toward scroll width even
-    // when idle, and a right-edge tab's bubble would push the whole page into
-    // horizontal scroll. `overflow-x-clip` contains that horizontal bleed while
-    // leaving overflow-y visible, so the tooltips (which drop *below* the strip)
-    // still render in full.
+    // Tabs wrap (never scroll) so the strip stays a fixed height. A wide tab
+    // row can still bleed horizontally, so `overflow-x-clip` contains that
+    // bleed while leaving overflow-y visible — the hover tooltips drop *below*
+    // the strip (portaled to <body>, so they add no layout) and still render in
+    // full.
     <div className="flex items-start gap-1 overflow-x-clip border-b border-neutral-200 bg-neutral-50 px-2 py-1">
       {/* Two columns — row heading, then that row's wrapping tabs — so every
           row's tabs start at the same x regardless of heading width. Home sits
@@ -140,10 +138,14 @@ function TabChrome({
   onClose,
 }: TabChromeProps) {
   return (
+    // The wrapper draws the pill (border/fill/rounding) but owns no padding:
+    // its two buttons tile the whole interior, so every pixel that *looks*
+    // clickable is. Spacing that used to live on the wrapper now lives inside
+    // the buttons, keeping the rendered geometry identical.
     <Tooltip content={<TrailTooltip trail={trail} />} side="bottom">
       <div
         className={cn(
-          'group/tab flex max-w-[12rem] items-center gap-1.5 rounded-md border px-2 py-1 text-sm',
+          'group/tab flex max-w-[12rem] items-stretch rounded-md border text-sm',
           active
             ? 'border-neutral-200 bg-white font-medium text-neutral-900 shadow-sm'
             : 'border-transparent text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800',
@@ -153,7 +155,11 @@ function TabChrome({
           type="button"
           onClick={onSelect}
           aria-label={iconOnly ? label : undefined}
-          className="flex min-w-0 items-center gap-1.5"
+          className={cn(
+            'flex min-w-0 flex-1 items-center gap-1.5 rounded-md py-1 pl-2',
+            // The close button supplies the rest of the right inset.
+            onClose ? 'pr-1.5' : 'pr-2',
+          )}
         >
           <span className="flex size-4 shrink-0 items-center justify-center">
             {icon}
@@ -164,13 +170,14 @@ function TabChrome({
           <button
             type="button"
             aria-label={`Close ${label}`}
-            onClick={(e) => {
-              e.stopPropagation()
-              onClose()
-            }}
-            className="flex size-4 shrink-0 items-center justify-center rounded text-neutral-400 opacity-0 hover:bg-neutral-200 hover:text-neutral-700 group-hover/tab:opacity-100"
+            onClick={onClose}
+            className="group/close flex shrink-0 items-center rounded-md py-1 pr-2 pl-0 opacity-0 group-hover/tab:opacity-100"
           >
-            <X className="size-3" />
+            {/* The glyph's hover square is driven by the button, not itself, so
+                it lights up across the whole (larger) target. */}
+            <span className="flex size-4 items-center justify-center rounded text-neutral-400 group-hover/close:bg-neutral-200 group-hover/close:text-neutral-700">
+              <X className="size-3" />
+            </span>
           </button>
         ) : null}
       </div>

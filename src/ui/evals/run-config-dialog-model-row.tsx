@@ -18,59 +18,65 @@ export function ModelMatrixRow({
   return (
     <div
       className={cn(
-        'flex items-center gap-2 px-3 py-1.5 text-sm transition',
+        'flex items-stretch pr-3 text-sm transition',
         selected ? 'bg-neutral-50/80' : 'hover:bg-neutral-50',
       )}
     >
-      {/* Checkbox — mirrors the count (0 = unchecked); toggles 0↔1. */}
+      {/* The row highlights on hover, so the row *is* the toggle: everything up
+          to the stepper is one checkbox button. Toggles 0↔1; the square below
+          is presentational (the role/state live on the button). */}
       <button
         type="button"
         role="checkbox"
         aria-checked={selected}
         aria-label={`Run ${model.label}`}
         onClick={() => onChange(selected ? 0 : 1)}
-        className={cn(
-          'flex size-5 shrink-0 items-center justify-center rounded border transition',
-          selected
-            ? 'border-neutral-900 bg-neutral-900 text-white'
-            : 'border-neutral-300 hover:border-neutral-500',
-        )}
+        className="group/row flex min-w-0 flex-1 items-center gap-2 py-1.5 pl-3 text-left"
       >
-        {selected ? <Check className="size-3.5" /> : null}
+        <span
+          className={cn(
+            'flex size-5 shrink-0 items-center justify-center rounded border transition',
+            selected
+              ? 'border-neutral-900 bg-neutral-900 text-white'
+              : 'border-neutral-300 group-hover/row:border-neutral-500',
+          )}
+        >
+          {selected ? <Check className="size-3.5" /> : null}
+        </span>
+
+        {/* icon + name */}
+        <BrandMark brand={brand} fallback={model.label} />
+        <span className="min-w-0 flex-1 truncate font-medium text-neutral-800">
+          {model.label}
+        </span>
+
+        {/* cost */}
+        <span className="w-16 shrink-0 text-right text-xs tabular-nums text-neutral-400">
+          {model.costPerMTok != null ? (
+            <>
+              ${model.costPerMTok.toFixed(2)}
+              <span className="text-neutral-300">/M</span>
+            </>
+          ) : (
+            <span className="text-neutral-300">—</span>
+          )}
+        </span>
+
+        {/* speed */}
+        <span className="w-16 shrink-0 text-right text-xs tabular-nums text-neutral-400">
+          {model.tokensPerSec != null ? (
+            <>
+              {model.tokensPerSec}
+              <span className="text-neutral-300"> tok/s</span>
+            </>
+          ) : (
+            <span className="text-neutral-300">—</span>
+          )}
+        </span>
       </button>
 
-      {/* icon + name */}
-      <BrandMark brand={brand} fallback={model.label} />
-      <span className="min-w-0 flex-1 truncate font-medium text-neutral-800">
-        {model.label}
-      </span>
-
-      {/* cost */}
-      <span className="w-16 shrink-0 text-right text-xs tabular-nums text-neutral-400">
-        {model.costPerMTok != null ? (
-          <>
-            ${model.costPerMTok.toFixed(2)}
-            <span className="text-neutral-300">/M</span>
-          </>
-        ) : (
-          <span className="text-neutral-300">—</span>
-        )}
-      </span>
-
-      {/* speed */}
-      <span className="w-16 shrink-0 text-right text-xs tabular-nums text-neutral-400">
-        {model.tokensPerSec != null ? (
-          <>
-            {model.tokensPerSec}
-            <span className="text-neutral-300"> tok/s</span>
-          </>
-        ) : (
-          <span className="text-neutral-300">—</span>
-        )}
-      </span>
-
       {/* -/+ stepper (default 0) */}
-      <div className="flex shrink-0 items-center gap-0.5">
+      <div className="flex shrink-0 items-center gap-0.5 pl-2">
         <button
           type="button"
           aria-label="One fewer run"
