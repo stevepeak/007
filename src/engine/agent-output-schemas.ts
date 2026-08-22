@@ -1,41 +1,38 @@
 // The built-in output JSON Schemas for the non-`object` agent output kinds, plus
 // the resolver that maps any output contract to its concrete JSON Schema.
 
+import { compileZodSource } from './agent-output-compiler'
 import type { JsonSchema } from './agent-output-scan'
 
-// A stable JSON Schema for the YES/NO output kind — the decision itself, how
-// sure the agent is of it, why, and what would have made it surer. `confidence`
-// and `feedback` exist so a gate can be more than a coin flip: a low score with
-// a concrete "I'd need the signed copy of the lease" is the difference between
-// a decision you can route on and one you should escalate. The descriptions are
-// the agent's only instructions for these fields, so they carry the contract
-// (including the 0–1 range, which JSON Schema bounds can't express through the
-// editor's Zod subset).
-export const BOOLEAN_OUTPUT_SCHEMA: JsonSchema = {
-  type: 'object',
-  properties: {
-    answer: {
-      type: 'boolean',
-      description: 'The decision: true for yes, false for no.',
-    },
-    confidence: {
-      type: 'number',
-      description:
-        'How sure you are of the answer, from 0 (a guess) to 1 (certain).',
-    },
-    reason: {
-      type: 'string',
-      description: 'A short justification for the decision.',
-    },
-    feedback: {
-      type: 'string',
-      description:
-        'What information or access would have raised your confidence. Empty if nothing would.',
-    },
-  },
-  required: ['answer', 'confidence', 'reason', 'feedback'],
-  additionalProperties: false,
-}
+// The YES/NO output kind, authored as Zod source and compiled once at load.
+//
+// The source is the single source of truth: the editor SHOWS this string
+// read-only and the engine RUNS the schema compiled from it, so what an author
+// reads is literally the contract, with no decompiler round-trip to drift
+// through. The `.describe()` text is the agent's only instruction for each
+// field, which is why the 0.0–1.0 range lives there — the compiler's subset has
+// no numeric bounds, and a bound the model never sees wouldn't help anyway.
+//
+// `confidence` and `feedback` exist so a gate can be more than a coin flip: a
+// low score with a concrete "I'd need the signed copy of the lease" is the
+// difference between a decision you can route on and one you should escalate.
+export const BOOLEAN_OUTPUT_SOURCE = `z.object({
+  answer: z.boolean().describe("The decision: true for yes, false for no."),
+  confidence: z.number().describe("How sure you are of the answer, as a decimal from 0.0 (a pure guess) to 1.0 (certain) — e.g. 0.25, 0.8, 0.95."),
+  reason: z.string().describe("A short justification for the decision."),
+  feedback: z.string().nullish().describe("What information or access would have raised your confidence. Null if nothing would."),
+})`
+
+// Compiled at module load. The source is a fixed literal covered by a test, so
+// a failure here is a bug in this file, not bad input — hence the throw rather
+// than a silent fallback that would ship a wrong contract to every YES/NO agent.
+export const BOOLEAN_OUTPUT_SCHEMA: JsonSchema = (() => {
+  const compiled = compileZodSource(BOOLEAN_OUTPUT_SOURCE)
+  if (!compiled.ok) {
+    throw new Error(`BOOLEAN_OUTPUT_SOURCE does not compile: ${compiled.error}`)
+  }
+  return compiled.schema
+})()
 
 // The JSON Schema for the plain-text output kind — the agent's final answer
 // under a single `text` field. Mirrors the `{ text }` shape agent nodes emit.

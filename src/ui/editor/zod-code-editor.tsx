@@ -46,6 +46,7 @@ const COMPLETIONS: Completion[] = [
   },
   { label: '.optional()', trigger: '.optional', insert: '.optional()' },
   { label: '.nullable()', trigger: '.nullable', insert: '.nullable()' },
+  { label: '.nullish()', trigger: '.nullish', insert: '.nullish()' },
   { label: '.int()', trigger: '.int', insert: '.int()' },
   { label: '.array()', trigger: '.array', insert: '.array()' },
   {
@@ -92,7 +93,7 @@ function tokenize(source: string): Token[] {
   const out: Token[] = []
   const n = source.length
   let i = 0
-  const isIdentStart = (c: string) => /[A-Za-z_$]/.test(c)
+  const isIdentStart = (c: string) => /[A-Z_$]/i.test(c)
   const isIdent = (c: string) => /[\w$]/.test(c)
 
   while (i < n) {
@@ -134,9 +135,9 @@ function tokenize(source: string): Token[] {
       continue
     }
     // Number.
-    if (/[0-9]/.test(c)) {
+    if (/\d/.test(c)) {
       let j = i + 1
-      while (j < n && /[0-9._a-fA-FxXeE]/.test(source[j])) j++
+      while (j < n && /[0-9._a-fx]/i.test(source[j])) j++
       out.push({ text: source.slice(i, j), cls: 'text-amber-600' })
       i = j
       continue
@@ -221,13 +222,13 @@ export function ZodCodeEditor({
   // The `[.\w]` run ending at the caret — the token we complete against.
   function tokenBeforeCaret(el: HTMLTextAreaElement) {
     const upto = el.value.slice(0, el.selectionStart)
-    const word = /[.A-Za-z]*$/.exec(upto)?.[0] ?? ''
+    const word = /[.A-Z]*$/i.exec(upto)?.[0] ?? ''
     return { word, start: el.selectionStart - word.length }
   }
 
   function refresh(el: HTMLTextAreaElement) {
     const { word } = tokenBeforeCaret(el)
-    if (word.length < 1 || (word[0] !== 'z' && word[0] !== '.')) {
+    if (word.length === 0 || (word[0] !== 'z' && word[0] !== '.')) {
       setOpen(false)
       return
     }

@@ -145,11 +145,17 @@ class Parser {
           schema = { type: 'array', items: schema }
           break
         case 'nullable':
+        case 'nullish':
           this.expect('punct', ')')
           // Mirror Zod v4's JSON Schema output: a union of the type with null.
           // A following `.describe()` then spreads the description onto the
           // outer node, matching how the seeded schemas serialize.
           schema = { anyOf: [schema, { type: 'null' }] }
+          // `.nullish()` is `.nullable().optional()`. The nullable half is what
+          // reaches the provider; the optional half is inert here for the same
+          // reason `.optional()` is (see `parseObjectCall` — strict structured
+          // output requires every key), so both compile to the same union.
+          if (method.value === 'nullish') optional = true
           break
         case 'int':
           this.expect('punct', ')')
@@ -166,7 +172,7 @@ class Parser {
         }
         default:
           throw new ParseError(
-            `Unsupported method ".${method.value}()". Use .optional(), .nullable(), .int(), .array(), or .describe("…").`,
+            `Unsupported method ".${method.value}()". Use .optional(), .nullable(), .nullish(), .int(), .array(), or .describe("…").`,
           )
       }
     }
@@ -276,7 +282,8 @@ class Parser {
 /**
  * Compile a Zod-schema source string into a JSON Schema. Supports the common
  * structured-output subset: z.string/number/boolean/enum, z.array(...),
- * z.object({...}) (nestable), plus the .optional(), .array(), and .describe()
+ * z.object({...}) (nestable), plus the .optional(), .nullable(), .nullish(),
+ * .int(), .array(), and .describe()
  * chains. The root must be a z.object. Never evaluates the source.
  */
 export function compileZodSource(source: string): CompileResult {

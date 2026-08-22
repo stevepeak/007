@@ -81,6 +81,7 @@ export {
 export {
   agentOutputJsonSchema,
   BOOLEAN_OUTPUT_SCHEMA,
+  BOOLEAN_OUTPUT_SOURCE,
   compileZodSource,
   formatZodSource,
   TEXT_OUTPUT_SCHEMA,

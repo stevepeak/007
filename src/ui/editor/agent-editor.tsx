@@ -889,10 +889,10 @@ function AgentEditorInner({
                     />
                   </EditorSection>
 
-                  {/* Prompt */}
+                  {/* System Prompt */}
                   <EditorSection
                     icon={MessageSquareText}
-                    title="Prompt"
+                    title="System Prompt"
                     description="The system instructions that define what this agent does."
                   >
                     <PromptBodyEditor

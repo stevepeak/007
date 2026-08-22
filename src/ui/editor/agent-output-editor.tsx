@@ -9,7 +9,7 @@ import {
 import { useMemo, useState } from 'react'
 
 import {
-  BOOLEAN_OUTPUT_SCHEMA,
+  BOOLEAN_OUTPUT_SOURCE,
   compileZodSource,
   formatZodSource,
   zodSourceFromJsonSchema,
@@ -17,6 +17,7 @@ import {
 } from '../../engine'
 import { cn } from '../cn'
 import { askCopilot, useCopilotSeedAvailable } from '../copilot/ask'
+
 import {
   buildAgentSchemaCopilotPrompt,
   type AgentSchemaPromptInput,
@@ -62,16 +63,12 @@ const SCHEMA_HELP = (
       <code className="rounded bg-neutral-100 px-1">z.object({'{…}'})</code>, and
       the <code className="rounded bg-neutral-100 px-1">.optional()</code> /{' '}
       <code className="rounded bg-neutral-100 px-1">.nullable()</code> /{' '}
+      <code className="rounded bg-neutral-100 px-1">.nullish()</code> /{' '}
       <code className="rounded bg-neutral-100 px-1">.int()</code> /{' '}
       <code className="rounded bg-neutral-100 px-1">.describe("…")</code> chains.
     </p>
   </>
 )
-
-// The YES/NO shape, shown read-only in the same editor the author writes a
-// structured schema in. Decompiled from the engine's own schema rather than
-// typed out here, so the contract on screen is the one that actually runs.
-const BOOLEAN_SOURCE = zodSourceFromJsonSchema(BOOLEAN_OUTPUT_SCHEMA)
 
 const EMPTY_SCHEMA = {
   type: 'object',
@@ -249,7 +246,11 @@ export function AgentOutputEditor({
             The agent returns this fixed shape — the decision routes the node's
             yes/no edges, and the rest flows downstream.
           </p>
-          <ZodCodeEditor value={BOOLEAN_SOURCE} onChange={() => {}} readOnly />
+          <ZodCodeEditor
+            value={BOOLEAN_OUTPUT_SOURCE}
+            onChange={() => {}}
+            readOnly
+          />
         </div>
       ) : null}
 
