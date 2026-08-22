@@ -68,8 +68,7 @@ describe('Scheduler', () => {
     }
 
     // Minimal driver mirroring the executor/graph-workflow loop.
-    while (true) {
-      if (s.pollOutput()) break
+    while (!s.pollOutput()) {
       const claimed = s.takeReady()
       if (claimed.length === 0) throw new Error('stalled')
       const settled = await Promise.all(

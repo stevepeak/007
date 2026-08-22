@@ -1,9 +1,12 @@
-import { describe, expect, test } from 'bun:test'
 import { MockLanguageModelV3 } from 'ai/test'
+import { describe, expect, test } from 'bun:test'
 import { z } from 'zod'
 
 import { agentConfigSchema, type WfSdkConfig } from '../engine'
+import { makeAgentConfig } from '../engine/agent-test-helpers'
+import { mockFinish, mockUsage } from '../engine/model-test-helpers'
 import type { AgentNodeMeta } from '../engine/nodes/agent'
+
 import { runWorkflowUnderConditions } from './index'
 
 // Matrix eval override — proves `runContext.agentOverride` swaps the agent
@@ -21,8 +24,8 @@ describe('agent override — matrix eval seam', () => {
         return new MockLanguageModelV3({
           doGenerate: async () => ({
             content: [{ type: 'text', text: 'ok' }],
-            finishReason: 'stop',
-            usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
+            finishReason: mockFinish('stop'),
+            usage: mockUsage(1, 2),
             warnings: [],
           }),
         })
@@ -74,11 +77,12 @@ describe('agent override — matrix eval seam', () => {
   const manifest = [
     {
       kind: 'agent' as const,
+      pinnedVersion: null,
       id: 'assistant',
       versionId: 'v1',
       versionNumber: 1,
       name: 'Assistant',
-      config: {
+      config: makeAgentConfig({
         modelId: 'mock',
         prompt: 'Saved prompt.',
         userPrompt: 'Go.',
@@ -86,7 +90,7 @@ describe('agent override — matrix eval seam', () => {
         toolIds: [],
         maxTurns: 5,
         output: { kind: 'text' as const },
-      },
+      }),
     },
   ]
 

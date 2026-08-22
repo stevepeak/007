@@ -1,10 +1,12 @@
 import { MockLanguageModelV3 } from 'ai/test'
 import { describe, expect, test } from 'bun:test'
 
+import { makeAgentConfig } from '../agent-test-helpers'
 import type { AgentConfig, SubAgentsConfig, WfRunManifestEntry } from '../graph'
+import { mockFinish, mockUsage } from '../model-test-helpers'
+import type { RunNodeContext } from '../run-node'
 import { createMemoryRunRecorder } from '../run-recorder'
 import { createMemorySink } from '../stream-sink'
-import type { RunNodeContext } from '../run-node'
 import type { ToolRegistry } from '../tool-registry'
 
 import type { JoinResult } from './spawn-manager'
@@ -18,9 +20,10 @@ import { synthesizeDelegationTools } from './sub-agent'
 // loop) so the test is deterministic; the sub-agents run through the genuine
 // `runAgentGeneration` path against a mock model.
 
-const baseConfig = (over: Partial<AgentConfig>): AgentConfig => ({
+function baseConfig (over: Partial<AgentConfig>): AgentConfig {
+  return makeAgentConfig({
   modelId: 'mock',
-  prompt: '',
+  prompt: 'PRIMARY orchestrator.',
   userPrompt: 'Go.',
   inputKind: 'task' as const,
   toolIds: [],
@@ -33,7 +36,8 @@ const baseConfig = (over: Partial<AgentConfig>): AgentConfig => ({
     allowStopSignal: true,
   },
   ...over,
-})
+  })
+}
 
 function agentEntry(
   id: string,
@@ -96,25 +100,6 @@ async function call(tool: unknown, args: unknown): Promise<unknown> {
   return execute(args, { toolCallId: 'call', messages: [] })
 }
 
-const textModel = (marker: string, text: string) =>
-  new MockLanguageModelV3({
-    doGenerate: async (options) => {
-      if (!systemMarker(options).includes(marker)) {
-        return {
-          content: [{ type: 'text' as const, text: 'unexpected' }],
-          finishReason: 'stop' as const,
-          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-          warnings: [],
-        }
-      }
-      return {
-        content: [{ type: 'text' as const, text }],
-        finishReason: 'stop' as const,
-        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-        warnings: [],
-      }
-    },
-  })
 
 describe('sub-agent delegation — end to end', () => {
   test('join collects every sub-agent result and records child steps', async () => {
@@ -135,8 +120,8 @@ describe('sub-agent delegation — end to end', () => {
           const text = m.includes('RESEARCH') ? 'finding 42' : 'looks fine'
           return {
             content: [{ type: 'text' as const, text }],
-            finishReason: 'stop' as const,
-            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            finishReason: mockFinish('stop'),
+            usage: mockUsage(1, 1),
             warnings: [],
           }
         },
@@ -202,7 +187,7 @@ describe('sub-agent delegation — end to end', () => {
           const m = systemMarker(options)
           if (m.includes('RESEARCH')) {
             // Never resolves → this sub-agent stays running.
-            return new Promise(() => {})
+            return await new Promise(() => {})
           }
           return {
             content: [
@@ -211,8 +196,8 @@ describe('sub-agent delegation — end to end', () => {
                 text: JSON.stringify({ __stop: true, reason: 'critical' }),
               },
             ],
-            finishReason: 'stop' as const,
-            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            finishReason: mockFinish('stop'),
+            usage: mockUsage(1, 1),
             warnings: [],
           }
         },
@@ -267,8 +252,8 @@ describe('sub-agent delegation — end to end', () => {
               { type: 'reasoning' as const, text: 'weighing the angle' },
               { type: 'text' as const, text: 'done' },
             ],
-            finishReason: 'stop' as const,
-            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            finishReason: mockFinish('stop'),
+            usage: mockUsage(1, 1),
             warnings: [],
           }),
         })
@@ -288,7 +273,7 @@ describe('sub-agent delegation — end to end', () => {
       // `progress` is the only user-facing level.
       expect(
         sink.logs.filter((l) => l.level === 'progress').map((l) => l.message),
-      ).toEqual(expected)
+      ).toEqual([...expected])
       // The dev feed records reasoning either way — that's the whole point of
       // the split, and why the run viewer showed thinking with the toggle off.
       expect(sink.logs.filter((l) => l.level === 'thinking')).toHaveLength(1)

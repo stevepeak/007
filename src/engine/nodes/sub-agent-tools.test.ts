@@ -11,12 +11,14 @@ import {
 // The pure synthesis layer: deterministic, collision-free tool names and the
 // per-target input schema shape. Shared by the runtime and the editor preview.
 
-const agent = (id: string, extra: Partial<SubAgentTarget> = {}): SubAgentTarget => ({
+function agent (id: string, extra: Partial<SubAgentTarget> = {}): SubAgentTarget {
+  return {
   kind: 'agent',
   id,
   version: null,
   ...extra,
-})
+}
+}
 
 describe('synthesizeTargets — naming', () => {
   test('derives spawn_<slug> from the display name', () => {

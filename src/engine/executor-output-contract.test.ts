@@ -1,9 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { z } from 'zod'
 
-import type { WfSdkConfig } from './config'
+import type { RunCompletion, WfSdkConfig } from './config'
 import { executeWorkflow } from './executor'
-import type { RunCompletion } from './config'
 import { createMemoryRunRecorder } from './run-recorder'
 import type { ToolRegistry } from './tool-registry'
 

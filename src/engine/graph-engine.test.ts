@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
-import { DEFAULT_WF_ENGINE, resolveGraphEngine } from './graph-engine'
 import { chainGraph } from './executor-test-helpers'
+import { DEFAULT_WF_ENGINE, resolveGraphEngine } from './graph-engine'
 
 // A graph whose trigger declares `engine`. Built off the shared chain graph so
 // these stay honest about the real node shape.

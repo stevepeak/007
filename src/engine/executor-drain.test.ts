@@ -54,7 +54,7 @@ function makeRegistry(timeline: string[]): ToolRegistry<Deps> {
         name: 'Failing side effect',
         kind: 'function' as const,
         description: 'A background arm that breaks.',
-        // eslint-disable-next-line @typescript-eslint/require-await
+         
         build: () => async () => {
           timeline.push('side-boom')
           throw new Error('side arm failed')

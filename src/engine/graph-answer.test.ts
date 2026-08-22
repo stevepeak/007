@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
-import { resolveAnswerNodeIds } from './graph-engine'
 import { chainGraph } from './executor-test-helpers'
+import { resolveAnswerNodeIds } from './graph-engine'
 
 // `chainGraph` is trigger → boom → after → output, with the Output bound to
 // `after`. That binding is exactly what names the answer-producing node.

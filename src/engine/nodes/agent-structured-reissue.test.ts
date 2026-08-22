@@ -1,7 +1,9 @@
 import { MockLanguageModelV3 } from 'ai/test'
 import { describe, expect, test } from 'bun:test'
 
+import { makeAgentConfig } from '../agent-test-helpers'
 import type { AgentNode, WfRunManifestEntry } from '../graph'
+import {  mockUsage } from '../model-test-helpers'
 import type { StreamSink } from '../stream-sink'
 
 import { executeAgentNode } from './agent'
@@ -25,7 +27,7 @@ const MANIFEST: WfRunManifestEntry[] = [
     versionId: 'v1',
     versionNumber: 1,
     name: 'Lister',
-    config: {
+    config: makeAgentConfig({
       modelId: 'mock',
       prompt: 'List the titles.',
       userPrompt: 'Go.',
@@ -41,7 +43,7 @@ const MANIFEST: WfRunManifestEntry[] = [
           additionalProperties: false,
         },
       },
-    },
+    }),
   },
 ]
 
@@ -51,7 +53,7 @@ const NODE: AgentNode = {
   label: 'List titles',
   position: { x: 0, y: 0 },
   informUser: { mode: 'off' },
-  config: { agentId: 'lister', version: null, inputs: {}, imageInputs: {} },
+  config: { agentId: 'lister', version: null, inputs: {} },
 }
 
 const GOOD = JSON.stringify({ titles: ['Bitterballen', 'Stamppot'] })
@@ -70,7 +72,7 @@ function scripted(replies: string[], calls: { n: number }) {
       return {
         content: [{ type: 'text' as const, text }],
         finishReason: { unified: text === GOOD ? 'stop' : 'length' },
-        usage: { inputTokens: 10, outputTokens: 1, totalTokens: 11 },
+        usage: mockUsage(10, 1),
         warnings: [],
       } as never
     },
@@ -80,7 +82,6 @@ function scripted(replies: string[], calls: { n: number }) {
 function run(replies: string[], calls: { n: number }, sink?: StreamSink) {
   return executeAgentNode<unknown>({
     node: NODE,
-    input: 'a menu',
     getModel: () => scripted(replies, calls),
     toolRegistry: new Map(),
     toolDeps: {},

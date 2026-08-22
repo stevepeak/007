@@ -3,6 +3,9 @@ import { describe, expect, test } from 'bun:test'
 import { z } from 'zod'
 
 import { makeBlobRef, type ToolRegistry, type WfSdkConfig } from '../engine'
+import { makeAgentConfig } from '../engine/agent-test-helpers'
+import { mockFinish, mockUsage } from '../engine/model-test-helpers'
+
 import { runWorkflowUnderConditions } from './index'
 
 // These tests exercise the whole engine integration through the eval harness:
@@ -128,8 +131,8 @@ describe('eval harness — agent graph', () => {
       new MockLanguageModelV3({
         doGenerate: async () => ({
           content: [{ type: 'text', text: 'Hello there' }],
-          finishReason: 'stop',
-          usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
+          finishReason: mockFinish('stop'),
+          usage: mockUsage(1, 2),
           warnings: [],
         }),
       }),
@@ -187,11 +190,12 @@ describe('eval harness — agent graph', () => {
       manifest: [
         {
           kind: 'agent',
+          pinnedVersion: null,
           id: 'assistant',
           versionId: 'v1',
           versionNumber: 1,
           name: 'Assistant',
-          config: {
+          config: makeAgentConfig({
             modelId: 'mock',
             prompt: 'Be helpful.',
             userPrompt: 'Go.',
@@ -199,7 +203,7 @@ describe('eval harness — agent graph', () => {
             toolIds: [],
             maxTurns: 5,
             output: { kind: 'text' },
-          },
+          }),
         },
       ],
     })
@@ -280,8 +284,8 @@ describe('eval harness — blob-ref rehydration', () => {
       new MockLanguageModelV3({
         doGenerate: async () => ({
           content: [{ type: 'text', text: 'ok' }],
-          finishReason: 'stop',
-          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          finishReason: mockFinish('stop'),
+          usage: mockUsage(1, 1),
           warnings: [],
         }),
       }),
@@ -324,6 +328,7 @@ describe('eval harness — blob-ref rehydration', () => {
       {
         id: 'summarize',
         kind: 'agent',
+        pinnedVersion: null,
         label: 'Summarize',
         position: { x: 400, y: 0 },
         // Binds the pointer field exactly as it would a plain string.
@@ -361,11 +366,12 @@ describe('eval harness — blob-ref rehydration', () => {
   const manifest = [
     {
       kind: 'agent' as const,
+      pinnedVersion: null,
       id: 'summarizer',
       versionId: 'v1',
       versionNumber: 1,
       name: 'Summarizer',
-      config: {
+      config: makeAgentConfig({
         modelId: 'mock',
         prompt: 'Summarize this:\n${text}',
         userPrompt: 'Go.',
@@ -373,7 +379,7 @@ describe('eval harness — blob-ref rehydration', () => {
         toolIds: [],
         maxTurns: 1,
         output: { kind: 'text' as const },
-      },
+      }),
     },
   ]
 

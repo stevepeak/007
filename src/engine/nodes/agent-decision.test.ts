@@ -1,7 +1,10 @@
 import { MockLanguageModelV3 } from 'ai/test'
 import { describe, expect, test } from 'bun:test'
 
+import { makeAgentConfig } from '../agent-test-helpers'
 import type { AgentNode, WfRunManifestEntry } from '../graph'
+import { mockFinish, mockUsage } from '../model-test-helpers'
+
 import { executeAgentNode } from './agent'
 
 // A YES/NO (boolean) output agent doubles as a Branch: `executeAgentNode`
@@ -20,7 +23,7 @@ function manifest(output: {
       versionId: 'v1',
       versionNumber: 1,
       name: 'Gate',
-      config: {
+      config: makeAgentConfig({
         modelId: 'mock',
         prompt: 'Is this urgent?',
         userPrompt: 'Go.',
@@ -28,7 +31,7 @@ function manifest(output: {
         toolIds: [],
         maxTurns: 1,
         output,
-      },
+      }),
     },
   ]
 }
@@ -39,7 +42,7 @@ const gateNode: AgentNode = {
   label: 'Gate',
   position: { x: 0, y: 0 },
   informUser: { mode: 'off' },
-  config: { agentId: 'gate', version: null, inputs: {}, imageInputs: {} },
+  config: { agentId: 'gate', version: null, inputs: {} },
 }
 
 // A generateObject-style mock: returns the object as a JSON text part, which the
@@ -48,17 +51,16 @@ function booleanModel(answer: boolean, reason: string) {
   return new MockLanguageModelV3({
     doGenerate: async () => ({
       content: [{ type: 'text', text: JSON.stringify({ answer, reason }) }],
-      finishReason: 'stop',
-      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      finishReason: mockFinish('stop'),
+      usage: mockUsage(1, 1),
       warnings: [],
     }),
   })
 }
 
 async function runGate(answer: boolean, reason: string) {
-  return executeAgentNode<unknown>({
+  return await executeAgentNode<unknown>({
     node: gateNode,
-    input: 'a message',
     getModel: () => booleanModel(answer, reason),
     toolRegistry: new Map(),
     toolDeps: {},
@@ -85,13 +87,12 @@ describe('agent node — YES/NO output as a decision', () => {
   test('a text-output agent produces no decision', async () => {
     const r = await executeAgentNode<unknown>({
       node: gateNode,
-      input: 'a message',
       getModel: () =>
         new MockLanguageModelV3({
           doGenerate: async () => ({
             content: [{ type: 'text', text: 'just some prose' }],
-            finishReason: 'stop',
-            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            finishReason: mockFinish('stop'),
+            usage: mockUsage(1, 1),
             warnings: [],
           }),
         }),

@@ -22,6 +22,17 @@ function node(
   return { id, kind, label, position: { x: 0, y: 0 }, ...extra }
 }
 
+/**
+ * Narrow a tree to its node rows.
+ *
+ * `buildActivityTree` returns `ActivityTopRow[]` — node rows plus run-level
+ * `state` markers. Every fixture below feeds node steps only, so no state row is
+ * ever produced; this states that expectation once instead of casting at each
+ * assertion.
+ */
+const nodeRows = (rows: ActivityTopRow[]): ActivityNodeRow[] =>
+  rows.filter((r): r is ActivityNodeRow => r.kind === 'node')
+
 function graphOf(nodes: ReturnType<typeof node>[]): WorkflowGraph {
   return { version: 1, nodes, edges: [] } as unknown as WorkflowGraph
 }
@@ -43,6 +54,7 @@ function step(
     input: null,
     output: null,
     branchResult: null,
+    cursor: sequence,
     meta: null,
     error: null,
     startedAt: null,
@@ -77,22 +89,22 @@ const GRAPH = graphOf([
 
 describe('buildActivityTree — top level', () => {
   test('excludes bookend kinds and orders by executed sequence', () => {
-    const rows = buildActivityTree({
+    const rows = nodeRows(buildActivityTree({
       graph: GRAPH,
       steps: [step('read', 'tool', 1, 'completed'), step('draft', 'agent', 2, 'running')],
       logs: [],
-    })
+    }))
     expect(rows.map((r) => r.nodeId)).toEqual(['read', 'draft'])
   })
 
   test('not-yet-run graph nodes surface as pending rows', () => {
-    const rows = buildActivityTree({ graph: GRAPH, steps: [], logs: [] })
+    const rows = nodeRows(buildActivityTree({ graph: GRAPH, steps: [], logs: [] }))
     expect(rows.map((r) => r.status)).toEqual(['pending', 'pending'])
     expect(rows.every((r) => !r.expandable)).toBe(true)
   })
 
   test('duration from step timing, fallback to node-start/end log pairing', () => {
-    const rows = buildActivityTree({
+    const rows = nodeRows(buildActivityTree({
       graph: GRAPH,
       steps: [
         step('read', 'tool', 1, 'completed', { startedAt: 1000, finishedAt: 1350 }),
@@ -102,13 +114,13 @@ describe('buildActivityTree — top level', () => {
         log('draft', 'node-start', '▶ Draft', 2000),
         log('draft', 'node-end', '✓ Draft', 2500),
       ],
-    })
+    }))
     expect(byKey(rows, 'read').durationMs).toBe(350)
     expect(byKey(rows, 'draft').durationMs).toBe(500)
   })
 
   test('attaches thinking/tool leaves but not the node bookends', () => {
-    const rows = buildActivityTree({
+    const rows = nodeRows(buildActivityTree({
       graph: GRAPH,
       steps: [step('draft', 'agent', 1, 'completed')],
       logs: [
@@ -117,7 +129,7 @@ describe('buildActivityTree — top level', () => {
         log('draft', 'tool', 'Called search', 3),
         log('draft', 'node-end', '✓ Draft', 4),
       ],
-    })
+    }))
     const draft = byKey(rows, 'draft')
     expect(draft.children.map((c) => c.kind)).toEqual(['log', 'log'])
     expect(draft.children.map((c) => (c.kind === 'log' ? c.level : ''))).toEqual([
@@ -166,7 +178,7 @@ describe('buildActivityTree — iterations', () => {
   }
 
   test('surfaces done/total item counts on the iteration row', () => {
-    const rows = buildActivityTree({ graph: ITER_GRAPH, steps: iterSteps(), logs: [] })
+    const rows = nodeRows(buildActivityTree({ graph: ITER_GRAPH, steps: iterSteps(), logs: [] }))
     const loop = byKey(rows, 'loop')
     // Two of three items recorded; both terminal (completed + failed) → 2/3.
     expect(loop.itemsTotal).toBe(3)
@@ -174,7 +186,7 @@ describe('buildActivityTree — iterations', () => {
   })
 
   test('groups inner steps by item, labels from subgraph, rolls up status', () => {
-    const rows = buildActivityTree({ graph: ITER_GRAPH, steps: iterSteps(), logs: [] })
+    const rows = nodeRows(buildActivityTree({ graph: ITER_GRAPH, steps: iterSteps(), logs: [] }))
     const loop = byKey(rows, 'loop')
     expect(loop.status).toBe('running')
     expect(loop.children.map((c) => (c.kind === 'group' ? c.label : ''))).toEqual([
@@ -196,12 +208,12 @@ describe('buildActivityTree — iterations', () => {
   })
 
   test('running loop with no items yet shows a live placeholder', () => {
-    const rows = buildActivityTree({
+    const rows = nodeRows(buildActivityTree({
       graph: ITER_GRAPH,
       steps: [step('loop', 'iteration', 1, 'running', { meta: { total: 5 } })],
       logs: [],
       live: true,
-    })
+    }))
     const loop = byKey(rows, 'loop')
     expect(loop.children).toHaveLength(1)
     expect(loop.children[0].kind).toBe('log')
@@ -211,7 +223,7 @@ describe('buildActivityTree — iterations', () => {
 
 describe('buildActivityTree — sub-agents & null graph', () => {
   test('sub-agent delegations nest under the agent and select the parent', () => {
-    const rows = buildActivityTree({
+    const rows = nodeRows(buildActivityTree({
       graph: GRAPH,
       steps: [
         step('draft', 'agent', 1, 'completed'),
@@ -222,7 +234,7 @@ describe('buildActivityTree — sub-agents & null graph', () => {
         }),
       ],
       logs: [],
-    })
+    }))
     const draft = byKey(rows, 'draft')
     const sub = draft.children[0]
     if (sub.kind !== 'node') throw new Error('expected sub-agent node row')
@@ -231,24 +243,24 @@ describe('buildActivityTree — sub-agents & null graph', () => {
   })
 
   test('agent rows carry step cost; non-agents leave it null', () => {
-    const rows = buildActivityTree({
+    const rows = nodeRows(buildActivityTree({
       graph: GRAPH,
       steps: [
         step('draft', 'agent', 2, 'completed', { costUsd: 0.0123 }),
         step('read', 'tool', 1, 'completed', { costUsd: null }),
       ],
       logs: [],
-    })
+    }))
     expect(byKey(rows, 'draft').costUsd).toBe(0.0123)
     expect(byKey(rows, 'read').costUsd).toBeNull()
   })
 
   test('null graph builds from steps, ordered by sequence', () => {
-    const rows = buildActivityTree({
+    const rows = nodeRows(buildActivityTree({
       graph: null,
       steps: [step('b', 'tool', 2, 'completed'), step('a', 'agent', 1, 'running')],
       logs: [],
-    })
+    }))
     expect(rows.map((r) => r.nodeId)).toEqual(['a', 'b'])
     expect(rows.map((r) => r.label)).toEqual(['a', 'b'])
   })
@@ -365,11 +377,11 @@ describe('buildActivityTree — run lifecycle markers', () => {
   })
 
   test('node ordering is untouched by the markers', () => {
-    const withMarkers = buildActivityTree({
+    const withMarkers = nodeRows(buildActivityTree({
       graph: GRAPH,
       steps: [step('read', 'tool', 1, 'completed'), step('draft', 'agent', 2, 'running')],
       logs: [stateLog('running', 1), stateLog('done', 2)],
-    })
+    }))
     expect(withMarkers.filter(isNode).map((r) => r.nodeId)).toEqual([
       'read',
       'draft',

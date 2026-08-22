@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
+import { makeAgentConfig } from './agent-test-helpers'
 import { agentFromManifest, type WfRunManifestEntry } from './graph'
 
 // The run manifest keys agent entries by (agentId, pin). A node that floats to
@@ -7,13 +8,15 @@ import { agentFromManifest, type WfRunManifestEntry } from './graph'
 // reference the same agent in one run, so each must resolve to its own frozen
 // config.
 
-const agentConfig = (prompt: string) => ({
-  modelId: 'mock',
-  prompt,
-  toolIds: [],
-  maxTurns: 1,
-  output: { kind: 'text' as const },
-})
+function agentConfig (prompt: string) {
+  return makeAgentConfig({
+    modelId: 'mock',
+    prompt,
+    toolIds: [],
+    maxTurns: 1,
+    output: { kind: 'text' as const },
+  })
+}
 
 const MANIFEST: WfRunManifestEntry[] = [
   {

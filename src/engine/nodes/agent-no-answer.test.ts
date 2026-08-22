@@ -3,7 +3,9 @@ import { MockLanguageModelV3 } from 'ai/test'
 import { describe, expect, test } from 'bun:test'
 import { z } from 'zod'
 
+import { makeAgentConfig } from '../agent-test-helpers'
 import type { AgentNode, WfRunManifestEntry } from '../graph'
+import { mockFinish, mockUsage } from '../model-test-helpers'
 import type { ToolRegistry } from '../tool-registry'
 
 import { executeAgentNode } from './agent'
@@ -19,7 +21,8 @@ import { AGENT_NO_OUTPUT } from './agent-generation'
 // write its answer, and an empty answer that arrives anyway fails the node
 // loudly instead of propagating.
 
-const MANIFEST = (maxTurns: number): WfRunManifestEntry[] => [
+function MANIFEST (maxTurns: number): WfRunManifestEntry[] {
+  return [
   {
     kind: 'agent',
     id: 'bot',
@@ -27,7 +30,7 @@ const MANIFEST = (maxTurns: number): WfRunManifestEntry[] => [
     versionId: 'v1',
     versionNumber: 1,
     name: 'Researcher',
-    config: {
+    config: makeAgentConfig({
       modelId: 'mock',
       prompt: 'Research, then answer.',
       userPrompt: 'Go.',
@@ -35,9 +38,10 @@ const MANIFEST = (maxTurns: number): WfRunManifestEntry[] => [
       toolIds: ['lookup'],
       maxTurns,
       output: { kind: 'text' },
-    },
+    }),
   },
 ]
+}
 
 const NODE: AgentNode = {
   id: 'agent',
@@ -45,7 +49,7 @@ const NODE: AgentNode = {
   label: 'Researcher',
   position: { x: 0, y: 0 },
   informUser: { mode: 'off' },
-  config: { agentId: 'bot', version: null, inputs: {}, imageInputs: {} },
+  config: { agentId: 'bot', version: null, inputs: {} },
 }
 
 const REGISTRY: ToolRegistry<unknown> = new Map([
@@ -88,18 +92,17 @@ function insatiableResearcher(seen: { toolChoices: unknown[] }) {
                 input: JSON.stringify({ q: 'again' }),
               },
             ],
-        finishReason: toolsDenied ? ('stop' as const) : ('tool-calls' as const),
-        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        finishReason: toolsDenied ? mockFinish('stop') : mockFinish('tool-calls'),
+        usage: mockUsage(1, 1),
         warnings: [],
       }
     },
   })
 }
 
-const run = (model: MockLanguageModelV3, maxTurns: number) =>
-  executeAgentNode<unknown>({
+function run (model: MockLanguageModelV3, maxTurns: number) {
+  return executeAgentNode<unknown>({
     node: NODE,
-    input: 'draft the coverage opinion',
     getModel: () => model,
     toolRegistry: REGISTRY,
     toolDeps: {},
@@ -107,6 +110,7 @@ const run = (model: MockLanguageModelV3, maxTurns: number) =>
     nodeOutputs: new Map(),
     manifest: MANIFEST(maxTurns),
   })
+}
 
 describe('agent node — never finishes empty', () => {
   test('the last turn is denied tools, so the model has to answer', async () => {
@@ -127,8 +131,8 @@ describe('agent node — never finishes empty', () => {
     const silent = new MockLanguageModelV3({
       doGenerate: async () => ({
         content: [{ type: 'text' as const, text: '   ' }],
-        finishReason: 'stop' as const,
-        usage: { inputTokens: 1, outputTokens: 0, totalTokens: 1 },
+        finishReason: mockFinish('stop'),
+        usage: mockUsage(1, 0),
         warnings: [],
       }),
     })
@@ -137,7 +141,7 @@ describe('agent node — never finishes empty', () => {
     expect(err).toBeInstanceOf(Error)
     expect((err as Error).message).toContain('produced no answer')
     // Marked fatal: a retry burns the same turns to reach the same silence.
-    expect((err as unknown as Record<string, unknown>)[AGENT_NO_OUTPUT]).toBe(
+    expect((err as Record<string, unknown>)[AGENT_NO_OUTPUT]).toBe(
       true,
     )
   })

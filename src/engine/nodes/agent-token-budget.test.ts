@@ -3,7 +3,9 @@ import { MockLanguageModelV3 } from 'ai/test'
 import { describe, expect, test } from 'bun:test'
 import { z } from 'zod'
 
+import { makeAgentConfig } from '../agent-test-helpers'
 import type { AgentNode, WfRunManifestEntry } from '../graph'
+import { mockFinish } from '../model-test-helpers'
 import type { ToolRegistry } from '../tool-registry'
 
 import { executeAgentNode } from './agent'
@@ -28,7 +30,8 @@ const PER_TURN_TOKENS = 1000
 // hands `onStepFinish`. Getting this wrong doesn't fail loudly: the SDK maps no
 // usage at all, `step.usage` arrives as `{}`, and every token-based assertion
 // silently sees a budget that is never spent.
-const usage = (input: number, output: number) => ({
+function usage (input: number, output: number) {
+  return {
   inputTokens: {
     total: input,
     noCache: input,
@@ -36,13 +39,13 @@ const usage = (input: number, output: number) => ({
     cacheWrite: undefined,
   },
   outputTokens: { total: output, text: output, reasoning: undefined },
-})
+}
+}
 
-const MANIFEST = (
-  maxTurns: number,
+function MANIFEST (maxTurns: number,
   toolTokenBudget: number | null,
-  contextLength?: number,
-): WfRunManifestEntry[] => [
+  contextLength?: number): WfRunManifestEntry[] {
+  return [
   {
     kind: 'agent',
     id: 'bot',
@@ -51,7 +54,7 @@ const MANIFEST = (
     versionNumber: 1,
     name: 'Researcher',
     ...(contextLength != null ? { contextLength } : {}),
-    config: {
+    config: makeAgentConfig({
       modelId: 'mock',
       prompt: 'Research, then answer.',
       userPrompt: 'Go.',
@@ -60,9 +63,10 @@ const MANIFEST = (
       maxTurns,
       toolTokenBudget,
       output: { kind: 'text' },
-    },
+    }),
   },
 ]
+}
 
 const NODE: AgentNode = {
   id: 'agent',
@@ -70,7 +74,7 @@ const NODE: AgentNode = {
   label: 'Researcher',
   position: { x: 0, y: 0 },
   informUser: { mode: 'off' },
-  config: { agentId: 'bot', version: null, inputs: {}, imageInputs: {} },
+  config: { agentId: 'bot', version: null, inputs: {} },
 }
 
 const REGISTRY: ToolRegistry<unknown> = new Map([
@@ -112,7 +116,7 @@ function insatiableResearcher(seen: { toolChoices: unknown[] }) {
                 input: JSON.stringify({ q: 'again' }),
               },
             ],
-        finishReason: denied ? ('stop' as const) : ('tool-calls' as const),
+        finishReason: denied ? mockFinish('stop') : mockFinish('tool-calls'),
         usage: usage(PER_TURN_TOKENS / 2, PER_TURN_TOKENS / 2),
         warnings: [],
       }
@@ -120,13 +124,10 @@ function insatiableResearcher(seen: { toolChoices: unknown[] }) {
   })
 }
 
-const run = (
-  model: MockLanguageModelV3,
-  manifest: WfRunManifestEntry[],
-) =>
-  executeAgentNode<unknown>({
+function run (model: MockLanguageModelV3,
+  manifest: WfRunManifestEntry[]) {
+  return executeAgentNode<unknown>({
     node: NODE,
-    input: 'does the policy cover flood damage?',
     getModel: () => model,
     toolRegistry: REGISTRY,
     toolDeps: {},
@@ -134,6 +135,7 @@ const run = (
     nodeOutputs: new Map(),
     manifest,
   })
+}
 
 describe('agent node — toolTokenBudget', () => {
   test('crossing the budget forces the answer instead of failing the node', async () => {
@@ -294,7 +296,7 @@ function growingResearcher(
                 input: JSON.stringify({ q: 'again' }),
               },
             ],
-        finishReason: denied ? ('stop' as const) : ('tool-calls' as const),
+        finishReason: denied ? mockFinish('stop') : mockFinish('tool-calls'),
         usage: usage(thisInput, 10),
         warnings: [],
       }

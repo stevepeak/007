@@ -3,8 +3,10 @@ import { MockLanguageModelV3 } from 'ai/test'
 import { describe, expect, test } from 'bun:test'
 import { z } from 'zod'
 
+import { makeAgentConfig } from '../engine/agent-test-helpers'
 import type { RunContext, WfSdkConfig } from '../engine/config'
 import type { AgentConfig } from '../engine/graph'
+import { mockFinish, mockUsage } from '../engine/model-test-helpers'
 import type { ToolRegistry } from '../engine/tool-registry'
 
 import { executeAgentPreview } from './run-agent-preview'
@@ -14,7 +16,7 @@ import { executeAgentPreview } from './run-agent-preview'
 
 type Deps = { marker: string }
 
-const BASE_CONFIG: AgentConfig = {
+const BASE_CONFIG: AgentConfig = makeAgentConfig({
   modelId: 'mock',
   prompt: 'Answer.',
   userPrompt: 'Go.',
@@ -22,7 +24,7 @@ const BASE_CONFIG: AgentConfig = {
   toolIds: [],
   maxTurns: 1,
   output: { kind: 'text' },
-} as AgentConfig
+})
 
 // The playground runs the agent's REAL contract, so a conversation preview needs
 // an agent that declares one — a task agent ignores authored turns entirely.
@@ -60,8 +62,8 @@ function fakeConfig(opts: {
           opts.seen.prompt = (o as { prompt: unknown }).prompt
           return {
             content: [{ type: 'text', text: 'ok' }],
-            finishReason: 'stop',
-            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            finishReason: mockFinish('stop'),
+            usage: mockUsage(1, 1),
             warnings: [],
           }
         },
@@ -236,8 +238,8 @@ describe('executeAgentPreview — a live tool actually executes', () => {
                 input: '{}',
               },
             ],
-            finishReason: 'tool-calls' as const,
-            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            finishReason: mockFinish('tool-calls'),
+            usage: mockUsage(1, 1),
             warnings: [],
           }
         }
@@ -245,8 +247,8 @@ describe('executeAgentPreview — a live tool actually executes', () => {
           content: [
             { type: 'text' as const, text: hasTools ? 'done' : 'invented' },
           ],
-          finishReason: 'stop' as const,
-          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          finishReason: mockFinish('stop'),
+          usage: mockUsage(1, 1),
           warnings: [],
         }
       },

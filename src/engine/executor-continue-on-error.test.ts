@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 
 import { executeWorkflow } from './executor'
-import { createMemoryRunRecorder } from './run-recorder'
 import { chainGraph, makeConfig } from './executor-test-helpers'
+import { createMemoryRunRecorder } from './run-recorder'
 
 describe('executor — continueOnError', () => {
   test('a best-effort node failure is recorded but the run continues', async () => {

@@ -8,8 +8,10 @@
     "skipLibCheck": true,
     "lib": ["DOM", "DOM.Iterable", "ES2023"],
     "jsx": "react-jsx",
-    "types": ["node", "react", "react-dom"]
+    "types": ["bun", "node", "react", "react-dom"]
   },
   "include": ["src/ui"],
-  "exclude": ["**/node_modules", "src/**/*.test.ts", "src/**/*.test.tsx"]
+  // UI tests are typechecked HERE (not in tsconfig.test.json): they need the
+  // DOM lib, and this project already has it.
+  "exclude": ["**/node_modules"]
 }

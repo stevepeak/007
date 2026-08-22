@@ -12,6 +12,8 @@ import {
   parseEvalSampleInput,
   parseEvalTools,
   unavailableCheckTypes,
+  type CheckTree,
+  type EvalSampleInput,
 } from './checks'
 
 // Phase 2 — the shared check vocabulary. These pure zod schemas are validated at
@@ -37,13 +39,13 @@ describe('eval checks schema', () => {
         value: 'missing id',
       },
       { type: 'output_match', match: 'regex', value: 'ETA' },
-    ]) {
+    ] as const) {
       expect(evalCheckSchema.parse(check)).toEqual(check)
     }
   })
 
   test('accepts a judge check and applies no defaults (optional stay absent)', () => {
-    const judge = { type: 'llm_judge', rubric: 'asks politely' }
+    const judge = { type: 'llm_judge', rubric: 'asks politely' } as const
     const parsed = evalCheckSchema.parse(judge)
     expect(parsed).toEqual(judge)
     expect(isJudgeCheck(parsed)).toBe(true)
@@ -72,7 +74,7 @@ describe('eval checks schema', () => {
   })
 
   test('check tree reduces an op over a list', () => {
-    const tree = {
+    const tree: CheckTree = {
       op: 'or',
       checks: [
         { type: 'tool_called', toolId: 't', called: true },
@@ -90,7 +92,7 @@ describe('eval checks schema', () => {
       kind: 'task',
       variables: {},
     })
-    const convo = {
+    const convo: EvalSampleInput = {
       kind: 'conversation',
       turns: [{ role: 'user', text: 'hi' }],
       variables: { userId: 'u1' },

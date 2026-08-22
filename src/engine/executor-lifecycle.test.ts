@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test'
 
 import type { RunCompletion, RunFailure } from './config'
 import { executeWorkflow } from './executor'
-import { createMemoryRunRecorder } from './run-recorder'
 import { chainGraph, makeConfig } from './executor-test-helpers'
+import { createMemoryRunRecorder } from './run-recorder'
 
 describe('executor — lifecycle callbacks', () => {
   test('onRunComplete fires once with the run output', async () => {

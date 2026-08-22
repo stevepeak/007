@@ -6,6 +6,12 @@
 // passes — holding the browser WS open across slow vision calls caused "Network
 // connection lost" errors.
 
+// Type-only (erased at compile time), so `@cloudflare/puppeteer` still stays out
+// of module load — see the lazy `import()` in `renderPdfPages`. Naming the exact
+// binding `launch` requires is also more honest than `Fetcher`: not every
+// Fetcher is a Browser-Rendering binding.
+import type { BrowserWorker } from '@cloudflare/puppeteer'
+
 const OCR_PROMPT =
   'You are an OCR engine. Extract all text from this document page exactly as it appears, preserving line breaks and table layout where reasonable. Output only the raw text — no preamble, no explanation, no markdown fences.'
 
@@ -79,7 +85,7 @@ function toBase64(bytes: Uint8Array): string {
 // the browser before returning (holding the WS open across slow vision calls
 // caused "Network connection lost" errors, so render and OCR are separate).
 async function renderPdfPages(
-  browserBinding: Fetcher,
+  browserBinding: BrowserWorker,
   pdfBytes: Uint8Array,
   pdfjsBaseUrl: string,
 ): Promise<Uint8Array[]> {
@@ -141,7 +147,7 @@ async function renderPdfPages(
 
 /** Rasterize a PDF and OCR every page, joined into one text blob. */
 export async function ocrPdf(
-  browserBinding: Fetcher,
+  browserBinding: BrowserWorker,
   pdfBytes: Uint8Array,
   recognize: OcrRecognize,
   opts?: {

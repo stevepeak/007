@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
-import { workflowGraphSchema } from './graph'
 import { chainGraph } from './executor-test-helpers'
+import { workflowGraphSchema } from './graph'
 
 describe('graph schema — node execution policy', () => {
   test('accepts a node with a full execution policy', () => {

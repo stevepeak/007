@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test'
 
 import type { RunCompletion } from './config'
 import { executeWorkflow } from './executor'
+import { makeConfig } from './executor-test-helpers'
 import { createMemoryRunRecorder } from './run-recorder'
 import { WorkflowStalledError } from './scheduler'
-import { makeConfig } from './executor-test-helpers'
 
 // A branch may connect only one arm; taking the unconnected arm ends that path
 // quietly ("fizzles out") — a clean completion with no output, not a stall error.

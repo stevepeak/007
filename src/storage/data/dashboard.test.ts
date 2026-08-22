@@ -2,9 +2,10 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import { Database } from 'bun:sqlite'
-import { drizzle } from 'drizzle-orm/bun-sqlite'
 import { beforeEach, describe, expect, test } from 'bun:test'
+import { drizzle } from 'drizzle-orm/bun-sqlite'
 
+import type { AnalyticsRow } from '../../analytics/query'
 import type { WfDb } from '../client'
 import type { ModelPriceMap } from '../cost'
 import {
@@ -17,6 +18,7 @@ import {
   wfWorkflowVersion,
 } from '../schema'
 
+import type { DashboardAnalytics } from './dashboard'
 import {
   collapseSeries,
   foldCostRows,
@@ -50,11 +52,13 @@ const NOW = Date.UTC(2026, 7, 6, 12, 0, 0)
 const PRICED = 'gpt-priced'
 const UNPRICED = 'gpt-unpriced'
 
-const agentMeta = (model: string, inputTokens: number, outputTokens: number) => ({
+function agentMeta (model: string, inputTokens: number, outputTokens: number) {
+  return {
   model,
   steps: [{ stepNumber: 1, toolCalls: [] }],
   totalUsage: { inputTokens, outputTokens },
-})
+}
+}
 
 async function seed(db: WfDb) {
   await db.insert(wfWorkflow).values([
@@ -374,9 +378,13 @@ describe('loadDashboard', () => {
 
 /** A fake SQL API that answers by matching on the query's discriminators. */
 function fakeAnalytics(
-  answers: { volume?: unknown[]; spend?: unknown[]; steps?: unknown[] },
+  answers: {
+    volume?: AnalyticsRow[]
+    spend?: AnalyticsRow[]
+    steps?: AnalyticsRow[]
+  },
   onQuery?: (sql: string) => void,
-) {
+): DashboardAnalytics {
   return {
     dataset: 'wf_telemetry',
     query: {
@@ -506,7 +514,9 @@ describe('loadDashboard with analytics', () => {
       db,
       { since: NOW - 89 * DAY, until: NOW },
       NOW,
-      fakeAnalytics({}, (sql) => seen.push(sql)),
+      fakeAnalytics({}, (sql) => {
+        seen.push(sql)
+      }),
     )
     expect(seen).toEqual([])
     expect(stats.runs.source).toBe('db')

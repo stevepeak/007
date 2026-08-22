@@ -3,7 +3,9 @@ import { MockLanguageModelV3 } from 'ai/test'
 import { describe, expect, test } from 'bun:test'
 import { z } from 'zod'
 
+import { makeAgentConfig } from '../agent-test-helpers'
 import type { AgentNode, WfRunManifestEntry } from '../graph'
+import { mockFinish, mockUsage } from '../model-test-helpers'
 import type { ToolRegistry } from '../tool-registry'
 
 import { executeAgentNode } from './agent'
@@ -20,11 +22,10 @@ import { executeAgentNode } from './agent'
 // than an absent field.
 const AUTO = { type: 'auto' }
 
-const MANIFEST = (
-  maxTurns: number,
+function MANIFEST (maxTurns: number,
   requireToolFirstTurn: boolean,
-  toolIds: string[] = ['lookup'],
-): WfRunManifestEntry[] => [
+  toolIds: string[] = ['lookup']): WfRunManifestEntry[] {
+  return [
   {
     kind: 'agent',
     id: 'bot',
@@ -32,7 +33,7 @@ const MANIFEST = (
     versionId: 'v1',
     versionNumber: 1,
     name: 'Researcher',
-    config: {
+    config: makeAgentConfig({
       modelId: 'mock',
       prompt: 'Research, then answer.',
       userPrompt: 'Go.',
@@ -41,9 +42,10 @@ const MANIFEST = (
       maxTurns,
       requireToolFirstTurn,
       output: { kind: 'text' },
-    },
+    }),
   },
 ]
+}
 
 const NODE: AgentNode = {
   id: 'agent',
@@ -51,7 +53,7 @@ const NODE: AgentNode = {
   label: 'Researcher',
   position: { x: 0, y: 0 },
   informUser: { mode: 'off' },
-  config: { agentId: 'bot', version: null, inputs: {}, imageInputs: {} },
+  config: { agentId: 'bot', version: null, inputs: {} },
 }
 
 const REGISTRY: ToolRegistry<unknown> = new Map([
@@ -95,23 +97,20 @@ function eagerAnswerer(seen: { toolChoices: unknown[] }) {
             : [{ type: 'text' as const, text: 'Answer.' }],
         finishReason:
           choice?.type === 'required'
-            ? ('tool-calls' as const)
-            : ('stop' as const),
-        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            ? mockFinish('tool-calls')
+            : mockFinish('stop'),
+        usage: mockUsage(1, 1),
         warnings: [],
       }
     },
   })
 }
 
-const run = (
-  model: MockLanguageModelV3,
+function run (model: MockLanguageModelV3,
   manifest: WfRunManifestEntry[],
-  toolRegistry: ToolRegistry<unknown> = REGISTRY,
-) =>
-  executeAgentNode<unknown>({
+  toolRegistry: ToolRegistry<unknown> = REGISTRY) {
+  return executeAgentNode<unknown>({
     node: NODE,
-    input: 'does the policy cover flood damage?',
     getModel: () => model,
     toolRegistry,
     toolDeps: {},
@@ -119,6 +118,7 @@ const run = (
     nodeOutputs: new Map(),
     manifest,
   })
+}
 
 describe('agent node — requireToolFirstTurn', () => {
   test('turn 1 is forced to call a tool, later turns are free to answer', async () => {

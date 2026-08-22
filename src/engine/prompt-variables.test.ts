@@ -37,7 +37,7 @@ describe('the `${token}` grammar', () => {
   })
 
   test('an escape that does not spell a valid name is left verbatim', () => {
-    expect(promptVariableName('a\\*b')).toBeNull()
+    expect(promptVariableName(String.raw`a\*b`)).toBeNull()
     expect(substitutePromptVariables('${a\\*b}', { 'a*b': 'x' })).toBe('${a\\*b}')
   })
 
@@ -58,8 +58,8 @@ describe('unescapePromptVariables', () => {
   })
 
   test('leaves Markdown escapes outside a variable alone', () => {
-    expect(unescapePromptVariables('use snake\\_case and \\*stars\\*')).toBe(
-      'use snake\\_case and \\*stars\\*',
+    expect(unescapePromptVariables(String.raw`use snake\_case and \*stars\*`)).toBe(
+      String.raw`use snake\_case and \*stars\*`,
     )
   })
 

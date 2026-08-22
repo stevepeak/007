@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 
 import { executeWorkflow } from './executor'
-import { createMemoryRunRecorder } from './run-recorder'
 import { makeConfig } from './executor-test-helpers'
+import { createMemoryRunRecorder } from './run-recorder'
 
 // trigger → {left, right} producers → aggregate → output. The two producers run
 // in parallel; the aggregate waits for both and collects their outputs into one

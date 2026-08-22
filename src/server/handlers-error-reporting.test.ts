@@ -48,7 +48,9 @@ describe('dispatcher error reporting', () => {
         resolveDb: () => {
           throw boom
         },
-        onError: (input) => reports.push(input),
+        onError: (input) => {
+          reports.push(input)
+        },
       }),
     )
 
@@ -70,7 +72,9 @@ describe('dispatcher error reporting', () => {
         resolveContext: () => {
           throw new UnauthorizedError('Unauthorized')
         },
-        onError: (input) => reports.push(input),
+        onError: (input) => {
+          reports.push(input)
+        },
       }),
     )
 
@@ -88,7 +92,9 @@ describe('dispatcher error reporting', () => {
         resolveDb: () => {
           throw new NotFoundError('gone')
         },
-        onError: (input) => reports.push(input),
+        onError: (input) => {
+          reports.push(input)
+        },
       }),
     )
 
@@ -113,7 +119,7 @@ describe('dispatcher error reporting', () => {
     const res = await handle(post('listAgents'))
 
     expect(res.status).toBe(500)
-    expect(await res.json()).toEqual({ error: 'underlying fault' })
+    expect(await res.json<unknown>()).toEqual({ error: 'underlying fault' })
   })
 
   test('the failure resolves an identity when it can, and omits it when it cannot', async () => {
@@ -125,7 +131,9 @@ describe('dispatcher error reporting', () => {
         resolveContext: () => {
           throw new Error('auth database unreachable')
         },
-        onError: (input) => reports.push(input),
+        onError: (input) => {
+          reports.push(input)
+        },
       }),
     )
 
@@ -142,8 +150,7 @@ describe('errorLogText', () => {
     // The shape that went unattributable in production: drizzle's message names
     // only the SQL, and the D1 rejection hangs off `cause`.
     const cause = new Error('D1_ERROR: Network connection lost')
-    const err = new Error('Failed query: select "id" from "wf_agent"')
-    err.cause = cause
+    const err = new Error('Failed query: select "id" from "wf_agent"', { cause: cause })
 
     const text = errorLogText(err)
 
@@ -152,8 +159,7 @@ describe('errorLogText', () => {
   })
 
   test('a non-Error cause is serialized, not stringified to [object Object]', () => {
-    const err = new Error('outer')
-    err.cause = { code: 'D1_ERROR', retryable: false }
+    const err = new Error('outer', { cause: { code: 'D1_ERROR', retryable: false } })
 
     const text = errorLogText(err)
 
@@ -164,8 +170,13 @@ describe('errorLogText', () => {
   test('a self-referential cause terminates instead of spinning', () => {
     const a = new Error('a')
     const b = new Error('b')
+    // Assignment, not the constructor option: the two errors reference EACH
+    // OTHER, so neither cause exists when the other is constructed. Building
+    // that cycle is the whole point of this test.
+    /* eslint-disable unicorn/no-error-property-assignment */
     a.cause = b
     b.cause = a
+    /* eslint-enable unicorn/no-error-property-assignment */
 
     expect(errorLogText(a)).toContain('caused by: Error: b')
   })

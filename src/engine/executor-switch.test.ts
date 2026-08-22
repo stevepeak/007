@@ -3,10 +3,10 @@ import { z } from 'zod'
 
 import type { WfSdkConfig } from './config'
 import { executeWorkflow } from './executor'
+import type { Deps } from './executor-test-helpers'
 import { workflowGraphSchema } from './graph'
 import { createMemoryRunRecorder } from './run-recorder'
 import type { ToolRegistry } from './tool-registry'
-import type { Deps } from './executor-test-helpers'
 
 // trigger → switch(on the trigger's `kind`) → [A|B|else] tool → its own
 // output. Each arm routes to a distinct output so the run returns the arm that

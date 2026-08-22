@@ -1,6 +1,5 @@
-import type { WorkflowStep } from 'cloudflare:workers'
-
 import { describe, expect, test } from 'bun:test'
+import type { WorkflowStep } from 'cloudflare:workers'
 
 import { createCountingStep, createRunCounters } from './step-counter'
 
@@ -106,8 +105,8 @@ describe('createCountingStep', () => {
     expect(await counting.do('load-graph', async () => ({ nodes: [] }))).toEqual({
       nodes: [],
     })
-    expect(await counting.waitForEvent('await:x', { type: 't' })).toEqual({
-      payload: 'event:await:x',
-    })
+    expect(
+      await counting.waitForEvent('await:x', { type: 't' }),
+    ).toMatchObject({ payload: 'event:await:x' })
   })
 })

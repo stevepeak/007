@@ -2,9 +2,9 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import { Database } from 'bun:sqlite'
-import { drizzle } from 'drizzle-orm/bun-sqlite'
-import { eq } from 'drizzle-orm'
 import { beforeEach, describe, expect, test } from 'bun:test'
+import { eq } from 'drizzle-orm'
+import { drizzle } from 'drizzle-orm/bun-sqlite'
 
 import type { AgentConfig } from '../../engine/graph'
 import type { WfDb } from '../client'

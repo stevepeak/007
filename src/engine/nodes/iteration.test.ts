@@ -12,6 +12,7 @@ import { collectGraphIssues } from '../graph-issues'
 import type { RunNodeContext } from '../run-node'
 import { createMemorySink } from '../stream-sink'
 import { ITERATION_ITEM_TRIGGER_KIND } from '../trigger-registry'
+
 import {
   executeSubgraph,
   iterationItemLimit,
@@ -24,12 +25,11 @@ import {
 // Builders
 // ---------------------------------------------------------------------------
 
-const iterNode = (
-  config: Partial<IterationNode['config']> = {},
+function iterNode (config: Partial<IterationNode['config']> = {},
   // Matches the schema default. Progress is opt-in, so an `off` iteration says
   // nothing to the user — see the announce tests below.
-  informUser: IterationNode['informUser'] = { mode: 'off' },
-): IterationNode => ({
+  informUser: IterationNode['informUser'] = { mode: 'off' }): IterationNode {
+  return {
   id: 'it',
   kind: 'iteration',
   position: { x: 0, y: 0 },
@@ -42,7 +42,8 @@ const iterNode = (
     subgraph: buildIterationSubgraph(),
     ...config,
   },
-})
+}
+}
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -238,11 +239,11 @@ describe('iteration fan-out fence', () => {
   })
 
   test('the failure names the node, the count and the limit', async () => {
-    const err = await runIteration({
+    const err = (await runIteration({
       node: iterNode({ maxItems: 2 }),
       list: ['a', 'b', 'c'],
       runItem: async (item) => item,
-    }).catch((e: unknown) => e as IterationTooManyItemsError)
+    }).catch((e: unknown) => e)) as IterationTooManyItemsError
     expect(err).toBeInstanceOf(IterationTooManyItemsError)
     expect(err.message).toContain('Iterate')
     expect(err.message).toContain('3 items')
@@ -322,6 +323,7 @@ describe('executeSubgraph', () => {
         {
           id: 'item',
           kind: 'trigger',
+          informUser: { mode: 'off' as const },
           label: 'Item',
           position: { x: 0, y: 0 },
           config: { triggerKind: ITERATION_ITEM_TRIGGER_KIND },
@@ -329,6 +331,7 @@ describe('executeSubgraph', () => {
         {
           id: 'b',
           kind: 'branch',
+          informUser: { mode: 'off' as const },
           label: 'Truthy?',
           position: { x: 100, y: 0 },
           // No `source` → tests the whole item input.
@@ -337,6 +340,7 @@ describe('executeSubgraph', () => {
         {
           id: 'yes',
           kind: 'output',
+          informUser: { mode: 'off' as const },
           label: 'Yes',
           position: { x: 200, y: 0 },
           config: { source: { kind: 'ref', nodeId: 'b', path: '' } },
@@ -344,6 +348,7 @@ describe('executeSubgraph', () => {
         {
           id: 'no',
           kind: 'output',
+          informUser: { mode: 'off' as const },
           label: 'No',
           position: { x: 200, y: 100 },
           config: { source: { kind: 'ref', nodeId: 'b', path: '' } },
@@ -381,6 +386,7 @@ describe('executeSubgraph under a container budget', () => {
       {
         id: 'item',
         kind: 'trigger',
+        informUser: { mode: 'off' as const },
         label: 'Item',
         position: { x: 0, y: 0 },
         config: { triggerKind: ITERATION_ITEM_TRIGGER_KIND },
@@ -388,6 +394,7 @@ describe('executeSubgraph under a container budget', () => {
       {
         id: 'b',
         kind: 'branch',
+        informUser: { mode: 'off' as const },
         label: 'Truthy?',
         position: { x: 100, y: 0 },
         config: { operator: 'is_not_empty' },
@@ -395,6 +402,7 @@ describe('executeSubgraph under a container budget', () => {
       {
         id: 'yes',
         kind: 'output',
+        informUser: { mode: 'off' as const },
         label: 'Yes',
         position: { x: 200, y: 0 },
         config: { source: { kind: 'ref', nodeId: 'b', path: '' } },
@@ -468,7 +476,7 @@ describe('iteration schema', () => {
 
   test('rejects a subgraph whose trigger is not the iteration_item kind', () => {
     const bad = iterNode()
-    const sub = structuredClone(bad.config.subgraph) as WorkflowGraph
+    const sub = structuredClone(bad.config.subgraph)
     const trig = sub.nodes.find((n) => n.kind === 'trigger')!
     ;(trig.config as { triggerKind: string }).triggerKind = 'manual'
     bad.config.subgraph = sub
@@ -479,7 +487,7 @@ describe('iteration schema', () => {
 
   test('rejects a nested iteration node inside the subgraph', () => {
     const bad = iterNode()
-    const sub = structuredClone(bad.config.subgraph) as WorkflowGraph
+    const sub = structuredClone(bad.config.subgraph)
     sub.nodes.push(iterNode())
     bad.config.subgraph = sub
     expect(() => workflowGraphSchema.parse(wrap(bad))).toThrow(

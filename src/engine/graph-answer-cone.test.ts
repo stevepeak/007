@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 
-import { answerCriticalIds } from './graph-answer-cone'
 import { chainGraph } from './executor-test-helpers'
 import { workflowGraphSchema, type WorkflowGraph } from './graph'
+import { answerCriticalIds } from './graph-answer-cone'
 
 const parse = (g: unknown): WorkflowGraph => workflowGraphSchema.parse(g)
 

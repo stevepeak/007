@@ -1,6 +1,5 @@
 import { MockLanguageModelV3 } from 'ai/test'
 import { describe, expect, test } from 'bun:test'
-import { z } from 'zod'
 
 import type {
   ToolRegistry,
@@ -8,6 +7,9 @@ import type {
   WfSdkConfig,
   WorkflowGraph,
 } from '../engine'
+import { makeAgentConfig } from '../engine/agent-test-helpers'
+import { mockFinish, mockUsage } from '../engine/model-test-helpers'
+
 import { runWorkflowUnderConditions } from './index'
 
 // End-to-end proof that a `workflow` node calls another workflow and awaits its
@@ -88,6 +90,7 @@ describe('eval harness — workflow-calls-workflow (tool callee)', () => {
       {
         id: 'ct',
         kind: 'trigger',
+        informUser: { mode: 'off' as const },
         label: 'Start',
         position: { x: 0, y: 0 },
         config: { triggerKind: 'manual' },
@@ -95,6 +98,7 @@ describe('eval harness — workflow-calls-workflow (tool callee)', () => {
       {
         id: 'shout',
         kind: 'tool',
+        informUser: { mode: 'off' as const },
         label: 'Shout',
         position: { x: 200, y: 0 },
         config: {
@@ -105,6 +109,7 @@ describe('eval harness — workflow-calls-workflow (tool callee)', () => {
       {
         id: 'co',
         kind: 'output',
+        informUser: { mode: 'off' as const },
         label: 'Out',
         position: { x: 400, y: 0 },
         config: { source: { kind: 'ref', nodeId: 'shout', path: '' } },
@@ -157,8 +162,8 @@ describe('eval harness — workflow-calls-workflow (agent callee, nested manifes
       new MockLanguageModelV3({
         doGenerate: async () => ({
           content: [{ type: 'text', text: 'Hi from callee' }],
-          finishReason: 'stop',
-          usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
+          finishReason: mockFinish('stop'),
+          usage: mockUsage(1, 2),
           warnings: [],
         }),
       }),
@@ -177,6 +182,7 @@ describe('eval harness — workflow-calls-workflow (agent callee, nested manifes
       {
         id: 'ct',
         kind: 'trigger',
+        informUser: { mode: 'off' as const },
         label: 'Start',
         position: { x: 0, y: 0 },
         config: { triggerKind: 'manual' },
@@ -186,11 +192,13 @@ describe('eval harness — workflow-calls-workflow (agent callee, nested manifes
         kind: 'agent',
         label: 'Assistant',
         position: { x: 200, y: 0 },
-        config: { agentId: 'assistant', inputs: {}, imageInputs: {} },
+        informUser: { mode: 'off' },
+        config: { agentId: 'assistant', version: null, inputs: {} },
       },
       {
         id: 'co',
         kind: 'output',
+        informUser: { mode: 'off' as const },
         label: 'Out',
         position: { x: 400, y: 0 },
         config: { source: { kind: 'ref', nodeId: 'a', path: '' } },
@@ -213,11 +221,12 @@ describe('eval harness — workflow-calls-workflow (agent callee, nested manifes
     },
     {
       kind: 'agent',
+      pinnedVersion: null,
       id: 'assistant',
       versionId: 'av1',
       versionNumber: 1,
       name: 'Assistant',
-      config: {
+      config: makeAgentConfig({
         modelId: 'mock',
         prompt: 'Be helpful.',
         userPrompt: 'Go.',
@@ -225,7 +234,7 @@ describe('eval harness — workflow-calls-workflow (agent callee, nested manifes
         toolIds: [],
         maxTurns: 1,
         output: { kind: 'text' },
-      },
+      }),
     },
   ]
 

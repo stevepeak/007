@@ -83,8 +83,7 @@ describe('apiErrorDetail', () => {
   // response body — the only part that explains the failure — must survive
   // that rewrap and still reach wf_run_step.error and the run feed.
   test('follows `cause` so a rewrapped provider error keeps its detail', () => {
-    const wrapped = new Error('AI_APICallError: Payment Required (HTTP 402)')
-    wrapped.cause = apiError()
+    const wrapped = new Error('AI_APICallError: Payment Required (HTTP 402)', { cause: apiError() })
 
     const d = apiErrorDetail(wrapped)
     expect(d?.statusCode).toBe(402)
@@ -95,6 +94,10 @@ describe('apiErrorDetail', () => {
 
   test('a self-referential cause chain terminates', () => {
     const a = new Error('a')
+    // Assignment, not the constructor option: a cause that points back at its
+    // own error cannot be expressed before the error exists — and a
+    // self-referential chain is exactly what this test needs to build.
+    // eslint-disable-next-line unicorn/no-error-property-assignment
     a.cause = a
     expect(apiErrorDetail(a)).toBeNull()
   })
@@ -136,11 +139,12 @@ describe('apiErrorDetail', () => {
   })
 
   test('a RetryError nested under a cause unwraps through both wrappers', () => {
-    const wrapped = new Error('node failed')
-    wrapped.cause = new RetryError({
-      message: 'Failed after 2 attempts',
-      reason: 'maxRetriesExceeded',
-      errors: [gatewayTimeout(), gatewayTimeout()],
+    const wrapped = new Error('node failed', {
+      cause: new RetryError({
+        message: 'Failed after 2 attempts',
+        reason: 'maxRetriesExceeded',
+        errors: [gatewayTimeout(), gatewayTimeout()],
+      }),
     })
 
     const d = apiErrorDetail(wrapped)

@@ -1,62 +1,84 @@
 import { describe, expect, test } from 'bun:test'
 
-import { collectGraphIssues } from './graph-issues'
 import {
   ITERATION_MAX_ITEMS_CEILING,
   workflowGraphShapeSchema,
   type WorkflowGraph,
+  type WorkflowNode,
 } from './graph'
+import { collectGraphIssues } from './graph-issues'
 
 const pos = { x: 0, y: 0 }
-const trigger = {
+
+// Fixtures model a PARSED graph — `collectGraphIssues` runs on the output of
+// `workflowGraphSchema`, never on raw authored JSON. That distinction matters
+// for `informUser`: the schema declares it `.default({ mode: 'off' })`, so it is
+// optional on the way in and REQUIRED on the way out. Annotating each builder
+// `WorkflowNode` pins them to the parsed shape, which is what caught these
+// fixtures having drifted off it entirely.
+const trigger: WorkflowNode = {
   id: 't',
-  kind: 'trigger' as const,
+  kind: 'trigger',
   position: pos,
   label: 'Start',
+  informUser: { mode: 'off' },
   config: { triggerKind: 'chat_message' },
 }
-const output = (id = 'o', source?: string) => ({
+function output (id = 'o', source?: string): WorkflowNode {
+  return {
   id,
-  kind: 'output' as const,
+  kind: 'output',
   position: pos,
   label: id,
-  config: source
-    ? { source: { kind: 'ref' as const, nodeId: source, path: '' } }
-    : {},
-})
-const agent = (id: string, agentId = 'a1') => ({
+  informUser: { mode: 'off' },
+  config: source ? { source: { kind: 'ref', nodeId: source, path: '' } } : {},
+}
+}
+function agent (id: string, agentId = 'a1'): WorkflowNode {
+  return {
   id,
-  kind: 'agent' as const,
+  kind: 'agent',
   position: pos,
   label: id,
-  config: { agentId, inputs: {} },
-})
-const branch = (id: string) => ({
+  informUser: { mode: 'off' },
+  config: { agentId, version: null, inputs: {} },
+}
+}
+function branch (id: string): WorkflowNode {
+  return {
   id,
-  kind: 'branch' as const,
+  kind: 'branch',
   position: pos,
   label: id,
-  config: { operator: 'is_not_empty' as const },
-})
-const tool = (id: string) => ({
+  informUser: { mode: 'off' },
+  config: { operator: 'is_not_empty' },
+}
+}
+function tool (id: string): WorkflowNode {
+  return {
   id,
-  kind: 'tool' as const,
+  kind: 'tool',
   position: pos,
   label: id,
+  informUser: { mode: 'off' },
   config: { toolId: 't1', args: {} },
-})
-const race = (id: string) => ({
+}
+}
+function race (id: string): WorkflowNode {
+  return {
   id,
-  kind: 'race' as const,
+  kind: 'race',
   position: pos,
   label: id,
+  informUser: { mode: 'off' },
   config: {},
-})
-const edge = (
-  source: string,
+}
+}
+function edge (source: string,
   target: string,
-  condition: 'yes' | 'no' | null = null,
-) => ({ id: `${source}->${target}`, source, target, condition })
+  condition: 'yes' | 'no' | null = null) {
+  return { id: `${source}->${target}`, source, target, condition }
+}
 
 function graph(
   nodes: WorkflowGraph['nodes'],
@@ -293,6 +315,7 @@ describe('collectGraphIssues', () => {
       kind: 'trigger' as const,
       position: pos,
       label: 'Item',
+      informUser: { mode: 'off' as const },
       config: { triggerKind: 'iteration_item' },
     }
     const iteration = {
@@ -300,6 +323,7 @@ describe('collectGraphIssues', () => {
       kind: 'iteration' as const,
       position: pos,
       label: 'Loop',
+      informUser: { mode: 'off' as const },
       config: {
         source: { kind: 'ref' as const, nodeId: 't', path: '' },
         concurrency: 1,
@@ -337,6 +361,7 @@ describe('collectGraphIssues', () => {
       kind: 'trigger' as const,
       position: pos,
       label: 'Item',
+      informUser: { mode: 'off' as const },
       config: { triggerKind: 'iteration_item' },
     }
     const last = inner[inner.length - 1]
@@ -345,6 +370,7 @@ describe('collectGraphIssues', () => {
       kind: 'iteration' as const,
       position: pos,
       label: 'Loop',
+      informUser: { mode: 'off' as const },
       config: {
         source: { kind: 'ref' as const, nodeId: 't', path: '' },
         concurrency: 1,

@@ -2,12 +2,14 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import { Database } from 'bun:sqlite'
-import { drizzle } from 'drizzle-orm/bun-sqlite'
 import { beforeEach, describe, expect, test } from 'bun:test'
+import { drizzle } from 'drizzle-orm/bun-sqlite'
 
 import { MANUAL_TRIGGER_KIND } from '../../engine'
+import { makeAgentConfig } from '../../engine/agent-test-helpers'
 import type { WfDb } from '../client'
 import { wfSchema } from '../schema'
+
 import { exportBundle } from './export'
 import { graphIdsToSlugs, graphSlugsToIds } from './graph-refs'
 import { importBundle } from './import'
@@ -44,7 +46,7 @@ function sampleBundle(prompt = 'Say hello to ${name}.'): SpecBundle {
         slug: 'greeter',
         name: 'Greeter',
         description: 'Greets people',
-        config: {
+        config: makeAgentConfig({
           modelId: 'test-model',
           prompt,
           toolIds: [],
@@ -56,7 +58,7 @@ function sampleBundle(prompt = 'Say hello to ${name}.'): SpecBundle {
             maxSpawns: 10,
             allowStopSignal: true,
           },
-        },
+        }),
       },
     ],
     workflows: [
@@ -80,7 +82,7 @@ function sampleBundle(prompt = 'Say hello to ${name}.'): SpecBundle {
               kind: 'agent',
               label: 'Greeter',
               position: { x: 160, y: 0 },
-              config: { agentSlug: 'greeter', inputs: {}, imageInputs: {} },
+              config: { agentSlug: 'greeter', inputs: {} },
             },
             {
               id: 'out',
@@ -174,7 +176,7 @@ describe('import/export round-trip', () => {
     expect(out.evals.map((e) => e.slug)).toEqual(['greeter-goal'])
 
     // The workflow graph's agent node came back as a slug, not a UUID.
-    const graph = out.workflows[0]!.graph as {
+    const graph = out.workflows[0].graph as {
       nodes: { kind: string; config: Record<string, unknown> }[]
     }
     const agentNode = graph.nodes.find((n) => n.kind === 'agent')!
@@ -182,9 +184,9 @@ describe('import/export round-trip', () => {
     expect(agentNode.config.agentId).toBeUndefined()
 
     // Trigger assignment round-tripped.
-    expect(out.workflows[0]!.triggers).toEqual([MANUAL_TRIGGER_KIND])
+    expect(out.workflows[0].triggers).toEqual([MANUAL_TRIGGER_KIND])
     // Eval target came back as the agent slug.
-    expect(out.evals[0]!.target).toBe('greeter')
+    expect(out.evals[0].target).toBe('greeter')
   })
 
   test('re-importing an unchanged bundle is a no-op', async () => {
@@ -202,7 +204,7 @@ describe('import/export round-trip', () => {
 
     // Export reflects the new prompt.
     const out = await exportBundle(db)
-    expect(out.agents[0]!.config.prompt).toBe('A different prompt ${name}.')
+    expect(out.agents[0].config.prompt).toBe('A different prompt ${name}.')
   })
 
   test('dry-run reports changes without writing', async () => {

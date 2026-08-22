@@ -1,13 +1,17 @@
-import { describe, expect, test } from 'bun:test'
 import { convertToModelMessages, tool } from 'ai'
 import { MockLanguageModelV3 } from 'ai/test'
+import { describe, expect, test } from 'bun:test'
 import { z } from 'zod'
 
-import type { AgentNodeMeta } from '../engine/nodes/agent'
 import type { ToolRegistry, WfSdkConfig } from '../engine'
+import { makeAgentConfig } from '../engine/agent-test-helpers'
+import { mockFinish, mockUsage } from '../engine/model-test-helpers'
+import type { AgentNodeMeta } from '../engine/nodes/agent'
+
 import type { SeededMessage } from './checks'
-import { runWorkflowUnderConditions } from './index'
 import { collectSeededToolCalls, seededMessagesToUiMessages } from './synthesis'
+
+import { runWorkflowUnderConditions } from './index'
 
 // Synthesis eval mode. Two layers:
 //   1. the pure converters (`seededMessagesToUiMessages` / `collectSeededToolCalls`)
@@ -73,8 +77,8 @@ function capturingModel(seen: { tools: string; prompt: string }) {
       seen.prompt = JSON.stringify(options.prompt)
       return {
         content: [{ type: 'text', text: 'The filing deadline is 30 days.' }],
-        finishReason: 'stop',
-        usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
+        finishReason: mockFinish('stop'),
+        usage: mockUsage(1, 2),
         warnings: [],
       }
     },
@@ -135,11 +139,12 @@ const graph = {
 const manifest = [
   {
     kind: 'agent' as const,
+    pinnedVersion: null,
     id: 'assistant',
     versionId: 'v1',
     versionNumber: 1,
     name: 'Assistant',
-    config: {
+    config: makeAgentConfig({
       modelId: 'mock',
       prompt: 'Answer from the conversation.',
       userPrompt: '',
@@ -147,7 +152,7 @@ const manifest = [
       toolIds: ['search_rag'],
       maxTurns: 5,
       output: { kind: 'text' as const },
-    },
+    }),
   },
 ]
 

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+
 import { NodeOutputs, describeNode, resolveBinding } from './binding'
 
 // Binding errors are read by workflow AUTHORS in the run viewer, so these tests
@@ -11,7 +12,7 @@ const NODES = [
   { id: 'n-b4', label: 'Result', kind: 'output' },
 ]
 
-const outputs = (seed: Record<string, unknown> = {}) => {
+function outputs (seed: Record<string, unknown> = {}) {
   const map = new NodeOutputs(NODES)
   for (const [id, value] of Object.entries(seed)) map.set(id, value)
   return map

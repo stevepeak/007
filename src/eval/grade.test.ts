@@ -2,6 +2,8 @@ import { APICallError } from 'ai'
 import { MockLanguageModelV3 } from 'ai/test'
 import { describe, expect, test } from 'bun:test'
 
+import { mockFinish, mockUsage } from '../engine/model-test-helpers'
+
 import type { CheckTree } from './checks'
 import {
   gradeRow,
@@ -165,8 +167,8 @@ function judgeModel(pass: boolean, confidence = 8) {
           }),
         },
       ],
-      finishReason: 'stop',
-      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      finishReason: mockFinish('stop'),
+      usage: mockUsage(1, 1),
       warnings: [],
     }),
   })
@@ -183,8 +185,8 @@ function sequencedJudge(replies: string[]) {
       calls.count += 1
       return {
         content: [{ type: 'text' as const, text }],
-        finishReason: 'stop' as const,
-        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        finishReason: mockFinish('stop'),
+        usage: mockUsage(1, 1),
         warnings: [],
       }
     },
@@ -210,8 +212,8 @@ function capturingJudge(pass: boolean, confidence = 8) {
             }),
           },
         ],
-        finishReason: 'stop',
-        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        finishReason: mockFinish('stop'),
+        usage: mockUsage(1, 1),
         warnings: [],
       }
     },

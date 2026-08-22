@@ -8,10 +8,9 @@ import { drizzle } from 'drizzle-orm/bun-sqlite'
 import type { WfDb } from '../../storage/client'
 import { createEvalRun, createEvalSet, getEvalRun, upsertEvalRow } from '../../storage/data'
 import { wfRun, wfSchema } from '../../storage/schema'
-import type { CreateWfSdkHandlersOptions } from './shared'
-import type { HandlerCtx } from './shared'
 
 import { buildEvalHandlers } from './evals'
+import type { CreateWfSdkHandlersOptions, HandlerCtx } from './shared'
 
 // A graded row that ERRORS has no per-check verdict explaining itself, so its
 // reason has to reach the result's `error` column or the report renders a red
@@ -61,7 +60,7 @@ function ctx(db: WfDb, params: unknown): HandlerCtx {
     req: new Request('http://localhost/api/wf', { method: 'POST' }),
     env: async () => ({}),
     analytics: async () => null,
-  } as unknown as HandlerCtx
+  }
 }
 
 describe('gradeEvalResult — an unasserted sample', () => {

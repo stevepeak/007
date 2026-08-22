@@ -9,7 +9,7 @@ import { createMemorySink, type StreamSink } from './stream-sink'
 describe('deltaChannelFor', () => {
   const streamingSink = (): StreamSink & { written: string[] } => {
     const written: string[] = []
-    return { append: () => undefined, delta: (t) => written.push(t), written }
+    return { delta: (t) => void written.push(t), written }
   }
 
   test('the answer-producing node gets a working channel', () => {

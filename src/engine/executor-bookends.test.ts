@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 
 import { executeWorkflow } from './executor'
+import { chainGraph, makeConfig } from './executor-test-helpers'
 import { createMemoryRunRecorder } from './run-recorder'
 import { createMemorySink, type StreamSink } from './stream-sink'
-import { chainGraph, makeConfig } from './executor-test-helpers'
 
 // The in-process backend is what the INLINE engine runs on, so it owes the run
 // viewer the same feed the durable backend emits from its `enter:`/`record:`
@@ -94,7 +94,6 @@ describe('executor — node bookends', () => {
   test('entries emitted by a node handler are stamped with its identity', async () => {
     const raw: { nodeId?: string; nodeKind?: string; sequence?: number }[] = []
     const sink: StreamSink = {
-      append: () => undefined,
       log: (e) => {
         raw.push({ nodeId: e.nodeId, nodeKind: e.nodeKind, sequence: e.sequence })
       },

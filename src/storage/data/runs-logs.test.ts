@@ -2,11 +2,12 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import { Database } from 'bun:sqlite'
-import { drizzle } from 'drizzle-orm/bun-sqlite'
 import { beforeEach, describe, expect, test } from 'bun:test'
+import { drizzle } from 'drizzle-orm/bun-sqlite'
 
 import type { WfDb } from '../client'
 import { wfSchema } from '../schema'
+
 import {
   appendRunLog,
   countNodeBodyLogs,

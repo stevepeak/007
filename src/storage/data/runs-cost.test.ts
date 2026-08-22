@@ -8,13 +8,13 @@ import { drizzle } from 'drizzle-orm/bun-sqlite'
 import type { WfDb } from '../client'
 import { wfRun, wfSchema, wfModel } from '../schema'
 
-import { getRunStatus } from './runs-inspector'
 import {
   invalidateModelPriceMap,
   loadModelPriceMap,
   loadRunPriceTable,
   priceMapFromTable,
 } from './runs-cost'
+import { getRunStatus } from './runs-inspector'
 
 const MIGRATIONS_DIR = fileURLToPath(
   new URL('../../../migrations', import.meta.url),
@@ -162,12 +162,12 @@ describe('loadRunPriceTable', () => {
 
     const table = await loadRunPriceTable(db)
     // Positional, so it survives JSON serialization into the step journal.
-    expect(JSON.parse(JSON.stringify(table))).toEqual(table)
+    expect(structuredClone(table)).toEqual(table)
 
     const rehydrated = priceMapFromTable(table)
     const direct = await loadModelPriceMap(db)
     for (const key of ['qwen3-9b', 'venice:qwen3-9b']) {
-      expect(rehydrated.get(key)).toEqual(direct.get(key)!)
+      expect(rehydrated.get(key)).toEqual(direct.get(key))
     }
   })
 

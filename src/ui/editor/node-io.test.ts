@@ -82,7 +82,6 @@ const chatTrigger = node('t', 'trigger', 'Chat message', {
 const agent = node('a', 'agent', 'Chat Bot', {
   agentId: 'bot',
   inputs: {},
-  imageInputs: {},
 })
 
 describe('agentThreadSource', () => {
@@ -93,7 +92,6 @@ describe('agentThreadSource', () => {
     const boundAgent = node('a', 'agent', 'Chat Bot', {
       agentId: 'bot',
       inputs: {},
-      imageInputs: {},
       conversation: { kind: 'ref', nodeId: 't', path: 'messages' },
     })
     const g = graph(
@@ -169,7 +167,6 @@ describe('agentThreadSource', () => {
     const step = node('a', 'agent', 'Summarizer', {
       agentId: 'summarizer',
       inputs: {},
-      imageInputs: {},
     })
     const g = graph([chatTrigger, step], [edge('e', 't', 'a')])
     expect(agentThreadSource(g, 'a', maps)).toEqual({ status: 'none' })
@@ -179,7 +176,6 @@ describe('agentThreadSource', () => {
     const step = node('a', 'agent', 'Summarizer', {
       agentId: 'summarizer',
       inputs: {},
-      imageInputs: {},
       conversation: { kind: 'ref', nodeId: 't', path: 'messages' },
     })
     const g = graph([chatTrigger, step], [edge('e', 't', 'a')])

@@ -6,6 +6,7 @@ import {
   type ToolRegistry,
   type WfSdkConfig,
 } from '../engine'
+
 import { runWorkflowUnderConditions } from './index'
 
 // End-to-end: a trigger emits a list, an iteration node maps a subgraph over it
@@ -56,6 +57,7 @@ describe('eval harness — iteration graph', () => {
   subgraph.nodes.splice(1, 0, {
     id: shoutId,
     kind: 'tool',
+    informUser: { mode: 'off' as const },
     label: 'Shout item',
     position: { x: 160, y: 0 },
     config: {

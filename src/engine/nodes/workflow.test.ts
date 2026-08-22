@@ -8,6 +8,7 @@ import {
 } from '../graph'
 import { collectGraphIssues } from '../graph-issues'
 import type { RunNodeContext } from '../run-node'
+
 import { executeWorkflowNode } from './workflow'
 
 // ---------------------------------------------------------------------------
@@ -22,6 +23,7 @@ const identityCallee: WorkflowGraph = {
     {
       id: 'ct',
       kind: 'trigger',
+      informUser: { mode: 'off' as const },
       label: 'Start',
       position: { x: 0, y: 0 },
       config: { triggerKind: 'manual' },
@@ -29,6 +31,7 @@ const identityCallee: WorkflowGraph = {
     {
       id: 'co',
       kind: 'output',
+      informUser: { mode: 'off' as const },
       label: 'Out',
       position: { x: 200, y: 0 },
       config: { source: { kind: 'ref', nodeId: 'ct', path: '' } },
@@ -47,6 +50,7 @@ const branchCallee: WorkflowGraph = {
     {
       id: 'ct',
       kind: 'trigger',
+      informUser: { mode: 'off' as const },
       label: 'Start',
       position: { x: 0, y: 0 },
       config: { triggerKind: 'manual' },
@@ -54,6 +58,7 @@ const branchCallee: WorkflowGraph = {
     {
       id: 'b',
       kind: 'branch',
+      informUser: { mode: 'off' as const },
       label: 'Truthy?',
       position: { x: 100, y: 0 },
       // No `source` → tests the whole trigger input.
@@ -62,6 +67,7 @@ const branchCallee: WorkflowGraph = {
     {
       id: 'yes',
       kind: 'output',
+      informUser: { mode: 'off' as const },
       label: 'Yes',
       position: { x: 200, y: 0 },
       config: { source: { kind: 'ref', nodeId: 'b', path: '' } },
@@ -69,6 +75,7 @@ const branchCallee: WorkflowGraph = {
     {
       id: 'no',
       kind: 'output',
+      informUser: { mode: 'off' as const },
       label: 'No',
       position: { x: 200, y: 100 },
       config: { source: { kind: 'ref', nodeId: 'b', path: '' } },
@@ -81,30 +88,37 @@ const branchCallee: WorkflowGraph = {
   ],
 }
 
-const workflowEntry = (graph: WorkflowGraph): WfRunManifestEntry => ({
+function workflowEntry (graph: WorkflowGraph): WfRunManifestEntry {
+  return {
   kind: 'workflow',
   id: 'wf-callee',
   versionId: 'v1',
   versionNumber: 3,
   name: 'Callee',
   graph,
-})
+}
+}
 
-const callNode = (
-  config: Partial<WorkflowCallNode['config']> = {},
-): WorkflowCallNode => ({
+function callNode (config: Partial<WorkflowCallNode['config']> = {}): WorkflowCallNode {
+  return {
   id: 'w',
   kind: 'workflow',
   position: { x: 0, y: 0 },
   label: 'Call',
-  config: { workflowId: 'wf-callee', inputs: {}, ...config },
-})
+  informUser: { mode: 'off' },
+  config: {
+    workflowId: 'wf-callee',
+    inputs: {},
+    calleeExecution: 'inline',
+    ...config,
+  },
+}
+}
 
-const ctxWith = (
-  manifest: WfRunManifestEntry[],
-  nodeOutputs: Map<string, unknown> = new Map(),
-): RunNodeContext<unknown> =>
-  ({ manifest, nodeOutputs }) as unknown as RunNodeContext<unknown>
+function ctxWith (manifest: WfRunManifestEntry[],
+  nodeOutputs = new Map<string, unknown>()): RunNodeContext<unknown> {
+  return ({ manifest, nodeOutputs }) as unknown as RunNodeContext<unknown>
+}
 
 // ---------------------------------------------------------------------------
 // executeWorkflowNode

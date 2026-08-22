@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 
 import { executeWorkflow } from './executor'
+import { makeConfig } from './executor-test-helpers'
 import { createMemoryRunRecorder } from './run-recorder'
 import { createMemorySink } from './stream-sink'
-import { makeConfig } from './executor-test-helpers'
 
 // The first-class user-facing progress feed: a node emits a `level: 'progress'`
 // line at start ONLY when the author set a `progressNote` (interpolated from run
@@ -20,13 +20,15 @@ const trigger = {
   position: { x: 0, y: 0 },
   config: { triggerKind: 'go' },
 }
-const output = (id: string, x: number, source: string) => ({
+function output (id: string, x: number, source: string) {
+  return {
   id,
   kind: 'output' as const,
   label: 'Out',
   position: { x, y: 0 },
   config: { source: { kind: 'ref' as const, nodeId: source, path: '' } },
-})
+}
+}
 
 function progressLines(sink: ReturnType<typeof createMemorySink>): string[] {
   return sink.logs.filter((l) => l.level === 'progress').map((l) => l.message)

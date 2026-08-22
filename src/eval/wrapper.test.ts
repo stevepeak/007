@@ -74,7 +74,7 @@ describe('buildAgentWrapperGraph', () => {
     // would publish a new wrapper version. Key REORDERING is fine —
     // `stableStringify` sorts — but added or dropped keys are not.
     const fresh = buildAgentWrapperGraph('agent-123')
-    expect(parseStoredGraph(JSON.parse(JSON.stringify(fresh)))).toEqual(fresh)
+    expect(parseStoredGraph(structuredClone(fresh))).toEqual(fresh)
   })
 
   test('a PINNED graph survives the zod round-trip too', () => {
@@ -83,7 +83,7 @@ describe('buildAgentWrapperGraph', () => {
     // could silently normalize — which would make every pinned eval cell
     // republish its wrapper forever.
     const fresh = buildAgentWrapperGraph('agent-123', 3)
-    expect(parseStoredGraph(JSON.parse(JSON.stringify(fresh)))).toEqual(fresh)
+    expect(parseStoredGraph(structuredClone(fresh))).toEqual(fresh)
   })
 
   test('the pin reaches the agent node, which is what the manifest reads', () => {

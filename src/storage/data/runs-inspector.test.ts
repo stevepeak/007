@@ -148,7 +148,7 @@ describe('getRun step cursor', () => {
     expect(result?.stepsPartial).toBe(false)
     const cursors = result!.steps.map((s) => s.cursor)
     expect(cursors).toHaveLength(2)
-    expect(cursors[1]).toBeGreaterThan(cursors[0]!)
+    expect(cursors[1]).toBeGreaterThan(cursors[0])
   })
 
   test('the cursor is distinct where `sequence` collides', async () => {
@@ -183,7 +183,7 @@ describe('getRun step cursor', () => {
     await addStep(db, { nodeId: 'c', status: 'running' })
 
     const full = await getRun(db, RUN)
-    const watermark = full!.steps[0]!.cursor
+    const watermark = full!.steps[0].cursor
 
     const delta = await getRun(db, RUN, { settledStepCursor: watermark })
 
@@ -198,7 +198,7 @@ describe('getRun step cursor', () => {
     const full = await getRun(db, RUN)
     // A watermark can only ever sit below the first unsettled step, so `b` is
     // above it — and stays above it as the row mutates in place.
-    const watermark = full!.steps[0]!.cursor
+    const watermark = full!.steps[0].cursor
 
     await db
       .update(wfRunStep)
@@ -218,7 +218,7 @@ describe('getRun step cursor', () => {
 
     const full = await getRun(db, RUN)
     const delta = await getRun(db, RUN, {
-      settledStepCursor: full!.steps[0]!.cursor,
+      settledStepCursor: full!.steps[0].cursor,
     })
 
     // The header totals are run-wide, so trimming the wire payload must not

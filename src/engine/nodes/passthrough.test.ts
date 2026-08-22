@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import type { PassthroughNode } from '../graph'
+
 import { executePassthroughNode } from './passthrough'
 
 // Build a minimal Passthrough node with the given config.
@@ -8,6 +9,7 @@ function node(config: PassthroughNode['config']): PassthroughNode {
   return {
     id: 'p',
     kind: 'passthrough',
+    informUser: { mode: 'off' as const },
     label: 'Passthrough',
     position: { x: 0, y: 0 },
     config,

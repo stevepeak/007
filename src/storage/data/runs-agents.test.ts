@@ -2,8 +2,8 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import { Database } from 'bun:sqlite'
-import { drizzle } from 'drizzle-orm/bun-sqlite'
 import { beforeEach, describe, expect, test } from 'bun:test'
+import { drizzle } from 'drizzle-orm/bun-sqlite'
 
 import type { WfDb } from '../client'
 import {
@@ -245,7 +245,7 @@ describe('listAgentCalls', () => {
         nodeKind: 'agent',
         itemIndex: i,
         sequence: i,
-        status: i === 3 ? 'failed' : 'completed',
+        status: i === 3 ? ('failed' as const) : ('completed' as const),
         error: i === 3 ? 'item blew up' : null,
         meta: agentMeta({ agentId: AGENT }),
         startedAt: new Date(1000 + i * 1000),

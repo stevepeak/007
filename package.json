@@ -34,7 +34,7 @@
   },
   "scripts": {
     "clean": "rm -rf node_modules dist .turbo",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.ui.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.ui.json && tsc --noEmit -p tsconfig.test.json",
     "test": "bun test",
     "lint": "eslint --ignore-pattern='./migrations/' .",
     "fix": "eslint --fix --quiet --ignore-pattern='./migrations/' .",
@@ -78,6 +78,7 @@
     "@cloudflare/workers-types": "^5.20260821.1",
     "@dexaai/config": "^0.0.10",
     "@ocavue/eslint-config": "^4.13.5",
+    "@types/bun": "^1.4.0",
     "@types/node": "^26.2.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",

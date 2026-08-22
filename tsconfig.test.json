@@ -1,0 +1,26 @@
+{
+  // Tests for everything OUTSIDE `src/ui` — the Workers-typed half of the
+  // package (engine, storage, cloudflare, server, eval, analytics).
+  //
+  // The split here mirrors the production one exactly, and for the same reason:
+  // the DOM lib and @cloudflare/workers-types declare conflicting globals
+  // (`fetch`, `Response`, `WebSocket`), so a single project spanning both makes
+  // Workers code fail against DOM signatures. UI tests are covered by
+  // tsconfig.ui.json instead, which already carries the DOM lib.
+  //
+  // Before this file existed, tests were excluded from BOTH projects and from
+  // ESLint, so `bun test` — which strips types rather than checking them — was
+  // the only thing that ever read them. Fixtures drifted from the types they
+  // claimed to model and nothing said a word.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "skipLibCheck": true,
+    "types": ["bun", "node", "@cloudflare/workers-types"],
+    // Fixtures legitimately declare fields a given case doesn't read; the
+    // production projects keep both of these on.
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": ["src/**/*.test.ts", "src/**/*test-helpers.ts"],
+  "exclude": ["**/node_modules", "src/ui/**"]
+}

@@ -75,7 +75,7 @@ describe('heuristicAgentChangeSummary', () => {
           maxSpawns: 10,
           allowStopSignal: true,
         },
-      } as Partial<AgentConfig>),
+      }),
     )
     expect(summary.short).toBe(
       'Changed the output contract, changed delegation.',

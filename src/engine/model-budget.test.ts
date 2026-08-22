@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
+import { AI_STEP_OPTS } from '../cloudflare/graph-workflow-dispatch-step-opts'
+
 import {
   MAX_ROUND_TRIP_MS,
   MAX_TOOL_MS,
@@ -9,7 +11,6 @@ import {
   STEP_TIMEOUT_SLACK_MS,
 } from './model-budget'
 import { defaultNodeTimeoutMs } from './node-timeout'
-import { AI_STEP_OPTS } from '../cloudflare/graph-workflow-dispatch-step-opts'
 
 describe('modelBudgetFor', () => {
   test('leaves slack below the step timeout so the in-process abort wins', () => {

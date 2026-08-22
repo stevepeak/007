@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import { calleeEventType, toCalleeWire } from '../cloudflare/callee-protocol'
+
 import {
   backfillIterationLimits,
   ITERATION_MAX_ITEMS_CEILING,
@@ -15,10 +16,12 @@ import {
 
 const pos = { x: 0, y: 0 }
 
-const parse = (nodes: unknown[]) =>
-  workflowGraphShapeSchema.parse({ version: 1, nodes, edges: [] })
+function parse (nodes: unknown[]) {
+  return workflowGraphShapeSchema.parse({ version: 1, nodes, edges: [] })
+}
 
-const iterationNode = (config: Record<string, unknown> = {}) => ({
+function iterationNode (config: Record<string, unknown> = {}) {
+  return {
   id: 'loop',
   kind: 'iteration',
   position: pos,
@@ -48,15 +51,18 @@ const iterationNode = (config: Record<string, unknown> = {}) => ({
     },
     ...config,
   },
-})
+}
+}
 
-const workflowNode = (config: Record<string, unknown> = {}) => ({
+function workflowNode (config: Record<string, unknown> = {}) {
+  return {
   id: 'call',
   kind: 'workflow',
   position: pos,
   label: 'Call',
   config: { workflowId: 'w1', ...config },
-})
+}
+}
 
 describe('execution modes', () => {
   // The default is load-bearing: every graph authored before the setting existed
@@ -171,7 +177,7 @@ describe('iteration fan-out bound', () => {
     // other loop rather than being skipped for sitting a level down.
     const inner = iterationNode()
     const outer = iterationNode()
-    outer.config.subgraph.nodes.push(inner as never)
+    outer.config.subgraph.nodes.push(inner)
     const filled = backfillIterationLimits(parse([outer, workflowNode()]))
     const [loop] = filled.nodes
     const nested =

@@ -2,6 +2,8 @@ import { MockLanguageModelV3 } from 'ai/test'
 import { describe, expect, test } from 'bun:test'
 
 import type { AgentConfig, AgentNode, WfRunManifestEntry } from '../graph'
+import { mockFinish, mockUsage } from '../model-test-helpers'
+
 import { executeAgentNode } from './agent'
 
 // Proves how an agent node's messages are built — and, just as importantly, that
@@ -58,8 +60,8 @@ function mockModelCapturing(seen: { prompt: unknown }) {
       seen.prompt = (opts as { prompt: unknown }).prompt
       return {
         content: [{ type: 'text', text: 'ok' }],
-        finishReason: 'stop',
-        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        finishReason: mockFinish('stop'),
+        usage: mockUsage(1, 1),
         warnings: [],
       }
     },
@@ -80,27 +82,30 @@ function botNode(
   }
 }
 
-const uiMessage = (text: string) => ({
+function uiMessage (text: string) {
+  return {
   id: text,
   role: 'user' as const,
   parts: [{ type: 'text' as const, text }],
-})
+}
+}
 
-const run = async (args: {
+async function run (args: {
   node: AgentNode
   manifest: WfRunManifestEntry[]
   nodeOutputs?: Map<string, unknown>
   seen: { prompt: unknown }
-}) =>
-  executeAgentNode<unknown>({
+}) {
+  return await executeAgentNode<unknown>({
     node: args.node,
     getModel: () => mockModelCapturing(args.seen),
     toolRegistry: new Map(),
     toolDeps: {},
     promptVariables: {},
-    nodeOutputs: args.nodeOutputs ?? new Map(),
+    nodeOutputs: args.nodeOutputs ?? new Map<string, unknown>(),
     manifest: args.manifest,
   })
+}
 
 describe('agent node — task input kind', () => {
   test('the user turn is the rendered userPrompt, and nothing else', async () => {

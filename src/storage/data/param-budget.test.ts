@@ -66,12 +66,20 @@ function probeDb(): Probe {
 
   // Drizzle prepares a statement and then spreads the binds into the executor,
   // so the parameter count is the executor's own argument count.
+  // `Reflect.get` is typed `any`; taking it as `unknown` and narrowing to a
+  // callable keeps the reflection honest instead of leaking `any` through every
+  // proxied member.
+  type AnyFn = (this: unknown, ...args: unknown[]) => unknown
+  const asFn = (v: unknown): AnyFn | null =>
+    typeof v === 'function' ? (v as AnyFn) : null
+
   const wrapStatement = (stmt: object) =>
     new Proxy(stmt, {
       get(target, prop, receiver) {
-        const value = Reflect.get(target, prop, receiver)
-        if (typeof value !== 'function') return value
-        if (!EXECUTORS.includes(String(prop))) return value.bind(target)
+        const value: unknown = Reflect.get(target, prop, receiver)
+        const fn = asFn(value)
+        if (!fn) return value
+        if (!EXECUTORS.includes(String(prop))) return fn.bind(target)
         return (...params: unknown[]) => {
           if (on) {
             counts.push(
@@ -80,25 +88,26 @@ function probeDb(): Probe {
                 : params.length,
             )
           }
-          return Reflect.apply(value, target, params)
+          return Reflect.apply(fn, target, params)
         }
       },
     })
 
   const proxied = new Proxy(sqlite, {
     get(target, prop, receiver) {
-      const value = Reflect.get(target, prop, receiver)
-      if (typeof value !== 'function') return value
+      const value: unknown = Reflect.get(target, prop, receiver)
+      const fn = asFn(value)
+      if (!fn) return value
       if (prop === 'prepare' || prop === 'query') {
         return (...args: unknown[]) =>
-          wrapStatement(Reflect.apply(value, target, args) as object)
+          wrapStatement(Reflect.apply(fn, target, args) as object)
       }
-      return value.bind(target)
+      return fn.bind(target)
     },
   })
 
   return {
-    db: drizzle(proxied as unknown as Database, {
+    db: drizzle(proxied, {
       schema: wfSchema,
     }) as unknown as WfDb,
     counts,
@@ -116,11 +125,13 @@ function expectWithinBudget(probe: Probe) {
   expect(probe.peak()).toBeLessThanOrEqual(D1_MAX_BOUND_PARAMS)
 }
 
-const agentMeta = (model: string, inputTokens: number, outputTokens: number) => ({
+function agentMeta (model: string, inputTokens: number, outputTokens: number) {
+  return {
   model,
   steps: [{ stepNumber: 1, toolCalls: [] }],
   totalUsage: { inputTokens, outputTokens },
-})
+}
+}
 
 // Comfortably past 90 (the chunk size) and past 100 (D1's ceiling), and enough
 // to force a third chunk so an off-by-one in the slicing shows up.

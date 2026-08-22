@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
-import type { EvalRowRecord } from './evals'
 import { buildEvalSnapshot, hashEvalSnapshot } from './eval-snapshot'
+import type { EvalRowRecord } from './evals'
 
 // The snapshot hash is PERSISTED and compared across runs to detect whether a
 // Sample's effective definition changed and to dedup identical snapshots. Its
