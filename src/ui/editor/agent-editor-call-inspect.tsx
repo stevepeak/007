@@ -6,6 +6,7 @@ import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { useRun } from '../hooks'
 import { WfLink } from '../nav'
+import { QueryState } from '../query-state'
 import { RunLog } from '../run-log'
 import { runStatusClass } from '../run-status'
 
@@ -102,17 +103,24 @@ export function AgentCallInspect({
           </WfLink>
         </span>
       ),
-      body: run.isLoading ? (
-        <p className="text-xs text-neutral-500">Loading run…</p>
-      ) : run.error ? (
-        <p className="text-xs text-red-600">{(run.error).message}</p>
-      ) : !step ? (
-        <p className="text-xs text-neutral-500">
-          This call&rsquo;s step is no longer recorded — the run&rsquo;s steps
-          may have been pruned.
-        </p>
-      ) : (
-        <RunLog step={step} />
+      // Keyed on the RESOLVED step, not the run: a loaded run whose steps have
+      // been pruned is the empty state, which is what `empty` renders.
+      body: (
+        <QueryState
+          query={{ isLoading: run.isLoading, error: run.error, data: step }}
+          loading={<p className="text-xs text-neutral-500">Loading run…</p>}
+          error={(error) => (
+            <p className="text-xs text-red-600">{error.message}</p>
+          )}
+          empty={
+            <p className="text-xs text-neutral-500">
+              This call&rsquo;s step is no longer recorded — the run&rsquo;s
+              steps may have been pruned.
+            </p>
+          }
+        >
+          {(step) => <RunLog step={step} />}
+        </QueryState>
       ),
     },
   ]

@@ -7,6 +7,7 @@ import { cn } from './cn'
 import { useWfComponents } from './context'
 import { useCreateWorkflow, useTriggerEvents } from './hooks'
 import { Modal } from './modal'
+import { QueryState } from './query-state'
 
 // Create-workflow flow. A workflow can't exist without knowing how it starts, so
 // creation is a small dialog: name it, then choose one of three trigger modes —
@@ -173,28 +174,39 @@ export function NewWorkflowDialog({
             <div className="space-y-2">
               <div className="space-y-1">
                 <Label>Event</Label>
-                {events.isLoading ? (
-                  <div className="text-xs text-neutral-500">
-                    Loading events…
-                  </div>
-                ) : eventList.length === 0 ? (
-                  <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700">
-                    This host declares no events. Use a manual or scheduled
-                    trigger instead.
-                  </div>
-                ) : (
-                  <select
-                    value={resolvedEventKind}
-                    onChange={(e) => setEventKind(e.target.value)}
-                    className="h-9 w-full rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none focus:border-neutral-500"
-                  >
-                    {eventList.map((ev) => (
-                      <option key={ev.kind} value={ev.kind}>
-                        {ev.description}
-                      </option>
-                    ))}
-                  </select>
-                )}
+                <QueryState
+                  query={{
+                    isLoading: events.isLoading,
+                    error: null,
+                    data: eventList,
+                  }}
+                  loading={
+                    <div className="text-xs text-neutral-500">
+                      Loading events…
+                    </div>
+                  }
+                  isEmpty={(events) => events?.length === 0}
+                  empty={
+                    <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700">
+                      This host declares no events. Use a manual or scheduled
+                      trigger instead.
+                    </div>
+                  }
+                >
+                  {(eventList) => (
+                    <select
+                      value={resolvedEventKind}
+                      onChange={(e) => setEventKind(e.target.value)}
+                      className="h-9 w-full rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none focus:border-neutral-500"
+                    >
+                      {eventList.map((ev) => (
+                        <option key={ev.kind} value={ev.kind}>
+                          {ev.description}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </QueryState>
               </div>
 
               {resolvedEvent && resolvedEvent.fields.length > 0 ? (

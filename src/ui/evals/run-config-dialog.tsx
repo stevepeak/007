@@ -101,6 +101,8 @@ export function RunConfigDialog({
 
   const modelsQuery = useModels()
   const providersQuery = useProviders()
+  // As in `model-select`: two queries folded into one flag for a picker, not a
+  // region of the dialog that a QueryState could own.
   const loadingModels = modelsQuery.isLoading || providersQuery.isLoading
 
   const models = useMemo(() => modelsQuery.data ?? [], [modelsQuery.data])

@@ -11,6 +11,7 @@ import { cn } from '../../cn'
 import { formatDurationMs, formatUsd } from '../../cost'
 import { useAgents, useWorkflow } from '../../hooks'
 import { WfLink } from '../../nav'
+import { pendingLabel } from '../../query-state'
 import { formatTimestamp, PassRate, Score } from '../shared'
 
 import { VerdictBadge } from './atoms'
@@ -261,7 +262,7 @@ function AgentChip({ agentId }: { agentId: string }) {
         <Icon className="size-3" />
       </span>
       <span className="text-sm font-medium text-neutral-800 group-hover:underline">
-        {agent?.name ?? (agents.isLoading ? 'Loading…' : 'Agent')}
+        {pendingLabel(agents, agent?.name, 'Agent')}
       </span>
     </WfLink>
   )
@@ -270,7 +271,7 @@ function AgentChip({ agentId }: { agentId: string }) {
 // Compact workflow chip — same shape as the agent chip, workflow glyph.
 function WorkflowChip({ workflowId }: { workflowId: string }) {
   const wf = useWorkflow(workflowId)
-  const name = wf.data?.workflow.name ?? (wf.isLoading ? 'Loading…' : 'Workflow')
+  const name = pendingLabel(wf, wf.data?.workflow.name, 'Workflow')
   return (
     <span className="inline-flex items-center gap-1.5">
       <span className="inline-flex size-5 shrink-0 items-center justify-center rounded bg-sky-100 text-sky-600">

@@ -15,6 +15,7 @@ import {
   useTools,
 } from './hooks'
 import { useWfNav } from './nav'
+import { QueryState } from './query-state'
 import { runStatusClass } from './run-status'
 import { toolChip } from './tool-appearance'
 import { ContextField } from './tool-context-field'
@@ -35,35 +36,37 @@ export type ToolDetailProps = {
 
 export function ToolDetail({ toolId, className }: ToolDetailProps) {
   const { data: tools, isLoading, error } = useTools()
+  // The ladder keys off the RESOLVED tool, not the tool list: a loaded registry
+  // that simply doesn't contain `toolId` is the "not registered" state, which is
+  // what `empty` renders.
   const tool = tools?.find((t) => t.id === toolId)
 
-  if (isLoading) {
-    return <div className="p-6 text-sm text-neutral-500">Loading…</div>
-  }
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {(error).message}
-        </div>
-      </div>
-    )
-  }
-  if (!tool) {
-    return (
-      <div className="p-6 text-sm text-neutral-500">
-        Tool <span className="font-mono text-neutral-700">{toolId}</span> is not
-        registered.
-      </div>
-    )
-  }
-
   return (
-    <div className={cn('mx-auto max-w-3xl space-y-8 p-6', className)}>
-      <ToolHeader tool={tool} />
-      <Playground tool={tool} />
-      <RecentCalls toolId={tool.id} />
-    </div>
+    <QueryState
+      query={{ isLoading, error, data: tool }}
+      loading={<div className="p-6 text-sm text-neutral-500">Loading…</div>}
+      error={(error) => (
+        <div className="p-6">
+          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {error.message}
+          </div>
+        </div>
+      )}
+      empty={
+        <div className="p-6 text-sm text-neutral-500">
+          Tool <span className="font-mono text-neutral-700">{toolId}</span> is
+          not registered.
+        </div>
+      }
+    >
+      {(tool) => (
+        <div className={cn('mx-auto max-w-3xl space-y-8 p-6', className)}>
+          <ToolHeader tool={tool} />
+          <Playground tool={tool} />
+          <RecentCalls toolId={tool.id} />
+        </div>
+      )}
+    </QueryState>
   )
 }
 
@@ -259,19 +262,15 @@ function RecentCalls({ toolId }: { toolId: string }) {
         </p>
       </div>
 
-      {isLoading ? (
-        <div className="text-sm text-neutral-500">Loading…</div>
-      ) : null}
-      {error ? (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {(error).message}
-        </div>
-      ) : null}
-      {data && data.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-neutral-200 p-6 text-center text-sm text-neutral-500">
-          This tool hasn&apos;t been called in any run yet.
-        </div>
-      ) : null}
+      <QueryState
+        query={{ isLoading, error, data }}
+        isEmpty={(calls) => calls?.length === 0}
+        empty={
+          <div className="rounded-lg border border-dashed border-neutral-200 p-6 text-center text-sm text-neutral-500">
+            This tool hasn&apos;t been called in any run yet.
+          </div>
+        }
+      />
 
       <div className="space-y-2">
         {data?.map((inv, i) => (

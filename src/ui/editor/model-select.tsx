@@ -36,6 +36,9 @@ export function ModelSelect({
 }) {
   const modelsQuery = useModels()
   const providersQuery = useProviders()
+  // Two queries reduced to one flag for the picker's own `loading` prop. Not a
+  // ladder: the trigger button and the list render either way, and neither
+  // query alone is the data being shown.
   const loading = modelsQuery.isLoading || providersQuery.isLoading
 
   const models = useMemo(() => modelsQuery.data ?? [], [modelsQuery.data])

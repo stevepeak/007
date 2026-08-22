@@ -10,6 +10,7 @@ import { formatRelative, formatTimestamp, formatTokens } from './cost'
 import { useWorkflows } from './hooks'
 import { useWfNav, WfLink } from './nav'
 import { NewWorkflowDialog } from './new-workflow-dialog'
+import { QueryState } from './query-state'
 import { Tooltip } from './tooltip'
 import { useModifierHold } from './use-modifier-hold'
 
@@ -55,19 +56,20 @@ export function WorkflowsList({ className }: WorkflowsListProps) {
         }}
       />
 
-      {isLoading ? (
-        <div className="text-sm text-neutral-500">Loading…</div>
-      ) : null}
-      {error ? (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {(error).message} — are you signed in?
-        </div>
-      ) : null}
-      {data?.length === 0 ? (
-        <div className="text-sm text-neutral-500">
-          No workflows in the wf_* tables yet. Seed one first.
-        </div>
-      ) : null}
+      <QueryState
+        query={{ isLoading, error, data }}
+        error={(error) => (
+          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {error.message} — are you signed in?
+          </div>
+        )}
+        isEmpty={(workflows) => workflows?.length === 0}
+        empty={
+          <div className="text-sm text-neutral-500">
+            No workflows in the wf_* tables yet. Seed one first.
+          </div>
+        }
+      />
       <div className="space-y-3">
         {data?.map((w) => (
           <div

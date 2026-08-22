@@ -10,6 +10,7 @@ import { useWfComponents } from '../context'
 import { useAgents, useEvalRuns, useEvalSet, useUpdateEvalSet, useUpsertEvalRow } from '../hooks'
 import { IdeaSpark } from '../idea-spark'
 import { useOpenAsset, useWfNav, WfLink } from '../nav'
+import { pendingLabel, QueryState } from '../query-state'
 import { WfShell } from '../shell'
 import { sectionCrumb } from '../wf-crumbs'
 
@@ -155,42 +156,46 @@ export function EvalSet({ setId, className }: EvalSetProps) {
       }
     >
       <div className="mx-auto max-w-5xl space-y-5 p-6">
-        {isLoading && !set ? (
-          <EmptyState message="Loading goal…" />
-        ) : !set ? (
-          <EmptyState message="This goal doesn't exist, or was archived / removed." />
-        ) : (
-          <>
-            <TargetRow
-              setId={setId}
-              targetId={set.targetId}
-              targetVersion={set.targetVersion}
-            />
+        <QueryState
+          query={{ isLoading, error: null, data: set }}
+          loading={<EmptyState message="Loading goal…" />}
+          empty={
+            <EmptyState message="This goal doesn't exist, or was archived / removed." />
+          }
+        >
+          {(set) => (
+            <>
+              <TargetRow
+                setId={setId}
+                targetId={set.targetId}
+                targetVersion={set.targetVersion}
+              />
 
-            <RunConfigDialog
-              open={runOpen}
-              onClose={() => setRunOpen(false)}
-              scope="goal"
-              targetName={set.name}
-              setIds={[setId]}
-            />
+              <RunConfigDialog
+                open={runOpen}
+                onClose={() => setRunOpen(false)}
+                scope="goal"
+                targetName={set.name}
+                setIds={[setId]}
+              />
 
-            <Tabs
-              active={tab}
-              onChange={(k) => setTab(k as SetTab)}
-              tabs={[
-                { key: 'samples', label: 'Samples' },
-                { key: 'runs', label: 'Test runs' },
-              ]}
-            />
+              <Tabs
+                active={tab}
+                onChange={(k) => setTab(k as SetTab)}
+                tabs={[
+                  { key: 'samples', label: 'Samples' },
+                  { key: 'runs', label: 'Test runs' },
+                ]}
+              />
 
-            {tab === 'samples' ? (
-              <SamplesTable setId={setId} rows={rows} />
-            ) : (
-              <RunsForSet setId={setId} />
-            )}
-          </>
-        )}
+              {tab === 'samples' ? (
+                <SamplesTable setId={setId} rows={rows} />
+              ) : (
+                <RunsForSet setId={setId} />
+              )}
+            </>
+          )}
+        </QueryState>
       </div>
     </WfShell>
   )
@@ -296,7 +301,7 @@ function TargetRow({
         <Icon className="size-4" />
       </span>
       <div className="min-w-0 flex-1 text-sm font-medium text-neutral-800">
-        {agent?.name ?? (agentsQuery.isLoading ? 'Loading…' : 'Unknown agent')}
+        {pendingLabel(agentsQuery, agent?.name, 'Unknown agent')}
       </div>
       <span className="shrink-0 rounded-full border border-neutral-200 bg-white px-2 py-0.5 text-[11px] font-medium tabular-nums text-neutral-500">
         {targetVersion == null ? 'Latest' : `v${targetVersion}`}

@@ -17,6 +17,7 @@ import {
   useSetFeedbackInternalNote,
 } from './hooks-feedback'
 import { useWfNav } from './nav'
+import { QueryState } from './query-state'
 import { WfShell } from './shell'
 import { sectionCrumb } from './wf-crumbs'
 
@@ -33,15 +34,17 @@ export function FeedbackDetail({ subjectId }: { subjectId: string }) {
       crumbs={[sectionCrumb('feedback'), { label: 'Item' }]}
       scroll
     >
-      {query.isLoading ? (
-        <p className="p-6 text-sm text-neutral-500">Loading feedback…</p>
-      ) : !row ? (
-        <p className="p-6 text-sm text-neutral-500">
-          This feedback item no longer exists — it may have been cleared.
-        </p>
-      ) : (
-        <FeedbackDetailBody row={row} />
-      )}
+      <QueryState
+        query={{ isLoading: query.isLoading, error: query.error, data: row }}
+        loading={<p className="p-6 text-sm text-neutral-500">Loading feedback…</p>}
+        empty={
+          <p className="p-6 text-sm text-neutral-500">
+            This feedback item no longer exists — it may have been cleared.
+          </p>
+        }
+      >
+        {(row) => <FeedbackDetailBody row={row} />}
+      </QueryState>
     </WfShell>
   )
 }

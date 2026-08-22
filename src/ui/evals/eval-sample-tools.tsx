@@ -181,6 +181,9 @@ export function useTargetHasTools(
   // mocks aren't built yet.
   if (targetKind !== 'agent') return true
   if (!targetId) return false
+  // A hook returning a tri-state answer (yes / no / still resolving), not a
+  // rendered ladder — `null` here means "don't decide yet", which is why the
+  // caller can't use QueryState either.
   if (detail.isLoading) return null
   const config = detail.data?.currentVersion?.config ?? detail.data?.draft?.config
   if (!config) return false

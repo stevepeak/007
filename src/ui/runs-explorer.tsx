@@ -194,6 +194,10 @@ export function RunsExplorer({
             purgeRevealed ? null : 'ml-auto',
           )}
         >
+          {/* Not a QueryState ladder: this surface's states are scattered
+              across three separate chrome slots — the count chip here, the
+              placeholder row in the table body, and the pager below — so no
+              single wrapper owns a region to sequence. */}
           {runsQuery.isLoading
             ? 'Loading…'
             : total === 0

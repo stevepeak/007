@@ -129,7 +129,6 @@ export function ModelsList({ className }: ModelsListProps) {
 
       <QueryState
         query={{ isLoading, error, data }}
-        loading={<div className="text-sm text-neutral-500">Loading…</div>}
         error={(error) => (
           <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
             {error.message} — are you signed in?

@@ -199,6 +199,9 @@ export function EvalRunsTable({
   onOpenRun: (runId: string, e: MouseEvent) => void
   renderFirstCell?: (run: WfEvalRunSummary) => ReactNode
 }) {
+  // Takes `isLoading` as a PROP rather than owning a query, so there is no
+  // query result here for `QueryState` to sequence — the caller has already
+  // reduced its own to a list plus a flag.
   if (isLoading && loadingMessage) return <EmptyState message={loadingMessage} />
   if (runs.length === 0) return <EmptyState message={emptyMessage} />
   return (

@@ -127,6 +127,9 @@ function AgentToolMocks({
       </p>
     )
   }
+  // Not a QueryState ladder: the states here are domain gates (no target set,
+  // target has no tools) interleaved with two queries that must BOTH land, and
+  // neither query's data is what the body renders.
   if (detail.isLoading || toolsQuery.isLoading) {
     return <p className="px-1 py-1 text-xs text-neutral-400">Loading tools…</p>
   }

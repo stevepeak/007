@@ -20,6 +20,7 @@ import {
   useUpsertEvalRow,
 } from '../hooks'
 import { useWfNav } from '../nav'
+import { QueryState } from '../query-state'
 import { WfShell } from '../shell'
 import { sectionCrumb } from '../wf-crumbs'
 
@@ -317,136 +318,146 @@ export function EvalSample({
       }
     >
       <div className="mx-auto max-w-5xl space-y-5 p-6">
-        {isLoading && !row ? (
-          <EmptyState message="Loading sample…" />
-        ) : !row || !draft ? (
-          <EmptyState message="This sample doesn't exist, or was archived / removed." />
-        ) : (
-          <>
-            <RunConfigDialog
-              open={runOpen}
-              onClose={() => setRunOpen(false)}
-              scope="sample"
-              targetName={set?.name || draft.name || 'goal'}
-              setIds={[setId]}
-            />
-
-            <Tabs
-              active={tab}
-              onChange={(k) => setTab(k as SampleTab)}
-              tabs={[
-                { key: 'config', label: 'Configuration' },
-                { key: 'runs', label: 'Test runs' },
-              ]}
-            />
-
-            {tab === 'config' ? (
-              <StepFlow
-                steps={
-                  [
-                    {
-                      key: 'input',
-                      title: INPUT_TITLES[draft.input.kind],
-                      content: (
-                        <div className="space-y-3">
-                          {kindMismatch ? (
-                            <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
-                              <p className="text-[11px] text-amber-700">
-                                This sample holds a{' '}
-                                <strong>{draft.input.kind}</strong> input, but{' '}
-                                {targetAgent?.name ?? 'the target agent'} now
-                                takes a <strong>{expectedKind}</strong> one — the
-                                run will ignore what&apos;s below.
-                              </p>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  persist({
-                                    ...draft,
-                                    input: emptyInputFor(
-                                      expectedKind === 'conversation'
-                                        ? 'conversation'
-                                        : 'task',
-                                    ),
-                                  })
-                                }
-                                className="ml-auto shrink-0 text-[11px] font-medium text-amber-800 underline"
-                              >
-                                Switch to {expectedKind}
-                              </button>
-                            </div>
-                          ) : null}
-                          <SampleInputEditor
-                            targetId={set?.targetId ?? ''}
-                            value={draft.input}
-                            onChange={(input) => persist({ ...draft, input })}
-                          />
-                        </div>
-                      ),
-                    },
-                    // Only when the target actually has tools. `null` = still
-                    // resolving the agent, so nothing renders yet rather than a
-                    // card that flashes in and back out.
-                    ...(hasTools
-                      ? [
-                          {
-                            key: 'tools',
-                            title:
-                              set?.targetKind === 'workflow' ? 'Nodes' : 'Tools',
-                            aside:
-                              draft.tools.mode === 'mocked' &&
-                              (set?.targetKind ?? 'agent') === 'agent' ? (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => setAddMockOpen((o) => !o)}
-                                >
-                                  <Plus className="size-4" />
-                                  Add mock
-                                </Button>
-                              ) : undefined,
-                            content: (
-                              <SampleToolsEditor
-                                targetId={set?.targetId ?? ''}
-                                targetKind={set?.targetKind ?? 'agent'}
-                                value={draft.tools}
-                                onChange={(tools) =>
-                                  persist({ ...draft, tools })
-                                }
-                                addOpen={addMockOpen}
-                                onAddOpenChange={setAddMockOpen}
-                                stagedToolResults={stagedToolResults}
-                              />
-                            ),
-                          },
-                        ]
-                      : []),
-                    {
-                      key: 'checks',
-                      title: 'Checks',
-                      content: (
-                        <ChecksList
-                          checks={draft.checks}
-                          tools={draft.tools}
-                          targetKind={set?.targetKind}
-                          hasTools={hasTools}
-                          outputSchema={outputSchema}
-                          allowToolIds={allowToolIds}
-                          openIndex={openCheck}
-                          onOpenChange={setOpenCheck}
-                          onChange={(checks) => persist({ ...draft, checks })}
-                          onAdd={addCheck}
-                        />
-                      ),
-                    },
-                  ] satisfies Step[]
-                }
+        <QueryState
+          // `draft` is local state seeded from `row`, so the sample is only
+          // really ready when both have landed — one gate, not two.
+          query={{
+            isLoading,
+            error: null,
+            data: row && draft ? { row, draft } : undefined,
+          }}
+          loading={<EmptyState message="Loading sample…" />}
+          empty={
+            <EmptyState message="This sample doesn't exist, or was archived / removed." />
+          }
+        >
+          {({ draft }) => (
+            <>
+              <RunConfigDialog
+                open={runOpen}
+                onClose={() => setRunOpen(false)}
+                scope="sample"
+                targetName={set?.name || draft.name || 'goal'}
+                setIds={[setId]}
               />
-            ) : (
-              <RunsForSample setId={setId} />
-            )}
-          </>
-        )}
+
+              <Tabs
+                active={tab}
+                onChange={(k) => setTab(k as SampleTab)}
+                tabs={[
+                  { key: 'config', label: 'Configuration' },
+                  { key: 'runs', label: 'Test runs' },
+                ]}
+              />
+
+              {tab === 'config' ? (
+                <StepFlow
+                  steps={
+                    [
+                      {
+                        key: 'input',
+                        title: INPUT_TITLES[draft.input.kind],
+                        content: (
+                          <div className="space-y-3">
+                            {kindMismatch ? (
+                              <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+                                <p className="text-[11px] text-amber-700">
+                                  This sample holds a{' '}
+                                  <strong>{draft.input.kind}</strong> input, but{' '}
+                                  {targetAgent?.name ?? 'the target agent'} now
+                                  takes a <strong>{expectedKind}</strong> one — the
+                                  run will ignore what&apos;s below.
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    persist({
+                                      ...draft,
+                                      input: emptyInputFor(
+                                        expectedKind === 'conversation'
+                                          ? 'conversation'
+                                          : 'task',
+                                      ),
+                                    })
+                                  }
+                                  className="ml-auto shrink-0 text-[11px] font-medium text-amber-800 underline"
+                                >
+                                  Switch to {expectedKind}
+                                </button>
+                              </div>
+                            ) : null}
+                            <SampleInputEditor
+                              targetId={set?.targetId ?? ''}
+                              value={draft.input}
+                              onChange={(input) => persist({ ...draft, input })}
+                            />
+                          </div>
+                        ),
+                      },
+                      // Only when the target actually has tools. `null` = still
+                      // resolving the agent, so nothing renders yet rather than a
+                      // card that flashes in and back out.
+                      ...(hasTools
+                        ? [
+                            {
+                              key: 'tools',
+                              title:
+                                set?.targetKind === 'workflow' ? 'Nodes' : 'Tools',
+                              aside:
+                                draft.tools.mode === 'mocked' &&
+                                (set?.targetKind ?? 'agent') === 'agent' ? (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => setAddMockOpen((o) => !o)}
+                                  >
+                                    <Plus className="size-4" />
+                                    Add mock
+                                  </Button>
+                                ) : undefined,
+                              content: (
+                                <SampleToolsEditor
+                                  targetId={set?.targetId ?? ''}
+                                  targetKind={set?.targetKind ?? 'agent'}
+                                  value={draft.tools}
+                                  onChange={(tools) =>
+                                    persist({ ...draft, tools })
+                                  }
+                                  addOpen={addMockOpen}
+                                  onAddOpenChange={setAddMockOpen}
+                                  stagedToolResults={stagedToolResults}
+                                />
+                              ),
+                            },
+                          ]
+                        : []),
+                      {
+                        key: 'checks',
+                        title: 'Checks',
+                        content: (
+                          <ChecksList
+                            checks={draft.checks}
+                            tools={draft.tools}
+                            targetKind={set?.targetKind}
+                            hasTools={hasTools}
+                            outputSchema={outputSchema}
+                            allowToolIds={allowToolIds}
+                            openIndex={openCheck}
+                            onOpenChange={setOpenCheck}
+                            onChange={(checks) => persist({ ...draft, checks })}
+                            onAdd={addCheck}
+                          />
+                        ),
+                      },
+                    ] satisfies Step[]
+                  }
+                />
+              ) : (
+                <RunsForSample setId={setId} />
+              )}
+            </>
+          )}
+        </QueryState>
       </div>
     </WfShell>
   )

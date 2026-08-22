@@ -11,6 +11,7 @@ import {
 } from '../cost'
 import { useAgentCalls, useTools } from '../hooks'
 import { WfLink } from '../nav'
+import { QueryState } from '../query-state'
 import { runStatusDotClass } from '../run-status'
 import { toolChip } from '../tool-appearance'
 import { ToolIcon } from '../tool-icon'
@@ -178,64 +179,60 @@ export function AgentCallsList({
 }) {
   const calls = useAgentCalls(agentId, { limit: CALL_LIMIT })
   const tools = useTools()
-  const rows = calls.data ?? []
-
-  if (calls.isLoading) {
-    return <p className="text-sm text-neutral-500">Loading…</p>
-  }
-
-  if (calls.error) {
-    return (
-      <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-        {(calls.error).message}
-      </p>
-    )
-  }
-
-  if (rows.length === 0) {
-    return (
-      <p className="rounded-md border border-dashed border-neutral-200 p-8 text-center text-sm text-neutral-500">
-        No runs yet. Playground and eval runs aren&rsquo;t counted — put this
-        agent in a workflow and its real calls land here.
-      </p>
-    )
-  }
 
   return (
-    <div className="space-y-2">
-      <div className="overflow-x-auto">
-        <div className="min-w-[56rem] space-y-1">
-          <div
-            className={cn(
-              ROW_COLS,
-              'px-3 pb-1 text-[11px] font-medium text-neutral-400',
-            )}
-          >
-            <span>Run</span>
-            <span className="text-right">Turns</span>
-            <span className="text-right">Tokens</span>
-            <span className="text-right">Cost</span>
-            <span className="text-right">Elapsed</span>
-            <span>Tools</span>
-            <span className="text-right">When</span>
-          </div>
-          {rows.map((call) => (
-            <CallRow
-              key={callKey(call)}
-              call={call}
-              tools={tools.data ?? []}
-              selected={selectedKey === callKey(call)}
-              onSelect={onSelect}
-            />
-          ))}
-        </div>
-      </div>
-      {rows.length === CALL_LIMIT ? (
-        <p className="text-[11px] text-neutral-400">
-          The {CALL_LIMIT} most recent calls.
+    <QueryState
+      query={calls}
+      error={(error) => (
+        <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error.message}
         </p>
-      ) : null}
-    </div>
+      )}
+      isEmpty={(calls) => calls?.length === 0}
+      empty={
+        <p className="rounded-md border border-dashed border-neutral-200 p-8 text-center text-sm text-neutral-500">
+          No runs yet. Playground and eval runs aren&rsquo;t counted — put this
+          agent in a workflow and its real calls land here.
+        </p>
+      }
+    >
+      {(rows) => (
+      <div className="space-y-2">
+        <div className="overflow-x-auto">
+          <div className="min-w-[56rem] space-y-1">
+            <div
+              className={cn(
+                ROW_COLS,
+                'px-3 pb-1 text-[11px] font-medium text-neutral-400',
+              )}
+            >
+              <span>Run</span>
+              <span className="text-right">Turns</span>
+              <span className="text-right">Tokens</span>
+              <span className="text-right">Cost</span>
+              <span className="text-right">Elapsed</span>
+              <span>Tools</span>
+              <span className="text-right">When</span>
+            </div>
+            {rows.map((call) => (
+              <CallRow
+                key={callKey(call)}
+                call={call}
+                tools={tools.data ?? []}
+                selected={selectedKey === callKey(call)}
+                onSelect={onSelect}
+              />
+            ))}
+          </div>
+        </div>
+        {rows.length === CALL_LIMIT ? (
+          <p className="text-[11px] text-neutral-400">
+            The {CALL_LIMIT} most recent calls.
+          </p>
+        ) : null}
+      </div>
+      )}
+    </QueryState>
   )
 }
 

@@ -6,6 +6,7 @@ import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { useTools } from '../hooks'
 import { Popover } from '../popover'
+import { QueryState } from '../query-state'
 import { ToolIcon } from '../tool-icon'
 import { useCommittedField } from '../use-committed-field'
 
@@ -93,49 +94,56 @@ export function EvalToolPicker({
           </button>
         )}
       >
-        {({ close }) =>
-          toolsQuery.isLoading ? (
-            <div className="px-3 py-6 text-center text-sm text-neutral-400">
-              Loading tools…
-            </div>
-          ) : tools.length === 0 ? (
-            <div className="px-3 py-6 text-center text-sm text-neutral-500">
-              No tools available.
-            </div>
-          ) : (
-            tools.map((t) => {
-              const isSel = t.id === value
-              return (
-                <button
-                  key={t.id}
-                  type="button"
-                  role="option"
-                  aria-selected={isSel}
-                  onClick={() => {
-                    onChange(t.id)
-                    close()
-                  }}
-                  className={cn(
-                    'flex w-full items-center gap-2 px-2 py-1.5 text-left transition',
-                    isSel ? 'bg-neutral-100' : 'hover:bg-neutral-50',
-                  )}
-                >
-                  <ToolIcon icon={t.icon} className="size-5" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-neutral-800">
-                      {t.name}
-                    </span>
-                    {t.description ? (
-                      <span className="block truncate text-xs text-neutral-400">
-                        {t.description}
+        {({ close }) => (
+          <QueryState
+            query={{ isLoading: toolsQuery.isLoading, error: null, data: tools }}
+            loading={
+              <div className="px-3 py-6 text-center text-sm text-neutral-400">
+                Loading tools…
+              </div>
+            }
+            isEmpty={(tools) => tools?.length === 0}
+            empty={
+              <div className="px-3 py-6 text-center text-sm text-neutral-500">
+                No tools available.
+              </div>
+            }
+          >
+            {(tools) =>
+              tools.map((t) => {
+                const isSel = t.id === value
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="option"
+                    aria-selected={isSel}
+                    onClick={() => {
+                      onChange(t.id)
+                      close()
+                    }}
+                    className={cn(
+                      'flex w-full items-center gap-2 px-2 py-1.5 text-left transition',
+                      isSel ? 'bg-neutral-100' : 'hover:bg-neutral-50',
+                    )}
+                  >
+                    <ToolIcon icon={t.icon} className="size-5" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-neutral-800">
+                        {t.name}
                       </span>
-                    ) : null}
-                  </span>
-                </button>
-              )
-            })
-          )
-        }
+                      {t.description ? (
+                        <span className="block truncate text-xs text-neutral-400">
+                          {t.description}
+                        </span>
+                      ) : null}
+                    </span>
+                  </button>
+                )
+              })
+            }
+          </QueryState>
+        )}
       </Popover>
     </div>
   )

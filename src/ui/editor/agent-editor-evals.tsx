@@ -21,6 +21,7 @@ import { StatusDot } from '../evals/run-report/atoms'
 import { buildResultRows } from '../evals/run-report/model'
 import { useCreateEvalSet, useEvalRun, useEvalSets, useModels } from '../hooks'
 import { useOpenAsset, WfLink } from '../nav'
+import { QueryState } from '../query-state'
 import { Tooltip } from '../tooltip'
 
 import { changedFields } from './agent-config-diff'
@@ -114,28 +115,33 @@ export function AgentEvalsPanel({
           return the sample&rsquo;s fixtures.
         </p>
 
-        {setsQuery.isLoading && goals.length === 0 ? (
-          <p className="text-xs text-neutral-400">Loading goals…</p>
-        ) : goals.length === 0 ? (
-          <EmptyGoals
-            agentId={agentId}
-            agentName={agentName}
-            existingNames={(setsQuery.data ?? []).map((s) => s.name)}
-          />
-        ) : (
-          <ul className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
-            {goals.map((g) => (
-              <GoalRow
-                key={g.id}
-                goal={g}
-                checked={g.rowCount > 0 && !excluded[g.id]}
-                onToggle={(on) =>
-                  setExcluded((prev) => ({ ...prev, [g.id]: !on }))
-                }
-              />
-            ))}
-          </ul>
-        )}
+        <QueryState
+          query={{ isLoading: setsQuery.isLoading, error: null, data: goals }}
+          loading={<p className="text-xs text-neutral-400">Loading goals…</p>}
+          isEmpty={(goals) => goals?.length === 0}
+          empty={
+            <EmptyGoals
+              agentId={agentId}
+              agentName={agentName}
+              existingNames={(setsQuery.data ?? []).map((s) => s.name)}
+            />
+          }
+        >
+          {(goals) => (
+            <ul className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+              {goals.map((g) => (
+                <GoalRow
+                  key={g.id}
+                  goal={g}
+                  checked={g.rowCount > 0 && !excluded[g.id]}
+                  onToggle={(on) =>
+                    setExcluded((prev) => ({ ...prev, [g.id]: !on }))
+                  }
+                />
+              ))}
+            </ul>
+          )}
+        </QueryState>
 
         {goals.length > 0 ? (
           <div className="flex items-center gap-2">

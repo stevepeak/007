@@ -20,6 +20,7 @@ import { useWfComponents } from '../context'
 import { useAgents, useEvalRuns, useEvalSets, useWorkflows } from '../hooks'
 import { useWfNav } from '../nav'
 import { Popover } from '../popover'
+import { QueryState } from '../query-state'
 
 import { EvalsHelpDialog } from './evals-help-dialog'
 import { NewGoalDialog } from './new-goal-dialog'
@@ -116,15 +117,19 @@ export function EvalsList({ className }: EvalsListProps) {
       />
 
       {tab === 'sets' ? (
-        setsQuery.isLoading ? (
-          <EmptyState message="Loading goals…" />
-        ) : (
-          <GoalsTable goals={goals} />
-        )
-      ) : runsQuery.isLoading ? (
-        <EmptyState message="Loading test runs…" />
+        <QueryState
+          query={{ isLoading: setsQuery.isLoading, error: null, data: goals }}
+          loading={<EmptyState message="Loading goals…" />}
+        >
+          {(goals) => <GoalsTable goals={goals} />}
+        </QueryState>
       ) : (
-        <RunsTable runs={runs} />
+        <QueryState
+          query={{ isLoading: runsQuery.isLoading, error: null, data: runs }}
+          loading={<EmptyState message="Loading test runs…" />}
+        >
+          {(runs) => <RunsTable runs={runs} />}
+        </QueryState>
       )}
     </div>
   )

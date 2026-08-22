@@ -2,6 +2,7 @@ import { Target } from 'lucide-react'
 import { useState } from 'react'
 
 import { useEvalRun } from '../hooks'
+import { QueryState } from '../query-state'
 import { WfShell } from '../shell'
 
 import { MatrixSummary } from './run-report/matrix-summary'
@@ -35,21 +36,23 @@ export function EvalRunReport({ evalRunId, className }: EvalRunReportProps) {
       scroll
       className={className}
     >
-      {isLoading && !data ? (
-        <EmptyState message="Loading run…" />
-      ) : !data ? (
-        <EmptyState message="Run not found." />
-      ) : (
-        <div className="mx-auto max-w-5xl space-y-4 p-6">
-          <RunHeader run={data.run} results={data.results} />
-          <MatrixSummary results={data.results} onHoverCell={setHoveredCell} />
-          <ResultsTable
-            results={data.results}
-            runStatus={data.run.status}
-            highlightedCell={hoveredCell}
-          />
-        </div>
-      )}
+      <QueryState
+        query={{ isLoading, error: null, data }}
+        loading={<EmptyState message="Loading run…" />}
+        empty={<EmptyState message="Run not found." />}
+      >
+        {(data) => (
+          <div className="mx-auto max-w-5xl space-y-4 p-6">
+            <RunHeader run={data.run} results={data.results} />
+            <MatrixSummary results={data.results} onHoverCell={setHoveredCell} />
+            <ResultsTable
+              results={data.results}
+              runStatus={data.run.status}
+              highlightedCell={hoveredCell}
+            />
+          </div>
+        )}
+      </QueryState>
     </WfShell>
   )
 }

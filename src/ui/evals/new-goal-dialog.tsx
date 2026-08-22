@@ -114,6 +114,8 @@ export function NewGoalDialog({ open, onClose, onCreated }: NewGoalDialogProps) 
               agentsQuery.isLoading ? 'Loading agents…' : 'Select an agent…'
             }
           />
+          {/* Not a QueryState ladder: the non-empty branch is also what renders
+              WHILE loading, so sequencing it would just duplicate the hint. */}
           {!agentsQuery.isLoading && agents.length === 0 ? (
             <p className="text-xs text-amber-600">
               No agents yet — create one first.
