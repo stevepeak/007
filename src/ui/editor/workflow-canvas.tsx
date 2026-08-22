@@ -15,48 +15,35 @@ import {
   type Connection,
 } from '@xyflow/react'
 import { LayoutGrid } from 'lucide-react'
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  type DragEvent as ReactDragEvent,
-} from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 
 import type { WorkflowGraph, WorkflowNode } from '../../engine'
 import { useWfComponents } from '../context'
 import { Tooltip } from '../tooltip'
 
-import { PALETTE_DATA_TYPE } from './node-palette'
 import {
-  editorTypeForKind,
   InvalidNodesProvider,
   NODE_TYPES,
   RunAgentVersionProvider,
   RunStatusProvider,
-  type EditorNodeData,
 } from './node-renderers'
+import { useCanvasDrop } from './workflow-canvas-drop'
 import {
   BOOKEND_KINDS,
-  DEFAULT_ITER_H,
-  DEFAULT_ITER_W,
-  DEFAULT_NOTE_H,
-  DEFAULT_NOTE_W,
-  edgeToFlow,
   engineToFlow,
-  extractEditorData,
-  flowToEngine,
-  orderParentsFirst,
   type EditorEdge,
   type EditorNode,
 } from './workflow-canvas-graph'
 import { layoutNodes } from './workflow-canvas-layout'
-import {
-  defaultDataForKind,
-  type NodeDefaults,
-} from './workflow-canvas-palette'
+import type { NodeDefaults } from './workflow-canvas-palette'
+import { useCanvasSync } from './workflow-canvas-sync'
 
 export type { NodeDefaults } from './workflow-canvas-palette'
+
+// The xyflow surface. This file is the RENDER plus the rules that live on
+// change events; the plumbing that keeps flow state and the engine graph in
+// agreement is in `workflow-canvas-sync`, and everything about iteration
+// membership — palette drops, drag-to-join — is in `workflow-canvas-drop`.
 
 // Stable empty set so the provider value doesn't change identity each render
 // when no invalid ids are passed.
@@ -67,23 +54,6 @@ const EMPTY_STATUSES: ReadonlyMap<string, string> = new Map()
 
 // Ditto for the run's frozen agent versions (empty in the editor).
 const EMPTY_AGENT_VERSIONS: ReadonlyMap<string, number> = new Map()
-
-// Keep a freshly adopted child fully inside its container. React Flow enforces
-// `extent: 'parent'` on every subsequent drag, but not on the frame where the
-// node joins — without this a node dropped half-over the edge renders outside it.
-function clampInside(
-  rel: { x: number; y: number },
-  node: { width?: number; height?: number } | undefined,
-  container: { width?: number; height?: number } | undefined,
-): { x: number; y: number } {
-  if (!container?.width || !container.height) return rel
-  const maxX = Math.max(0, container.width - (node?.width ?? 0))
-  const maxY = Math.max(0, container.height - (node?.height ?? 0))
-  return {
-    x: Math.min(Math.max(rel.x, 0), maxX),
-    y: Math.min(Math.max(rel.y, 0), maxY),
-  }
-}
 
 export interface WorkflowCanvasProps {
   graph: WorkflowGraph
@@ -140,75 +110,26 @@ function CanvasInner({
   const [edges, setEdges, onEdgesChange] = useEdgesState<EditorEdge>(
     initial.edges,
   )
-  const {
-    screenToFlowPosition,
-    fitView,
-    getIntersectingNodes,
-    getInternalNode,
-  } = useReactFlow()
+  const { fitView } = useReactFlow()
   const wrapperRef = useRef<HTMLDivElement>(null)
-  const lastEmittedFingerprintRef = useRef<string | null>(null)
 
-  // Re-seed when the upstream graph CONTENT changes (discard draft, sibling tab
-  // published). Fingerprint compare avoids clobbering local edits on every
-  // parent re-render.
-  const lastSeededFingerprintRef = useRef(JSON.stringify(graph))
-  useEffect(() => {
-    const fingerprint = JSON.stringify(graph)
-    if (lastSeededFingerprintRef.current === fingerprint) return
-    lastSeededFingerprintRef.current = fingerprint
-    const next = engineToFlow(graph)
-    lastEmittedFingerprintRef.current = JSON.stringify(
-      flowToEngine(next.nodes, next.edges),
-    )
-    setNodes(next.nodes)
-    setEdges(next.edges)
-  }, [graph, setNodes, setEdges])
+  useCanvasSync({
+    graph,
+    nodes,
+    edges,
+    setNodes,
+    setEdges,
+    onChange,
+    registerNodePatcher,
+    registerApplyGraph,
+    registerSelectNode,
+  })
 
-  useEffect(() => {
-    if (!registerNodePatcher) return
-    registerNodePatcher((nodeId, next) => {
-      setNodes((ns) =>
-        ns.map((n) =>
-          n.id === nodeId ? { ...n, data: extractEditorData(next) } : n,
-        ),
-      )
-    })
-  }, [registerNodePatcher, setNodes])
-
-  useEffect(() => {
-    if (!registerApplyGraph) return
-    registerApplyGraph((next) => {
-      const flow = engineToFlow(next)
-      setNodes(flow.nodes)
-      setEdges(flow.edges)
-    })
-  }, [registerApplyGraph, setNodes, setEdges])
-
-  useEffect(() => {
-    if (!registerSelectNode) return
-    registerSelectNode((nodeId) => {
-      setNodes((ns) => ns.map((n) => ({ ...n, selected: n.id === nodeId })))
-      void fitView({ nodes: [{ id: nodeId }], duration: 400, maxZoom: 1.2 })
-    })
-  }, [registerSelectNode, setNodes, fitView])
-
-  // onChange is a notification, not a save. Fingerprint-based so cosmetic
-  // xyflow re-emits (selection/hover/mid-drag) don't fire structural changes.
-  const onChangeRef = useRef(onChange)
-  useEffect(() => {
-    onChangeRef.current = onChange
-  }, [onChange])
-  useEffect(() => {
-    const fingerprint = JSON.stringify(flowToEngine(nodes, edges))
-    if (lastEmittedFingerprintRef.current === null) {
-      lastEmittedFingerprintRef.current = fingerprint
-      return
-    }
-    if (lastEmittedFingerprintRef.current === fingerprint) return
-    lastEmittedFingerprintRef.current = fingerprint
-    onChangeRef.current?.(flowToEngine(nodes, edges))
-  }, [nodes, edges])
+  const { handleDragOver, handleDrop, handleNodeDragStop } = useCanvasDrop({
+    defaults,
+    setNodes,
+    setEdges,
+  })
 
   const handleConnect = useCallback(
     (params: Connection) => {
@@ -233,52 +154,6 @@ function CanvasInner({
       onSelectionChange?.(sel[0]?.id ?? null)
     },
     [onSelectionChange],
-  )
-
-  // Membership by containment: when a node is dropped over an iteration
-  // container it becomes that container's child (part of the loop). Joining is
-  // one-way — children carry `extent: 'parent'`, so a node inside a loop can be
-  // moved around but never dragged back out past the container's boundary. To
-  // take a node out of a loop, delete it and re-add it on the canvas. Containers
-  // don't nest, and notes never join one.
-  const handleNodeDragStop = useCallback(
-    (_: unknown, dragged: EditorNode) => {
-      // Notes are free-floating annotations; never fold one into a loop container.
-      if (dragged.data.kind === 'iteration' || dragged.data.kind === 'note')
-        return
-      // Already inside a loop — `extent: 'parent'` keeps it there, nothing to do.
-      if (dragged.parentId) return
-      const absPos =
-        getInternalNode(dragged.id)?.internals.positionAbsolute ??
-        dragged.position
-      const container = getIntersectingNodes(dragged).find(
-        (n) => (n.data as EditorNodeData).kind === 'iteration',
-      )
-      if (!container) return
-      const cAbs =
-        getInternalNode(container.id)?.internals.positionAbsolute ??
-        container.position
-      const rel = clampInside(
-        { x: absPos.x - cAbs.x, y: absPos.y - cAbs.y },
-        getInternalNode(dragged.id)?.measured,
-        getInternalNode(container.id)?.measured,
-      )
-      setNodes((ns) =>
-        orderParentsFirst(
-          ns.map((n) =>
-            n.id === dragged.id
-              ? {
-                  ...n,
-                  parentId: container.id,
-                  extent: 'parent',
-                  position: rel,
-                }
-              : n,
-          ),
-        ),
-      )
-    },
-    [getIntersectingNodes, getInternalNode, setNodes],
   )
 
   // Only connect nodes in the same scope: both top-level, or both inside the
@@ -328,108 +203,6 @@ function CanvasInner({
       onNodesChange([...filtered, ...childRemovals])
     },
     [readOnly, onNodesChange, nodes],
-  )
-
-  const handleDragOver = useCallback((event: ReactDragEvent) => {
-    event.preventDefault()
-    event.dataTransfer.dropEffect = 'move'
-  }, [])
-
-  const handleDrop = useCallback(
-    (event: ReactDragEvent) => {
-      event.preventDefault()
-      const kind = event.dataTransfer.getData(PALETTE_DATA_TYPE)
-      if (!kind) return
-      const position = screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY,
-      })
-      const newData = defaultDataForKind(kind, defaults)
-      if (!newData) return
-
-      // Dropping an iteration adds the container plus its Item/Result bookend
-      // children (flattened) and their connecting edge.
-      if (newData.kind === 'iteration') {
-        const containerId = crypto.randomUUID()
-        const sub = newData.config.subgraph
-        const container: EditorNode = {
-          id: containerId,
-          type: editorTypeForKind('iteration'),
-          position,
-          deletable: true,
-          data: newData,
-          style: { width: DEFAULT_ITER_W, height: DEFAULT_ITER_H },
-        }
-        const children: EditorNode[] = sub.nodes.map((child) => ({
-          id: child.id,
-          type: editorTypeForKind(child.kind),
-          position: child.position,
-          parentId: containerId,
-          extent: 'parent',
-          deletable: !BOOKEND_KINDS.has(child.kind),
-          data: extractEditorData(child),
-        }))
-        setNodes((ns) => [...ns, container, ...children])
-        setEdges((es) => [...es, ...sub.edges.map(edgeToFlow)])
-        return
-      }
-
-      // A sticky Note is a free-floating annotation — it's never part of the
-      // graph or an iteration loop, so it always lands top-level, pre-sized.
-      if (newData.kind === 'note') {
-        setNodes((ns) => [
-          ...ns,
-          {
-            id: crypto.randomUUID(),
-            type: editorTypeForKind('note'),
-            position,
-            data: newData,
-            style: { width: DEFAULT_NOTE_W, height: DEFAULT_NOTE_H },
-          },
-        ])
-        return
-      }
-
-      // Dropping any other node over a container makes it a member of that loop.
-      const container = getIntersectingNodes({
-        x: position.x,
-        y: position.y,
-        width: 1,
-        height: 1,
-      }).find((n) => (n.data as EditorNodeData).kind === 'iteration')
-      const id = crypto.randomUUID()
-      if (container) {
-        const cAbs =
-          getInternalNode(container.id)?.internals.positionAbsolute ??
-          container.position
-        setNodes((ns) =>
-          orderParentsFirst([
-            ...ns,
-            {
-              id,
-              type: editorTypeForKind(newData.kind),
-              position: { x: position.x - cAbs.x, y: position.y - cAbs.y },
-              parentId: container.id,
-              extent: 'parent',
-              data: newData,
-            },
-          ]),
-        )
-        return
-      }
-      setNodes((ns) => [
-        ...ns,
-        { id, type: editorTypeForKind(newData.kind), position, data: newData },
-      ])
-    },
-    [
-      screenToFlowPosition,
-      setNodes,
-      setEdges,
-      defaults,
-      getIntersectingNodes,
-      getInternalNode,
-    ],
   )
 
   return (

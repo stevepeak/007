@@ -17,7 +17,6 @@ export function ConfirmStep({
   totalTests,
   concurrency,
   onConcurrencyChange,
-  matrixBlocked,
   runError,
 }: {
   /** Name of the always-present first prompt row — saved prompt, or the draft. */
@@ -29,7 +28,6 @@ export function ConfirmStep({
   /** In-flight tests allowed at once — see EVAL_CONCURRENCY_CHOICES. */
   concurrency: number
   onConcurrencyChange: (next: number) => void
-  matrixBlocked: boolean
   runError: boolean
 }) {
   const { Button } = useWfComponents()
@@ -147,14 +145,6 @@ export function ConfirmStep({
         </span>
       </div>
 
-      {matrixBlocked ? (
-        <p className="text-xs text-amber-600">
-          Running a full matrix (multiple models, higher run counts, or extra
-          prompts) isn&apos;t supported by the engine yet — select a single
-          model with one run and no extra prompts to launch. Matrix runs are
-          coming.
-        </p>
-      ) : null}
       {runError ? (
         <p className="text-xs text-red-600">
           Couldn&apos;t launch the run. Check that eval runs are configured for

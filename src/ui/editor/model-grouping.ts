@@ -1,5 +1,8 @@
 import type { ModelOption, ModelProvider } from '../../engine/config'
 
+/** A provider and the models the host declared under it. */
+export type ModelGroup = { provider: ModelProvider; models: ModelOption[] }
+
 /** Bucket models under the provider the host declared for them, in declared
  * order. Orphans (no matching provider) fall into a synthetic trailing group so
  * nothing is silently hidden. Shared by the model picker and the run-config
@@ -7,7 +10,7 @@ import type { ModelOption, ModelProvider } from '../../engine/config'
 export function groupModelsByProvider(
   models: ModelOption[],
   providers: ModelProvider[],
-): { provider: ModelProvider; models: ModelOption[] }[] {
+): ModelGroup[] {
   const declared = providers
     .map((provider) => ({
       provider,
