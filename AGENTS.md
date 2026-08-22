@@ -162,9 +162,12 @@ a forty-second. If a helper doesn't cover your case, extend the helper.
 
 **The loading ladder.** Don't hand-roll `isLoading` → `error` → `empty` →
 content. `src/ui/query-state.tsx` sequences it, and `loading` / `error` default
-to the house markup so a conversion is usually three lines. The seven places that
-legitimately can't use it each say why in a comment — read one before deciding
-yours is an eighth.
+to the house markup so a conversion is usually three lines. The handful of places
+that legitimately can't use it each say why in a comment — find them with
+`grep -rn "Not a QueryState ladder" src/ui` and read one before deciding yours
+belongs with them. The recurring reasons are a surface whose states are
+scattered across separate chrome slots (so no wrapper owns a region to
+sequence), and two queries folded into one flag for a picker.
 
 **Reading the clock.** `Date.now()` during render is impure and the React
 Compiler rejects it: the value moves every render, so anything derived from it
@@ -188,10 +191,32 @@ object, so identities are stable. This is the one place the SDK deliberately
 overrides a React rule; the real hazard it gestures at lives in the *host*
 (passing an inline object as `components` defeats the memo).
 
-**Component size.** Split by **lifecycle**, not by screen region.
-`src/ui/editor/use-agent-editor-state.ts` is the worked example: an agent's
-metadata is unversioned and saves on blur while its config is drafted and
-published, so they are two hooks rather than one pile of `useState`.
+**Component size.** Split by **lifecycle or concern**, not by screen region.
+The shape a surface converges on is a `use<Thing>` hook holding what is true, a
+component holding what it looks like, and — where there is real arithmetic — a
+plain module holding what it computes.
+
+`src/ui/editor/use-agent-editor-state.ts` is the worked example for the first:
+an agent's metadata is unversioned and saves on blur while its config is drafted
+and published, so they are two hooks rather than one pile of `useState`.
+`src/ui/editor/use-workflow-editor-state.ts` is the same split for a workflow
+(description vs graph).
+
+The third piece is the one worth reaching for. `run-activity-tree` was one
+function doing three unrelated jobs, so it is now four modules — model, index,
+rows, state-rows — and its nineteen tests passed untouched through the split,
+which is the signal you want. `evals/run-report/matrix-model.ts` came out of
+JSX and got its own tests, because deciding which model wins on cost is
+arithmetic, not markup. `run-selection.ts` likewise: resolving which recorded
+step belongs to the selected node is fiddly enough to be worth testing away from
+the page that renders it.
+
+**Deliberate exceptions carry a comment.** `AgentConfigPanel` runs past ~200
+lines on purpose and says so at the top: what is left after its derivations
+moved into `useAgentConfigFacts` is a flat sequence of seven `<EditorSection>`
+blocks with no nesting or shared state, where the file order IS the screen
+order. If you leave something long, say why there — a bare long function reads
+as an oversight.
 
 ---
 

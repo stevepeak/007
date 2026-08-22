@@ -11,43 +11,29 @@ import {
   Play,
   Wrench,
 } from 'lucide-react'
-import { useMemo, useRef, useState } from 'react'
+import { useState } from 'react'
 
-import { agentInputVariables, type AgentConfig } from '../../engine'
+import type { AgentConfig } from '../../engine'
 import type {
-  AgentPreviewMessage,
   AgentPreviewResult,
-  JsonSchema,
   ToolContextField,
-  ToolOption,
 } from '../../server/protocol'
 import { WfAutoForm } from '../autoform/wf-auto-form'
 import { cn } from '../cn'
 import { formatRelative, formatTimestamp } from '../cost'
 import { highlightJson } from '../data-view'
-import {
-  useModels,
-  useRunAgentPreview,
-  useToolContextFields,
-  useTools,
-} from '../hooks'
-import { toText } from '../to-text'
+import { useModels, useToolContextFields, useTools } from '../hooks'
 import { ContextField } from '../tool-context-field'
 import { Tooltip } from '../tooltip'
 
 import { changedFields } from './agent-config-diff'
 import {
-  contextFieldsFor,
-  filledContext,
-  missingContext,
-  requiredContextKeys,
-} from './agent-editor-context'
-import {
   ConversationBuilder,
   ConversationTranscript,
 } from './agent-editor-conversation'
-import { defaultsToLive, ToolModeList } from './agent-editor-tool-modes'
+import { ToolModeList } from './agent-editor-tool-modes'
 import { NoteMarkdown } from './note-markdown'
+import { usePlaygroundRuns, type PlaygroundRun } from './use-playground-runs'
 
 // Playground — runs the editor's live draft config in isolation (no graph, no
 // persistence) and shows the final answer plus the per-step thinking/tool-call
@@ -58,65 +44,6 @@ import { NoteMarkdown } from './note-markdown'
 // `${title}`/`${text}` gets a field for each. An agent with no variables gets a
 // single free-form message box instead. Both are expressed as a JSON Schema and
 // rendered through the same AutoForm playground as tools.
-function agentInputSchema(
-  variables: string[],
-  /** The agent works on a conversation, so this box is the newest turn. */
-  conversational: boolean,
-): JsonSchema {
-  const names = variables.length > 0 ? variables : ['input']
-  return {
-    type: 'object',
-    required: names,
-    properties: Object.fromEntries(
-      names.map((name) => [
-        name,
-        {
-          type: 'string',
-          title:
-            variables.length > 0
-              ? name
-              : conversational
-                ? 'New message'
-                : 'Test input',
-          format: 'textarea',
-        },
-      ]),
-    ),
-  }
-}
-
-/** One playground run, kept in the editor's history until the page is left. */
-type PlaygroundRun = {
-  id: number
-  startedAt: number
-  status: 'running' | 'done' | 'error'
-  /**
-   * The exact draft this run executed, frozen. `config` is only ever replaced
-   * wholesale by the editor's `patch`, so holding the reference IS the snapshot
-   * — and it's what makes a run restorable: a result is only evidence if you can
-   * get back to the configuration that produced it.
-   */
-  config: AgentConfig
-  /** What was submitted — one entry per prompt variable, or `input`. */
-  input: Record<string, string>
-  /** The prior turns this run was given, if the agent works on a conversation. */
-  messages: AgentPreviewMessage[]
-  /**
-   * The run scope the live tools were given (client org, chat thread). Frozen
-   * with the rest: "found nothing" means something different depending on which
-   * client the search was pointed at.
-   */
-  context: Record<string, string>
-  /**
-   * The tools that ran FOR REAL in this run (everything else was faked). Part of
-   * the record because "the agent found nothing" means something very different
-   * depending on whether the search actually happened.
-   */
-  liveToolIds: string[]
-  result: AgentPreviewResult | null
-  error: string | null
-}
-
 export function PlaygroundPanel({
   config,
   onRestore,
@@ -125,156 +52,7 @@ export function PlaygroundPanel({
   /** Load a run's frozen config back into the editor. */
   onRestore?: (config: AgentConfig) => void
 }) {
-  // Both prompts, since either can declare a variable and both interpolate from
-  // one bag — the same union a workflow node has to bind.
-  const variables = useMemo(() => agentInputVariables(config), [config])
-  const hasVars = variables.length > 0
-  // A conversation agent gets a thread to run against. A task agent has no
-  // free-text turn to type: its message IS `userPrompt`, and filling the
-  // variables below is exactly what a node's bindings do at run time.
-  const conversational = config.inputKind === 'conversation'
-  const schema = useMemo(
-    () => agentInputSchema(variables, conversational),
-    [variables, conversational],
-  )
-  // The turns BEFORE the message being sent. Kept across runs so you can send a
-  // follow-up without retyping the thread that set it up.
-  const [history, setHistory] = useState<AgentPreviewMessage[]>([])
-
-  const run = useRunAgentPreview()
-  // The agent's attached tools, resolved to their registry metadata (name, icon,
-  // and the `sideEffect` tag the live/simulated default is drawn from). Ids the
-  // registry no longer knows are dropped — they can't be run either way.
-  const allTools = useTools().data
-  const attachedTools = useMemo(() => {
-    const byId = new Map((allTools ?? []).map((t) => [t.id, t]))
-    return config.toolIds
-      .map((id) => byId.get(id))
-      .filter((t): t is ToolOption => t !== undefined && t.kind === 'ai-tool')
-  }, [allTools, config.toolIds])
-
-  // Explicit per-tool choices only. Everything else falls back to the tool's
-  // default, so attaching a tool picks up the right mode without any bookkeeping
-  // here, and removing one leaves no stale entry behind that matters.
-  const [toolModes, setToolModes] = useState<Record<string, boolean>>({})
-  const liveTools = useMemo(() => {
-    const set = new Set<string>()
-    for (const t of attachedTools) {
-      if (toolModes[t.id] ?? defaultsToLive(t)) set.add(t.id)
-    }
-    return set
-  }, [attachedTools, toolModes])
-
-  // The ambient run scope this run needs — the union of what the LIVE tools
-  // declare (`requiresContext`), resolved to the host's own field definitions.
-  // Simulated tools ask for nothing, so an all-simulated run stays one click.
-  const contextFields = useToolContextFields().data
-  const [context, setContext] = useState<Record<string, string>>({})
-  const neededContext = useMemo(
-    () =>
-      contextFieldsFor(
-        contextFields ?? [],
-        requiredContextKeys(attachedTools, liveTools),
-      ),
-    [contextFields, attachedTools, liveTools],
-  )
-  // Blocking the run is the point: an unscoped live tool doesn't fail, it
-  // matches nothing and reports "found nothing" — the one answer you must never
-  // be shown while judging whether an agent works.
-  const missing = useMemo(
-    () => missingContext(neededContext, context),
-    [neededContext, context],
-  )
-  // Every run this session, newest first. Each keeps its own status, result and
-  // config, so comparing two prompts is "run, edit, run" and both answers stay
-  // on screen — the previous behaviour showed only the latest, which made the
-  // comparison the whole panel exists for impossible.
-  const [runs, setRuns] = useState<PlaygroundRun[]>([])
-  // Accordion: a new run opens itself and collapses the rest, so the column
-  // doesn't grow without bound as runs pile up.
-  const [expandedId, setExpandedId] = useState<number | null>(null)
-  const nextIdRef = useRef(1)
-  const pending = runs.some((r) => r.status === 'running')
-
-  function onRun(values: Record<string, unknown>) {
-    const input: Record<string, string> = hasVars
-      ? Object.fromEntries(
-          variables.map((v) => [v, toText(values[v]).trim()]),
-        )
-      : { input: toText(values.input).trim() }
-
-    const id = nextIdRef.current++
-    const snapshot = config
-    // Frozen with the config: the modes at submit time are what this run means.
-    const liveToolIds = [...liveTools]
-    // Empty turns are scaffolding, not context — drop them rather than feeding
-    // the model a blank message. Gated on the flag so a thread left over from
-    // toggling "works on a conversation" off can't silently reach the run.
-    const messages = conversational
-      ? history.filter((m) => m.text.trim().length > 0)
-      : []
-    // Only the keys this run's live tools asked for — a value left over from a
-    // tool that's since been switched to simulated isn't part of this run.
-    const runContext = filledContext(neededContext, context)
-    setRuns((prev) => [
-      {
-        id,
-        startedAt: Date.now(),
-        status: 'running',
-        config: snapshot,
-        input,
-        messages,
-        context: runContext,
-        liveToolIds,
-        result: null,
-        error: null,
-      },
-      ...prev,
-    ])
-    setExpandedId(id)
-
-    // `mutateAsync` rather than `mutate` because the result has to land on THIS
-    // run's card: the mutation object only ever holds the most recent call's
-    // data, which a second run would overwrite.
-    void run
-      .mutateAsync(
-        hasVars
-          ? {
-              config: snapshot,
-              promptVariables: input,
-              liveToolIds,
-              messages,
-              context: runContext,
-            }
-          : {
-              config: snapshot,
-              input: input.input,
-              liveToolIds,
-              messages,
-              context: runContext,
-            },
-      )
-      .then(
-        (result) =>
-          setRuns((prev) =>
-            prev.map((r) =>
-              r.id === id ? { ...r, status: 'done', result } : r,
-            ),
-          ),
-        (err: unknown) =>
-          setRuns((prev) =>
-            prev.map((r) =>
-              r.id === id
-                ? {
-                    ...r,
-                    status: 'error',
-                    error: err instanceof Error ? err.message : String(err),
-                  }
-                : r,
-            ),
-          ),
-      )
-  }
+  const pg = usePlaygroundRuns(config)
 
   return (
     <div className="space-y-3">
@@ -295,24 +73,24 @@ export function PlaygroundPanel({
           into a workflow. Uses your current unsaved edits, and every run keeps
           the configuration it ran on so you can go back to it.
         </p>
-        {conversational ? (
+        {pg.conversational ? (
           <ConversationBuilder
-            messages={history}
-            onChange={setHistory}
-            disabled={pending}
+            messages={pg.history}
+            onChange={pg.setHistory}
+            disabled={pg.pending}
           />
         ) : null}
         <ToolModeList
-          tools={attachedTools}
-          live={liveTools}
-          contextFields={contextFields ?? []}
-          unmetContext={new Set(missing.map((f) => f.key))}
-          disabled={pending}
+          tools={pg.attachedTools}
+          live={pg.liveTools}
+          contextFields={pg.contextFields}
+          unmetContext={new Set(pg.missing.map((f) => f.key))}
+          disabled={pg.pending}
           onToggle={(toolId, isLive) =>
-            setToolModes((m) => ({ ...m, [toolId]: isLive }))
+            pg.setToolModes((m) => ({ ...m, [toolId]: isLive }))
           }
         />
-        {config.subAgents.targets.length > 0 && attachedTools.length > 0 ? (
+        {config.subAgents.targets.length > 0 && pg.attachedTools.length > 0 ? (
           <p className="text-[11px] text-neutral-400">
             These switches cover this agent&rsquo;s own tools. Anything a
             sub-agent calls is always simulated.
@@ -320,36 +98,40 @@ export function PlaygroundPanel({
         ) : null}
 
         <PlaygroundContext
-          fields={neededContext}
-          values={context}
-          missing={missing}
-          disabled={pending}
-          onChange={(key, value) => setContext((c) => ({ ...c, [key]: value }))}
+          fields={pg.neededContext}
+          values={pg.context}
+          missing={pg.missing}
+          disabled={pg.pending}
+          onChange={(key, value) =>
+            pg.setContext((c) => ({ ...c, [key]: value }))
+          }
         />
 
         <WfAutoForm
-          schema={schema}
-          disabled={pending}
-          pending={pending}
+          schema={pg.schema}
+          disabled={pg.pending}
+          pending={pg.pending}
           submitLabel="Run agent"
           submitIcon={<Play className="size-3.5" />}
-          submitDisabled={missing.length > 0}
+          submitDisabled={pg.missing.length > 0}
           submitTitle={
-            missing.length > 0
-              ? `Provide ${missing.map((f) => f.label).join(', ')} first`
+            pg.missing.length > 0
+              ? `Provide ${pg.missing.map((f) => f.label).join(', ')} first`
               : undefined
           }
-          onSubmit={onRun}
+          onSubmit={pg.onRun}
         />
       </aside>
 
-      {runs.map((r) => (
+      {pg.runs.map((r) => (
         <PlaygroundRunCard
           key={r.id}
           run={r}
           number={r.id}
-          expanded={expandedId === r.id}
-          onToggle={() => setExpandedId(expandedId === r.id ? null : r.id)}
+          expanded={pg.expandedId === r.id}
+          onToggle={() =>
+            pg.setExpandedId(pg.expandedId === r.id ? null : r.id)
+          }
           changed={changedFields(r.config, config)}
           onRestore={onRestore ? () => onRestore(r.config) : undefined}
         />

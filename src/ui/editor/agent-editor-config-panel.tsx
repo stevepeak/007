@@ -7,12 +7,10 @@ import {
   Users,
   Wrench,
 } from 'lucide-react'
-import { useMemo } from 'react'
 
 import type { AgentConfig } from '../../engine'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
-import { useModels, useTools } from '../hooks'
 
 import { AgentBudgetSection } from './agent-editor-budget'
 import { AgentInputEditor } from './agent-input-editor'
@@ -22,16 +20,28 @@ import { ModelSelect } from './model-select'
 import { PromptBodyEditor } from './prompt-body-editor'
 import { SubAgentPicker } from './sub-agent-picker'
 import { ToolPicker } from './tool-picker'
+import { useAgentConfigFacts } from './use-agent-config-facts'
 
 // The agent editor's LEFT column: everything that is a setting on the agent.
 // (The right column is the evidence half — evals and the playground — and lives
 // in the editor itself, which owns the split.)
 //
 // It sits apart from `agent-editor.tsx` because the whole cluster of derived
-// facts below — what the selected model can do, whether there is a tool loop at
-// all, and what a turn therefore costs — is read by these controls and by
-// nothing else. Keeping it here means the editor holds draft STATE and this
-// holds what that state IMPLIES, rather than one component holding both.
+// facts it reads — what the selected model can do, whether there is a tool loop
+// at all, and what a turn therefore costs — is used by these controls and by
+// nothing else. Those live in `useAgentConfigFacts`, so the editor holds draft
+// STATE, that hook holds what the state IMPLIES, and this file holds what the
+// author sees.
+//
+// LENGTH: this function runs past the ~200-line bar the codebase otherwise
+// keeps to, and that is a decision rather than an omission. What remains after
+// the derivations moved out is a FLAT SEQUENCE of seven `<EditorSection>`
+// blocks — no nesting, no branching, no shared local state between them — read
+// top to bottom in the order they appear on screen. Splitting it would trade
+// one file you can read straight through for seven you have to assemble in your
+// head, and would break the property that the file order IS the screen order.
+// Each section is already its own component (`ToolPicker`, `AgentOutputEditor`,
+// `AgentBudgetSection`, …); what is left here is the arrangement of them.
 export function AgentConfigPanel({
   agentId,
   agentName,
@@ -54,69 +64,16 @@ export function AgentConfigPanel({
   registerSetUserPrompt: (set: (body: string) => void) => void
 }) {
   const { Checkbox } = useWfComponents()
-  const tools = useTools()
-  const aiTools = (tools.data ?? []).filter((t) => t.kind === 'ai-tool')
+  const {
+    aiTools,
+    selectedModel,
+    modelLacksTools,
+    modelLacksStructuredOutput,
+    schemaCopilotContext,
+    hasToolsOrSubAgents,
+    requireToolReason,
+  } = useAgentConfigFacts(config, agentName, agentDescription)
 
-  // What the currently-selected model can do. The picker only offers models
-  // that meet the agent's needs, so the inverse holds here: if the chosen model
-  // is KNOWN to lack a capability, the editor sections that depend on it are
-  // disabled. Capabilities are only gated when reported — a model with no
-  // capability info (e.g. the pre-refresh static list) is treated as capable.
-  const models = useModels()
-
-  const selectedModel = (models.data ?? []).find((m) => m.id === config.modelId)
-  const modelCaps = selectedModel?.capabilities
-  // Only disable a section when the model is KNOWN to lack the capability (its
-  // catalog reported one but not this flag). Unknown capabilities stay enabled.
-  const modelLacksTools = modelCaps != null && !modelCaps.tools
-  const modelLacksStructuredOutput =
-    modelCaps != null && !modelCaps.structuredOutput
-
-  // What the Copilot needs to talk about this agent's output shape: what it is
-  // told to do, and what it can call. Tool IDS are resolved to names because the
-  // name is what an author (and the Copilot) reasons about.
-  const schemaCopilotContext = useMemo(
-    () => ({
-      agentName,
-      agentDescription,
-      instructions: config.prompt,
-      toolNames: config.toolIds.map(
-        (id) => aiTools.find((t) => t.id === id)?.name ?? id,
-      ),
-    }),
-    [agentName, agentDescription, config.prompt, config.toolIds, aiTools],
-  )
-
-  // A turn is a round of calling SOMETHING, and delegation synthesizes
-  // `spawn_*` / `await_subagents` into the tool set — so an agent with only
-  // sub-agents runs just as real a multi-turn loop as one with only tools.
-  // Everything that asks "is there a loop here?" gates on this, never on
-  // toolIds alone.
-  const hasToolsOrSubAgents =
-    config.toolIds.length > 0 || config.subAgents.targets.length > 0
-
-  // With neither, there is no loop to bound: the model answers on turn 1 and
-  // stops, whatever `maxTurns` says. Turns and the budget are both meaningless
-  // in that shape, so the fields go read-only rather than inviting the author to
-  // tune numbers that can't do anything.
-
-
-  // The three shapes where "require a call on turn 1" is inert. It lives in
-  // Settings now, which renders unconditionally, so the no-target case has to be
-  // stated here rather than handled by not drawing the control. Mirrors the
-  // engine's `forceFirstTool` guard; keep the two in step.
-  const requireToolReason = !hasToolsOrSubAgents
-    ? 'Attach a tool or sub-agent for the agent to be required to call.'
-    : config.output.kind !== 'text'
-      ? 'Only Text agents run a tool loop — a structured result is generated in one pass, with no tools.'
-      : config.maxTurns < 2
-        ? 'Needs at least 2 max turns — with 1, that turn is also the final answering turn, which never calls tools.'
-        : null
-
-
-  // Dropping the last tool retires the loop, so the turn count and budget that
-  // described it are retired with it — patched at the point of change rather
-  // than in an effect, which would mark an untouched agent dirty on open.
   function patchToolsAndRetireLoop(next: Partial<AgentConfig>) {
     const merged = { ...config, ...next }
     const stillHasTools =

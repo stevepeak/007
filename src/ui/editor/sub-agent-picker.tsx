@@ -50,7 +50,6 @@ export function SubAgentPicker({
   onChange,
   currentAgentId,
 }: SubAgentPickerProps) {
-  const { Input, Label } = useWfComponents()
   const cfg = value ?? DEFAULT_SUB_AGENTS
   const agents = useAgents()
   const workflows = useWorkflows()
@@ -85,7 +84,12 @@ export function SubAgentPicker({
     [options],
   )
 
-  const selectedKeys = new Set(cfg.targets.map(targetKey))
+  const selectedKeys = useMemo(
+    () => new Set(cfg.targets.map(targetKey)),
+    [cfg.targets],
+  )
+  // Already-picked targets drop out of the results — the list is what you can
+  // still add, not everything that exists.
   const results = useMemo(() => {
     const q = query.trim().toLowerCase()
     return options
@@ -97,8 +101,7 @@ export function SubAgentPicker({
           o.description.toLowerCase().includes(q),
       )
       .sort((x, y) => x.name.localeCompare(y.name))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [options, query, cfg.targets])
+  }, [options, query, selectedKeys])
 
   function patch(next: Partial<SubAgentsConfig>) {
     onChange({ ...cfg, ...next })
@@ -133,95 +136,163 @@ export function SubAgentPicker({
 
   return (
     <div className="space-y-4">
-      {/* Selected targets */}
-      {cfg.targets.length > 0 ? (
-        <ul className="space-y-1.5">
-          {cfg.targets.map((t) => {
-            const o = byKey.get(targetKey(t))
-            return (
-              <li
-                key={targetKey(t)}
-                className="flex items-center gap-2.5 rounded-md border border-neutral-200 bg-white p-2"
+      <SelectedTargets targets={cfg.targets} byKey={byKey} onRemove={remove} />
+
+      <TargetSearch
+        query={query}
+        onQuery={setQuery}
+        open={open}
+        onOpenChange={setOpen}
+        results={results}
+        anyOptions={options.length > 0}
+        onAdd={add}
+      />
+
+      <Guardrails cfg={cfg} onPatch={patch} />
+
+      <SpawnToolPreview preview={preview} />
+    </div>
+  )
+}
+
+/** The delegation whitelist as it stands. */
+function SelectedTargets({
+  targets,
+  byKey,
+  onRemove,
+}: {
+  targets: SubAgentTarget[]
+  byKey: Map<string, PickOption>
+  onRemove: (t: SubAgentTarget) => void
+}) {
+  if (targets.length === 0) {
+    return (
+      <div className="rounded-md border border-dashed border-neutral-200 p-3 text-center text-xs text-neutral-400">
+        No sub-agents yet. Add agents or workflows this agent may delegate to.
+      </div>
+    )
+  }
+  return (
+    <ul className="space-y-1.5">
+      {targets.map((t) => {
+        const o = byKey.get(targetKey(t))
+        return (
+          <li
+            key={targetKey(t)}
+            className="flex items-center gap-2.5 rounded-md border border-neutral-200 bg-white p-2"
+          >
+            <TargetIcon option={o} kind={t.kind} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium text-neutral-800">
+                {o?.name ?? t.id}
+                <span className="ml-2 rounded bg-neutral-100 px-1 py-px text-[10px] font-medium uppercase tracking-wide text-neutral-500">
+                  {t.kind}
+                </span>
+              </span>
+              {o?.description ? (
+                <span className="block truncate text-xs text-neutral-400">
+                  {o.description}
+                </span>
+              ) : null}
+            </span>
+            <button
+              type="button"
+              aria-label={`Remove ${o?.name ?? t.id}`}
+              onClick={() => onRemove(t)}
+              className="shrink-0 rounded p-1 text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-600"
+            >
+              <X className="size-4" />
+            </button>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+/**
+ * Type-ahead over every agent and workflow this agent could delegate to.
+ *
+ * The blur close is deferred ~120ms so a click on a result lands before the
+ * list unmounts; the result buttons also add on `mouseDown` rather than
+ * `click`, which is what makes the pick register at all.
+ */
+function TargetSearch({
+  query,
+  onQuery,
+  open,
+  onOpenChange,
+  results,
+  anyOptions,
+  onAdd,
+}: {
+  query: string
+  onQuery: (q: string) => void
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  results: PickOption[]
+  /** Whether anything exists to pick — words the empty state. */
+  anyOptions: boolean
+  onAdd: (o: PickOption) => void
+}) {
+  const { Input } = useWfComponents()
+  return (
+    <div className="relative">
+      <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-neutral-400" />
+      <Input
+        value={query}
+        onChange={(e) => onQuery(e.target.value)}
+        onFocus={() => onOpenChange(true)}
+        onBlur={() => setTimeout(() => onOpenChange(false), 120)}
+        placeholder="Search agents & workflows to delegate to…"
+        className="pl-8"
+      />
+      {open ? (
+        <div className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-md border border-neutral-200 bg-white p-1 shadow-lg">
+          {results.length === 0 ? (
+            <div className="p-2 text-xs text-neutral-400">
+              {anyOptions ? 'Nothing matches.' : 'No agents or workflows available.'}
+            </div>
+          ) : (
+            results.map((o) => (
+              <button
+                key={o.key}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  onAdd(o)
+                }}
+                className="flex w-full items-center gap-2.5 rounded-md p-2 text-left transition-colors hover:bg-neutral-50"
               >
-                <TargetIcon option={o} kind={t.kind} />
+                <TargetIcon option={o} kind={o.kind} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium text-neutral-800">
-                    {o?.name ?? t.id}
-                    <span className="ml-2 rounded bg-neutral-100 px-1 py-px text-[10px] font-medium uppercase tracking-wide text-neutral-500">
-                      {t.kind}
-                    </span>
+                    {o.name}
                   </span>
-                  {o?.description ? (
-                    <span className="block truncate text-xs text-neutral-400">
-                      {o.description}
-                    </span>
-                  ) : null}
+                  <span className="block truncate text-xs text-neutral-400">
+                    {o.description || o.kind}
+                  </span>
                 </span>
-                <button
-                  type="button"
-                  aria-label={`Remove ${o?.name ?? t.id}`}
-                  onClick={() => remove(t)}
-                  className="shrink-0 rounded p-1 text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-600"
-                >
-                  <X className="size-4" />
-                </button>
-              </li>
-            )
-          })}
-        </ul>
-      ) : (
-        <div className="rounded-md border border-dashed border-neutral-200 p-3 text-center text-xs text-neutral-400">
-          No sub-agents yet. Add agents or workflows this agent may delegate to.
+              </button>
+            ))
+          )}
         </div>
-      )}
+      ) : null}
+    </div>
+  )
+}
 
-      {/* Search to add */}
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-neutral-400" />
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onFocus={() => setOpen(true)}
-          onBlur={() => setTimeout(() => setOpen(false), 120)}
-          placeholder="Search agents & workflows to delegate to…"
-          className="pl-8"
-        />
-        {open ? (
-          <div className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-md border border-neutral-200 bg-white p-1 shadow-lg">
-            {results.length === 0 ? (
-              <div className="p-2 text-xs text-neutral-400">
-                {options.length === 0
-                  ? 'No agents or workflows available.'
-                  : 'Nothing matches.'}
-              </div>
-            ) : (
-              results.map((o) => (
-                <button
-                  key={o.key}
-                  type="button"
-                  onMouseDown={(e) => {
-                    e.preventDefault()
-                    add(o)
-                  }}
-                  className="flex w-full items-center gap-2.5 rounded-md p-2 text-left transition-colors hover:bg-neutral-50"
-                >
-                  <TargetIcon option={o} kind={o.kind} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-neutral-800">
-                      {o.name}
-                    </span>
-                    <span className="block truncate text-xs text-neutral-400">
-                      {o.description || o.kind}
-                    </span>
-                  </span>
-                </button>
-              ))
-            )}
-          </div>
-        ) : null}
-      </div>
-
-      {/* Guardrails */}
+/** Bounds on the fan-out, and whether a child may cut the wait short. */
+function Guardrails({
+  cfg,
+  onPatch,
+}: {
+  cfg: SubAgentsConfig
+  onPatch: (next: Partial<SubAgentsConfig>) => void
+}) {
+  const { Input, Label } = useWfComponents()
+  return (
+    <>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label>Max concurrent</Label>
@@ -231,7 +302,7 @@ export function SubAgentPicker({
             max={20}
             value={cfg.maxConcurrent}
             onChange={(e) =>
-              patch({
+              onPatch({
                 maxConcurrent: Math.max(1, Number.parseInt(e.target.value, 10) || 1),
               })
             }
@@ -245,7 +316,7 @@ export function SubAgentPicker({
             max={50}
             value={cfg.maxSpawns}
             onChange={(e) =>
-              patch({
+              onPatch({
                 maxSpawns: Math.max(1, Number.parseInt(e.target.value, 10) || 1),
               })
             }
@@ -256,34 +327,45 @@ export function SubAgentPicker({
         <input
           type="checkbox"
           checked={cfg.allowStopSignal}
-          onChange={(e) => patch({ allowStopSignal: e.target.checked })}
+          onChange={(e) => onPatch({ allowStopSignal: e.target.checked })}
         />
         Let a sub-agent signal “stop” to short-circuit the wait
       </label>
+    </>
+  )
+}
 
-      {/* Live preview of the synthesized tools */}
-      {preview.length > 0 ? (
-        <div className="space-y-1.5 rounded-md border border-neutral-200 bg-neutral-50/60 p-3">
-          <div className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">
-            Tools this agent will get
-          </div>
-          <ul className="space-y-1">
-            {preview.map((p) => (
-              <li key={p.toolName} className="text-xs text-neutral-600">
-                <code className="rounded bg-neutral-200/70 px-1 py-px font-mono text-[11px] text-neutral-800">
-                  {p.toolName}
-                </code>
-              </li>
-            ))}
-            <li className="text-xs text-neutral-600">
-              <code className="rounded bg-neutral-200/70 px-1 py-px font-mono text-[11px] text-neutral-800">
-                await_subagents
-              </code>{' '}
-              <span className="text-neutral-400">· wait for results</span>
-            </li>
-          </ul>
-        </div>
-      ) : null}
+/**
+ * The tools this whitelist actually synthesizes. Shown because the connection
+ * between "pick a target" and "the agent gains a `spawn_x` tool" is otherwise
+ * invisible until a run.
+ */
+function SpawnToolPreview({
+  preview,
+}: {
+  preview: { toolName: string }[]
+}) {
+  if (preview.length === 0) return null
+  return (
+    <div className="space-y-1.5 rounded-md border border-neutral-200 bg-neutral-50/60 p-3">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+        Tools this agent will get
+      </div>
+      <ul className="space-y-1">
+        {preview.map((p) => (
+          <li key={p.toolName} className="text-xs text-neutral-600">
+            <code className="rounded bg-neutral-200/70 px-1 py-px font-mono text-[11px] text-neutral-800">
+              {p.toolName}
+            </code>
+          </li>
+        ))}
+        <li className="text-xs text-neutral-600">
+          <code className="rounded bg-neutral-200/70 px-1 py-px font-mono text-[11px] text-neutral-800">
+            await_subagents
+          </code>{' '}
+          <span className="text-neutral-400">· wait for results</span>
+        </li>
+      </ul>
     </div>
   )
 }
