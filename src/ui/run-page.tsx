@@ -1,29 +1,22 @@
-import { Activity, ChevronDown, ExternalLink, RotateCcw } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Activity } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { WorkflowGraph, WorkflowNode } from '../engine'
-import type { RetryRunMode, WfRunStepDTO } from '../server/protocol'
+import type { RetryRunMode } from '../server/protocol'
 
 import { cn } from './cn'
-import { useWfComponents } from './context'
-import {
-  formatDuration,
-  formatTimestamp,
-  formatTokens,
-  formatUsd,
-} from './cost'
-import { NOT_RUN_STATUS } from './editor/node-renderers-shared'
 import { WorkflowCanvas } from './editor/workflow-canvas'
 import { useRetryRun, useRun } from './hooks'
 import { useFeedbackForSubjects } from './hooks-feedback'
-import { MessageFeedback } from './message-feedback'
-import { useWfNav, WfLink } from './nav'
+import { useWfNav } from './nav'
 import { QueryState } from './query-state'
-import { readIterationTotal } from './run-activity-tree'
 import { runAgentVersions } from './run-agent-versions'
 import { RunNodeDock } from './run-node-dock'
-import { runStatusClass } from './run-status'
-import { SentryIcon } from './sentry-icon'
+import { RunHeaderActions } from './run-page-header'
+import {
+  isRunLive,
+  resolveRunSelection,
+  topLevelStatuses,
+} from './run-selection'
 import { WfShell } from './shell'
 import { useTickingNow } from './use-now'
 
@@ -74,26 +67,6 @@ function fmtRelative(ms: number): string {
 // `parentIterationId` is the container's id when the match is an inner loop node
 // (null at top level) — that's what tells the dock to show a per-item picker and
 // resolve the node's step against a chosen item index.
-function findNode(
-  graph: WorkflowGraph,
-  id: string,
-): { node: WorkflowNode; parentIterationId: string | null } | null {
-  for (const n of graph.nodes) {
-    if (n.id === id) return { node: n, parentIterationId: null }
-    if (n.kind === 'iteration') {
-      const child = n.config.subgraph.nodes.find((c) => c.id === id)
-      if (child) return { node: child, parentIterationId: n.id }
-    }
-  }
-  return null
-}
-
-// The number of items an iteration node fanned out over, read from its recorded
-// step meta. 0 when the node never ran or isn't an iteration.
-function iterationItemCount(step: WfRunStepDTO | null | undefined): number {
-  return readIterationTotal(step?.meta) ?? 0
-}
-
 export type RunPageProps = {
   runId: string
   /** Select this node as soon as the run loads, with the dock on Inspect —
@@ -105,48 +78,12 @@ export type RunPageProps = {
   className?: string
 }
 
-// A run still producing steps. `done` counts as live: the answer is in, but the
-// arms that don't feed the Output are draining and their steps are still
-// landing — so nothing may be called un-run yet.
-const LIVE_RUN_STATUSES = new Set(['queued', 'running', 'done'])
-
-function isRunLive(status: string): boolean {
-  return LIVE_RUN_STATUSES.has(status)
-}
-
-/**
- * Statuses for one iteration container's inner nodes at the focused item —
- * what actually ran for that item, plus `not-run` for the rest once the run has
- * settled. Empty when the container isn't in the graph (a version since gone).
- */
-function innerStatuses(
-  graph: WorkflowGraph | null,
-  steps: readonly WfRunStepDTO[],
-  containerId: string,
-  itemIndex: number,
-  settled: boolean,
-): Array<[string, string]> {
-  const out: Array<[string, string]> = steps
-    .filter((s) => s.parentNodeId === containerId && s.itemIndex === itemIndex)
-    .map((s) => [s.nodeId, s.status])
-  if (!settled || !graph) return out
-  const container = graph.nodes.find((n) => n.id === containerId)
-  if (container?.kind !== 'iteration') return out
-  const ran = new Set(out.map(([id]) => id))
-  for (const n of container.config.subgraph.nodes) {
-    if (n.kind === 'note' || ran.has(n.id)) continue
-    out.push([n.id, NOT_RUN_STATUS])
-  }
-  return out
-}
-
 export function RunPage({
   runId,
   initialNodeId,
   initialItemIndex,
   className,
 }: RunPageProps) {
-  const { Badge } = useWfComponents()
   const { navigate } = useWfNav()
   const { data, isLoading, error } = useRun(runId)
   // A live run's elapsed time has to keep moving, so this one clock ticks — and
@@ -163,45 +100,28 @@ export function RunPage({
     initialNodeId ?? null,
   )
   // Which iteration item the dock is focused on when an inner-subgraph node is
-  // selected. Clamped to the node's item count at read time, so it survives
+  // selected. Clamped at read time in `resolveRunSelection`, so it survives
   // switching between iterations of different lengths without a reset.
   const [selectedItemIndex, setSelectedItemIndex] = useState(
     initialItemIndex ?? 0,
   )
 
-  // nodeId → status for the top-level graph (the canvas's own nodes), driving
-  // the tint + status dots. Iteration inner steps are keyed per item and layered
-  // on separately (see `canvasStatuses`) so they don't collide here.
-  //
-  // Once the run has SETTLED, every top-level node still missing a step is
-  // marked `not-run` so the canvas dims it. Absence of a step is the only
-  // evidence either way, and it covers both reasons a node goes untouched — an
-  // arm a branch routed away from, and a node with no live path into it at all.
-  // Gated on settled because until then "no step" means "not yet", and dimming
-  // the whole graph at run start would say the opposite of what it means.
-  const nodeStatuses = useMemo(() => {
-    const map = new Map(
-      (data?.steps ?? [])
-        .filter((s) => !s.parentNodeId)
-        .map((s) => [s.nodeId, s.status]),
-    )
-    const graph = data?.graph
-    if (graph && data.run && !isRunLive(data.run.status)) {
-      for (const n of graph.nodes) {
-        // A Note is a canvas annotation, never executed — dimming it would
-        // report a non-event.
-        if (n.kind === 'note' || map.has(n.id)) continue
-        map.set(n.id, NOT_RUN_STATUS)
-      }
-    }
-    return map
-  }, [data])
+  const topLevel = useMemo(
+    () => topLevelStatuses(data?.graph, data?.steps ?? [], data?.run.status),
+    [data],
+  )
 
   // A deep link's node is selected once, as soon as the canvas exists: going
   // through the canvas's own selector (rather than state alone) also tints the
   // card and pans to it, so the node the link named is the one you're looking
   // at. Once only — after that the selection is yours.
   const selectNodeRef = useRef<((nodeId: string) => void) | null>(null)
+  const registerSelectNode = useCallback(
+    (select: (nodeId: string) => void) => {
+      selectNodeRef.current = select
+    },
+    [],
+  )
   const appliedInitialNodeRef = useRef(false)
   useEffect(() => {
     if (appliedInitialNodeRef.current || !initialNodeId || !data?.graph) return
@@ -216,6 +136,16 @@ export function RunPage({
   const agentVersions = useMemo(
     () => runAgentVersions(data?.steps ?? []),
     [data?.steps],
+  )
+
+  const handleRetry = useCallback(
+    (mode: RetryRunMode) => {
+      retry.mutate(
+        { runId, mode },
+        { onSuccess: ({ runId: newRunId }) => navigate(`runs/${newRunId}`) },
+      )
+    },
+    [retry, runId, navigate],
   )
 
   return (
@@ -239,86 +169,15 @@ export function RunPage({
     >
       {(data) => {
         const { run } = data
-        const start = run.startedAt ?? run.createdAt
-        const end =
-          run.finishedAt ?? (run.status === 'running' ? now : null)
         const live = isRunLive(run.status)
-        // Any terminal run can be re-run from scratch on the latest version — including
-        // ones that completed successfully. "Resume from failed step" (canResume below)
-        // stays gated on an actual failure.
-        const canRetry = !live
-        // Resume only makes sense when a specific node failed and we still have the
-        // graph (node ids must line up with the recorded steps).
-        const canResume =
-          run.status === 'failed' &&
-          !!data.graph &&
-          data.steps.some((s) => s.status === 'failed')
-
-        const found =
-          selectedId && data.graph ? findNode(data.graph, selectedId) : null
-        const selectedNode = found?.node ?? null
-        const parentIterationId = found?.parentIterationId ?? null
-
-        // How many items the relevant iteration fanned out over — for the container's
-        // own aggregate step when it's selected, or the parent container's step when
-        // an inner node is selected. Drives the per-item picker + the itemIndex clamp.
-        const iterationId =
-          parentIterationId ??
-          (selectedNode?.kind === 'iteration' ? selectedId : null)
-        const iterationStep = iterationId
-          ? (data.steps.find(
-              (s) => s.nodeId === iterationId && !s.parentNodeId,
-            ) ?? null)
-          : null
-        const itemCount = iterationItemCount(iterationStep)
-        const itemIndex =
-          itemCount > 0 ? Math.min(selectedItemIndex, itemCount - 1) : 0
-
-        // An inner-subgraph node's step is addressed by (nodeId, container, item);
-        // a top-level node's step is the single row with no parent.
-        const selectedStep = !selectedId
-          ? null
-          : parentIterationId
-            ? (data.steps.find(
-                (s) =>
-                  s.nodeId === selectedId &&
-                  s.parentNodeId === parentIterationId &&
-                  s.itemIndex === itemIndex,
-              ) ?? null)
-            : (data.steps.find(
-                (s) => s.nodeId === selectedId && !s.parentNodeId,
-              ) ?? null)
-
-        // Canvas tint: top-level statuses, plus — when an iteration or one of its
-        // inner nodes is selected — that iteration's inner nodes tinted by the focused
-        // item, so stepping through items lights up the subgraph item by item.
-        //
-        // The inner nodes of a container get `not-run` only while that container
-        // is FOCUSED, because only then are we layering an item's steps and can
-        // tell "didn't run for this item" from "no item selected". Blanket-
-        // dimming every subgraph would mark a perfectly successful loop as
-        // un-run until you clicked into it.
-        const canvasStatuses = iterationId
-          ? new Map<string, string>([
-              ...nodeStatuses,
-              ...innerStatuses(
-                data.graph,
-                data.steps,
-                iterationId,
-                itemIndex,
-                !isRunLive(data.run.status),
-              ),
-            ])
-          : nodeStatuses
-
-        const handleRetry = (mode: RetryRunMode) => {
-          retry.mutate(
-            { runId, mode },
-            {
-              onSuccess: ({ runId: newRunId }) => navigate(`runs/${newRunId}`),
-            },
-          )
-        }
+        const selection = resolveRunSelection({
+          graph: data.graph,
+          steps: data.steps,
+          runStatus: run.status,
+          selectedId,
+          selectedItemIndex,
+          topLevel,
+        })
 
         return (
           <WfShell
@@ -337,81 +196,26 @@ export function RunPage({
               },
             ]}
             actions={
-              <>
-                <span className="text-xs text-neutral-500">
-                  <WfLink
-                    to={`${run.workflowId}/edit`}
-                    className="hover:text-neutral-800 hover:underline"
-                    title={`Open ${run.workflowName} in the editor`}
-                  >
-                    {run.workflowName}
-                  </WfLink>
-                  {/* Outside the link on purpose: the editor opens the
-                      workflow's current draft, not the frozen version that ran. */}
-                  {data.versionNumber != null ? (
-                    <span className="text-neutral-400">
-                      {' '}
-                      v{data.versionNumber}
-                    </span>
-                  ) : null}
-                </span>
-                <Badge className={cn('border', runStatusClass[run.status])}>
-                  {run.status}
-                </Badge>
-                {run.sentryTraceUrl ? (
-                  <a
-                    href={run.sentryTraceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-violet-600 hover:text-violet-700 hover:underline"
-                    title="Open this run's distributed trace in Sentry"
-                  >
-                    <SentryIcon className="size-3.5" />
-                    Trace
-                    <ExternalLink className="size-3" />
-                  </a>
-                ) : null}
-                <span className="text-xs text-neutral-500">
-                  {formatTimestamp(run.createdAt)}
-                </span>
-                <span className="text-xs text-neutral-500">
-                  {formatDuration(start, end)}
-                </span>
-                {run.costUsd != null ? (
-                  <span
-                    className="text-xs font-medium text-neutral-600 tabular-nums"
-                    title={
-                      run.totalTokens != null
-                        ? `${run.totalTokens.toLocaleString()} tokens`
-                        : undefined
-                    }
-                  >
-                    {formatUsd(run.costUsd)}
-                    {run.totalTokens != null ? (
-                      <span className="ml-1 font-normal text-neutral-400">
-                        · {formatTokens(run.totalTokens)} tok
-                      </span>
-                    ) : null}
-                  </span>
-                ) : null}
-                <MessageFeedback
-                  alwaysVisible
-                  subjectId={feedbackSubjectId}
-                  rating={feedback?.rating ?? null}
-                  note={feedback?.note ?? null}
-                  runId={run.id}
-                  correlationId={run.correlationId}
-                  subjectTitle={run.workflowName}
-                  body={run.error ?? null}
-                />
-                {canRetry ? (
-                  <RetryMenu
-                    canResume={canResume}
-                    pending={retry.isPending}
-                    onPick={handleRetry}
-                  />
-                ) : null}
-              </>
+              <RunHeaderActions
+                run={run}
+                versionNumber={data.versionNumber}
+                now={now}
+                feedbackSubjectId={feedbackSubjectId}
+                feedbackRating={feedback?.rating ?? null}
+                feedbackNote={feedback?.note ?? null}
+                // Any terminal run can be re-run from scratch on the latest
+                // version — including ones that completed successfully.
+                canRetry={!live}
+                // Resume only makes sense when a specific node failed and we
+                // still have the graph (node ids must line up with the steps).
+                canResume={
+                  run.status === 'failed' &&
+                  !!data.graph &&
+                  data.steps.some((s) => s.status === 'failed')
+                }
+                retryPending={retry.isPending}
+                onRetry={handleRetry}
+              />
             }
           >
             <div className="flex h-full flex-col">
@@ -422,7 +226,7 @@ export function RunPage({
               ) : null}
               {retry.error ? (
                 <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-700">
-                  Retry failed: {(retry.error).message}
+                  Retry failed: {retry.error.message}
                 </div>
               ) : null}
 
@@ -432,22 +236,20 @@ export function RunPage({
                   <WorkflowCanvas
                     graph={data.graph}
                     readOnly
-                    nodeStatuses={canvasStatuses}
+                    nodeStatuses={selection.canvasStatuses}
                     nodeAgentVersions={agentVersions}
                     onSelectionChange={setSelectedId}
-                    registerSelectNode={(select) => {
-                      selectNodeRef.current = select
-                    }}
+                    registerSelectNode={registerSelectNode}
                   />
                 ) : (
                   <div className="flex h-full items-center justify-center p-6 text-sm text-neutral-400">
-                    This run's workflow version is no longer available.
+                    This run&apos;s workflow version is no longer available.
                   </div>
                 )}
               </div>
               <RunNodeDock
-                node={selectedNode}
-                step={selectedStep}
+                node={selection.selectedNode}
+                step={selection.selectedStep}
                 steps={data.steps}
                 logs={data.logs}
                 logsTruncated={data.logsTruncated}
@@ -460,8 +262,8 @@ export function RunPage({
                 onSelectNode={setSelectedId}
                 // Per-item picker: only meaningful when inspecting a node INSIDE an
                 // iteration, where itemIndex selects which recorded item to show.
-                itemIndex={parentIterationId ? itemIndex : null}
-                itemCount={parentIterationId ? itemCount : 0}
+                itemIndex={selection.parentIterationId ? selection.itemIndex : null}
+                itemCount={selection.parentIterationId ? selection.itemCount : 0}
                 onSelectItem={setSelectedItemIndex}
               />
             </div>
@@ -469,78 +271,5 @@ export function RunPage({
         )
       }}
     </QueryState>
-  )
-}
-
-// The Retry control: a split button with two modes. "Retry from start" runs the
-// latest version fresh; "Resume from failed step" replays completed work on the
-// original version and picks up at the failure (disabled when nothing failed).
-function RetryMenu({
-  canResume,
-  pending,
-  onPick,
-}: {
-  canResume: boolean
-  pending: boolean
-  onPick: (mode: RetryRunMode) => void
-}) {
-  const { Button } = useWfComponents()
-  const [open, setOpen] = useState(false)
-
-  return (
-    <div className="relative">
-      <Button size="sm" onClick={() => setOpen((o) => !o)} disabled={pending}>
-        <RotateCcw className="size-3.5" />
-        {pending ? 'Retrying…' : 'Retry'}
-        <ChevronDown className="size-3.5 opacity-70" />
-      </Button>
-      {open ? (
-        <>
-          {/* Click-away backdrop. */}
-          <button
-            type="button"
-            aria-hidden
-            tabIndex={-1}
-            className="fixed inset-0 z-10 cursor-default"
-            onClick={() => setOpen(false)}
-          />
-          <div className="absolute right-0 z-20 mt-1 w-72 overflow-hidden rounded-md border border-neutral-200 bg-white p-1 shadow-lg">
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false)
-                onPick('restart')
-              }}
-              className="block w-full rounded px-2 py-1.5 text-left hover:bg-neutral-50"
-            >
-              <div className="text-sm font-medium text-neutral-800">
-                Retry from start
-              </div>
-              <div className="text-xs text-neutral-500">
-                Fresh run on the latest workflow version
-              </div>
-            </button>
-            <button
-              type="button"
-              disabled={!canResume}
-              onClick={() => {
-                setOpen(false)
-                onPick('resume')
-              }}
-              className="block w-full rounded px-2 py-1.5 text-left hover:bg-neutral-50 disabled:opacity-40 disabled:hover:bg-transparent"
-            >
-              <div className="text-sm font-medium text-neutral-800">
-                Resume from failed step
-              </div>
-              <div className="text-xs text-neutral-500">
-                {canResume
-                  ? 'Reuse completed steps · original version'
-                  : 'No failed step to resume from'}
-              </div>
-            </button>
-          </div>
-        </>
-      ) : null}
-    </div>
   )
 }

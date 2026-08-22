@@ -4,7 +4,7 @@ import {
   ChevronRight,
   SquareArrowOutUpRight,
 } from 'lucide-react'
-import { useCallback, useRef, useState } from 'react'
+import { useState } from 'react'
 
 import type { WorkflowGraph, WorkflowNode } from '../engine'
 import type { WfRunLogDTO, WfRunStepDTO } from '../server/protocol'
@@ -17,6 +17,7 @@ import { RunActivityLog } from './run-activity-log'
 import { stepAgentVersion } from './run-agent-versions'
 import { RunLog } from './run-log'
 import { runStatusClass } from './run-status'
+import { useResizableDock } from './use-resizable-dock'
 
 // The run viewer's bottom dock (DevTools-style, like the editor's Data/Issues
 // dock). Two tabs:
@@ -61,16 +62,6 @@ export type RunNodeDockProps = {
   initialTab?: 'activity' | 'logs'
 }
 
-// Height bounds for the resizable body: never let it shrink out of sight, and
-// keep the graph above it usable at the top.
-const MIN_DOCK_H = 120
-const DEFAULT_DOCK_H = 224
-function maxDockH(): number {
-  return typeof window !== 'undefined'
-    ? Math.max(MIN_DOCK_H, window.innerHeight - 160)
-    : 640
-}
-
 export function RunNodeDock({
   node,
   step,
@@ -88,68 +79,8 @@ export function RunNodeDock({
 }: RunNodeDockProps) {
   const { Badge } = useWfComponents()
   const hasItemPicker = itemCount > 0 && itemIndex != null
-  const [open, setOpen] = useState(true)
+  const { open, setOpen, height, dragging, startDrag } = useResizableDock()
   const [tab, setTab] = useState<'activity' | 'logs'>(initialTab)
-
-  // Drag-to-resize the body height. The top border doubles as the handle: a
-  // click (no movement) toggles the panel, a drag resizes it (clamped so it
-  // stays visible). `open` is mirrored into a ref so the move handler can read
-  // it without re-subscribing.
-  const [height, setHeight] = useState(DEFAULT_DOCK_H)
-  const [dragging, setDragging] = useState(false)
-  // `abort` cancels both document listeners at once. They used to be removed by
-  // name, which meant `endDrag` had to reference itself inside its own
-  // definition — a read-before-declaration React's compiler rejects, and a live
-  // hazard besides: a listener removed by a stale function identity is a
-  // listener that stays attached.
-  const dragRef = useRef<{
-    startY: number
-    startH: number
-    moved: boolean
-    abort: AbortController
-  } | null>(null)
-  const openRef = useRef(open)
-  openRef.current = open
-
-  const onDrag = useCallback((e: MouseEvent) => {
-    const d = dragRef.current
-    if (!d) return
-    const delta = d.startY - e.clientY // drag up → taller
-    if (Math.abs(delta) > 3) d.moved = true
-    setHeight(Math.min(maxDockH(), Math.max(MIN_DOCK_H, d.startH + delta)))
-    if (!openRef.current) setOpen(true)
-  }, [])
-
-  const endDrag = useCallback(() => {
-    const d = dragRef.current
-    d?.abort.abort()
-    document.body.style.userSelect = ''
-    document.body.style.cursor = ''
-    setDragging(false)
-    // A click with no meaningful drag toggles the panel, like the chevron.
-    if (d && !d.moved) setOpen((o) => !o)
-    dragRef.current = null
-  }, [])
-
-  const startDrag = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault()
-      const abort = new AbortController()
-      dragRef.current = {
-        startY: e.clientY,
-        startH: height,
-        moved: false,
-        abort,
-      }
-      setDragging(true)
-      document.body.style.userSelect = 'none'
-      document.body.style.cursor = 'ns-resize'
-      const { signal } = abort
-      document.addEventListener('mousemove', onDrag, { signal })
-      document.addEventListener('mouseup', endDrag, { signal })
-    },
-    [height, onDrag, endDrag],
-  )
 
   return (
     <div className="flex shrink-0 flex-col border-t border-neutral-200 bg-white">
