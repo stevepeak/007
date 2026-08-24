@@ -1,6 +1,8 @@
+import { changedFields } from '../../engine'
 import { agentConfigSchema, agentInputVariables } from '../../engine/graph'
 import {
   archiveAgent,
+  changedEntityMetaFields,
   countWorkflowsReferencingAgent,
   createAgent,
   discardAgentDraft,
@@ -179,6 +181,16 @@ export function buildAgentHandlers<TDeps>(
         config,
         lastEditedBy: c.ctx.userId,
       })
+      // The draft row is PK'd on the agent id and overwritten on every save, so
+      // this is the only trace that a save happened at all. The payload stays
+      // out — an unpublished draft is not worth a config-sized row per keystroke
+      // burst, and the fields say enough to place it on a timeline.
+      await c.change({
+        entityKind: 'agent',
+        entityId: agentId,
+        action: 'update',
+        fields: ['draft'],
+      })
       return { ok: true }
     },
 
@@ -206,6 +218,17 @@ export function buildAgentHandlers<TDeps>(
         aiSummaryLong: p.aiSummary?.long,
         publishedBy: c.ctx.userId,
       })
+      // A publish already stores its config immutably in wf_agent_version, so
+      // the log records the EVENT and what moved — never a second copy.
+      await c.change({
+        entityKind: 'agent',
+        entityId: agentId,
+        action: 'publish',
+        fields: previousConfig ? changedFields(previousConfig, config) : ['initial'],
+        after: { versionId: out.versionId, versionNumber: out.versionNumber },
+        note: p.changeNote ?? null,
+      })
+
       // Published before the summary was ready: generate + persist it in the
       // background so the response returns immediately. Only when the host
       // wired a scheduler — otherwise the summary stays null until a later
@@ -290,12 +313,26 @@ export function buildAgentHandlers<TDeps>(
         icon?: string
         color?: string
       }
+      // Metadata is unversioned — a rename leaves no trace anywhere else, so
+      // read the before-image while it still exists.
+      const before = (await getAgent(c.db, agentId))?.agent ?? null
       await updateAgentMeta(c.db, {
         agentId,
         name: p.name,
         description: p.description,
         icon: p.icon,
         color: p.color,
+      })
+      const after = (await getAgent(c.db, agentId))?.agent ?? null
+      await c.change({
+        entityKind: 'agent',
+        entityId: agentId,
+        action: 'update',
+        fields:
+          before && after ? changedEntityMetaFields(before, after) : Object.keys(p),
+        before,
+        after,
+        note: after?.name ?? null,
       })
       return { ok: true }
     },
@@ -324,7 +361,16 @@ export function buildAgentHandlers<TDeps>(
     archiveAgent: async (c) => {
       const agentId = requireStr(c.params, 'agentId')
       await requireAgentExists(c.db, agentId)
+      const before = (await getAgent(c.db, agentId))?.agent ?? null
       await archiveAgent(c.db, { agentId })
+      await c.change({
+        entityKind: 'agent',
+        entityId: agentId,
+        action: 'archive',
+        fields: ['archived'],
+        before,
+        note: before?.name ?? null,
+      })
       return { ok: true }
     },
 

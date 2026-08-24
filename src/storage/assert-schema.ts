@@ -30,6 +30,9 @@ export async function assertWfSchema(db: WfDb): Promise<void> {
     // Probe the feedback table, so a DB migrated before the feedback migration
     // (0019) surfaces the same actionable error.
     await db.run(sql`select 1 from wf_feedback limit 1`)
+    // Probe the change log, so a DB migrated before 0026 surfaces the same
+    // actionable error rather than failing on the first edit anyone makes.
+    await db.run(sql`select 1 from wf_change limit 1`)
   } catch (err) {
     throw new Error(
       "@stevepeak/007: the wf_* tables are missing from the bound D1 database. " +

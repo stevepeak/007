@@ -17,6 +17,15 @@ export {
   wfAgentDraft,
   wfAgentVersion,
 } from './schema-agents'
+export {
+  WF_CHANGE_ACTIONS,
+  WF_CHANGE_ENTITY_KINDS,
+  WF_CHANGE_SOURCES,
+  wfChange,
+  type WfChangeAction,
+  type WfChangeEntityKind,
+  type WfChangeSource,
+} from './schema-change'
 export { wfFeedback } from './schema-feedback'
 export {
   wfEvalResult,
@@ -34,6 +43,7 @@ export {
 } from './schema-workflows'
 
 import { wfAgent, wfAgentDraft, wfAgentVersion } from './schema-agents'
+import { wfChange } from './schema-change'
 import {
   wfEvalResult,
   wfEvalRow,
@@ -68,4 +78,5 @@ export const wfSchema = {
   wfModelProvider,
   wfModel,
   wfFeedback,
+  wfChange,
 }

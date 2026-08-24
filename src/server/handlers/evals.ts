@@ -11,6 +11,8 @@ import {
 } from '../../eval'
 import {
   buildEvalSnapshot,
+  changedEvalRowFields,
+  changedEvalSetFields,
   createEvalRun,
   createEvalSet,
   deleteEvalRow,
@@ -127,6 +129,14 @@ export function buildEvalHandlers<TDeps>(
         triggerKind,
         createdBy: c.ctx.userId,
       })
+      await c.change({
+        entityKind: 'eval_set',
+        entityId: setId,
+        action: 'create',
+        fields: ['name', 'target'],
+        after: { name, targetKind, targetId, triggerKind },
+        note: name,
+      })
       return { setId }
     },
 
@@ -141,6 +151,9 @@ export function buildEvalHandlers<TDeps>(
         triggerKind?: string
         archived?: boolean
       }
+      // Read first: a Goal has no version history, so this before-image is the
+      // only record of what it used to say.
+      const existing = await getEvalSet(c.db, setId)
       await updateEvalSet(c.db, {
         setId,
         name: p.name,
@@ -151,12 +164,33 @@ export function buildEvalHandlers<TDeps>(
         triggerKind: p.triggerKind,
         archived: p.archived,
       })
+      const before = existing?.set ?? null
+      const after = (await getEvalSet(c.db, setId))?.set ?? null
+      await c.change({
+        entityKind: 'eval_set',
+        entityId: setId,
+        action: p.archived === true ? 'archive' : 'update',
+        fields:
+          before && after ? changedEvalSetFields(before, after) : Object.keys(p),
+        before,
+        after,
+        note: after?.name ?? before?.name ?? null,
+      })
       return { ok: true }
     },
 
     deleteEvalSet: async (c) => {
       const setId = requireStr(c.params, 'setId')
+      const existing = await getEvalSet(c.db, setId)
       await deleteEvalSet(c.db, setId)
+      await c.change({
+        entityKind: 'eval_set',
+        entityId: setId,
+        action: 'archive',
+        fields: ['archived'],
+        before: existing?.set ?? null,
+        note: existing?.set.name ?? null,
+      })
       return { ok: true }
     },
 
@@ -171,6 +205,10 @@ export function buildEvalHandlers<TDeps>(
         checks?: WfEvalRowDTO['checks']
         sortOrder?: number
       }
+      // A Sample carries the grading criteria and has no version history, so
+      // the before-image here is the only way to see what a score was measured
+      // against yesterday.
+      const before = p.id ? ((await getEvalRow(c.db, p.id))?.row ?? null) : null
       // The JSON payloads are validated inside `upsertEvalRow` (zod).
       const rowId = await upsertEvalRow(c.db, {
         id: p.id,
@@ -182,12 +220,34 @@ export function buildEvalHandlers<TDeps>(
         checks: p.checks,
         sortOrder: p.sortOrder,
       })
+      const after = (await getEvalRow(c.db, rowId))?.row ?? null
+      await c.change({
+        entityKind: 'eval_row',
+        entityId: rowId,
+        parentId: setId,
+        action: before ? 'update' : 'create',
+        fields:
+          before && after ? changedEvalRowFields(before, after) : ['input', 'checks'],
+        before,
+        after,
+        note: name,
+      })
       return { rowId }
     },
 
     deleteEvalRow: async (c) => {
       const rowId = requireStr(c.params, 'rowId')
+      const existing = await getEvalRow(c.db, rowId)
       await deleteEvalRow(c.db, rowId)
+      await c.change({
+        entityKind: 'eval_row',
+        entityId: rowId,
+        parentId: existing?.row.setId ?? null,
+        action: 'archive',
+        fields: ['archived'],
+        before: existing?.row ?? null,
+        note: existing?.row.name ?? null,
+      })
       return { ok: true }
     },
 

@@ -199,10 +199,38 @@ export async function updateEvalSet(
     .where(eq(wfEvalSet.id, input.setId))
 }
 
-/** Hard-delete a set and its rows (results/runs are kept for history). */
-export async function deleteEvalSet(db: WfDb, setId: string) {
-  await db.delete(wfEvalRow).where(eq(wfEvalRow.setId, setId))
-  await db.delete(wfEvalSet).where(eq(wfEvalSet.id, setId))
+/**
+ * Archive a set and its rows.
+ *
+ * This used to hard-delete both, which was wrong twice over. A historical eval
+ * run is graded against a Goal, and `wf_eval_result.snapshot` exists precisely
+ * so those reports survive later edits — dropping the Goal outright left the
+ * report describing rows that no longer resolve. And an audit log cannot record
+ * a change to something that has been erased.
+ *
+ * The UI already archived rather than deleted (`ArchiveButton` sets
+ * `archived: true`), so this path was effectively dead; `purge` keeps the old
+ * behaviour available for a caller that genuinely wants the rows gone.
+ */
+export async function deleteEvalSet(
+  db: WfDb,
+  setId: string,
+  opts?: { purge?: boolean },
+) {
+  if (opts?.purge) {
+    await db.delete(wfEvalRow).where(eq(wfEvalRow.setId, setId))
+    await db.delete(wfEvalSet).where(eq(wfEvalSet.id, setId))
+    return
+  }
+  const now = new Date()
+  await db
+    .update(wfEvalRow)
+    .set({ archived: true, updatedAt: now })
+    .where(eq(wfEvalRow.setId, setId))
+  await db
+    .update(wfEvalSet)
+    .set({ archived: true, updatedAt: now })
+    .where(eq(wfEvalSet.id, setId))
 }
 
 /** Create (no id) or update (id given) a row. Validates the JSON payloads. */

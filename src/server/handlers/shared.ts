@@ -7,7 +7,7 @@ import {
   type WorkflowGraph,
 } from '../../engine/graph'
 import type { WfDb } from '../../storage/client'
-import type { DashboardAnalytics } from '../../storage/data'
+import type { DashboardAnalytics, RecordChangeInput } from '../../storage/data'
 import { agentExists, workflowExists } from '../../storage/data'
 import type { JsonSchema, WfDataClient, WfRunSummary } from '../protocol'
 
@@ -182,6 +182,16 @@ export type HandlerCtx = {
    * Memoized per request like `env`, since only the dashboard touches it.
    */
   analytics: () => Promise<DashboardAnalytics | null>
+  /**
+   * Append to the durable change log. The actor, the db and the source are
+   * already bound, so a handler states only WHAT changed.
+   *
+   * Bound rather than passed because the alternative is threading
+   * `c.ctx.userId` through a dozen call sites, and nothing in the type system
+   * would catch the one that forgot. Never throws — an audit write must not
+   * fail the mutation it describes.
+   */
+  change: (input: Omit<RecordChangeInput, 'actor'>) => Promise<void>
 }
 
 // A handler may be sync or async — the dispatcher always awaits its result

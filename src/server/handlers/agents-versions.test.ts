@@ -7,7 +7,12 @@ import { drizzle } from 'drizzle-orm/bun-sqlite'
 
 import type { AgentConfig } from '../../engine/graph'
 import type { WfDb } from '../../storage/client'
-import { createAgent, listAgentVersions } from '../../storage/data'
+import {
+  createAgent,
+  listAgentVersions,
+  listChanges,
+  recordChange,
+} from '../../storage/data'
 import { wfSchema } from '../../storage/schema'
 
 import { buildAgentHandlers } from './agents'
@@ -88,6 +93,9 @@ function ctx(db: WfDb, params: unknown): HandlerCtx {
     req: new Request('http://localhost/api/wf', { method: 'POST' }),
     env: async () => ({}),
     analytics: async () => null,
+    // Real recorder against the same in-memory db — these tests exercise the
+    // handlers end to end, and a stub would hide a broken change write.
+    change: (input) => recordChange(db, { ...input, actor: { userId: 'tester' } }),
   }
 }
 
@@ -119,6 +127,48 @@ describe('agent publish handler', () => {
     expect(latest.changeNote).toBe('more turns')
     expect(latest.aiSummaryShort).toBe('Raise the turn limit')
     expect(latest.aiSummaryLong).toBe('- 5 → 9')
+  })
+
+  // The change log has to be written by the HANDLER, not just by `recordChange`
+  // — nothing in the type system forces the call, so it needs a test that would
+  // notice it going missing.
+  test('a publish is recorded in the change log, with its actor and diff', async () => {
+    const handlers = buildAgentHandlers(options())
+    await handlers.publishAgent(
+      ctx(db, {
+        agentId,
+        config: config({ modelId: 'other-model', maxTurns: 9 }),
+        changeNote: 'swap the model',
+        aiSummary: { short: 's', long: 'l' },
+      }),
+    )
+
+    const [change] = await listChanges(db, {
+      entityKind: 'agent',
+      entityId: agentId,
+    })
+    expect(change.action).toBe('publish')
+    expect(change.actorId).toBe('tester')
+    // Named the way the editor names them — the shared label table.
+    expect(change.fields).toEqual(['model', 'max turns'])
+    expect(change.note).toBe('swap the model')
+    // The config itself is already immutable in wf_agent_version; the log points
+    // at it rather than storing a second copy.
+    expect(change.after).toMatchObject({ versionNumber: 2 })
+  })
+
+  test('an agent rename is recorded, since metadata has no version history', async () => {
+    const handlers = buildAgentHandlers(options())
+    await handlers.updateAgentMeta(ctx(db, { agentId, name: 'Renamed' }))
+
+    const [change] = await listChanges(db, {
+      entityKind: 'agent',
+      entityId: agentId,
+    })
+    expect(change.action).toBe('update')
+    expect(change.fields).toEqual(['name'])
+    expect(change.before).toMatchObject({ name: 'Coster' })
+    expect(change.after).toMatchObject({ name: 'Renamed' })
   })
 
   test('publishing without a summary fills it in the background', async () => {

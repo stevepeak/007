@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 import { errorLogText } from '../engine/error-detail'
 import { errorMessage } from '../engine/run-node'
-import type { DashboardAnalytics } from '../storage/data'
+import { recordChange, type DashboardAnalytics } from '../storage/data'
 import { WF_EVAL_TARGET_KINDS } from '../storage/schema'
 
 import { buildAgentHandlers } from './handlers/agents'
@@ -17,6 +17,7 @@ import {
   NotFoundError,
   UnauthorizedError,
   type CreateWfSdkHandlersOptions,
+  type HandlerCtx,
   type HandlerFn,
   type WfHandlers,
   type WfServerContext,
@@ -415,7 +416,20 @@ export function createWfSdkHandlers<TDeps>(
         }
         return analyticsValue
       }
-      const result = await handler({ params, ctx, db, req, env, analytics })
+      // Bound once per request so a handler can never record a change without
+      // the actor who made it.
+      const actor = { userId: ctx?.userId ?? null, source: 'ui' as const }
+      const change: HandlerCtx['change'] = (input) =>
+        recordChange(db, { ...input, actor })
+      const result = await handler({
+        params,
+        ctx,
+        db,
+        req,
+        env,
+        analytics,
+        change,
+      })
       return json(result)
     } catch (err) {
       // Bad client input (a `requireStr()` guard or a handler-level zod parse) is a

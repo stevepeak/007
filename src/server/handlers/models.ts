@@ -245,6 +245,15 @@ export function buildModelHandlers<TDeps>(
         }
       }
       await setModelEnabled(c.db, { modelId, enabled })
+      await c.change({
+        entityKind: 'model',
+        entityId: modelId,
+        action: enabled ? 'enable' : 'disable',
+        fields: ['enabled'],
+        before: { enabled: !enabled },
+        after: { enabled },
+        note: modelId,
+      })
       invalidateModelPriceMap(c.db)
       return { ok: true as const }
     },

@@ -1,4 +1,5 @@
 import {
+  changedEntityMetaFields,
   createWorkflow,
   discardDraft,
   getVersionGraph,
@@ -112,6 +113,15 @@ export function buildWorkflowHandlers<TDeps>(
       const graph = parseGraph(c.params)
       await requireExists(c.db, workflowId)
       await updateDraft(c.db, { workflowId, graph, lastEditedBy: c.ctx.userId })
+      // The draft row is PK'd on the workflow id and overwritten on every save,
+      // so this is the only trace a save happened. The graph itself stays out —
+      // it is unbounded, and a published version already stores it immutably.
+      await c.change({
+        entityKind: 'workflow',
+        entityId: workflowId,
+        action: 'update',
+        fields: ['draft'],
+      })
       return { ok: true }
     },
 
@@ -140,6 +150,17 @@ export function buildWorkflowHandlers<TDeps>(
         aiSummaryLong: p.aiSummary?.long,
         publishedBy: c.ctx.userId,
       })
+      // The graph is already immutable in wf_workflow_version — record the EVENT
+      // and its note, never a second copy of the payload.
+      await c.change({
+        entityKind: 'workflow',
+        entityId: workflowId,
+        action: 'publish',
+        fields: previousGraph ? ['graph'] : ['initial'],
+        after: { versionId: out.versionId, versionNumber: out.versionNumber },
+        note: p.changeNote ?? null,
+      })
+
       // Published before the summary was ready: generate + persist it in the
       // background so the response returns immediately. Only when the host
       // wired a scheduler — otherwise the summary stays null until a later
@@ -199,11 +220,24 @@ export function buildWorkflowHandlers<TDeps>(
         archived?: boolean
       }
       await requireExists(c.db, workflowId)
+      // Metadata is unversioned — a rename leaves no trace anywhere else.
+      const before = (await getWorkflow(c.db, workflowId))?.workflow ?? null
       await updateWorkflow(c.db, {
         workflowId,
         name: p.name,
         description: p.description,
         archived: p.archived,
+      })
+      const after = (await getWorkflow(c.db, workflowId))?.workflow ?? null
+      await c.change({
+        entityKind: 'workflow',
+        entityId: workflowId,
+        action: p.archived === true ? 'archive' : 'update',
+        fields:
+          before && after ? changedEntityMetaFields(before, after) : Object.keys(p),
+        before,
+        after,
+        note: after?.name ?? null,
       })
       return { ok: true }
     },

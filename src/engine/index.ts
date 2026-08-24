@@ -279,3 +279,4 @@ export {
   type SynthesizedTarget,
   type TargetDisplay,
 } from './nodes/sub-agent-tools'
+export { CONFIG_FIELDS, changedFields } from './config-fields'

@@ -38,8 +38,10 @@ import {
   saveVersion,
   updateEvalSet,
   upsertEvalRow,
+  recordChange,
 } from '../data'
 import { wfAgent, wfEvalRow, wfWorkflow } from '../schema'
+import type { WfChangeAction, WfChangeEntityKind } from '../schema'
 
 import { graphSlugsToIds } from './graph-refs'
 import { slugify } from './slug'
@@ -62,7 +64,7 @@ export interface ImportOptions {
   prune?: boolean
   /** Change note stamped on every new version this import publishes. */
   changeNote?: string
-  /** Recorded as createdBy/publishedBy on new rows/versions. */
+  /** Recorded as createdBy/publishedBy on new rows/versions, and in the log. */
   actor?: string
 }
 
@@ -103,7 +105,56 @@ export async function importBundle(
   }
 
   const clean = changes.every((c) => c.action === 'unchanged')
+  if (!opts.dryRun) await recordImport(db, changes, opts)
   return { changes, clean }
+}
+
+// Which change log kinds a spec entity maps to. `eval` covers the Goal; its
+// samples are replaced wholesale by the import, so the Goal is the honest unit.
+const CHANGE_KIND: Record<EntityChange['kind'], WfChangeEntityKind> = {
+  agent: 'agent',
+  workflow: 'workflow',
+  eval: 'eval_set',
+}
+
+const CHANGE_ACTION: Record<
+  Exclude<ChangeAction, 'unchanged'>,
+  WfChangeAction
+> = {
+  create: 'create',
+  update: 'update',
+  archive: 'archive',
+}
+
+/**
+ * Write the import's own report to the change log, so a definition that arrived
+ * from `specs/` is as attributable as one edited in the UI.
+ *
+ * One pass at the END, over the report the CLI already prints, rather than a
+ * `recordChange` scattered through each reconcile pass — the two can't disagree
+ * about what happened, and a dry run stays genuinely read-only.
+ *
+ * The entity ID here is the SLUG, not the row id. The slug is what the spec
+ * names and what a reader recognises; the ids are assigned across three passes
+ * and threading them back out would be the only reason to.
+ */
+async function recordImport(
+  db: WfDb,
+  changes: EntityChange[],
+  opts: ImportOptions,
+): Promise<void> {
+  const actor = { userId: opts.actor ?? null, source: 'spec-import' as const }
+  for (const change of changes) {
+    if (change.action === 'unchanged') continue
+    await recordChange(db, {
+      entityKind: CHANGE_KIND[change.kind],
+      entityId: change.slug,
+      action: CHANGE_ACTION[change.action],
+      fields: ['definition'],
+      note: opts.changeNote ?? 'spec import',
+      actor,
+    })
+  }
 }
 
 // ── Shared reconcile helpers ─────────────────────────────────────────────────
