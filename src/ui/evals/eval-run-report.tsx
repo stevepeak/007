@@ -5,6 +5,7 @@ import { useEvalRun } from '../hooks'
 import { QueryState } from '../query-state'
 import { WfShell } from '../shell'
 
+import { DriftBanner } from './run-report/drift-banner'
 import { MatrixSummary } from './run-report/matrix-summary'
 import { ResultsTable } from './run-report/results-table'
 import { RunHeader } from './run-report/run-summary'
@@ -44,6 +45,7 @@ export function EvalRunReport({ evalRunId, className }: EvalRunReportProps) {
         {(data) => (
           <div className="mx-auto max-w-5xl space-y-4 p-6">
             <RunHeader run={data.run} results={data.results} />
+            <DriftBanner drift={data.drift} results={data.results} />
             <MatrixSummary results={data.results} onHoverCell={setHoveredCell} />
             <ResultsTable
               results={data.results}

@@ -228,6 +228,7 @@ export {
 // Per-kind node executors — exported for hosts that compose custom backends.
 export {
   executeAgentNode,
+  stepAgentVersion,
   type AgentNodeMeta,
   type AgentNodeResult,
 } from './nodes/agent'

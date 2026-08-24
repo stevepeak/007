@@ -21,6 +21,7 @@ import type {
 } from '../schema'
 import { wfEvalResult, wfEvalRow, wfEvalRun, wfEvalSet } from '../schema'
 
+import { loadRunStats } from './runs-cost'
 import { clampLimit, pickDefined } from './shared'
 
 const EVAL_RUN_PAGE_MAX = 200
@@ -412,6 +413,49 @@ export async function loadPreviousSnapshotHashes(
     })
   }
   return previous
+}
+
+
+/**
+ * The eval run these samples were most recently measured against before this
+ * one, plus the agent version IT ran.
+ *
+ * "Previous run" is derived from the samples rather than from the run list,
+ * because runs cover whatever Goals were asked for — the run immediately before
+ * this one in time may share no samples with it and is not a comparison at all.
+ *
+ * The agent version is the half a snapshot hash cannot report: a Goal that
+ * floats to the latest published version keeps an identical hash across a
+ * republish, so without this the report says nothing changed when the thing
+ * under test did.
+ */
+export async function loadPreviousEvalRun(
+  db: WfDb,
+  previous: Map<string, { hash: string | null; evalRunId: string; at: Date }>,
+): Promise<{ id: string; at: Date; agentVersion: number | null } | null> {
+  let newest: { evalRunId: string; at: Date } | null = null
+  for (const p of previous.values()) {
+    if (!newest || p.at > newest.at) newest = { evalRunId: p.evalRunId, at: p.at }
+  }
+  if (!newest) return null
+
+  const rows = await db
+    .select({ wfRunId: wfEvalResult.wfRunId })
+    .from(wfEvalResult)
+    .where(eq(wfEvalResult.evalRunId, newest.evalRunId))
+  const runIds = rows
+    .map((r) => r.wfRunId)
+    .filter((id): id is string => id != null)
+  const stats = await loadRunStats(db, runIds)
+  // Any cell answers: a run's agent nodes all resolve from one frozen manifest.
+  let agentVersion: number | null = null
+  for (const s of stats.values()) {
+    if (s.agentVersion != null) {
+      agentVersion = s.agentVersion
+      break
+    }
+  }
+  return { id: newest.evalRunId, at: newest.at, agentVersion }
 }
 
 

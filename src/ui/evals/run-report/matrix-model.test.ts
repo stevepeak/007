@@ -34,7 +34,7 @@ function result(over: Partial<WfEvalResultDTO> = {}): WfEvalResultDTO {
 }
 
 function stats(costUsd: number, totalTokens: number, durationMs: number) {
-  return { costUsd, totalTokens, durationMs, models: [] }
+  return { costUsd, totalTokens, durationMs, models: [], agentVersion: null }
 }
 
 describe('isMatrixRun', () => {

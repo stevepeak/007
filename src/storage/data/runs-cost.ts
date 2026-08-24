@@ -1,5 +1,6 @@
 import { inArray } from 'drizzle-orm'
 
+import { stepAgentVersion } from '../../engine/nodes/agent-generation'
 import type { WfDb } from '../client'
 import {
   agentUsage,
@@ -170,6 +171,20 @@ export type RunStats = {
    *  to the run wall-clock only when no agent step recorded timing; null when
    *  neither is available. */
   durationMs: number | null
+  /**
+   * The agent version this run actually executed, frozen into the manifest at
+   * start and stamped onto each agent step.
+   *
+   * The live catalog cannot answer this after the fact, and for evals that is
+   * the whole point: a Goal with no pinned `targetVersion` floats to latest, so
+   * republishing the agent leaves the sample's snapshot hash IDENTICAL. Same
+   * hash, different agent, different score. This is the axis that says so.
+   *
+   * Null when no agent step recorded one (a workflow-target eval, or a run that
+   * predates the stamp). First stamp wins — a run's agent nodes all resolve
+   * from the same frozen manifest.
+   */
+  agentVersion: number | null
 }
 
 /**
@@ -224,6 +239,7 @@ export async function loadRunStats(
       costUsd: null,
       models: [],
       durationMs: null,
+      agentVersion: null,
     })
   }
 
@@ -237,6 +253,7 @@ export async function loadRunStats(
       models: Set<string>
       agentMs: number
       hasAgentMs: boolean
+      agentVersion: number | null
     }
   >()
   for (const sr of stepRows) {
@@ -250,7 +267,9 @@ export async function loadRunStats(
       models: new Set<string>(),
       agentMs: 0,
       hasAgentMs: false,
+      agentVersion: null,
     }
+    a.agentVersion ??= stepAgentVersion(sr.meta)
     a.tokens += usage.inputTokens + usage.outputTokens
     a.hasTokens = true
     a.models.add(usage.model)
@@ -278,7 +297,9 @@ export async function loadRunStats(
       costUsd: null,
       models: [],
       durationMs: null,
+      agentVersion: null,
     }
+    base.agentVersion = a.agentVersion
     base.totalTokens = a.hasTokens ? a.tokens : null
     base.costUsd = a.hasCost ? a.cost : null
     base.models = [...a.models]

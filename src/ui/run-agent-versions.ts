@@ -1,3 +1,4 @@
+import { stepAgentVersion as readAgentVersion } from '../engine'
 import type { WfRunStepDTO } from '../server/protocol'
 
 // Which agent version a run actually executed. An agent node is a pointer that
@@ -7,13 +8,16 @@ import type { WfRunStepDTO } from '../server/protocol'
 // (`AgentNodeMeta.agentVersion`). Reading it back here is what lets the run
 // viewer name the version that ran rather than whatever is newest today.
 
-/** The agent version a single recorded step ran, or null when unstamped. */
+/**
+ * The agent version a single recorded step ran, or null when unstamped.
+ *
+ * Thin wrapper over the storage-layer reader so the run viewer and the eval
+ * report can never disagree about how the stamp is read.
+ */
 export function stepAgentVersion(
   step: Pick<WfRunStepDTO, 'meta'> | null | undefined,
 ): number | null {
-  const v = (step?.meta as { agentVersion?: unknown } | null | undefined)
-    ?.agentVersion
-  return typeof v === 'number' ? v : null
+  return readAgentVersion(step?.meta)
 }
 
 /**

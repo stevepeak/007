@@ -116,6 +116,14 @@ export type WfEvalResultRunStats = {
   costUsd: number | null
   models: string[]
   durationMs: number | null
+  /**
+   * The agent version this result actually ran — the second drift axis, and the
+   * one `previousSnapshotHash` structurally cannot see. A Goal that floats to
+   * the latest published version (the default) keeps an IDENTICAL hash when the
+   * agent is republished, so without this a report shows "nothing changed" for
+   * two runs of two different agents.
+   */
+  agentVersion: number | null
 }
 
 // One row's outcome within an eval run: the verdict, the judge score, the
@@ -177,7 +185,39 @@ export type WfEvalResultDTO = {
   createdAt: number
 }
 
+/** One recorded edit, as the drift banner names it. */
+export type WfEvalDriftChange = {
+  entityKind: 'agent' | 'workflow' | 'eval_set' | 'eval_row'
+  action: string
+  /** Human field labels — "checks", "system prompt". */
+  fields: string[]
+  actorId: string | null
+  note: string | null
+  at: number
+}
+
+/**
+ * Everything needed to answer "what changed since the last comparable run?" —
+ * the question a moved pass rate always raises and a report could never answer.
+ *
+ * `previousRun` is derived from the SAMPLES, not the run list: runs cover
+ * whatever Goals were asked for, so the run before this one in time may share no
+ * samples with it.
+ */
+export type WfEvalRunDrift = {
+  previousRunId: string
+  previousRunAt: number
+  /** The agent version that run executed, when it recorded one. */
+  previousAgentVersion: number | null
+  /** Edits to the Goal and its samples between the two runs. */
+  goalChanges: WfEvalDriftChange[]
+  /** Edits to the agent (or workflow) under test between the two runs. */
+  targetChanges: WfEvalDriftChange[]
+}
+
 export type WfEvalRunDetail = {
   run: WfEvalRunSummary
   results: WfEvalResultDTO[]
+  /** Null when no earlier run covered any of these samples. */
+  drift: WfEvalRunDrift | null
 }

@@ -12,8 +12,9 @@ import type { StreamSink } from '../stream-sink'
 import { buildAgentToolSet, type ToolRegistry } from '../tool-registry'
 
 import {
-  type AgentNodeResult,
   runAgentGeneration,
+  stepAgentVersion,
+  type AgentNodeResult,
 } from './agent-generation'
 import {
   buildAgentMessages,
@@ -26,7 +27,7 @@ import { type SubAgentRunCtx, synthesizeDelegationTools } from './sub-agent'
 // in `agent-inputs.ts` and the model loop (+ its result/meta types) in
 // `agent-generation.ts`. Re-export the pieces `sub-agent.ts` and external
 // consumers import from here so those import paths are unchanged.
-export { coerceToMessages, runAgentGeneration }
+export { coerceToMessages, runAgentGeneration, stepAgentVersion }
 export type {
   AgentNodeMeta,
   AgentNodeResult,

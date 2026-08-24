@@ -25,6 +25,22 @@ import type { StreamSink } from '../stream-sink'
 // messages, and tool set; this owns only how the model is driven and how the
 // result is shaped into an {@link AgentNodeResult}.
 
+/**
+ * The agent version a recorded step ran, or null when unstamped.
+ *
+ * Lives here, beside the type it reads, because two layers need it and neither
+ * may import the other: the run viewer names the version a run executed, and the
+ * eval report needs it to catch the case its snapshot hash structurally cannot —
+ * a Goal with no pinned `targetVersion` floats to latest, so republishing the
+ * agent leaves the hash IDENTICAL. Same hash, different agent, different score.
+ *
+ * Takes `unknown` because every caller reads it off a stored `meta` column.
+ */
+export function stepAgentVersion(meta: unknown): number | null {
+  const v = (meta as { agentVersion?: unknown } | null | undefined)?.agentVersion
+  return typeof v === 'number' ? v : null
+}
+
 export type AgentNodeMeta = {
   model: string
   systemPrompt: string

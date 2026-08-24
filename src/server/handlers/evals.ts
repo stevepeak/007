@@ -9,9 +9,11 @@ import {
   type GradeModelFactory,
   type GradeStep,
 } from '../../eval'
+import type { EvalRowSnapshot } from '../../eval/checks'
 import {
   buildEvalSnapshot,
   changedEvalRowFields,
+  changesBetween,
   changedEvalSetFields,
   createEvalRun,
   createEvalSet,
@@ -25,13 +27,20 @@ import {
   insertEvalResult,
   listEvalRuns,
   listEvalSets,
+  loadPreviousEvalRun,
   loadPreviousSnapshotHashes,
   loadRunStats,
   updateEvalRun,
   updateEvalSet,
   upsertEvalRow,
 } from '../../storage/data'
-import type { WfEvalRowDTO, WfEvalTargetKind } from '../protocol'
+import type { WfChangeRecord } from '../../storage/data'
+import type {
+  WfEvalDriftChange,
+  WfEvalRowDTO,
+  WfEvalRunDrift,
+  WfEvalTargetKind,
+} from '../protocol'
 
 import { evalResultDTO, evalRunSummary, evalSetSummary } from './eval-dto'
 import {
@@ -39,6 +48,7 @@ import {
   requireHook,
   requireStr,
   type CreateWfSdkHandlersOptions,
+  type HandlerCtx,
   type WfHandlers,
 } from './shared'
 
@@ -67,6 +77,74 @@ function toGradeSteps(
     output: s.output,
     meta: s.meta,
   }))
+}
+
+
+// What changed between an eval run and the last one that measured the same
+// samples — the question a moved pass rate always raises.
+//
+// Two axes, because either alone misleads. The GOAL axis is edits to the Goal
+// and its samples; the TARGET axis is edits to the agent under test, which a
+// sample's snapshot hash structurally cannot see when the Goal floats to the
+// latest published version.
+//
+// Never throws: a report that can't explain itself is still a report.
+async function loadDrift(
+  c: HandlerCtx,
+  input: {
+    previous: Map<string, { hash: string | null; evalRunId: string; at: Date }>
+    setIds: string[]
+    rowIds: string[]
+    targetId: string | null
+    targetKind: 'agent' | 'workflow'
+    until: Date
+  },
+): Promise<WfEvalRunDrift | null> {
+  try {
+    const prev = await loadPreviousEvalRun(c.db, input.previous)
+    if (!prev) return null
+
+    const window = { from: prev.at, to: input.until }
+    const [goal, target] = await Promise.all([
+      changesBetween(
+        c.db,
+        [
+          { entityKind: 'eval_set', entityIds: input.setIds },
+          { entityKind: 'eval_row', entityIds: input.rowIds },
+        ],
+        window,
+      ),
+      input.targetId
+        ? changesBetween(
+            c.db,
+            [{ entityKind: input.targetKind, entityIds: [input.targetId] }],
+            window,
+          )
+        : Promise.resolve([]),
+    ])
+
+    return {
+      previousRunId: prev.id,
+      previousRunAt: prev.at.getTime(),
+      previousAgentVersion: prev.agentVersion,
+      goalChanges: goal.map(driftChange),
+      targetChanges: target.map(driftChange),
+    }
+  } catch (err) {
+    console.warn('[wf] eval drift lookup failed:', err)
+    return null
+  }
+}
+
+function driftChange(row: WfChangeRecord): WfEvalDriftChange {
+  return {
+    entityKind: row.entityKind as WfEvalDriftChange['entityKind'],
+    action: row.action,
+    fields: Array.isArray(row.fields) ? (row.fields as string[]) : [],
+    actorId: row.actorId,
+    note: row.note,
+    at: row.createdAt.getTime(),
+  }
 }
 
 export function buildEvalHandlers<TDeps>(
@@ -518,6 +596,10 @@ export function buildEvalHandlers<TDeps>(
       const stats = await loadRunStats(c.db, runIds)
       // What each sample looked like the last time it ran, so the report can say
       // whether a moved score followed a moved test.
+      // The frozen target identity — every result in a run shares it.
+      const firstSnapshot = result.results
+        .map((r) => r.snapshot as EvalRowSnapshot | null)
+        .find((snap) => snap != null)
       const previous = await loadPreviousSnapshotHashes(c.db, {
         evalRunId,
         rowIds: [...new Set(result.results.map((r) => r.rowId))],
@@ -532,6 +614,17 @@ export function buildEvalHandlers<TDeps>(
             previous.get(r.rowId)?.hash ?? null,
           ),
         ),
+        drift: await loadDrift(c, {
+          previous,
+          setIds: Array.isArray(result.run.setIds)
+            ? (result.run.setIds as string[])
+            : [],
+          rowIds: [...new Set(result.results.map((r) => r.rowId))],
+          targetId: firstSnapshot?.target.targetId ?? null,
+          targetKind:
+            firstSnapshot?.target.targetKind === 'workflow' ? 'workflow' : 'agent',
+          until: result.run.createdAt,
+        }),
       }
     },
   }

@@ -1,8 +1,14 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it, test } from 'bun:test'
 
 import type { WfEvalResultDTO } from '../../../server/protocol'
 
-import { changedSampleCount, resultDrift, runDrift } from './drift-model'
+import {
+  agentVersionMoveFromPrevious,
+  changedSampleCount,
+  resultDrift,
+  runAgentVersionSpan,
+  runDrift,
+} from './drift-model'
 
 function result(over: Partial<WfEvalResultDTO> = {}): WfEvalResultDTO {
   return {
@@ -100,5 +106,57 @@ describe('changedSampleCount', () => {
         result({ rowId: 'b', previousSnapshotHash: null }),
       ]),
     ).toBe(0)
+  })
+})
+
+function withVersion(version: number | null, over: Partial<WfEvalResultDTO> = {}) {
+  return result({
+    runStats: {
+      totalTokens: null,
+      costUsd: null,
+      models: [],
+      durationMs: null,
+      agentVersion: version,
+    },
+    ...over,
+  })
+}
+
+describe('runAgentVersionSpan', () => {
+  test('reports the single version a normal run executed', () => {
+    const span = runAgentVersionSpan([withVersion(7), withVersion(7)])
+    expect(span.versions).toEqual([7])
+    expect(span.mixed).toBe(false)
+  })
+
+  // Republished mid-run: the cells aren't comparable with each OTHER, not just
+  // with a previous run.
+  test('flags a run that spanned versions', () => {
+    const span = runAgentVersionSpan([withVersion(9), withVersion(7)])
+    expect(span.versions).toEqual([7, 9])
+    expect(span.mixed).toBe(true)
+  })
+
+  test('is empty when nothing recorded a version', () => {
+    expect(runAgentVersionSpan([withVersion(null)]).versions).toEqual([])
+  })
+})
+
+describe('agentVersionMoveFromPrevious', () => {
+  // The case the snapshot hash structurally cannot see: a floating Goal keeps an
+  // identical hash across a republish.
+  test('reports a republish even when the samples are untouched', () => {
+    const current = [withVersion(9, { snapshotHash: 'same', previousSnapshotHash: 'same' })]
+    expect(changedSampleCount(current)).toBe(0)
+    expect(agentVersionMoveFromPrevious(current, 7)).toEqual({ from: 7, to: 9 })
+  })
+
+  test('stays quiet when the version held still', () => {
+    expect(agentVersionMoveFromPrevious([withVersion(7)], 7)).toBeNull()
+  })
+
+  test('stays quiet when either side never recorded one', () => {
+    expect(agentVersionMoveFromPrevious([withVersion(null)], 7)).toBeNull()
+    expect(agentVersionMoveFromPrevious([withVersion(9)], null)).toBeNull()
   })
 })
