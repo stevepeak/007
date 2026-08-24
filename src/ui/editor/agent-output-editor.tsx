@@ -94,6 +94,17 @@ export type AgentOutputEditorProps = {
    * a Copilot handed no context would only be guessing.
    */
   copilotContext?: Omit<AgentSchemaPromptInput, 'currentSource'>
+  /**
+   * Lift the Zod source into the caller's state — pass both to make it
+   * controlled, omit both to keep the local copy.
+   *
+   * Worth doing wherever there is an undo stack. The config stores the COMPILED
+   * schema, so a source keystroke that doesn't yet parse exists only here;
+   * restoring a snapshot would move the schema underneath an editor still
+   * showing the old text.
+   */
+  source?: string
+  onSourceEdit?: (source: string) => void
 }
 
 export function AgentOutputEditor({
@@ -102,6 +113,8 @@ export function AgentOutputEditor({
   structuredDisabled = false,
   structuredDisabledReason,
   copilotContext,
+  source: controlledSource,
+  onSourceEdit,
 }: AgentOutputEditorProps) {
   const copilotAvailable = useCopilotSeedAvailable()
   // Local source state for the structured editor so keystrokes stay smooth even
@@ -109,9 +122,14 @@ export function AgentOutputEditor({
   // (the single source of truth) so the author always sees the real shape; never
   // the placeholder, so an untouched agent's schema is never overwritten by
   // example text.
-  const [source, setSource] = useState(() =>
+  const [localSource, setLocalSource] = useState(() =>
     value.kind === 'object' ? zodSourceFromJsonSchema(value.schema) : '',
   )
+  const controlled = controlledSource !== undefined
+  const source = controlled ? controlledSource : localSource
+  const setSource = controlled
+    ? (next: string) => onSourceEdit?.(next)
+    : setLocalSource
 
   // Only compile once there's actually a source to compile. When the source is
   // empty (e.g. a schema authored in code, with no round-trip source), stay

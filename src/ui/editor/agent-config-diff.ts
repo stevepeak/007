@@ -31,3 +31,22 @@ export function changedFields(a: AgentConfig, b: AgentConfig): string[] {
     (f) => JSON.stringify(a[f.key]) !== JSON.stringify(b[f.key]),
   ).map((f) => f.label)
 }
+
+// Longest a field list gets before it stops being a label and starts being a
+// paragraph. Past this the count reads better than the names.
+const MAX_LISTED_FIELDS = 2
+
+/**
+ * A one-line description of an agent-config edit, for the History dropdown —
+ * the agent editor's counterpart to `describeChange` for graphs.
+ *
+ * Doubles as the undo stack's coalescing key: two consecutive edits to the same
+ * field produce the same string, which is what lets a run of keystrokes collapse
+ * into one history entry instead of evicting the whole stack.
+ */
+export function describeAgentChange(a: AgentConfig, b: AgentConfig): string {
+  const fields = changedFields(a, b)
+  if (fields.length === 0) return 'Edited agent'
+  if (fields.length > MAX_LISTED_FIELDS) return `Changed ${fields.length} settings`
+  return `Edited ${fields.join(' and ')}`
+}

@@ -3,7 +3,6 @@ import { GitBranch, History, Sparkles } from 'lucide-react'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 
-import type { EditSnapshot } from './use-edit-history'
 
 // Commit-graph node for a change-history row: a dot on a connecting rail. The
 // newest change is dark; older ones are a single muted grey tone.
@@ -21,8 +20,14 @@ function HistoryDot({ muted }: { muted?: boolean }) {
   )
 }
 
-// The change-history dropdown: every edit since the workflow opened, newest
-// first, click to jump the canvas to that snapshot.
+// Just the field the dropdown renders. Typed structurally rather than as
+// `EditSnapshot` so the same menu serves the workflow editor AND the agent
+// editor — one stores a graph per entry and the other a config, and neither
+// fact matters to a list of labels.
+type HistoryRow = { label: string }
+
+// The change-history dropdown: every edit since the asset was opened, newest
+// first, click to jump back to that point.
 export function HistoryMenu({
   open,
   onToggle,
@@ -33,7 +38,7 @@ export function HistoryMenu({
 }: {
   open: boolean
   onToggle: () => void
-  snapshots: EditSnapshot[]
+  snapshots: HistoryRow[]
   currentIndex: number
   changeCount: number
   onSelect: (index: number) => void

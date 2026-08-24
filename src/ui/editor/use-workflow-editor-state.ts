@@ -106,10 +106,30 @@ export function useWorkflowEditorState({
   const [showPublish, setShowPublish] = useState(false)
   const canvas = useCanvasHandles()
 
+  const update = useUpdateWorkflow()
+
+  // The title as the SERVER currently has it. The rename is committed on blur,
+  // so stepping through history has to re-commit whenever a snapshot carries a
+  // different one — otherwise undo would leave the two disagreeing.
+  const committedNameRef = useRef(initialName)
+  const commitName = useCallback(
+    (next: string) => {
+      if (next === committedNameRef.current) return
+      committedNameRef.current = next
+      update.mutate({ workflowId, name: next })
+    },
+    [update, workflowId],
+  )
+
   // Undo/redo history: owns the `graph`/`name` under edit, the snapshot stack,
   // dirty tracking, and keyboard undo/redo. Snapshots re-apply to the xyflow
   // canvas via its imperative ref.
-  const history = useEditHistory(initialGraph, initialName, canvas.applyGraph)
+  const history = useEditHistory(
+    initialGraph,
+    initialName,
+    canvas.applyGraph,
+    commitName,
+  )
   const { graph, name } = history
 
   // Offline preview of the user-facing progress UX (no run, no model spend).
@@ -120,7 +140,6 @@ export function useWorkflowEditorState({
   const versions = useVersions(workflowId)
   const saveDraft = useSaveDraft()
   const saveVersion = useSaveVersion()
-  const update = useUpdateWorkflow()
 
   const defaults: NodeDefaults = useMemo(
     () => ({
@@ -167,8 +186,8 @@ export function useWorkflowEditorState({
     }
     history.setName(trimmed)
     history.push({ graph, name: trimmed, label: `Renamed to "${trimmed}"` })
-    update.mutate({ workflowId, name: trimmed })
-  }, [name, history, initialName, graph, update, workflowId])
+    commitName(trimmed)
+  }, [name, history, initialName, graph, commitName])
 
   // Blurring the description commits it to the server (no undo history entry).
   const commitDescription = useCallback(() => {

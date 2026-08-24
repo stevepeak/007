@@ -1,10 +1,10 @@
-import { Archive, Check, History } from 'lucide-react'
+import { Archive, Check } from 'lucide-react'
 
 import { useWfComponents } from '../context'
 import { SaveStateBadge } from '../save-state-badge'
 import { Tooltip } from '../tooltip'
 
-import { VersionsMenu } from './editor-menus'
+import { HistoryMenu, VersionsMenu } from './editor-menus'
 import type { useAgentDraft } from './use-agent-editor-state'
 
 // The agent editor's header strip: save/publish, the version history menu, and
@@ -39,21 +39,6 @@ export function AgentEditorHeaderActions({
         {draft.saveError ? (
           <span className="text-xs text-red-600">{draft.saveError}</span>
         ) : null}
-        {draft.latestEdits ? (
-          <Tooltip
-            content="You're on a configuration restored from a playground run — go back to the edits you had before restoring."
-            side="bottom"
-          >
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={draft.returnToLatestEdits}
-            >
-              <History className="mr-1.5 size-3.5" />
-              Latest changes
-            </Button>
-          </Tooltip>
-        ) : null}
         <Tooltip content="Archive" side="bottom">
           <button
             type="button"
@@ -64,6 +49,17 @@ export function AgentEditorHeaderActions({
             <Archive className="size-4" />
           </button>
         </Tooltip>
+        <HistoryMenu
+          open={draft.showHistory}
+          onToggle={() => draft.setShowHistory((h) => !h)}
+          snapshots={draft.snapshots}
+          currentIndex={draft.historyIndex}
+          changeCount={draft.snapshots.length - 1}
+          onSelect={(index) => {
+            draft.applySnapshot(index)
+            draft.setShowHistory(false)
+          }}
+        />
         <VersionsMenu
           open={draft.showVersions}
           onToggle={() => draft.setShowVersions((v) => !v)}

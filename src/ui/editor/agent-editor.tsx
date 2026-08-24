@@ -218,6 +218,8 @@ function AgentEditorInner({
                   agentDescription={meta.description}
                   config={draft.config}
                   initialConfig={initialConfig}
+                  zodSource={draft.zodSource}
+                  setZodSource={draft.setZodSource}
                   patch={draft.patch}
                   registerSetBody={draft.registerSetBody}
                   registerSetUserPrompt={draft.registerSetUserPrompt}

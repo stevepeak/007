@@ -1,7 +1,7 @@
-import { useReducer, useRef, useState } from 'react'
+import { useState } from 'react'
 
 import type { WorkflowGraph, WorkflowNode } from '../../engine'
-import { useUndoScope } from '../undo/use-undo-scope'
+import { useUndoStack, type CoalesceRule } from '../undo/use-undo-stack'
 
 // One entry in the undo/redo change history. The workflow name lives here too
 // (not in the graph), so renaming the title is undoable alongside graph edits.
@@ -87,79 +87,67 @@ export function describeChange(prev: WorkflowGraph, next: WorkflowGraph): string
   return 'Edited workflow'
 }
 
-// Owns the editor's undo/redo history engine: the `graph`/`name` under edit, the
-// snapshot stack, dirty tracking, and the global keyboard undo/redo handler.
-// `applyGraphToCanvas` re-applies a snapshot's graph to the xyflow canvas (the
-// imperative ref lives in the editor); the hook stays out of the canvas ref
-// protocol otherwise.
+// What the stack actually holds. `EditSnapshot` is this plus its label, kept as
+// its own exported type because the History dropdown renders those rows.
+type Snapshot = { graph: WorkflowGraph; name: string }
+
+// A drag emits a change per tick and a text field emits one per keystroke; both
+// are ONE edit to a reader. `describeChange` already names the node it touched,
+// so the label is a good enough identity for "still the same gesture".
+//
+// Moves have no window — a drag ends when the pointer does. Typing gets 600ms,
+// so a pause starts a new entry and undo lands where you'd expect.
+function coalesceGraphEdit(
+  _prev: Snapshot,
+  _next: Snapshot,
+  label: string,
+): CoalesceRule {
+  if (label.startsWith('Moved')) return { key: label }
+  if (label.startsWith('Edited') || label.startsWith('Renamed node')) {
+    return { key: label, windowMs: 600 }
+  }
+  return null
+}
+
+// The workflow editor's view of the shared undo engine: the graph and title
+// under edit, plus the canvas restore channel. Everything about stacks, dirty
+// tracking and keyboard routing lives in `useUndoStack`; what stays here is the
+// pair of facts specific to a workflow — that a snapshot is a graph AND a name,
+// and that the canvas has to be told when one is re-applied.
 export function useEditHistory(
   initialGraph: WorkflowGraph,
   initialName: string,
   applyGraphToCanvas: (graph: WorkflowGraph) => void,
+  // The title is the one field that is BOTH undoable and written to the server
+  // the moment it's committed. Without telling the caller when a snapshot moves
+  // it, undoing a rename would show the old title while the server kept the new
+  // one — so the caller re-commits, and what you see stays what is stored.
+  onNameRestored?: (name: string) => void,
 ) {
-  const [graph, setGraph] = useState<WorkflowGraph>(initialGraph)
   const [name, setName] = useState(initialName)
 
-  // Undo/redo history. `applyingRef` suppresses recording the change the canvas
-  // re-emits when we programmatically apply a snapshot (undo/redo/version load).
-  const historyRef = useRef<EditSnapshot[]>([
-    { graph: initialGraph, name: initialName, label: 'Opened' },
-  ])
-  const indexRef = useRef(0)
-  const applyingRef = useRef(false)
-  // Which history index reflects the last-saved state (drives the dirty flag).
-  const [savedIndex, setSavedIndex] = useState(0)
-  // Bumped on any history mutation so the toolbar re-renders (refs alone don't).
-  const [, bump] = useReducer((n: number) => n + 1, 0)
+  const history = useUndoStack<Snapshot>({
+    initial: { graph: initialGraph, name: initialName },
+    max: MAX_HISTORY,
+    describe: (prev, next) => describeChange(prev.graph, next.graph),
+    coalesce: coalesceGraphEdit,
+    onApply: (snap) => {
+      applyGraphToCanvas(snap.graph)
+      setName(snap.name)
+      onNameRestored?.(snap.name)
+    },
+  })
 
-  // Push a new snapshot onto the history stack, truncating any redo tail and
-  // forgetting the oldest entries once the stack exceeds MAX_HISTORY.
-  function push(snap: EditSnapshot) {
-    const trimmed = historyRef.current.slice(0, indexRef.current + 1)
-    trimmed.push(snap)
-    let dropped = 0
-    if (trimmed.length > MAX_HISTORY) {
-      dropped = trimmed.length - MAX_HISTORY
-      trimmed.splice(0, dropped)
-    }
-    historyRef.current = trimmed
-    indexRef.current = trimmed.length - 1
-    // Dropping from the front shifts every absolute index down. Keep savedIndex
-    // pointed at the saved snapshot; if it fell off the front it goes negative
-    // and can never re-equal `index`, so `dirty` correctly stays true.
-    if (dropped) setSavedIndex((s) => s - dropped)
-    bump()
-  }
+  const { graph } = history.state
 
+  // The canvas emits its whole graph on every change; the title lives outside it.
   function recordCanvasChange(next: WorkflowGraph) {
-    setGraph(next)
-    if (applyingRef.current) {
-      applyingRef.current = false
-      return
-    }
-    const prev = historyRef.current[indexRef.current]
-    const label = prev ? describeChange(prev.graph, next) : 'Edited workflow'
-    // Coalesce a run of drag emissions into a single "Moved" entry so the
-    // change log stays readable (xyflow emits a change per drag tick).
-    const atTip = indexRef.current === historyRef.current.length - 1
-    if (atTip && label.startsWith('Moved') && prev?.label.startsWith('Moved')) {
-      const copy = historyRef.current.slice()
-      copy[indexRef.current] = { graph: next, name, label }
-      historyRef.current = copy
-      return
-    }
-    push({ graph: next, name, label })
+    history.record({ graph: next, name })
   }
 
-  function applySnapshot(index: number) {
-    const snap = historyRef.current[index]
-    if (!snap) return
-    indexRef.current = index
-    applyingRef.current = true
-    applyGraphToCanvas(snap.graph)
-    setGraph(snap.graph)
-    setName(snap.name)
-    bump()
+  /** Push an explicit entry — a rename, which no graph diff would describe. */
+  function push(snap: EditSnapshot) {
+    history.push({ state: { graph: snap.graph, name: snap.name }, label: snap.label })
   }
 
   // Load a graph as a fresh, undoable history entry (version load / restore).
@@ -169,53 +157,32 @@ export function useEditHistory(
     name?: string
     label: string
   }) {
-    applyingRef.current = true
-    applyGraphToCanvas(snap.graph)
-    setGraph(snap.graph)
-    if (snap.name !== undefined) setName(snap.name)
-    push({ graph: snap.graph, name: snap.name ?? name, label: snap.label })
+    history.load({
+      state: { graph: snap.graph, name: snap.name ?? name },
+      label: snap.label,
+    })
   }
-
-  function undo() {
-    if (indexRef.current > 0) applySnapshot(indexRef.current - 1)
-  }
-  function redo() {
-    if (indexRef.current < historyRef.current.length - 1) {
-      applySnapshot(indexRef.current + 1)
-    }
-  }
-
-  const dirty = indexRef.current !== savedIndex
-
-  // Toolbar affordances: whether a step exists in each direction, and the label
-  // of the change it would undo/redo (for the button tooltips).
-  const affordances = {
-    canUndo: indexRef.current > 0,
-    canRedo: indexRef.current < historyRef.current.length - 1,
-    undoLabel: historyRef.current[indexRef.current]?.label,
-    redoLabel: historyRef.current[indexRef.current + 1]?.label,
-  }
-
-  // Undo/redo is registered, not subscribed. `WfUndoProvider` owns the only
-  // keydown listener and routes to whichever scope is in front — which is what
-  // keeps three keep-alive editor tabs from all answering one Cmd+Z.
-  useUndoScope({ undo, redo, ...affordances })
 
   return {
     graph,
     name,
     setName,
-    snapshots: historyRef.current,
-    index: indexRef.current,
-    dirty,
+    // Flattened back to the `{ graph, name, label }` rows the History dropdown
+    // renders. The stack stores state and label separately; this surface predates
+    // that split and there is no reason to churn its callers over it.
+    snapshots: history.entries.map((e) => ({ ...e.state, label: e.label })),
+    index: history.index,
+    dirty: history.dirty,
     push,
     recordCanvasChange,
-    applySnapshot,
+    applySnapshot: history.applyIndex,
     loadSnapshot,
-    undo,
-    redo,
-    ...affordances,
-    // Mark the current history index as the last-saved state (clears dirty).
-    markSaved: () => setSavedIndex(indexRef.current),
+    undo: history.undo,
+    redo: history.redo,
+    canUndo: history.canUndo,
+    canRedo: history.canRedo,
+    undoLabel: history.undoLabel,
+    redoLabel: history.redoLabel,
+    markSaved: history.markSaved,
   }
 }

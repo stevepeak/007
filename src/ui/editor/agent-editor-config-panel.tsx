@@ -49,6 +49,8 @@ export function AgentConfigPanel({
   config,
   initialConfig,
   patch,
+  zodSource,
+  setZodSource,
   registerSetBody,
   registerSetUserPrompt,
 }: {
@@ -60,6 +62,9 @@ export function AgentConfigPanel({
   /** Seeds the TipTap prompt editors once; later edits arrive through `patch`. */
   initialConfig: AgentConfig
   patch: (next: Partial<AgentConfig>) => void
+  /** The output schema's Zod source, held upstream so undo can restore it. */
+  zodSource: string
+  setZodSource: (source: string) => void
   registerSetBody: (set: (body: string) => void) => void
   registerSetUserPrompt: (set: (body: string) => void) => void
 }) {
@@ -205,6 +210,8 @@ export function AgentConfigPanel({
             structuredDisabled={modelLacksStructuredOutput}
             structuredDisabledReason={`${selectedModel?.label ?? 'The selected model'} doesn’t support structured output — only a Text result is available.`}
             copilotContext={schemaCopilotContext}
+            source={zodSource}
+            onSourceEdit={setZodSource}
           />
         </EditorSection>
 
