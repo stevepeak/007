@@ -23,6 +23,7 @@ function result(over: Partial<WfEvalResultDTO> = {}): WfEvalResultDTO {
     error: null,
     snapshot: null,
     snapshotHash: null,
+    previousSnapshotHash: null,
     modelId: null,
     promptLabel: null,
     promptBody: null,

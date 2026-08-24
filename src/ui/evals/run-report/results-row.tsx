@@ -5,7 +5,8 @@ import { cn } from '../../cn'
 import { formatDurationMs, formatTokens, formatUsd } from '../../cost'
 import { PassRate, Score } from '../shared'
 
-import { StatusDot } from './atoms'
+import { ChangedPill, StatusDot } from './atoms'
+import { resultDrift } from './drift-model'
 import { cellKey, type ResultRow } from './model'
 import { ResultDetail } from './result-detail'
 import type { useResultsView } from './use-results-view'
@@ -65,6 +66,7 @@ export function ResultRowView({
               />
             )}
             <span className="truncate">{row.sampleName}</span>
+            {resultDrift(row.result).changed ? <ChangedPill /> : null}
           </span>
         </td>
         {view.isMatrix && (

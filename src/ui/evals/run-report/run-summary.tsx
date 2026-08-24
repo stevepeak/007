@@ -15,6 +15,7 @@ import { pendingLabel } from '../../query-state'
 import { formatTimestamp, PassRate, Score } from '../shared'
 
 import { VerdictBadge } from './atoms'
+import { changedSampleCount } from './drift-model'
 import { mean } from './model'
 
 // The run summary card: the Agent › Goal › Run identity line + status, over the
@@ -32,6 +33,7 @@ export function RunHeader({
   // only roll up in `finalizeEvalRun`), so derive live figures from the results
   // landing one-by-one. Once completed, fall back to the authoritative run row.
   const live = liveTotals(results)
+  const editedSamples = changedSampleCount(results)
   const passed = running ? live.passed : run.passed
   const score = running ? live.score : run.score
   const completed = live.completed
@@ -91,7 +93,31 @@ export function RunHeader({
           </span>
         </Metric>
       </div>
+      {editedSamples > 0 ? <EditedSamplesNote count={editedSamples} /> : null}
     </div>
+  )
+}
+
+/**
+ * Says out loud that some of these tests are not the tests that ran last time.
+ *
+ * Comparing two runs of a Goal only means something if the Goal held still, and
+ * an author who edited a check last week has no way to remember that while
+ * reading a pass rate. The note is the difference between "the agent got worse"
+ * and "I moved the bar".
+ *
+ * It reports the SAMPLE definitions only. A floating Goal whose agent was
+ * republished shows nothing here — that axis needs the agent version, which the
+ * report gets separately.
+ */
+function EditedSamplesNote({ count }: { count: number }) {
+  return (
+    <p className="mt-3 border-t border-neutral-100 pt-3 text-xs text-neutral-500">
+      <span className="font-medium text-amber-700">
+        {count} {count === 1 ? 'sample was' : 'samples were'} edited
+      </span>{' '}
+      since they last ran — compare with care.
+    </p>
   )
 }
 

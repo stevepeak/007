@@ -153,6 +153,17 @@ export type WfEvalResultDTO = {
   /** sha256 of `snapshot`'s reproducibility-relevant fields; null when no snapshot. */
   snapshotHash: string | null
   /**
+   * The hash this SAMPLE carried the last time it ran before this run — the
+   * baseline for "was the test edited since?". Null when the sample is new, or
+   * when either side predates snapshots.
+   *
+   * Note what this can and cannot see. It compares the sample's DEFINITION, so
+   * it catches an edited check or input. It does NOT catch the target agent
+   * being republished under a floating `targetVersion`, which leaves the hash
+   * identical — that axis is reported separately.
+   */
+  previousSnapshotHash: string | null
+  /**
    * Matrix cell this result belongs to — which (model × prompt × attempt) of the
    * run's model×prompt sweep produced it. All null for a plain run (the target's
    * own saved model/prompt); the report then collapses them into one baseline

@@ -42,3 +42,22 @@ export function VerdictBadge({ status }: { status: string }) {
     </span>
   )
 }
+
+/**
+ * Marks a sample whose definition changed since it last ran — so a score that
+ * moved with it can be read as "the test changed", not "the agent regressed".
+ *
+ * Deliberately quiet. It is a footnote on a row, not a warning: editing a sample
+ * is normal, and the pill exists to remove a wrong inference, not to suggest
+ * something is broken.
+ */
+export function ChangedPill() {
+  return (
+    <span
+      title="This sample was edited since the last run that included it — its inputs, tools, or checks differ. A score change here may be the test moving rather than the agent."
+      className="shrink-0 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-amber-700 ring-1 ring-amber-200 ring-inset"
+    >
+      edited
+    </span>
+  )
+}

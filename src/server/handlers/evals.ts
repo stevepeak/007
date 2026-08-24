@@ -23,6 +23,7 @@ import {
   insertEvalResult,
   listEvalRuns,
   listEvalSets,
+  loadPreviousSnapshotHashes,
   loadRunStats,
   updateEvalRun,
   updateEvalSet,
@@ -455,10 +456,21 @@ export function buildEvalHandlers<TDeps>(
         .map((r) => r.wfRunId)
         .filter((id): id is string => id != null)
       const stats = await loadRunStats(c.db, runIds)
+      // What each sample looked like the last time it ran, so the report can say
+      // whether a moved score followed a moved test.
+      const previous = await loadPreviousSnapshotHashes(c.db, {
+        evalRunId,
+        rowIds: [...new Set(result.results.map((r) => r.rowId))],
+        before: result.run.createdAt,
+      })
       return {
         run: evalRunSummary(result.run),
         results: result.results.map((r) =>
-          evalResultDTO(r, r.wfRunId ? stats.get(r.wfRunId) : null),
+          evalResultDTO(
+            r,
+            r.wfRunId ? stats.get(r.wfRunId) : null,
+            previous.get(r.rowId)?.hash ?? null,
+          ),
         ),
       }
     },

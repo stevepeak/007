@@ -88,6 +88,7 @@ export function evalResultDTO(
     createdAt: Date
   },
   runStats?: RunStats | null,
+  previousSnapshotHash?: string | null,
 ): WfEvalResultDTO {
   return {
     id: r.id,
@@ -103,6 +104,7 @@ export function evalResultDTO(
     error: r.error ?? null,
     snapshot: (r.snapshot as EvalRowSnapshot | null) ?? null,
     snapshotHash: r.snapshotHash ?? null,
+    previousSnapshotHash: previousSnapshotHash ?? null,
     modelId: r.modelId ?? null,
     promptLabel: r.promptLabel ?? null,
     promptBody: r.promptBody ?? null,

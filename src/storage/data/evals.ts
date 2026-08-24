@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, lt, ne, sql } from 'drizzle-orm'
 
 import {
   checkTreeSchema,
@@ -333,6 +333,57 @@ export async function getEvalRun(db: WfDb, evalRunId: string) {
     .where(eq(wfEvalResult.evalRunId, evalRunId))
     .orderBy(asc(wfEvalResult.createdAt))
   return { run, results }
+}
+
+
+/**
+ * For each sample in a run, the snapshot hash it carried the LAST time it ran
+ * before this one — the baseline "has this test changed?" compares against.
+ *
+ * Per SAMPLE rather than per run, deliberately. Runs cover whatever set of Goals
+ * you asked for, so "the previous run" is often not a run that included this
+ * sample at all; the last time each sample actually ran is the only comparison
+ * that means anything. A sample making its debut simply has no entry.
+ *
+ * One query. Results arrive newest-first and the first sighting of a row id
+ * wins, so the map holds each sample's most recent prior hash.
+ */
+export async function loadPreviousSnapshotHashes(
+  db: WfDb,
+  input: { evalRunId: string; rowIds: string[]; before: Date },
+): Promise<Map<string, { hash: string | null; evalRunId: string; at: Date }>> {
+  const previous = new Map<
+    string,
+    { hash: string | null; evalRunId: string; at: Date }
+  >()
+  if (input.rowIds.length === 0) return previous
+
+  const rows = await db
+    .select({
+      rowId: wfEvalResult.rowId,
+      snapshotHash: wfEvalResult.snapshotHash,
+      evalRunId: wfEvalResult.evalRunId,
+      createdAt: wfEvalResult.createdAt,
+    })
+    .from(wfEvalResult)
+    .where(
+      and(
+        inArray(wfEvalResult.rowId, input.rowIds),
+        ne(wfEvalResult.evalRunId, input.evalRunId),
+        lt(wfEvalResult.createdAt, input.before),
+      ),
+    )
+    .orderBy(desc(wfEvalResult.createdAt))
+
+  for (const r of rows) {
+    if (previous.has(r.rowId)) continue
+    previous.set(r.rowId, {
+      hash: r.snapshotHash,
+      evalRunId: r.evalRunId,
+      at: r.createdAt,
+    })
+  }
+  return previous
 }
 
 
