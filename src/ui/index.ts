@@ -1,5 +1,13 @@
 export { WfSdkProvider, type WfSdkProviderProps } from './provider'
 export {
+  UndoLayer,
+  UndoTabScope,
+  useActiveUndoScope,
+  WfUndoProvider,
+} from './undo/undo-context'
+export { useUndoScope, type UseUndoScopeOptions } from './undo/use-undo-scope'
+export type { UndoScope } from './undo/pick-scope'
+export {
   useWfClient,
   useWfComponents,
   useWfAssistant,

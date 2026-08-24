@@ -165,7 +165,11 @@ export function PromptBodyEditor({
   return (
     // `relative` so the Markdown mark can float in the box's bottom-right
     // corner; the extra right padding keeps text from running under it.
-    <div className="relative">
+    //
+    // The undo marker keeps app-level undo out: StarterKit ships ProseMirror's
+    // own History plugin, and one Cmd+Z mid-sentence should step back through
+    // the text, not revert the whole agent config around it.
+    <div className="relative" data-wf-undo="native">
       <EditorContent
         editor={editor}
         className={cn(

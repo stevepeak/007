@@ -1,6 +1,8 @@
 import { X } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
 
+import { UndoLayer } from './undo/undo-context'
+
 // Shared dialog scaffolding extracted from the create/help/config dialogs: a
 // full-screen backdrop that closes on click, a centered panel that swallows its
 // own clicks, an optional titled header with a close button, an optional footer
@@ -47,6 +49,7 @@ export function Modal({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onClick={onClose}
     >
+      <UndoLayer>
       <div className={panelClassName} onClick={(e) => e.stopPropagation()}>
         {title != null ? (
           <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-3">
@@ -67,6 +70,7 @@ export function Modal({
           </div>
         ) : null}
       </div>
+      </UndoLayer>
     </div>
   )
 }

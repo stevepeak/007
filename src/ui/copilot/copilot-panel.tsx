@@ -92,7 +92,9 @@ export function CopilotPanel({ context }: { context: WfAssistantContext }) {
   )
 
   return (
-    <div className="flex h-full shrink-0">
+    // The rail is its own world: Cmd+Z in the composer must undo TEXT, never the
+    // workflow sitting behind the panel.
+    <div className="flex h-full shrink-0" data-wf-undo="native">
       {/* Collapsed strip — a thin reopen affordance, shown only when closed. */}
       {!open ? (
         <div className="flex h-full flex-col items-center border-l border-border bg-card">

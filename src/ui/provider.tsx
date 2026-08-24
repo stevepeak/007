@@ -5,6 +5,7 @@ import type { WfDataClient } from '../server/protocol'
 
 import { WfSdkContext, type WfAssistantComponent } from './context'
 import { defaultComponents, type WfComponents } from './primitives'
+import { WfUndoProvider } from './undo/undo-context'
 
 export type WfSdkProviderProps = {
   /** Data client — usually `createHttpWfDataClient({ baseUrl })`. */
@@ -46,7 +47,9 @@ export function WfSdkProvider({
   )
   return (
     <QueryClientProvider client={qc}>
-      <WfSdkContext.Provider value={value}>{children}</WfSdkContext.Provider>
+      <WfSdkContext.Provider value={value}>
+        <WfUndoProvider>{children}</WfUndoProvider>
+      </WfSdkContext.Provider>
     </QueryClientProvider>
   )
 }

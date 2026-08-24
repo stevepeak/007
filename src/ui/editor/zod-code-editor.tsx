@@ -293,6 +293,10 @@ export function ZodCodeEditor({
           ref={ref}
           value={value}
           spellCheck={false}
+          // The Zod source is local to this editor (the config stores the
+          // COMPILED schema), so nothing upstream can restore a keystroke —
+          // native field undo is the only undo there is.
+          data-wf-undo="native"
           readOnly={readOnly}
           onChange={(e) => {
             if (readOnly) return

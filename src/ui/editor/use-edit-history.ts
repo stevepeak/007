@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, useReducer } from 'react'
+import { useReducer, useRef, useState } from 'react'
 
 import type { WorkflowGraph, WorkflowNode } from '../../engine'
+import { useUndoScope } from '../undo/use-undo-scope'
 
 // One entry in the undo/redo change history. The workflow name lives here too
 // (not in the graph), so renaming the title is undoable alongside graph edits.
@@ -84,16 +85,6 @@ export function describeChange(prev: WorkflowGraph, next: WorkflowGraph): string
   }
   if (moved) return `Moved ${nodeName(moved)}`
   return 'Edited workflow'
-}
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  const el = target as HTMLElement | null
-  return (
-    !!el &&
-    (el.tagName === 'INPUT' ||
-      el.tagName === 'TEXTAREA' ||
-      el.isContentEditable)
-  )
 }
 
 // Owns the editor's undo/redo history engine: the `graph`/`name` under edit, the
@@ -196,28 +187,19 @@ export function useEditHistory(
 
   const dirty = indexRef.current !== savedIndex
 
-  // Keyboard undo/redo (the toolbar buttons were removed). Ignore when typing in
-  // a field. Cmd/Ctrl+Z = undo, Cmd/Ctrl+Shift+Z or Ctrl+Y = redo.
-  const undoRef = useRef(undo)
-  const redoRef = useRef(redo)
-  undoRef.current = undo
-  redoRef.current = redo
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (!(e.metaKey || e.ctrlKey) || isEditableTarget(e.target)) return
-      const key = e.key.toLowerCase()
-      if (key === 'z') {
-        e.preventDefault()
-        if (e.shiftKey) redoRef.current()
-        else undoRef.current()
-      } else if (key === 'y') {
-        e.preventDefault()
-        redoRef.current()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  // Toolbar affordances: whether a step exists in each direction, and the label
+  // of the change it would undo/redo (for the button tooltips).
+  const affordances = {
+    canUndo: indexRef.current > 0,
+    canRedo: indexRef.current < historyRef.current.length - 1,
+    undoLabel: historyRef.current[indexRef.current]?.label,
+    redoLabel: historyRef.current[indexRef.current + 1]?.label,
+  }
+
+  // Undo/redo is registered, not subscribed. `WfUndoProvider` owns the only
+  // keydown listener and routes to whichever scope is in front — which is what
+  // keeps three keep-alive editor tabs from all answering one Cmd+Z.
+  useUndoScope({ undo, redo, ...affordances })
 
   return {
     graph,
@@ -232,12 +214,7 @@ export function useEditHistory(
     loadSnapshot,
     undo,
     redo,
-    // Toolbar affordances: whether a step exists in each direction, and the
-    // label of the change it would undo/redo (for the button tooltips).
-    canUndo: indexRef.current > 0,
-    canRedo: indexRef.current < historyRef.current.length - 1,
-    undoLabel: historyRef.current[indexRef.current]?.label,
-    redoLabel: historyRef.current[indexRef.current + 1]?.label,
+    ...affordances,
     // Mark the current history index as the last-saved state (clears dirty).
     markSaved: () => setSavedIndex(indexRef.current),
   }

@@ -24,6 +24,7 @@ import { toolText } from './tool-appearance'
 import { ToolDetail } from './tool-detail'
 import { ToolIcon } from './tool-icon'
 import { ToolsList } from './tools-list'
+import { UndoTabScope } from './undo/undo-context'
 import { sectionCrumb } from './wf-crumbs'
 import { DEFAULT_WF_SECTIONS, WfHub, type WfHubSection } from './wf-hub'
 import { classifyAssetPath } from './wf-tab-routes'
@@ -122,6 +123,10 @@ function WfTabbedShell({
   )
 }
 
+// Inactive panes stay MOUNTED (that is the whole point of keep-alive), so
+// `active` has to be published to anything that cares which surface is really in
+// front. Undo is the first: without this every open editor would answer the same
+// Cmd+Z.
 function TabPane({
   active,
   children,
@@ -129,7 +134,11 @@ function TabPane({
   active: boolean
   children: ReactNode
 }) {
-  return <div className={cn('h-full', !active && 'hidden')}>{children}</div>
+  return (
+    <div className={cn('h-full', !active && 'hidden')}>
+      <UndoTabScope active={active}>{children}</UndoTabScope>
+    </div>
+  )
 }
 
 // Home tab: the hub + all section browsing. Never opens a tab of its own — every
