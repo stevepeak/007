@@ -39,6 +39,12 @@ export type UndoStackOptions<T> = {
   coalesce?: (prev: T, next: T, label: string) => CoalesceRule
   /** Push a restored value into state a snapshot can't reach by itself. */
   onApply?: (state: T, direction: ApplyDirection) => void
+  /**
+   * Stay registered but dormant — for a surface that is mounted before it has
+   * anything to edit. A disabled scope never claims the keystroke, so it can't
+   * swallow Cmd+Z from whatever else is on screen.
+   */
+  enabled?: boolean
 }
 
 const DEFAULT_MAX_HISTORY = 50
@@ -51,6 +57,7 @@ export function useUndoStack<T>(opts: UndoStackOptions<T>) {
     describe,
     coalesce,
     onApply,
+    enabled = true,
   } = opts
 
   const [state, setState] = useState<T>(initial)
@@ -149,6 +156,16 @@ export function useUndoStack<T>(opts: UndoStackOptions<T>) {
     push(entry)
   }
 
+  function reset(next: T, label = initialLabel) {
+    entriesRef.current = [{ state: next, label }]
+    indexRef.current = 0
+    applyingRef.current = false
+    lastCoalesceKeyRef.current = null
+    setSavedIndex(0)
+    setState(next)
+    bump()
+  }
+
   function undo() {
     if (indexRef.current > 0) applyIndex(indexRef.current - 1, 'undo')
   }
@@ -167,7 +184,7 @@ export function useUndoStack<T>(opts: UndoStackOptions<T>) {
 
   // Registered, not subscribed — `WfUndoProvider` owns the only keydown
   // listener and decides which mounted surface answers.
-  useUndoScope({ undo, redo, ...affordances })
+  useUndoScope({ undo, redo, ...affordances, enabled })
 
   return {
     state,
@@ -183,5 +200,14 @@ export function useUndoStack<T>(opts: UndoStackOptions<T>) {
     ...affordances,
     /** Mark the current index as the last-saved state (clears `dirty`). */
     markSaved: () => setSavedIndex(indexRef.current),
+    /**
+     * Re-seed the stack, discarding its history — for a surface that mounts
+     * before the thing it edits has loaded.
+     *
+     * Not `load`, which APPENDS: that would leave the placeholder the stack was
+     * created with sitting underneath as a real history entry, and one Cmd+Z too
+     * many would restore it and blank the editor.
+     */
+    reset,
   }
 }

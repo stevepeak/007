@@ -6,6 +6,7 @@ import { ArchiveButton } from '../archive-button'
 import { useWfComponents } from '../context'
 import { useWfNav } from '../nav'
 import { QueryState } from '../query-state'
+import { SaveStateBadge } from '../save-state-badge'
 import { WfShell } from '../shell'
 import { sectionCrumb } from '../wf-crumbs'
 
@@ -115,10 +116,10 @@ export function EvalSample({
           ? {
               editable: {
                 value: draft.name,
-                onChange: (name) => state.setDraft({ ...draft, name }),
-                onCommit: () => {
-                  if (draft.name !== row.name) state.persist(draft)
-                },
+                onChange: (name) => state.edit({ ...draft, name }),
+                // Blur ends the edit rather than saving it — the draft is
+                // already recorded, and the Save button owns the write.
+                onCommit: () => {},
                 ariaLabel: 'Sample name',
               },
             }
@@ -128,12 +129,8 @@ export function EvalSample({
         row && draft
           ? {
               value: draft.description,
-              onChange: (description) => state.setDraft({ ...draft, description }),
-              onCommit: () => {
-                if (draft.description !== (row.description ?? '')) {
-                  state.persist(draft)
-                }
-              },
+              onChange: (description) => state.edit({ ...draft, description }),
+              onCommit: () => {},
               ariaLabel: 'Sample description',
             }
           : undefined
@@ -161,7 +158,33 @@ export function EvalSample({
                 navigate(`evals/${setId}`)
               }}
             />
-            <Button size="sm" variant="outline" onClick={() => setRunOpen(true)}>
+            <SaveStateBadge
+              dirty={state.dirty}
+              dirtyTooltip="You have unsaved changes to this sample"
+              savedTooltip="All sample changes saved"
+            />
+            {state.saveError ? (
+              <span className="text-xs text-red-600">{state.saveError}</span>
+            ) : null}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void state.save()}
+              disabled={!state.dirty || state.saving}
+            >
+              {state.saving ? 'Saving…' : 'Save'}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                // What you see is what runs. Before the draft model these could
+                // not diverge; now they can, and grading yesterday's definition
+                // is precisely the confusion this project exists to remove.
+                void state.saveIfDirty().then(() => setRunOpen(true))
+              }}
+              disabled={state.saving}
+            >
               <Play className="size-4" />
               Run Sample
             </Button>

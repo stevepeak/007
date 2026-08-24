@@ -1,5 +1,5 @@
 import { ArrowUpRight, Goal, Pencil, Play, Plus } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { WfEvalRowDTO } from '../../server/protocol'
 import { agentColor, agentIcon } from '../agent-appearance'
@@ -11,9 +11,16 @@ import { useAgents, useEvalRuns, useEvalSet, useUpdateEvalSet, useUpsertEvalRow 
 import { IdeaSpark } from '../idea-spark'
 import { useOpenAsset, useWfNav, WfLink } from '../nav'
 import { pendingLabel, QueryState } from '../query-state'
+import { SaveStateBadge } from '../save-state-badge'
 import { WfShell } from '../shell'
+import { useUndoStack } from '../undo/use-undo-stack'
+import { useUnsavedGuard } from '../undo/use-unsaved-guard'
 import { sectionCrumb } from '../wf-crumbs'
 
+import {
+  describeGoalChange,
+  type GoalDraft,
+} from './describe-sample-change'
 import { RunConfigDialog } from './run-config-dialog'
 import { EmptyState, EvalRunsTable, Tabs } from './shared'
 
@@ -43,20 +50,48 @@ export function EvalSet({ setId, className }: EvalSetProps) {
   const updateSet = useUpdateEvalSet()
   const upsertRow = useUpsertEvalRow()
 
-  // Local name/description, synced once per set id so background refetches don't
-  // clobber an in-progress edit (persisted on blur).
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
+  // The goal's editable half, on an undo stack and written only on Save — the
+  // same model the samples use, so one page doesn't have two save behaviours.
+  //
+  // `reset` rather than `load`, because the stack is created before the set
+  // arrives: loading would leave the empty seed underneath as a history entry,
+  // and one Cmd+Z too many would blank the title.
+  const history = useUndoStack<GoalDraft>({
+    initial: { name: '', description: '' },
+    describe: describeGoalChange,
+    coalesce: (_a, _b, label) =>
+      label.startsWith('Edited') ? { key: label, windowMs: 600 } : null,
+    enabled: set != null,
+  })
+  const { name, description } = history.state
   const syncedIdRef = useRef<string | null>(null)
   useEffect(() => {
     if (set && syncedIdRef.current !== set.id) {
-      setName(set.name)
-      setDescription(set.description ?? '')
       syncedIdRef.current = set.id
+      history.reset({ name: set.name, description: set.description ?? '' })
     }
-  }, [set])
+  }, [set, history])
+
+  const save = useCallback(async () => {
+    if (!set) return
+    await updateSet.mutateAsync({
+      setId,
+      name: name.trim() || 'Untitled goal',
+      description: description || null,
+    })
+    history.markSaved()
+  }, [set, setId, name, description, updateSet, history])
+
+  const saveIfDirty = useCallback(async () => {
+    if (history.dirty) await save()
+  }, [history.dirty, save])
+
+  useUnsavedGuard(history.dirty, `Goal: ${name || 'Untitled'}`)
 
   const addSample = async () => {
+    // Creating a sample navigates away from this goal. Anything unsaved in the
+    // title or description would go with it.
+    await saveIfDirty()
     const { rowId } = await upsertRow.mutateAsync({
       setId,
       name: 'Untitled sample',
@@ -78,11 +113,9 @@ export function EvalSet({ setId, className }: EvalSetProps) {
           ? {
               editable: {
                 value: name,
-                onChange: setName,
-                onCommit: () => {
-                  const next = name.trim() || 'Untitled goal'
-                  if (next !== set.name) updateSet.mutate({ setId, name: next })
-                },
+                onChange: (next) => history.record({ ...history.state, name: next }),
+                // Blur ends the edit; the Save button owns the write.
+                onCommit: () => {},
                 ariaLabel: 'Goal name',
               },
             }
@@ -92,11 +125,9 @@ export function EvalSet({ setId, className }: EvalSetProps) {
         set
           ? {
               value: description,
-              onChange: setDescription,
-              onCommit: () => {
-                if (description !== (set.description ?? ''))
-                  updateSet.mutate({ setId, description: description || null })
-              },
+              onChange: (next) =>
+                history.record({ ...history.state, description: next }),
+              onCommit: () => {},
               ariaLabel: 'Goal description',
             }
           : undefined
@@ -116,6 +147,19 @@ export function EvalSet({ setId, className }: EvalSetProps) {
                 navigate('evals')
               }}
             />
+            <SaveStateBadge
+              dirty={history.dirty}
+              dirtyTooltip="You have unsaved changes to this goal"
+              savedTooltip="All goal changes saved"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void save()}
+              disabled={!history.dirty || updateSet.isPending}
+            >
+              {updateSet.isPending ? 'Saving…' : 'Save'}
+            </Button>
             <Button
               size="sm"
               variant="outline"
@@ -128,7 +172,10 @@ export function EvalSet({ setId, className }: EvalSetProps) {
             <Button
               size="sm"
               disabled={rows.length === 0}
-              onClick={() => setRunOpen(true)}
+              onClick={() => {
+                // What you see is what runs.
+                void saveIfDirty().then(() => setRunOpen(true))
+              }}
             >
               <Play className="size-4" />
               Run Goal

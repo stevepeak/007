@@ -111,7 +111,7 @@ function WfTabbedShell({
             />
           </TabPane>
           {tabs.map((tab) => (
-            <TabPane key={tab.id} active={activeId === tab.id}>
+            <TabPane key={tab.id} active={activeId === tab.id} tabId={tab.id}>
               <AssetRoutes path={tab.path} />
             </TabPane>
           ))}
@@ -129,14 +129,19 @@ function WfTabbedShell({
 // Cmd+Z.
 function TabPane({
   active,
+  tabId,
   children,
 }: {
   active: boolean
+  /** Null for Home, which holds no editor and so can never be unsaved. */
+  tabId?: string | null
   children: ReactNode
 }) {
   return (
     <div className={cn('h-full', !active && 'hidden')}>
-      <UndoTabScope active={active}>{children}</UndoTabScope>
+      <UndoTabScope active={active} tabId={tabId}>
+        {children}
+      </UndoTabScope>
     </div>
   )
 }

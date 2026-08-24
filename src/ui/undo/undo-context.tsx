@@ -39,8 +39,25 @@ const ActiveScopeContext = createContext<UndoScope | null>(null)
 /** Nesting depth. A modal or overlay sits above the surface it covers. */
 const DepthContext = createContext(0)
 
-/** Whether the enclosing keep-alive tab is the visible one. */
-const ActiveContext = createContext(true)
+/** The enclosing keep-alive tab: whether it's visible, and which one it is. */
+type TabScope = { active: boolean; tabId: string | null }
+const ActiveContext = createContext<TabScope>({ active: true, tabId: null })
+
+/**
+ * Surfaces holding unsaved work, so closing a tab can say so first.
+ *
+ * Lives beside the undo registry because it is the same kind of statement — an
+ * editor announcing something about its own state — and because both are read
+ * by chrome that sits outside the editor.
+ */
+type UnsavedRegistry = {
+  set: (id: number, entry: { tabId: string | null; label: string }) => void
+  clear: (id: number) => void
+  /** Labels of unsaved surfaces in a tab. Empty when it's safe to close. */
+  inTab: (tabId: string) => string[]
+  nextId: () => number
+}
+const UnsavedContext = createContext<UnsavedRegistry | null>(null)
 
 // What a consumer of `useActiveUndoScope` can actually see. Comparing THIS —
 // rather than object identity — is what keeps `update()` on every render from
@@ -65,6 +82,25 @@ export function WfUndoProvider({ children }: { children: ReactNode }) {
 
   const [active, setActive] = useState<UndoScope | null>(null)
   const signatureRef = useRef('')
+
+  // Plain refs: nothing renders off this, it is only ever asked a question at
+  // the moment a tab is about to close.
+  const unsavedRef = useRef(
+    new Map<number, { tabId: string | null; label: string }>(),
+  )
+  const unsavedIdRef = useRef(0)
+  const unsaved = useMemo<UnsavedRegistry>(
+    () => ({
+      nextId: () => ++unsavedIdRef.current,
+      set: (id, entry) => unsavedRef.current.set(id, entry),
+      clear: (id) => unsavedRef.current.delete(id),
+      inTab: (tabId) =>
+        [...unsavedRef.current.values()]
+          .filter((e) => e.tabId === tabId)
+          .map((e) => e.label),
+    }),
+    [],
+  )
 
   const syncWinner = useCallback(() => {
     const winner = pickScope(scopesRef.current.values())
@@ -127,9 +163,11 @@ export function WfUndoProvider({ children }: { children: ReactNode }) {
 
   return (
     <RegistryContext.Provider value={registry}>
-      <ActiveScopeContext.Provider value={active}>
-        {children}
-      </ActiveScopeContext.Provider>
+      <UnsavedContext.Provider value={unsaved}>
+        <ActiveScopeContext.Provider value={active}>
+          {children}
+        </ActiveScopeContext.Provider>
+      </UnsavedContext.Provider>
     </RegistryContext.Provider>
   )
 }
@@ -154,13 +192,17 @@ export function UndoLayer({ children }: { children: ReactNode }) {
  */
 export function UndoTabScope({
   active,
+  tabId = null,
   children,
 }: {
   active: boolean
+  /** Identifies the tab, so an unsaved-work guard can be scoped to it. */
+  tabId?: string | null
   children: ReactNode
 }) {
+  const value = useMemo(() => ({ active, tabId }), [active, tabId])
   return (
-    <ActiveContext.Provider value={active}>{children}</ActiveContext.Provider>
+    <ActiveContext.Provider value={value}>{children}</ActiveContext.Provider>
   )
 }
 
@@ -172,8 +214,16 @@ export function useUndoDepth() {
   return useContext(DepthContext)
 }
 
-export function useUndoActive() {
-  return useContext(ActiveContext)
+export function useUndoActive(): boolean {
+  return useContext(ActiveContext).active
+}
+
+export function useUndoTabId(): string | null {
+  return useContext(ActiveContext).tabId
+}
+
+export function useUnsavedRegistry() {
+  return useContext(UnsavedContext)
 }
 
 /**

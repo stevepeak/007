@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react'
 
+import { useUnsavedRegistry } from './undo/undo-context'
 import { assetTabId, isAssetPath } from './wf-tab-routes'
 
 // Browser-style tab state for the 007 surface, layered on the injected
@@ -55,6 +56,25 @@ export type WfTabsState = {
 }
 
 const WfTabsContext = createContext<WfTabsState | null>(null)
+
+
+/**
+ * Ask before discarding unsaved work. Returns true when it is safe to proceed.
+ *
+ * A native confirm rather than the SDK's `Modal`: closing a tab is synchronous
+ * all the way down, and threading an async confirmation through it would restage
+ * the whole close path for a prompt that fires almost never.
+ */
+function confirmDiscard(labels: string[]): boolean {
+  if (labels.length === 0) return true
+  const what =
+    labels.length === 1
+      ? labels[0]
+      : `${labels.length} items (${labels.join(', ')})`
+  return window.confirm(
+    `${what} has unsaved changes. Close anyway and lose them?`,
+  )
+}
 
 export function useWfTabs(): WfTabsState {
   const value = useContext(WfTabsContext)
@@ -175,6 +195,9 @@ export function WfTabsProvider({
   navigate,
   children,
 }: WfTabsProviderProps) {
+  // Editors holding unsaved work announce themselves here; closing a tab asks
+  // before discarding any that live in it.
+  const unsaved = useUnsavedRegistry()
   const [init] = useState<Init>(() => computeInit(path, readStored()))
   const [tabs, setTabs] = useState<WfTab[]>(init.tabs)
   const [homePath, setHomePath] = useState<string>(init.homePath)
@@ -287,6 +310,7 @@ export function WfTabsProvider({
     (id: string) => {
       const idx = tabs.findIndex((t) => t.id === id)
       if (idx === -1) return
+      if (!confirmDiscard(unsaved?.inTab(id) ?? [])) return
       const next = tabs.filter((t) => t.id !== id)
       setTabs(next)
       if (id !== activeId) return
@@ -301,11 +325,15 @@ export function WfTabsProvider({
         navigate(homePath)
       }
     },
-    [tabs, activeId, homePath, navigate],
+    [tabs, activeId, homePath, navigate, unsaved],
   )
 
   const closeAllTabs = useCallback(() => {
     if (tabs.length === 0) return
+    const losing = tabs
+      .filter((t) => t.id !== activeId)
+      .flatMap((t) => unsaved?.inTab(t.id) ?? [])
+    if (!confirmDiscard(losing)) return
     // Keep the tab currently in focus — sweeping away the thing you're reading
     // is never what "close all" means here. Focus (and the URL) don't move.
     const keep = tabs.filter((t) => t.id === activeId)
@@ -314,7 +342,7 @@ export function WfTabsProvider({
     expectedPathRef.current = homePath
     setActiveId(HOME_TAB_ID)
     navigate(homePath)
-  }, [tabs, activeId, homePath, navigate])
+  }, [tabs, activeId, homePath, navigate, unsaved])
 
   const value = useMemo<WfTabsState>(
     () => ({

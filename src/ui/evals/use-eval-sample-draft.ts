@@ -10,7 +10,13 @@ import type {
 } from '../../server/protocol'
 import { evalSampleLayer } from '../../server/protocol'
 import { useAgents, useDeleteEvalRow, useEvalSet, useUpsertEvalRow } from '../hooks'
+import { useUndoStack } from '../undo/use-undo-stack'
+import { useUnsavedGuard } from '../undo/use-unsaved-guard'
 
+import {
+  coalesceSampleEdit,
+  describeSampleChange,
+} from './describe-sample-change'
 import { useTargetHasTools } from './eval-sample-tools'
 
 // The state behind the Sample view. Everything here is downstream of ONE fact:
@@ -20,8 +26,15 @@ import { useTargetHasTools } from './eval-sample-tools'
 // fields it may assert on — all of it is read off the target, not stored on the
 // sample, so none of it can drift from the agent it is testing.
 //
-// Rows are MUTABLE — there is no version step. Every edit persists the whole
-// row, which is why `persist` takes a complete draft rather than a patch.
+// Rows are MUTABLE — there is no version step. Edits land on a local undo stack
+// and reach the server only on an explicit save, which is why `edit` takes a
+// complete draft rather than a patch.
+//
+// This used to write the whole row on every change. That made Cmd+Z meaningless
+// here (there was no local state to step back through), it meant a Sample's
+// grading criteria moved under a running comparison, and it produced a firehose
+// of unattributed writes. The cost is that a sample can now be dirty, which is
+// why `save`, `dirty`, and the guard on tab close all come out of this hook.
 
 /** The editable half of a sample row. */
 export type Draft = {
@@ -103,16 +116,30 @@ export function useEvalSampleDraft({
     [set?.targetKind, targetAgent?.toolIds],
   )
 
-  // Local draft, synced once per row id so background refetches don't clobber an
-  // in-progress edit. Every mutation persists the whole row.
-  const [draft, setDraft] = useState<Draft | null>(null)
+  // The draft lives on an undo stack, seeded once per row id so a background
+  // refetch can't clobber an in-progress edit.
+  //
+  // `reset` rather than `load`, because the stack is created before the row
+  // arrives: loading would leave the seeded `null` underneath as a history
+  // entry, and one Cmd+Z too many would blank the editor.
+  const history = useUndoStack<Draft | null>({
+    initial: null,
+    describe: (a, b) =>
+      a && b ? describeSampleChange(a, b) : 'Edited sample',
+    coalesce: (a, b, label) =>
+      a && b ? coalesceSampleEdit(a, b, label) : null,
+    // Dormant until a row has loaded — an empty editor must not claim Cmd+Z
+    // away from whatever else is on screen.
+    enabled: row != null,
+  })
+  const draft = history.state
   const syncedIdRef = useRef<string | null>(null)
   useEffect(() => {
     if (row && syncedIdRef.current !== row.id) {
-      setDraft(draftFromRow(row))
       syncedIdRef.current = row.id
+      history.reset(draftFromRow(row))
     }
-  }, [row])
+  }, [row, history])
 
   // Which check row is expanded — the accordion state lives here so "Add check"
   // can open the row it just appended.
@@ -133,22 +160,49 @@ export function useEvalSampleDraft({
     if (initialCheckIndex != null) setOpenCheck(initialCheckIndex)
   }, [initialCheckIndex])
 
-  const persist = useCallback(
+  // Draft-then-save means closing the tab can now lose work. This is the other
+  // half of that trade.
+  useUnsavedGuard(history.dirty, `Sample: ${draft?.name || 'Untitled'}`)
+
+  /** Record an edit locally. Nothing reaches the server until `save`. */
+  const edit = useCallback(
     (next: Draft) => {
       if (!row) return
-      setDraft(next)
-      upsertRow.mutate({
-        id: row.id,
-        setId,
-        name: next.name.trim() || 'Untitled sample',
-        description: next.description.trim() || null,
-        input: next.input,
-        tools: next.tools,
-        checks: next.checks,
-      })
+      history.record(next)
     },
-    [row, upsertRow, setId],
+    [row, history],
   )
+
+  /**
+   * Write the draft. Resolves once the row is stored, so callers that must not
+   * act on a stale definition — running the sample, navigating away — can await
+   * it rather than racing it.
+   */
+  const save = useCallback(async () => {
+    if (!row || !draft) return
+    await upsertRow.mutateAsync({
+      id: row.id,
+      setId,
+      name: draft.name.trim() || 'Untitled sample',
+      description: draft.description.trim() || null,
+      input: draft.input,
+      tools: draft.tools,
+      checks: draft.checks,
+    })
+    history.markSaved()
+  }, [row, draft, upsertRow, setId, history])
+
+  /**
+   * Save only if there is something to save.
+   *
+   * The guard that matters: what you see is what runs. Before the draft model
+   * the two could not diverge; now they can, and an eval that silently grades
+   * yesterday's definition is exactly the bug this whole project exists to
+   * remove.
+   */
+  const saveIfDirty = useCallback(async () => {
+    if (history.dirty) await save()
+  }, [history.dirty, save])
 
   // Append a check and expand it. Lifted here because the draft and the
   // accordion state both live here; the trigger is the last row of the
@@ -162,9 +216,9 @@ export function useEvalSampleDraft({
         hasTools ? DEFAULT_CHECK : DEFAULT_CHECK_NO_TOOLS,
       ],
     }
-    persist({ ...draft, checks })
+    edit({ ...draft, checks })
     setOpenCheck(checks.checks.length - 1)
-  }, [draft, hasTools, persist])
+  }, [draft, hasTools, edit])
 
   // A sample authored before its goal's target changed input kind still holds
   // the old variant. Offer the swap rather than silently rewriting an author's
@@ -183,8 +237,18 @@ export function useEvalSampleDraft({
     outputSchema,
     allowToolIds,
     draft,
-    setDraft,
-    persist,
+    edit,
+    save,
+    saveIfDirty,
+    dirty: history.dirty,
+    saving: upsertRow.isPending,
+    saveError: upsertRow.error?.message ?? null,
+    undo: history.undo,
+    redo: history.redo,
+    canUndo: history.canUndo,
+    canRedo: history.canRedo,
+    undoLabel: history.undoLabel,
+    redoLabel: history.redoLabel,
     deleteRow,
     openCheck,
     setOpenCheck,

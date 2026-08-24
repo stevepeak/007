@@ -38,7 +38,7 @@ export function SampleConfigSteps({
   onAddMockOpenChange: (open: boolean) => void
 }) {
   const { Button } = useWfComponents()
-  const { set, persist } = state
+  const { set, edit } = state
   const targetKind = set?.targetKind ?? 'agent'
 
   const steps: Step[] = [
@@ -53,7 +53,7 @@ export function SampleConfigSteps({
           <SampleInputEditor
             targetId={set?.targetId ?? ''}
             value={draft.input}
-            onChange={(input) => persist({ ...draft, input })}
+            onChange={(input) => edit({ ...draft, input })}
           />
         </div>
       ),
@@ -82,7 +82,7 @@ export function SampleConfigSteps({
           targetId={set?.targetId ?? ''}
           targetKind={targetKind}
           value={draft.tools}
-          onChange={(tools) => persist({ ...draft, tools })}
+          onChange={(tools) => edit({ ...draft, tools })}
           addOpen={addMockOpen}
           onAddOpenChange={onAddMockOpenChange}
           stagedToolResults={state.stagedToolResults}
@@ -104,7 +104,7 @@ export function SampleConfigSteps({
         allowToolIds={state.allowToolIds}
         openIndex={state.openCheck}
         onOpenChange={state.setOpenCheck}
-        onChange={(checks) => persist({ ...draft, checks })}
+        onChange={(checks) => edit({ ...draft, checks })}
         onAdd={state.addCheck}
       />
     ),
@@ -136,7 +136,7 @@ function KindMismatchNotice({
       <button
         type="button"
         onClick={() =>
-          state.persist({
+          state.edit({
             ...draft,
             input: emptyInputFor(
               state.expectedKind === 'conversation' ? 'conversation' : 'task',

@@ -10,7 +10,6 @@
 export * from './data/authoring'
 export * from './data/dashboard'
 export * from './data/runs'
-export * from './data/change-fields'
 export * from './data/changes'
 export * from './data/evals'
 export * from './data/eval-snapshot'

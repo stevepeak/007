@@ -281,3 +281,8 @@ export {
   type TargetDisplay,
 } from './nodes/sub-agent-tools'
 export { CONFIG_FIELDS, changedFields } from './config-fields'
+export {
+  changedEntityMetaFields,
+  changedEvalRowFields,
+  changedEvalSetFields,
+} from './change-fields'

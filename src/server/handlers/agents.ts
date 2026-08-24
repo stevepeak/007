@@ -1,8 +1,7 @@
-import { changedFields } from '../../engine'
+import { changedEntityMetaFields, changedFields } from '../../engine'
 import { agentConfigSchema, agentInputVariables } from '../../engine/graph'
 import {
   archiveAgent,
-  changedEntityMetaFields,
   countWorkflowsReferencingAgent,
   createAgent,
   discardAgentDraft,

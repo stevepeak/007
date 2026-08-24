@@ -1,3 +1,7 @@
+import {
+  changedEvalRowFields,
+  changedEvalSetFields,
+} from '../../engine'
 import { agentConfigSchema } from '../../engine/graph'
 import {
   collectSeededToolCalls,
@@ -12,9 +16,7 @@ import {
 import type { EvalRowSnapshot } from '../../eval/checks'
 import {
   buildEvalSnapshot,
-  changedEvalRowFields,
   changesBetween,
-  changedEvalSetFields,
   createEvalRun,
   createEvalSet,
   deleteEvalRow,
