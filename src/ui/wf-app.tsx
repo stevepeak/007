@@ -1,5 +1,6 @@
 import { useMemo, type ReactNode } from 'react'
 
+import { ActivityList } from './activity/activity-list'
 import { AgentsList } from './agents-list'
 import { cn } from './cn'
 import { ComingSoon } from './coming-soon'
@@ -222,6 +223,13 @@ function HomeRoutes({
       return (
         <WfShell crumbs={[sectionCrumb('models', { current: true })]} scroll>
           <ModelsList />
+        </WfShell>
+      )
+    }
+    if (key === 'activity') {
+      return (
+        <WfShell crumbs={[sectionCrumb('activity', { current: true })]} scroll>
+          <ActivityList className="mx-auto max-w-4xl p-6" />
         </WfShell>
       )
     }

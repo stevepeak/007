@@ -126,6 +126,7 @@ export function createHttpWfDataClient(
     // a slow failure-recorder would just compound the failure it's recording.
     recordEvalFailure: bind('recordEvalFailure'),
     finalizeEvalRun: bind('finalizeEvalRun'),
+    listChanges: bind('listChanges'),
     listEvalRuns: bind('listEvalRuns'),
     getEvalRun: (evalRunId) => call('getEvalRun', { evalRunId }),
 

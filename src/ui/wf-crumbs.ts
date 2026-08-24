@@ -2,6 +2,7 @@ import {
   Activity,
   Bot,
   Boxes,
+  History,
   Target,
   ThumbsUp,
   Wrench,
@@ -22,6 +23,7 @@ type WfSectionKey =
   | 'runs'
   | 'evals'
   | 'models'
+  | 'activity'
   | 'feedback'
 
 const SECTIONS: Record<
@@ -34,6 +36,7 @@ const SECTIONS: Record<
   runs: { title: 'Runs', icon: Activity, iconClassName: 'text-sky-500', to: 'runs' },
   evals: { title: 'Evals', icon: Target, iconClassName: 'text-rose-500', to: 'evals' },
   models: { title: 'Models', icon: Boxes, iconClassName: 'text-amber-500', to: 'models' },
+  activity: { title: 'Activity', icon: History, iconClassName: 'text-slate-500', to: 'activity' },
   feedback: { title: 'Feedback', icon: ThumbsUp, iconClassName: 'text-teal-500', to: 'feedback' },
 }
 

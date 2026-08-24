@@ -5,6 +5,7 @@ import {
 } from '@tanstack/react-query'
 
 import type {
+  WfChangeListInput,
   WfDashboardInput,
   WfDataClient,
   WfFeedbackListInput,
@@ -44,6 +45,9 @@ export const keys = {
   agentReferences: (id: string) => ['wf', 'agent-references', id] as const,
   agentCalls: (id: string, limit?: number) =>
     ['wf', 'agent-calls', id, limit ?? null] as const,
+  changes: (input: WfChangeListInput) => ['wf', 'changes', input] as const,
+  // Prefix key: invalidates every filter variant of the change feed.
+  changesAll: ['wf', 'changes'] as const,
   evalSets: (includeArchived?: boolean) =>
     ['wf', 'eval-sets', includeArchived ?? false] as const,
   // Prefix key: invalidates both archived/active variants of the eval sets list.

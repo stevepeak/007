@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import type { AgentConfig } from '../../engine'
 import type { WfAgentCall } from '../../server/protocol'
+import { ActivityList } from '../activity/activity-list'
 import { AGENT_ICONS, DEFAULT_AGENT_COLOR } from '../agent-appearance'
 import { AppearancePicker } from '../appearance-picker'
 import { cn } from '../cn'
@@ -84,11 +85,12 @@ export function AgentEditor({
   )
 }
 
-type EditorTab = 'editor' | 'calls'
+type EditorTab = 'editor' | 'calls' | 'activity'
 
 const EDITOR_TABS = [
   { key: 'editor', label: 'Editor' },
   { key: 'calls', label: 'Recent calls' },
+  { key: 'activity', label: 'Activity' },
 ]
 
 function AgentEditorInner({
@@ -196,6 +198,17 @@ function AgentEditorInner({
                 onChange={(k) => setTab(k as EditorTab)}
                 tabs={EDITOR_TABS}
               />
+
+              {tab === 'activity' ? (
+                // The versions menu shows what was PUBLISHED; this shows
+                // everything else — draft saves, renames, the archive — which is
+                // most of what happens to an agent and none of what a version
+                // records.
+                <ActivityList
+                  filter={{ entityKind: 'agent', entityId: agentId }}
+                  emptyMessage="No changes recorded for this agent yet."
+                />
+              ) : null}
 
               {tab === 'calls' ? (
                 <AgentCallsList

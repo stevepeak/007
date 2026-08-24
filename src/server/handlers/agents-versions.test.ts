@@ -16,6 +16,7 @@ import {
 import { wfSchema } from '../../storage/schema'
 
 import { buildAgentHandlers } from './agents'
+import { buildChangeHandlers } from './changes'
 import type { CreateWfSdkHandlersOptions, HandlerCtx } from './shared'
 
 // The publish path end-to-end through the handler: the AI summary riding along
@@ -169,6 +170,41 @@ describe('agent publish handler', () => {
     expect(change.fields).toEqual(['name'])
     expect(change.before).toMatchObject({ name: 'Coster' })
     expect(change.after).toMatchObject({ name: 'Renamed' })
+  })
+
+  // The read path, through the same handler the UI calls — the Activity view is
+  // only as good as this returning what the mutation wrote.
+  test('the change feed serves what the handlers recorded', async () => {
+    const handlers = buildAgentHandlers(options())
+    await handlers.updateAgentMeta(ctx(db, { agentId, name: 'Renamed' }))
+    await handlers.publishAgent(
+      ctx(db, {
+        agentId,
+        config: config({ modelId: 'other-model' }),
+        aiSummary: { short: 's', long: 'l' },
+      }),
+    )
+
+    const feed = buildChangeHandlers()
+    const rows = await feed.listChanges(
+      ctx(db, { entityKind: 'agent', entityId: agentId }),
+    )
+    // Newest first.
+    expect(rows.map((r) => r.action)).toEqual(['publish', 'update'])
+    expect(rows[0].fields).toEqual(['model'])
+    expect(rows[0].actorId).toBe('tester')
+    expect(rows[0].createdAt).toBeGreaterThan(0)
+  })
+
+  test('the feed does not leak another entity\'s history', async () => {
+    const handlers = buildAgentHandlers(options())
+    await handlers.updateAgentMeta(ctx(db, { agentId, name: 'Renamed' }))
+
+    const feed = buildChangeHandlers()
+    const rows = await feed.listChanges(
+      ctx(db, { entityKind: 'agent', entityId: 'some-other-agent' }),
+    )
+    expect(rows).toEqual([])
   })
 
   test('publishing without a summary fills it in the background', async () => {

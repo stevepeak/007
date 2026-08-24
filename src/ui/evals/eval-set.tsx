@@ -2,6 +2,7 @@ import { ArrowUpRight, Goal, Pencil, Play, Plus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { WfEvalRowDTO } from '../../server/protocol'
+import { ActivityList } from '../activity/activity-list'
 import { agentColor, agentIcon } from '../agent-appearance'
 import { AgentSelect, type AgentSelectValue } from '../agent-select'
 import { ArchiveButton } from '../archive-button'
@@ -30,7 +31,7 @@ import { EmptyState, EvalRunsTable, Tabs } from './shared'
 // (wf_eval_row) and the TEST RUNS that included it. (Internal identifiers still
 // use `set`/`setId`.)
 
-type SetTab = 'samples' | 'runs'
+type SetTab = 'samples' | 'runs' | 'activity'
 
 export type EvalSetProps = {
   setId: string
@@ -232,13 +233,22 @@ export function EvalSet({ setId, className }: EvalSetProps) {
                 tabs={[
                   { key: 'samples', label: 'Samples' },
                   { key: 'runs', label: 'Test runs' },
+                  { key: 'activity', label: 'Activity' },
                 ]}
               />
 
               {tab === 'samples' ? (
                 <SamplesTable setId={setId} rows={rows} />
-              ) : (
+              ) : tab === 'runs' ? (
                 <RunsForSet setId={setId} />
+              ) : (
+                // Filtered by PARENT, so the goal's history includes edits to
+                // its samples — which is where the grading criteria live, and so
+                // where "did the test change?" is actually answered.
+                <ActivityList
+                  filter={{ parentId: setId }}
+                  emptyMessage="No changes recorded for this goal's samples yet."
+                />
               )}
             </>
           )}

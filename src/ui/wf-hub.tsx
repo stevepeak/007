@@ -2,6 +2,7 @@ import {
   Activity,
   Bot,
   Boxes,
+  History,
   Target,
   ThumbsUp,
   Wrench,
@@ -105,6 +106,17 @@ export const DEFAULT_WF_SECTIONS: WfHubSection[] = [
     accent: {
       card: 'hover:border-amber-300 hover:shadow-lg hover:shadow-amber-100',
       icon: 'group-hover:bg-amber-100 group-hover:text-amber-600 group-hover:shadow-md group-hover:shadow-amber-200',
+    },
+  },
+  {
+    key: 'activity',
+    title: 'Activity',
+    description:
+      'Who changed what, and when — every edit to an agent, workflow, goal, or model, newest first.',
+    icon: History,
+    accent: {
+      card: 'hover:border-slate-300 hover:shadow-lg hover:shadow-slate-100',
+      icon: 'group-hover:bg-slate-100 group-hover:text-slate-600 group-hover:shadow-md group-hover:shadow-slate-200',
     },
   },
   {

@@ -20,6 +20,7 @@ import type {
   WfAgentSummary,
   WfAgentVersionSummary,
 } from './protocol-agents'
+import type { WfChangeDTO, WfChangeListInput } from './protocol-changes'
 import type { WfDashboardInput, WfDashboardResult } from './protocol-dashboard'
 import type {
   WfEvalResultDTO,
@@ -404,6 +405,14 @@ export interface WfDataClient {
   }): Promise<WfEvalResultDTO>
   /** Roll up an eval run's results into its final counts/score + status. */
   finalizeEvalRun(input: { evalRunId: string }): Promise<WfEvalRunSummary>
+  /**
+   * The change log, newest first — who changed what, and when.
+   *
+   * Reads across every entity kind, so an empty filter is the global feed and a
+   * filled one is an asset's own history.
+   */
+  listChanges(input?: WfChangeListInput): Promise<WfChangeDTO[]>
+
   listEvalRuns(input?: { limit?: number }): Promise<WfEvalRunSummary[]>
   getEvalRun(evalRunId: string): Promise<WfEvalRunDetail | null>
 

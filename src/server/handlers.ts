@@ -3,9 +3,13 @@ import { z } from 'zod'
 import { errorLogText } from '../engine/error-detail'
 import { errorMessage } from '../engine/run-node'
 import { recordChange, type DashboardAnalytics } from '../storage/data'
-import { WF_EVAL_TARGET_KINDS } from '../storage/schema'
+import {
+  WF_CHANGE_ENTITY_KINDS,
+  WF_EVAL_TARGET_KINDS,
+} from '../storage/schema'
 
 import { buildAgentHandlers } from './handlers/agents'
+import { buildChangeHandlers } from './handlers/changes'
 import { buildDashboardHandlers } from './handlers/dashboard'
 import { buildEvalHandlers } from './handlers/evals'
 import { buildFeedbackHandlers } from './handlers/feedback'
@@ -218,6 +222,13 @@ const wfInputSchemas: Record<keyof WfDataClient, z.ZodType> = {
   getEvalRun: z.object({ evalRunId: z.string() }),
   finalizeEvalRun: z.object({ evalRunId: z.string() }),
   listEvalSets: z.object({ includeArchived: z.boolean().optional() }),
+  listChanges: z.object({
+    entityKind: z.enum(WF_CHANGE_ENTITY_KINDS).optional(),
+    entityId: z.string().optional(),
+    parentId: z.string().optional(),
+    actorId: z.string().optional(),
+    limit: z.number().optional(),
+  }),
   listEvalRuns: z.object({ limit: z.number().optional() }),
   createEvalSet: z.object({
     name: z.string(),
@@ -344,6 +355,7 @@ function buildHandlers<TDeps>(
     ...buildRunHandlers(opts),
     ...buildDashboardHandlers(opts),
     ...buildAgentHandlers(opts),
+    ...buildChangeHandlers(),
     ...buildEvalHandlers(opts),
     ...buildFeedbackHandlers(opts),
   }
