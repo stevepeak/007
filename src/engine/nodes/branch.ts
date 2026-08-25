@@ -19,6 +19,14 @@ export type ExecuteBranchNodeArgs = {
   /** Live node-output cache, so a `source` ref resolves against an upstream
    * node's output exactly like agent/tool input bindings do. */
   nodeOutputs: Map<string, unknown>
+  /**
+   * Deep-rehydrates blob-ref values (a large upstream value spilled to storage)
+   * to their real content before the comparison. Without it a spilled value
+   * would be compared as the POINTER — `contains` would test the pointer's JSON,
+   * `equals` would never match — and the branch would route confidently on the
+   * wrong text rather than failing.
+   */
+  rehydrate?: (value: unknown) => Promise<unknown>
 }
 
 // Coerce any value to a string for text comparisons without tripping the
@@ -118,16 +126,17 @@ function evaluate(
   }
 }
 
-export function executeBranchNode(
+export async function executeBranchNode(
   deps: ExecuteBranchNodeArgs,
-): BranchNodeResult {
-  const { node, input, nodeOutputs } = deps
+): Promise<BranchNodeResult> {
+  const { node, input, nodeOutputs, rehydrate } = deps
   const { source, operator, value } = node.config
   // A `source` ref selects any upstream node's output (resolved like agent/tool
   // inputs); with none, fall back to the whole incoming input.
-  const target = source
+  const raw = source
     ? resolveBinding(source, nodeOutputs, { nodeId: node.id, name: 'source' })
     : input
+  const target = rehydrate ? await rehydrate(raw) : raw
   const pass = evaluate(operator, target, value)
 
   const subject = source

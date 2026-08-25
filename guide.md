@@ -53,6 +53,7 @@ cycles (`ui → server → storage → engine`, `cloudflare → storage → engi
 | `@stevepeak/007/cloudflare`              | any server route²       | `startGraphRun`, `createHttpGraphRunClient`, `createR2BlobResolver`, `createExtractTextTool` |
 | `@stevepeak/007/cloudflare/runtime`      | Workers **only**        | `makeGraphWorkflow`, `RunRoom` (durable classes — import `cloudflare:workers`) |
 | `@stevepeak/007/cloudflare/blob-resolver`| any server route        | `createR2BlobResolver` (engine-only leaf)       |
+| `@stevepeak/007/cloudflare/blob-spill`   | any server route        | `createR2BlobSpiller`, `spillTextIfLarge` (the write half of blob refs) |
 | `@stevepeak/007/cloudflare/extract-text` | any server route¹       | `createExtractTextTool` (R2/Vision OCR tool)    |
 | `@stevepeak/007/cloudflare/analytics-engine` | Workers (AE binding) | `createAnalyticsEngineTelemetry` — the write half of run telemetry (§7b) |
 | `@stevepeak/007/server`                  | any server route        | `createWfSdkHandlers`, `createHttpWfDataClient` |

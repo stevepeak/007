@@ -16,6 +16,7 @@
     "./cloudflare": "./src/cloudflare/index.ts",
     "./cloudflare/analytics-engine": "./src/cloudflare/analytics-engine.ts",
     "./cloudflare/blob-resolver": "./src/cloudflare/blob-resolver.ts",
+    "./cloudflare/blob-spill": "./src/cloudflare/blob-spill.ts",
     "./cloudflare/extract-text": "./src/cloudflare/extract-text.ts",
     "./cloudflare/runtime": "./src/cloudflare/runtime.ts",
     "./engine": "./src/engine/index.ts",

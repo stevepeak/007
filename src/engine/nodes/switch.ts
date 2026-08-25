@@ -27,26 +27,40 @@ export type ExecuteSwitchNodeArgs = {
   /** Live node-output cache, so `source` and any ref-valued case resolve
    * against an upstream node's output exactly like agent/tool bindings do. */
   nodeOutputs: Map<string, unknown>
+  /**
+   * Deep-rehydrates blob-ref values (a large upstream value spilled to storage)
+   * to their real content before matching. Applied to the subject AND to every
+   * ref-valued case, since either side of the comparison can address a spilled
+   * output — and a pointer compared against real text matches nothing, silently
+   * sending every run down the default case.
+   */
+  rehydrate?: (value: unknown) => Promise<unknown>
 }
 
-export function executeSwitchNode(
+export async function executeSwitchNode(
   deps: ExecuteSwitchNodeArgs,
-): SwitchNodeResult {
-  const { node, input, nodeOutputs } = deps
+): Promise<SwitchNodeResult> {
+  const { node, input, nodeOutputs, rehydrate } = deps
   const { source, cases } = node.config
-  const target = source
+  const rawTarget = source
     ? resolveBinding(source, nodeOutputs, { nodeId: node.id, name: 'source' })
     : input
+  const target = rehydrate ? await rehydrate(rawTarget) : rawTarget
 
-  const hit = cases.find((c) =>
-    looseEquals(
-      target,
-      resolveBinding(c.value, nodeOutputs, {
+  // Resolved up front rather than inside `find`, because the rehydrate is async
+  // and `Array.prototype.find` would take the promise itself as truthy and
+  // match the first case every time.
+  const caseValues = await Promise.all(
+    cases.map(async (c) => {
+      const raw = resolveBinding(c.value, nodeOutputs, {
         nodeId: node.id,
         name: `case ${c.key}`,
-      }),
-    ),
+      })
+      return rehydrate ? await rehydrate(raw) : raw
+    }),
   )
+  const hitIndex = cases.findIndex((_, i) => looseEquals(target, caseValues[i]))
+  const hit = hitIndex === -1 ? undefined : cases[hitIndex]
   const result = hit ? hit.key : SWITCH_DEFAULT_CASE
   const subject = source
     ? source.path

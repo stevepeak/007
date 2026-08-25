@@ -161,7 +161,12 @@ export async function runNode<TDeps>(
       // boolean it decided. Nodes that need the pre-Branch data ref the producer
       // directly (all past outputs stay globally accessible). The yes/no comes
       // from a code predicate and still routes the outgoing yes/no edges.
-      const r = executeBranchNode({ node, input, nodeOutputs: ctx.nodeOutputs })
+      const r = await executeBranchNode({
+        node,
+        input,
+        nodeOutputs: ctx.nodeOutputs,
+        rehydrate,
+      })
       const decision = { result: r.result, reasoning: r.reasoning }
       return {
         schedulerOutput: decision,
@@ -174,7 +179,12 @@ export async function runNode<TDeps>(
       // Multi-way sibling of `branch`: like Branch it emits its decision
       // (`{ result, reasoning }`, where result is the winning case key or
       // 'else') rather than forwarding its input, and routes its case edges.
-      const r = executeSwitchNode({ node, input, nodeOutputs: ctx.nodeOutputs })
+      const r = await executeSwitchNode({
+        node,
+        input,
+        nodeOutputs: ctx.nodeOutputs,
+        rehydrate,
+      })
       const decision = { result: r.result, reasoning: r.reasoning }
       return {
         schedulerOutput: decision,

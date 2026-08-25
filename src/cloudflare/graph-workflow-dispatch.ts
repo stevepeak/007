@@ -51,6 +51,11 @@ import {
   recordTerminal,
 } from './graph-workflow-dispatch-logs'
 import type { RunCtx } from './graph-workflow-dispatch-run-ctx'
+import {
+  rehydrateAtBoundary,
+  spillAtBoundary,
+  spillNodeOutputs,
+} from './graph-workflow-dispatch-spill'
 import { notifyHost, stepDo } from './graph-workflow-dispatch-step'
 import {
   DEFAULT_STEP_OPTS,
@@ -126,7 +131,7 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
       stepDo(step, `iter:${node.id}:${index}`, stepOptsFor(node), async () => {
         const rc = { ...p.runContext, env }
         const toolDeps = await config.buildRunDeps(rc)
-        return await executeSubgraph(
+        const itemResult = await executeSubgraph(
           node.config.subgraph,
           item,
           {
@@ -163,6 +168,15 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
             parentNodeId: node.id,
             itemIndex: index,
           },
+        )
+        // This return IS the boundary: one item's whole subgraph result is
+        // journaled as this step's output. Spilling here is also what keeps the
+        // collection below small, since the collection is these returns.
+        return await spillAtBoundary(
+          config,
+          toolDeps,
+          { runId: p.workflowRunId, nodeId: node.id, itemIndex: index, slot: 'iteration-item' },
+          itemResult,
         )
       }),
   }).catch((err: unknown) => {
@@ -626,8 +640,23 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
                   ),
               ),
           )
+          // Last thing before the value crosses the durable boundary: anything
+          // too big to journal is written out and replaced by a pointer. Inside
+          // the closure on purpose — out here the payload would already have
+          // had to survive the crossing we're protecting.
+          const outputs = await spillNodeOutputs(
+            config,
+            toolDeps,
+            {
+              runId: p.workflowRunId,
+              nodeId: node.id,
+              slot: 'node-output',
+            },
+            r,
+          )
           return {
             ...r,
+            ...outputs,
             logs: bodyLogs,
             execStartedAt,
             execFinishedAt: new Date(),
@@ -704,34 +733,68 @@ export async function deliverOutput<TDeps, E extends GraphWorkflowEnv>(
   // persist anything: a run whose Output was bound to the wrong shape — or that
   // fizzled out with no result under a contract that requires one — fails here
   // (the caller's catch records the failure) rather than the host reading an
-  // empty result. Pure, deterministic Zod on an in-hand value, so it's safe in
-  // the orchestrator (no step.do needed). Contract-less triggers pass through.
+  // empty result. Contract-less triggers pass through.
   // A spawned callee skips the contract for the same reason it skips trigger
   // validation: the inline path it replaces enforces neither, and flipping
   // `calleeExecution` must not change whether a workflow is allowed to finish.
   // The PARENT's own Output still answers to its own trigger's contract.
-  const output = p.subRun
-    ? rawOutput
-    : enforceOutputContract(
+  //
+  // A large answer arrives here as a blob pointer (see
+  // `graph-workflow-dispatch-spill`), and the contract is a Zod check that
+  // would reject the pointer's shape, so both the check and the write need the
+  // value read back. That read is R2 I/O, which cannot happen out here: this
+  // body re-executes on every wake, and a non-deterministic call in it would
+  // re-run once per hibernation. So `answerFor` does the read INSIDE whichever
+  // step needs it — and the pointer, not the payload, is what this function
+  // returns, since the instance result has a size cap of its own and `wf_run`
+  // is where the host reads the answer from anyway.
+  const answerFor = async (): Promise<unknown> => {
+    const answer = p.subRun
+      ? rawOutput
+      : await rehydrateAtBoundary(
+          config,
+          () => config.buildRunDeps({ ...p.runContext, env }),
+          rawOutput,
+        )
+    if (p.subRun) return answer
+    try {
+      return enforceOutputContract(
         config.triggers,
         scheduler.trigger.config.triggerKind,
-        rawOutput,
+        answer,
       )
-  await stepDo(step, 'finalize', () =>
-    markRunDone(createWfDb(env.WF_DB), {
+    } catch (err) {
+      // The contract cannot come out true on a retry — the graph is bound the
+      // way it is bound. Retrying would spend the node's whole backoff
+      // schedule re-deriving the same rejection, so fail now and let the
+      // caller's catch record it, exactly as it did when this check ran in the
+      // orchestrator body.
+      throw new NonRetryableError(
+        err instanceof Error ? err.message : String(err),
+      )
+    }
+  }
+  await stepDo(step, 'finalize', async () =>
+    await markRunDone(createWfDb(env.WF_DB), {
       runId: p.workflowRunId,
-      output,
+      output: await answerFor(),
       settled: !pendingWork,
       pendingNodes: scheduler.inFlightCount(),
     }),
   )
-  await reportToParent(ctx, { ok: true, output })
+  // The callee reports its pointer as-is: the parent hands it to a node that
+  // rehydrates inside its own step, so the payload never touches the 1 MiB
+  // event cap. `rawOutput` is already contract-free for a sub-run.
+  await reportToParent(ctx, { ok: true, output: rawOutput })
   if (config.onRunComplete) {
-    await notifyHost(step, 'on-complete', () =>
-      config.onRunComplete!({ ...p.runContext, env }, { output, outputNodeId }),
+    await notifyHost(step, 'on-complete', async () =>
+      await config.onRunComplete!(
+        { ...p.runContext, env },
+        { output: await answerFor(), outputNodeId },
+      ),
     )
   }
-  return { output, outputNodeId }
+  return { output: rawOutput, outputNodeId }
 }
 
 /**

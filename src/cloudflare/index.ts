@@ -39,6 +39,12 @@ export {
   type CreateR2BlobResolverOptions,
 } from './blob-resolver'
 export {
+  createR2BlobSpiller,
+  spillTextIfLarge,
+  type CreateR2BlobSpillerOptions,
+  type SpillTextOptions,
+} from './blob-spill'
+export {
   createAnalyticsEngineTelemetry,
   MAX_POINTS_PER_INVOCATION,
   type CreateAnalyticsEngineTelemetryOptions,

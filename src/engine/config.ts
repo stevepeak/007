@@ -81,6 +81,36 @@ export type BlobRefResolver<TDeps> = (
   deps: TDeps,
 ) => Promise<string>
 
+/** Where a spilled value was about to cross, so a host can key spills by kind. */
+export type BlobSpillContext = {
+  runId: string
+  nodeId: string
+  /** Set when the value is one item's result inside an iteration subgraph. */
+  itemIndex?: number
+  slot: 'node-output' | 'iteration-item'
+  /**
+   * Where inside the node's output this payload sat, e.g. `text` or
+   * `items.3.body` (empty when the output *is* the payload). Part of the key's
+   * identity: one node can spill several leaves, and they must not collide.
+   */
+  path: string
+}
+
+/**
+ * Writes a payload the engine judged too large to cross a step boundary, and
+ * reports the key it can later be read back by. The inverse of
+ * {@link BlobRefResolver}: this one runs *inside* the producing node's step,
+ * that one inside the consuming node's, so the payload itself never sits at a
+ * boundary. The engine decides *whether* to spill and encodes the payload; the
+ * host decides only *where the bytes go* — which is where storage layout and
+ * tenancy belong. See `createR2BlobSpiller` in `../cloudflare`.
+ */
+export type BlobSpiller<TDeps> = (
+  payload: { text: string; contentType: string },
+  ctx: BlobSpillContext,
+  deps: TDeps,
+) => Promise<{ key: string; storage?: string }>
+
 // NOTE: vision (`ResolvedImage` / `ImageRefResolver` / an agent node's
 // `imageInputs`) was removed along with the implicit user message. Image parts
 // were appended to whatever turn happened to exist, which is exactly the kind of
@@ -281,6 +311,25 @@ export interface WfSdkConfig<TDeps = unknown> {
    */
   resolveBlobRef?: BlobRefResolver<TDeps>
   /**
+   * Optional: write the parts of a node output that exceed
+   * {@link spillThresholdBytes} to blob storage, so the boundary carries a
+   * pointer instead of the payload. Applied to every node output and every
+   * iteration item result — the two places a value crosses a durable step
+   * boundary and meets Cloudflare Workflows' 1 MiB cap.
+   *
+   * Requires {@link resolveBlobRef}: a pointer nothing can read back is worse
+   * than the oversized value it replaced, so declaring one without the other is
+   * a config error rather than a degraded mode.
+   */
+  spillBlobRef?: BlobSpiller<TDeps>
+  /**
+   * Byte threshold above which a string inside a node output is spilled
+   * (default 128 KiB — well under the 1 MiB step cap, so the pointer and its
+   * preview fit with room for the rest of the step's envelope). Ignored without
+   * {@link spillBlobRef}.
+   */
+  spillThresholdBytes?: number
+  /**
    * Host-declared **events** + their data schemas. These are the "on an event"
    * trigger options offered in the creation flow; the built-in manual and
    * periodic triggers need no registry entry.
@@ -358,6 +407,22 @@ export function defineWfConfig<TDeps = unknown>(
   }
   if (config.resolveBlobRef != null && typeof config.resolveBlobRef !== 'function') {
     problems.push('`resolveBlobRef`, if set, must be a function')
+  }
+  if (config.spillBlobRef != null && typeof config.spillBlobRef !== 'function') {
+    problems.push('`spillBlobRef`, if set, must be a function')
+  }
+  if (config.spillBlobRef != null && config.resolveBlobRef == null) {
+    problems.push(
+      '`spillBlobRef` requires `resolveBlobRef` — a spilled pointer with no reader would break every node downstream of a large output',
+    )
+  }
+  if (
+    config.spillThresholdBytes != null &&
+    (typeof config.spillThresholdBytes !== 'number' ||
+      !Number.isFinite(config.spillThresholdBytes) ||
+      config.spillThresholdBytes <= 0)
+  ) {
+    problems.push('`spillThresholdBytes`, if set, must be a positive number')
   }
 
   if (config.onRunComplete != null && typeof config.onRunComplete !== 'function') {
