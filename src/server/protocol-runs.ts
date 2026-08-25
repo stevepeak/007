@@ -15,6 +15,8 @@ export type WfRunSummary = {
   startedAt: number | null
   finishedAt: number | null
   error: string | null
+  /** The shared Markdown note written on this run; null when nobody has. */
+  note: string | null
   /** Total tokens across the run's agent steps; null when it ran no agents. */
   totalTokens: number | null
   /** Aggregate USD cost across the run's agent steps; null when no agent ran or
@@ -28,8 +30,8 @@ export type WfRunSummary = {
 }
 
 // Filters + pagination for the runs explorer. All optional; `search` matches
-// workflow name / trigger kind / subject / correlation. `since`/`until` are
-// epoch millis over the run's createdAt.
+// workflow name / trigger kind / subject / correlation / note. `since`/`until`
+// are epoch millis over the run's createdAt.
 export type WfRunListInput = {
   workflowVersionId?: string
   workflowId?: string

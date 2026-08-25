@@ -115,6 +115,7 @@ export {
   setFeedbackInternalNote,
   setModelEnabled,
   setRunManifest,
+  setRunNote,
   touchModelProvider,
   updateAgentDraft,
   updateAgentMeta,

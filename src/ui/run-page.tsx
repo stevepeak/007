@@ -11,6 +11,7 @@ import { useWfNav } from './nav'
 import { QueryState } from './query-state'
 import { runAgentVersions } from './run-agent-versions'
 import { RunNodeDock } from './run-node-dock'
+import { RunNote } from './run-note'
 import { RunHeaderActions } from './run-page-header'
 import {
   isRunLive,
@@ -229,6 +230,10 @@ export function RunPage({
                   Retry failed: {retry.error.message}
                 </div>
               ) : null}
+              {/* Directly under the error it usually explains, and above the
+                  graph — the note is the human reading of the run, so it wants
+                  to be the first thing seen, not something found in a tab. */}
+              <RunNote runId={run.id} note={run.note} />
 
               {/* Body: read-only workflow graph on top, node inspector docked below. */}
               <div className="relative min-h-0 flex-1 bg-neutral-50">

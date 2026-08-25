@@ -211,6 +211,16 @@ export interface WfDataClient {
     mode: RetryRunMode
   }): Promise<{ runId: string }>
   /**
+   * Write (or clear, with an empty note) the run's shared Markdown note — why
+   * it failed, what was tried, what to check next. Not private and not
+   * attributed: anyone looking at the run can read it and edit it, and the last
+   * write wins. Long notes are truncated server-side.
+   */
+  setRunNote(input: {
+    runId: string
+    note: string | null
+  }): Promise<{ ok: true }>
+  /**
    * Delete EVERY run and everything derived from it — steps, the log feed, and
    * the eval results/runs that grade those runs. Feedback rows survive with
    * their `runId` cleared. Definitions (workflows, agents, eval sets) are

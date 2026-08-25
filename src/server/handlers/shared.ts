@@ -63,6 +63,7 @@ export function runSummary(
     startedAt: Date | null
     finishedAt: Date | null
     error: string | null
+    note?: string | null
     totalTokens?: number | null
     costUsd?: number | null
     sentryTraceId?: string | null
@@ -83,6 +84,7 @@ export function runSummary(
     startedAt: toEpoch(r.startedAt),
     finishedAt: toEpoch(r.finishedAt),
     error: r.error,
+    note: r.note ?? null,
     totalTokens: r.totalTokens ?? null,
     costUsd: r.costUsd ?? null,
     sentryTraceId,

@@ -6,6 +6,8 @@ import {
   getRunStatus,
   listRunTriggerKinds,
   listRuns,
+  RUN_NOTE_MAX_LENGTH,
+  setRunNote,
 } from '../../storage/data'
 import type {
   RetryRunMode,
@@ -36,6 +38,7 @@ export function buildRunHandlers<TDeps>(
   | 'getRun'
   | 'getRunStatus'
   | 'retryRun'
+  | 'setRunNote'
   | 'deleteAllRuns'
 > {
   return {
@@ -156,6 +159,21 @@ export function buildRunHandlers<TDeps>(
         ...(result.logsTruncated ? { logsTruncated: true as const } : {}),
       }
       return detail
+    },
+
+    // The run's shared note. Blank-after-trim clears it rather than storing an
+    // empty string, so "has a note" is one check (`note != null`) everywhere
+    // downstream — the list column, the search match, the viewer's empty state.
+    setRunNote: async (c) => {
+      const runId = requireStr(c.params, 'runId')
+      const raw = (c.params as { note?: string | null }).note
+      const trimmed = raw?.trim()
+      const note = trimmed ? trimmed.slice(0, RUN_NOTE_MAX_LENGTH) : null
+      const updated = await setRunNote(c.db, { runId, note })
+      if (!updated) {
+        throw new NotFoundError('Run not found.')
+      }
+      return { ok: true as const }
     },
 
     retryRun: async (c) => {

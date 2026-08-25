@@ -3,6 +3,7 @@ import type { WfRunSummary } from '../server/protocol'
 import { formatDuration, formatTimestamp, formatUsd } from './cost'
 import { useWfNav } from './nav'
 import { RunStatusBadge } from './run-status'
+import { firstLine } from './text-preview'
 
 // The runs table itself. Each row opens that run's full-page viewer.
 export function RunsTable({
@@ -23,6 +24,7 @@ export function RunsTable({
           <tr className="border-b border-neutral-200">
             <th className="px-3 py-2 font-medium">Status</th>
             <th className="px-3 py-2 font-medium">Workflow</th>
+            <th className="px-3 py-2 font-medium">Note</th>
             <th className="px-3 py-2 font-medium">Started</th>
             <th className="px-3 py-2 text-right font-medium">Duration</th>
             <th className="px-3 py-2 text-right font-medium">Cost</th>
@@ -47,6 +49,21 @@ export function RunsTable({
                     v{r.versionNumber}
                   </span>
                 </div>
+              </td>
+              {/* Fixed width + truncate, not `max-w-0`-style flex: the note is
+                  free text of any length and must not be allowed to squeeze the
+                  columns either side of it. The full text is the row's title. */}
+              <td className="max-w-[18rem] px-3 py-2">
+                {r.note ? (
+                  <div
+                    className="truncate text-neutral-600"
+                    title={r.note}
+                  >
+                    {firstLine(r.note, 200)}
+                  </div>
+                ) : (
+                  <span className="text-neutral-300">—</span>
+                )}
               </td>
               <td className="whitespace-nowrap px-3 py-2 text-neutral-600">
                 {formatTimestamp(r.createdAt)}
@@ -74,7 +91,7 @@ export function RunsTable({
           {!isLoading && runs.length === 0 ? (
             <tr>
               <td
-                colSpan={5}
+                colSpan={6}
                 className="px-3 py-12 text-center text-sm text-neutral-400"
               >
                 {hasFilters ? 'No runs match these filters.' : 'No runs yet.'}

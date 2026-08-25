@@ -161,6 +161,12 @@ const wfInputSchemas: Record<keyof WfDataClient, z.ZodType> = {
     runId: z.string(),
     mode: z.enum(['restart', 'resume']).optional(),
   }),
+  setRunNote: z.object({
+    runId: z.string(),
+    // Nullable rather than optional: clearing the note is an explicit `null`,
+    // so an omitted field can never be read as "erase it".
+    note: z.string().nullable(),
+  }),
 
   // ---- dashboard ----------------------------------------------------------
   getDashboard: z.object({

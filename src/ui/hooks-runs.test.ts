@@ -23,6 +23,7 @@ function detail(over: Partial<WfRunDetail> = {}): WfRunDetail {
       startedAt: null,
       finishedAt: null,
       error: null,
+      note: null,
       totalTokens: null,
       costUsd: null,
       sentryTraceId: null,

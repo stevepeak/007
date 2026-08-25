@@ -83,6 +83,9 @@ export async function listRuns(db: WfDb, input: ListRunsFilter) {
       like(wfRun.triggerKind, q),
       like(wfRun.subjectId, q),
       like(wfRun.correlationId, q),
+      // The note is the only free text a human writes about a run, so it is
+      // the term most likely to be searched for — "the timeout one".
+      like(wfRun.note, q),
     )
     if (match) conds.push(match)
   }
@@ -101,6 +104,7 @@ export async function listRuns(db: WfDb, input: ListRunsFilter) {
       startedAt: wfRun.startedAt,
       finishedAt: wfRun.finishedAt,
       error: wfRun.error,
+      note: wfRun.note,
       workflowId: wfWorkflowVersion.workflowId,
       workflowName: wfWorkflow.name,
       versionNumber: wfWorkflowVersion.versionNumber,

@@ -52,6 +52,13 @@ export const wfRun = sqliteTable(
     manifest: text('manifest', { mode: 'json' })
       .notNull()
       .default(sql`'[]'`),
+    // A free-form Markdown note anyone can write on this run — why it failed,
+    // what was tried, what to look at next. Deliberately not private and not
+    // authored-attributed: it is a shared scratchpad on one execution, closer to
+    // a whiteboard than a comment thread, and the run's own history (steps,
+    // logs, changes) already records who did what. Also matched by the runs
+    // explorer's search, so a note is how you find a run again later.
+    note: text('note'),
     // Marks a run produced by an eval (simulate=true). Since there is no tenant
     // partition, this flag is how the general Runs explorer keeps eval runs out
     // of a firm's view (default listings exclude it). See wf_eval_result.wfRunId.

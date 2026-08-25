@@ -7,8 +7,8 @@ import { RunsPager, RunsTable } from './runs-explorer-table'
 import { TIMEFRAMES, useRunsQuery } from './use-runs-query'
 
 // Interface #2 — the runs explorer. A dense, server-filtered, paginated table
-// built for thousands of runs: search by workflow name / trigger / reference,
-// filter by status, workflow, and timeframe. Clicking a row opens that
+// built for thousands of runs: search by workflow name / trigger / reference /
+// note, filter by status, workflow, and timeframe. Clicking a row opens that
 // run's full-page viewer. All querying happens server-side (see `listRuns`), so
 // the browser only ever holds one page.
 //
@@ -53,7 +53,7 @@ export function RunsExplorer({
         <Input
           value={q.searchRaw}
           onChange={(e) => q.setSearchRaw(e.target.value)}
-          placeholder="Search workflow, trigger, or reference…"
+          placeholder="Search workflow, trigger, reference, or note…"
           className="h-9 w-64"
         />
         <FilterPill

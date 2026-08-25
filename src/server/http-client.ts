@@ -84,6 +84,7 @@ export function createHttpWfDataClient(
     getRun: (runId, opts) => call('getRun', { runId, ...opts }),
     getRunStatus: (runId) => call('getRunStatus', { runId }),
     retryRun: bind('retryRun'),
+    setRunNote: bind('setRunNote'),
     // A full purge sweeps several tables — give it room past the 20s default.
     deleteAllRuns: bind('deleteAllRuns', 120000),
     // Six aggregates, one of which parses every agent step's meta JSON over the

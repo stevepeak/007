@@ -13,7 +13,7 @@ import type {
 } from '../server/protocol'
 
 import { useWfClient } from './context'
-import { keys } from './hooks-shared'
+import { keys, useWfMutation } from './hooks-shared'
 
 export function useRuns(input: WfRunListInput = {}) {
   const client = useWfClient()
@@ -184,6 +184,17 @@ export function useDeleteAllRuns() {
       ])
     },
   })
+}
+
+// Write or clear the run's shared note. Invalidates this run (the viewer's own
+// copy) and the whole runs list — the note is a searchable, displayed column
+// there, so a page holding the edited run is now stale either way.
+export function useSetRunNote() {
+  return useWfMutation(
+    (client, input: { runId: string; note: string | null }) =>
+      client.setRunNote(input),
+    (input) => [keys.run(input.runId), keys.runsAll],
+  )
 }
 
 // Re-dispatch a finished run. On success the runs list + this run are
