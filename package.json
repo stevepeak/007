@@ -59,7 +59,7 @@
     "@tiptap/pm": "^3.30.3",
     "@tiptap/react": "^3.30.3",
     "@tiptap/starter-kit": "^3.30.3",
-    "@xyflow/react": "^12.11.3",
+    "@xyflow/react": "^12.11.4",
     "ai": "^7.0.79",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
