@@ -1,3 +1,5 @@
+import { eq } from 'drizzle-orm'
+
 import type { WorkflowGraph } from '../../engine/graph'
 import type { WfDb } from '../client'
 import { wfWorkflow, wfWorkflowDraft } from '../schema'
@@ -28,11 +30,20 @@ import { latestVersionGraphs } from './authoring-workflows'
 // exists precisely so this doesn't regress into a per-workflow N+1 (see its doc
 // comment). Both `listWorkflowsReferencing*` build on this so the load/filter
 // shape lives in exactly one function.
+//
+// Archived workflows are excluded: a retired workflow never runs, so the agents
+// its graph names are not really in use. Counting them would inflate the
+// agents-list usage column and — worse — let a dead workflow block archiving an
+// agent nothing live still calls. Drafts and versions of archived workflows drop
+// out with them, since the map below only walks the workflows this query keeps.
 async function loadWorkflowReferenceGraphs(
   db: WfDb,
 ): Promise<{ id: string; name: string; graphs: WorkflowGraph[] }[]> {
   const [workflows, drafts, latestByWorkflow] = await Promise.all([
-    db.select({ id: wfWorkflow.id, name: wfWorkflow.name }).from(wfWorkflow),
+    db
+      .select({ id: wfWorkflow.id, name: wfWorkflow.name })
+      .from(wfWorkflow)
+      .where(eq(wfWorkflow.archived, false)),
     db
       .select({
         workflowId: wfWorkflowDraft.workflowId,
