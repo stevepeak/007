@@ -1,6 +1,7 @@
 import { describeNode, resolveBinding } from '../binding'
 import {
   ITERATION_MAX_ITEMS_FALLBACK,
+  workflowGraphSchema,
   type IterationNode,
   type WorkflowGraph,
 } from '../graph'
@@ -275,6 +276,40 @@ export function resolveIterationList(
     )
   }
   return value
+}
+
+/**
+ * Dig one iteration node's subgraph back out of the graph that contains it.
+ *
+ * An iteration's subgraph is not a published entity — it has no version row, no
+ * id of its own, it exists only as `config.subgraph` on the container node. A
+ * durable item runs as its own workflow instance, and that instance is spawned
+ * against the PARENT's `workflowVersionId` plus this node id rather than being
+ * handed the subgraph JSON in its params. Passing the graph down would put an
+ * unversioned second copy of it on the wire that could disagree with the version
+ * the parent froze; reading it back out of the same version instead makes "the
+ * item ran the graph its parent was running" true by construction.
+ *
+ * Throws rather than returning null: reaching here with a bad node id means the
+ * spawn and the graph disagree, and there is no sensible graph to run instead.
+ */
+export function iterationSubgraphOf(
+  graphJson: unknown,
+  nodeId: string,
+): WorkflowGraph {
+  const graph = workflowGraphSchema.parse(graphJson)
+  const node = graph.nodes.find((n) => n.id === nodeId)
+  if (!node) {
+    throw new Error(
+      `Iteration node ${nodeId} is not in this workflow version — an item cannot be run for it.`,
+    )
+  }
+  if (node.kind !== 'iteration') {
+    throw new Error(
+      `Node ${nodeId} is a ${node.kind} node, not an iteration — it has no per-item subgraph.`,
+    )
+  }
+  return node.config.subgraph
 }
 
 /**

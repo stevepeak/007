@@ -45,6 +45,7 @@ import {
 import {
   assertValidEventType,
   calleeEventType,
+  iterationItemParams,
   toCalleeWire,
   type CalleeDoneEvent,
   type CalleeDoneWire,
@@ -96,11 +97,24 @@ type RunStepResult = NodeRunResult & {
   execFinishedAt?: Date
 }
 
-// Run one iteration node. Iteration orchestrates its own per-item durable
-// steps, so it is NOT wrapped in a single `run:` step — `step.do` calls can't
-// nest. Each item's subgraph runs inside its own top-level `iter:` step
-// (deterministic name = node id + index → replay-safe); the outer
-// `runIteration` only awaits those steps under its concurrency pool and
+// Run one iteration node. Iteration orchestrates its own per-item durable steps,
+// so it is NOT wrapped in a single `run:` step — `step.do` and `waitForEvent`
+// can't nest inside one.
+//
+// What an item IS depends on `itemExecution`:
+//   • inline  — one top-level `iter:<node>:<i>` step running the subgraph in
+//     THIS instance (`runItemInline`),
+//   • durable — a child instance of its own, spawned and awaited over
+//     `spawn:<node>:<i>` + `await:<node>:<i>` (`runItemAsChildInstance`).
+//
+// Every one of those names is built from the ITEM INDEX, never from completion
+// order or a worker slot. That is what makes the pool below safe to replay: it
+// hands indices to workers in completion order, which a replay does not
+// reproduce, but the journal is addressed by name — and a name the journal
+// doesn't have is EXECUTED, which for the durable path would mean an orphan
+// child instance.
+//
+// The outer `runIteration` only awaits the items under its concurrency pool and
 // collects the ordered results. The whole iteration is still recorded as ONE
 // run-step by the caller (output = the collection).
 async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
@@ -110,25 +124,22 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
    * here to host one). Carries the loop's note and per-item ticks. */
   nodeSink: StreamSink,
 ): Promise<RunStepResult> {
-  const { step, env, config, p, manifest, scheduler } = ctx
-  // The loop speaks for its whole body. Its subgraph gets the run-level sink
-  // with USER-facing lines stripped: a step inside a loop has nowhere to be
-  // shown — the feed is one flat list — so it stays quiet until there is a
-  // per-item surface for it. Its dev trace is unaffected.
-  const itemSink = withoutUserProgress(ctx.sink)
-  if (node.config.itemExecution === 'durable') {
-    // Per-item child instances are not wired up yet. Failing loudly beats
-    // silently running inline: the author chose this setting precisely because
-    // an item repeating from the start is unacceptable to them, and a quiet
-    // downgrade would hand them exactly that with no way to notice.
-    throw new NonRetryableError(
-      `Iteration "${node.label}" is set to Durable item execution, which is not available yet. Switch it back to Inline to run this workflow.`,
-    )
-  }
-  // The fan-out fence throws before a single `iter:` step is spawned, and the
-  // list it rejected is the same list every replay resolves — retrying only
-  // spends the budget the fence just refused. Escalate it the same way the
-  // durable-mode guard above does.
+  const { p, scheduler } = ctx
+  // The two item executions differ ONLY in what one item does — the list, the
+  // fence, the pool, the ordering and the counters are shared, so they are
+  // written once here and the mode picks a `runItem`. Anything that has to hold
+  // for both (results in item order, the fence firing before any work starts)
+  // then cannot drift between them.
+  const runItem =
+    node.config.itemExecution === 'durable'
+      ? (item: unknown, index: number) =>
+          runItemAsChildInstance(ctx, node, item, index)
+      : (item: unknown, index: number) =>
+          runItemInline(ctx, node, item, index)
+
+  // The fan-out fence throws before a single step is taken or a single instance
+  // created, and the list it rejected is the same list every replay resolves —
+  // retrying only spends the budget the fence just refused.
   const iter = await runIteration({
     node,
     // List is a ref into an upstream output, resolved against the
@@ -136,13 +147,50 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
     list: resolveIterationList(node, scheduler.getOutputs()),
     sink: nodeSink,
     promptVariables: p.runContext.promptVariables,
-    runItem: (item, index) =>
-      // The iteration node creates no `run:` step of its own — these per-item
-      // steps are the only ones it has, so its `execution` policy governs ONE
-      // ITEM. `stepOptsFor` and `resolveStepTimeoutMs` below read that same
-      // policy, which is what keeps the item's wall-clock timeout and the
-      // in-process budget derived from it in agreement.
-      stepDo(step, `iter:${node.id}:${index}`, stepOptsFor(node), async () => {
+    runItem,
+  }).catch((err: unknown) => {
+    if (err instanceof IterationTooManyItemsError) {
+      throw new NonRetryableError(err.message)
+    }
+    throw err
+  })
+  // The main step multiplier: an iteration spends steps per ITEM instead of a
+  // single `run:`, so a wide list is what makes a graph expensive.
+  // `iter.meta.total` is journaled, so this re-accumulates identically on replay.
+  ctx.counters.iterationItems += iter.meta.total
+  return {
+    schedulerOutput: iter.results,
+    recordedOutput: iter.results,
+    meta: iter.meta,
+  }
+}
+
+/**
+ * One item, run inside the parent instance as a single all-or-nothing step.
+ *
+ * The iteration node creates no `run:` step of its own — these per-item steps
+ * are the only ones it has, so its `execution` policy governs ONE ITEM.
+ * `stepOptsFor` and `resolveStepTimeoutMs` read that same policy, which is what
+ * keeps the item's wall-clock timeout and the in-process budget derived from it
+ * in agreement.
+ */
+async function runItemInline<TDeps, E extends GraphWorkflowEnv>(
+  ctx: RunCtx<TDeps, E>,
+  node: IterationNode,
+  item: unknown,
+  index: number,
+): Promise<unknown> {
+  const { step, env, config, p, manifest } = ctx
+  // The loop speaks for its whole body. Its subgraph gets the run-level sink
+  // with USER-facing lines stripped: a step inside a loop has nowhere to be
+  // shown — the feed is one flat list — so it stays quiet until there is a
+  // per-item surface for it. Its dev trace is unaffected.
+  const itemSink = withoutUserProgress(ctx.sink)
+  return await stepDo(
+    step,
+    `iter:${node.id}:${index}`,
+    stepOptsFor(node),
+    async () => {
         const rc = { ...p.runContext, env }
         const toolDeps = await config.buildRunDeps(rc)
         const itemResult = await executeSubgraph(
@@ -186,28 +234,123 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
         // This return IS the boundary: one item's whole subgraph result is
         // journaled as this step's output. Spilling here is also what keeps the
         // collection below small, since the collection is these returns.
-        return await spillAtBoundary(
-          config,
-          toolDeps,
-          { runId: p.workflowRunId, nodeId: node.id, itemIndex: index, slot: 'iteration-item' },
-          itemResult,
-        )
-      }),
-  }).catch((err: unknown) => {
-    if (err instanceof IterationTooManyItemsError) {
-      throw new NonRetryableError(err.message)
-    }
-    throw err
-  })
-  // The main step multiplier: an iteration spends one `iter:` step per item
-  // instead of a single `run:`, so a wide list is what makes a graph expensive.
-  // `iter.meta.total` is journaled, so this re-accumulates identically on replay.
-  ctx.counters.iterationItems += iter.meta.total
-  return {
-    schedulerOutput: iter.results,
-    recordedOutput: iter.results,
-    meta: iter.meta,
+      return await spillAtBoundary(
+        config,
+        toolDeps,
+        {
+          runId: p.workflowRunId,
+          nodeId: node.id,
+          itemIndex: index,
+          slot: 'iteration-item',
+        },
+        itemResult,
+      )
+    },
+  )
+}
+
+/**
+ * One item, run as its own child workflow instance: spawn, then park until it
+ * reports back.
+ *
+ * This is `dispatchDurableCallee` one level down. Same handshake (spawn → park →
+ * event, never poll — a parked instance is hibernated and free), same reason:
+ * the item's inner nodes get real durable steps, their own declared retries and
+ * timeouts, and a resumable run each, instead of one all-or-nothing step whose
+ * failure replays the whole item's side effects.
+ *
+ * NOT wrapped in a `run:` step, and neither is the iteration around it — nothing
+ * here may nest inside a `step.do`, which is the whole point.
+ *
+ * One semantic difference from an inline item, deliberate and inherited from
+ * what a RUN means here: a child reports the moment its Output is reached
+ * (`deliverOutput`), while arms that don't feed the Output keep draining behind
+ * it. An inline item drains before `executeSubgraph` returns. So under durable
+ * items, "the loop finished" means every item ANSWERED, not that every item's
+ * background side effects have landed. That is exactly how the top-level run
+ * already behaves for its own host, and how `dispatchDurableCallee` already
+ * behaves for a workflow-call node — releasing a waiter behind a branch it never
+ * depended on would be the odd choice, not this.
+ *
+ * Concurrency and stop-on-error are NOT implemented here. `runIteration`'s
+ * worker pool already bounds how many of these are in flight and already drains
+ * on failure (no new spawns; those already running are awaited before the node
+ * fails), so this function is only ever one item. See NEW-174 and
+ * `iteration-durable-semantics.test.ts`.
+ */
+async function runItemAsChildInstance<TDeps, E extends GraphWorkflowEnv>(
+  ctx: RunCtx<TDeps, E>,
+  node: IterationNode,
+  item: unknown,
+  index: number,
+): Promise<unknown> {
+  const { step, env, p, manifest, instanceId, traceId } = ctx
+  // Per ITEM, not per node: two children of the same iteration must not park on
+  // one type, or whichever finished first would wake both waiters and hand each
+  // the wrong item's output — a silent mix-up rather than a failure. Built here
+  // (not inside the spawn step) so an id that can't make a valid event type
+  // fails before anything is created.
+  const eventType = calleeEventType(node.id, index)
+
+  // The child's `wf_run` and its instance in ONE journaled step, so a replay
+  // reuses both rather than minting a second run and a second orphan instance.
+  // `crypto.randomUUID()` is safe inside a step for exactly that reason.
+  const spawned = await stepDo(
+    step,
+    `spawn:${node.id}:${index}`,
+    DEFAULT_STEP_OPTS,
+    async () => {
+      const childRunId = await createRun(createWfDb(env.WF_DB), {
+        workflowVersionId: p.workflowVersionId,
+        triggerKind: p.runContext.triggerKind,
+        subjectId: p.runContext.subjectId,
+        correlationId: p.runContext.correlationId,
+        actorId: p.runContext.actorId,
+        sentryTraceId: traceId,
+        // What nests this item under its parent in the run viewer, and the only
+        // link that survives the parent finishing. See NEW-172.
+        parent: { runId: p.workflowRunId, nodeId: node.id, itemIndex: index },
+      })
+      const instance = await env.GRAPH_WORKFLOW.create({
+        params: iterationItemParams({
+          parent: p,
+          manifest,
+          parentInstanceId: instanceId,
+          nodeId: node.id,
+          item,
+          eventType,
+          childRunId,
+          roomId: crypto.randomUUID(),
+        }),
+      })
+      return { childRunId, instanceId: instance.id }
+    },
+  )
+
+  // Park. The timeout is the node's own declared step timeout — the same knob
+  // that bounds an inline item — so a child that dies without ever reporting
+  // surfaces as a legible timeout rather than a permanently stuck run.
+  const settled = await step.waitForEvent<CalleeDoneWire>(
+    `await:${node.id}:${index}`,
+    { type: eventType, timeout: resolveStepTimeoutMs(node) },
+  )
+
+  if (!settled.payload.ok) {
+    // Not retryable: a retry would spawn a whole second child for this item and
+    // the first one's side effects have already happened. `runIteration` decides
+    // what this does to the rest of the loop — a placeholder in this item's slot,
+    // or a drain — according to `stopOnError`.
+    throw new NonRetryableError(
+      `Item ${index} of iteration "${node.label}" failed (run ${spawned.childRunId}): ${settled.payload.error}`,
+    )
   }
+
+  // The child spilled a large output to R2 inside its own run and reported the
+  // POINTER, so this crosses the 1 MiB event cap the same way the inline path's
+  // `spillAtBoundary` return crosses the step-return cap — and lands in the
+  // collection in the same shape. Downstream nodes rehydrate inside their own
+  // steps either way.
+  return JSON.parse(settled.payload.outputJson)
 }
 
 // ── Durable callees ─────────────────────────────────────────────────────────

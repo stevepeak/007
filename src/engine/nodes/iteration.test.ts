@@ -16,6 +16,7 @@ import { ITERATION_ITEM_TRIGGER_KIND } from '../trigger-registry'
 import {
   executeSubgraph,
   iterationItemLimit,
+  iterationSubgraphOf,
   IterationTooManyItemsError,
   resolveIterationList,
   runIteration,
@@ -619,6 +620,33 @@ describe('iteration schema', () => {
       { id: 'e1', source: 't', target: 'it', condition: null },
       { id: 'e2', source: 'it', target: 'o', condition: null },
     ],
+  })
+
+  // NEW-173. A durable item runs as its own instance, spawned against the
+  // PARENT's workflowVersionId plus this node id — the subgraph is never put on
+  // the wire, it is read back out of the version the parent already froze.
+  test('iterationSubgraphOf digs the subgraph back out by node id', () => {
+    const node = iterNode()
+    const found = iterationSubgraphOf(wrap(node), 'it')
+
+    expect(found).toEqual(node.config.subgraph)
+    // Whatever comes back has to be runnable on its own — it is what the child
+    // instance hands to its Scheduler.
+    expect(() => workflowGraphSchema.parse(found)).not.toThrow()
+  })
+
+  test('iterationSubgraphOf refuses a node id that is not in the version', () => {
+    // The spawn and the graph disagreeing means the child would silently run
+    // the wrong thing; there is no sensible graph to fall back to.
+    expect(() => iterationSubgraphOf(wrap(iterNode()), 'nope')).toThrow(
+      /not in this workflow version/,
+    )
+  })
+
+  test('iterationSubgraphOf refuses a node of the wrong kind', () => {
+    expect(() => iterationSubgraphOf(wrap(iterNode()), 'o')).toThrow(
+      /is a output node, not an iteration/,
+    )
   })
 
   test('buildIterationSubgraph produces a valid runnable subgraph', () => {

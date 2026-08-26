@@ -1,3 +1,7 @@
+import type { WfRunManifestEntry } from '../engine/graph'
+
+import type { GraphWorkflowParams } from './graph-workflow'
+
 // The parent↔child protocol for a workflow-call node running its callee as its
 // own workflow instance (`calleeExecution: 'durable'`).
 //
@@ -36,7 +40,7 @@ export type CalleeDoneWire =
  * The 100-char cap is documented. `wf-callee-done-` (15) + a UUID (36) + an
  * item suffix leaves ample room.
  */
-export const WF_EVENT_TYPE_PATTERN = /^[A-Za-z0-9-]{1,100}$/
+export const WF_EVENT_TYPE_PATTERN = /^[A-Z0-9-]{1,100}$/i
 
 /**
  * Refuse to mint or send an event type production would reject.
@@ -78,6 +82,55 @@ export function calleeEventType(nodeId: string, index?: number): string {
       : `wf-callee-done-${nodeId}-${index}`
   assertValidEventType(eventType, `Workflow node ${nodeId}`)
   return eventType
+}
+
+/**
+ * The params one iteration-item child instance is started with.
+ *
+ * Pure and exported for its test: two of the fields it sets are OPTIONAL on
+ * {@link GraphWorkflowParams}, so omitting either compiles cleanly and then goes
+ * quietly wrong at run time —
+ *
+ *   • no `subRun.iterationNodeId` → the child runs the parent's WHOLE graph
+ *     instead of the one item's subgraph,
+ *   • no `inheritedManifest` → the child re-resolves every floating reference,
+ *     so a publish landing mid-run splits one logical run across two prompt
+ *     versions.
+ *
+ * Neither announces itself. Building the object in one named place, with a test
+ * that asserts both are present, is what stops that.
+ */
+export function iterationItemParams(args: {
+  /** The PARENT run's params — the child takes its version and run context. */
+  parent: GraphWorkflowParams
+  manifest: WfRunManifestEntry[]
+  parentInstanceId: string
+  /** The iteration container's node id, in the parent's graph. */
+  nodeId: string
+  /** This item's element of the list. */
+  item: unknown
+  eventType: string
+  childRunId: string
+  roomId: string
+}): GraphWorkflowParams {
+  return {
+    runId: args.roomId,
+    workflowRunId: args.childRunId,
+    // The PARENT's version. The child digs this iteration's subgraph out of it
+    // by node id rather than being handed the graph — see `iterationSubgraphOf`.
+    workflowVersionId: args.parent.workflowVersionId,
+    // The item IS the subgraph's trigger output, exactly as `executeSubgraph`
+    // seeds it inline. A sub-run is seeded raw, so the two paths hand the
+    // subgraph the identical value.
+    triggerInput: args.item,
+    runContext: args.parent.runContext,
+    inheritedManifest: args.manifest,
+    subRun: {
+      parentInstanceId: args.parentInstanceId,
+      eventType: args.eventType,
+      iterationNodeId: args.nodeId,
+    },
+  }
 }
 
 export function toCalleeWire(payload: CalleeDoneEvent): CalleeDoneWire {

@@ -14,6 +14,7 @@ import {
   type WfRunManifestEntry,
 } from '../engine/graph'
 import { settleOf, type NodeSettlement } from '../engine/node-settlement'
+import { iterationSubgraphOf } from '../engine/nodes/iteration'
 import { errorMessage } from '../engine/run-node'
 import type { RecordStepArgs } from '../engine/run-recorder'
 import { Scheduler, WorkflowStalledError } from '../engine/scheduler'
@@ -151,8 +152,24 @@ export type GraphWorkflowParams = {
   subRun?: {
     /** The parent's own instance id (`event.instanceId`), for `sendEvent`. */
     parentInstanceId: string
-    /** Event type the parent is parked on — unique per calling node. */
+    /** Event type the parent is parked on — unique per calling node, and per
+     * ITEM when this is one item of a durable iteration. */
     eventType: string
+    /**
+     * Set when this child is ONE ITEM of a durable iteration rather than a whole
+     * called workflow. It names the iteration node in the parent's graph whose
+     * `config.subgraph` this instance should run.
+     *
+     * The child is spawned against the PARENT's `workflowVersionId` and digs the
+     * subgraph out of it, rather than the subgraph being passed down in params.
+     * An iteration's subgraph is not a published entity — it has no version row
+     * of its own — and shipping graph JSON through params would put a second,
+     * unversioned copy of it on the wire, which could then disagree with the
+     * version the parent froze. Reading it back out of the same version is what
+     * makes "the item ran the graph the parent was running" true by
+     * construction.
+     */
+    iterationNodeId?: string
   }
   /**
    * The parent's frozen run manifest, passed down instead of re-resolved.
@@ -252,7 +269,14 @@ export function makeGraphWorkflow<
           throw new Error(`Workflow version ${p.workflowVersionId} not found.`)
         }
         return {
-          graph: v.graph,
+          // One item of a durable iteration runs the container's subgraph, not
+          // the whole version. Narrowed HERE, inside the load step, so every
+          // line below this point — scheduler, manifest, walk, Output — sees a
+          // single graph and needs to know nothing about which kind of run it
+          // is in.
+          graph: p.subRun?.iterationNodeId
+            ? iterationSubgraphOf(v.graph, p.subRun.iterationNodeId)
+            : v.graph,
           workflowId: v.workflowId,
           prices: await loadRunPriceTable(db),
         }
