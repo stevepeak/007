@@ -245,10 +245,13 @@ export const OutputNodeRenderer = defineNode({
       : null,
 })
 
-// Multi-way routing: one source handle per case key plus the `else` fallback,
-// stacked down the right edge. Each handle's `id` is the case key, so xyflow
-// lands an edge's `sourceHandle` on the arm whose `edge.condition` matches — the
-// same id↔condition contract the yes/no DecisionHandles use.
+// Multi-way routing: one source handle per case plus the `else` fallback,
+// stacked down the right edge. Each handle's `id` is the case KEY, not the
+// author's name for it, so xyflow lands an edge's `sourceHandle` on the arm
+// whose `edge.condition` matches — the same id↔condition contract the yes/no
+// DecisionHandles use, and the reason renaming an arm can never re-point an
+// edge. The name itself rides on the EDGE (see `ConditionEdge`), which is where
+// a reader is already looking to see where a route goes.
 export function SwitchNodeRenderer(props: NodeProps) {
   const r = useNodeRenderer(props, 'switch')
   if (!r) return null

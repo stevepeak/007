@@ -12,8 +12,10 @@ import type { ToolRegistry } from './tool-registry'
 // output. Each arm routes to a distinct output so the run returns the arm that
 // fired. Case A is a literal the author typed; case B is a REF — it matches when
 // `kind` equals another upstream value (here the trigger's own `expected`),
-// which is the second way the editor lets a case be filled in.
-function switchGraph() {
+// which is the second way the editor lets a case be filled in. `caseALabel` is
+// the author's optional name for the first arm — cosmetic, so most tests leave
+// it off.
+function switchGraph(caseALabel?: string) {
   const armTool = (id: string, toolId: string, x: number) => ({
     id,
     kind: 'tool' as const,
@@ -53,7 +55,11 @@ function switchGraph() {
         config: {
           source: { kind: 'ref' as const, nodeId: 't', path: 'kind' },
           cases: [
-            { key: 'A', value: { kind: 'literal' as const, value: 'image' } },
+            {
+              key: 'A',
+              label: caseALabel,
+              value: { kind: 'literal' as const, value: 'image' },
+            },
             {
               key: 'B',
               value: { kind: 'ref' as const, nodeId: 't', path: 'expected' },
@@ -130,6 +136,25 @@ describe('executor — switch (multi-way routing)', () => {
     // The other arms never ran.
     expect(recorder.steps.some((s) => s.nodeId === 'b-tool')).toBe(false)
     expect(recorder.steps.some((s) => s.nodeId === 'else-tool')).toBe(false)
+  })
+
+  // A name is cosmetic — routing still runs on the key — but it has to reach the
+  // trace, or a run log and the canvas the author is reading disagree on what
+  // the arm is called.
+  test('a named case keeps routing on its key and reads by its name', async () => {
+    const recorder = createMemoryRunRecorder()
+    const result = await executeWorkflow({
+      graph: switchGraph('image'),
+      triggerInput: { kind: 'image', expected: 'audio' },
+      config: switchConfig(),
+      runContext: { subjectId: 'acme', triggerKind: 'go' },
+      recorder,
+    })
+    // The edge is still 'A', so the same arm fires as when it was unnamed.
+    expect(result.outputNodeId).toBe('a-out')
+    const step = recorder.steps.find((s) => s.nodeId === 'sw')
+    expect(step?.branchResult?.result).toBe('A')
+    expect(step?.branchResult?.reasoning).toContain("matched case 'image' (A)")
   })
 
   test('matches a case bound to another upstream value', async () => {

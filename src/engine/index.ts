@@ -56,6 +56,7 @@ export {
   isWfNodeKind,
   SWITCH_DEFAULT_CASE,
   nextSwitchCaseKey,
+  switchArmName,
   type SwitchNode,
   type FeatureRequestNode,
   type PassthroughNode,

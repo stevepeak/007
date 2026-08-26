@@ -341,6 +341,22 @@ export function nextSwitchCaseKey(existing: readonly string[]): string {
   }
 }
 
+/**
+ * What an arm is CALLED on screen: the author's name for it when they gave one,
+ * otherwise the minted letter. Routing still runs on the key — this is only how
+ * the outgoing edge reads, so a graph stays legible ('image') instead of
+ * alphabetised ('A'). The `else` fallback has no case row to name, so it always
+ * reads as itself.
+ */
+export function switchArmName(
+  cases: readonly { key: string; label?: string }[],
+  key: string | null | undefined,
+): string {
+  if (key == null) return ''
+  const named = cases.find((c) => c.key === key)?.label?.trim()
+  return named || key
+}
+
 // 0 → 'A', 25 → 'Z', 26 → 'AA' — the spreadsheet-column alphabet, bijective
 // base-26 so there is no zero-width gap between 'Z' and 'AA'.
 function spreadsheetLetters(index: number): string {
@@ -365,15 +381,21 @@ const switchNodeSchema = baseNode.extend({
   //
   // A case's `value` is a full binding, so a case is either a literal the
   // author typed or another upstream value the input must equal. Its `key` is
-  // the edge label (`edge.condition === key`) — the editor mints stable letters
-  // (A, B, C…) so the author never invents one — plus one edge with
+  // the routing identity (`edge.condition === key`) — the editor mints stable
+  // letters (A, B, C…) so the author never invents one — plus one edge with
   // `condition === 'else'`.
+  //
+  // `label` is the author's own name for that arm ('image', 'refund'…), shown
+  // on the outgoing edge in place of the letter. It is PURELY cosmetic:
+  // renaming an arm must never re-point an edge, which is exactly why the key
+  // and the name are two fields rather than one editable key.
   config: z.object({
     source: refBindingSchema.optional(),
     cases: z
       .array(
         z.object({
           key: z.string().min(1),
+          label: z.string().optional(),
           value: argBindingSchema,
         }),
       )

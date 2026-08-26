@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { nextSwitchCaseKey } from './graph-schema'
+import { nextSwitchCaseKey, switchArmName } from './graph-schema'
 
 // Case keys are edge labels, so what matters is that minting one never disturbs
 // the keys already in use — removing a case must not re-letter its siblings.
@@ -26,5 +26,30 @@ describe('nextSwitchCaseKey', () => {
   test('never mints the reserved fallback key', () => {
     // Legacy graphs can carry authored keys; the fallback arm is still reserved.
     expect(nextSwitchCaseKey(['else'])).toBe('A')
+  })
+})
+
+// What an arm READS as, which is a separate question from what it routes on.
+describe('switchArmName', () => {
+  const cases = [
+    { key: 'A', label: 'image' },
+    { key: 'B' },
+    { key: 'C', label: '  ' },
+  ]
+
+  test('prefers the author name over the minted letter', () => {
+    expect(switchArmName(cases, 'A')).toBe('image')
+  })
+
+  test('falls back to the letter when unnamed or blank', () => {
+    expect(switchArmName(cases, 'B')).toBe('B')
+    // A field the author cleared to spaces is not a name.
+    expect(switchArmName(cases, 'C')).toBe('C')
+  })
+
+  test('leaves the fallback arm and unknown keys as themselves', () => {
+    expect(switchArmName(cases, 'else')).toBe('else')
+    expect(switchArmName(cases, 'Z')).toBe('Z')
+    expect(switchArmName(cases, null)).toBe('')
   })
 })

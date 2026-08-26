@@ -33,7 +33,9 @@ export function edgeToFlow(e: WorkflowEdge): EditorEdge {
     source: e.source,
     target: e.target,
     sourceHandle: e.condition ?? undefined,
-    label: e.condition ?? undefined,
+    // No `label` here on purpose: `ConditionEdge` derives what the edge reads as
+    // from the SOURCE node at render time, because a Switch arm's name lives on
+    // that node's case row and has to follow a rename immediately.
     data: { condition: e.condition },
   }
 }

@@ -3,6 +3,7 @@ import jsonata from 'jsonata'
 import {
   ITERATION_MAX_ITEMS_CEILING,
   SWITCH_DEFAULT_CASE,
+  switchArmName,
   type WorkflowGraph,
   type WorkflowNode,
 } from './graph'
@@ -402,7 +403,7 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
           ...base,
           severity: 'error',
           message: `Switch case${many ? 's' : ''} ${blank
-            .map((c) => `"${c.key}"`)
+            .map((c) => `"${switchArmName(node.config.cases, c.key)}"`)
             .join(', ')} ${many ? 'have' : 'has'} no value to match — type the value, or link the upstream data it should equal.`,
         })
       }

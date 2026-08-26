@@ -1,5 +1,5 @@
 import { resolveBinding } from '../binding'
-import { SWITCH_DEFAULT_CASE, type SwitchNode } from '../graph'
+import { SWITCH_DEFAULT_CASE, switchArmName, type SwitchNode } from '../graph'
 
 import { looseEquals } from './branch'
 
@@ -67,8 +67,11 @@ export async function executeSwitchNode(
       ? `${source.nodeId}.${source.path}`
       : source.nodeId
     : 'input'
+  // Name the arm the way the canvas does, so a run trace and the graph the
+  // author is looking at say the same word. The key rides along in brackets
+  // because that is what `result` actually carries.
   const detail = hit
-    ? `matched case '${hit.key}'`
+    ? `matched case '${switchArmName(cases, hit.key)}' (${hit.key})`
     : `no case matched → '${SWITCH_DEFAULT_CASE}'`
   return {
     result,

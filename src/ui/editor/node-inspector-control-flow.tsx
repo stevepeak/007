@@ -11,6 +11,7 @@ import {
   type IterationItemExecution,
   type TransformOutputShape,
 } from '../../engine'
+import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { askCopilot, useCopilotSeedAvailable } from '../copilot/ask'
 import { toText } from '../to-text'
@@ -140,30 +141,32 @@ function literalText(binding: ArgBinding): string {
   return binding.kind === 'literal' ? scalarText(binding.value) : ''
 }
 
-// One leading marker per case — the key the author sees on the row, on the
-// node's outgoing handle, and on the edge. Rendered as a badge rather than an
-// editable field: the key is bookkeeping the graph needs, not a decision the
-// author should have to make.
+// The look every case marker wears — the quiet chip at the head of the row.
+// Shared so the editable name and the fixed `else` sit on the same baseline and
+// read as the same thing.
+const CASE_MARKER =
+  'border-input bg-muted text-muted-foreground h-auto shrink-0 rounded-md border px-2 py-1.5 text-center font-mono text-xs'
+
+// The fixed marker: the `else` arm, which has no case row to rename.
 function CaseMarker({ children }: { children: ReactNode }) {
-  return (
-    <span className="border-input bg-muted text-muted-foreground min-w-9 shrink-0 rounded-md border px-2 py-1.5 text-center font-mono text-xs">
-      {children}
-    </span>
-  )
+  return <span className={cn(CASE_MARKER, 'min-w-9')}>{children}</span>
 }
 
 // The Switch inspector. A Switch matches ONE upstream value against a list of
 // cases, so the editor asks for exactly that: pick the value with the same data
 // picker every other node uses, then per case type the value it must equal — or
 // link a second upstream value to compare against. Each case's key is minted as
-// a letter (A, B, C…) and never re-lettered, so it stays a stable edge label.
+// a letter (A, B, C…) and never re-lettered, so an edge stays pointed where the
+// author put it — but the author can TYPE OVER that letter to name the arm, and
+// the name is what the canvas edge reads as, so a graph says 'image' rather
+// than 'A'.
 export function SwitchInspector({
   node,
   graph,
   onChange,
   itemSchema,
 }: NodeInspectorProps) {
-  const { Label } = useWfComponents()
+  const { Input, Label } = useWfComponents()
   if (node.kind !== 'switch') return null
 
   const cases = node.config.cases
@@ -171,6 +174,14 @@ export function SwitchInspector({
     onChange({ ...node, config: { ...node.config, cases: next } })
   const setCaseValue = (index: number, value: ArgBinding) =>
     setCases(cases.map((c, i) => (i === index ? { ...c, value } : c)))
+  // An emptied name field drops the field entirely rather than storing '', so
+  // the arm falls back to its letter instead of rendering as a blank label.
+  const setCaseLabel = (index: number, label: string) =>
+    setCases(
+      cases.map((c, i) =>
+        i === index ? { ...c, label: label || undefined } : c,
+      ),
+    )
 
   return (
     <>
@@ -194,7 +205,17 @@ export function SwitchInspector({
         <Label>Cases</Label>
         {cases.map((c, i) => (
           <div key={c.key} className="flex items-start gap-1.5">
-            <CaseMarker>{c.key}</CaseMarker>
+            {/* The marker IS the name field: it shows the minted letter until
+                the author types over it, so renaming an arm costs one click on
+                the thing already labelling it. Left empty it stays the letter —
+                and the key never changes either way, so the edge never moves. */}
+            <Input
+              className={cn(CASE_MARKER, 'w-24')}
+              value={c.label ?? ''}
+              placeholder={c.key}
+              aria-label={`Name for case ${c.key}`}
+              onChange={(e) => setCaseLabel(i, e.target.value)}
+            />
             <div className="min-w-0 flex-1">
               <DataRefField
                 node={node}
@@ -220,7 +241,7 @@ export function SwitchInspector({
             <button
               type="button"
               className="text-muted-foreground hover:text-foreground shrink-0 rounded px-1.5 py-1.5 text-xs"
-              aria-label={`Remove case ${c.key}`}
+              aria-label={`Remove case ${c.label?.trim() || c.key}`}
               onClick={() => setCases(cases.filter((_, j) => j !== i))}
             >
               ✕
@@ -251,8 +272,9 @@ export function SwitchInspector({
       </div>
       <p className="text-muted-foreground text-xs">
         Deterministic — no model call. Cases are matched in order, and each one
-        grows its own outgoing edge; a value matching none takes the
-        always-present <strong>else</strong> edge.
+        grows its own outgoing edge; a value matching none takes the{' '}
+        <strong>else</strong> edge. Type over a path's letter to name it — the
+        canvas shows the name, the letter stays the routing key.
       </p>
     </>
   )

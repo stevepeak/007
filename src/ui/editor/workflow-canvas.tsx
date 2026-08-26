@@ -28,6 +28,7 @@ import {
   RunStatusProvider,
 } from './node-renderers'
 import { useCanvasDrop } from './workflow-canvas-drop'
+import { CONDITION_EDGE_TYPE, ConditionEdge } from './workflow-canvas-edge'
 import {
   BOOKEND_KINDS,
   engineToFlow,
@@ -54,6 +55,10 @@ const EMPTY_STATUSES: ReadonlyMap<string, string> = new Map()
 
 // Ditto for the run's frozen agent versions (empty in the editor).
 const EMPTY_AGENT_VERSIONS: ReadonlyMap<string, number> = new Map()
+
+// Module-level so the object keeps identity across renders — React Flow warns
+// and rebuilds its edge renderers when this map changes.
+const EDGE_TYPES = { [CONDITION_EDGE_TYPE]: ConditionEdge }
 
 export interface WorkflowCanvasProps {
   graph: WorkflowGraph
@@ -230,8 +235,9 @@ function CanvasInner({
               nodesConnectable={!readOnly}
               onDrop={readOnly ? undefined : handleDrop}
               onDragOver={readOnly ? undefined : handleDragOver}
+              edgeTypes={EDGE_TYPES}
               defaultEdgeOptions={{
-                type: 'smoothstep',
+                type: CONDITION_EDGE_TYPE,
                 markerEnd: { type: MarkerType.ArrowClosed },
               }}
               fitView
