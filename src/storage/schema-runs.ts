@@ -9,6 +9,7 @@ import {
 
 import {
   createdAt,
+  TOP_LEVEL_ITEM_INDEX,
   WF_RUN_STATUSES,
   WF_RUN_STEP_STATUSES,
 } from './schema-common'
@@ -63,6 +64,21 @@ export const wfRun = sqliteTable(
     // partition, this flag is how the general Runs explorer keeps eval runs out
     // of a firm's view (default listings exclude it). See wf_eval_result.wfRunId.
     isEval: integer('is_eval', { mode: 'boolean' }).notNull().default(false),
+    // Nesting. A run spawned by another run — a workflow-call callee, or one
+    // item of a durable iteration — carries the three columns below; a
+    // top-level run leaves parent_run_id NULL. This is the ONLY link that
+    // answers "list the children of this run": correlation_id is inherited but
+    // is a host reference (many unrelated runs can share one), sentry_trace_id
+    // groups a trace rather than a tree, and the parent's step `meta.childRunId`
+    // only points downward.
+    parentRunId: text('parent_run_id'),
+    /** The iteration or workflow-call node in the PARENT graph that spawned this run. */
+    parentNodeId: text('parent_node_id'),
+    // 0-based position within a durable iteration's items; TOP_LEVEL_ITEM_INDEX
+    // (-1) for a top-level run and for a single workflow-call callee, matching
+    // wf_run_step's convention. Never NULL — same reason given there, and so
+    // ordering children by it needs no NULL handling.
+    itemIndex: integer('item_index').notNull().default(TOP_LEVEL_ITEM_INDEX),
     createdAt: createdAt(),
   },
   (t) => [
@@ -70,6 +86,8 @@ export const wfRun = sqliteTable(
     index('wf_run_version_created_idx').on(t.workflowVersionId, t.createdAt),
     index('wf_run_subject_idx').on(t.subjectId),
     index('wf_run_eval_created_idx').on(t.isEval, t.createdAt),
+    // Drives the nested run listing and the ordered child fan-out.
+    index('wf_run_parent_idx').on(t.parentRunId, t.itemIndex),
   ],
 )
 
@@ -95,7 +113,7 @@ export const wfRunStep = sqliteTable(
     /** Iteration container this step ran inside, or NULL for a top-level step. */
     parentNodeId: text('parent_node_id'),
     /** 0-based item index within an iteration; `-1` for a top-level step. */
-    itemIndex: integer('item_index').notNull().default(-1),
+    itemIndex: integer('item_index').notNull().default(TOP_LEVEL_ITEM_INDEX),
     sequence: integer('sequence').notNull(),
     status: text('status', { enum: WF_RUN_STEP_STATUSES }).notNull(),
     input: text('input', { mode: 'json' })

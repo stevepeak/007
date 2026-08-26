@@ -295,6 +295,11 @@ async function dispatchDurableCallee<TDeps, E extends GraphWorkflowEnv>(
         // Same trace as the parent, so the callee's spans land in one
         // distributed trace instead of a detached second one.
         sentryTraceId: traceId,
+        // The nesting link the run viewer reads to show this callee UNDER its
+        // caller. A workflow-call node spawns exactly one callee, so it takes
+        // the top-level item sentinel; durable iteration items pass a real
+        // 0-based index instead.
+        parent: { runId: p.workflowRunId, nodeId: node.id },
       })
       const childRoomId = crypto.randomUUID()
       const instance = await env.GRAPH_WORKFLOW.create({

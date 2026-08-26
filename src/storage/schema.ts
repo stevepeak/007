@@ -5,6 +5,7 @@
 // shared tenancy/run-identity conventions and the `createdAt` helper.
 
 export {
+  TOP_LEVEL_ITEM_INDEX,
   WF_EVAL_RESULT_STATUSES,
   WF_EVAL_TARGET_KINDS,
   WF_FEEDBACK_RATINGS,

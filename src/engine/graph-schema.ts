@@ -621,7 +621,30 @@ const iterationNodeSchema = baseNode.extend({
     // read out of a merged input — e.g. an iteration behind a Branch refs the
     // upstream tool that made the list, not the (boolean-only) Branch.
     source: refBindingSchema.optional(),
+    // How many items may be in flight at once. The knob keeps its meaning under
+    // BOTH item executions, but what it bounds differs:
+    //
+    //   • inline  — a real resource bound. Every item shares the parent
+    //     instance's subrequest and CPU budget, so this is what stops one list
+    //     from exhausting it.
+    //   • durable — each item is its own instance with its own budget and the
+    //     parent merely parks, so this bounds nothing local. It throttles what
+    //     the ITEMS hit: model provider rate limits, D1, whatever the subgraph
+    //     calls. An author who set 4 meant "don't hammer things", and that is
+    //     still the useful reading — so durable windows rather than spawning
+    //     all N at once (NEW-174).
+    //
+    // Either way it is `runIteration`'s worker pool that enforces it; the
+    // durable backend supplies a `runItem` that spawns a child and parks on its
+    // report, and inherits the pool rather than reimplementing the semantics.
     concurrency: z.number().int().min(1).max(20).default(4),
+    // What a failed item does to the rest. When on, the failure DRAINS the loop:
+    // no further items start, items already running are awaited, and only then
+    // does the node fail. Under durable items a child instance could instead be
+    // terminated outright — deliberately not done. A child killed mid-write
+    // leaves a half-written recipe and nothing can un-write it, and draining
+    // matches how the top-level walk already handles a failed node
+    // (`stopDispatch` + `drainInflight`). See iteration-durable-semantics.test.ts.
     stopOnError: z.boolean().default(false),
     // Whether each item is atomic or gets per-node durability — see
     // `iterationItemExecutionSchema`. Defaulted (not optional) because unlike the

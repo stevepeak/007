@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 
 import type { WfRunManifestEntry } from '../../engine/graph'
 import type { WfDb } from '../client'
-import { wfRun } from '../schema'
+import { TOP_LEVEL_ITEM_INDEX, wfRun } from '../schema'
 
 import { recordRunStateChange } from './runs-logs'
 
@@ -31,6 +31,13 @@ export async function createRun(
     isEval?: boolean
     /** Stable 32-hex trace id for the run's Sentry spans + deep-link. */
     sentryTraceId?: string
+    /**
+     * Nesting: the run that spawned this one, the node in ITS graph that did
+     * the spawning, and — for a durable iteration item — which item this is.
+     * Omit all three for a top-level run. See `wf_run`'s columns; the item
+     * index falls back to the `-1` sentinel rather than NULL.
+     */
+    parent?: { runId: string; nodeId: string; itemIndex?: number }
   },
 ): Promise<string> {
   const id = crypto.randomUUID()
@@ -43,6 +50,9 @@ export async function createRun(
     actorId: input.actorId ?? null,
     isEval: input.isEval ?? false,
     sentryTraceId: input.sentryTraceId ?? null,
+    parentRunId: input.parent?.runId ?? null,
+    parentNodeId: input.parent?.nodeId ?? null,
+    itemIndex: input.parent?.itemIndex ?? TOP_LEVEL_ITEM_INDEX,
     status: 'queued',
   })
   await recordRunStateChange(db, { runId: id, status: 'queued' })

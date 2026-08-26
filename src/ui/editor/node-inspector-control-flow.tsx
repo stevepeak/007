@@ -26,6 +26,24 @@ import { buildTransformCopilotPrompt } from './transform-copilot-prompt'
 // What the choice means for the author, in their terms. The trade is per-item
 // startup cost against how much work is lost when one item fails partway — and
 // the right answer depends on list length, which only the author knows.
+// What `concurrency` bounds depends on the item execution: inline items share
+// the parent run's budget, durable items each have their own and the parent just
+// waits. The number means the same thing either way — "at most this many at
+// once" — but the REASON to pick one changes, so the help text does too.
+const CONCURRENCY_HELP: Record<IterationItemExecution, string> = {
+  inline:
+    'How many items run at once (1–20). They share this run’s budget, so this is what stops a long list from exhausting it. 1 runs them one at a time.',
+  durable:
+    'How many items run at once (1–20). Each item is its own run with its own budget, so this isn’t about this run’s limits — it throttles what the items call out to, like a model provider’s rate limit. 1 runs them one at a time.',
+}
+
+const STOP_ON_ERROR_HELP: Record<IterationItemExecution, string> = {
+  inline:
+    'When off, a failed item is recorded and the rest keep running; the output collects a placeholder in that item’s slot.',
+  durable:
+    'When off, a failed item is recorded and the rest keep running; the output collects a placeholder in that item’s slot. When on, no further items start, but items already running are left to finish before the loop fails — stopping one partway would leave its work half-written.',
+}
+
 const ITEM_EXECUTION_HELP: Record<IterationItemExecution, string> = {
   inline:
     'Each item runs as a single all-or-nothing unit. Cheapest per item, so it suits long lists over small subgraphs — but if an item fails partway it repeats from the start, and the inner steps’ own timeout and retry settings do not apply.',
@@ -335,7 +353,7 @@ export function IterationInspector({
           }}
         />
         <p className="text-muted-foreground text-xs">
-          How many items run at once (1–20). 1 runs them one at a time.
+          {CONCURRENCY_HELP[node.config.itemExecution]}
         </p>
       </div>
       <div className={field}>
@@ -405,8 +423,7 @@ export function IterationInspector({
         Stop on first error
       </label>
       <p className="text-muted-foreground text-xs">
-        When off, a failed item is recorded and the rest keep running; the
-        output collects a placeholder in that item's slot.
+        {STOP_ON_ERROR_HELP[node.config.itemExecution]}
       </p>
       <p className="text-muted-foreground text-xs">
         Drag nodes into the block on the canvas to run them per item. The{' '}

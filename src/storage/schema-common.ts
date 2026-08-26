@@ -43,6 +43,16 @@ export const WF_RUN_STEP_STATUSES = [
   'skipped',
 ] as const
 
+/**
+ * The "not an iteration item" sentinel for an `item_index` column.
+ *
+ * Both `wf_run_step` and `wf_run` carry an item index, and both use `-1` rather
+ * than NULL for the top-level case: SQLite treats NULLs as distinct inside a
+ * unique index, which would silently defeat `wf_run_step`'s idempotent upsert.
+ * Named here so the two schemas can't drift on the value.
+ */
+export const TOP_LEVEL_ITEM_INDEX = -1
+
 // An eval run shares the run lifecycle vocabulary; each per-row result is a
 // three-way pass/fail/error.
 export const WF_EVAL_TARGET_KINDS = ['agent', 'workflow'] as const
