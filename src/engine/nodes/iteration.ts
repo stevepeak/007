@@ -81,9 +81,17 @@ export type SubgraphRecorder = {
  * is identity). The subgraph is strictly re-validated here — a structurally
  * broken subgraph fails the item rather than the parent parse.
  *
+ * Reaching the Output settles the item's ANSWER, it does not end the item: the
+ * walk keeps going until nothing is left to run, so an arm that doesn't feed
+ * the Output — a side-effect tool, a classifier whose result is only recorded —
+ * still fires. This mirrors the top-level `executeWorkflow` drain; see
+ * {@link Scheduler.completeOutput}.
+ *
  * When `record` is supplied, every inner node (plus the trigger and output) is
  * persisted as a scoped run-step; a failing node records its failed step before
- * the error propagates so the item's break point is inspectable.
+ * the error propagates so the item's break point is inspectable. A failure
+ * during the drain — after the answer is settled — is recorded but does not
+ * fail the item.
  */
 export async function executeSubgraph<TDeps>(
   subgraph: WorkflowGraph,
@@ -138,9 +146,21 @@ export async function executeSubgraph<TDeps>(
     })
   }
 
+  // The item's answer, once an Output has been reached. Its presence turns the
+  // walk below from "producing the answer" into "draining what's left" —
+  // exactly the split `executeWorkflow` makes at the top level. Returning on
+  // the Output instruction instead (which this loop used to do) kills the arms
+  // that don't feed it: a node hung off the side of the item's main line
+  // becomes ready, loses the race to the Output, and then never fires at all.
+  // See `Scheduler.completeOutput`, which exists for precisely this.
+  let delivered: { output: unknown } | null = null
+
   while (true) {
     const instruction = scheduler.next()
     if (instruction.type === 'stall') {
+      // A stall AFTER the answer is the normal end of the drain — everything
+      // that could run has run. Only a stall with no answer is a broken item.
+      if (delivered) return delivered.output
       throw new WorkflowStalledError()
     }
     if (instruction.type === 'output') {
@@ -153,7 +173,13 @@ export async function executeSubgraph<TDeps>(
           output: instruction.output,
         })
       }
-      return instruction.output
+      // Settle it so the walk moves PAST this Output to the remaining arms,
+      // rather than being handed the same one on every call. Only the FIRST
+      // Output is the item's answer; a later arm reaching its own is recorded
+      // for the trace but changes nothing the caller already has.
+      scheduler.completeOutput(instruction.nodeId, instruction.output)
+      delivered ??= { output: instruction.output }
+      continue
     }
     const { node, input } = instruction
     let result: NodeRunResult
@@ -188,6 +214,11 @@ export async function executeSubgraph<TDeps>(
           finishedAt: new Date(),
         })
       }
+      // Same rule the top-level walk applies to a drain failure: once the
+      // item's answer is out, a side arm blowing up does not retract it. The
+      // failed step is recorded either way, so the break point stays
+      // inspectable; we just stop draining instead of failing the item.
+      if (delivered) return delivered.output
       throw err
     }
     if (rec) {

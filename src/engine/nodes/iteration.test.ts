@@ -372,6 +372,163 @@ describe('executeSubgraph', () => {
 })
 
 // ---------------------------------------------------------------------------
+// executeSubgraph — draining arms the item's Output does not feed
+// ---------------------------------------------------------------------------
+
+// The same regression `executor-drain.test.ts` pins at the top level, one level
+// down. `executeSubgraph` used to RETURN on the Output instruction, so a node
+// hung off the side of the item's main line — a classifier whose verdict is
+// only recorded, a side-effect tool — was left ready-but-never-dispatched. It
+// lost the race to the Output and then silently vanished from the trace.
+describe('executeSubgraph — background arms inside one item', () => {
+  function ctxWithTools(timeline: string[]): RunNodeContext<unknown> {
+    const build = (id: string, result: unknown) => ({
+      id,
+      name: id,
+      kind: 'function' as const,
+      description: id,
+      build: () => () => {
+        timeline.push(id)
+        return Promise.resolve(result)
+      },
+    })
+    return {
+      toolRegistry: new Map([
+        ['main', build('main', { text: 'answered' })],
+        ['side', build('side', { ok: true })],
+        [
+          'side-boom',
+          {
+            id: 'side-boom',
+            name: 'side-boom',
+            kind: 'function' as const,
+            description: 'side-boom',
+            build: () => async () => {
+              timeline.push('side-boom')
+              throw new Error('side arm failed')
+            },
+          },
+        ],
+      ]),
+      toolDeps: {},
+      nodeOutputs: new Map(),
+    } as unknown as RunNodeContext<unknown>
+  }
+
+  /**
+   * item → main → out        (the arm the item's value comes from)
+   * item → side              (a dead end — nothing downstream of it)
+   *
+   * `side` is placed LAST in the node array on purpose: the sequential walk
+   * picks the first ready node in array order, which is exactly where a node
+   * just added in the editor lands.
+   */
+  const subgraph = (sideToolId: string): WorkflowGraph => ({
+    version: 1,
+    nodes: [
+      {
+        id: 'item',
+        kind: 'trigger',
+        informUser: { mode: 'off' as const },
+        label: 'Item',
+        position: { x: 0, y: 0 },
+        config: { triggerKind: ITERATION_ITEM_TRIGGER_KIND },
+      },
+      {
+        id: 'main',
+        kind: 'tool',
+        informUser: { mode: 'off' as const },
+        label: 'Main',
+        position: { x: 100, y: 0 },
+        config: { toolId: 'main', args: {} },
+      },
+      {
+        id: 'out',
+        kind: 'output',
+        informUser: { mode: 'off' as const },
+        label: 'Done',
+        position: { x: 200, y: 0 },
+        config: { source: { kind: 'ref', nodeId: 'main', path: '' } },
+      },
+      {
+        id: 'side',
+        kind: 'tool',
+        informUser: { mode: 'off' as const },
+        label: 'Side',
+        position: { x: 100, y: 100 },
+        config: { toolId: sideToolId, args: {} },
+      },
+    ],
+    edges: [
+      { id: 'e1', source: 'item', target: 'main', condition: null },
+      { id: 'e2', source: 'main', target: 'out', condition: null },
+      { id: 'e3', source: 'item', target: 'side', condition: null },
+    ],
+  })
+
+  test('a dead-end arm still runs after the item Output is reached', async () => {
+    const timeline: string[] = []
+    const out = await executeSubgraph(
+      subgraph('side'),
+      { n: 1 },
+      ctxWithTools(timeline),
+    )
+
+    expect(out).toEqual({ text: 'answered' })
+    // The whole point: the arm nothing waits on executed rather than being
+    // dropped when the Output won the race.
+    expect(timeline).toContain('side')
+  })
+
+  test('the dead-end arm is recorded as its own step', async () => {
+    const timeline: string[] = []
+    const steps: { nodeId: string; status: string }[] = []
+    await executeSubgraph(
+      subgraph('side'),
+      { n: 1 },
+      ctxWithTools(timeline),
+      {
+        parentNodeId: 'it',
+        itemIndex: 0,
+        recorder: {
+          record: async (args) => {
+            steps.push({ nodeId: args.nodeId, status: args.status })
+          },
+        },
+      },
+    )
+
+    const side = steps.find((s) => s.nodeId === 'side')
+    expect(side?.status).toBe('completed')
+  })
+
+  test('a drain failure is recorded but does not retract the answer', async () => {
+    const timeline: string[] = []
+    const steps: { nodeId: string; status: string }[] = []
+    const out = await executeSubgraph(
+      subgraph('side-boom'),
+      { n: 1 },
+      ctxWithTools(timeline),
+      {
+        parentNodeId: 'it',
+        itemIndex: 0,
+        recorder: {
+          record: async (args) => {
+            steps.push({ nodeId: args.nodeId, status: args.status })
+          },
+        },
+      },
+    )
+
+    // Once the item's answer is out, a side arm blowing up does not fail the
+    // item — but the break point is still in the trace.
+    expect(out).toEqual({ text: 'answered' })
+    expect(timeline).toContain('side-boom')
+    expect(steps.find((s) => s.nodeId === 'side')?.status).toBe('failed')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // executeSubgraph — the container's time budget
 // ---------------------------------------------------------------------------
 
