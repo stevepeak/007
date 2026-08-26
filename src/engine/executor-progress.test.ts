@@ -195,6 +195,103 @@ describe('executor — user-facing progress', () => {
     expect(await runIterationGraph(undefined)).toEqual([])
   })
 
+  test('a step INSIDE the loop never reaches the user feed', async () => {
+    // The loop speaks for its whole body: there is no surface that can show a
+    // step running once per item, so an inner note is dropped from the USER
+    // feed while the loop's own note and ticks stand for it. The editor
+    // disables the control, so this only guards graphs published before it did.
+    const sink = createMemorySink()
+    const recorder = createMemoryRunRecorder()
+    await executeWorkflow({
+      graph: {
+        version: 1 as const,
+        nodes: [
+          trigger,
+          {
+            id: 'src',
+            kind: 'passthrough' as const,
+            label: 'List',
+            position: { x: 200, y: 0 },
+            config: { value: { kind: 'literal', value: [1, 2] } },
+          },
+          {
+            id: 'loop',
+            kind: 'iteration' as const,
+            label: 'Each',
+            position: { x: 400, y: 0 },
+            informUser: { mode: 'static' as const, note: 'Reading ${n}.' },
+            config: {
+              source: { kind: 'ref', nodeId: 'src', path: '' },
+              concurrency: 1,
+              stopOnError: true,
+              subgraph: {
+                version: 1 as const,
+                nodes: [
+                  {
+                    id: 'it',
+                    kind: 'trigger' as const,
+                    label: 'Item',
+                    position: { x: 0, y: 0 },
+                    config: { triggerKind: 'iteration_item' },
+                  },
+                  {
+                    id: 'inner',
+                    kind: 'tool' as const,
+                    label: 'Inner',
+                    position: { x: 200, y: 0 },
+                    informUser: {
+                      mode: 'static' as const,
+                      note: 'Inner step talking.',
+                    },
+                    config: { toolId: 'after', args: {} },
+                  },
+                  {
+                    id: 'io',
+                    kind: 'output' as const,
+                    label: 'ItemOut',
+                    position: { x: 400, y: 0 },
+                    config: {
+                      source: { kind: 'ref', nodeId: 'inner', path: '' },
+                    },
+                  },
+                ],
+                edges: [
+                  { id: 'ie1', source: 'it', target: 'inner', condition: null },
+                  {
+                    id: 'ie2',
+                    source: 'inner',
+                    target: 'io',
+                    condition: null,
+                  },
+                ],
+              },
+            },
+          },
+          output('o', 600, 'loop'),
+        ],
+        edges: [
+          { id: 'e1', source: 't', target: 'src', condition: null },
+          { id: 'e2', source: 'src', target: 'loop', condition: null },
+          { id: 'e3', source: 'loop', target: 'o', condition: null },
+        ],
+      },
+      triggerInput: { n: 1 },
+      config: makeConfig(),
+      runContext: { triggerKind: 'go' },
+      recorder,
+      sink,
+    })
+    const lines = progressLines(sink)
+    expect(lines).toContain('Reading 2.')
+    expect(lines).toContain('Processing item 2 of 2')
+    expect(lines).not.toContain('Inner step talking.')
+    // Muted for the USER, not hidden: the inner node still ran and still
+    // recorded a per-item step, which is what the run viewer drills into.
+    expect(
+      recorder.steps.filter((s) => s.nodeId === 'inner').length,
+    ).toBeGreaterThan(0)
+  })
+
   test('an empty list still announces zero rather than going quiet', async () => {
     // The author asked to be told how many items there are; "none" is an answer
     // the user wants, not a reason to say nothing.

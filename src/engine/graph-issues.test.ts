@@ -346,6 +346,52 @@ describe('collectGraphIssues', () => {
     ).toBe(true)
   })
 
+  test('flags an "Inform user" note on a step inside a loop', () => {
+    const itemTrigger = {
+      id: 'it',
+      kind: 'trigger' as const,
+      position: pos,
+      label: 'Item',
+      informUser: { mode: 'off' as const },
+      config: { triggerKind: 'iteration_item' },
+    }
+    const child = {
+      ...agent('child', 'a1'),
+      informUser: { mode: 'static' as const, note: 'Reading this one.' },
+    }
+    const iteration = {
+      id: 'loop',
+      kind: 'iteration' as const,
+      position: pos,
+      label: 'Loop',
+      informUser: { mode: 'static' as const, note: 'Reading ${n}.' },
+      config: {
+        source: { kind: 'ref' as const, nodeId: 't', path: '' },
+        concurrency: 1,
+        stopOnError: false,
+        itemExecution: 'inline' as const,
+        maxItems: 10,
+        subgraph: graph(
+          [itemTrigger, child, output('res', 'child')],
+          [edge('it', 'child'), edge('child', 'res')],
+        ),
+      },
+    }
+    const issues = collectGraphIssues(
+      graph([trigger, iteration, output()], [edge('t', 'loop'), edge('loop', 'o')]),
+    )
+    // The child is flagged — nothing it reports can reach the user…
+    expect(
+      issues.some(
+        (i) => i.nodeId === 'child' && /Inform user/.test(i.message),
+      ),
+    ).toBe(true)
+    // …while the loop's OWN note is exactly where narration belongs.
+    expect(
+      issues.some((i) => i.nodeId === 'loop' && /Inform user/.test(i.message)),
+    ).toBe(false)
+  })
+
   // ── Iteration item execution ────────────────────────────────────────────────
   // The editor can see how much work ONE item does; only the author knows how
   // many items there will be. These warnings surface the half the editor knows.

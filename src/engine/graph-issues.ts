@@ -435,6 +435,20 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
   for (const node of graph.nodes) {
     if (node.kind === 'iteration') {
       issues.push(...collectGraphIssues(node.config.subgraph))
+      // A step inside a loop cannot reach the user: the feed is one flat list,
+      // with nowhere to put the same line thirty times over. The editor
+      // disables the control, so this can only come from a graph published
+      // before it did — and a note that silently says nothing is worse than one
+      // that is flagged. The loop's own note is where the narration belongs.
+      for (const child of node.config.subgraph.nodes) {
+        if (child.informUser.mode === 'off') continue
+        issues.push({
+          nodeId: child.id,
+          nodeLabel: child.label,
+          severity: 'warning',
+          message: `"Inform user" is set on a step inside iteration "${node.label}", where nothing it reports reaches the user. Set the note on the iteration step itself instead.`,
+        })
+      }
     }
   }
 

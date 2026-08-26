@@ -25,7 +25,11 @@ import { buildCalleeTriggerInput } from '../engine/nodes/workflow'
 import { runNode, type NodeRunResult } from '../engine/run-node'
 import { recordedBranchResult } from '../engine/run-recorder'
 import type { ExecutableNode, ReportResult } from '../engine/scheduler'
-import type { RunLogEntry, StreamSink } from '../engine/stream-sink'
+import {
+  withoutUserProgress,
+  type RunLogEntry,
+  type StreamSink,
+} from '../engine/stream-sink'
 import { enforceOutputContract } from '../engine/trigger-registry'
 import { createWfDb } from '../storage/client'
 import {
@@ -47,6 +51,7 @@ import {
 import type { GraphWorkflowEnv, GraphWorkflowResult } from './graph-workflow'
 import {
   nodeLabel,
+  ownsItsDurableSteps,
   startEntryOf,
   recordTerminal,
 } from './graph-workflow-dispatch-logs'
@@ -100,8 +105,16 @@ type RunStepResult = NodeRunResult & {
 async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
   ctx: RunCtx<TDeps, E>,
   node: IterationNode,
+  /** The node's own feed writer, built by the caller (there is no `run:` step
+   * here to host one). Carries the loop's note and per-item ticks. */
+  nodeSink: StreamSink,
 ): Promise<RunStepResult> {
-  const { step, env, config, p, manifest, sink, scheduler } = ctx
+  const { step, env, config, p, manifest, scheduler } = ctx
+  // The loop speaks for its whole body. Its subgraph gets the run-level sink
+  // with USER-facing lines stripped: a step inside a loop has nowhere to be
+  // shown — the feed is one flat list — so it stays quiet until there is a
+  // per-item surface for it. Its dev trace is unaffected.
+  const itemSink = withoutUserProgress(ctx.sink)
   if (node.config.itemExecution === 'durable') {
     // Per-item child instances are not wired up yet. Failing loudly beats
     // silently running inline: the author chose this setting precisely because
@@ -120,7 +133,7 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
     // List is a ref into an upstream output, resolved against the
     // scheduler's global outputs — not the forwarded input.
     list: resolveIterationList(node, scheduler.getOutputs()),
-    sink,
+    sink: nodeSink,
     promptVariables: p.runContext.promptVariables,
     runItem: (item, index) =>
       // The iteration node creates no `run:` step of its own — these per-item
@@ -144,7 +157,7 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
             nodeOutputs: new Map(),
             promptVariables: p.runContext.promptVariables,
             manifest,
-            sink,
+            sink: itemSink,
             resolveBlobRef: config.resolveBlobRef,
             simulate: p.runContext.simulate,
             fixtures: p.runContext.fixtures,
@@ -439,6 +452,7 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
   // starts, in step with the glow, rather than a whole node behind. The
   // record step below flips this same (run_id, node_id) row to its
   // terminal status and rewrites the node's full feed.
+  const selfStepping = ownsItsDurableSteps(node)
   await stepDo(step, `enter:${node.id}`, DEFAULT_STEP_OPTS, async () => {
     await ctx.recordOne({
       nodeId: node.id,
@@ -448,11 +462,25 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
       status: 'running',
       startedAt: new Date(startTs),
     })
-    await replaceNodeLogs(createWfDb(env.WF_DB), {
-      runId: p.workflowRunId,
-      nodeId: node.id,
-      entries: [startRow],
-    })
+    const logDb = createWfDb(env.WF_DB)
+    // A self-stepping node's feed is written by position-keyed upsert from end
+    // to end (see `ownsItsDurableSteps`), so its opening line takes the `start`
+    // slot here and the record step rewrites that same row. Every other node
+    // replaces its feed wholesale, which is what clears it for a fresh run.
+    if (selfStepping) {
+      await appendRunLog(logDb, {
+        runId: p.workflowRunId,
+        nodeId: node.id,
+        ordinal: 'start',
+        entry: startRow,
+      })
+    } else {
+      await replaceNodeLogs(logDb, {
+        runId: p.workflowRunId,
+        nodeId: node.id,
+        entries: [startRow],
+      })
+    }
     return null
   })
 
@@ -467,20 +495,69 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
   // step where the real error object still exists (Cloudflare rebuilds it on
   // the way out, dropping everything but message + stack).
   let captured: CapturedFailure | null = null
+  // The feed writer for a node that drives durable steps of its OWN (see
+  // `ownsItsDurableSteps`): there is no `run:` step to host a per-node sink, so
+  // it is built HERE, in the orchestrator body. That placement is the whole
+  // reason its writes are position-keyed — the body is NOT journaled, so every
+  // replay of the instance re-emits these same lines, and only an upsert onto a
+  // deterministic slot keeps a replay from stacking a second copy of the node's
+  // narration onto the feed. `bodyLogs` collects the same entries so the record
+  // step settles them in those same slots; a replay refills it on the way past,
+  // so a feed written here survives that rewrite.
+  //
+  // Without this the lines went to the run-level sink, which persists nothing —
+  // an iteration's `Reading each recipe — ${n} in total.` was authored,
+  // emitted, and dropped on the floor (ART-25).
+  const selfSteppingSink = (): StreamSink => {
+    const logDb = createWfDb(env.WF_DB)
+    return {
+      log: (entry) => {
+        const e: RunLogEntry = {
+          ...entry,
+          ts: entry.ts ?? Date.now(),
+          nodeId: entry.nodeId ?? node.id,
+          nodeKind: entry.nodeKind ?? node.kind,
+          sequence: entry.sequence ?? seq,
+        }
+        const ordinal = bodyLogs.length
+        bodyLogs.push(e)
+        // Best-effort, exactly as in the `run:` sink: a dropped progress line
+        // must never fail the node that was merely narrating itself.
+        void appendRunLog(logDb, {
+          runId: p.workflowRunId,
+          nodeId: node.id,
+          ordinal,
+          entry: {
+            nodeId: e.nodeId ?? node.id,
+            nodeKind: e.nodeKind ?? node.kind,
+            sequence: e.sequence ?? seq,
+            level: e.level,
+            message: e.message,
+            meta: e.meta ?? null,
+            ts: e.ts ?? Date.now(),
+          },
+        }).catch((err: unknown) => {
+          console.error('[wf] live log append failed:', err)
+        })
+        return sink.log?.(e)
+      },
+    }
+  }
+
   try {
     if (node.kind === 'iteration') {
       // No progress emit here: an iteration's note needs the item count, which
       // only exists once the list is resolved inside `runIteration` — that's
-      // where both its note and its per-item lines are emitted, straight to the
-      // run sink (there's no `run:` step to host a per-node sink).
-      result = await dispatchIteration(ctx, node)
+      // where both its note and its per-item lines are emitted.
+      result = await dispatchIteration(ctx, node, selfSteppingSink())
     } else if (
       node.kind === 'workflow' &&
       node.config.calleeExecution === 'durable'
     ) {
       // Same reason as iteration: this node drives durable steps of its own
       // (spawn + waitForEvent), which can't live inside a `run:` step.
-      emitNodeStartProgress(sink, node, p.runContext.promptVariables)
+      const nodeSink = selfSteppingSink()
+      emitNodeStartProgress(nodeSink, node, p.runContext.promptVariables)
       result = await dispatchDurableCallee(ctx, node, input)
     } else {
       result = await stepDo(
@@ -696,7 +773,10 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
     output: result.recordedOutput,
     meta: result.meta,
     branchResult: recordedBranchResult(result),
-    bodyLogs: result.logs ?? [],
+    // `logs` is the `run:` step's journaled copy — the same array, returned
+    // through the step so it survives replay. A self-stepping node has no such
+    // step and fills `bodyLogs` directly.
+    bodyLogs: result.logs ?? bodyLogs,
     startedAt: result.execStartedAt,
     finishedAt: result.execFinishedAt,
   })

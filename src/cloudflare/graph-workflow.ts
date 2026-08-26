@@ -220,18 +220,17 @@ export function makeGraphWorkflow<
       const step = createCountingStep(rawStep, counters)
       const traceId = p.runContext.traceId
       // The durable backend has no RUN-LEVEL live channel. Every line a
-      // consumer reads is written by the PER-NODE sink in `dispatchNode`, which
+      // consumer reads is written by a PER-NODE sink in `dispatchNode`, which
       // persists to `wf_run_log` directly; this run-level sink is the terminus
-      // those forward to, and it now has nowhere further to go.
+      // those forward to, and it has nowhere further to go.
       //
-      // Left deliberately empty rather than deleted, because the sink is still
-      // threaded to `runIteration` and `executeSubgraph`: lines emitted there
-      // (an iteration's note, an inner node's feed) have no per-node D1 writer
-      // behind them and so are not persisted on this engine. They were not
-      // persisted before either — they went to the RunRoom, which nothing read.
-      // Wiring them to `wf_run_log` is a real gap, and a separate one: it has to
-      // reconcile with the terminal `replaceNodeLogs` rewrite that owns a node's
-      // feed. Tracked on ART-25.
+      // Left deliberately empty rather than deleted, because it is still what
+      // `executeSubgraph` receives — the nodes INSIDE an iteration. Those have
+      // no per-node writer, and until there is a surface that can show a step
+      // running thirty times they are not meant to have one: the loop narrates
+      // for its whole body (see `withoutUserProgress`), and its own note and
+      // per-item ticks now do persist, through the sink `dispatchNode` builds
+      // for it.
       const sink: StreamSink = {}
 
       // Resolved once per wake, which is exactly the scope of the sink's

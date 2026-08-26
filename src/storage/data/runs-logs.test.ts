@@ -14,6 +14,7 @@ import {
   getRunLogs,
   getRunProgressFeed,
   replaceNodeLogs,
+  upsertNodeLogs,
   type WfRunLogRow,
 } from './runs-logs'
 
@@ -120,6 +121,55 @@ describe('live run-log appends', () => {
 
     await attempt(db, [entry('info', '→ model', 10)])
     expect(await countNodeBodyLogs(db, { runId: RUN, nodeId: NODE })).toBe(1)
+  })
+
+  // How a SELF-STEPPING node's feed is written — an iteration, or a durable
+  // workflow call. Its lines are emitted from the orchestrator body, which is
+  // not journaled, so the same pass happens again on every replay of the
+  // instance. Position-keyed slots are what make that harmless.
+  async function selfSteppingPass(
+    db: WfDb,
+    body: WfRunLogRow[],
+    settle?: { start: WfRunLogRow; end: WfRunLogRow },
+  ): Promise<void> {
+    await upsertNodeLogs(db, {
+      runId: RUN,
+      nodeId: NODE,
+      rows: [
+        ...(settle ? [{ ordinal: 'start', entry: settle.start }] : []),
+        ...body.map((entry, i) => ({ ordinal: i, entry })),
+        ...(settle ? [{ ordinal: 'end', entry: settle.end }] : []),
+      ],
+    })
+  }
+
+  test('a self-stepping node replaying its feed rewrites it in place', async () => {
+    const body = [
+      entry('progress', 'Reading each recipe — 2 in total.', 10),
+      entry('progress', 'Processing item 1 of 2', 20),
+      entry('progress', 'Processing item 2 of 2', 30),
+    ]
+    const settle = {
+      start: entry('node-start', '▶ Process each recipe', 5),
+      end: entry('node-end', '✓ Process each recipe', 40),
+    }
+    // Live, as the loop runs…
+    await selfSteppingPass(db, body)
+    // …then the `record:` step settles the same slots…
+    await selfSteppingPass(db, body, settle)
+    // …and a later replay of the instance emits the whole body a second time,
+    // long after the node settled. Without position keying this is where a
+    // second copy of the loop's narration appears in the feed.
+    await selfSteppingPass(db, body)
+
+    const { rows: logs } = await getRunLogs(db, RUN)
+    expect(logs.map((l) => l.message)).toEqual([
+      '▶ Process each recipe',
+      'Reading each recipe — 2 in total.',
+      'Processing item 1 of 2',
+      'Processing item 2 of 2',
+      '✓ Process each recipe',
+    ])
   })
 
   test('the terminal rewrite supersedes whatever the live path wrote', async () => {

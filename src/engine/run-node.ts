@@ -19,7 +19,7 @@ import { executeTransformNode } from './nodes/transform'
 import { executeWorkflowNode } from './nodes/workflow'
 import type { RunRecorder } from './run-recorder'
 import type { ExecuteInstruction } from './scheduler'
-import type { StreamSink } from './stream-sink'
+import { withoutUserProgress, type StreamSink } from './stream-sink'
 import type { ToolRegistry } from './tool-registry'
 
 // Recorder-free, scheduler-free node dispatch. This is the shared seam between
@@ -273,6 +273,13 @@ export async function runNode<TDeps>(
       // durable Cloudflare backend drives iteration itself (each item its own
       // top-level `step.do`) rather than through this inline path, because
       // `step.do` calls cannot nest inside another step.
+      //
+      // The loop narrates for its whole body: its own note and per-item ticks
+      // reach the user, and every step INSIDE it is muted (see
+      // `withoutUserProgress` — a flat feed has nowhere to put thirty items'
+      // worth of interleaved narration). Only the user level is dropped; the
+      // subgraph's dev trace still flows to the same sink.
+      const itemCtx = { ...ctx, sink: withoutUserProgress(ctx.sink) }
       const r = await runIteration({
         node,
         // The list is a ref into an upstream node's output, resolved against the
@@ -284,7 +291,7 @@ export async function runNode<TDeps>(
           executeSubgraph(
             node.config.subgraph,
             item,
-            ctx,
+            itemCtx,
             ctx.subStepRecorder
               ? {
                   recorder: ctx.subStepRecorder,

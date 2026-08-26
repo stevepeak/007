@@ -192,6 +192,7 @@ export {
 } from './trigger-registry'
 export {
   createMemorySink,
+  withoutUserProgress,
   type RunAnswerChunk,
   type RunLogEntry,
   type RunLogLevel,

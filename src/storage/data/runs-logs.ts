@@ -73,8 +73,15 @@ export async function replaceNodeLogs(
 // `replaceNodeLogs` still deletes and rewrites the node's whole feed, so the
 // settled row set is authoritative regardless of what the live path did.
 
-/** Deterministic id for a live-appended entry — see the note above. */
-function liveLogId(runId: string, nodeId: string, ordinal: number): string {
+/** Deterministic id for a live-appended entry — see the note above. A string
+ * ordinal names a row whose place in the feed is fixed rather than counted
+ * (`start` / `end`), so a bookend can be rewritten without knowing how many
+ * body lines came between them. */
+function liveLogId(
+  runId: string,
+  nodeId: string,
+  ordinal: number | string,
+): string {
   return `${runId}:${nodeId}:${ordinal}`
 }
 
@@ -88,8 +95,9 @@ export async function appendRunLog(
   input: {
     runId: string
     nodeId: string
-    /** The node's emit counter for this attempt (0-based). */
-    ordinal: number
+    /** The node's emit counter for this attempt (0-based), or a fixed slot name
+     * for a bookend (`start` / `end`). */
+    ordinal: number | string
     entry: WfRunLogRow
   },
 ): Promise<void> {
@@ -119,6 +127,42 @@ export async function appendRunLog(
         ts: row.ts,
       },
     })
+}
+
+/**
+ * Write a node's WHOLE feed as position-keyed upserts — no delete-then-insert.
+ *
+ * The counterpart to {@link replaceNodeLogs}, for the nodes whose lines are
+ * emitted from the orchestrator body rather than from inside a journaled
+ * `step.do`: an iteration (its items ARE its steps) and a durable workflow call.
+ * Those closures re-execute on every replay of the instance, so the same lines
+ * are emitted again after the feed has already been written — and a
+ * delete-then-insert with fresh ids would leave the replay's copy sitting
+ * beside the settled one. Keying every row by its POSITION in the feed makes
+ * the rewrite land on the rows that are already there.
+ *
+ * The trade against `replaceNodeLogs` is deliberate: nothing is removed, so a
+ * pass that emits FEWER lines than the last one leaves the extra tail behind.
+ * For these nodes the feed is a pure function of the list they fanned out over,
+ * so it does not shrink.
+ */
+export async function upsertNodeLogs(
+  db: WfDb,
+  input: {
+    runId: string
+    nodeId: string
+    /** Each row with the slot it occupies — see {@link appendRunLog}. */
+    rows: { ordinal: number | string; entry: WfRunLogRow }[]
+  },
+): Promise<void> {
+  for (const row of input.rows) {
+    await appendRunLog(db, {
+      runId: input.runId,
+      nodeId: input.nodeId,
+      ordinal: row.ordinal,
+      entry: row.entry,
+    })
+  }
 }
 
 /**

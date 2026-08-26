@@ -126,3 +126,36 @@ export function createMemorySink(): StreamSink & {
     },
   }
 }
+
+/**
+ * The same sink with USER-FACING lines removed: `progress` entries are dropped,
+ * every other level (the node bookends, info/thinking/tool/warn/error) passes
+ * through untouched.
+ *
+ * Wrapped around the sink an ITERATION hands its subgraph. There is no surface
+ * that can show a line from inside a loop: the user's feed is one flat list, so
+ * a step that runs thirty times either repeats itself thirty times or
+ * interleaves thirty items' narration into nonsense. Until there is a per-item
+ * surface to show them in, the loop speaks for its body (`runIteration` emits
+ * the author's note and the per-item ticks) and the body stays quiet. The
+ * editor disables "Inform user" on a node inside an iteration for the same
+ * reason; this is the runtime half, and it is what keeps a graph published
+ * before that existed from narrating into the void.
+ *
+ * The DEVELOPER feed is untouched on purpose — the run viewer still gets every
+ * inner node's trace. This mutes who is listening, not what happened.
+ */
+export function withoutUserProgress(sink: StreamSink): StreamSink
+export function withoutUserProgress(
+  sink: StreamSink | undefined,
+): StreamSink | undefined
+export function withoutUserProgress(
+  sink: StreamSink | undefined,
+): StreamSink | undefined {
+  const log = sink?.log
+  if (!sink || !log) return sink
+  return {
+    ...sink,
+    log: (entry) => (entry.level === 'progress' ? undefined : log(entry)),
+  }
+}

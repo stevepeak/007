@@ -3,7 +3,11 @@ import type { RecordStepArgs } from '../engine/run-recorder'
 import type { ExecutableNode } from '../engine/scheduler'
 import type { RunLogEntry } from '../engine/stream-sink'
 import { createWfDb } from '../storage/client'
-import { replaceNodeLogs, type WfRunLogRow } from '../storage/data'
+import {
+  replaceNodeLogs,
+  upsertNodeLogs,
+  type WfRunLogRow,
+} from '../storage/data'
 
 import type { GraphWorkflowEnv } from './graph-workflow'
 import type { RunCtx } from './graph-workflow-dispatch-run-ctx'
@@ -14,6 +18,26 @@ import { DEFAULT_STEP_OPTS } from './graph-workflow-dispatch-step-opts'
 // backend needed them too. Re-exported here so this module stays the one import
 // site for the durable backend's dispatch.
 export { nodeLabel, startEntryOf }
+
+/**
+ * Does this node drive durable steps of its OWN, instead of running inside a
+ * single `run:` step?
+ *
+ * Two do — an iteration (one `step.do` per item) and a workflow call set to
+ * durable execution (spawn + `waitForEvent`) — because `step.do` calls cannot
+ * nest. That makes them the only nodes whose feed is emitted from the
+ * orchestrator body, which re-executes on every replay of the instance rather
+ * than being journaled. Everywhere a node's logs are written, that difference
+ * decides HOW: position-keyed upserts for these, delete-then-insert for the
+ * rest. Exported so the dispatch and the record step can't answer it
+ * differently.
+ */
+export function ownsItsDurableSteps(node: ExecutableNode): boolean {
+  return (
+    node.kind === 'iteration' ||
+    (node.kind === 'workflow' && node.config.calleeExecution === 'durable')
+  )
+}
 
 // Persist a node's full feed (bookends + body) in one idempotent write. Shared
 // by the success + failure paths so every node — even a failed one — leaves a
@@ -26,21 +50,36 @@ async function persistLogs<TDeps, E extends GraphWorkflowEnv>(
   bodyLogs: RunLogEntry[],
   endEntry: RunLogEntry,
 ): Promise<void> {
-  const entries: WfRunLogRow[] = [startEntry, ...bodyLogs, endEntry].map(
-    (e) => ({
-      nodeId: e.nodeId ?? node.id,
-      nodeKind: e.nodeKind ?? node.kind,
-      sequence: e.sequence ?? seq,
-      level: e.level,
-      message: e.message,
-      meta: e.meta ?? null,
-      ts: e.ts ?? Date.now(),
-    }),
-  )
-  await replaceNodeLogs(createWfDb(ctx.env.WF_DB), {
+  const row = (e: RunLogEntry): WfRunLogRow => ({
+    nodeId: e.nodeId ?? node.id,
+    nodeKind: e.nodeKind ?? node.kind,
+    sequence: e.sequence ?? seq,
+    level: e.level,
+    message: e.message,
+    meta: e.meta ?? null,
+    ts: e.ts ?? Date.now(),
+  })
+  const db = createWfDb(ctx.env.WF_DB)
+  if (ownsItsDurableSteps(node)) {
+    // Same rows, written to the SAME slots the live path already used, so this
+    // settles the feed in place instead of stacking a second copy of it beside
+    // what a replay will emit again. `start`/`end` are named slots because the
+    // body's length isn't fixed; the body keeps its emit ordinal.
+    await upsertNodeLogs(db, {
+      runId: ctx.p.workflowRunId,
+      nodeId: node.id,
+      rows: [
+        { ordinal: 'start', entry: row(startEntry) },
+        ...bodyLogs.map((e, i) => ({ ordinal: i, entry: row(e) })),
+        { ordinal: 'end', entry: row(endEntry) },
+      ],
+    })
+    return
+  }
+  await replaceNodeLogs(db, {
     runId: ctx.p.workflowRunId,
     nodeId: node.id,
-    entries,
+    entries: [startEntry, ...bodyLogs, endEntry].map(row),
   })
 }
 
