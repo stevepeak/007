@@ -159,7 +159,18 @@ export function ToolPicker({
               key={t.id}
               className="flex items-center gap-2.5 rounded-md border border-border bg-card p-2"
             >
-              <ToolIcon icon={t.icon} className="size-6 shrink-0" />
+              <span
+                className={cn(
+                  'flex size-7 shrink-0 items-center justify-center overflow-hidden rounded',
+                  toolChip(t.color),
+                )}
+              >
+                <ToolIcon
+                  icon={t.icon}
+                  iconName={t.iconName}
+                  className="size-4"
+                />
+              </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium text-foreground">
                   {t.name}

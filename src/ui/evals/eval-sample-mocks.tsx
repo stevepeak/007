@@ -11,8 +11,10 @@ import {
   sampleFromSchema,
   validateAgainstSchema,
 } from '../autoform/json-schema-provider'
+import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { useAgent, useTools } from '../hooks'
+import { toolChip } from '../tool-appearance'
 import { ToolIcon } from '../tool-icon'
 
 // Per-sample tool fixtures: a pinned output a tool returns under `simulate`, so a
@@ -161,7 +163,14 @@ function AgentToolMocks({
               !validateAgainstSchema(tool.outputSchema, fixtures[toolId]).ok
             return (
               <div key={toolId} className="flex items-start gap-2 px-4 py-3">
-                <ToolIcon icon={tool?.icon} className="mt-0.5 size-5" />
+                <span
+                  className={cn(
+                    'mt-0.5 flex size-5 shrink-0 items-center justify-center overflow-hidden rounded',
+                    toolChip(tool?.color ?? null),
+                  )}
+                >
+                  <ToolIcon icon={tool?.icon} iconName={tool?.iconName} className="size-3.5" />
+                </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm text-neutral-800">
@@ -208,7 +217,14 @@ function AgentToolMocks({
       {editingTool ? (
         <div className="space-y-3 rounded-lg border border-neutral-200 p-4">
           <div className="flex items-center gap-2">
-            <ToolIcon icon={editingTool.icon} className="size-5" />
+            <span
+              className={cn(
+                'flex size-5 shrink-0 items-center justify-center overflow-hidden rounded',
+                toolChip(editingTool.color),
+              )}
+            >
+              <ToolIcon icon={editingTool.icon} iconName={editingTool.iconName} className="size-3.5" />
+            </span>
             <span className="text-sm font-medium text-neutral-800">
               {editingTool.name}
             </span>
@@ -389,7 +405,14 @@ function MockToolPicker({
             onClick={() => onPick(t.id)}
             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-neutral-50"
           >
-            <ToolIcon icon={t.icon} className="size-5" />
+            <span
+              className={cn(
+                'flex size-5 shrink-0 items-center justify-center overflow-hidden rounded',
+                toolChip(t.color),
+              )}
+            >
+              <ToolIcon icon={t.icon} iconName={t.iconName} className="size-3.5" />
+            </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium text-neutral-800">
                 {t.name}

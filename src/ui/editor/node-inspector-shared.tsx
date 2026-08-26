@@ -9,6 +9,7 @@ import type {
 import type { ToolOption, WfWorkflowSummary } from '../../server/protocol'
 import { cn } from '../cn'
 import { RichSelect } from '../rich-select'
+import { toolChip } from '../tool-appearance'
 import { ToolIcon } from '../tool-icon'
 
 export type NodeInspectorProps = {
@@ -122,8 +123,10 @@ export function WorkflowSelect({
   )
 }
 
-// Rich tool picker: shows each tool's brand icon and name (a native <select>
-// can't render the inline-SVG ToolIcon).
+// Rich tool picker: shows each tool's icon and name (a native <select> can't
+// render the inline-SVG ToolIcon). Icon and chip color come from the same
+// `toolChip` + `ToolIcon` pair every other tool surface uses, so a tool looks
+// the same here as on its card, in the node, and in the run log.
 export function ToolSelect({
   tools,
   value,
@@ -143,13 +146,27 @@ export function ToolSelect({
       empty="No tools registered."
       renderValue={(t) => (
         <>
-          <ToolIcon icon={t.icon} className="size-4" />
+          <span
+            className={cn(
+              'flex size-5 shrink-0 items-center justify-center overflow-hidden rounded',
+              toolChip(t.color),
+            )}
+          >
+            <ToolIcon icon={t.icon} iconName={t.iconName} className="size-3.5" />
+          </span>
           <span className="min-w-0 flex-1 truncate">{t.name}</span>
         </>
       )}
       renderOption={(t) => (
         <>
-          <ToolIcon icon={t.icon} className="mt-0.5 size-6" />
+          <span
+            className={cn(
+              'mt-0.5 flex size-6 shrink-0 items-center justify-center overflow-hidden rounded',
+              toolChip(t.color),
+            )}
+          >
+            <ToolIcon icon={t.icon} iconName={t.iconName} className="size-4" />
+          </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium text-foreground">
               {t.name}
