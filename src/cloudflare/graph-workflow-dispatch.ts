@@ -22,7 +22,7 @@ import {
   runIteration,
 } from '../engine/nodes/iteration'
 import { buildCalleeTriggerInput } from '../engine/nodes/workflow'
-import { runNode, type NodeRunResult } from '../engine/run-node'
+import { errorMessage, runNode, type NodeRunResult } from '../engine/run-node'
 import { recordedBranchResult } from '../engine/run-recorder'
 import type { ExecutableNode, ReportResult } from '../engine/scheduler'
 import {
@@ -43,6 +43,7 @@ import {
 } from '../storage/data'
 
 import {
+  assertValidEventType,
   calleeEventType,
   toCalleeWire,
   type CalleeDoneEvent,
@@ -238,6 +239,15 @@ export async function reportToParent<TDeps, E extends GraphWorkflowEnv>(
   }
   const wire = toCalleeWire(payload)
   await stepDo(ctx.step, 'report-to-parent', DEFAULT_STEP_OPTS, async () => {
+    // Check the type before sending. An invalid one is rejected by the platform
+    // and retried on the standard backoff for hours, while the parent shows only
+    // a generic timeout — so this is the one place that can name the real cause,
+    // and retrying it can never help.
+    try {
+      assertValidEventType(sub.eventType, 'Reporting to parent workflow')
+    } catch (err) {
+      throw new NonRetryableError(errorMessage(err))
+    }
     const parent = await ctx.env.GRAPH_WORKFLOW.get(sub.parentInstanceId)
     await parent.sendEvent({ type: sub.eventType, payload: wire })
     return null
