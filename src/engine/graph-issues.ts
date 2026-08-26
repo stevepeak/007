@@ -366,7 +366,9 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
     // edge is not flagged; the generic "nothing downstream" warning above still
     // covers a decision node with no outgoing edges at all.
 
-    // A switch needs an outgoing edge per case plus a 'default' fallback.
+    // A switch needs an outgoing edge per case. The 'else' fallback is
+    // optional — without it an unmatched input just fizzles out, the same as
+    // an unconnected branch arm — so it's only a warning.
     if (node.kind === 'switch') {
       const { missingCases, hasDefault } = switchCoverage(node, out)
       if (missingCases.length > 0) {
@@ -382,8 +384,8 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
       if (!hasDefault) {
         issues.push({
           ...base,
-          severity: 'error',
-          message: `Switch needs a "${SWITCH_DEFAULT_CASE}" (fallback) path.`,
+          severity: 'warning',
+          message: `Switch has no "${SWITCH_DEFAULT_CASE}" (fallback) path — an unmatched input stops here.`,
         })
       }
       // A case the author added but never filled in. It isn't inert — an empty

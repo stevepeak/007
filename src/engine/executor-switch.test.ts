@@ -157,10 +157,29 @@ describe('executor — switch (multi-way routing)', () => {
     expect(result.outputNodeId).toBe('else-out')
   })
 
-  test('rejects a switch missing its else edge', () => {
+  // The 'else' arm is optional: like an unconnected branch arm, an unmatched
+  // input just fizzles out. The editor still warns (graph-issues.ts).
+  test('accepts a switch with no else edge', () => {
     const g = switchGraph()
     g.edges = g.edges.filter((e) => e.id !== 'e-else')
-    expect(() => workflowGraphSchema.parse(g)).toThrow(/else/)
+    expect(() => workflowGraphSchema.parse(g)).not.toThrow()
+  })
+
+  test('an unmatched input with no else edge stops there', async () => {
+    const g = switchGraph()
+    g.edges = g.edges.filter((e) => e.id !== 'e-else')
+    const recorder = createMemoryRunRecorder()
+    const result = await executeWorkflow({
+      graph: g,
+      triggerInput: { kind: 'audio', expected: 'video' },
+      config: switchConfig(),
+      runContext: { subjectId: 'acme', triggerKind: 'go' },
+      recorder,
+    })
+    // No arm is alive, so the run ends with no output rather than erroring.
+    expect(result.outputNodeId).toBeNull()
+    expect(result.output).toBeUndefined()
+    expect(recorder.steps.some((s) => s.nodeId === 'else-tool')).toBe(false)
   })
 
   test('rejects an outgoing edge matching no declared case', () => {

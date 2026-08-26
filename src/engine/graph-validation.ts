@@ -101,9 +101,11 @@ function checkRefBindings(g: GraphShape, ctx: GraphCheckCtx): void {
   }
 }
 
-// Switch nodes: unique, non-reserved case keys; an outgoing edge per case; a
-// single 'else' fallback edge; and no outgoing edge whose condition matches
-// neither a declared case nor 'else'.
+// Switch nodes: unique, non-reserved case keys; an outgoing edge per case; and
+// no outgoing edge whose condition matches neither a declared case nor 'else'.
+// A missing 'else' arm is NOT rejected here — like an unconnected branch arm,
+// an unmatched input simply fizzles out at run time. It stays an author-time
+// warning in graph-issues.ts.
 function checkSwitchNodes(g: GraphShape, ctx: GraphCheckCtx): void {
   for (const n of g.nodes) {
     if (n.kind !== 'switch') continue
@@ -122,17 +124,11 @@ function checkSwitchNodes(g: GraphShape, ctx: GraphCheckCtx): void {
       })
     }
     const outs = g.edges.filter((e) => e.source === n.id)
-    const { missingCases, hasDefault } = switchCoverage(n, outs)
+    const { missingCases } = switchCoverage(n, outs)
     for (const k of new Set(missingCases)) {
       ctx.addIssue({
         code: 'custom',
         message: `Switch node ${n.id} case '${k}' has no outgoing edge.`,
-      })
-    }
-    if (!hasDefault) {
-      ctx.addIssue({
-        code: 'custom',
-        message: `Switch node ${n.id} must have a '${SWITCH_DEFAULT_CASE}' (fallback) outgoing edge.`,
       })
     }
     for (const e of outs) {

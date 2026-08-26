@@ -51,7 +51,7 @@ export function graphShapeFacts(graph: WorkflowGraph): {
 
 /**
  * Switch coverage: the declared case keys with no matching outgoing edge, and
- * whether the required `default` fallback edge exists. `outgoing` is the switch
+ * whether the optional `else` fallback edge exists. `outgoing` is the switch
  * node's own outgoing edges.
  */
 export function switchCoverage(
