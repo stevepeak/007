@@ -5,7 +5,6 @@ import {
   AGENT_COLORS,
   AGENT_ICONS,
   ALL_AGENT_ICON_NAMES,
-  ALL_AGENT_ICONS,
   agentColor,
   agentIcon,
 } from './agent-appearance'
@@ -37,6 +36,9 @@ function searchable(name: string): string {
 const SEARCH_INDEX: { name: string; haystack: string }[] =
   ALL_AGENT_ICON_NAMES.map((name) => ({ name, haystack: searchable(name) }))
 
+// Membership test for a stored icon name, so we never paint a lookup miss.
+const ICON_NAMES = new Set(ALL_AGENT_ICON_NAMES)
+
 export type AppearancePickerProps = {
   /** Currently-stored lucide icon name. */
   icon: string
@@ -63,12 +65,16 @@ export function AppearancePicker({
   const TriggerIcon = agentIcon(icon)
 
   // No query → the curated grid, with the current icon pinned in front when it
-  // isn't one of them (so the selection is always visible on open).
+  // isn't one of them (so the selection is always visible on open). Only pin a
+  // name lucide actually knows: stored icons can be empty (agents created
+  // before appearance existed) or stale after a lucide rename, and pinning one
+  // of those used to paint an `undefined` component and blank the page.
   const results = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) {
       const curated = AGENT_ICONS.map((i) => i.name)
-      return curated.includes(icon) ? curated : [icon, ...curated]
+      const pin = ICON_NAMES.has(icon) && !curated.includes(icon)
+      return pin ? [icon, ...curated] : curated
     }
     const terms = q.split(/\s+/)
     return SEARCH_INDEX.filter((e) =>
@@ -145,7 +151,7 @@ export function AppearancePicker({
             ) : (
               <div className="grid max-h-52 grid-cols-8 gap-1 overflow-y-auto pr-0.5">
                 {shown.map((name) => {
-                  const Icon = ALL_AGENT_ICONS[name]
+                  const Icon = agentIcon(name)
                   const selected = name === icon
                   return (
                     <button

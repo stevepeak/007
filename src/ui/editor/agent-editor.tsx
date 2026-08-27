@@ -74,8 +74,10 @@ export function AgentEditor({
             initialConfig={initialConfig}
             initialName={data.agent.name}
             initialDescription={data.agent.description ?? ''}
-            initialIcon={data.agent.icon ?? AGENT_ICONS[0].name}
-            initialColor={data.agent.color ?? DEFAULT_AGENT_COLOR}
+            // `||`, not `??`: the column holds '' for agents that predate
+            // appearance, and an empty icon name resolves to nothing.
+            initialIcon={data.agent.icon || AGENT_ICONS[0].name}
+            initialColor={data.agent.color || DEFAULT_AGENT_COLOR}
             className={className}
             onPublished={onPublished}
           />
