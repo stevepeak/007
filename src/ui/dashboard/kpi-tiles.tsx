@@ -1,6 +1,6 @@
 import {
-  AlertTriangle,
   Activity,
+  CircleCheck,
   DollarSign,
   Footprints,
   ThumbsDown,
@@ -87,15 +87,24 @@ export function KpiTiles({
   onOpenFeedback: () => void
 }) {
   const { runs, cost, feedback, steps } = data
-  const failureRate = runs.total > 0 ? runs.failed / runs.total : 0
+  const succeeded = Math.max(runs.total - runs.failed, 0)
+  const successRate = runs.total > 0 ? succeeded / runs.total : 0
   // Only color the number when there is something to react to — a permanently
-  // red tile stops meaning anything.
-  const failureAccent =
+  // green tile stops meaning anything, so a clean window stays neutral and only
+  // the runs that DID report an issue tint it.
+  const successAccent =
     runs.failed === 0
       ? undefined
-      : failureRate >= 0.1
+      : successRate <= 0.9
         ? STATUS.critical
         : STATUS.serious
+  // Clean runs per bucket. Series totals are preserved through the "Other" fold,
+  // so summing them is the exact per-bucket run count; sparking the rate instead
+  // would dip to zero on quiet buckets and read as an outage.
+  const cleanPoints = runs.failedPoints.map((failedAt, i) => {
+    const totalAt = runs.series.reduce((sum, s) => sum + (s.points[i] ?? 0), 0)
+    return Math.max(totalAt - failedAt, 0)
+  })
 
   return (
     <div
@@ -114,17 +123,17 @@ export function KpiTiles({
         onClick={onOpenRuns}
       />
       <StatTile
-        label="Failure rate"
-        icon={AlertTriangle}
-        value={runs.total > 0 ? `${(failureRate * 100).toFixed(1)}%` : '—'}
+        label="Success rate"
+        icon={CircleCheck}
+        value={runs.total > 0 ? `${(successRate * 100).toFixed(1)}%` : '—'}
         detail={
           runs.total > 0
-            ? `${formatCount(runs.failed)} of ${formatCount(runs.total)} failed`
+            ? `${formatCount(succeeded)} of ${formatCount(runs.total)} ran clean`
             : 'No runs in this window'
         }
-        accent={failureAccent}
-        spark={runs.failedPoints}
-        sparkColor={failureAccent ?? SPARK_NEUTRAL}
+        accent={successAccent}
+        spark={cleanPoints}
+        sparkColor={SPARK_NEUTRAL}
         onClick={onOpenRuns}
       />
       <StatTile
