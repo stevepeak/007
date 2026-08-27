@@ -18,12 +18,14 @@ import {
 // bindable to an upstream node's output or a literal) and a read-only tree of
 // all data accessible to the node based on the graph.
 
-// Agent (prompt variables → `inputs`), tool (arguments → `args`) and workflow
-// (the callee's trigger payload → `inputs`) nodes carry per-input bindings.
+// Agent (prompt variables → `inputs`), tool (arguments → `args`), workflow (the
+// callee's trigger payload → `inputs`) and text (body variables → `inputs`)
+// nodes carry per-input bindings.
 export function bindingsOf(node: WorkflowNode): Record<string, ArgBinding> {
   if (node.kind === 'agent') return node.config.inputs ?? {}
   if (node.kind === 'tool') return node.config.args ?? {}
   if (node.kind === 'workflow') return node.config.inputs ?? {}
+  if (node.kind === 'text') return node.config.inputs ?? {}
   return {}
 }
 
@@ -40,6 +42,8 @@ export function withBinding(
   if (node.kind === 'tool')
     return { ...node, config: { ...node.config, args: next } }
   if (node.kind === 'workflow')
+    return { ...node, config: { ...node.config, inputs: next } }
+  if (node.kind === 'text')
     return { ...node, config: { ...node.config, inputs: next } }
   return node
 }

@@ -66,7 +66,8 @@ export function NodeInputsPanel({
   if (
     node.kind !== 'agent' &&
     node.kind !== 'tool' &&
-    node.kind !== 'workflow'
+    node.kind !== 'workflow' &&
+    node.kind !== 'text'
   ) {
     return null
   }
@@ -123,7 +124,9 @@ export function NodeInputsPanel({
             ? 'This agent needs no variables.'
             : node.kind === 'workflow'
               ? 'Pick a workflow to call, and publish it, to see what it takes. Its trigger payload is what you map here.'
-              : 'This tool takes no arguments.'}
+              : node.kind === 'text'
+                ? 'This text has no ${variables} yet — add one to the body above and it appears here to map.'
+                : 'This tool takes no arguments.'}
         </p>
       ) : null}
       {requiredInputs.length > 0 || showConversation ? (

@@ -33,8 +33,11 @@ export function useGraphIssues(graph: WorkflowGraph): GraphIssue[] {
       // incoming edge is sequencing, not content, so an unmapped variable is
       // sent to the model verbatim as `${name}`. All of them report as ONE issue
       // naming the tokens and how to bind them; listing each key separately as
-      // well only showed the same gap twice.
-      if (node.kind === 'agent') {
+      // well only showed the same gap twice. A Text node's body variables read
+      // exactly the same way, so they share the message (that node throws rather
+      // than emitting a raw `${name}`, which makes the issue even more worth
+      // fixing before a run).
+      if (node.kind === 'agent' || node.kind === 'text') {
         bindingIssues.push({
           nodeId: node.id,
           nodeLabel: node.label,

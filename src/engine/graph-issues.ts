@@ -108,6 +108,19 @@ function configIssue(node: WorkflowNode): GraphIssue | null {
         }
       }
       return null
+    case 'text':
+      // The body IS the node's behaviour — without one there is nothing to emit,
+      // so this is an error rather than a warning (same call as Transform's
+      // missing expression). Whether every `${token}` in the body is BOUND is
+      // checked in the UI layer alongside the other binding-completeness rules.
+      if (!node.config.body.trim()) {
+        return {
+          ...base,
+          severity: 'error',
+          message: 'No text yet — write the text this step should produce.',
+        }
+      }
+      return null
     case 'transform': {
       // An expression is the node's entire behaviour — without one there is
       // nothing to run, so this is an error rather than a warning.

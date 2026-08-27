@@ -1,6 +1,7 @@
 import {
   agentOutputJsonSchema,
   ancestorIds,
+  inferPromptVariables,
   ITERATION_ITEM_TRIGGER_KIND,
   predecessorIds,
   SWITCH_DEFAULT_CASE,
@@ -348,6 +349,19 @@ export function nodeRequires(node: WorkflowNode, maps: IoMaps): NodeInput[] {
     }
     case 'tool':
       return inputsOfSchema(maps.toolsById.get(node.config.toolId)?.inputSchema)
+    case 'text':
+      // A Text node declares its own inputs: every `${name}` its body mentions.
+      // No catalog is consulted — the body IS the contract — so renaming a token
+      // renames the binding row the moment the author stops typing. Untyped for
+      // the same reason an agent's prompt variables are: whatever is bound gets
+      // stringified, so declaring 'string' would hide every non-string field
+      // from a mapping that works fine.
+      return inferPromptVariables(node.config.body).map((v) => ({
+        key: v,
+        label: v,
+        required: true,
+        type: 'unknown',
+      }))
     case 'workflow':
       // What the CALLEE's trigger takes. Binding none of these is legal and
       // common — `buildCalleeTriggerInput` then passes this node's upstream
@@ -357,7 +371,8 @@ export function nodeRequires(node: WorkflowNode, maps: IoMaps): NodeInput[] {
     // Kinds with nothing to bind. Transform and Passthrough DO carry bindings,
     // but theirs are author-declared (`inputs`/`fields`) rather than a schema
     // the node must satisfy, so they are edited in their own inspector panels
-    // and never appear as required inputs.
+    // and never appear as required inputs. (Text is the exception above: its
+    // body names the variables, so they ARE a contract the node must satisfy.)
     case 'trigger':
     case 'branch':
     case 'switch':
@@ -388,7 +403,7 @@ export function missingRequiredInputs(
       ? (node.config.inputs ?? {})
       : node.kind === 'tool'
         ? (node.config.args ?? {})
-        : node.kind === 'workflow'
+        : node.kind === 'workflow' || node.kind === 'text'
           ? (node.config.inputs ?? {})
           : null
   if (!bindings) return []
@@ -613,6 +628,14 @@ function nodeOutput(
     case 'switch':
       // Routing nodes emit their decision, not a forwarded input.
       return { fields: decisionOutputFields(node), type: 'object' }
+
+    case 'text':
+      // A Text node emits its filled-in body — one string, no fields. Reporting
+      // `string` (rather than falling through to the pass-through resolution) is
+      // what lets a downstream Output bound to a chat trigger's `{ text }`
+      // accept it, and keeps the picker from offering its predecessor's fields
+      // as if this node still carried them.
+      return { fields: [], type: 'string' }
 
     case 'transform':
       // A Transform emits whatever its expression returns, which nothing can know

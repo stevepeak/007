@@ -131,6 +131,16 @@ export const NODE_KIND_SEEDS: { [K in WfNodeKind]: NodeKindSeed<K> } = {
     config: { inputs: {}, expression: '' },
   }),
 
+  // Drops in empty, which reads as a blocking "no text" issue until the author
+  // writes some — deliberate, and for the same reason Transform does it: a node
+  // with an empty body has no behaviour, and quietly emitting '' would hand a
+  // human a blank message.
+  text: () => ({
+    kind: 'text',
+    label: 'Text',
+    config: { body: '', inputs: {} },
+  }),
+
   // A config-less first-to-finish join. The author wires several upstreams into
   // it; the first to complete wins. It reads as a (non-blocking) "needs 2+
   // inputs" warning until at least two feed in.

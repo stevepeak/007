@@ -57,6 +57,7 @@ export {
   type SwitchNode,
   type FeatureRequestNode,
   type PassthroughNode,
+  type TextNode,
   type TransformNode,
   TRANSFORM_OUTPUT_SHAPES,
   type TransformOutputShape,
@@ -262,6 +263,7 @@ export {
   executeTransformNode,
   type TransformNodeResult,
 } from './nodes/transform'
+export { executeTextNode, type TextNodeResult } from './nodes/text'
 export { executeRaceNode, type RaceNodeResult } from './nodes/race'
 export {
   executeAggregateNode,

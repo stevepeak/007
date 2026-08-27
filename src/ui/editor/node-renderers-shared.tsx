@@ -13,6 +13,7 @@ import {
   Shuffle,
   Split,
   StickyNote,
+  Type,
   Workflow,
   Wrench,
   type LucideIcon,
@@ -247,6 +248,11 @@ export const KIND_STYLE: Record<
     icon: Forward,
     accent: 'border-l-lime-400',
     label: 'Passthrough',
+  },
+  text: {
+    icon: Type,
+    accent: 'border-l-blue-400',
+    label: 'Text',
   },
   transform: {
     icon: Shuffle,

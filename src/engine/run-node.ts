@@ -14,6 +14,7 @@ import {
 import { executePassthroughNode } from './nodes/passthrough'
 import { executeRaceNode } from './nodes/race'
 import { executeSwitchNode } from './nodes/switch'
+import { executeTextNode } from './nodes/text'
 import { executeToolNode } from './nodes/tool'
 import { executeTransformNode } from './nodes/transform'
 import {
@@ -251,6 +252,20 @@ export async function runNode<TDeps>(
       const r = await executeTransformNode({
         node,
         input,
+        nodeOutputs: ctx.nodeOutputs,
+        rehydrate,
+      })
+      return {
+        schedulerOutput: r.output,
+        recordedOutput: r.output,
+      }
+    }
+    case 'text': {
+      // Deterministic text composition: fills the node's `${variable}` tokens
+      // from its bindings and emits the finished string. No LLM — this is the
+      // node an author reaches for when the wording is theirs, not a model's.
+      const r = await executeTextNode({
+        node,
         nodeOutputs: ctx.nodeOutputs,
         rehydrate,
       })

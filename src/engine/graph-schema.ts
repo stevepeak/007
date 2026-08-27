@@ -533,6 +533,38 @@ const transformNodeSchema = baseNode.extend({
     .default({ inputs: {}, expression: '' }),
 })
 
+// A Text node writes a block of text. The body is authored Markdown carrying
+// `${variable}` tokens — the SAME grammar an agent's prompt uses — and each
+// token is bound to an upstream value the way an agent's prompt variables are.
+// Its output is the filled-in string, emitted bare.
+//
+// It exists because composing text was, until now, something only an LLM could
+// do in this graph: an author who merely wanted "Dear ${clientName}, we found
+// ${count} conflicts." had to spend a model call on deterministic string
+// assembly, paying latency and nondeterminism for a task with one right answer.
+// Transform can technically concatenate, but a JSONata expression is the wrong
+// surface for prose — the text ends up as string literals inside code, where
+// nobody can read or edit it.
+//
+// Both fields are required in practice: an empty body has no behaviour (like an
+// expressionless Transform), and a `${token}` with no binding fails the run
+// rather than emitting a half-filled sentence to a human.
+const textNodeSchema = baseNode.extend({
+  kind: z.literal('text'),
+  config: z
+    .object({
+      // The text itself, stored as Markdown (the editor authors it rich-text and
+      // serializes, exactly like a prompt body). `${name}` tokens are filled from
+      // `inputs`; everything else is emitted verbatim.
+      body: z.string().default(''),
+      // One entry per `${name}` in the body: a `ref` into an upstream node's
+      // output or a `literal`. Resolved values are coerced to strings (objects
+      // JSON-stringified), matching how an agent fills its prompt variables.
+      inputs: z.record(z.string(), argBindingSchema).default({}),
+    })
+    .default({ body: '', inputs: {} }),
+})
+
 // A Race is a first-to-finish join. Where every other work node fires only once
 // ALL its predecessors complete (the scheduler's `every` rule), a Race fires as
 // soon as the FIRST of its upstream nodes completes (an `any`/`some` rule — the
@@ -706,6 +738,7 @@ export const workflowNodeSchema = z.discriminatedUnion('kind', [
   featureRequestNodeSchema,
   passthroughNodeSchema,
   transformNodeSchema,
+  textNodeSchema,
   raceNodeSchema,
   aggregateNodeSchema,
   iterationNodeSchema,
@@ -729,6 +762,7 @@ export type WorkflowCallNode = z.infer<typeof workflowCallNodeSchema>
 export type FeatureRequestNode = z.infer<typeof featureRequestNodeSchema>
 export type PassthroughNode = z.infer<typeof passthroughNodeSchema>
 export type TransformNode = z.infer<typeof transformNodeSchema>
+export type TextNode = z.infer<typeof textNodeSchema>
 export type RaceNode = z.infer<typeof raceNodeSchema>
 export type AggregateNode = z.infer<typeof aggregateNodeSchema>
 export type NoteNode = z.infer<typeof noteNodeSchema>
@@ -764,6 +798,7 @@ export type WorkflowNode =
   | FeatureRequestNode
   | PassthroughNode
   | TransformNode
+  | TextNode
   | RaceNode
   | AggregateNode
   | IterationNode

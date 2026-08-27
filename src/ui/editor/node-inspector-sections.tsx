@@ -15,6 +15,10 @@ import {
   WorkflowSelect,
   type NodeInspectorProps,
 } from './node-inspector-shared'
+import {
+  PROMPT_EDITOR_COMPACT_HEIGHT,
+  PromptBodyEditor,
+} from './prompt-body-editor'
 
 function triggerModeLabel(triggerKind: string): string {
   if (triggerKind === MANUAL_TRIGGER_KIND) return 'Manually'
@@ -234,6 +238,40 @@ export function AggregateInspector({ node }: NodeInspectorProps) {
       element per upstream, in connection order). Feed that list to a sibling,
       such as an Iteration node, to process the results together.
     </p>
+  )
+}
+
+// The Text inspector. A Text node is the deterministic half of what an agent
+// does: the author writes the wording, `${variables}` pull in values from
+// earlier steps, and the filled-in string is the node's output. Reuses the
+// prompt body editor because the surface is identical — Markdown with variable
+// chips — and an author who has written a prompt already knows this box.
+export function TextInspector({ node, onChange }: NodeInspectorProps) {
+  const { Label } = useWfComponents()
+  if (node.kind !== 'text') return null
+  return (
+    <div className={field}>
+      <Label>Text</Label>
+      <PromptBodyEditor
+        // Remount when the selection moves. The editor seeds its document once
+        // from `initialBody` and owns it from then on, so a reused instance
+        // would keep showing the previously selected node's text.
+        key={node.id}
+        initialBody={node.config.body}
+        minHeightClass={PROMPT_EDITOR_COMPACT_HEIGHT}
+        placeholder={
+          'Write the text… use Markdown to format and ${variable} to pull in a value from an earlier step.'
+        }
+        onChange={(body) =>
+          onChange({ ...node, config: { ...node.config, body } })
+        }
+      />
+      <p className="text-muted-foreground text-xs">
+        Every <code>{'${name}'}</code> you write appears under “Needs” below —
+        link each one to an earlier step’s result. No model runs here, so the
+        same inputs always produce the same text.
+      </p>
+    </div>
   )
 }
 

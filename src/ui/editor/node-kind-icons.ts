@@ -11,6 +11,7 @@ import {
   Split,
   StickyNote,
   Target,
+  Type,
   Workflow,
   Wrench,
   type LucideIcon,
@@ -35,6 +36,7 @@ const NODE_KIND_ICONS: Record<NodeKindIconName, LucideIcon> = {
   Split,
   StickyNote,
   Target,
+  Type,
   Workflow,
   Wrench,
 }

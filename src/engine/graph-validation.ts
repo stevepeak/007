@@ -49,7 +49,7 @@ function checkGraphShape(g: GraphShape, ctx: GraphCheckCtx): void {
   }
 }
 
-// Ref bindings must point at real nodes. Tool `args`, Workflow/Transform
+// Ref bindings must point at real nodes. Tool `args`, Workflow/Transform/Text
 // `inputs`, and the Branch/Output/Transform `source` all share the ArgBinding
 // shape. A binary decision
 // (branch) may still leave one arm unconnected — it "fizzles out" at run time —
@@ -63,7 +63,7 @@ function checkRefBindings(g: GraphShape, ctx: GraphCheckCtx): void {
         ? n.config.args
         : n.kind === 'workflow'
           ? n.config.inputs
-          : n.kind === 'transform'
+          : n.kind === 'transform' || n.kind === 'text'
             ? n.config.inputs
             : null
     if (bindings) {
@@ -73,7 +73,9 @@ function checkRefBindings(g: GraphShape, ctx: GraphCheckCtx): void {
           ? 'Tool'
           : n.kind === 'workflow'
             ? 'Workflow'
-            : 'Transform'
+            : n.kind === 'text'
+              ? 'Text'
+              : 'Transform'
       for (const [argName, binding] of Object.entries(bindings)) {
         if (binding.kind === 'ref' && !ids.has(binding.nodeId)) {
           ctx.addIssue({

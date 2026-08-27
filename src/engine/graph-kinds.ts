@@ -36,6 +36,7 @@ export type NodeKindIconName =
   | 'Split'
   | 'StickyNote'
   | 'Target'
+  | 'Type'
   | 'Workflow'
   | 'Wrench'
 
@@ -103,6 +104,18 @@ const NODE_KINDS = {
     palette: {
       category: 'Steps',
       description: 'Direct call to a registered tool — no LLM in the loop.',
+    },
+  },
+  text: {
+    label: 'Text',
+    icon: 'Type',
+    timeout: 'default',
+    bookend: false,
+    decision: false,
+    palette: {
+      category: 'Steps',
+      description:
+        'Write a block of text, filling in ${values} from earlier steps.',
     },
   },
   branch: {

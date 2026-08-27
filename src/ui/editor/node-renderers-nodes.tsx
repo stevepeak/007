@@ -217,6 +217,22 @@ export const TransformNodeRenderer = defineNode({
   },
 })
 
+// A Text node: deterministic text composition. One or many upstreams wire into
+// its target handle (sequencing only — the content comes from its bindings); the
+// filled-in string flows out the source handle. The subtitle previews the text
+// itself, which is what a reader scanning the canvas wants: the wording IS the
+// configuration here, unlike an agent card where the interesting fact is which
+// agent it points at.
+export const TextNodeRenderer = defineNode({
+  kind: 'text',
+  subtitle: (data) => {
+    const body = data.config.body.trim()
+    if (!body) return 'No text yet'
+    const oneLine = body.replaceAll(/\s+/g, ' ')
+    return oneLine.length > 56 ? `${oneLine.slice(0, 55)}…` : oneLine
+  },
+})
+
 // A Race node: a first-to-finish join. Many upstreams wire into its single target
 // handle; whichever finishes first wins and flows out the source handle.
 export const RaceNodeRenderer = defineNode({
