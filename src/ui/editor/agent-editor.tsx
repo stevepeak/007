@@ -232,7 +232,7 @@ function AgentEditorInner({
                   config={draft.config}
                   initialConfig={initialConfig}
                   zodSource={draft.zodSource}
-                  setZodSource={draft.setZodSource}
+                  editZodSource={draft.editZodSource}
                   patch={draft.patch}
                   registerSetBody={draft.registerSetBody}
                   registerSetUserPrompt={draft.registerSetUserPrompt}

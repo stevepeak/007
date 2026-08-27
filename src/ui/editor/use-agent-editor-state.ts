@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { zodSourceFromJsonSchema, type AgentConfig } from '../../engine'
+import {
+  zodSourceFromJsonSchema,
+  type AgentConfig,
+  type AgentOutput,
+} from '../../engine'
 import { useWfClient } from '../context'
 import {
   useAgentVersions,
@@ -107,10 +111,17 @@ export function useAgentMeta({
 //
 // Discrete picks (a model, a tool) get no rule — each is its own edit.
 function coalesceConfigEdit(
-  _prev: AgentDraftState,
-  _next: AgentDraftState,
+  prev: AgentDraftState,
+  next: AgentDraftState,
   label: string,
 ): CoalesceRule {
+  // Schema typing gets its own key rather than the label's. Most keystrokes
+  // leave the source uncompilable, so the config doesn't move and the label
+  // flips between "Edited agent" and "Edited expected output" mid-word — two
+  // keys, so nothing would ever merge and one schema would fill the stack.
+  if (prev.zodSource !== next.zodSource) {
+    return { key: 'output-schema-source', windowMs: 600 }
+  }
   return label.startsWith('Edited') ? { key: label, windowMs: 600 } : null
 }
 
@@ -213,9 +224,22 @@ export function useAgentDraft({
   }
 
   // Source keystrokes ride the same stack as the schema they compile to, so one
-  // undo moves both. They coalesce as typing, not as a config field change.
-  function setZodSource(source: string) {
-    history.record({ ...history.state, zodSource: source })
+  // undo moves both — and both land in ONE record. Recording the text and then
+  // the schema separately meant the second call spread a `history.state` read
+  // during the same render, i.e. the value from BEFORE the keystroke, putting
+  // the old source back every time the author typed. They coalesce as typing,
+  // not as a config field change.
+  function editZodSource({
+    source,
+    output,
+  }: {
+    source: string
+    output?: AgentOutput
+  }) {
+    history.record({
+      config: output ? { ...config, output } : config,
+      zodSource: source,
+    })
   }
 
   /** Take a playground run's frozen config — as an undoable entry, not a jump. */
@@ -281,7 +305,7 @@ export function useAgentDraft({
     config,
     patch,
     zodSource,
-    setZodSource,
+    editZodSource,
     dirty: history.dirty,
     // The change log for this editing session, newest last.
     snapshots: history.entries,

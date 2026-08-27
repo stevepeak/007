@@ -8,7 +8,7 @@ import {
   Wrench,
 } from 'lucide-react'
 
-import type { AgentConfig } from '../../engine'
+import type { AgentConfig, AgentOutput } from '../../engine'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 
@@ -50,7 +50,7 @@ export function AgentConfigPanel({
   initialConfig,
   patch,
   zodSource,
-  setZodSource,
+  editZodSource,
   registerSetBody,
   registerSetUserPrompt,
 }: {
@@ -64,7 +64,8 @@ export function AgentConfigPanel({
   patch: (next: Partial<AgentConfig>) => void
   /** The output schema's Zod source, held upstream so undo can restore it. */
   zodSource: string
-  setZodSource: (source: string) => void
+  /** One edit carries both halves — see `AgentOutputEditor`'s `onSourceEdit`. */
+  editZodSource: (edit: { source: string; output?: AgentOutput }) => void
   registerSetBody: (set: (body: string) => void) => void
   registerSetUserPrompt: (set: (body: string) => void) => void
 }) {
@@ -211,7 +212,7 @@ export function AgentConfigPanel({
             structuredDisabledReason={`${selectedModel?.label ?? 'The selected model'} doesn’t support structured output — only a Text result is available.`}
             copilotContext={schemaCopilotContext}
             source={zodSource}
-            onSourceEdit={setZodSource}
+            onSourceEdit={editZodSource}
           />
         </EditorSection>
 

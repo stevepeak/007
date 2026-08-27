@@ -104,7 +104,16 @@ export type AgentOutputEditorProps = {
    * showing the old text.
    */
   source?: string
-  onSourceEdit?: (source: string) => void
+  /**
+   * One keystroke is ONE edit: the text and the schema it compiles to arrive
+   * together. Reporting them as two separate calls is what broke this editor —
+   * a caller holding both in a single snapshot recorded the source, then
+   * recorded the schema on top of the pre-keystroke snapshot, reverting the
+   * source it had just been given. Nothing typed ever appeared in the box.
+   *
+   * `output` is absent when only the text moved (a reformat on blur).
+   */
+  onSourceEdit?: (edit: { source: string; output?: AgentOutput }) => void
 }
 
 export function AgentOutputEditor({
@@ -127,9 +136,6 @@ export function AgentOutputEditor({
   )
   const controlled = controlledSource !== undefined
   const source = controlled ? controlledSource : localSource
-  const setSource = controlled
-    ? (next: string) => onSourceEdit?.(next)
-    : setLocalSource
 
   // Only compile once there's actually a source to compile. When the source is
   // empty (e.g. a schema authored in code, with no round-trip source), stay
@@ -157,16 +163,22 @@ export function AgentOutputEditor({
   }
 
   function onSourceChange(next: string) {
-    setSource(next)
     const c = compileZodSource(next)
-    onChange({
+    // While the source doesn't compile, hold the schema at its last-good value
+    // so a half-typed draft is still saveable.
+    const output: AgentOutput = {
       kind: 'object',
       schema: c.ok
         ? c.schema
         : value.kind === 'object'
           ? value.schema
           : EMPTY_SCHEMA,
-    })
+    }
+    if (controlled) onSourceEdit?.({ source: next, output })
+    else {
+      setLocalSource(next)
+      onChange(output)
+    }
   }
 
   // Reformat on blur ("commit"), but only when the source is valid — never
@@ -174,7 +186,11 @@ export function AgentOutputEditor({
   function formatSource() {
     if (!source.trim() || !compileZodSource(source).ok) return
     const formatted = formatZodSource(source)
-    if (formatted !== source) setSource(formatted)
+    if (formatted === source) return
+    // Only the text moves — formatting a compiling source can't change what it
+    // compiles to, so there's no schema to send with it.
+    if (controlled) onSourceEdit?.({ source: formatted })
+    else setLocalSource(formatted)
   }
 
   // Hand the Copilot the agent's own context and let it ask the author what the
