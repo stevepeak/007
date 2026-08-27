@@ -76,6 +76,8 @@ export function runSummary(
     parentNodeId?: string | null
     /** The stored item index — `-1` is the "not an iteration item" sentinel. */
     itemIndex?: number | null
+    /** The parent run's workflow name, when the caller resolved one. */
+    parentWorkflowName?: string | null
     /** Totals across everything this run spawned; omitted when it spawned none. */
     tree?: WfRunTreeTotals | null
   },
@@ -113,6 +115,7 @@ export function runSummary(
             // wire shape reads as "not one of several items".
             itemIndex:
               r.itemIndex == null || r.itemIndex < 0 ? null : r.itemIndex,
+            workflowName: r.parentWorkflowName ?? null,
           }
         : null,
     // Only the reads that resolved a tree pass one — a child-run row, for

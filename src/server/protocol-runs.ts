@@ -35,8 +35,17 @@ export type WfRunSummary = {
    * for a workflow-call callee (one callee per node, so it has no position).
    * This is the only link that survives the parent finishing — see
    * `wf_run.parent_run_id`.
+   *
+   * `workflowName` names the parent's workflow, so a child reached by direct
+   * link can say where "up" goes. Only the single-run inspector resolves it —
+   * the list reads pay for no extra join and leave it null.
    */
-  parent: { runId: string; nodeId: string; itemIndex: number | null } | null
+  parent: {
+    runId: string
+    nodeId: string
+    itemIndex: number | null
+    workflowName: string | null
+  } | null
   /**
    * What this run cost INCLUDING every run it spawned, or null when it spawned
    * none — in which case {@link costUsd} above already is the whole story.

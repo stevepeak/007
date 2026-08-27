@@ -6,10 +6,20 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import { and, eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 
+import type { WorkflowGraph } from '../../engine/graph'
 import type { WfDb } from '../client'
-import { wfRun, wfRunLog, wfRunStep, wfSchema } from '../schema'
+import {
+  TOP_LEVEL_ITEM_INDEX,
+  wfRun,
+  wfRunLog,
+  wfRunStep,
+  wfSchema,
+  wfWorkflow,
+  wfWorkflowVersion,
+} from '../schema'
 
 import {
+  executedGraph,
   getRun,
   getRunForGrading,
   getRunLastActivityAt,
@@ -331,5 +341,187 @@ describe('getRunForGrading', () => {
 
   test('returns null for an unknown run', async () => {
     expect(await getRunForGrading(db, 'nope')).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The graph a run actually executed
+// ---------------------------------------------------------------------------
+//
+// A durable iteration item is spawned against its PARENT's version id plus the
+// container's node id, and the engine narrows the subgraph back out before it
+// walks anything. The inspector has to narrow the same way or the item's viewer
+// renders a graph the item never touched.
+
+function node(id: string, kind: string, config: unknown = {}) {
+  return {
+    id,
+    kind,
+    label: id,
+    position: { x: 0, y: 0 },
+    informUser: { mode: 'off' },
+    config,
+  }
+}
+
+const SUBGRAPH: WorkflowGraph = {
+  version: 1,
+  nodes: [
+    node('item', 'trigger', { triggerKind: 'iteration_item' }),
+    node('detail', 'agent', {}),
+  ],
+  edges: [{ id: 'e', source: 'item', target: 'detail', condition: null }],
+} as unknown as WorkflowGraph
+
+function parentGraph(containerKind = 'iteration'): WorkflowGraph {
+  return {
+    version: 1,
+    nodes: [
+      node('start', 'trigger', { triggerKind: 'manual' }),
+      node(
+        'per-recipe',
+        containerKind,
+        containerKind === 'iteration'
+          ? {
+              concurrency: 4,
+              stopOnError: false,
+              itemExecution: 'durable',
+              subgraph: SUBGRAPH,
+            }
+          : {},
+      ),
+    ],
+    edges: [{ id: 'e', source: 'start', target: 'per-recipe', condition: null }],
+  } as unknown as WorkflowGraph
+}
+
+describe('executedGraph', () => {
+  test('an iteration item gets the container\'s subgraph', () => {
+    const graph = executedGraph(parentGraph(), {
+      nodeId: 'per-recipe',
+      itemIndex: 3,
+    })
+
+    expect(graph.nodes.map((n) => n.id)).toEqual(['item', 'detail'])
+  })
+
+  test('a top-level run gets its version\'s own graph', () => {
+    const full = parentGraph()
+
+    expect(executedGraph(full, null)).toBe(full)
+  })
+
+  test('a workflow-call callee is never narrowed, whatever its node id', () => {
+    // The collision guard. A durable callee ALSO carries a `parent_node_id`,
+    // but it runs the callee's own version — that id addresses a node in the
+    // PARENT's graph, and narrowing on it alone would hand back a subgraph
+    // belonging to a workflow this run never entered. Only a real item index
+    // separates the two cases, so the id is deliberately made to match here.
+    const callee = parentGraph()
+
+    const graph = executedGraph(callee, {
+      nodeId: 'per-recipe',
+      itemIndex: TOP_LEVEL_ITEM_INDEX,
+    })
+
+    expect(graph).toBe(callee)
+  })
+
+  test('a container edited out of the version leaves the graph alone', () => {
+    // Not thrown on: the run is historical and still worth inspecting with
+    // whatever graph the version does have.
+    const full = parentGraph()
+
+    expect(executedGraph(full, { nodeId: 'gone', itemIndex: 0 })).toBe(full)
+  })
+
+  test('a parent node that is not an iteration leaves the graph alone', () => {
+    const full = parentGraph('workflow')
+
+    expect(executedGraph(full, { nodeId: 'per-recipe', itemIndex: 0 })).toBe(
+      full,
+    )
+  })
+})
+
+describe('getRun for a durable iteration item', () => {
+  let db: WfDb
+
+  beforeEach(async () => {
+    db = freshDb()
+    await db.insert(wfWorkflow).values({ id: 'wf-1', name: 'Ingest document' })
+    await db.insert(wfWorkflowVersion).values({
+      id: 'ver-1',
+      workflowId: 'wf-1',
+      versionNumber: 2,
+      graph: parentGraph(),
+    })
+  })
+
+  test('the viewer gets the subgraph the item ran, not the parent workflow', async () => {
+    await addRun(db, { parentRunId: 'parent-1', parentNodeId: 'per-recipe', itemIndex: 29 })
+    // Recorded exactly as the durable backend writes them: subgraph node ids,
+    // at the TOP level of the item's own run.
+    await addStep(db, { nodeId: 'item', nodeKind: 'trigger', sequence: 0 })
+    await addStep(db, { nodeId: 'detail', sequence: 1 })
+
+    const result = await getRun(db, RUN)
+
+    // The invariant that was broken: every step the item recorded addresses a
+    // node the viewer can actually show. Handed the parent's graph, not one of
+    // them did — so the canvas dimmed every node to `not-run` and the nodes
+    // that HAD run were unreachable inside a container.
+    const ids = new Set(result!.graph!.nodes.map((n) => n.id))
+    for (const step of result!.steps) expect(ids.has(step.nodeId)).toBe(true)
+    expect(result!.graph!.nodes).toHaveLength(2)
+  })
+
+  test('the version block still names the parent workflow', async () => {
+    // Narrowing the graph must not rename the run: an item IS a run of this
+    // workflow version, and the header links to it.
+    await addRun(db, { parentRunId: 'parent-1', parentNodeId: 'per-recipe', itemIndex: 0 })
+
+    const result = await getRun(db, RUN)
+
+    expect(result?.workflowName).toBe('Ingest document')
+    expect(result?.versionNumber).toBe(2)
+  })
+
+  test('a top-level run of the same version keeps the whole graph', async () => {
+    await addRun(db)
+
+    const result = await getRun(db, RUN)
+
+    expect(result!.graph!.nodes.map((n) => n.id)).toEqual([
+      'start',
+      'per-recipe',
+    ])
+  })
+
+  test('a child names the workflow its parent belongs to', async () => {
+    // What the breadcrumb reads. Resolved from the PARENT's version, because a
+    // durable callee's parent runs a different workflow from the child.
+    await db.insert(wfWorkflow).values({ id: 'wf-2', name: 'Drop intake' })
+    await db.insert(wfWorkflowVersion).values({
+      id: 'ver-2',
+      workflowId: 'wf-2',
+      versionNumber: 1,
+      graph: parentGraph(),
+    })
+    await db.insert(wfRun).values({
+      id: 'parent-1',
+      workflowVersionId: 'ver-2',
+      triggerKind: 'manual',
+      status: 'completed',
+    })
+    await addRun(db, { parentRunId: 'parent-1', parentNodeId: 'per-recipe', itemIndex: 1 })
+
+    expect((await getRun(db, RUN))?.parentWorkflowName).toBe('Drop intake')
+  })
+
+  test('a top-level run resolves no parent name and pays for no lookup', async () => {
+    await addRun(db)
+
+    expect((await getRun(db, RUN))?.parentWorkflowName).toBeNull()
   })
 })

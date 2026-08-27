@@ -159,6 +159,7 @@ export function buildRunHandlers<TDeps>(
               totalTokens: result.totalTokens,
               costUsd: result.costUsd,
               tree: result.tree,
+              parentWorkflowName: result.parentWorkflowName,
             },
             opts.sentryTraceUrl,
           ),

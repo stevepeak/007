@@ -44,14 +44,25 @@ function triggerLabel(kind: string): string {
   return TRIGGER_LABELS[kind] ?? kind.charAt(0).toUpperCase() + kind.slice(1)
 }
 
-/** How a child run names the run it came from. An iteration item knows its
- *  position; a workflow-call callee has none. */
-function parentCrumbLabel(parent: {
-  itemIndex: number | null
-}): string {
-  return parent.itemIndex == null
-    ? 'Calling run'
-    : `Item ${parent.itemIndex + 1} of`
+/**
+ * How a child run names its position in the parent's fan-out.
+ *
+ * `total` is the sibling count once it has loaded — a durable iteration spawns
+ * one run per item, so the number of children IS the number of items. Null
+ * until then, and the label degrades to the position alone rather than
+ * rendering a placeholder total that would be wrong for a moment.
+ *
+ * Returns null for a workflow-call callee: one callee per node means there is
+ * no position, and "Item 1 of 1" would invent a fan-out that never happened.
+ */
+function itemCrumbLabel(
+  itemIndex: number | null,
+  total: number | null,
+): string | null {
+  if (itemIndex == null) return null
+  return total != null && total > 0
+    ? `Item ${itemIndex + 1} of ${total}`
+    : `Item ${itemIndex + 1}`
 }
 
 // Coarse "N units ago" phrasing for the run's breadcrumb label.
@@ -111,6 +122,12 @@ export function RunPage({
   )
   const { data: childRuns } = useChildRuns(runId, {
     enabled: spawnsChildren,
+    live: isRunLive(data?.run.status ?? ''),
+  })
+  // The runs this one's PARENT spawned — this run's siblings. Same query key as
+  // the parent's own child list, so arriving here from the parent's dock is a
+  // cache hit rather than a second fetch. Only ever asked for by a child run.
+  const { data: siblingRuns } = useChildRuns(data?.run.parent?.runId ?? null, {
     live: isRunLive(data?.run.status ?? ''),
   })
   const retry = useRetryRun()
@@ -193,6 +210,9 @@ export function RunPage({
       {(data) => {
         const { run } = data
         const live = isRunLive(run.status)
+        const itemCrumb = run.parent
+          ? itemCrumbLabel(run.parent.itemIndex, siblingRuns?.length ?? null)
+          : null
         const selection = resolveRunSelection({
           graph: data.graph,
           steps: data.steps,
@@ -213,12 +233,18 @@ export function RunPage({
               // a child's own trace says nothing about who spawned it.
               ...(run.parent
                 ? [
+                    // Named, and pointing at the parent RUN. "Item 30 of 32" on
+                    // its own says which fragment this is but not what it is a
+                    // fragment OF, and a durable callee runs a different
+                    // workflow from its parent — so the name has to come from
+                    // the parent rather than from this run.
                     {
-                      label: parentCrumbLabel(run.parent),
+                      label: run.parent.workflowName ?? 'Parent run',
                       to: `runs/${run.parent.runId}`,
                     },
                   ]
                 : []),
+              ...(itemCrumb ? [{ label: itemCrumb }] : []),
               {
                 label: (
                   <>
@@ -250,6 +276,7 @@ export function RunPage({
                 }
                 retryPending={retry.isPending}
                 onRetry={handleRetry}
+                siblings={siblingRuns}
               />
             }
           >

@@ -1,8 +1,10 @@
 import { and, asc, desc, eq, getTableColumns, isNull, sql } from 'drizzle-orm'
 
+import type { WorkflowGraph } from '../../engine/graph'
 import type { WfDb } from '../client'
 import { stepCost } from '../cost'
 import {
+  TOP_LEVEL_ITEM_INDEX,
   wfRun,
   wfRunLog,
   wfRunStep,
@@ -131,6 +133,45 @@ export type GetRunOptions = {
  */
 const stepCursor = sql<number>`wf_run_step.rowid`
 
+/**
+ * The graph a run actually EXECUTED — which, for a durable iteration item, is
+ * not its version's graph.
+ *
+ * An item run is spawned against its PARENT's `workflowVersionId` plus the
+ * container's node id, because an iteration's subgraph is not a published
+ * entity and has no version row of its own (see `iterationSubgraphOf`). The
+ * engine narrows it back out at `load-graph` and walks the subgraph; the item's
+ * steps are therefore recorded against SUBGRAPH node ids, at the top level of
+ * their own run.
+ *
+ * The inspector has to narrow identically, and used to hand back the version
+ * row verbatim. That put the parent's whole workflow on the item's canvas: not
+ * one of its top-level nodes had a step, so every one of them dimmed to
+ * `not-run`, the nodes that DID run were buried inside a container the viewer
+ * had no reason to open, and the activity feed named the parent's nodes rather
+ * than the item's.
+ *
+ * Narrowing needs both halves of the parent link, not just the node id. A
+ * durable workflow-CALL child also carries a `parent_node_id`, but it runs the
+ * callee's own version — that node id belongs to a different graph, and a
+ * same-named node in the callee's would otherwise narrow a run to a subgraph it
+ * never executed. Only an item carries a real `item_index`, so the two cases
+ * stay distinguishable no matter what the ids collide on.
+ */
+export function executedGraph(
+  graph: WorkflowGraph,
+  parent: { nodeId: string | null; itemIndex: number | null } | null,
+): WorkflowGraph {
+  if (!parent?.nodeId) return graph
+  if (parent.itemIndex == null || parent.itemIndex === TOP_LEVEL_ITEM_INDEX) {
+    return graph
+  }
+  const container = graph.nodes.find((n) => n.id === parent.nodeId)
+  // Unchanged rather than thrown on: a run whose container has since been
+  // edited out of a version is still worth inspecting with the graph we have.
+  return container?.kind === 'iteration' ? container.config.subgraph : graph
+}
+
 /** The run-inspector load shape: run, ordered steps, the version's graph. */
 export async function getRun(
   db: WfDb,
@@ -148,7 +189,8 @@ export async function getRun(
   // The version and the workflow it belongs to are a single join rather than a
   // second sequential round trip — the name lookup used to wait on the version
   // row purely to read its `workflowId`.
-  const [rawSteps, priceMap, logRead, version, childCounts] = await Promise.all([
+  const [rawSteps, priceMap, logRead, version, childCounts, parentWorkflowName] =
+    await Promise.all([
     db
       .select({ ...getTableColumns(wfRunStep), cursor: stepCursor })
       .from(wfRunStep)
@@ -179,6 +221,24 @@ export async function getRun(
     // tells us whether this run spawned anything, so the roll-up below is only
     // paid for by the runs that have a tree to roll up.
     countChildRuns(db, [runId]),
+    // What to CALL the run this one came from. A child is a fragment of
+    // something bigger and its viewer is reachable by direct link, so the way
+    // back up has to name where it goes — and a durable callee runs a different
+    // workflow from its parent, so the child's own name cannot answer it. Only
+    // read for a run that has a parent: every top-level run pays nothing.
+    run.parentRunId
+      ? db
+          .select({ workflowName: wfWorkflow.name })
+          .from(wfRun)
+          .innerJoin(
+            wfWorkflowVersion,
+            eq(wfRun.workflowVersionId, wfWorkflowVersion.id),
+          )
+          .innerJoin(wfWorkflow, eq(wfWorkflowVersion.workflowId, wfWorkflow.id))
+          .where(eq(wfRun.id, run.parentRunId))
+          .limit(1)
+          .then((rows) => rows[0]?.workflowName ?? null)
+      : null,
   ])
   let costUsd: number | null = null
   let totalTokens: number | null = null
@@ -218,7 +278,13 @@ export async function getRun(
     logs: logRead.rows,
     /** True when the feed outgrew the read cap and its oldest entries are gone. */
     logsTruncated: logRead.truncated,
-    graph: version?.graph != null ? parseStoredGraph(version.graph) : null,
+    graph:
+      version?.graph != null
+        ? executedGraph(parseStoredGraph(version.graph), {
+            nodeId: run.parentNodeId,
+            itemIndex: run.itemIndex,
+          })
+        : null,
     versionNumber: version?.versionNumber ?? null,
     workflowId: version?.workflowId ?? null,
     workflowName: version?.workflowName ?? null,
@@ -226,6 +292,8 @@ export async function getRun(
     workflowVersionId: run.workflowVersionId,
     /** True when the four version-derived fields were deliberately not read. */
     versionOmitted,
+    /** The workflow the PARENT run belongs to; null for a top-level run. */
+    parentWorkflowName,
     costUsd,
     totalTokens,
     tree,

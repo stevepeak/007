@@ -502,7 +502,7 @@ describe('buildActivityTree — durable items and callees (NEW-177)', () => {
       costUsd: null,
       sentryTraceId: null,
       sentryTraceUrl: null,
-      parent: { runId: 'parent', nodeId, itemIndex },
+      parent: { runId: 'parent', nodeId, itemIndex, workflowName: null },
       tree: null,
       ...over,
     }
