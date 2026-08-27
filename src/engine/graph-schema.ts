@@ -116,6 +116,30 @@ export type IterationItemExecution = z.infer<
 //     publish backfill catches everything else), so it is deliberately permissive:
 //     it exists to stop a runaway, not to retroactively fail a workflow that has
 //     been looping over 300 rows every night for months.
+//
+// WHERE THE DURABLE CEILING COMES FROM (NEW-178). It was first written for a
+// path that did not exist, so it is worth stating what it is actually bounded
+// by now that the path does. Against Cloudflare's published Workflows limits:
+//
+//   • Concurrent instances (50,000 paid / 100 free) — NOT the binding limit,
+//     and not for the reason it looks like. A durable fan-out never has more
+//     than `concurrency` children running at once (≤ 20, windowed by the item
+//     pool, NEW-174), and the parent spends the whole fan-out parked in
+//     `waitForEvent`, which Cloudflare counts as "waiting" rather than
+//     "running". A 1000-item loop therefore contributes ~20 running instances.
+//   • Instance creation rate (100/s per workflow) — same story: item starts are
+//     gated by the same pool, so the ceiling here cannot outrun it.
+//   • Steps per instance (10,000 paid / 1,024 free) — THIS is the binding one.
+//     Each durable item costs the PARENT two steps (`spawn:` + `await:`; see
+//     `step-counter.ts`), so 1000 items is ~2,000 steps on top of the run
+//     envelope and the top-level nodes. Comfortable on paid; a free-plan
+//     account would blow its 1,024-step limit at roughly 500 items.
+//
+// So 1000 stands, and what actually stops an author long before it is cost and
+// wall clock: at ~$0.05 and ~100s per item on the ingest subgraph, a full-width
+// durable loop is tens of dollars and hours of elapsed time. That is a judgement
+// for the workflow's own `maxItems` — the shipped ingest workflows sit at 60,
+// twice the largest document anyone has actually uploaded (29 recipes).
 export const ITERATION_MAX_ITEMS_CEILING: Record<
   IterationItemExecution,
   number

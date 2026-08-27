@@ -3,7 +3,7 @@
 // resume support. Pure functions over a `WfDb` handle.
 //
 // This is a thin re-export barrel. The implementation lives in cohesive sibling
-// modules (`runs-lifecycle`, `runs-logs`, `runs-cost`, `runs-list`,
+// modules (`runs-lifecycle`, `runs-logs`, `runs-cost`, `runs-children`, `runs-list`,
 // `runs-agents`, `runs-inspector`, `runs-resume`, `runs-purge`, `runs-note`).
 // Import from `./runs` as before.
 
@@ -11,7 +11,10 @@ export * from './runs-lifecycle'
 export * from './runs-note'
 export * from './runs-purge'
 export * from './runs-logs'
+export * from './runs-usage'
 export * from './runs-cost'
+export * from './runs-children'
+export * from './runs-rollup'
 export * from './runs-list'
 export * from './runs-agents'
 export * from './runs-inspector'

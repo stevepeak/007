@@ -1,4 +1,8 @@
-import type { WfRunLogDTO, WfRunStepDTO } from '../server/protocol'
+import type {
+  WfRunLogDTO,
+  WfRunStepDTO,
+  WfRunSummary,
+} from '../server/protocol'
 
 // Indexing a run's raw steps and logs into the lookups the tree builder walks.
 // Split out because it is the one part of `buildActivityTree` that answers
@@ -14,6 +18,16 @@ export type RunActivityIndex = {
   topSteps: Map<string, WfRunStepDTO>
   /** containerNodeId → every step recorded beneath it (iteration items, sub-agents). */
   childSteps: Map<string, WfRunStepDTO[]>
+  /**
+   * nodeId → the child RUNS that node spawned, ordered by item index.
+   *
+   * The durable counterpart of `childSteps`. An inline iteration item records
+   * its inner nodes as steps on THIS run; a durable one runs as its own
+   * workflow instance, so its nodes land on that instance's run and the only
+   * thing the parent holds is the link. Same shape in the tree, different
+   * source — which is exactly what the two maps are for.
+   */
+  childRuns: Map<string, WfRunSummary[]>
   /** nodeId → its feed lines, oldest first. Bookends are excluded. */
   logsByNode: Map<string, WfRunLogDTO[]>
   /** A node's wall-clock window, or undefined if it never closed. */
@@ -23,6 +37,7 @@ export type RunActivityIndex = {
 export function indexRunActivity(
   steps: WfRunStepDTO[],
   logs: WfRunLogDTO[],
+  runs: WfRunSummary[] = [],
 ): RunActivityIndex {
   // Latest top-level step per node + children by container.
   const topSteps = new Map<string, WfRunStepDTO>()
@@ -36,6 +51,17 @@ export function indexRunActivity(
       arr.push(s)
       childSteps.set(s.parentNodeId, arr)
     }
+  }
+
+  // Child runs by the node that spawned them. Already ordered by item index
+  // server-side (`listChildRuns`), so grouping preserves it.
+  const childRuns = new Map<string, WfRunSummary[]>()
+  for (const r of runs) {
+    const nodeId = r.parent?.nodeId
+    if (!nodeId) continue
+    const arr = childRuns.get(nodeId) ?? []
+    arr.push(r)
+    childRuns.set(nodeId, arr)
   }
 
   // Logs by node: the bookends carry TIMING, everything else is a leaf line.
@@ -61,6 +87,7 @@ export function indexRunActivity(
   return {
     topSteps,
     childSteps,
+    childRuns,
     logsByNode,
     // Only a CLOSED window counts: a node that started and never finished has
     // no duration to report, and pairing a start with `now` would make every

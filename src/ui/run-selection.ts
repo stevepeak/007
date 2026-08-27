@@ -22,6 +22,32 @@ export function isRunLive(status: string): boolean {
   return LIVE_RUN_STATUSES.has(status)
 }
 
+/**
+ * Could a run of this graph have spawned child RUNS?
+ *
+ * True for a durable iteration (one child instance per item) or a durable
+ * workflow-call (one child instance for the callee). Both `itemExecution` and
+ * `calleeExecution` default to `inline`, in which case the inner work is
+ * recorded as steps on this run and there is nothing to fetch.
+ *
+ * The point is to keep the child-runs query off the overwhelming majority of
+ * runs, which can't have any. A NULL graph answers true: the version row is
+ * gone, so nothing here can rule children out, and a run whose children are
+ * real must not lose its drill-down because its graph was deleted.
+ *
+ * Only the top level is inspected. An iteration's subgraph can contain a
+ * workflow-call node, but that node belongs to the ITEM's run — it would spawn
+ * a grandchild, listed under the child, not here.
+ */
+export function canSpawnChildRuns(graph: WorkflowGraph | null): boolean {
+  if (!graph) return true
+  return graph.nodes.some(
+    (n) =>
+      (n.kind === 'iteration' && n.config.itemExecution === 'durable') ||
+      (n.kind === 'workflow' && n.config.calleeExecution === 'durable'),
+  )
+}
+
 /** Find a node anywhere in the graph, including inside an iteration subgraph. */
 export function findNode(
   graph: WorkflowGraph,

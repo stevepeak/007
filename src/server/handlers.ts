@@ -145,6 +145,7 @@ const wfInputSchemas: Record<keyof WfDataClient, z.ZodType> = {
     limit: z.number().optional(),
     offset: z.number().optional(),
   }),
+  listChildRuns: z.object({ parentRunId: z.string() }),
   getRun: z.object({
     runId: z.string(),
     // Cache hint only — see `WfClient.getRun`. A stale or unknown id simply

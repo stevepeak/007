@@ -21,7 +21,7 @@ import type {
 } from '../schema'
 import { wfEvalResult, wfEvalRow, wfEvalRun, wfEvalSet } from '../schema'
 
-import { loadRunStats } from './runs-cost'
+import { loadRunStats } from './runs-rollup'
 import { clampLimit, pickDefined } from './shared'
 
 const EVAL_RUN_PAGE_MAX = 200

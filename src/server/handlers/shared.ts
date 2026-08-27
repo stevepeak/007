@@ -9,7 +9,12 @@ import {
 import type { WfDb } from '../../storage/client'
 import type { DashboardAnalytics, RecordChangeInput } from '../../storage/data'
 import { agentExists, workflowExists } from '../../storage/data'
-import type { JsonSchema, WfDataClient, WfRunSummary } from '../protocol'
+import type {
+  JsonSchema,
+  WfDataClient,
+  WfRunSummary,
+  WfRunTreeTotals,
+} from '../protocol'
 
 import type { WfServerContext } from './handler-options'
 
@@ -67,6 +72,12 @@ export function runSummary(
     totalTokens?: number | null
     costUsd?: number | null
     sentryTraceId?: string | null
+    parentRunId?: string | null
+    parentNodeId?: string | null
+    /** The stored item index — `-1` is the "not an iteration item" sentinel. */
+    itemIndex?: number | null
+    /** Totals across everything this run spawned; omitted when it spawned none. */
+    tree?: WfRunTreeTotals | null
   },
   traceUrl?: (traceId: string) => string | null,
 ): WfRunSummary {
@@ -90,6 +101,24 @@ export function runSummary(
     sentryTraceId,
     sentryTraceUrl:
       sentryTraceId && traceUrl ? (traceUrl(sentryTraceId) ?? null) : null,
+    // Both columns are written together at spawn time, so a row with a parent
+    // run always has a parent node; requiring both here means a half-written
+    // link reads as "top-level" rather than as a child pointing nowhere.
+    parent:
+      r.parentRunId && r.parentNodeId
+        ? {
+            runId: r.parentRunId,
+            nodeId: r.parentNodeId,
+            // `-1` is the top-level/callee sentinel — surfaced as null so the
+            // wire shape reads as "not one of several items".
+            itemIndex:
+              r.itemIndex == null || r.itemIndex < 0 ? null : r.itemIndex,
+          }
+        : null,
+    // Only the reads that resolved a tree pass one — a child-run row, for
+    // instance, deliberately reports its own figures and leaves this null
+    // rather than paying for a walk per row (see `listChildRuns`).
+    tree: r.tree ?? null,
   }
 }
 

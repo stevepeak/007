@@ -9,6 +9,7 @@ import {
   Info,
   Minus,
   Radio,
+  SquareArrowOutUpRight,
   Wrench,
   X,
 } from 'lucide-react'
@@ -16,11 +17,16 @@ import type { LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { WorkflowGraph } from '../engine'
-import type { WfRunLogDTO, WfRunStepDTO } from '../server/protocol'
+import type {
+  WfRunLogDTO,
+  WfRunStepDTO,
+  WfRunSummary,
+} from '../server/protocol'
 
 import { cn } from './cn'
 import { formatClock, formatDurationMs, formatUsd } from './cost'
 import { KIND_STYLE } from './editor/node-renderers-shared'
+import { WfLink } from './nav'
 import {
   buildActivityTree,
   flattenTree,
@@ -137,6 +143,12 @@ export type RunActivityLogProps = {
   logs: WfRunLogDTO[]
   /** Recorded steps — the tree skeleton (loop items, sub-agent delegations). */
   steps: WfRunStepDTO[]
+  /**
+   * The runs this run spawned — a durable iteration's items, a durable
+   * workflow-call's callee. Their inner nodes are steps on THEIR runs, not on
+   * this one, so without these the loop renders as a node with nothing under it.
+   */
+  childRuns?: WfRunSummary[]
   /** The run's graph at the version that ran — supplies labels + pending rows. */
   graph: WorkflowGraph | null
   /** True while the run is still executing — shows a live "listening" footer. */
@@ -165,6 +177,7 @@ const BASE_PAD = 6
 export function RunActivityLog({
   logs,
   steps,
+  childRuns,
   graph,
   live,
   logsTruncated,
@@ -182,8 +195,8 @@ export function RunActivityLog({
   )
 
   const tree = useMemo(
-    () => buildActivityTree({ graph, steps, logs, live }),
-    [graph, steps, logs, live],
+    () => buildActivityTree({ graph, steps, logs, childRuns, live }),
+    [graph, steps, logs, childRuns, live],
   )
   const flat = useMemo(() => flattenTree(tree, overrides), [tree, overrides])
 
@@ -338,19 +351,24 @@ function ActivityRowView({
   if (row.kind === 'group') {
     const selected =
       selectedNodeId === row.containerNodeId &&
+      row.itemIndex != null &&
       selectedItemIndex === row.itemIndex
     return (
       <div
         style={{ paddingLeft: pad }}
         onClick={() => {
           onSelectNode?.(row.containerNodeId)
-          onSelectItem?.(row.itemIndex)
+          // Only an ITEM drives the dock's per-item picker. A callee row has no
+          // position, and feeding it one would scroll the picker to an item
+          // that doesn't exist.
+          if (row.itemIndex != null) onSelectItem?.(row.itemIndex)
         }}
         className={cn(
           'flex items-center gap-2 rounded py-0.5 pr-1.5 select-none',
           onSelectNode && 'cursor-pointer hover:bg-neutral-100',
           selected && 'bg-blue-50',
         )}
+        title={row.error ?? undefined}
       >
         {caret}
         <span
@@ -359,7 +377,43 @@ function ActivityRowView({
             runStatusDotClass[row.status] ?? 'bg-neutral-300',
           )}
         />
-        <span className="font-medium text-neutral-600">{row.label}</span>
+        <span
+          className={cn(
+            'shrink-0 font-medium',
+            row.status === 'failed' ? 'text-rose-700' : 'text-neutral-600',
+          )}
+        >
+          {row.label}
+        </span>
+        {row.error ? (
+          <span className="min-w-0 truncate text-rose-500">— {row.error}</span>
+        ) : null}
+        {/* The drill-down. A durable item's whole trace lives on its own run, so
+            this link is the ONLY way into it — the parent records no steps for
+            work that happened in another instance. */}
+        {row.childRunId ? (
+          <WfLink
+            to={`runs/${row.childRunId}`}
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex shrink-0 items-center gap-1 text-neutral-400 hover:text-neutral-700 hover:underline"
+            title="Open this item's own run"
+          >
+            open run
+            <SquareArrowOutUpRight className="size-3" />
+          </WfLink>
+        ) : null}
+        {row.costUsd != null || row.durationMs != null ? (
+          <span className="ml-auto flex shrink-0 items-center gap-2 tabular-nums">
+            {row.costUsd != null ? (
+              <span className="text-neutral-500">{formatUsd(row.costUsd)}</span>
+            ) : null}
+            {row.durationMs != null ? (
+              <span className="text-emerald-600">
+                {formatDurationMs(row.durationMs)}
+              </span>
+            ) : null}
+          </span>
+        ) : null}
       </div>
     )
   }

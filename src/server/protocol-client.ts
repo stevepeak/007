@@ -43,6 +43,7 @@ import type {
   WfRunListResult,
   WfRunPurgeResult,
   WfRunStatusDTO,
+  WfRunSummary,
 } from './protocol-runs'
 import type {
   ToolContextField,
@@ -158,6 +159,22 @@ export interface WfDataClient {
     versionId: string,
   ): Promise<{ graph: WorkflowGraph; versionNumber: number } | null>
   listRuns(input: WfRunListInput): Promise<WfRunListResult>
+  /**
+   * The runs one run spawned — a durable iteration's items, or a workflow-call
+   * node's callee — ordered by item index, each with its own cost.
+   *
+   * Its own method rather than a field on {@link WfDataClient.getRun} or on the
+   * list rows, because the two surfaces that need it want it on different
+   * clocks: the runs explorer fetches it only for the row someone expands, and
+   * the run viewer polls it while the parent is live so item rows fill in as
+   * children report. Folding it into either load would make every caller of
+   * that load pay for it.
+   *
+   * Reads `wf_run.parent_run_id`, which is written at SPAWN time, so an item
+   * appears here the moment its child instance is created — long before the
+   * parent's iteration step records anything.
+   */
+  listChildRuns(input: { parentRunId: string }): Promise<WfRunSummary[]>
   /** Distinct trigger kinds seen across all runs (filter dropdown). */
   listRunTriggerKinds(): Promise<string[]>
   /**

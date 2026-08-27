@@ -624,6 +624,11 @@ export async function loadDashboard(
   // `wf_model` scan, so it is not worth threading the map through `listRuns`.
   const failures = await listRuns(db, {
     status: 'failed',
+    // Flat, not nested. This panel is one row per failure with its error text,
+    // and a failed iteration item is a failure worth showing AS ITSELF — under
+    // the explorer's nesting it would surface as its parent, which under
+    // `stopOnError: false` is a completed run with no error to display.
+    includeChildren: true,
     since,
     until,
     limit: RECENT_FAILURE_LIMIT,

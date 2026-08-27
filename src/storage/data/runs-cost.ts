@@ -1,16 +1,8 @@
-import { inArray } from 'drizzle-orm'
-
-import { stepAgentVersion } from '../../engine/nodes/agent-generation'
 import type { WfDb } from '../client'
-import {
-  agentUsage,
-  tokenCostUsd,
-  type ModelPrice,
-  type ModelPriceMap,
-} from '../cost'
-import { wfModel, wfRun, wfRunStep } from '../schema'
+import type { ModelPrice, ModelPriceMap } from '../cost'
+import { wfModel } from '../schema'
 
-import { selectChunked } from './shared'
+import { foldUsage, groupUsageByRun, selectRunUsage } from './runs-usage'
 
 // ---------------------------------------------------------------------------
 // Cost derivation — model price map + per-run token/cost/timing stats
@@ -155,156 +147,39 @@ export function priceMapFromTable(table: RunPriceTable): ModelPriceMap {
 }
 
 /**
- * Per-run cost / speed / model, keyed by run id — powers the eval report's
- * per-sample stats and the run's rolled-up averages. Every figure is scoped to
- * the AGENT CALL(S) only: tokens/cost sum the agent steps' usage (tools, the
- * trigger, and outputs carry none), and `durationMs` is the agent steps' own
- * wall-clock — never the whole run, and never the judge/test grading (which
- * runs after the wf_run finishes and records no steps). `models` are the
- * provider-native ids of those agent steps.
+ * Fold each run's agent-step token usage into a `{ totalTokens, costUsd }` pair,
+ * for a set of run ids in one chunked pass.
+ *
+ * `totalTokens` is null when a run fired no agents; `costUsd` is null when none
+ * of its agents' models were priced (partial pricing yields a best-effort sum).
+ * Runs with no agent step at all are simply absent from the map.
+ *
+ * Scoped to the given runs ONLY — a parent whose work happened in children
+ * reports what it did itself, which for a durable fan-out is near-nothing. That
+ * is the correct answer to "what did this instance do?"; the wider number is
+ * {@link rollUpRunCost}, and the two are kept separate because both are shown.
+ *
+ * The narrow sibling of {@link loadRunStats}: this answers the two numbers the
+ * runs list and the child-run rows display, where that one also carries timing
+ * and the frozen agent version. Shared so every displayed dollar figure is
+ * derived the same way rather than each caller re-implementing the fold.
  */
-export type RunStats = {
-  totalTokens: number | null
-  costUsd: number | null
-  models: string[]
-  /** Agent-call duration in ms: sum of each agent step's own window. Falls back
-   *  to the run wall-clock only when no agent step recorded timing; null when
-   *  neither is available. */
-  durationMs: number | null
-  /**
-   * The agent version this run actually executed, frozen into the manifest at
-   * start and stamped onto each agent step.
-   *
-   * The live catalog cannot answer this after the fact, and for evals that is
-   * the whole point: a Goal with no pinned `targetVersion` floats to latest, so
-   * republishing the agent leaves the sample's snapshot hash IDENTICAL. Same
-   * hash, different agent, different score. This is the axis that says so.
-   *
-   * Null when no agent step recorded one (a workflow-target eval, or a run that
-   * predates the stamp). First stamp wins — a run's agent nodes all resolve
-   * from the same frozen manifest.
-   */
-  agentVersion: number | null
-}
-
-/**
- * Load {@link RunStats} for a set of runs in one pass — the run rows (for a
- * timing fallback) plus their agent steps' token usage + windows (for tokens,
- * cost, models, and agent-call duration). Mirrors {@link attachRunCost}'s
- * aggregation. Runs with no id in `runIds` are absent from the returned map.
- */
-export async function loadRunStats(
+export async function aggregateRunCost(
   db: WfDb,
-  runIds: string[],
-): Promise<Map<string, RunStats>> {
-  const out = new Map<string, RunStats>()
-  if (runIds.length === 0) return out
-  // An eval run hands over one id per sample, so `runIds` is matrix-sized —
-  // both lookups chunk. Every row keys back to its own run id, so the folds
-  // below don't care that the rows arrive chunk by chunk.
-  const [priceMap, runRows, stepRows] = await Promise.all([
-    loadModelPriceMap(db),
-    selectChunked(runIds, (ids) =>
-      db
-        .select({
-          id: wfRun.id,
-          startedAt: wfRun.startedAt,
-          finishedAt: wfRun.finishedAt,
-        })
-        .from(wfRun)
-        .where(inArray(wfRun.id, ids)),
-    ),
-    selectChunked(runIds, (ids) =>
-      db
-        .select({
-          runId: wfRunStep.runId,
-          meta: wfRunStep.meta,
-          startedAt: wfRunStep.startedAt,
-          finishedAt: wfRunStep.finishedAt,
-        })
-        .from(wfRunStep)
-        .where(inArray(wfRunStep.runId, ids)),
-    ),
-  ])
-
-  // Run wall-clock, used only as a duration fallback when agent steps carry no
-  // timing of their own.
-  const runWallMs = new Map<string, number | null>()
-  for (const r of runRows) {
-    const start = r.startedAt?.getTime() ?? null
-    const end = r.finishedAt?.getTime() ?? null
-    runWallMs.set(r.id, start != null && end != null ? end - start : null)
-    out.set(r.id, {
-      totalTokens: null,
-      costUsd: null,
-      models: [],
-      durationMs: null,
-      agentVersion: null,
-    })
-  }
-
-  const agg = new Map<
+  runIds: readonly string[],
+): Promise<Map<string, { totalTokens: number | null; costUsd: number | null }>> {
+  const out = new Map<
     string,
-    {
-      tokens: number
-      hasTokens: boolean
-      cost: number
-      hasCost: boolean
-      models: Set<string>
-      agentMs: number
-      hasAgentMs: boolean
-      agentVersion: number | null
-    }
+    { totalTokens: number | null; costUsd: number | null }
   >()
-  for (const sr of stepRows) {
-    const usage = agentUsage(sr.meta)
-    if (!usage) continue
-    const a = agg.get(sr.runId) ?? {
-      tokens: 0,
-      hasTokens: false,
-      cost: 0,
-      hasCost: false,
-      models: new Set<string>(),
-      agentMs: 0,
-      hasAgentMs: false,
-      agentVersion: null,
-    }
-    a.agentVersion ??= stepAgentVersion(sr.meta)
-    a.tokens += usage.inputTokens + usage.outputTokens
-    a.hasTokens = true
-    a.models.add(usage.model)
-    const cost = tokenCostUsd(
-      usage.inputTokens,
-      usage.outputTokens,
-      priceMap.get(usage.model),
-    )
-    if (cost != null) {
-      a.cost += cost
-      a.hasCost = true
-    }
-    const start = sr.startedAt?.getTime()
-    const end = sr.finishedAt?.getTime()
-    if (start != null && end != null) {
-      a.agentMs += Math.max(0, end - start)
-      a.hasAgentMs = true
-    }
-    agg.set(sr.runId, a)
-  }
-
-  for (const [runId, a] of agg) {
-    const base = out.get(runId) ?? {
-      totalTokens: null,
-      costUsd: null,
-      models: [],
-      durationMs: null,
-      agentVersion: null,
-    }
-    base.agentVersion = a.agentVersion
-    base.totalTokens = a.hasTokens ? a.tokens : null
-    base.costUsd = a.hasCost ? a.cost : null
-    base.models = [...a.models]
-    base.durationMs = a.hasAgentMs ? a.agentMs : (runWallMs.get(runId) ?? null)
-    out.set(runId, base)
+  if (runIds.length === 0) return out
+  const [priceMap, usage] = await Promise.all([
+    loadModelPriceMap(db),
+    selectRunUsage(db, runIds),
+  ])
+  for (const [runId, rows] of groupUsageByRun(usage)) {
+    const { totalTokens, costUsd } = foldUsage(rows, priceMap)
+    out.set(runId, { totalTokens, costUsd })
   }
   return out
 }

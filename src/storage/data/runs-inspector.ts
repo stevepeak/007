@@ -11,8 +11,10 @@ import {
 } from '../schema'
 
 import { parseStoredGraph } from './authoring'
+import { countChildRuns } from './runs-children'
 import { loadModelPriceMap } from './runs-cost'
 import { getRunLogs } from './runs-logs'
+import { rollUpRunCost } from './runs-rollup'
 
 // ---------------------------------------------------------------------------
 // Run inspector — the single-run load shape (run, steps, logs, graph, cost)
@@ -146,7 +148,7 @@ export async function getRun(
   // The version and the workflow it belongs to are a single join rather than a
   // second sequential round trip — the name lookup used to wait on the version
   // row purely to read its `workflowId`.
-  const [rawSteps, priceMap, logRead, version] = await Promise.all([
+  const [rawSteps, priceMap, logRead, version, childCounts] = await Promise.all([
     db
       .select({ ...getTableColumns(wfRunStep), cursor: stepCursor })
       .from(wfRunStep)
@@ -173,6 +175,10 @@ export async function getRun(
           .where(eq(wfWorkflowVersion.id, run.workflowVersionId))
           .limit(1)
           .then((rows) => rows[0]),
+    // Rides in the same wave: one grouped read over `wf_run_parent_idx` that
+    // tells us whether this run spawned anything, so the roll-up below is only
+    // paid for by the runs that have a tree to roll up.
+    countChildRuns(db, [runId]),
   ])
   let costUsd: number | null = null
   let totalTokens: number | null = null
@@ -194,6 +200,12 @@ export async function getRun(
   // over the wire and what the client re-parses each tick, not what D1 reads.
   // A rows-read win would need the cost totals to be incremental too, and they
   // can't be: a step's cost changes when its `meta` lands, in place.
+  // What the run cost INCLUDING its children. Null for a run that spawned
+  // none, where it would be identical to the own totals just derived.
+  const tree =
+    (childCounts.get(runId)?.total ?? 0) > 0
+      ? ((await rollUpRunCost(db, [runId])).get(runId) ?? null)
+      : null
   const stepsPartial = opts.settledStepCursor != null
   const shippedSteps = stepsPartial
     ? steps.filter((s) => s.cursor > (opts.settledStepCursor as number))
@@ -216,6 +228,7 @@ export async function getRun(
     versionOmitted,
     costUsd,
     totalTokens,
+    tree,
   }
 }
 

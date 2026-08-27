@@ -7,7 +7,11 @@ import {
 import { useState } from 'react'
 
 import type { WorkflowGraph, WorkflowNode } from '../engine'
-import type { WfRunLogDTO, WfRunStepDTO } from '../server/protocol'
+import type {
+  WfRunLogDTO,
+  WfRunStepDTO,
+  WfRunSummary,
+} from '../server/protocol'
 
 import { cn } from './cn'
 import { useWfComponents } from './context'
@@ -38,6 +42,10 @@ export type RunNodeDockProps = {
   steps: WfRunStepDTO[]
   /** The whole run's structured progress feed (drives the Activity tab). */
   logs: WfRunLogDTO[]
+  /** The runs this run spawned — durable iteration items and callees. Their
+   *  work happened on their own runs, so the Activity tree links out to them
+   *  rather than showing per-item rows it has no steps for. */
+  childRuns?: WfRunSummary[]
   /** The log feed was capped server-side — passed through to the activity feed. */
   logsTruncated?: boolean
   /** The run's graph at the version that ran — the Activity tree's skeleton. */
@@ -67,6 +75,7 @@ export function RunNodeDock({
   step,
   steps,
   logs,
+  childRuns,
   logsTruncated,
   graph,
   live,
@@ -191,6 +200,7 @@ export function RunNodeDock({
               logs={logs}
               logsTruncated={logsTruncated}
               steps={steps}
+              childRuns={childRuns}
               graph={graph}
               live={live}
               selectedNodeId={selectedNodeId}

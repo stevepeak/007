@@ -4,6 +4,7 @@ import {
   getRun,
   getRunRetrySource,
   getRunStatus,
+  listChildRuns,
   listRunTriggerKinds,
   listRuns,
   RUN_NOTE_MAX_LENGTH,
@@ -34,6 +35,7 @@ export function buildRunHandlers<TDeps>(
 ): Pick<
   WfHandlers,
   | 'listRuns'
+  | 'listChildRuns'
   | 'listRunTriggerKinds'
   | 'getRun'
   | 'getRunStatus'
@@ -66,11 +68,25 @@ export function buildRunHandlers<TDeps>(
         offset: p.offset,
       })
       return {
-        runs: result.rows.map((r) => runSummary(r, opts.sentryTraceUrl)),
+        runs: result.rows.map((r) => ({
+          ...runSummary(r, opts.sentryTraceUrl),
+          children: r.children,
+        })),
         total: result.total,
         limit: result.limit,
         offset: result.offset,
       }
+    },
+
+    // The children one run spawned — a durable iteration's items, or a
+    // workflow-call node's callee. Its own method, on its own clock: the runs
+    // explorer calls it for the row someone expands, and the run viewer polls
+    // it while the parent is live. Bounded by the spawning node (one callee, or
+    // an iteration already fenced by `maxItems`), so it takes no page size.
+    listChildRuns: async (c) => {
+      const parentRunId = requireStr(c.params, 'parentRunId')
+      const rows = await listChildRuns(c.db, parentRunId)
+      return rows.map((r) => runSummary(r, opts.sentryTraceUrl))
     },
 
     listRunTriggerKinds: async (c) => await listRunTriggerKinds(c.db),
@@ -142,6 +158,7 @@ export function buildRunHandlers<TDeps>(
               versionNumber: result.versionNumber ?? 0,
               totalTokens: result.totalTokens,
               costUsd: result.costUsd,
+              tree: result.tree,
             },
             opts.sentryTraceUrl,
           ),

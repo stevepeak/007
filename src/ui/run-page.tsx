@@ -5,7 +5,7 @@ import type { RetryRunMode } from '../server/protocol'
 
 import { cn } from './cn'
 import { WorkflowCanvas } from './editor/workflow-canvas'
-import { useRetryRun, useRun } from './hooks'
+import { useChildRuns, useRetryRun, useRun } from './hooks'
 import { useFeedbackForSubjects } from './hooks-feedback'
 import { useWfNav } from './nav'
 import { QueryState } from './query-state'
@@ -14,6 +14,7 @@ import { RunNodeDock } from './run-node-dock'
 import { RunNote } from './run-note'
 import { RunHeaderActions } from './run-page-header'
 import {
+  canSpawnChildRuns,
   isRunLive,
   resolveRunSelection,
   topLevelStatuses,
@@ -41,6 +42,16 @@ const TRIGGER_LABELS: Record<string, string> = {
 
 function triggerLabel(kind: string): string {
   return TRIGGER_LABELS[kind] ?? kind.charAt(0).toUpperCase() + kind.slice(1)
+}
+
+/** How a child run names the run it came from. An iteration item knows its
+ *  position; a workflow-call callee has none. */
+function parentCrumbLabel(parent: {
+  itemIndex: number | null
+}): string {
+  return parent.itemIndex == null
+    ? 'Calling run'
+    : `Item ${parent.itemIndex + 1} of`
 }
 
 // Coarse "N units ago" phrasing for the run's breadcrumb label.
@@ -91,6 +102,17 @@ export function RunPage({
   // stops the moment the run settles, since a finished run's duration is fixed
   // and re-rendering the page every second for an unchanging number is waste.
   const now = useTickingNow(isRunLive(data?.run.status ?? '') ? 1000 : null)
+  // The runs this one spawned — durable iteration items, durable callees. Only
+  // fetched for a run whose graph can actually spawn any, and only polled while
+  // the parent is live, since that is when children appear and change state.
+  const spawnsChildren = useMemo(
+    () => canSpawnChildRuns(data?.graph ?? null),
+    [data?.graph],
+  )
+  const { data: childRuns } = useChildRuns(runId, {
+    enabled: spawnsChildren,
+    live: isRunLive(data?.run.status ?? ''),
+  })
   const retry = useRetryRun()
   // Run-level thumbs feedback. Namespaced so a run's rating never collides with a
   // message/document sharing the same host id in the globally-unique subject key.
@@ -185,6 +207,18 @@ export function RunPage({
             className={className}
             titleIcon={<Activity className="size-5 shrink-0 text-sky-500" />}
             crumbs={[
+              // A child run is a fragment of something bigger, and landing on
+              // one from a link (or a bookmark) otherwise gives no sign of
+              // that — nor any way back up. The parent link is the only route:
+              // a child's own trace says nothing about who spawned it.
+              ...(run.parent
+                ? [
+                    {
+                      label: parentCrumbLabel(run.parent),
+                      to: `runs/${run.parent.runId}`,
+                    },
+                  ]
+                : []),
               {
                 label: (
                   <>
@@ -257,6 +291,7 @@ export function RunPage({
                 step={selection.selectedStep}
                 steps={data.steps}
                 logs={data.logs}
+                childRuns={childRuns}
                 logsTruncated={data.logsTruncated}
                 graph={data.graph}
                 live={live}

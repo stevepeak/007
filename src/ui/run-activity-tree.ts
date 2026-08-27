@@ -1,6 +1,10 @@
 import type { WorkflowGraph } from '../engine'
 import { NON_STEP_KINDS } from '../engine/run-progress'
-import type { WfRunLogDTO, WfRunStepDTO } from '../server/protocol'
+import type {
+  WfRunLogDTO,
+  WfRunStepDTO,
+  WfRunSummary,
+} from '../server/protocol'
 
 import { indexRunActivity } from './run-activity-index'
 import type {
@@ -25,6 +29,14 @@ import { buildStateRows, interleaveStateRows } from './run-activity-state-rows'
 // supplies labels/kinds and lets not-yet-run nodes show as faint "pending"
 // rows. Logs (thinking / tool / info lines) hang off their owning node as leaf
 // activity.
+//
+// Steps only reach as far as this run, though. A DURABLE iteration item and a
+// durable workflow-call callee execute as their own workflow instances, so
+// their inner nodes are steps on a different run entirely — nothing in this
+// run's step trace would show them, and the loop would read as a black box.
+// `childRuns` closes that: one row per child run, sourced from
+// `wf_run.parent_run_id`, which is written at SPAWN time and so populates the
+// list while the children are still working rather than once the loop settles.
 
 export type {
   ActivityGroupRow,
@@ -43,11 +55,13 @@ export function buildActivityTree(input: {
   graph: WorkflowGraph | null
   steps: WfRunStepDTO[]
   logs: WfRunLogDTO[]
+  /** The runs this run spawned — durable iteration items and callees. */
+  childRuns?: WfRunSummary[]
   live?: boolean
 }): ActivityTopRow[] {
-  const { graph, steps, logs, live = false } = input
+  const { graph, steps, logs, childRuns = [], live = false } = input
 
-  const index = indexRunActivity(steps, logs)
+  const index = indexRunActivity(steps, logs, childRuns)
   const { topSteps, timingFor } = index
 
   const placement = buildStateRows(logs)

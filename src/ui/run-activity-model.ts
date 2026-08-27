@@ -40,16 +40,33 @@ export type ActivityNodeRow = {
   children: ActivityRow[]
 }
 
-// A synthetic grouping row for one iteration item ("Item k / N"). Selecting it
-// focuses the container node at that item index (via the dock's item picker).
+// A synthetic grouping row for one iteration item ("Item k / N"), or for a
+// workflow-call node's callee. Selecting it focuses the container node at that
+// item index (via the dock's item picker).
+//
+// The row has TWO sources, and reads the same either way. An INLINE item's
+// inner nodes were recorded as steps on this run, so they hang off it as
+// children. A DURABLE item ran as its own workflow instance, so its nodes are
+// on that instance's run and this row carries a `childRunId` to open instead —
+// there is nothing to expand in place, because none of it happened here.
 export type ActivityGroupRow = {
   kind: 'group'
   key: string
   label: string
   containerNodeId: string
-  itemIndex: number
+  /** 0-based iteration item, or null for a workflow-call callee (which has no
+   *  position, and so must not drive the dock's per-item picker). */
+  itemIndex: number | null
   status: ActivityStatus
-  expandable: true
+  /** The run this item executed in, for a durable item or a callee. Null for an
+   *  inline item, whose trace is right here. */
+  childRunId: string | null
+  /** Set on a child-run row: that run's own figures, since the parent records
+   *  no step for work that happened inside another instance. */
+  durationMs: number | null
+  costUsd: number | null
+  error: string | null
+  expandable: boolean
   defaultOpen: boolean
   children: ActivityRow[]
 }

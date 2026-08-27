@@ -28,6 +28,8 @@ function detail(over: Partial<WfRunDetail> = {}): WfRunDetail {
       costUsd: null,
       sentryTraceId: null,
       sentryTraceUrl: null,
+      parent: null,
+      tree: null,
       output: null,
     },
     steps: [],

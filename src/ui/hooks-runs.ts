@@ -26,6 +26,34 @@ export function useRuns(input: WfRunListInput = {}) {
   })
 }
 
+/**
+ * The child runs one run spawned — a durable iteration's items, or a
+ * workflow-call node's callee.
+ *
+ * `enabled` is how both callers pay only for what they show: the runs explorer
+ * turns it on for the row someone expands, and the run viewer turns it on only
+ * for a run that actually has children. Polls on the same 1.5s cadence as
+ * `useRun` while the PARENT is live, because that is when items are appearing
+ * and changing state — a child's own status is not something this list can
+ * watch for.
+ */
+export function useChildRuns(
+  parentRunId: string | null,
+  opts: { enabled?: boolean; live?: boolean } = {},
+) {
+  const client = useWfClient()
+  const { enabled = true, live = false } = opts
+  return useQuery({
+    queryKey: keys.runChildren(parentRunId ?? ''),
+    queryFn: () => client.listChildRuns({ parentRunId: parentRunId as string }),
+    enabled: !!parentRunId && enabled,
+    refetchInterval: live ? 1500 : false,
+    // Keep the last set on screen through a refetch, so an expanded fan-out
+    // doesn't blink empty every tick.
+    placeholderData: keepPreviousData,
+  })
+}
+
 export function useRunTriggerKinds() {
   const client = useWfClient()
   return useQuery({

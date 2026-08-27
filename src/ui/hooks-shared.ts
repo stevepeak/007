@@ -39,6 +39,9 @@ export const keys = {
   runTriggerKinds: ['wf', 'run-trigger-kinds'] as const,
   dashboard: (input: WfDashboardInput) => ['wf', 'dashboard', input] as const,
   run: (id: string) => ['wf', 'run', id] as const,
+  // The child runs one run spawned. Keyed under `run` so dropping a run's
+  // cache (`['wf','run']`) takes its children with it.
+  runChildren: (id: string) => ['wf', 'run', id, 'children'] as const,
   agents: ['wf', 'agents'] as const,
   agent: (id: string) => ['wf', 'agent', id] as const,
   agentVersions: (id: string) => ['wf', 'agent-versions', id] as const,

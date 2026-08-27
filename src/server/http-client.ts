@@ -80,6 +80,7 @@ export function createHttpWfDataClient(
     listVersions: (workflowId) => call('listVersions', { workflowId }),
     getVersion: (versionId) => call('getVersion', { versionId }),
     listRuns: bind('listRuns'),
+    listChildRuns: bind('listChildRuns'),
     listRunTriggerKinds: bind('listRunTriggerKinds'),
     getRun: (runId, opts) => call('getRun', { runId, ...opts }),
     getRunStatus: (runId) => call('getRunStatus', { runId }),

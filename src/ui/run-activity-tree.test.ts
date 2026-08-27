@@ -2,7 +2,11 @@ import { describe, expect, test } from 'bun:test'
 
 import type { WorkflowGraph } from '../engine'
 import { RUN_STATE_LEVEL } from '../engine/stream-sink'
-import type { WfRunLogDTO, WfRunStepDTO } from '../server/protocol'
+import type {
+  WfRunLogDTO,
+  WfRunStepDTO,
+  WfRunSummary,
+} from '../server/protocol'
 
 import {
   buildActivityTree,
@@ -452,5 +456,197 @@ describe('buildActivityTree — marker timing', () => {
     expect(marker).toBeDefined()
     expect(marker?.elapsedMs).toBeNull()
     expect(marker?.message).toBe('Workflow completed')
+  })
+})
+
+describe('buildActivityTree — durable items and callees (NEW-177)', () => {
+  const DURABLE_GRAPH = graphOf([
+    node('trg', 'trigger', 'Start'),
+    node('loop', 'iteration', 'Save each', {
+      config: {
+        itemExecution: 'durable',
+        subgraph: {
+          version: 1,
+          nodes: [node('it', 'iteration_item', 'Item')],
+          edges: [],
+        },
+      },
+    }),
+    node('call', 'workflow', 'Enrich', {
+      config: { calleeExecution: 'durable' },
+    }),
+    node('out', 'output', 'Done'),
+  ])
+
+  function childRun(
+    id: string,
+    nodeId: string,
+    itemIndex: number | null,
+    over: Partial<WfRunSummary> = {},
+  ): WfRunSummary {
+    return {
+      id,
+      status: 'completed',
+      triggerKind: 'upload',
+      workflowId: 'wf-1',
+      workflowName: 'Ingest one recipe',
+      versionNumber: 1,
+      subjectId: null,
+      correlationId: null,
+      createdAt: 100,
+      startedAt: 100,
+      finishedAt: 400,
+      error: null,
+      note: null,
+      totalTokens: null,
+      costUsd: null,
+      sentryTraceId: null,
+      sentryTraceUrl: null,
+      parent: { runId: 'parent', nodeId, itemIndex },
+      tree: null,
+      ...over,
+    }
+  }
+
+  test('a durable item becomes a group row linking to its own run', () => {
+    // The whole reason this path exists: a durable item's inner nodes are steps
+    // on ITS run, so the parent has nothing to expand and the link is the only
+    // way in.
+    const rows = nodeRows(
+      buildActivityTree({
+        graph: DURABLE_GRAPH,
+        steps: [step('loop', 'iteration', 1, 'running', { meta: { total: 2 } })],
+        logs: [],
+        childRuns: [
+          childRun('run-a', 'loop', 0, { costUsd: 0.25 }),
+          childRun('run-b', 'loop', 1, { status: 'running', finishedAt: null }),
+        ],
+      }),
+    )
+    const loop = byKey(rows, 'loop')
+    const [first, second] = loop.children
+    if (first.kind !== 'group' || second.kind !== 'group')
+      throw new Error('expected group rows')
+
+    expect(first.label).toBe('Item 1 / 2')
+    expect(first.childRunId).toBe('run-a')
+    // Its figures come off the CHILD RUN — the parent records no step for work
+    // that happened inside another instance.
+    expect(first.durationMs).toBe(300)
+    expect(first.costUsd).toBe(0.25)
+    expect(first.children).toEqual([])
+    expect(first.expandable).toBe(false)
+
+    expect(second.status).toBe('running')
+    expect(second.durationMs).toBeNull()
+  })
+
+  test('items appear from SPAWN time, before the loop records its own step', () => {
+    // `wf_run.parent_run_id` is written when the child is created, whereas the
+    // iteration's step meta lands only when the LOOP settles. If this rendered
+    // off the step, the fan-out would be a black box for its entire duration.
+    const rows = nodeRows(
+      buildActivityTree({
+        graph: DURABLE_GRAPH,
+        steps: [],
+        logs: [],
+        childRuns: [childRun('run-a', 'loop', 0, { status: 'running' })],
+      }),
+    )
+    const loop = byKey(rows, 'loop')
+    expect(loop.children).toHaveLength(1)
+    // No declared total yet, so it counts what it can see rather than inventing
+    // one.
+    expect(loop.children[0].kind === 'group' && loop.children[0].label).toBe(
+      'Item 1 / 1',
+    )
+  })
+
+  test('the loop rolls up done/total across its child runs', () => {
+    const rows = nodeRows(
+      buildActivityTree({
+        graph: DURABLE_GRAPH,
+        steps: [step('loop', 'iteration', 1, 'running', { meta: { total: 3 } })],
+        logs: [],
+        childRuns: [
+          childRun('run-a', 'loop', 0),
+          childRun('run-b', 'loop', 1, { status: 'failed', error: 'boom' }),
+          childRun('run-c', 'loop', 2, { status: 'running' }),
+        ],
+      }),
+    )
+    const loop = byKey(rows, 'loop')
+    expect(loop.itemsTotal).toBe(3)
+    expect(loop.itemsDone).toBe(2)
+    const failed = loop.children[1]
+    expect(failed.kind === 'group' && failed.status).toBe('failed')
+    expect(failed.kind === 'group' && failed.error).toBe('boom')
+  })
+
+  test('child runs are ordered by item index, not by arrival', () => {
+    const rows = nodeRows(
+      buildActivityTree({
+        graph: DURABLE_GRAPH,
+        steps: [step('loop', 'iteration', 1, 'running', { meta: { total: 3 } })],
+        logs: [],
+        childRuns: [
+          childRun('run-c', 'loop', 2),
+          childRun('run-a', 'loop', 0),
+          childRun('run-b', 'loop', 1),
+        ],
+      }),
+    )
+    expect(
+      byKey(rows, 'loop').children.map((c) =>
+        c.kind === 'group' ? c.childRunId : null,
+      ),
+    ).toEqual(['run-a', 'run-b', 'run-c'])
+  })
+
+  test('a durable callee links from its workflow-call node', () => {
+    const rows = nodeRows(
+      buildActivityTree({
+        graph: DURABLE_GRAPH,
+        steps: [step('call', 'workflow', 1, 'completed')],
+        logs: [],
+        childRuns: [
+          childRun('run-callee', 'call', null, {
+            workflowName: 'Enrich prices',
+          }),
+        ],
+      }),
+    )
+    const call = byKey(rows, 'call')
+    const [row] = call.children
+    if (row.kind !== 'group') throw new Error('expected a group row')
+    expect(row.childRunId).toBe('run-callee')
+    // A callee has no position, so it names its workflow instead — and must not
+    // claim an item index, which would drive the dock's per-item picker.
+    expect(row.label).toBe('Enrich prices')
+    expect(row.itemIndex).toBeNull()
+  })
+
+  test('an inline iteration is untouched by the durable path', () => {
+    // Both modes have to stay legible. With no child runs, item rows still come
+    // from the recorded per-item steps and still expand in place.
+    const rows = nodeRows(
+      buildActivityTree({
+        graph: DURABLE_GRAPH,
+        steps: [
+          step('loop', 'iteration', 1, 'completed', { meta: { total: 1 } }),
+          step('it', 'tool', 0, 'completed', {
+            parentNodeId: 'loop',
+            itemIndex: 0,
+          }),
+        ],
+        logs: [],
+        childRuns: [],
+      }),
+    )
+    const item = byKey(rows, 'loop').children[0]
+    if (item.kind !== 'group') throw new Error('expected a group row')
+    expect(item.childRunId).toBeNull()
+    expect(item.expandable).toBe(true)
+    expect(item.children).toHaveLength(1)
   })
 })

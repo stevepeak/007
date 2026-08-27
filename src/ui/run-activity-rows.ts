@@ -1,6 +1,6 @@
 import type { WorkflowNode } from '../engine'
 import { NON_STEP_KINDS } from '../engine/run-progress'
-import type { WfRunStepDTO } from '../server/protocol'
+import type { WfRunStepDTO, WfRunSummary } from '../server/protocol'
 
 import type { RunActivityIndex } from './run-activity-index'
 import {
@@ -10,6 +10,7 @@ import {
   resolveDuration,
   rollUp,
   type ActivityGroupRow,
+  type ActivityStatus,
   type ActivityLogRow,
   type ActivityNodeRow,
   type ActivityRow,
@@ -102,6 +103,12 @@ function iterationChildren(
         containerNodeId: containerId,
         itemIndex: idx,
         status,
+        // An inline item's whole trace is right here, so there is nothing to
+        // open — and no separate run, timing or cost of its own to report.
+        childRunId: null,
+        durationMs: null,
+        costUsd: null,
+        error: null,
         expandable: true,
         // Keep the active/failed item open; open completed items only when
         // the loop is small enough not to flood the feed.
@@ -109,6 +116,97 @@ function iterationChildren(
         children,
       }
     })
+}
+
+/**
+ * Map a child RUN's status onto the feed's node-status vocabulary.
+ *
+ * `done` reads as running on purpose: the run's answer has landed but arms that
+ * don't feed its Output are still draining, and calling that finished is the
+ * exact confusion the run lifecycle markers exist to clear up. `queued` reads
+ * as pending — the child exists but has not started.
+ */
+function runStatusToActivity(status: string): ActivityStatus {
+  switch (status) {
+    case 'queued':
+      return 'pending'
+    case 'running':
+    case 'done':
+      return 'running'
+    case 'failed':
+      return 'failed'
+    case 'cancelled':
+      return 'skipped'
+    default:
+      return 'completed'
+  }
+}
+
+function runDuration(run: WfRunSummary): number | null {
+  const start = run.startedAt ?? run.createdAt
+  // Only a CLOSED window counts, matching `timingFor` — pairing a start with
+  // `now` would make every in-flight child look like it finished instantly.
+  return run.finishedAt != null && run.finishedAt >= start
+    ? run.finishedAt - start
+    : null
+}
+
+// --- Durable items / callees → one group row per CHILD RUN. ---
+//
+// The other half of `iterationChildren`. A durable item's inner nodes were
+// never recorded against this run — they are steps on the child's own run — so
+// the row is built from the child run row itself and links there rather than
+// expanding. Crucially this reads `wf_run`, which is written at SPAWN time, so
+// items appear the moment they are created rather than when the loop settles.
+function childRunGroups(
+  index: RunActivityIndex,
+  containerNodeId: string,
+  containerStep: WfRunStepDTO | null | undefined,
+): ActivityGroupRow[] {
+  const runs = index.childRuns.get(containerNodeId) ?? []
+  if (runs.length === 0) return []
+  // Ordered here rather than relying on the server's ORDER BY: this is a pure
+  // derivation, and item order is what the reader uses to find "the one that
+  // failed" — it must not depend on the shape of the caller's fetch. Ties
+  // (callee rows, which all sit at a null index) keep arrival order.
+  const ordered = runs
+    .map((run, i) => ({ run, i }))
+    .sort(
+      (a, b) =>
+        (a.run.parent?.itemIndex ?? -1) - (b.run.parent?.itemIndex ?? -1) ||
+        a.i - b.i,
+    )
+    .map(({ run }) => run)
+  // The declared item count once the loop has resolved its list; until then the
+  // children spawned so far are all we know of — so a loop mid-fan-out reads
+  // "Item 2 / 3" rather than "Item 2 / 2".
+  const total = iterationTotal(containerStep) ?? runs.length
+  return ordered.map((run) => {
+    const itemIndex = run.parent?.itemIndex ?? null
+    return {
+      kind: 'group' as const,
+      // Keyed on the child RUN id rather than the position, so the key is
+      // unique even for callee rows, which all sit at a null index.
+      key: `${containerNodeId}:run:${run.id}`,
+      label:
+        itemIndex == null
+          ? // A callee has no position — its workflow name is the informative
+            // thing about it.
+            run.workflowName
+          : `Item ${itemIndex + 1} / ${total}`,
+      containerNodeId,
+      itemIndex,
+      status: runStatusToActivity(run.status),
+      childRunId: run.id,
+      durationMs: runDuration(run),
+      costUsd: run.costUsd,
+      error: run.error,
+      // Nothing to expand: none of this item's work happened on this run.
+      expandable: false,
+      defaultOpen: false,
+      children: [],
+    }
+  })
 }
 
 // --- Agent delegations (`sub:<agent>:<ord>`) → flat rows under the agent. ---
@@ -155,11 +253,17 @@ export function makeTopRow(
 ): ActivityNodeRow {
   const status = deriveStatus(step)
   const nodeKind = node?.kind ?? step?.nodeKind ?? 'node'
+  // The runs this node spawned, if any. A node is EITHER inline (its inner work
+  // is steps on this run) or durable (its inner work is a child run), never
+  // both, so these two never compete for the same node — but reading the child
+  // runs first means a durable loop shows its items from the moment they are
+  // spawned, before it has recorded a step of its own.
+  const spawned = childRunGroups(index, nodeId, step)
   let children: ActivityRow[]
   let itemsDone: number | null = null
   let itemsTotal: number | null = null
   if (nodeKind === 'iteration') {
-    const groups = iterationChildren(index, nodeId, node, step)
+    const groups = spawned.length > 0 ? spawned : iterationChildren(index, nodeId, node, step)
     children = groups
     itemsTotal = iterationTotal(step) ?? (groups.length || null)
     itemsDone = groups.filter((g) => g.status !== 'running' && g.status !== 'pending').length
@@ -179,7 +283,15 @@ export function makeTopRow(
       ]
     }
   } else {
-    children = [...subAgentChildren(index, nodeId), ...logLeaves(index, nodeId, nodeId)]
+    // A durable workflow-call node spawns exactly one child run. Same row shape
+    // as a durable iteration item, and the same reason it exists: the callee's
+    // trace is on its own run, so this is the link to it. An INLINE callee has
+    // no child run and nothing changes here.
+    children = [
+      ...spawned,
+      ...subAgentChildren(index, nodeId),
+      ...logLeaves(index, nodeId, nodeId),
+    ]
   }
   return {
     kind: 'node',

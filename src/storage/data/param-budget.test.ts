@@ -20,8 +20,8 @@ import { deleteWorkflow } from './authoring-workflows'
 import { listWorkflowsWithStats } from './authoring-workflows-stats'
 import { getFeedbackForSubjects } from './feedback'
 import { listAgentCalls } from './runs-agents'
-import { loadRunStats } from './runs-cost'
 import { listRuns } from './runs-list'
+import { loadRunStats } from './runs-rollup'
 
 // D1 rejects any prepared statement binding more than 100 parameters with
 // `D1_ERROR: too many SQL variables`. Nothing in the test stack reproduces that

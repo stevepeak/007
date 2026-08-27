@@ -1,13 +1,18 @@
 import { ChevronDown, ExternalLink, RotateCcw } from 'lucide-react'
 import { useState } from 'react'
 
-import type { RetryRunMode, WfRunDetail } from '../server/protocol'
+import type {
+  RetryRunMode,
+  WfRunDetail,
+  WfRunSummary,
+} from '../server/protocol'
 import type { WfFeedbackRating } from '../server/protocol-feedback'
 
 import { cn } from './cn'
 import { useWfComponents } from './context'
 import {
   formatDuration,
+  formatDurationMs,
   formatTimestamp,
   formatTokens,
   formatUsd,
@@ -85,23 +90,7 @@ export function RunHeaderActions({
       <span className="text-xs text-neutral-500">
         {formatDuration(start, end)}
       </span>
-      {run.costUsd != null ? (
-        <span
-          className="text-xs font-medium text-neutral-600 tabular-nums"
-          title={
-            run.totalTokens != null
-              ? `${run.totalTokens.toLocaleString()} tokens`
-              : undefined
-          }
-        >
-          {formatUsd(run.costUsd)}
-          {run.totalTokens != null ? (
-            <span className="ml-1 font-normal text-neutral-400">
-              · {formatTokens(run.totalTokens)} tok
-            </span>
-          ) : null}
-        </span>
-      ) : null}
+      <RunCostStat run={run} />
       <MessageFeedback
         alwaysVisible
         subjectId={feedbackSubjectId}
@@ -194,5 +183,54 @@ function RetryMenu({
         </>
       ) : null}
     </div>
+  )
+}
+
+
+/**
+ * The header's cost figure — the run's own total, or the TREE total once it has
+ * spawned children.
+ *
+ * A durable fan-out's parent records the loop and little else, so its own cost
+ * describes the dispatch rather than the work. Showing that as the run's
+ * headline number would understate a multi-recipe upload by an order of
+ * magnitude; the own figure moves into the tooltip, beside the additive compute
+ * time that says what the concurrency bought.
+ */
+function RunCostStat({ run }: { run: WfRunSummary }) {
+  const tree = run.tree
+  const cost = tree?.costUsd ?? run.costUsd
+  const tokens = tree?.totalTokens ?? run.totalTokens
+  if (cost == null) return null
+  const title = [
+    tokens != null ? `${tokens.toLocaleString()} tokens` : null,
+    tree ? `Across ${tree.runCount} runs, including everything this one spawned` : null,
+    tree?.computeMs != null
+      ? `${formatDurationMs(tree.computeMs)} of compute, run concurrently`
+      : null,
+    tree
+      ? `This run itself: ${run.costUsd != null ? formatUsd(run.costUsd) : 'no priced agent calls'}`
+      : null,
+    tree && tree.pending > 0
+      ? `${tree.pending} still running — this is the total so far`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  return (
+    <span
+      className="text-xs font-medium text-neutral-600 tabular-nums"
+      title={title || undefined}
+    >
+      {formatUsd(cost)}
+      {tree && tree.pending > 0 ? (
+        <span className="font-normal text-neutral-400">+</span>
+      ) : null}
+      {tokens != null ? (
+        <span className="ml-1 font-normal text-neutral-400">
+          · {formatTokens(tokens)} tok
+        </span>
+      ) : null}
+    </span>
   )
 }

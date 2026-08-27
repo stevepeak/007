@@ -48,7 +48,7 @@ const ITEM_EXECUTION_HELP: Record<IterationItemExecution, string> = {
   inline:
     'Each item runs as a single all-or-nothing unit. Cheapest per item, so it suits long lists over small subgraphs — but if an item fails partway it repeats from the start, and the inner steps’ own timeout and retry settings do not apply.',
   durable:
-    'Each item runs as its own checkpointed run, so every inner step retries and times out on its own terms and a failure resumes instead of repeating. Costs one run start per item, so it suits shorter lists over real pipelines.',
+    'Each item runs as its own checkpointed run, so every inner step retries and times out on its own terms — a step that fails is retried by itself instead of repeating the whole item. Costs one run start per item, so it suits shorter lists over real pipelines. Each item also gets a run of its own you can open from the loop and inspect.',
 }
 
 export function BranchInspector({
