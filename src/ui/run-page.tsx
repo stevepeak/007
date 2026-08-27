@@ -120,7 +120,7 @@ export function RunPage({
   // stops the moment the run settles, since a finished run's duration is fixed
   // and re-rendering the page every second for an unchanging number is waste.
   const now = useTickingNow(isRunLive(data?.run.status ?? '') ? 1000 : null)
-  // The runs this one spawned — durable iteration items, durable callees. Only
+  // The runs this one spawned — durable iteration items, called workflows. Only
   // fetched for a run whose graph can actually spawn any, and only polled while
   // the parent is live, since that is when children appear and change state.
   const spawnsChildren = useMemo(
@@ -242,7 +242,7 @@ export function RunPage({
                 ? [
                     // Named, and pointing at the parent RUN. "Item 30 of 32" on
                     // its own says which fragment this is but not what it is a
-                    // fragment OF, and a durable callee runs a different
+                    // fragment OF, and a callee runs a different
                     // workflow from its parent — so the name has to come from
                     // the parent rather than from this run.
                     {

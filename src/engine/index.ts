@@ -34,9 +34,6 @@ export {
   ITERATION_MAX_ITEMS_DEFAULT,
   ITERATION_MAX_ITEMS_FALLBACK,
   backfillIterationLimits,
-  CALLEE_EXECUTIONS,
-  calleeExecutionSchema,
-  type CalleeExecution,
   type ArgBinding,
   type RefBinding,
   type AgentConfig,
@@ -280,7 +277,9 @@ export {
   type IterationResult,
 } from './nodes/iteration'
 export {
+  buildCalleeTriggerInput,
   executeWorkflowNode,
+  type ChildWorkflowRunner,
   type WorkflowNodeMeta,
   type WorkflowNodeResult,
 } from './nodes/workflow'

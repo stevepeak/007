@@ -32,6 +32,7 @@ import {
   setRunManifest,
 } from '../storage/data'
 
+import type { CalleeParent } from './callee-protocol'
 import {
   deliverOutput,
   dispatchNode,
@@ -47,6 +48,7 @@ import {
   resolveTelemetrySink,
   runDims,
 } from './graph-workflow-telemetry'
+import type { RunRoom } from './run-room'
 import { createCountingStep, createRunCounters } from './step-counter'
 
 // The minimal binding contract a host Env must satisfy for the durable backend.
@@ -72,12 +74,25 @@ export interface GraphWorkflowEnv {
    */
   WF_DB: D1Database
   /**
-   * This same Workflow, so a run can spawn a CHILD instance for a callee marked
-   * `calleeExecution: 'durable'` — and so the child can reach back to send its
-   * completion event. Self-referential by design: parent and child run the exact
-   * same entrypoint, differing only in their params.
+   * This same Workflow, so a run can spawn a CHILD instance — one per durable
+   * iteration item, or one for a called workflow whose own trigger declares the
+   * durable engine — and so the child can reach back to send its completion
+   * event. Self-referential by design: parent and child run the exact same
+   * entrypoint, differing only in their params.
    */
   GRAPH_WORKFLOW: Workflow<GraphWorkflowParams>
+  /**
+   * The RunRoom namespace, for the other half of the same job: a called
+   * workflow whose trigger declares the INLINE engine is started in a room of
+   * its own, and a child of any engine reports back into a room when the run
+   * that called it is itself inline.
+   *
+   * Required, even for a host that never authors an inline workflow: whether a
+   * callee needs this binding is decided by the CALLEE's trigger, so a missing
+   * binding would surface as a run-time failure inside somebody else's
+   * workflow rather than as a typecheck failure here.
+   */
+  RUN_ROOM: DurableObjectNamespace<RunRoom>
 }
 
 // Serializable run context carried in the workflow params (no live `env`).
@@ -135,23 +150,25 @@ export type GraphWorkflowParams = {
    */
   resumeFromRunId?: string
   /**
-   * Set when this instance is a CHILD spawned by a workflow-call node whose
-   * `calleeExecution` is 'durable'. It runs the callee graph as a first-class
-   * run of its own (its own `wf_run`, its own per-node durable steps) and reports
-   * the result back to the waiting parent by event.
+   * Set when this run was SPAWNED BY another run — the callee of a
+   * workflow-call node, or one item of a durable iteration. It is a first-class
+   * run of its own (its own `wf_run`, its own per-node steps) and reports its
+   * result back to whoever is waiting.
    *
-   * Three things change under it, all so a spawned callee behaves exactly like an
-   * inlined one — the setting must change *where* the work runs, never *what it
-   * means*:
+   * Three things change under it, all so a spawned run behaves exactly like the
+   * inlined subgraph it stands in for — being spawned must change *where* the
+   * work runs, never *what it means*:
    *   • the trigger input is seeded raw (the inline `executeSubgraph` path does
    *     no trigger-registry validation, and a callee triggered by an event kind
-   *     would otherwise start failing the moment an author flipped the setting),
+   *     would otherwise start failing the moment it was called rather than
+   *     started),
    *   • the Output value skips the trigger's output contract for the same reason,
-   *   • completion/failure is reported to the parent before the instance settles.
+   *   • completion/failure is reported to the parent before the run settles.
    */
   subRun?: {
-    /** The parent's own instance id (`event.instanceId`), for `sendEvent`. */
-    parentInstanceId: string
+    /** Where to report the result — the parent's instance, or its RunRoom when
+     * the calling run is itself on the inline engine. See `CalleeParent`. */
+    parent: CalleeParent
     /** Event type the parent is parked on — unique per calling node, and per
      * ITEM when this is one item of a durable iteration. */
     eventType: string
@@ -230,7 +247,7 @@ export function makeGraphWorkflow<
       const p = event.payload
       const env = this.env
       // Wrapped ONCE, here, so every `stepDo(ctx.step, …)` — plus the direct
-      // `waitForEvent` a durable callee parks on — is tallied without any call
+      // `waitForEvent` a workflow-call node parks on — is tallied without any call
       // site knowing. See `step-counter.ts` for why this is a proxy and why it
       // survives replay.
       const counters = createRunCounters()
@@ -351,7 +368,7 @@ export function makeGraphWorkflow<
       // A spawned callee is seeded raw: the inline path it replaces validates
       // nothing (the caller's `buildTriggerInput` output is handed straight to
       // the subgraph's identity trigger), so validating here would make flipping
-      // `calleeExecution` change whether a workflow runs at all.
+      // being called change whether a workflow runs at all.
       const validatedTriggerInput = p.subRun
         ? p.triggerInput
         : resolveTriggerInput(

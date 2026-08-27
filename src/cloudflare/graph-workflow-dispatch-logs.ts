@@ -23,8 +23,8 @@ export { nodeLabel, startEntryOf }
  * Does this node drive durable steps of its OWN, instead of running inside a
  * single `run:` step?
  *
- * Two do — an iteration (one `step.do` per item) and a workflow call set to
- * durable execution (spawn + `waitForEvent`) — because `step.do` calls cannot
+ * Two do — an iteration (one `step.do` per item) and a workflow call (spawn +
+ * `waitForEvent` for its callee's own run) — because `step.do` calls cannot
  * nest. That makes them the only nodes whose feed is emitted from the
  * orchestrator body, which re-executes on every replay of the instance rather
  * than being journaled. Everywhere a node's logs are written, that difference
@@ -33,10 +33,7 @@ export { nodeLabel, startEntryOf }
  * differently.
  */
 export function ownsItsDurableSteps(node: ExecutableNode): boolean {
-  return (
-    node.kind === 'iteration' ||
-    (node.kind === 'workflow' && node.config.calleeExecution === 'durable')
-  )
+  return node.kind === 'iteration' || node.kind === 'workflow'
 }
 
 // Persist a node's full feed (bookends + body) in one idempotent write. Shared

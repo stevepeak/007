@@ -31,7 +31,7 @@ import {
 
 // Cloudflare Workflows bills per STEP, and a graph's step count is not
 // proportional to its size: every node costs enter/run/record, an iteration
-// spends one step per ITEM, and a durable callee adds two more. This is the only
+// spends one step per ITEM, and a called workflow adds two more. This is the only
 // place that relationship is visible — which graph is expensive, and why.
 //
 // Stacked by workflow rather than lined: the question is "where did the steps

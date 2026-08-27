@@ -412,7 +412,7 @@ describe('executedGraph', () => {
   })
 
   test('a workflow-call callee is never narrowed, whatever its node id', () => {
-    // The collision guard. A durable callee ALSO carries a `parent_node_id`,
+    // The collision guard. A callee ALSO carries a `parent_node_id`,
     // but it runs the callee's own version — that id addresses a node in the
     // PARENT's graph, and narrowing on it alone would hand back a subgraph
     // belonging to a workflow this run never entered. Only a real item index
@@ -500,7 +500,7 @@ describe('getRun for a durable iteration item', () => {
 
   test('a child names the workflow its parent belongs to', async () => {
     // What the breadcrumb reads. Resolved from the PARENT's version, because a
-    // durable callee's parent runs a different workflow from the child.
+    // callee's parent runs a different workflow from the child.
     await db.insert(wfWorkflow).values({ id: 'wf-2', name: 'Drop intake' })
     await db.insert(wfWorkflowVersion).values({
       id: 'ver-2',

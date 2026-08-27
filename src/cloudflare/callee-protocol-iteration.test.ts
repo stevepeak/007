@@ -93,7 +93,10 @@ describe('iterationItemParams', () => {
   test('every child reports to the same parent instance, with a valid type', () => {
     for (const i of [0, 1, 17]) {
       const params = build(i, i)
-      expect(params.subRun?.parentInstanceId).toBe('parent-instance')
+      expect(params.subRun?.parent).toEqual({
+        kind: 'instance',
+        instanceId: 'parent-instance',
+      })
       expect(params.subRun?.eventType).toMatch(WF_EVENT_TYPE_PATTERN)
     }
   })

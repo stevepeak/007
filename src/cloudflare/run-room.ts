@@ -4,7 +4,9 @@ import type { WfSdkConfig } from '../engine/config'
 import { errorMessage } from '../engine/run-node'
 import type { RunAnswerChunk } from '../engine/stream-sink'
 
-import type { GraphWorkflowParams } from './graph-workflow'
+import type { CalleeDoneWire } from './callee-protocol'
+import { CalleeWaiters } from './callee-waiters'
+import type { GraphWorkflowEnv, GraphWorkflowParams } from './graph-workflow'
 import { runInlineGraph } from './inline-run'
 
 // Per-run coordination room. Two responsibilities, both live:
@@ -77,6 +79,25 @@ export class RunRoomBase<E = unknown> extends DurableObject<E> {
     const from = Math.max(0, Math.min(cursor, this.answer.length))
     return { text: this.answer.slice(from), cursor: this.answer.length }
   }
+
+  /**
+   * Callees this room's run is waiting on — this engine's `step.waitForEvent`.
+   * See {@link CalleeWaiters}, which is where the mechanics (and the race) live.
+   */
+  private callees = new CalleeWaiters()
+
+  /**
+   * A spawned callee reporting its result. Called over RPC by the child — from
+   * its Workflows instance, or from its own room when it too ran inline.
+   */
+  deliverCallee(eventType: string, wire: CalleeDoneWire): void {
+    this.callees.deliver(eventType, wire)
+  }
+
+  /** Park until a called workflow reports back, or `timeoutMs` elapses. */
+  waitForCallee(eventType: string, timeoutMs: number): Promise<CalleeDoneWire> {
+    return this.callees.wait(eventType, timeoutMs)
+  }
 }
 
 /**
@@ -100,7 +121,11 @@ type InlineHostRpc = {
  */
 export interface RunRoom extends RunRoomBase, InlineHostRpc {}
 
-export type RunRoomClass<E extends { WF_DB: D1Database }> = new (
+// The env is the full backend contract, not just `WF_DB`: on the inline engine
+// this room hosts a real run, and a real run can call another workflow — which
+// means starting a child instance (`GRAPH_WORKFLOW`) or a child room
+// (`RUN_ROOM`), and reporting back into whichever host called it.
+export type RunRoomClass<E extends GraphWorkflowEnv> = new (
   ctx: DurableObjectState,
   env: E,
 ) => RunRoomBase<E> & InlineHostRpc
@@ -117,7 +142,7 @@ export type RunRoomClass<E extends { WF_DB: D1Database }> = new (
  * run's execution host, so it needs the host's model factory, tools, and deps —
  * exactly what {@link makeGraphWorkflow} needs for the durable engine.
  */
-export function makeRunRoom<TDeps, E extends { WF_DB: D1Database }>(
+export function makeRunRoom<TDeps, E extends GraphWorkflowEnv>(
   config: WfSdkConfig<TDeps>,
 ): RunRoomClass<E> {
   return class RunRoom extends RunRoomBase<E> {

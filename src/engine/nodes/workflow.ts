@@ -1,5 +1,10 @@
 import { resolveBinding } from '../binding'
-import { workflowFromManifest, type WorkflowCallNode } from '../graph'
+import {
+  workflowFromManifest,
+  type WfEngine,
+  type WfWorkflowManifestEntry,
+  type WorkflowCallNode,
+} from '../graph'
 import type { RunNodeContext } from '../run-node'
 
 import { executeSubgraph } from './iteration'
@@ -7,18 +12,32 @@ import { executeSubgraph } from './iteration'
 // The Workflow node calls another workflow and awaits its result. The callee's
 // published graph was frozen into the run manifest at run start (transitively,
 // so its own agents/sub-workflows are present too); here we resolve it, build the
-// callee's trigger input, and run the graph inline via the shared `executeSubgraph`
-// loop. The callee's Output value is this node's output. Running inline (rather
-// than spawning a separate run) mirrors the iteration node and keeps the pure
-// engine free of any backend/spawn concern — the same `ctx` (model factory,
-// tools, manifest, blob/image resolvers) threads straight through, so nested
-// nodes resolve exactly as top-level ones do.
+// callee's trigger input, and hand it to whoever can actually start it.
+//
+// A callee is a RUN OF ITS OWN wherever a backend can start one: its own
+// `wf_run` linked back to this run and this node, executing on the engine the
+// CALLEE's trigger declares. The caller never chooses that engine — see the
+// Workflow node's schema comment. The backend supplies that ability as
+// `ctx.runChildWorkflow`; the engine itself knows nothing about instances,
+// rooms, or D1.
+//
+// Without it the callee's graph runs inline as a subgraph through the same
+// `executeSubgraph` loop iteration uses. That is the fallback for the two
+// contexts that genuinely cannot spawn: a node nested inside an INLINE
+// iteration item (already inside a `step.do`, where nothing may nest), and the
+// bare engine in tests and the playground. The same `ctx` threads straight
+// through there, so nested nodes resolve exactly as top-level ones do.
 
 export type WorkflowNodeMeta = {
   workflowId: string
   versionId: string
   versionNumber: number
   name: string
+  /** The callee's own run, when it got one — the run viewer's drill-down link. */
+  childRunId?: string
+  /** Which engine the callee ran on, as its own trigger declared. Absent when
+   *  it ran inline as a subgraph of this node (no run of its own). */
+  engine?: WfEngine
 }
 
 export type WorkflowNodeResult = {
@@ -26,14 +45,31 @@ export type WorkflowNodeResult = {
   meta: WorkflowNodeMeta
 }
 
+/**
+ * Start the callee as its own run and await its answer — the backend's half of
+ * a workflow-call node.
+ *
+ * Injected rather than implemented here because starting a run means touching
+ * D1 and a platform (a Workflows instance, a Durable Object), none of which the
+ * pure engine may know about. Returns the callee's Output value plus the ids
+ * that let a reader open its trace.
+ */
+export type ChildWorkflowRunner = (args: {
+  node: WorkflowCallNode
+  /** The callee, resolved and frozen at run start. */
+  entry: WfWorkflowManifestEntry
+  /** What the callee's trigger is seeded with — see {@link buildCalleeTriggerInput}. */
+  triggerInput: unknown
+}) => Promise<{ output: unknown; childRunId: string; engine: WfEngine }>
+
 // Build the callee's trigger output. With no `inputs` bindings the node's
 // upstream input is passed straight through (identity, like an iteration item);
 // otherwise each key/binding builds one field of a trigger-input object.
 //
-// Exported because the durable-callee path in the Cloudflare backend must build
-// the SAME input before handing it to a child instance — sharing this is what
-// keeps `calleeExecution` a choice about where the callee runs rather than about
-// what it receives.
+// Exported because every path that starts a callee — inline subgraph, child
+// instance, child inline run — must build the SAME input. Sharing this is what
+// keeps the callee's engine a choice about where the work runs rather than
+// about what it receives.
 export function buildCalleeTriggerInput(
   node: WorkflowCallNode,
   input: unknown,
@@ -65,14 +101,19 @@ export async function executeWorkflowNode<TDeps>(args: {
     )
   }
   const triggerInput = buildCalleeTriggerInput(node, input, ctx.nodeOutputs)
-  const output = await executeSubgraph(entry.graph, triggerInput, ctx)
-  return {
-    output,
-    meta: {
-      workflowId: entry.id,
-      versionId: entry.versionId,
-      versionNumber: entry.versionNumber,
-      name: entry.name,
-    },
+  const base = {
+    workflowId: entry.id,
+    versionId: entry.versionId,
+    versionNumber: entry.versionNumber,
+    name: entry.name,
   }
+  if (ctx.runChildWorkflow) {
+    const child = await ctx.runChildWorkflow({ node, entry, triggerInput })
+    return {
+      output: child.output,
+      meta: { ...base, childRunId: child.childRunId, engine: child.engine },
+    }
+  }
+  const output = await executeSubgraph(entry.graph, triggerInput, ctx)
+  return { output, meta: base }
 }

@@ -156,13 +156,6 @@ export const ITERATION_MAX_ITEMS_DEFAULT: Record<
 }
 export const ITERATION_MAX_ITEMS_FALLBACK = 1000
 
-// The same choice for a workflow-call node's callee. A separate alias rather
-// than a shared one so each node kind's values can diverge later without a
-// rename, and so the schema reads in the node's own vocabulary.
-export const CALLEE_EXECUTIONS = ['inline', 'durable'] as const
-export const calleeExecutionSchema = z.enum(CALLEE_EXECUTIONS)
-export type CalleeExecution = z.infer<typeof calleeExecutionSchema>
-
 // What the USER sees while a step runs — a single, mutually-exclusive choice, so
 // the modes can't be held at once and there are no cross-field invariants to
 // enforce by hand:
@@ -431,10 +424,18 @@ const switchNodeSchema = baseNode.extend({
 // node, it is a pure pointer at a reusable entity by id: it floats to that
 // workflow's latest published version, frozen into the run manifest at run start
 // (`WfWorkflowManifestEntry`) so a run replays against an exact graph even as the
-// callee drifts. At run time the frozen graph runs inline as a subgraph (the same
-// `executeSubgraph` path iteration uses); its Output value becomes this node's
-// output. Reference cycles (A→B→A) are rejected at manifest resolution, not here
-// — the graph alone can't see the callee's graph.
+// callee drifts. At run time the callee gets a RUN OF ITS OWN — its own `wf_run`,
+// linked back to this run and this node, executing on the engine the callee's
+// OWN trigger declares. Its Output value becomes this node's output. Reference
+// cycles (A→B→A) are rejected at manifest resolution, not here — the graph alone
+// can't see the callee's graph.
+//
+// There is deliberately NO per-call execution setting. How a workflow executes
+// (durable steps vs the inline engine, its nodes' retries and timeouts) is a
+// property OF THAT WORKFLOW, declared once on its own trigger node; letting a
+// caller override it would mean the same published workflow behaves differently
+// depending on who called it, and would make an author reason about durability
+// in a graph they aren't looking at.
 const workflowCallNodeSchema = baseNode.extend({
   kind: z.literal('workflow'),
   config: z.object({
@@ -446,21 +447,6 @@ const workflowCallNodeSchema = baseNode.extend({
     // item). Non-empty → each key/binding (a literal or a `ref` into an upstream
     // node's output) builds one field of a trigger-input object.
     inputs: z.record(z.string(), argBindingSchema).default({}),
-    // How the callee executes — the workflow-node peer of an iteration's
-    // `itemExecution`, and the same trade in a different shape:
-    //
-    //   • 'inline'  — the callee's whole graph runs inside THIS node's single
-    //     durable step. Cheapest, but the callee is atomic: a failure in its
-    //     fifth node replays its first four (side effects included), and its
-    //     nodes' own `execution` policy never applies.
-    //   • 'durable' — the callee runs as its own child workflow instance with
-    //     its own `wf_run`, so every one of its nodes gets a real durable step,
-    //     its declared retries, and its declared timeout. Costs one instance
-    //     start, and the parent parks on `waitForEvent` while it runs (a waiting
-    //     instance is free — it doesn't count against the concurrency cap).
-    //
-    // A small callee stays 'inline'; a real pipeline wants 'durable'.
-    calleeExecution: calleeExecutionSchema.default('inline'),
   }),
 })
 

@@ -89,7 +89,7 @@ export type WfDashboardResult = {
   /**
    * Cloudflare Workflows step consumption — the billing line a graph's node
    * count doesn't predict: three steps per node, one per iteration ITEM, two per
-   * durable callee, plus the run envelope.
+   * called workflow, plus the run envelope.
    *
    * Null (never zero) when analytics is unconfigured — nothing in SQL counts
    * `step.do` calls, so there is no fallback and a fabricated 0 would read as

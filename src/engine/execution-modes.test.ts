@@ -64,35 +64,39 @@ function workflowNode (config: Record<string, unknown> = {}) {
 
 describe('execution modes', () => {
   // The default is load-bearing: every graph authored before the setting existed
-  // has no `itemExecution`/`calleeExecution` at all, and must keep running
-  // exactly as it did — as one unit per item / per callee.
+  // has no `itemExecution` at all, and must keep running exactly as it did — as
+  // one unit per item.
   test('a graph with no setting means inline', () => {
     const g = parse([iterationNode(), workflowNode()])
-    const [loop, call] = g.nodes
+    const [loop] = g.nodes
     expect(loop.kind === 'iteration' && loop.config.itemExecution).toBe('inline')
-    expect(call.kind === 'workflow' && call.config.calleeExecution).toBe(
-      'inline',
-    )
   })
 
   test('an explicit durable setting round-trips', () => {
-    const g = parse([
-      iterationNode({ itemExecution: 'durable' }),
-      workflowNode({ calleeExecution: 'durable' }),
-    ])
-    const [loop, call] = g.nodes
+    const g = parse([iterationNode({ itemExecution: 'durable' }), workflowNode()])
+    const [loop] = g.nodes
     expect(loop.kind === 'iteration' && loop.config.itemExecution).toBe(
-      'durable',
-    )
-    expect(call.kind === 'workflow' && call.config.calleeExecution).toBe(
       'durable',
     )
   })
 
   test('an unknown mode is rejected rather than silently defaulted', () => {
-    expect(() => parse([workflowNode({ calleeExecution: 'spawn' })])).toThrow()
+    expect(() =>
+      parse([iterationNode({ itemExecution: 'spawn' }), workflowNode()]),
+    ).toThrow()
   })
 
+  // A workflow-call node has no execution setting of its own: the callee runs
+  // as its own child run, on the engine ITS trigger declares. A stored graph
+  // carrying the setting this replaced parses clean, without it.
+  test('a workflow-call node keeps no execution setting', () => {
+    const g = parse([iterationNode(), workflowNode({ calleeExecution: 'durable' })])
+    const [, call] = g.nodes
+    expect(call.kind === 'workflow' && call.config).toEqual({
+      workflowId: 'w1',
+      inputs: {},
+    })
+  })
 })
 
 // The fan-out bound rides the same lifecycle as `itemExecution` — stored in the

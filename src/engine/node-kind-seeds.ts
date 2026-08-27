@@ -98,12 +98,12 @@ export const NODE_KIND_SEEDS: { [K in WfNodeKind]: NodeKindSeed<K> } = {
 
   // A pointer node — the inspector picks which workflow to call. Left empty so
   // it reads as "no workflow selected" (an error) until the author picks one.
-  // `calleeExecution: 'inline'` is the cheap default; the Issues panel nudges
-  // toward Durable once the chosen callee turns out to be a real pipeline.
+  // Nothing else to seed: the callee runs as its own child run, on the engine
+  // its own trigger declares, so a caller has no execution knobs of its own.
   workflow: () => ({
     kind: 'workflow',
     label: 'Call workflow',
-    config: { workflowId: '', inputs: {}, calleeExecution: 'inline' },
+    config: { workflowId: '', inputs: {} },
   }),
 
   'feature-request': () => ({

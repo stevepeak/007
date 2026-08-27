@@ -32,7 +32,7 @@ describe('agent step timeout ↔ model budget', () => {
 })
 
 describe('callee handshake', () => {
-  // A parent can have several durable callees parked at once. Keying the event
+  // A parent can have several callees parked at once. Keying the event
   // type on the node id is what stops one node's completion waking a sibling —
   // which would hand that sibling the wrong workflow's output.
   test('each calling node parks on its own event type', () => {

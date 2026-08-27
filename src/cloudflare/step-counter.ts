@@ -2,8 +2,8 @@ import type { WorkflowStep } from 'cloudflare:workers'
 
 // Cloudflare Workflows bills per STEP, not per run, and a graph's step count is
 // nowhere near its node count: every node costs `enter:` + `run:` + `record:`,
-// an INLINE iteration substitutes one `iter:<node>:<i>` per item, a durable
-// callee — and every item of a DURABLE iteration — substitutes `spawn:` +
+// an INLINE iteration substitutes one `iter:<node>:<i>` per item, a workflow
+// call — and every item of a DURABLE iteration — substitutes `spawn:` +
 // `await:`, and the run envelope adds ~8 more. Nothing
 // recorded that number, so the billing line had no explanation.
 //

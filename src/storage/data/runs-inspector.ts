@@ -223,7 +223,7 @@ export async function getRun(
     countChildRuns(db, [runId]),
     // What to CALL the run this one came from. A child is a fragment of
     // something bigger and its viewer is reachable by direct link, so the way
-    // back up has to name where it goes — and a durable callee runs a different
+    // back up has to name where it goes — and a callee runs a different
     // workflow from its parent, so the child's own name cannot answer it. Only
     // read for a run that has a parent: every top-level run pays nothing.
     run.parentRunId

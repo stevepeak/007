@@ -5,6 +5,7 @@ import { executeWorkflow } from '../engine/executor'
 import type { WfRunManifestEntry } from '../engine/graph'
 import { modelBudgetFor } from '../engine/model-budget'
 import { resolveNodeTimeoutMs } from '../engine/node-timeout'
+import type { ChildWorkflowRunner } from '../engine/nodes/workflow'
 import { errorMessage } from '../engine/run-node'
 import type { RunLogEntry, StreamSink } from '../engine/stream-sink'
 import { createWfDb, type WfDb } from '../storage/client'
@@ -20,7 +21,17 @@ import {
   setRunManifest,
 } from '../storage/data'
 
-import type { GraphWorkflowParams } from './graph-workflow'
+import {
+  calleeEventType,
+  type CalleeDoneEvent,
+  type CalleeDoneWire,
+} from './callee-protocol'
+import {
+  reportCalleeResult,
+  spawnCalleeRun,
+  type SpawnedChildRun,
+} from './child-run'
+import type { GraphWorkflowEnv, GraphWorkflowParams } from './graph-workflow'
 import {
   createTelemeteredRecorder,
   resolveTelemetrySink,
@@ -65,6 +76,16 @@ import { createRunCounters } from './step-counter'
  */
 export interface InlineRunRoom {
   appendAnswer(text: string): void
+  /**
+   * Park until a called workflow reports its result — this engine's
+   * `step.waitForEvent`. Lives on the room rather than in this module because
+   * the room is the only thing both halves can address: the walk runs inside
+   * it, and the child reaches it by id. See `RunRoomBase.waitForCallee`.
+   */
+  waitForCallee(eventType: string, timeoutMs: number): Promise<CalleeDoneWire>
+  /** Hand a result to whoever is waiting on `eventType`. Used here only to
+   *  cancel a wait whose spawn never happened. */
+  deliverCallee(eventType: string, wire: CalleeDoneWire): void
 }
 
 /**
@@ -151,6 +172,72 @@ async function notifyHost(
   }
 }
 
+/**
+ * The inline engine's half of a workflow-call node: give the callee a run of its
+ * own, then park until it reports back.
+ *
+ * The shape is the durable backend's `dispatchCallee`, minus the journal —
+ * register the wait, spawn, await, unwrap — and that symmetry is the point. A
+ * callee behaves the same whichever engine its CALLER happens to be on, and the
+ * engine the callee itself runs on is read from its own trigger inside
+ * `spawnCalleeRun`, so an inline run can call a durable workflow and vice versa.
+ *
+ * The wait is registered BEFORE the spawn, so a callee that finishes almost
+ * instantly cannot report into an empty room.
+ */
+export function buildChildWorkflowRunner<E extends GraphWorkflowEnv>(args: {
+  env: E
+  db: WfDb
+  room: InlineRunRoom
+  p: GraphWorkflowParams
+  manifest: WfRunManifestEntry[]
+}): ChildWorkflowRunner {
+  const { env, db, room, p, manifest } = args
+  return async ({ node, entry, triggerInput }) => {
+    const eventType = calleeEventType(node.id)
+    // The calling node's own declared timeout, exactly as it bounds a durable
+    // parent's `waitForEvent` — so the author's one knob bounds the wait on
+    // both engines.
+    const settled = room.waitForCallee(
+      eventType,
+      resolveNodeTimeoutMs(node, p.runContext.executionOverride),
+    )
+    let spawned: SpawnedChildRun
+    try {
+      spawned = await spawnCalleeRun(env, db, {
+        entry,
+        triggerInput,
+        parentRunId: p.workflowRunId,
+        nodeId: node.id,
+        runContext: p.runContext,
+        manifest,
+        traceId: p.runContext.traceId,
+        // This run lives in a room, not an instance: the child reports by RPC.
+        parent: { kind: 'room', roomId: p.runId },
+        eventType,
+      })
+    } catch (err) {
+      // Nothing will ever report under this event type now. Settle the wait
+      // rather than leave the room holding a timer for a child that was never
+      // created.
+      room.deliverCallee(eventType, { ok: false, error: errorMessage(err) })
+      await settled.catch(() => undefined)
+      throw err
+    }
+    const wire = await settled
+    if (!wire.ok) {
+      // The callee recorded its own failure against its own run; this is the
+      // caller's copy of why its node failed.
+      throw new Error(`Called workflow "${entry.name}" failed: ${wire.error}`)
+    }
+    return {
+      output: JSON.parse(wire.outputJson) as unknown,
+      childRunId: spawned.childRunId,
+      engine: spawned.engine,
+    }
+  }
+}
+
 export type RunInlineGraphDeps<E> = {
   /** Host Env (live bindings) — carries `DB` and is passed back to the host. */
   env: E
@@ -168,7 +255,7 @@ export type RunInlineGraphDeps<E> = {
  * Never throws: a failed run is recorded as failed (D1 + room) and swallowed,
  * because the caller is a fire-and-forget DO task with nowhere to report to.
  */
-export async function runInlineGraph<TDeps, E extends { WF_DB: D1Database }>(
+export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
   config: WfSdkConfig<TDeps>,
   deps: RunInlineGraphDeps<E>,
 ): Promise<void> {
@@ -224,6 +311,30 @@ export async function runInlineGraph<TDeps, E extends { WF_DB: D1Database }>(
     onRunFailed: undefined,
   }
 
+  // This run may itself BE a callee. Reporting is best-effort from here: unlike
+  // the durable backend, which has a retried step to lean on, a failed report
+  // has nowhere to be retried — so it is logged and the caller's own wait times
+  // out, which is the same outcome as a child that died silently.
+  //
+  // Size: the answer travels whole, since this engine has no step boundary to
+  // spill it at (a durable callee's Output is usually already a blob pointer by
+  // the time it reports). A durable CALLER is woken by `sendEvent`, whose
+  // payload caps at 1 MiB — fine for the interactive, text-shaped work this
+  // engine exists for, and the reason a callee that returns bulk should be on
+  // the durable engine, which is its own trigger's call to make.
+  const sub = p.subRun
+  const report = async (payload: CalleeDoneEvent): Promise<void> => {
+    if (!sub) return
+    try {
+      await reportCalleeResult(env, sub, payload)
+    } catch (err) {
+      console.error(
+        `[wf] inline run ${p.workflowRunId} could not report to its caller:`,
+        errorMessage(err),
+      )
+    }
+  }
+
   try {
     if (p.resumeFromRunId) {
       // Loud rather than silent: resume replays a prior run's completed steps,
@@ -232,6 +343,16 @@ export async function runInlineGraph<TDeps, E extends { WF_DB: D1Database }>(
       // were already done.
       throw new Error(
         'Resume is not supported on the inline engine — it has no step journal to replay. Switch the workflow to the durable engine to resume a failed run.',
+      )
+    }
+
+    // A durable iteration item is spawned against its PARENT's version and digs
+    // the container's subgraph out of it — a narrowing only the durable backend
+    // performs, and only for items it spawned itself. Nothing routes one here;
+    // say so rather than silently running the parent's whole graph.
+    if (p.subRun?.iterationNodeId) {
+      throw new Error(
+        'An iteration item cannot run on the inline engine — items are spawned as durable child instances.',
       )
     }
 
@@ -247,11 +368,14 @@ export async function runInlineGraph<TDeps, E extends { WF_DB: D1Database }>(
 
     // Resolve every floating reference to its published version once and freeze
     // it onto the run, so a mid-run publish can't split a run across two prompt
-    // versions. Identical to the durable backend's `resolve-manifest` step.
-    const manifest: WfRunManifestEntry[] = await resolveRunManifest(
-      db,
-      version.graph,
-    )
+    // versions. Identical to the durable backend's `resolve-manifest` step —
+    // including the part where a SPAWNED run inherits its caller's manifest
+    // instead of resolving its own: re-resolving would float every reference to
+    // whatever is published at that instant, splitting one logical run across
+    // two prompt versions. The inherited copy is still written onto this run, so
+    // its trace records exactly which versions it executed.
+    const manifest: WfRunManifestEntry[] =
+      p.inheritedManifest ?? (await resolveRunManifest(db, version.graph))
     await setRunManifest(db, { runId: p.workflowRunId, manifest })
 
     // No `cloudflareRunId`: there is no Workflows instance behind this run. The
@@ -266,6 +390,21 @@ export async function runInlineGraph<TDeps, E extends { WF_DB: D1Database }>(
       triggerInput: p.triggerInput,
       config: execConfig,
       runContext,
+      // Seeded raw, and answering to its caller rather than to its trigger's
+      // contract — see `ExecuteWorkflowDeps.spawned`. The durable backend does
+      // exactly the same for a run it was handed rather than started.
+      spawned: !!sub,
+      // Calling another workflow gives it a run of its own, here as much as on
+      // the durable engine. This engine has no `waitForEvent`, so the wait is a
+      // promise held by the room (see `waitForCallee`) — but everything either
+      // side of it is identical, right down to the event type.
+      runChildWorkflow: buildChildWorkflowRunner({
+        env,
+        db,
+        room,
+        p,
+        manifest,
+      }),
       // Telemetered, and counted: with no orchestrator and no step journal, the
       // recorder is the only place this backend can learn its own shape.
       recorder: withRunCounts(
@@ -310,6 +449,11 @@ export async function runInlineGraph<TDeps, E extends { WF_DB: D1Database }>(
           settled: !pendingWork,
           pendingNodes,
         })
+        // Release the caller HERE, on the answer, not on completion — the same
+        // rule the durable backend applies, and for the same reason: arms that
+        // don't feed the Output are still draining, and nobody waiting on an
+        // answer should wait behind work they never depended on.
+        await report({ ok: true, output })
         if (config.onRunComplete) {
           await notifyHost('on-complete', () =>
             config.onRunComplete!(runContext, { output, outputNodeId }),
@@ -339,6 +483,10 @@ export async function runInlineGraph<TDeps, E extends { WF_DB: D1Database }>(
     emit('failed', { error: message })
     try {
       await failRun(db, { runId: p.workflowRunId, error: message })
+      // Wake the caller BEFORE the host callback: a callee that dies silently
+      // leaves its caller parked until the calling node's timeout, turning a
+      // legible failure into a long stall.
+      await report({ ok: false, error: message })
       if (config.onRunFailed) {
         await notifyHost('on-failed', () =>
           config.onRunFailed!(runContext, {

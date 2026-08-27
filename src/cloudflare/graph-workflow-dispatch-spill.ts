@@ -23,7 +23,7 @@ type BoundaryContext = Omit<BlobSpillContext, 'path'>
 //   run:<node>          a node's output (both copies — recorded and scheduled)
 //   iter:<node>:<i>     one iteration item's subgraph result
 //   (the collection)    every item's result, gathered
-//   callee event        a durable callee's output, JSON-encoded onto the event
+//   callee event        a spawned callee's output, JSON-encoded onto the event
 //
 // The first two are spilled here. The other two need no write of their own: an
 // iteration's collection is the list of its items' returns, so spilling the

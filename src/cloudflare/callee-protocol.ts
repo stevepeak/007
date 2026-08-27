@@ -2,12 +2,30 @@ import type { WfRunManifestEntry } from '../engine/graph'
 
 import type { GraphWorkflowParams } from './graph-workflow'
 
-// The parent↔child protocol for a workflow-call node running its callee as its
-// own workflow instance (`calleeExecution: 'durable'`).
+// The parent↔child protocol for a spawned child run — a workflow-call node's
+// callee, or one item of a durable iteration.
 //
 // Deliberately free of any `cloudflare:*` import: it is pure data shared by the
-// two halves of the handshake — the parent parked on `waitForEvent` and the
-// spawned child that wakes it — which also keeps it testable outside workerd.
+// two halves of the handshake — the waiting parent and the spawned child that
+// wakes it — which also keeps it testable outside workerd.
+
+/**
+ * Where a spawned child reports its result, which is decided by what KIND OF
+ * HOST the parent is rather than by anything about the child:
+ *
+ *   • 'instance' — the parent is a durable run parked on `waitForEvent`, woken
+ *     by `sendEvent` to its instance.
+ *   • 'room'     — the parent is an INLINE run, executing in its RunRoom
+ *     Durable Object with no step journal and nothing to park on. It awaits an
+ *     in-memory promise, resolved by an RPC into the room.
+ *
+ * One union rather than two protocols because the child must not care: it
+ * finishes, it reports, and `reportCalleeResult` picks the transport. That is
+ * what lets any engine call any engine.
+ */
+export type CalleeParent =
+  | { kind: 'instance'; instanceId: string }
+  | { kind: 'room'; roomId: string }
 
 /** What a spawned callee reports back, in engine terms. */
 export type CalleeDoneEvent =
@@ -52,9 +70,16 @@ export const WF_EVENT_TYPE_PATTERN = /^[A-Z0-9-]{1,100}$/i
  * `WorkflowTimeoutError` naming nothing. The real cause lives in a different
  * instance's step history. Failing here instead makes it say what it is.
  */
+/**
+ * A malformed event type, as its own class so a caller can tell it apart from
+ * a transport failure: retrying a bad type can never succeed, while retrying a
+ * failed `sendEvent` usually does.
+ */
+export class InvalidEventTypeError extends Error {}
+
 export function assertValidEventType(eventType: string, context: string): void {
   if (!WF_EVENT_TYPE_PATTERN.test(eventType)) {
-    throw new Error(
+    throw new InvalidEventTypeError(
       `${context}: "${eventType}" is not a valid Cloudflare Workflows event type. ` +
         'It must be 1–100 characters of letters, digits and hyphens — a colon in ' +
         'particular is accepted locally and rejected in production.',
@@ -65,7 +90,7 @@ export function assertValidEventType(eventType: string, context: string): void {
 /**
  * The event type one waiting parent parks on.
  *
- * Keyed by node id because a parent can have several durable callees in flight
+ * Keyed by node id because a parent can have several callees in flight
  * at once: a shared type would let whichever finished first wake every waiter,
  * handing each the wrong callee's output — a silent data mix-up rather than a
  * visible failure. A durable ITERATION extends the same reasoning one level
@@ -104,6 +129,8 @@ export function iterationItemParams(args: {
   /** The PARENT run's params — the child takes its version and run context. */
   parent: GraphWorkflowParams
   manifest: WfRunManifestEntry[]
+  /** Where to report back. An iteration item is only ever spawned by the
+   *  durable backend, so this is always the parent's instance. */
   parentInstanceId: string
   /** The iteration container's node id, in the parent's graph. */
   nodeId: string
@@ -126,7 +153,7 @@ export function iterationItemParams(args: {
     runContext: args.parent.runContext,
     inheritedManifest: args.manifest,
     subRun: {
-      parentInstanceId: args.parentInstanceId,
+      parent: { kind: 'instance', instanceId: args.parentInstanceId },
       eventType: args.eventType,
       iterationNodeId: args.nodeId,
     },

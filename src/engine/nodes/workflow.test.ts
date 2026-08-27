@@ -109,7 +109,6 @@ function callNode (config: Partial<WorkflowCallNode['config']> = {}): WorkflowCa
   config: {
     workflowId: 'wf-callee',
     inputs: {},
-    calleeExecution: 'inline',
     ...config,
   },
 }

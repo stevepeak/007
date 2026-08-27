@@ -94,7 +94,7 @@ A workflow is a directed graph. Two engine-managed bookends — **trigger** and
 | `branch`          | deterministic yes/no predicate (no LLM); routes the live edge       |
 | `switch`          | deterministic multi-way routing to a matched case                   |
 | `iteration`       | fans a list out over an embedded subgraph, one run per item         |
-| `workflow`        | calls another workflow inline and returns its output                |
+| `workflow`        | calls another workflow as a child run and returns its output        |
 | `race`            | first-to-finish join — forwards the winning upstream                |
 | `aggregate`       | wait-for-all join — forwards the ordered list of upstream outputs   |
 | `feature-request` | pass-through placeholder capturing a "wish it did X" note           |

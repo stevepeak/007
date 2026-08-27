@@ -16,7 +16,10 @@ import { executeRaceNode } from './nodes/race'
 import { executeSwitchNode } from './nodes/switch'
 import { executeToolNode } from './nodes/tool'
 import { executeTransformNode } from './nodes/transform'
-import { executeWorkflowNode } from './nodes/workflow'
+import {
+  executeWorkflowNode,
+  type ChildWorkflowRunner,
+} from './nodes/workflow'
 import type { RunRecorder } from './run-recorder'
 import type { ExecuteInstruction } from './scheduler'
 import { withoutUserProgress, type StreamSink } from './stream-sink'
@@ -84,6 +87,17 @@ export type RunNodeContext<TDeps> = {
    * runs, but only its single aggregate step is persisted (by the backend).
    */
   subStepRecorder?: RunRecorder
+  /**
+   * The backend's ability to start a called workflow as a RUN OF ITS OWN — its
+   * own `wf_run`, on the engine that workflow's own trigger declares. Supplied
+   * by whichever host can actually start one.
+   *
+   * Omitted where nothing can be spawned: inside an inline iteration item's
+   * `step.do` (nothing may nest in a step), and in the bare engine used by
+   * tests and the playground. A workflow node then runs its callee's frozen
+   * graph inline as a subgraph instead — see `executeWorkflowNode`.
+   */
+  runChildWorkflow?: ChildWorkflowRunner
 }
 
 export async function runNode<TDeps>(

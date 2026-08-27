@@ -28,13 +28,13 @@ function iteration(itemExecution?: string, subgraph: unknown[] = []) {
   }
 }
 
-function workflowCall(calleeExecution?: string) {
+function workflowCall() {
   return {
     id: 'call',
     kind: 'workflow',
     label: 'Call',
     position: { x: 0, y: 0 },
-    config: calleeExecution ? { calleeExecution } : {},
+    config: { workflowId: 'w1', inputs: {} },
   }
 }
 
@@ -45,37 +45,30 @@ describe('canSpawnChildRuns', () => {
     expect(canSpawnChildRuns(graphOf([PLAIN, iteration('durable')]))).toBe(true)
   })
 
-  test('a durable workflow-call can', () => {
-    expect(canSpawnChildRuns(graphOf([workflowCall('durable')]))).toBe(true)
+  test('ANY workflow-call can — a callee always gets a run of its own', () => {
+    expect(canSpawnChildRuns(graphOf([workflowCall()]))).toBe(true)
   })
 
-  test('inline nodes cannot — their work is steps on this run', () => {
-    expect(
-      canSpawnChildRuns(
-        graphOf([PLAIN, iteration('inline'), workflowCall('inline')]),
-      ),
-    ).toBe(false)
+  test('an inline iteration alone cannot — its work is steps on this run', () => {
+    expect(canSpawnChildRuns(graphOf([PLAIN, iteration('inline')]))).toBe(false)
   })
 
-  test('an unset execution mode cannot — both default to inline', () => {
-    // A graph published before the knob existed carries neither field, and must
-    // not start paying for a poll it can never have children for.
-    expect(canSpawnChildRuns(graphOf([iteration(), workflowCall()]))).toBe(false)
+  test('an unset item execution cannot — it defaults to inline', () => {
+    // A graph published before the knob existed carries no field, and must not
+    // start paying for a poll it can never have children for.
+    expect(canSpawnChildRuns(graphOf([PLAIN, iteration()]))).toBe(false)
   })
 
   test('a graph of ordinary nodes cannot', () => {
     expect(canSpawnChildRuns(graphOf([PLAIN]))).toBe(false)
   })
 
-  test('a durable call INSIDE an iteration subgraph does not count', () => {
-    // That node belongs to the item's run — it spawns a grandchild, listed
-    // under the child, not here. Counting it would fetch children this run
-    // never has.
+  test('a call INSIDE an inline iteration subgraph counts', () => {
+    // An inline item runs in THIS run, so the callee it spawns is this run's
+    // own child — miss it and the drill-down disappears.
     expect(
-      canSpawnChildRuns(
-        graphOf([iteration('inline', [workflowCall('durable')])]),
-      ),
-    ).toBe(false)
+      canSpawnChildRuns(graphOf([iteration('inline', [workflowCall()])])),
+    ).toBe(true)
   })
 
   test('a null graph counts as "cannot rule it out"', () => {

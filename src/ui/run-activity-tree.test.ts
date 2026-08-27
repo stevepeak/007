@@ -557,7 +557,7 @@ describe('buildActivityTree — durable items and callees (NEW-177)', () => {
       },
     }),
     node('call', 'workflow', 'Enrich', {
-      config: { calleeExecution: 'durable' },
+      config: { workflowId: 'wf-callee', inputs: {} },
     }),
     node('out', 'output', 'Done'),
   ])
@@ -724,7 +724,7 @@ describe('buildActivityTree — durable items and callees (NEW-177)', () => {
     ).toEqual(['run-a', 'run-b', 'run-c'])
   })
 
-  test('a durable callee links from its workflow-call node', () => {
+  test('a callee links from its workflow-call node', () => {
     const rows = nodeRows(
       buildActivityTree({
         graph: DURABLE_GRAPH,

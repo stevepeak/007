@@ -147,7 +147,7 @@ export type DashboardStats<TFailure> = DashboardWindow & {
   /**
    * Cloudflare Workflows step consumption — the billing line a graph's node
    * count does not predict (three steps per node, one per iteration ITEM, two
-   * per durable callee, plus the run envelope).
+   * per called workflow, plus the run envelope).
    *
    * Null, never zero, when analytics is unconfigured: D1 records no step counts,
    * so there is nothing to fall back to and a fabricated 0 would read as "this

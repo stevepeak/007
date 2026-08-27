@@ -2,7 +2,6 @@ import {
   ITERATION_ITEM_TRIGGER_KIND,
   MANUAL_TRIGGER_KIND,
   PERIODIC_TRIGGER_KIND,
-  type CalleeExecution,
   type WfEngine,
 } from '../../engine'
 import { AgentSelect } from '../agent-select'
@@ -96,6 +95,10 @@ export function TriggerInspector({ node, onChange }: NodeInspectorProps) {
             <option value="inline">Inline (fast, no checkpoints)</option>
           </Select>
           <p className="text-muted-foreground text-xs">{ENGINE_HELP[engine]}</p>
+          <p className="text-muted-foreground text-xs">
+            This is the only place it is decided: it applies whether this
+            workflow is started on its own or called by another one.
+          </p>
         </div>
       )}
     </div>
@@ -150,22 +153,11 @@ export function ToolInspector({ node, onChange }: NodeInspectorProps) {
   )
 }
 
-// The same durability-vs-overhead trade an iteration's item execution makes, at
-// the scale of a whole called workflow — so a small helper workflow stays cheap
-// and a real pipeline stops being all-or-nothing.
-const CALLEE_EXECUTION_HELP: Record<CalleeExecution, string> = {
-  inline:
-    'The called workflow runs inside this one step. Cheapest, and right for a small helper — but it is all-or-nothing: if it fails partway it repeats from its first step, and its own steps’ timeout and retry settings do not apply.',
-  durable:
-    'The called workflow runs as its own checkpointed run, with its own trace you can open. Every one of its steps retries and times out on its own terms, and this workflow simply waits — waiting costs nothing. Right for a callee that does real work.',
-}
-
 export function WorkflowInspector({
   node,
   onChange,
   currentWorkflowId,
 }: NodeInspectorProps) {
-  const { Label, Select } = useWfComponents()
   const workflows = useWorkflows()
   // A workflow can call any OTHER workflow. Exclude itself — a direct self-call
   // is always a reference cycle (deeper cycles are caught at run start).
@@ -191,26 +183,10 @@ export function WorkflowInspector({
           result, which becomes this node's output. The upstream input is passed
           straight through as the called workflow's trigger input.
         </p>
-      </div>
-      <div className={field}>
-        <Label>Execution</Label>
-        <Select
-          value={node.config.calleeExecution}
-          onChange={(e) =>
-            onChange({
-              ...node,
-              config: {
-                ...node.config,
-                calleeExecution: e.target.value as CalleeExecution,
-              },
-            })
-          }
-        >
-          <option value="inline">Inline (as one step)</option>
-          <option value="durable">Durable (as its own run)</option>
-        </Select>
         <p className="text-muted-foreground text-xs">
-          {CALLEE_EXECUTION_HELP[node.config.calleeExecution]}
+          It gets a run of its own — its own trace, nested under this one, on
+          whichever engine that workflow's own trigger is set to. Nothing to
+          choose here: how a workflow executes belongs to that workflow.
         </p>
       </div>
     </div>

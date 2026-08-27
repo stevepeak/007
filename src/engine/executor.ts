@@ -4,6 +4,7 @@ import { resolveAnswerNodeIds } from './graph-engine'
 import type { ModelBudget } from './model-budget'
 import { emitNodeStartProgress } from './node-progress'
 import { settleOf, type NodeSettlement } from './node-settlement'
+import type { ChildWorkflowRunner } from './nodes/workflow'
 import { endEntryOf, startEntryOf } from './run-log-entries'
 import { errorMessage, runNode } from './run-node'
 import { recordedBranchResult, type RunRecorder } from './run-recorder'
@@ -51,6 +52,23 @@ export type ExecuteWorkflowDeps<TDeps> = {
    * produced nothing the host can read, so the failure belongs to the run.
    */
   onOutput?: (delivery: WorkflowOutputDelivery) => void | Promise<void>
+  /**
+   * This run was SPAWNED by another run — it is a workflow-call node's callee,
+   * not something a host started. Two boundary checks are then skipped, exactly
+   * as they are on the durable backend (see `GraphWorkflowParams.subRun`): the
+   * trigger input is seeded raw, and the Output value skips the trigger's
+   * output contract. Both belong to the seam between a HOST and a run; the
+   * caller has already built the value, and a callee answers to its caller,
+   * not to its trigger's contract.
+   */
+  spawned?: boolean
+  /**
+   * How this backend starts a workflow-call node's callee as its own child run.
+   * Threaded straight onto the node context — see
+   * `RunNodeContext.runChildWorkflow`. Omitted by callers that can't spawn a
+   * run (tests, the playground), which run the callee inline as a subgraph.
+   */
+  runChildWorkflow?: ChildWorkflowRunner
 }
 
 /**
@@ -169,11 +187,13 @@ export async function executeWorkflow<TDeps>(
       delta: deltaChannelFor(sink, answerNodeIds, node.id),
     }
 
-  const validatedTriggerInput = resolveTriggerInput(
-    config.triggers,
-    trigger.config.triggerKind,
-    deps.triggerInput,
-  )
+  const validatedTriggerInput = deps.spawned
+    ? deps.triggerInput
+    : resolveTriggerInput(
+        config.triggers,
+        trigger.config.triggerKind,
+        deps.triggerInput,
+      )
 
   const toolDeps = await config.buildRunDeps(runContext)
 
@@ -260,6 +280,9 @@ export async function executeWorkflow<TDeps>(
           // An iteration node records its inner subgraph steps (once per item)
           // through the same recorder that persists top-level steps.
           subStepRecorder: recorder,
+          // Threaded through unchanged, so a workflow node nested in an
+          // iteration item spawns its callee exactly like a top-level one.
+          runChildWorkflow: deps.runChildWorkflow,
         },
       )
       await recorder.record({
@@ -381,13 +404,16 @@ export async function executeWorkflow<TDeps>(
         // Only the FIRST Output answers to the contract: it is the one the host
         // reads. A later arm reaching its own Output is recorded for the trace
         // but changes nothing the caller already received.
-        const output = delivered
-          ? out.output
-          : enforceOutputContract(
-              config.triggers,
-              trigger.config.triggerKind,
-              out.output,
-            )
+        // A spawned callee skips it too: it answers to the node that called it,
+        // and the inline path it stands in for enforced nothing.
+        const output =
+          delivered || deps.spawned
+            ? out.output
+            : enforceOutputContract(
+                config.triggers,
+                trigger.config.triggerKind,
+                out.output,
+              )
         await recorder.record({
           nodeId: out.nodeId,
           nodeKind: 'output',
