@@ -1,6 +1,7 @@
 import { ChevronDown, ExternalLink, Layers, RotateCcw } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
+import { iterationItemListLabel } from '../engine/item-title'
 import type {
   RetryRunMode,
   WfRunDetail,
@@ -223,7 +224,10 @@ function SiblingMenu({
                     />
                     <span className="truncate">
                       {r.parent?.itemIndex != null
-                        ? `Item ${r.parent.itemIndex + 1}`
+                        ? iterationItemListLabel(
+                            r.parent.itemTitle,
+                            r.parent.itemIndex,
+                          )
                         : `Run ${i + 1}`}
                     </span>
                     <span className="ml-auto shrink-0 text-xs text-neutral-400">

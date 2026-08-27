@@ -329,6 +329,7 @@ describe('collectGraphIssues', () => {
         concurrency: 1,
         stopOnError: false,
         itemExecution: 'durable' as const,
+        itemTitle: '',
         // Child agent has no agent selected — an error that lives inside the loop.
         subgraph: graph(
           [itemTrigger, agent('child', ''), output('res')],
@@ -370,6 +371,7 @@ describe('collectGraphIssues', () => {
         concurrency: 1,
         stopOnError: false,
         itemExecution: 'inline' as const,
+        itemTitle: '',
         maxItems: 10,
         subgraph: graph(
           [itemTrigger, child, output('res', 'child')],
@@ -422,6 +424,7 @@ describe('collectGraphIssues', () => {
         concurrency: 1,
         stopOnError: false,
         itemExecution,
+        itemTitle: '',
         // Bounded, so these fixtures raise only the execution-shape issue they
         // are about — the fan-out fence has its own tests below.
         maxItems: 10,

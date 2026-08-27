@@ -82,6 +82,11 @@ export const NODE_KIND_SEEDS: { [K in WfNodeKind]: NodeKindSeed<K> } = {
       // Durable once the subgraph grows past a step or two, which is the point
       // at which the choice actually starts to matter.
       itemExecution: 'inline',
+      // Items are numbered until the author names them. Left empty rather than
+      // seeded with a guess like `${title}`: a template pointing at a field the
+      // list doesn't have resolves to nothing and falls back to numbering
+      // anyway, so a guess would only ever be invisible or wrong.
+      itemTitle: '',
       // Bounded from the first frame: an unset limit is an error in the Issues
       // panel, and a new node should never open already broken. The seed is the
       // inline ceiling, so the author's only reason to touch it is to go LOWER

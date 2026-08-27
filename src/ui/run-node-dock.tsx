@@ -64,6 +64,9 @@ export type RunNodeDockProps = {
    */
   itemIndex?: number | null
   itemCount?: number
+  /** The focused item's name, shown on hover — the stepper stays numeric so it
+   *  keeps its fixed width as you page through items. */
+  itemTitle?: string | null
   onSelectItem?: (index: number) => void
   /** Which tab the dock opens on. Defaults to the run-wide Activity feed; a
    *  deep link that already names a node opens on that node's trace instead. */
@@ -83,6 +86,7 @@ export function RunNodeDock({
   onSelectNode,
   itemIndex,
   itemCount = 0,
+  itemTitle,
   onSelectItem,
   initialTab = 'activity',
 }: RunNodeDockProps) {
@@ -151,7 +155,10 @@ export function RunNodeDock({
                 >
                   <ChevronLeft className="size-3.5" />
                 </button>
-                <span className="px-1 text-[11px] font-medium text-neutral-600 tabular-nums">
+                <span
+                  className="px-1 text-[11px] font-medium text-neutral-600 tabular-nums"
+                  title={itemTitle ?? undefined}
+                >
                   item {itemIndex + 1}/{itemCount}
                 </span>
                 <button

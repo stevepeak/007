@@ -79,6 +79,17 @@ export const wfRun = sqliteTable(
     // wf_run_step's convention. Never NULL — same reason given there, and so
     // ordering children by it needs no NULL handling.
     itemIndex: integer('item_index').notNull().default(TOP_LEVEL_ITEM_INDEX),
+    // What to CALL this item, resolved from the container's `itemTitle`
+    // template against THIS item's value at spawn time. NULL when the author
+    // set no template, when it resolved to nothing, or for any run that isn't
+    // an iteration item — all of which display as "Item N".
+    //
+    // Denormalised deliberately. The value it was resolved from lives in the
+    // child's own trigger step, and every surface that needs the title is a
+    // list of SIBLINGS (the picker, the parent's activity feed): resolving it
+    // at read time would mean a step read per child, on a poll, to render a
+    // label. Resolved once, where the item value is already in hand.
+    itemTitle: text('item_title'),
     createdAt: createdAt(),
   },
   (t) => [

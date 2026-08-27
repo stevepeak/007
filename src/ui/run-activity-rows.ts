@@ -1,4 +1,5 @@
 import type { WorkflowNode } from '../engine'
+import { iterationItemListLabel, iterationItemTitle } from '../engine/item-title'
 import { NON_STEP_KINDS } from '../engine/run-progress'
 import type { WfRunStepDTO, WfRunSummary } from '../server/protocol'
 
@@ -55,6 +56,20 @@ function iterationChildren(
       ? new Map(node.config.subgraph.nodes.map((n) => [n.id, n]))
       : new Map<string, WorkflowNode>()
 
+  // An INLINE item's title is resolved right here, from the item's own trigger
+  // step — whose output IS the item. Nothing is stored for it, unlike a durable
+  // item (see `wf_run.item_title`): all of this item's steps are already on
+  // this run, so the value the template needs is in hand, and resolving live
+  // means the feature also works on runs recorded before it existed.
+  const titleTemplate =
+    node?.kind === 'iteration' ? node.config.itemTitle : undefined
+  const itemValues = new Map<number, unknown>()
+  if (titleTemplate?.trim()) {
+    for (const s of index.childSteps.get(containerId) ?? []) {
+      if (s.nodeKind === 'trigger') itemValues.set(s.itemIndex ?? 0, s.output)
+    }
+  }
+
   const byItem = new Map<number, WfRunStepDTO[]>()
   for (const s of kids) {
     const idx = s.itemIndex ?? 0
@@ -99,7 +114,14 @@ function iterationChildren(
       return {
         kind: 'group',
         key: `${containerId}:item:${idx}`,
-        label: `Item ${idx + 1} / ${total}`,
+        label: iterationItemListLabel(
+          iterationItemTitle(titleTemplate, itemValues.get(idx), {
+            index: idx,
+            total,
+          }),
+          idx,
+          total,
+        ),
         containerNodeId: containerId,
         itemIndex: idx,
         status,
@@ -193,7 +215,10 @@ function childRunGroups(
           ? // A callee has no position — its workflow name is the informative
             // thing about it.
             run.workflowName
-          : `Item ${itemIndex + 1} / ${total}`,
+          : // Resolved at SPAWN time and stored on the child, because this row
+            // is built from `wf_run` alone — the item's value lives in the
+            // child's own trigger step, which the parent never reads.
+            iterationItemListLabel(run.parent?.itemTitle, itemIndex, total),
       containerNodeId,
       itemIndex,
       status: runStatusToActivity(run.status),

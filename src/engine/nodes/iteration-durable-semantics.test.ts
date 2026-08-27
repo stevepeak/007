@@ -30,6 +30,7 @@ function iterNode(config: Partial<IterationNode['config']> = {}): IterationNode 
       concurrency: 4,
       stopOnError: false,
       itemExecution: 'durable',
+      itemTitle: '',
       subgraph: buildIterationSubgraph(),
       ...config,
     },

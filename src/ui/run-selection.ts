@@ -1,4 +1,5 @@
 import type { WorkflowGraph, WorkflowNode } from '../engine'
+import { iterationItemTitle } from '../engine/item-title'
 import type { WfRunStepDTO } from '../server/protocol'
 
 import { NOT_RUN_STATUS } from './editor/node-renderers-shared'
@@ -134,6 +135,14 @@ export type RunSelection = {
   /** The focused item, clamped to the relevant iteration's actual count. */
   itemIndex: number
   itemCount: number
+  /**
+   * What the focused item is CALLED, from the container's `itemTitle` template
+   * resolved against that item's own value. Null when the author set no
+   * template, when it resolves to nothing, or when the item's value isn't on
+   * this run — a DURABLE item's value lives on its own child run, and the
+   * picker this feeds only ever appears for inline items anyway.
+   */
+  itemTitle: string | null
   selectedStep: WfRunStepDTO | null
   canvasStatuses: Map<string, string>
 }
@@ -179,6 +188,26 @@ export function resolveRunSelection(input: {
         ) ?? null)
       : (steps.find((s) => s.nodeId === selectedId && !s.parentNodeId) ?? null)
 
+  // The focused item's name, from its own trigger step — whose output IS the
+  // item. Resolved live rather than read from anywhere: every step of an inline
+  // item is already on this run, so the value is in hand, and nothing had to be
+  // stored for runs recorded before titles existed.
+  const container = iterationId && graph ? findNode(graph, iterationId) : null
+  const titleTemplate =
+    container?.node.kind === 'iteration' ? container.node.config.itemTitle : ''
+  const itemTitle = !titleTemplate?.trim()
+    ? null
+    : iterationItemTitle(
+        titleTemplate,
+        steps.find(
+          (s) =>
+            s.parentNodeId === iterationId &&
+            s.itemIndex === itemIndex &&
+            s.nodeKind === 'trigger',
+        )?.output,
+        { index: itemIndex, total: itemCount },
+      )
+
   // Canvas tint: top-level statuses, plus — when an iteration or one of its
   // inner nodes is selected — that iteration's inner nodes tinted by the focused
   // item, so stepping through items lights up the subgraph item by item.
@@ -206,6 +235,7 @@ export function resolveRunSelection(input: {
     parentIterationId,
     itemIndex,
     itemCount,
+    itemTitle,
     selectedStep,
     canvasStatuses,
   }

@@ -39,12 +39,18 @@ export type WfRunSummary = {
    * `workflowName` names the parent's workflow, so a child reached by direct
    * link can say where "up" goes. Only the single-run inspector resolves it —
    * the list reads pay for no extra join and leave it null.
+   *
+   * `itemTitle` is what to CALL this item — the container's `itemTitle`
+   * template resolved against the item's own value at spawn time. Null when
+   * the author set no template or it resolved to nothing, in which case every
+   * surface falls back to "Item N" via `iterationItemLabel`.
    */
   parent: {
     runId: string
     nodeId: string
     itemIndex: number | null
     workflowName: string | null
+    itemTitle: string | null
   } | null
   /**
    * What this run cost INCLUDING every run it spawned, or null when it spawned

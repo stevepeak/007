@@ -5,6 +5,7 @@ import {
   type IterationNode,
   type WorkflowGraph,
 } from '../graph'
+import { iterationItemTitle } from '../item-title'
 import { remainingBudget, type ModelBudget } from '../model-budget'
 import { emitNodeProgress } from '../node-progress'
 import {
@@ -434,9 +435,18 @@ export async function runIteration(args: {
       if (index >= total) return
       cursor = index + 1
       if (announce) {
+        // Named where the author gave a template — this is the END-USER's line,
+        // and "Processing Chocolate Mousse (3 of 12)" is the difference between
+        // a progress bar and a report of what is happening.
+        const title = iterationItemTitle(node.config.itemTitle, arr[index], {
+          index,
+          total,
+        })
         void sink?.log?.({
           level: 'progress',
-          message: `Processing item ${index + 1} of ${total}`,
+          message: title
+            ? `Processing ${title} (${index + 1} of ${total})`
+            : `Processing item ${index + 1} of ${total}`,
           nodeId: node.id,
           nodeKind: 'iteration',
         })

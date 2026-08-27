@@ -65,6 +65,8 @@ export type ChildRunRow = {
   parentNodeId: string | null
   /** 0-based iteration item, or null for a single workflow-call callee. */
   itemIndex: number | null
+  /** The item's resolved name, or null when it has none — display "Item N". */
+  itemTitle: string | null
   totalTokens: number | null
   costUsd: number | null
 }
@@ -149,6 +151,7 @@ export async function listChildRuns(
       parentRunId: wfRun.parentRunId,
       parentNodeId: wfRun.parentNodeId,
       itemIndex: wfRun.itemIndex,
+      itemTitle: wfRun.itemTitle,
     })
     .from(wfRun)
     .innerJoin(

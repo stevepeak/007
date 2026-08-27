@@ -676,6 +676,16 @@ const iterationNodeSchema = baseNode.extend({
     // graph already behaves as 'inline', so writing the default into stored JSON
     // records what those graphs were always doing.
     itemExecution: iterationItemExecutionSchema.default('inline'),
+    // What to CALL each item, as a `${path}` template resolved against that
+    // item's own value — `${title}`, `${recipe.name}`, `${rows.0.label}`. Paths
+    // are the BINDING language (`resolvePath`), not the flat prompt-variable
+    // grammar; see `item-title.ts` for why the two differ.
+    //
+    // Empty by default, and empty means numbering: every surface that lists
+    // items falls back to "Item N" through `iterationItemLabel`, so a template
+    // that resolves to nothing degrades to exactly the old behaviour rather
+    // than to a row of blanks.
+    itemTitle: z.string().default(''),
     // The most items this loop may fan out over. Optional — and, unlike
     // `itemExecution`, NOT defaulted — because "never set" has to stay
     // distinguishable from a deliberate number: it is what the Issues panel
@@ -749,6 +759,7 @@ export interface IterationNode {
     concurrency: number
     stopOnError: boolean
     itemExecution: IterationItemExecution
+    itemTitle: string
     maxItems?: number
     width?: number
     height?: number

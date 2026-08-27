@@ -219,6 +219,32 @@ describe('listChildRuns', () => {
     expect(callee?.itemIndex).toBeNull()
   })
 
+  test('carries the item title resolved at spawn', async () => {
+    // Stored, not derived: every surface that shows this is a list of siblings
+    // built from `wf_run` alone, and the value the title came from lives in the
+    // child's own trigger step — one step read per child, on a poll, to render
+    // a label.
+    const parentId = await createRun(db, parentBase)
+    await createRun(db, {
+      ...parentBase,
+      parent: {
+        runId: parentId,
+        nodeId: 'iter-1',
+        itemIndex: 0,
+        itemTitle: 'Chocolate Mousse',
+      },
+    })
+    // No title — the author set no template, or it resolved to nothing.
+    await createRun(db, {
+      ...parentBase,
+      parent: { runId: parentId, nodeId: 'iter-1', itemIndex: 1 },
+    })
+
+    const kids = await listChildRuns(db, parentId)
+
+    expect(kids.map((k) => k.itemTitle)).toEqual(['Chocolate Mousse', null])
+  })
+
   test('a run with no children returns an empty list', async () => {
     expect(await listChildRuns(db, await createRun(db, parentBase))).toEqual([])
   })

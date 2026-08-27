@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 
 import type { WorkflowGraph } from '../engine'
+import type { WfRunStepDTO } from '../server/protocol'
 
-import { canSpawnChildRuns } from './run-selection'
+import { canSpawnChildRuns, resolveRunSelection } from './run-selection'
 
 // `canSpawnChildRuns` is the gate on the run viewer's child-runs fetch. Getting
 // it wrong is silent in both directions: too permissive adds a query and a
@@ -82,5 +83,125 @@ describe('canSpawnChildRuns', () => {
     // children — and a run whose children are real must not lose its
     // drill-down because its workflow was deleted.
     expect(canSpawnChildRuns(null)).toBe(true)
+  })
+})
+
+// The per-item picker's label. Same resolution as the activity feed's inline
+// path — from the item's own trigger step — so the two can't disagree about
+// what item 3 is called while you page through it.
+describe('resolveRunSelection — the focused item\'s title', () => {
+  function step(over: Partial<WfRunStepDTO>): WfRunStepDTO {
+    return {
+      nodeId: 'x',
+      nodeKind: 'tool',
+      parentNodeId: null,
+      itemIndex: null,
+      sequence: 0,
+      status: 'completed',
+      input: null,
+      output: null,
+      branchResult: null,
+      cursor: 0,
+      meta: null,
+      error: null,
+      startedAt: null,
+      finishedAt: null,
+      costUsd: null,
+      ...over,
+    }
+  }
+
+  const graph = graphOf([
+    {
+      id: 'loop',
+      kind: 'iteration',
+      label: 'Loop',
+      position: { x: 0, y: 0 },
+      config: {
+        itemTitle: '${title}',
+        subgraph: {
+          version: 1,
+          nodes: [{ id: 'save', kind: 'tool', label: 'Save', position: { x: 0, y: 0 } }],
+          edges: [],
+        },
+      },
+    },
+  ])
+
+  const steps = [
+    step({ nodeId: 'loop', nodeKind: 'iteration', meta: { total: 2 } }),
+    step({
+      nodeId: 'it',
+      nodeKind: 'trigger',
+      parentNodeId: 'loop',
+      itemIndex: 0,
+      output: { title: 'Chocolate Mousse' },
+    }),
+    step({
+      nodeId: 'it',
+      nodeKind: 'trigger',
+      parentNodeId: 'loop',
+      itemIndex: 1,
+      output: { title: 'Tarte' },
+    }),
+  ]
+
+  const select = (selectedItemIndex: number) =>
+    resolveRunSelection({
+      graph,
+      steps,
+      runStatus: 'completed',
+      selectedId: 'save',
+      selectedItemIndex,
+      topLevel: new Map(),
+    })
+
+  test('names the item currently focused, not the first one', () => {
+    expect(select(0).itemTitle).toBe('Chocolate Mousse')
+    expect(select(1).itemTitle).toBe('Tarte')
+  })
+
+  test('is null when the container carries no template', () => {
+    const bare = graphOf([
+      {
+        id: 'loop',
+        kind: 'iteration',
+        label: 'Loop',
+        position: { x: 0, y: 0 },
+        config: {
+          subgraph: {
+            version: 1,
+            nodes: [
+              { id: 'save', kind: 'tool', label: 'Save', position: { x: 0, y: 0 } },
+            ],
+            edges: [],
+          },
+        },
+      },
+    ])
+
+    expect(
+      resolveRunSelection({
+        graph: bare,
+        steps,
+        runStatus: 'completed',
+        selectedId: 'save',
+        selectedItemIndex: 0,
+        topLevel: new Map(),
+      }).itemTitle,
+    ).toBeNull()
+  })
+
+  test('is null outside an iteration, where there is no item at all', () => {
+    expect(
+      resolveRunSelection({
+        graph,
+        steps,
+        runStatus: 'completed',
+        selectedId: null,
+        selectedItemIndex: 0,
+        topLevel: new Map(),
+      }).itemTitle,
+    ).toBeNull()
   })
 })

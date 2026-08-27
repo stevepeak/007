@@ -37,7 +37,13 @@ export async function createRun(
      * Omit all three for a top-level run. See `wf_run`'s columns; the item
      * index falls back to the `-1` sentinel rather than NULL.
      */
-    parent?: { runId: string; nodeId: string; itemIndex?: number }
+    parent?: {
+      runId: string
+      nodeId: string
+      itemIndex?: number
+      /** The container's `itemTitle` resolved against this item; see `wf_run`. */
+      itemTitle?: string | null
+    }
   },
 ): Promise<string> {
   const id = crypto.randomUUID()
@@ -53,6 +59,7 @@ export async function createRun(
     parentRunId: input.parent?.runId ?? null,
     parentNodeId: input.parent?.nodeId ?? null,
     itemIndex: input.parent?.itemIndex ?? TOP_LEVEL_ITEM_INDEX,
+    itemTitle: input.parent?.itemTitle ?? null,
     status: 'queued',
   })
   await recordRunStateChange(db, { runId: id, status: 'queued' })

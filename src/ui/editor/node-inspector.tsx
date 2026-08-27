@@ -2,12 +2,18 @@ import {
   Brain,
   ExternalLink,
   MessageSquareText,
+  Tag,
   Wrench,
   type LucideIcon,
 } from 'lucide-react'
 import type { ComponentType } from 'react'
 
-import { isBookendKind, type InformUser, type WorkflowNode } from '../../engine'
+import {
+  isBookendKind,
+  type InformUser,
+  type IterationNode,
+  type WorkflowNode,
+} from '../../engine'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { WfLink } from '../nav'
@@ -306,6 +312,10 @@ export function NodeInspector(props: NodeInspectorProps) {
               This step reports nothing to the user.
             </p>
           )}
+
+          {node.kind === 'iteration' ? (
+            <ItemTitleField node={node} onChange={onChange} />
+          ) : null}
         </InspectorSection>
       )}
 
@@ -320,3 +330,69 @@ export function NodeInspector(props: NodeInspectorProps) {
     </div>
   )
 }
+
+/**
+ * What to call each item of a fan-out.
+ *
+ * Lives in "Inform user" because it is the same question that section already
+ * asks — what a human reading this run is shown — just answered per item rather
+ * than per step. It applies in every mode, including Off: the mode governs the
+ * END USER's progress feed, while the title also names items in the run
+ * viewer's breadcrumb, sibling picker and activity feed, which an author wants
+ * whether or not the loop narrates itself.
+ *
+ * `${…}` here is a BINDING path into the item, not a run variable — so it takes
+ * dots (`${recipe.name}`) where a progress note's `${var}` does not. See
+ * `item-title.ts` for why the two grammars are deliberately separate.
+ */
+function ItemTitleField({
+  node,
+  onChange,
+}: {
+  node: IterationNode
+  onChange: (next: WorkflowNode) => void
+}) {
+  const { Input } = useWfComponents()
+  // The element shape inferred when the author picked the list. Naming the
+  // fields beats describing the syntax: the whole difficulty is knowing what
+  // is ON an item, and the answer is already sitting on the node.
+  const fields = Object.keys(
+    (node.config.itemSchema?.properties as Record<string, unknown>) ?? {},
+  ).slice(0, 6)
+
+  return (
+    <div className="space-y-1 border-t pt-3">
+      <SectionHeader icon={Tag}>Item title</SectionHeader>
+      <Input
+        value={node.config.itemTitle}
+        placeholder="${title}"
+        onChange={(e) =>
+          onChange({
+            ...node,
+            config: { ...node.config, itemTitle: e.target.value },
+          })
+        }
+      />
+      <p className="text-muted-foreground text-xs">
+        Names each item in the run viewer instead of &ldquo;Item 1&rdquo;,
+        &ldquo;Item 2&rdquo;. Use <code>{'${field}'}</code> to read from the
+        item — dots work, so <code>{'${recipe.name}'}</code> reaches inside it.
+        {fields.length > 0 ? (
+          <>
+            {' '}
+            This list&rsquo;s items have:{' '}
+            {fields.map((f, i) => (
+              <span key={f}>
+                {i > 0 ? ', ' : null}
+                <code>{`\${${f}}`}</code>
+              </span>
+            ))}
+            .
+          </>
+        ) : null}{' '}
+        Leave empty to number them.
+      </p>
+    </div>
+  )
+}
+

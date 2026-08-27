@@ -11,6 +11,7 @@ import {
   type IterationNode,
   type WorkflowCallNode,
 } from '../engine/graph'
+import { iterationItemTitle } from '../engine/item-title'
 import { modelBudgetFor } from '../engine/model-budget'
 import { nodeSpanLabel } from '../engine/node-label'
 import { emitNodeStartProgress } from '../engine/node-progress'
@@ -309,7 +310,17 @@ async function runItemAsChildInstance<TDeps, E extends GraphWorkflowEnv>(
         sentryTraceId: traceId,
         // What nests this item under its parent in the run viewer, and the only
         // link that survives the parent finishing. See NEW-172.
-        parent: { runId: p.workflowRunId, nodeId: node.id, itemIndex: index },
+        parent: {
+          runId: p.workflowRunId,
+          nodeId: node.id,
+          itemIndex: index,
+          // Resolved HERE because this is the last place the item's value and
+          // the container's template are both in hand — the child instance
+          // gets the item, but not the node that spawned it.
+          itemTitle: iterationItemTitle(node.config.itemTitle, item, {
+            index,
+          }),
+        },
       })
       const instance = await env.GRAPH_WORKFLOW.create({
         params: iterationItemParams({

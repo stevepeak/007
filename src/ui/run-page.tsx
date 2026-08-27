@@ -1,6 +1,7 @@
 import { Activity } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { iterationItemLabel } from '../engine/item-title'
 import type { RetryRunMode } from '../server/protocol'
 
 import { cn } from './cn'
@@ -47,19 +48,25 @@ function triggerLabel(kind: string): string {
 /**
  * How a child run names its position in the parent's fan-out.
  *
- * `total` is the sibling count once it has loaded — a durable iteration spawns
- * one run per item, so the number of children IS the number of items. Null
- * until then, and the label degrades to the position alone rather than
- * rendering a placeholder total that would be wrong for a moment.
+ * A NAMED item (the container's `itemTitle` resolved against its own value) is
+ * shown by name alone — the position is right beside it on the sibling picker's
+ * button, and "Item 30 of 34" is the thing the name exists to replace.
+ *
+ * Unnamed, `total` is the sibling count once it has loaded — a durable
+ * iteration spawns one run per item, so the number of children IS the number of
+ * items. Null until then, and the label degrades to the position alone rather
+ * than rendering a placeholder total that would be wrong for a moment.
  *
  * Returns null for a workflow-call callee: one callee per node means there is
  * no position, and "Item 1 of 1" would invent a fan-out that never happened.
  */
 function itemCrumbLabel(
-  itemIndex: number | null,
+  parent: { itemIndex: number | null; itemTitle: string | null },
   total: number | null,
 ): string | null {
+  const { itemIndex, itemTitle } = parent
   if (itemIndex == null) return null
+  if (itemTitle?.trim()) return iterationItemLabel(itemTitle, itemIndex)
   return total != null && total > 0
     ? `Item ${itemIndex + 1} of ${total}`
     : `Item ${itemIndex + 1}`
@@ -211,7 +218,7 @@ export function RunPage({
         const { run } = data
         const live = isRunLive(run.status)
         const itemCrumb = run.parent
-          ? itemCrumbLabel(run.parent.itemIndex, siblingRuns?.length ?? null)
+          ? itemCrumbLabel(run.parent, siblingRuns?.length ?? null)
           : null
         const selection = resolveRunSelection({
           graph: data.graph,
@@ -331,6 +338,7 @@ export function RunPage({
                 // iteration, where itemIndex selects which recorded item to show.
                 itemIndex={selection.parentIterationId ? selection.itemIndex : null}
                 itemCount={selection.parentIterationId ? selection.itemCount : 0}
+                itemTitle={selection.itemTitle}
                 onSelectItem={setSelectedItemIndex}
               />
             </div>

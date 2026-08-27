@@ -213,6 +213,90 @@ describe('buildActivityTree — iterations', () => {
     expect((item0.children[0] as ActivityNodeRow).itemIndex).toBe(0)
   })
 
+  // --- Named items -------------------------------------------------------
+  //
+  // An INLINE item's title is resolved in the client, from the item's own
+  // trigger step (whose output IS the item) — nothing is stored for it, which
+  // is why the fixtures below give those steps an `output`.
+
+  const TITLED_GRAPH = graphOf([
+    node('trg', 'trigger', 'Start'),
+    node('loop', 'iteration', 'Save each', {
+      config: {
+        itemTitle: '${title}',
+        subgraph: {
+          version: 1,
+          nodes: [
+            node('it', 'iteration_item', 'Item'),
+            node('save', 'tool', 'Save one'),
+          ],
+          edges: [],
+        },
+      },
+    }),
+    node('out', 'output', 'Done'),
+  ])
+
+  function titledSteps(items: Array<Record<string, unknown>>): WfRunStepDTO[] {
+    return [
+      step('loop', 'iteration', 1, 'running', { meta: { total: items.length } }),
+      ...items.flatMap((output, i) => [
+        step('it', 'trigger', 0, 'completed', {
+          parentNodeId: 'loop',
+          itemIndex: i,
+          output,
+        }),
+        step('save', 'tool', 1, 'completed', {
+          parentNodeId: 'loop',
+          itemIndex: i,
+        }),
+      ]),
+    ]
+  }
+
+  test('an inline item is named from its own trigger output', () => {
+    const rows = nodeRows(
+      buildActivityTree({
+        graph: TITLED_GRAPH,
+        steps: titledSteps([{ title: 'Chocolate Mousse' }, { title: 'Tarte' }]),
+        logs: [],
+      }),
+    )
+
+    // Numbered AND named: the position is how someone came looking, the name is
+    // what they are looking for.
+    expect(
+      byKey(rows, 'loop').children.map((c) => (c.kind === 'group' ? c.label : '')),
+    ).toEqual(['1. Chocolate Mousse', '2. Tarte'])
+  })
+
+  test('a template the items do not satisfy falls back to numbering', () => {
+    // The safety property. An author typing `${title}` over a list of `{ name }`
+    // gets exactly the labels this feed carried before titles existed —
+    // including the `/ total` — rather than a column of blanks.
+    const rows = nodeRows(
+      buildActivityTree({
+        graph: TITLED_GRAPH,
+        steps: titledSteps([{ name: 'Tarte' }, { name: 'Mousse' }]),
+        logs: [],
+      }),
+    )
+
+    expect(
+      byKey(rows, 'loop').children.map((c) => (c.kind === 'group' ? c.label : '')),
+    ).toEqual(['Item 1 / 2', 'Item 2 / 2'])
+  })
+
+  test('a loop with no template is untouched', () => {
+    const rows = nodeRows(
+      buildActivityTree({ graph: ITER_GRAPH, steps: iterSteps(), logs: [] }),
+    )
+
+    expect(
+      byKey(rows, 'loop').children.map((c) => (c.kind === 'group' ? c.label : '')),
+    ).toEqual(['Item 1 / 3', 'Item 2 / 3'])
+  })
+
   test('running loop with no items yet shows a live placeholder', () => {
     const rows = nodeRows(buildActivityTree({
       graph: ITER_GRAPH,
@@ -502,11 +586,48 @@ describe('buildActivityTree — durable items and callees (NEW-177)', () => {
       costUsd: null,
       sentryTraceId: null,
       sentryTraceUrl: null,
-      parent: { runId: 'parent', nodeId, itemIndex, workflowName: null },
+      parent: {
+        runId: 'parent',
+        nodeId,
+        itemIndex,
+        workflowName: null,
+        itemTitle: null,
+      },
       tree: null,
       ...over,
     }
   }
+
+  test('a durable item is named from what was stored at spawn', () => {
+    // The durable half reads `wf_run.item_title`, NOT a trigger step: this row
+    // is built from the child run alone, and the item's value lives on a run
+    // the parent never loads. Same displayed shape as the inline path.
+    const rows = nodeRows(
+      buildActivityTree({
+        graph: DURABLE_GRAPH,
+        steps: [step('loop', 'iteration', 1, 'running', { meta: { total: 2 } })],
+        logs: [],
+        childRuns: [
+          childRun('run-a', 'loop', 0, {
+            parent: {
+              runId: 'parent',
+              nodeId: 'loop',
+              itemIndex: 0,
+              workflowName: null,
+              itemTitle: 'Chocolate Mousse',
+            },
+          }),
+          // Unnamed alongside named — a child spawned before the author added
+          // the template keeps its number rather than borrowing a sibling's name.
+          childRun('run-b', 'loop', 1),
+        ],
+      }),
+    )
+
+    expect(
+      byKey(rows, 'loop').children.map((c) => (c.kind === 'group' ? c.label : '')),
+    ).toEqual(['1. Chocolate Mousse', 'Item 2 / 2'])
+  })
 
   test('a durable item becomes a group row linking to its own run', () => {
     // The whole reason this path exists: a durable item's inner nodes are steps

@@ -135,6 +135,14 @@ export {
 } from './node-kind-seeds'
 export { nodeProgressMessage } from './node-progress'
 export {
+  ITEM_TITLE_MAX_LENGTH,
+  ITEM_TITLE_TOKEN_RE,
+  iterationItemLabel,
+  iterationItemListLabel,
+  iterationItemTitle,
+  itemTitleTokens,
+} from './item-title'
+export {
   collectGraphIssues,
   type GraphIssue,
   type GraphIssueSeverity,
