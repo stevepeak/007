@@ -1,4 +1,4 @@
-import { AlertTriangle, Link2, Pencil, X } from 'lucide-react'
+import { AlertTriangle, HelpCircle, Link2, Pencil, X } from 'lucide-react'
 import { type ReactNode, useMemo, useState } from 'react'
 
 import type {
@@ -10,6 +10,7 @@ import type {
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { toText } from '../to-text'
+import { Tooltip } from '../tooltip'
 
 import { BindingSourceNode } from './node-data-panel-picker'
 import {
@@ -288,6 +289,19 @@ function BindingField({
         <code className="shrink-0 rounded bg-muted px-1 py-0.5 text-xs font-medium text-foreground">
           {label}
         </code>
+        {description ? (
+          // The input's own documentation, straight from the tool's Zod schema
+          // (`.describe(...)` on the argument) or the trigger payload it maps to.
+          // An author binding a field usually can't tell what it expects from the
+          // name alone, so where the schema says, it is one hover away instead of
+          // buried in a native `title=`.
+          <Tooltip content={description} side="left" className="shrink-0">
+            <HelpCircle
+              aria-label={`About ${label}`}
+              className="size-3.5 text-muted-foreground/60 transition hover:text-muted-foreground"
+            />
+          </Tooltip>
+        ) : null}
         <span
           className={cn(
             'min-w-0 flex-1 truncate text-xs',
@@ -295,7 +309,7 @@ function BindingField({
               ? 'text-rose-600'
               : 'text-muted-foreground',
           )}
-          title={description ? `${shown} — ${description}` : shown}
+          title={shown}
           onMouseEnter={refNodeId ? () => setHovered(refNodeId) : undefined}
           onMouseLeave={refNodeId ? () => setHovered(null) : undefined}
         >
