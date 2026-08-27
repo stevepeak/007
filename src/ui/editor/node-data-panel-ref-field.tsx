@@ -1,5 +1,5 @@
 import { Link2, X } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import type {
   JsonSchema,
@@ -9,7 +9,7 @@ import type {
 } from '../../engine'
 import { cn } from '../cn'
 
-import { BindingSourceNode } from './node-data-panel-picker'
+import { BindingSourceNode, pickableSources } from './node-data-panel-picker'
 import { useAccessibleData } from './node-data-panel-shared'
 
 export type DataRefFieldProps = {
@@ -50,6 +50,9 @@ export function DataRefField({
   literal,
 }: DataRefFieldProps) {
   const { accessible } = useAccessibleData(node, graph, itemSchema)
+  // No declared target type here — a Branch tests whatever it is handed — so the
+  // picker is offered whole, unfiltered.
+  const sources = useMemo(() => pickableSources(accessible), [accessible])
   const [open, setOpen] = useState(false)
   const src = value
     ? accessible.find((n) => n.nodeId === value.nodeId)
@@ -106,12 +109,12 @@ export function DataRefField({
             </p>
           ) : (
             <div className="space-y-1.5">
-              {accessible.map((n) => (
+              {sources.map((s) => (
                 <BindingSourceNode
-                  key={n.nodeId}
-                  node={n}
+                  key={s.node.nodeId}
+                  source={s}
                   onPick={(path) => {
-                    onChange({ kind: 'ref', nodeId: n.nodeId, path })
+                    onChange({ kind: 'ref', nodeId: s.node.nodeId, path })
                     setOpen(false)
                   }}
                 />

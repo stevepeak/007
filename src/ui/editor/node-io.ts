@@ -123,6 +123,124 @@ function schemaType(schema: JsonSchema | undefined): string {
   return typeof schema?.type === 'string' ? schema.type : 'unknown'
 }
 
+// ---------------------------------------------------------------------------
+// Types, as the binding UI enforces them.
+//
+// An input declares a JSON type (a tool's Zod arg, a callee's trigger payload)
+// and so does most upstream data, so the editor can refuse a mapping that the
+// run would only reject later — when a `boolean` argument arrives as the string
+// "false", or a number field is linked to a message array.
+// ---------------------------------------------------------------------------
+
+const JSON_TYPES = new Set([
+  'string',
+  'number',
+  'boolean',
+  'object',
+  'array',
+  'null',
+])
+
+/**
+ * A declared type reduced to the JSON type it really is, or null when the type
+ * is opaque — nothing was stated, or what was stated isn't a JSON type at all
+ * ('unknown', 'passthrough', a callee's 'workflow', a Branch's `"yes" | "no"`).
+ * `integer` is a `number`; an agent's `text` output is a `string`.
+ */
+export function normalizeJsonType(type: string | undefined): string | null {
+  if (!type) return null
+  if (type === 'integer') return 'number'
+  if (type === 'text') return 'string'
+  return JSON_TYPES.has(type) ? type : null
+}
+
+/**
+ * Whether a value of `valueType` may be mapped into an input declared as
+ * `inputType` — the rule behind the binding picker's filtering.
+ *
+ * Deliberately permissive about what it can't see: an opaque type matches
+ * everything, because refusing the un-inspectable would hide most real mappings
+ * (an agent's free-form output above all). The filter only bites when BOTH
+ * sides state a JSON type and the two disagree.
+ */
+export function acceptsValueType(
+  inputType: string | undefined,
+  valueType: string | undefined,
+): boolean {
+  const want = normalizeJsonType(inputType)
+  const got = normalizeJsonType(valueType)
+  if (!want || !got) return true
+  return want === got
+}
+
+/**
+ * The literal is typed into one text box, but the input may declare a non-string
+ * JSON type — so coerce the string to that type before storing it. A numeric
+ * input (e.g. `keepCount`) is stored as `0` (number), not `"0"`; otherwise the
+ * tool's Zod schema rejects it at run time. Unparseable input falls back to the
+ * raw string, so the schema still surfaces a clear validation error — but the
+ * editor prefers to block that case up front; see `literalIssue`.
+ */
+export function coerceLiteral(raw: string, type?: string): unknown {
+  switch (normalizeJsonType(type)) {
+    case 'number': {
+      const n = Number(raw)
+      return raw.trim() !== '' && !Number.isNaN(n) ? n : raw
+    }
+    case 'boolean': {
+      if (raw === 'true') return true
+      if (raw === 'false') return false
+      return raw
+    }
+    case 'object':
+    case 'array': {
+      try {
+        return JSON.parse(raw)
+      } catch {
+        return raw
+      }
+    }
+    default:
+      return raw
+  }
+}
+
+/**
+ * Why a typed literal can't be committed yet, or null when it is well-formed.
+ * Drives the Set button's disabled state, so a value that the input's schema
+ * would certainly reject can't be stored in the first place. Empty input is not
+ * an issue here — an empty box is simply not ready, which the caller handles.
+ */
+export function literalIssue(raw: string, type?: string): string | null {
+  if (raw.trim() === '') return null
+  if (type === 'integer' && !Number.isSafeInteger(Number(raw))) {
+    return 'Enter a whole number'
+  }
+  switch (normalizeJsonType(type)) {
+    case 'number':
+      return Number.isNaN(Number(raw)) ? 'Enter a number' : null
+    case 'object':
+    case 'array': {
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(raw)
+      } catch {
+        return 'Enter valid JSON'
+      }
+      if (normalizeJsonType(type) === 'array') {
+        return Array.isArray(parsed) ? null : 'Enter a JSON array'
+      }
+      return parsed !== null &&
+        typeof parsed === 'object' &&
+        !Array.isArray(parsed)
+        ? null
+        : 'Enter a JSON object'
+    }
+    default:
+      return null
+  }
+}
+
 // The JSON-ish type of a literal binding's value — for a Passthrough's authored
 // field tree. Nullish is opaque ('unknown'); everything else maps to its JSON
 // container type so a `{ name: "…" }` literal reports `string`, matching a
@@ -217,11 +335,15 @@ export function nodeRequires(node: WorkflowNode, maps: IoMaps): NodeInput[] {
   switch (node.kind) {
     case 'agent': {
       const agent = maps.agentsById.get(node.config.agentId)
+      // Untyped on purpose: a `${variable}` is interpolated into the prompt, and
+      // `interpolateUserText` renders whatever it is given — a number, a boolean,
+      // a whole object as JSON. Declaring 'string' here would make the binding
+      // picker hide every non-string field from a mapping that works fine.
       return (agent?.inputVariables ?? []).map((v) => ({
         key: v,
         label: v,
         required: true,
-        type: 'string',
+        type: 'unknown',
       }))
     }
     case 'tool':
@@ -308,7 +430,9 @@ function decisionOutputFields(node: WorkflowNode): DataField[] {
     const keys = node.config.cases.map((c) => c.key)
     const type =
       keys.length > 0
-        ? [...keys, SWITCH_DEFAULT_CASE].map((k) => JSON.stringify(k)).join(' | ')
+        ? [...keys, SWITCH_DEFAULT_CASE]
+            .map((k) => JSON.stringify(k))
+            .join(' | ')
         : 'string'
     return [
       {
@@ -435,7 +559,9 @@ function nodeOutput(
     }
 
     case 'trigger': {
-      const schema = maps.triggersByKind.get(node.config.triggerKind)?.inputSchema
+      const schema = maps.triggersByKind.get(
+        node.config.triggerKind,
+      )?.inputSchema
       // The iteration `Item` trigger emits one list element; its shape is injected
       // into the maps (from the parent iteration's inferred `itemSchema`).
       if (node.config.triggerKind === ITERATION_ITEM_TRIGGER_KIND) {
@@ -443,7 +569,10 @@ function nodeOutput(
         return { fields: fieldsOf(schema, ''), type: schema ? t : 'item' }
       }
       // Only host-declared events carry a payload shape; manual/periodic don't.
-      return { fields: fieldsOf(schema, ''), type: schema ? 'event' : 'trigger' }
+      return {
+        fields: fieldsOf(schema, ''),
+        type: schema ? 'event' : 'trigger',
+      }
     }
 
     case 'output':
@@ -590,7 +719,8 @@ export function transformSourceShape(
   // `items` holds; `children` is empty on arrays.
   return {
     label,
-    fields: field.type === 'array' ? (field.items ?? []) : (field.children ?? []),
+    fields:
+      field.type === 'array' ? (field.items ?? []) : (field.children ?? []),
     type: field.type,
   }
 }
@@ -625,12 +755,17 @@ export function withIterationItemSchema(
 // field tree), for comparing whether two nodes emit the same shape. Returns null
 // when the shape can't be inferred (unknown / passthrough / opaque), so callers
 // skip un-comparable inputs rather than flagging a false mismatch.
-function shapeSignature(out: { fields: DataField[]; type: string }): string | null {
+function shapeSignature(out: {
+  fields: DataField[]
+  type: string
+}): string | null {
   const OPAQUE = new Set(['unknown', 'passthrough', 'workflow'])
   if (OPAQUE.has(out.type) && out.fields.length === 0) return null
   const norm = (fields: DataField[]): string =>
     fields
-      .map((f) => `${f.key}:${f.type}${f.children ? `{${norm(f.children)}}` : ''}`)
+      .map(
+        (f) => `${f.key}:${f.type}${f.children ? `{${norm(f.children)}}` : ''}`,
+      )
       .sort()
       .join(',')
   return `${out.type}|${norm(out.fields)}`
@@ -762,7 +897,10 @@ function reachableMessageSource(
   const grandIds = predecessorIds(graph, pred.id)
   if (grandIds.length === 1) {
     const grand = byId.get(grandIds[0])
-    if (grand && carriesThread(nodeOutput(grand, maps, graph, byId, new Set()))) {
+    if (
+      grand &&
+      carriesThread(nodeOutput(grand, maps, graph, byId, new Set()))
+    ) {
       return { id: grand.id, label: grand.label }
     }
   }
@@ -849,7 +987,7 @@ function describeContract(contract: JsonSchema): string {
   }
   const t = typeof contract.type === 'string' ? contract.type : 'a value'
   if (t === 'object') {
-    const keys = Object.keys((contract.properties ?? {}))
+    const keys = Object.keys(contract.properties ?? {})
     return keys.length > 0 ? `a { ${keys.join(', ')} } value` : 'an object'
   }
   return t === 'string' ? 'text' : t

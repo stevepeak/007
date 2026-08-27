@@ -3,7 +3,10 @@ import { describe, expect, test } from 'bun:test'
 import type { WorkflowGraph } from '../../engine'
 
 import {
+  acceptsValueType,
   agentThreadSource,
+  coerceLiteral,
+  literalIssue,
   missingRequiredInputs,
   nodeRequires,
   outputContractIssue,
@@ -345,5 +348,75 @@ describe('nodeRequires / missingRequiredInputs — workflow nodes', () => {
     expect(missingRequiredInputs(call as never, callerMaps)).toEqual([
       'userText',
     ])
+  })
+})
+
+describe('acceptsValueType — what the binding picker may offer', () => {
+  test('matching JSON types accept each other', () => {
+    expect(acceptsValueType('boolean', 'boolean')).toBe(true)
+    expect(acceptsValueType('object', 'object')).toBe(true)
+  })
+
+  test('mismatched JSON types are refused', () => {
+    expect(acceptsValueType('boolean', 'string')).toBe(false)
+    expect(acceptsValueType('number', 'array')).toBe(false)
+    expect(acceptsValueType('array', 'object')).toBe(false)
+  })
+
+  test("integer is a number, and an agent's text is a string", () => {
+    expect(acceptsValueType('integer', 'number')).toBe(true)
+    expect(acceptsValueType('number', 'integer')).toBe(true)
+    expect(acceptsValueType('string', 'text')).toBe(true)
+  })
+
+  // The permissive half: anything we can't inspect stays available, or the
+  // picker would hide most real mappings (agent output above all).
+  test('an opaque type on either side accepts everything', () => {
+    expect(acceptsValueType('boolean', 'unknown')).toBe(true)
+    expect(acceptsValueType('boolean', 'passthrough')).toBe(true)
+    expect(acceptsValueType('boolean', '"yes" | "no"')).toBe(true)
+    expect(acceptsValueType(undefined, 'object')).toBe(true)
+    expect(acceptsValueType('unknown', 'string')).toBe(true)
+  })
+})
+
+describe('literal editing is typed', () => {
+  test('a literal is coerced to the declared type', () => {
+    expect(coerceLiteral('0', 'number')).toBe(0)
+    expect(coerceLiteral('true', 'boolean')).toBe(true)
+    expect(coerceLiteral('0', 'string')).toBe('0')
+    expect(coerceLiteral('{"a":1}', 'object')).toEqual({ a: 1 })
+  })
+
+  test('malformed values report why, so Set stays disabled', () => {
+    expect(literalIssue('abc', 'number')).toBe('Enter a number')
+    expect(literalIssue('1.5', 'integer')).toBe('Enter a whole number')
+    expect(literalIssue('{', 'object')).toBe('Enter valid JSON')
+    expect(literalIssue('[1]', 'object')).toBe('Enter a JSON object')
+    expect(literalIssue('{"a":1}', 'array')).toBe('Enter a JSON array')
+  })
+
+  test('well-formed values and untyped input have no issue', () => {
+    expect(literalIssue('12', 'number')).toBeNull()
+    expect(literalIssue('12', 'integer')).toBeNull()
+    expect(literalIssue('[1]', 'array')).toBeNull()
+    expect(literalIssue('anything', undefined)).toBeNull()
+    expect(literalIssue('', 'number')).toBeNull()
+  })
+})
+
+describe('agent prompt variables take any shape', () => {
+  test("an agent's variables are untyped, so nothing is filtered out", () => {
+    const maps = {
+      toolsById: new Map(),
+      agentsById: new Map([['a1', { inputVariables: ['topic'] }]]),
+      triggersByKind: new Map(),
+      workflowsById: new Map(),
+    } as unknown as IoMaps
+    const agentNode = node('a', 'agent', 'Agent', { agentId: 'a1' })
+    const [topic] = nodeRequires(agentNode as never, maps)
+    expect(topic?.type).toBe('unknown')
+    expect(acceptsValueType(topic?.type, 'object')).toBe(true)
+    expect(acceptsValueType(topic?.type, 'number')).toBe(true)
   })
 })

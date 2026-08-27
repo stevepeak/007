@@ -12,7 +12,7 @@ import { useWfComponents } from '../context'
 import { toText } from '../to-text'
 import { Tooltip } from '../tooltip'
 
-import { BindingSourceNode } from './node-data-panel-picker'
+import { BindingSourceNode, pickableSources } from './node-data-panel-picker'
 import {
   bindingsOf,
   useAccessibleData,
@@ -22,7 +22,10 @@ import {
 import { InspectorSection, SectionHeader } from './node-inspector-shared'
 import {
   agentThreadSource,
+  coerceLiteral,
+  literalIssue,
   nodeRequires,
+  normalizeJsonType,
   type AccessibleNode,
   type NodeInput,
   type ThreadStatus,
@@ -133,7 +136,8 @@ export function NodeInputsPanel({
                   label="conversation"
                   description="The chat thread this agent answers. It is the agent's only source of messages, so it must be linked — usually to the chat trigger's messages. A run with it unbound fails."
                   icon={
-                    empty?.tone === 'warn' || thread.status === 'unsupported' ? (
+                    empty?.tone === 'warn' ||
+                    thread.status === 'unsupported' ? (
                       <AlertTriangle className="size-3.5 shrink-0 text-rose-500" />
                     ) : undefined
                   }
@@ -193,36 +197,6 @@ function conversationEmptyState(
   return undefined
 }
 
-// The literal is typed into a single text box, but a tool arg / prompt variable
-// can declare a non-string JSON type. Coerce the string to that declared type so
-// a numeric input (e.g. `keepCount`) is stored as `0` (number), not `"0"` —
-// otherwise the tool's Zod schema rejects it at run time. Unparseable input falls
-// back to the raw string, so the schema still surfaces a clear validation error.
-function coerceLiteral(raw: string, type?: string): unknown {
-  switch (type) {
-    case 'number':
-    case 'integer': {
-      const n = Number(raw)
-      return raw.trim() !== '' && !Number.isNaN(n) ? n : raw
-    }
-    case 'boolean': {
-      if (raw === 'true') return true
-      if (raw === 'false') return false
-      return raw
-    }
-    case 'object':
-    case 'array': {
-      try {
-        return JSON.parse(raw)
-      } catch {
-        return raw
-      }
-    }
-    default:
-      return raw
-  }
-}
-
 // Describes one binding: unmapped, a literal, or a ref into an upstream node.
 function describeBinding(
   binding: ArgBinding | null,
@@ -236,6 +210,24 @@ function describeBinding(
   const src = accessible.find((n) => n.nodeId === binding.nodeId)
   const label = src?.label ?? binding.nodeId
   return binding.path ? `${label} · ${binding.path}` : `${label} · whole output`
+}
+
+// How to name the type in prose, for the "nothing upstream fits" line.
+function typeNoun(type?: string): string {
+  switch (normalizeJsonType(type)) {
+    case 'number':
+      return 'number'
+    case 'boolean':
+      return 'true/false value'
+    case 'object':
+      return 'object'
+    case 'array':
+      return 'list'
+    case 'string':
+      return 'text value'
+    default:
+      return 'value'
+  }
 }
 
 function BindingField({
@@ -252,7 +244,8 @@ function BindingField({
 }: {
   label: string
   description?: string
-  /** JSON Schema type of the input, used to coerce a typed literal. */
+  /** JSON Schema type of the input. Decides which literal editor is offered and
+   * which upstream fields the picker is allowed to show. */
   type?: string
   /** Allowed values when the input is an enum — the literal editor becomes a
    * picker so a free-text value can't be entered. */
@@ -268,11 +261,17 @@ function BindingField({
   /** Tone for `emptyText`: a neutral hint or a warning. */
   emptyTone?: 'muted' | 'warn'
 }) {
-  const { Input, Select } = useWfComponents()
   const setHovered = useHoverHighlightSetter()
   const [open, setOpen] = useState(false)
   const [literal, setLiteral] = useState(() =>
     binding?.kind === 'literal' ? toText(binding.value) : '',
+  )
+  // Only what this input can actually take. An upstream `string` is not offered
+  // to a `boolean` argument, because the run would just fail Zod validation on
+  // it — see `acceptsValueType` for how permissive the rule is.
+  const sources = useMemo(
+    () => pickableSources(accessible, type),
+    [accessible, type],
   )
   const mapped = Boolean(binding)
   // The full (untruncated) text shown in the row — surfaced as the hover title so
@@ -349,76 +348,202 @@ function BindingField({
             <p className="text-muted-foreground text-xs">
               No upstream data to map from yet.
             </p>
+          ) : sources.length === 0 ? (
+            <p className="text-muted-foreground text-xs">
+              No upstream {typeNoun(type)} to map from — nothing above this step
+              produces one. Set it below instead.
+            </p>
           ) : (
             <div className="space-y-1.5">
-              {accessible.map((n) => (
+              {sources.map((s) => (
                 <BindingSourceNode
-                  key={n.nodeId}
-                  node={n}
+                  key={s.node.nodeId}
+                  source={s}
                   onPick={(path) => {
-                    onSet({ kind: 'ref', nodeId: n.nodeId, path })
+                    onSet({ kind: 'ref', nodeId: s.node.nodeId, path })
                     setOpen(false)
                   }}
                 />
               ))}
             </div>
           )}
-          {enumValues && enumValues.length > 0 ? (
-            // Enum input: pick from the allowed values — no free-text, so an
-            // invalid literal can't be entered. Selecting sets it immediately.
-            <div className="flex items-center gap-1.5 border-t border-neutral-100 pt-2">
-              <Pencil className="size-3 shrink-0 text-muted-foreground" />
-              <Select
-                value={
-                  binding?.kind === 'literal' ? toText(binding.value) : ''
-                }
-                onChange={(e) => {
-                  const picked = enumValues.find(
-                    (v) => String(v) === e.target.value,
-                  )
-                  if (picked === undefined) return
-                  onSet({ kind: 'literal', value: picked })
-                  setOpen(false)
-                }}
-                className="h-7 flex-1 rounded border border-input bg-card px-1.5 text-xs text-foreground"
-              >
-                <option value="" disabled>
-                  Select a value…
-                </option>
-                {enumValues.map((v) => (
-                  <option key={String(v)} value={String(v)}>
-                    {String(v)}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 border-t border-neutral-100 pt-2">
-              <Pencil className="size-3 shrink-0 text-muted-foreground" />
-              <Input
-                value={literal}
-                placeholder="or type a literal value…"
-                onChange={(e) => setLiteral(e.target.value)}
-                className="h-7 flex-1 text-xs"
-              />
-              <button
-                type="button"
-                disabled={literal.length === 0}
-                onClick={() => {
-                  onSet({
-                    kind: 'literal',
-                    value: coerceLiteral(literal, type),
-                  })
-                  setOpen(false)
-                }}
-                className="shrink-0 rounded border border-border px-2 py-1 text-xs text-muted-foreground transition hover:bg-accent disabled:opacity-40"
-              >
-                Set
-              </button>
-            </div>
-          )}
+          <LiteralEditor
+            type={type}
+            enumValues={enumValues}
+            binding={binding}
+            literal={literal}
+            setLiteral={setLiteral}
+            onCommit={(value) => {
+              onSet({ kind: 'literal', value })
+              setOpen(false)
+            }}
+          />
         </div>
       ) : null}
+    </div>
+  )
+}
+
+/**
+ * The "or just type the value" half of the picker, shaped by what the input
+ * declares. The control matches the type rather than making every value a
+ * string the author has to spell correctly: an enum picks, a boolean toggles, a
+ * number takes a number field, an object/array takes JSON that must parse
+ * before it can be set. Only an untyped/string input still gets a plain box.
+ */
+function LiteralEditor({
+  type,
+  enumValues,
+  binding,
+  literal,
+  setLiteral,
+  onCommit,
+}: {
+  type?: string
+  enumValues?: unknown[]
+  binding: ArgBinding | null
+  literal: string
+  setLiteral: (value: string) => void
+  onCommit: (value: unknown) => void
+}) {
+  const { Input, Select, Textarea } = useWfComponents()
+  const current = binding?.kind === 'literal' ? binding.value : undefined
+  const jsonType = normalizeJsonType(type)
+
+  if (enumValues && enumValues.length > 0) {
+    // Enum input: pick from the allowed values — no free-text, so an invalid
+    // literal can't be entered. Selecting sets it immediately.
+    return (
+      <LiteralRow>
+        <Select
+          value={current === undefined ? '' : toText(current)}
+          onChange={(e) => {
+            const picked = enumValues.find((v) => String(v) === e.target.value)
+            if (picked === undefined) return
+            onCommit(picked)
+          }}
+          className="h-7 flex-1 rounded border border-input bg-card px-1.5 text-xs text-foreground"
+        >
+          <option value="" disabled>
+            Select a value…
+          </option>
+          {enumValues.map((v) => (
+            <option key={String(v)} value={String(v)}>
+              {String(v)}
+            </option>
+          ))}
+        </Select>
+      </LiteralRow>
+    )
+  }
+
+  if (jsonType === 'boolean') {
+    // A boolean has exactly two literals, so it gets two buttons. Typing "true"
+    // into a text box was the old way to store the STRING "true", which the
+    // tool's Zod schema then rejected at run time.
+    return (
+      <LiteralRow>
+        <div className="flex flex-1 overflow-hidden rounded border border-input">
+          {[true, false].map((v) => {
+            const active = current === v
+            return (
+              <button
+                key={String(v)}
+                type="button"
+                aria-pressed={active}
+                onClick={() => onCommit(v)}
+                className={cn(
+                  'flex-1 px-2 py-1 text-xs transition',
+                  active
+                    ? 'bg-neutral-900 text-white'
+                    : 'text-muted-foreground hover:bg-accent',
+                )}
+              >
+                {String(v)}
+              </button>
+            )
+          })}
+        </div>
+      </LiteralRow>
+    )
+  }
+
+  const issue = literalIssue(literal, type)
+  const ready = literal.trim().length > 0 && !issue
+  const set = () => {
+    if (ready) onCommit(coerceLiteral(literal, type))
+  }
+
+  if (jsonType === 'object' || jsonType === 'array') {
+    // Structured literals are edited as JSON and must parse — an unparseable
+    // string used to be stored verbatim and fail the run instead.
+    return (
+      <div className="space-y-1 border-t border-neutral-100 pt-2">
+        <div className="flex items-start gap-1.5">
+          <Pencil className="mt-1.5 size-3 shrink-0 text-muted-foreground" />
+          <Textarea
+            value={literal}
+            rows={2}
+            spellCheck={false}
+            placeholder={jsonType === 'array' ? '["…"]' : '{ "key": "value" }'}
+            onChange={(e) => setLiteral(e.target.value)}
+            className="flex-1 rounded border border-input px-1.5 py-1 font-mono text-xs"
+          />
+          <button
+            type="button"
+            disabled={!ready}
+            onClick={set}
+            className="shrink-0 rounded border border-border px-2 py-1 text-xs text-muted-foreground transition hover:bg-accent disabled:opacity-40"
+          >
+            Set
+          </button>
+        </div>
+        {issue ? <p className="pl-4.5 text-xs text-rose-600">{issue}</p> : null}
+      </div>
+    )
+  }
+
+  const numeric = jsonType === 'number'
+  return (
+    <div className="space-y-1 border-t border-neutral-100 pt-2">
+      <div className="flex items-center gap-1.5">
+        <Pencil className="size-3 shrink-0 text-muted-foreground" />
+        <Input
+          value={literal}
+          type={numeric ? 'number' : 'text'}
+          step={type === 'integer' ? 1 : undefined}
+          placeholder={
+            numeric ? 'or type a number…' : 'or type a literal value…'
+          }
+          onChange={(e) => setLiteral(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              set()
+            }
+          }}
+          className="h-7 flex-1 text-xs"
+        />
+        <button
+          type="button"
+          disabled={!ready}
+          onClick={set}
+          className="shrink-0 rounded border border-border px-2 py-1 text-xs text-muted-foreground transition hover:bg-accent disabled:opacity-40"
+        >
+          Set
+        </button>
+      </div>
+      {issue ? <p className="pl-4.5 text-xs text-rose-600">{issue}</p> : null}
+    </div>
+  )
+}
+
+// The shared frame for a one-line literal control: the pencil, then the control.
+function LiteralRow({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex items-center gap-1.5 border-t border-neutral-100 pt-2">
+      <Pencil className="size-3 shrink-0 text-muted-foreground" />
+      {children}
     </div>
   )
 }
