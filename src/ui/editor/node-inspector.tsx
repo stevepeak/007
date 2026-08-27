@@ -218,11 +218,9 @@ export function NodeInspector(props: NodeInspectorProps) {
         ) : null}
       </div>
 
-      {/* Primary config for this kind — which agent / tool / workflow, the
-          branch condition, etc. Comes first, headed directly by the title. */}
-      {Inspector ? <Inspector {...props} /> : null}
-
-      {/* The step's display name on the canvas. */}
+      {/* The step's display name on the canvas. First for every kind — it is
+          what the author reads on the node they just clicked, so naming the
+          step precedes configuring it. */}
       <InspectorSection>
         <SectionHeader>Internal label</SectionHeader>
         <Input
@@ -230,6 +228,10 @@ export function NodeInspector(props: NodeInspectorProps) {
           onChange={(e) => onChange({ ...node, label: e.target.value })}
         />
       </InspectorSection>
+
+      {/* Primary config for this kind — which agent / tool / workflow, the
+          branch condition, etc. */}
+      {Inspector ? <Inspector {...props} /> : null}
 
       {/* What the USER sees while this step runs — off / static / dynamic.
           Agents get all three (dynamic streams the model's live thinking); other
