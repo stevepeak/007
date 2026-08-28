@@ -52,7 +52,7 @@
     "@dagrejs/dagre": "^3.1.1",
     "@hookform/resolvers": "^5.9.1",
     "@sentry/cloudflare": "^10.71.0",
-    "@tanstack/react-query": "^5.102.7",
+    "@tanstack/react-query": "^5.102.8",
     "@tiptap/core": "^3.30.5",
     "@tiptap/extension-placeholder": "^3.30.5",
     "@tiptap/extensions": "^3.30.5",
@@ -65,7 +65,7 @@
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
     "jsonata": "^2.2.2",
-    "lucide-react": "^1.34.0",
+    "lucide-react": "^1.35.0",
     "react-hook-form": "^7.86.0",
     "react-is": "^19.2.0",
     "recharts": "^3.10.1",
@@ -76,7 +76,7 @@
     "react-dom": "^19"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260827.1",
+    "@cloudflare/workers-types": "^5.20260828.1",
     "@dexaai/config": "^0.0.10",
     "@ocavue/eslint-config": "^4.13.5",
     "@types/bun": "^1.4.0",
