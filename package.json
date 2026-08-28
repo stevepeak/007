@@ -45,13 +45,13 @@
     "db:migrate": "sh -c '[ -f ../../.wf-migrate.env ] && . ../../.wf-migrate.env; wrangler d1 migrations apply ${WF_D1_NAME:-DB} --remote --config ${WF_D1_CONFIG:-./wrangler.jsonc}'"
   },
   "dependencies": {
-    "@ai-sdk/react": "^4.0.86",
+    "@ai-sdk/react": "^4.0.87",
     "@autoform/core": "^4.0.0",
     "@autoform/react": "^5.0.0",
     "@cloudflare/puppeteer": "1.4.0",
     "@dagrejs/dagre": "^3.1.1",
     "@hookform/resolvers": "^5.9.1",
-    "@sentry/cloudflare": "^10.71.0",
+    "@sentry/cloudflare": "^10.72.0",
     "@tanstack/react-query": "^5.102.8",
     "@tiptap/core": "^3.30.5",
     "@tiptap/extension-placeholder": "^3.30.5",
@@ -61,7 +61,7 @@
     "@tiptap/react": "^3.30.5",
     "@tiptap/starter-kit": "^3.30.5",
     "@xyflow/react": "^12.11.5",
-    "ai": "^7.0.83",
+    "ai": "^7.0.84",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
     "jsonata": "^2.2.2",
@@ -69,7 +69,7 @@
     "react-hook-form": "^7.86.0",
     "react-is": "^19.2.0",
     "recharts": "^3.10.1",
-    "zod": "^4.4.3"
+    "zod": "^4.5.1"
   },
   "peerDependencies": {
     "react": "^19",
@@ -88,6 +88,6 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "typescript": "^5.9.3",
-    "wrangler": "^4.127.0"
+    "wrangler": "^4.127.1"
   }
 }
