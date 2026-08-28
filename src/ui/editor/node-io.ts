@@ -31,6 +31,10 @@ export type DataField = {
   /** JSON Schema `type` (string/number/object/array/…) or "unknown". */
   type: string
   description?: string
+  /** Allowed values when the field's schema declares an enum. Lets a matcher
+   * (a Switch case, a Branch operand) offer the options instead of asking the
+   * author to spell one of them correctly. */
+  enum?: unknown[]
   /** Nested fields when `type` is `object`. */
   children?: DataField[]
   /** Element fields when `type` is `array` — the shape of each item. Shown in
@@ -316,6 +320,7 @@ function fieldsOf(
       type: schemaType(s),
       description:
         typeof s.description === 'string' ? s.description : undefined,
+      enum: Array.isArray(s.enum) ? s.enum : undefined,
       children: s.type === 'object' ? fieldsOf(s, path) : undefined,
       items:
         s.type === 'array'
@@ -455,6 +460,9 @@ function decisionOutputFields(node: WorkflowNode): DataField[] {
         label: 'result',
         path: 'result',
         type,
+        // The declared case keys ARE the value set, so a downstream matcher can
+        // offer them rather than have the author retype a letter.
+        enum: keys.length > 0 ? [...keys, SWITCH_DEFAULT_CASE] : undefined,
         description: 'The matching case key — drives which edge is taken.',
       },
       reasoning,
@@ -466,6 +474,7 @@ function decisionOutputFields(node: WorkflowNode): DataField[] {
       label: 'result',
       path: 'result',
       type: '"yes" | "no"',
+      enum: ['yes', 'no'],
       description: 'Whether the predicate held — drives the yes/no edge.',
     },
     reasoning,
@@ -955,6 +964,29 @@ export function findField(
     }
   }
   return undefined
+}
+
+/**
+ * The values a ref-addressed field is allowed to take, when its upstream schema
+ * declares an enum — a Switch case / Branch operand then offers a picker of the
+ * real options instead of a free-text box the author has to spell right.
+ *
+ * Undefined for an unbound ref (nothing declares the whole incoming input's
+ * shape) and for a whole-output ref (an object isn't an enum).
+ */
+export function refEnumOptions(
+  accessible: AccessibleNode[],
+  ref: { nodeId: string; path?: string } | undefined,
+): unknown[] | undefined {
+  if (!ref?.path) return undefined
+  const source = accessible.find((n) => n.nodeId === ref.nodeId)
+  if (!source) return undefined
+  const field = findField(source.fields, ref.path)
+  if (!field) return undefined
+  // A boolean is an enum of two, and the two are exactly the values that must be
+  // typed right — "True"/"yes" match nothing at run time.
+  if (field.type === 'boolean') return [true, false]
+  return field.enum && field.enum.length > 0 ? field.enum : undefined
 }
 
 // The active trigger's declared output contract (JSON Schema), or undefined when

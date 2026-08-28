@@ -10,6 +10,7 @@ import {
   missingRequiredInputs,
   nodeRequires,
   outputContractIssue,
+  refEnumOptions,
   type IoMaps,
 } from './node-io'
 
@@ -418,5 +419,46 @@ describe('agent prompt variables take any shape', () => {
     expect(topic?.type).toBe('unknown')
     expect(acceptsValueType(topic?.type, 'object')).toBe(true)
     expect(acceptsValueType(topic?.type, 'number')).toBe(true)
+  })
+})
+
+describe('enum options behind a ref', () => {
+  const accessible = [
+    {
+      nodeId: 'a',
+      label: 'Classify',
+      kind: 'agent' as const,
+      wholeType: 'object',
+      fields: [
+        {
+          key: 'category',
+          label: 'category',
+          path: 'category',
+          type: 'string',
+          enum: ['refund', 'billing'],
+        },
+        { key: 'note', label: 'note', path: 'note', type: 'string' },
+        { key: 'urgent', label: 'urgent', path: 'urgent', type: 'boolean' },
+      ],
+    },
+  ]
+
+  test('a declared enum becomes the offered options', () => {
+    expect(refEnumOptions(accessible, { nodeId: 'a', path: 'category' })).toEqual(
+      ['refund', 'billing'],
+    )
+  })
+
+  test('a boolean field offers its two values', () => {
+    expect(refEnumOptions(accessible, { nodeId: 'a', path: 'urgent' })).toEqual([
+      true,
+      false,
+    ])
+  })
+
+  test('a plain field, a whole-output ref and an unbound ref offer nothing', () => {
+    expect(refEnumOptions(accessible, { nodeId: 'a', path: 'note' })).toBeUndefined()
+    expect(refEnumOptions(accessible, { nodeId: 'a', path: '' })).toBeUndefined()
+    expect(refEnumOptions(accessible, undefined)).toBeUndefined()
   })
 })

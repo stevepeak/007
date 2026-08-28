@@ -9,6 +9,7 @@ import {
   SWITCH_DEFAULT_CASE,
   type ArgBinding,
   type IterationItemExecution,
+  type SwitchNode,
   type TransformOutputShape,
 } from '../../engine'
 import { cn } from '../cn'
@@ -20,7 +21,7 @@ import { BranchOperatorSelect } from './branch-operator-select'
 import { DataRefField, IterationListField } from './node-data-panel'
 import { useAccessibleData } from './node-data-panel-shared'
 import { field, type NodeInspectorProps } from './node-inspector-shared'
-import { transformSourceShape } from './node-io'
+import { refEnumOptions, transformSourceShape } from './node-io'
 import { buildTransformCopilotPrompt } from './transform-copilot-prompt'
 
 // What the choice means for the author, in their terms. The trade is per-item
@@ -57,7 +58,16 @@ export function BranchInspector({
   onChange,
   itemSchema,
 }: NodeInspectorProps) {
-  const { Input, Label } = useWfComponents()
+  const { Input, Label, Select } = useWfComponents()
+  // Called before the kind guard, because a hook can't sit behind an early
+  // return. When the tested value declares an enum, the operand is one OF those
+  // values, so the box becomes a picker of them rather than a spelling test.
+  const { accessible } = useAccessibleData(node, graph, itemSchema)
+  const branchSource = node.kind === 'branch' ? node.config.source : undefined
+  const options = useMemo(
+    () => refEnumOptions(accessible, branchSource),
+    [accessible, branchSource],
+  )
   if (node.kind !== 'branch') return null
   return (
     <>
@@ -94,16 +104,42 @@ export function BranchInspector({
           />
           {branchOperatorTakesValue(node.config.operator) ? (
             <div className="min-w-0 flex-1">
-              <Input
-                placeholder="value…"
-                value={scalarText(node.config.value)}
-                onChange={(e) =>
-                  onChange({
-                    ...node,
-                    config: { ...node.config, value: e.target.value },
-                  })
-                }
-              />
+              {options ? (
+                <Select
+                  className="border-input bg-card text-foreground h-8 w-full rounded-md border px-1.5 text-xs"
+                  value={scalarText(node.config.value)}
+                  onChange={(e) => {
+                    // Round-tripped through the declared options so a numeric or
+                    // boolean enum keeps its type instead of being stored as its
+                    // text form.
+                    const picked = options.find(
+                      (o) => toText(o) === e.target.value,
+                    )
+                    onChange({
+                      ...node,
+                      config: { ...node.config, value: picked ?? '' },
+                    })
+                  }}
+                >
+                  <option value="">value…</option>
+                  {options.map((o) => (
+                    <option key={toText(o)} value={toText(o)}>
+                      {toText(o)}
+                    </option>
+                  ))}
+                </Select>
+              ) : (
+                <Input
+                  placeholder="value…"
+                  value={scalarText(node.config.value)}
+                  onChange={(e) =>
+                    onChange({
+                      ...node,
+                      config: { ...node.config, value: e.target.value },
+                    })
+                  }
+                />
+              )}
             </div>
           ) : (
             <p className="text-muted-foreground flex-1 text-xs">
@@ -178,6 +214,28 @@ function CaseMarker({ children }: { children: ReactNode }) {
 // author put it — but the author can TYPE OVER that letter to name the arm, and
 // the name is what the canvas edge reads as, so a graph says 'image' rather
 // than 'A'.
+type SwitchCase = SwitchNode['config']['cases'][number]
+
+/**
+ * Appends cases, minting each key against the ones already present PLUS the ones
+ * this call has already minted — a key is an edge identity, so two arms added in
+ * one click must not collide.
+ */
+function appendCases(
+  cases: readonly SwitchCase[],
+  added: { value: unknown; label?: string }[],
+): SwitchCase[] {
+  const next = [...cases]
+  for (const a of added) {
+    next.push({
+      key: nextSwitchCaseKey(next.map((c) => c.key)),
+      label: a.label,
+      value: { kind: 'literal', value: a.value },
+    })
+  }
+  return next
+}
+
 export function SwitchInspector({
   node,
   graph,
@@ -185,10 +243,19 @@ export function SwitchInspector({
   itemSchema,
 }: NodeInspectorProps) {
   const { Input, Label } = useWfComponents()
+  // Called before the kind guard, because a hook can't sit behind an early
+  // return. When the matched value declares an enum, the case list stops being
+  // free authoring and becomes a checklist over the declared values.
+  const { accessible } = useAccessibleData(node, graph, itemSchema)
+  const switchSource = node.kind === 'switch' ? node.config.source : undefined
+  const options = useMemo(
+    () => refEnumOptions(accessible, switchSource),
+    [accessible, switchSource],
+  )
   if (node.kind !== 'switch') return null
 
   const cases = node.config.cases
-  const setCases = (next: typeof cases) =>
+  const setCases = (next: SwitchCase[]) =>
     onChange({ ...node, config: { ...node.config, cases: next } })
   const setCaseValue = (index: number, value: ArgBinding) =>
     setCases(cases.map((c, i) => (i === index ? { ...c, value } : c)))
@@ -200,6 +267,12 @@ export function SwitchInspector({
         i === index ? { ...c, label: label || undefined } : c,
       ),
     )
+  // Which declared options no case covers yet — what the "add the rest" button
+  // offers, so an author never retypes a value the schema already spells out.
+  const covered = new Set(
+    cases.map((c) => (c.value.kind === 'literal' ? toText(c.value.value) : '')),
+  )
+  const uncovered = (options ?? []).filter((o) => !covered.has(toText(o)))
 
   return (
     <>
@@ -221,6 +294,15 @@ export function SwitchInspector({
       </div>
       <div className={field}>
         <Label>Cases</Label>
+        {/* Two named columns. The left box is what the ARM is called; the right
+            box is what the input must EQUAL — the one confusion worth a header
+            row, since the name box shows the routing letter and so reads like a
+            value until something says otherwise. */}
+        <div className="text-muted-foreground flex items-center gap-1.5 text-[10px] tracking-wide uppercase">
+          <span className="w-14 shrink-0">Path</span>
+          <span className="min-w-0 flex-1">Input equals</span>
+          <span className="w-5 shrink-0" />
+        </div>
         {cases.map((c, i) => (
           <div key={c.key} className="flex items-start gap-1.5">
             {/* The marker IS the name field: it shows the minted letter until
@@ -228,7 +310,7 @@ export function SwitchInspector({
                 the thing already labelling it. Left empty it stays the letter —
                 and the key never changes either way, so the edge never moves. */}
             <Input
-              className={cn(CASE_MARKER, 'w-24')}
+              className={cn(CASE_MARKER, 'w-14')}
               value={c.label ?? ''}
               placeholder={c.key}
               aria-label={`Name for case ${c.key}`}
@@ -243,11 +325,25 @@ export function SwitchInspector({
                 // author's typed literal, editable in place.
                 value={c.value.kind === 'ref' ? c.value : undefined}
                 emptyLabel="equals…"
+                // The graph reports an unfilled case by NAME; the border says
+                // which row that name belongs to.
+                invalid={
+                  c.value.kind === 'literal' &&
+                  (c.value.value == null || c.value.value === '')
+                }
                 literal={{
                   value: literalText(c.value),
-                  placeholder: 'equals…',
+                  placeholder: options ? 'pick a value…' : 'equals…',
+                  // An enum input turns each case into a choice among the
+                  // declared values — nothing to spell, nothing to mistype.
+                  options,
                   onChange: (value) =>
-                    setCaseValue(i, { kind: 'literal', value }),
+                    setCaseValue(i, {
+                      kind: 'literal',
+                      // Round-tripped through the options so a numeric or
+                      // boolean enum keeps its type.
+                      value: options?.find((o) => toText(o) === value) ?? value,
+                    }),
                 }}
                 // Clearing the link drops back to an empty typed value, so the
                 // row is never left without a binding.
@@ -258,7 +354,7 @@ export function SwitchInspector({
             </div>
             <button
               type="button"
-              className="text-muted-foreground hover:text-foreground shrink-0 rounded px-1.5 py-1.5 text-xs"
+              className="text-muted-foreground hover:text-foreground w-5 shrink-0 rounded py-1.5 text-xs"
               aria-label={`Remove case ${c.label?.trim() || c.key}`}
               onClick={() => setCases(cases.filter((_, j) => j !== i))}
             >
@@ -269,30 +365,41 @@ export function SwitchInspector({
         <div className="flex items-start gap-1.5">
           <CaseMarker>{SWITCH_DEFAULT_CASE}</CaseMarker>
           <p className="text-muted-foreground flex-1 py-1.5 text-xs">
-            No case matched.
+            Anything the cases above didn’t match.
           </p>
         </div>
-        <button
-          type="button"
-          className="border-input hover:bg-accent self-start rounded-md border px-2 py-1 text-xs"
-          onClick={() =>
-            setCases([
-              ...cases,
-              {
-                key: nextSwitchCaseKey(cases.map((c) => c.key)),
-                value: { kind: 'literal', value: '' },
-              },
-            ])
-          }
-        >
-          + Add case
-        </button>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            className="border-input hover:bg-accent rounded-md border px-2 py-1 text-xs"
+            onClick={() => setCases(appendCases(cases, [{ value: '' }]))}
+          >
+            + Add case
+          </button>
+          {uncovered.length > 0 ? (
+            <button
+              type="button"
+              className="border-input hover:bg-accent rounded-md border px-2 py-1 text-xs"
+              onClick={() =>
+                setCases(
+                  appendCases(
+                    cases,
+                    uncovered.map((o) => ({ value: o, label: toText(o) })),
+                  ),
+                )
+              }
+            >
+              + Add the {uncovered.length} remaining option
+              {uncovered.length > 1 ? 's' : ''}
+            </button>
+          ) : null}
+        </div>
       </div>
       <p className="text-muted-foreground text-xs">
         Deterministic — no model call. Cases are matched in order, and each one
         grows its own outgoing edge; a value matching none takes the{' '}
-        <strong>else</strong> edge. Type over a path's letter to name it — the
-        canvas shows the name, the letter stays the routing key.
+        <strong>else</strong> edge. The left box only NAMES the path — the canvas
+        edge reads that name, while the routing key stays the letter underneath.
       </p>
     </>
   )
