@@ -169,23 +169,72 @@ const agentConfigObjectSchema = z.object({
   // the final answering turn, which denies tools and must win), and the
   // structured-output kinds, which run `generateObject` with no tool loop at all.
   requireToolFirstTurn: z.boolean().default(false),
-  // NOTE: `exposeThinking` and `enableReasoning` used to live here and are gone.
-  // Zod strips them from stored configs, so old rows still parse.
-  //
-  // Both were display/behavior switches an agent should never have owned:
-  //   - What a step surfaces to the user is a per-PLACEMENT choice, so it lives
-  //     on the workflow node (`informUser`) — the same agent can stream its work
-  //     in one workflow and stay quiet in another. Sub-agents, which have no node
-  //     of their own, inherit the primary node's choice (see `sub-agent.ts`).
-  //   - Whether the model reasons at all is deliberately NOT configurable.
-  //     Reasoning is a real extra generation pass that materially improves
-  //     multi-step analysis; a display preference must not silently switch it
-  //     off. Nothing passes a reasoning intent for agents, so the provider
-  //     default (on) always wins. The one place it IS disabled is short internal
-  //     utility calls (`summarize-changes.ts`), in code, per call.
-  //
-  // Keeping them as dead-but-parsed fields cost real debugging time: they show
-  // up in run dumps reading exactly like live switches.
+  /**
+   * Let the model think before it answers — an extra generation pass, billed and
+   * waited for, before a single token of the answer appears.
+   *
+   * ── Default OFF, and why ───────────────────────────────────────────────────
+   * Reasoning is not free and it is not free *by a lot*. Measured on this
+   * codebase's ingest pipeline: `document-structurer` — one call, a reasoning
+   * model, a strict output schema — averages **127 seconds** with a tail past
+   * **17 minutes**, while the extraction agents beside it return in 4–10s. That
+   * one node is ~62% of the wall-clock of every document we ingest.
+   *
+   * So the burden of proof sits with turning it ON, not with leaving it off.
+   *
+   * ── When you SHOULD enable it ──────────────────────────────────────────────
+   * Turn it on when the agent has to *decide* something, and a wrong decision is
+   * expensive:
+   *   • multi-step analysis — weighing several documents or clauses against each
+   *     other, where the answer depends on holding them in mind together;
+   *   • judgement calls — conflict checks, risk and competency assessments, any
+   *     "should we…" question;
+   *   • long tool loops — where the next call depends on reading the last
+   *     result properly, and a wrong turn wastes the whole loop;
+   *   • open-ended user questions, where the shape of a good answer isn't known
+   *     ahead of time.
+   *
+   * ── When you should NOT ────────────────────────────────────────────────────
+   * Leave it off when the task is *transcription* rather than *thought* — the
+   * answer is already in the input and the job is to reshape it:
+   *   • extraction and structuring against a fixed schema;
+   *   • classification into a known set of labels;
+   *   • summarizing or titling a single passage;
+   *   • per-item work inside an iteration, where the cost multiplies by the
+   *     number of items.
+   * These are exactly the cases where a reasoning model spends its whole budget
+   * in a `<think>` pass and can even return empty content on a tight cap.
+   *
+   * ── Not the same thing as the node's "reasoning" toggle ────────────────────
+   * The workflow node's `informUser.reasoning` decides whether the user SEES the
+   * thinking. This decides whether the model DOES any. They are deliberately
+   * separate: a display preference must never silently change what the model
+   * computes, which is the mistake that got the previous `enableReasoning`
+   * deleted. If this is off, that toggle simply has nothing to show.
+   *
+   * A model that cannot reason ignores this — the editor disables the control
+   * when the catalog says so.
+   *
+   * ── Why this is back, having once been removed ─────────────────────────────
+   * The earlier field was removed for two good reasons: it was tangled up with a
+   * display switch, and it was DEAD — nothing passed a reasoning intent for
+   * agents, so it read like a live control in run dumps while changing nothing.
+   * Both are addressed here: it is wired straight into `getModel` at
+   * `nodes/agent.ts` and `nodes/sub-agent.ts`, and the display concern stays on
+   * the node. What also changed is the evidence — "reasoning materially improves
+   * multi-step analysis" is true for analysis agents and simply false for the
+   * extraction agents that make up most of a pipeline, and we now have the
+   * latency numbers to say so.
+   */
+  reasoning: z.boolean().default(false),
+  // NOTE: `exposeThinking` used to live here and is gone. Zod strips it from
+  // stored configs, so old rows still parse. What a step surfaces to the user is
+  // a per-PLACEMENT choice, so it lives on the workflow node (`informUser`) —
+  // the same agent can stream its work in one workflow and stay quiet in
+  // another. Sub-agents, which have no node of their own, inherit the primary
+  // node's choice (see `sub-agent.ts`). Keeping it as a dead-but-parsed field
+  // cost real debugging time: it showed up in run dumps reading exactly like a
+  // live switch.
   //
   // What the agent is expected to produce.
   output: agentOutputSchema.default({ kind: 'text' }),
@@ -310,5 +359,13 @@ export function agentInputVariables(
 export type AgentOverride = {
   modelId?: string
   prompt?: string
+  /**
+   * Override whether the agent thinks before answering, independently of its
+   * saved setting — so an eval can run the SAME agent both ways and compare
+   * what the extra generation pass actually buys, in quality and in seconds.
+   * That comparison is the intended way to decide the setting rather than
+   * guessing at it.
+   */
+  reasoning?: boolean
   config?: AgentConfig
 }

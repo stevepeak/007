@@ -75,6 +75,9 @@ export function AgentsList({ className }: AgentsListProps) {
           toolIds: [],
           maxTurns: 5,
           requireToolFirstTurn: false,
+          // A new agent doesn't think until its author decides it needs to —
+          // same default as the schema.
+          reasoning: false,
           toolTokenBudget: null,
           answerReservePercent: 10,
           output: { kind: 'text' },

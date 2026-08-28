@@ -107,7 +107,10 @@ async function runAgentTarget<TDeps>(
   // No reasoning intent, matching the primary agent node: nothing forces the
   // model's thinking off, so the provider default (on) always wins. Whether that
   // thinking is SHOWN is the separate, display-only `streamReasoning` below.
-  const model = ctx.getModel(config.modelId)
+  // Same contract as the primary node: the sub-agent's OWN config decides
+  // whether it reasons. It inherits the parent's display choice, never its
+  // thinking budget.
+  const model = ctx.getModel(config.modelId, { reasoning: config.reasoning })
 
   // The sub-agent's own registry tools, plus the injected stop signal. A sub-
   // agent does NOT itself get delegation tools (spawning is one level deep per

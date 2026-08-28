@@ -184,14 +184,21 @@ export async function executeAgentNode<TDeps>(
   const streamToolCalls = inform.mode === 'dynamic' && inform.tools
   // DISPLAY-ONLY, deliberately. `streamReasoning` decides whether the model's
   // thinking is shown live to the end user; it must NOT decide whether the model
-  // thinks at all. Those are different concerns: reasoning is a real extra
-  // generation pass that materially improves multi-step analysis, so a display
-  // preference silently switching it off would degrade every answer with no
-  // signal. We therefore pass NO reasoning intent here — leaving it undefined
-  // keeps the provider's own default (thinking on). Note the model's reasoning
-  // reaches the dev feed and the post-answer reveal regardless of this toggle
-  // (see the always-on `thinking` level in `agent-generation.ts`).
-  const model = getModel(modelId)
+  // thinks at all. Those are different concerns, and they now have two different
+  // controls: this node toggle for what is SHOWN, and the agent's own
+  // `reasoning` field for whether the model thinks at all. Coupling them would
+  // mean a display preference silently changing what the model computes. Note
+  // the model's reasoning reaches the dev feed and the post-answer reveal
+  // regardless of this toggle (see the always-on `thinking` level in
+  // `agent-generation.ts`) — when there is any to show.
+  // Whether the model reasons at all is the AGENT's setting, per its config —
+  // and it is passed explicitly rather than left undefined. Undefined means "no
+  // intent, take the provider default", which for Venice is thinking ON; that
+  // implicit default is what made a structural-extraction agent spend two
+  // minutes per document in a `<think>` pass nobody asked for.
+  const model = getModel(modelId, {
+    reasoning: agentOverride?.reasoning ?? config.reasoning,
+  })
   // Synthesis eval: an empty tool set forces the model to answer from its seeded
   // history alone. Otherwise resolve the agent's real tools (neutralized under
   // simulate). freezeTools also suppresses delegation-tool synthesis below.

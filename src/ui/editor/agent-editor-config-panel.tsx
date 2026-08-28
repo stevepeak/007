@@ -73,12 +73,34 @@ export function AgentConfigPanel({
   const {
     aiTools,
     selectedModel,
+    models,
     modelLacksTools,
     modelLacksStructuredOutput,
+    modelLacksReasoning,
     schemaCopilotContext,
     hasToolsOrSubAgents,
     requireToolReason,
   } = useAgentConfigFacts(config, agentName, agentDescription)
+
+  // Switching models must not leave a setting behind that the new model cannot
+  // honour. `reasoning: true` against a non-reasoning model is inert at run time
+  // (the host only ever ACTS on `false`, by injecting `disable_thinking`), which
+  // is precisely what makes it worth clearing: an inert-but-true flag reads like
+  // a live switch in a stored config and in run dumps, and that is the exact
+  // confusion that got the previous `enableReasoning` deleted.
+  //
+  // Unknown capabilities are left alone, matching the rule everywhere else here:
+  // only a model KNOWN to lack reasoning clears the flag.
+  function patchModel(modelId: string) {
+    const next = (models.data ?? []).find((m) => m.id === modelId)
+    const knownToLackReasoning =
+      next?.capabilities != null && !next.capabilities.reasoning
+    patch(
+      knownToLackReasoning && config.reasoning
+        ? { modelId, reasoning: false }
+        : { modelId },
+    )
+  }
 
   function patchToolsAndRetireLoop(next: Partial<AgentConfig>) {
     const merged = { ...config, ...next }
@@ -107,15 +129,21 @@ export function AgentConfigPanel({
         >
           <ModelSelect
             value={config.modelId}
-            onChange={(modelId) => patch({ modelId })}
+            onChange={patchModel}
             // Gate the picker on what THIS agent needs: a tool-calling model
-            // when tools are attached, and structured output for a Yes/No or
-            // structured result (both go through `generateObject`).
+            // when tools are attached, structured output for a Yes/No or
+            // structured result (both go through `generateObject`), and a
+            // reasoning model when the agent is set to think before answering.
+            // The picker is the PRIMARY guard — a model that can't meet a
+            // requirement is never offered — and the per-section disabled states
+            // below are the backstop for a config that arrived some other way
+            // (a spec import, or a catalog refresh that changed a model).
             requirements={{
               tools: config.toolIds.length > 0,
               structuredOutput:
                 config.output.kind === 'object' ||
                 config.output.kind === 'boolean',
+              reasoning: config.reasoning,
             }}
           />
         </EditorSection>
@@ -268,6 +296,56 @@ export function AgentConfigPanel({
           {requireToolReason ? (
             <p className="text-xs text-amber-600">
               {requireToolReason}
+            </p>
+          ) : null}
+          <label
+            className={cn(
+              'flex items-start gap-2.5',
+              modelLacksReasoning
+                ? 'cursor-not-allowed opacity-60'
+                : 'cursor-pointer',
+            )}
+          >
+            <span className="min-w-0 flex-1">
+              <span className="text-foreground block text-sm font-medium">
+                Think before answering
+              </span>
+              <span className="mt-0.5 block text-xs text-neutral-400">
+                The model reasons through the problem in a separate
+                pass before it starts answering. It costs a full extra
+                generation — seconds on a short task, minutes on a
+                long one — so it is off unless the work earns it.
+                <br />
+                <strong className="text-neutral-300">
+                  Turn it on
+                </strong>{' '}
+                when the agent has to decide something and a wrong
+                call is expensive: weighing documents against each
+                other, judgement calls like conflict or risk checks,
+                long tool loops where the next step depends on reading
+                the last one properly, or open-ended questions.
+                <br />
+                <strong className="text-neutral-300">
+                  Leave it off
+                </strong>{' '}
+                when the answer is already in the input and the job is
+                to reshape it: extracting to a schema, classifying,
+                summarizing one passage — and especially for per-item
+                work inside a loop, where the cost multiplies by the
+                number of items.
+              </span>
+            </span>
+            <Checkbox
+              className="mt-0.5"
+              checked={config.reasoning && !modelLacksReasoning}
+              disabled={modelLacksReasoning}
+              onChange={(e) => patch({ reasoning: e.target.checked })}
+            />
+          </label>
+          {modelLacksReasoning ? (
+            <p className="text-xs text-amber-600">
+              {selectedModel?.label ?? 'This model'} does not support
+              reasoning.
             </p>
           ) : null}
         </EditorSection>

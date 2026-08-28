@@ -81,10 +81,14 @@ export async function executeAgentPreview<TDeps>(opts: {
   runContext: RunContext
 }): Promise<AgentPreviewResult> {
   const { config, wfConfig } = opts
-  // Playground explicitly asks for reasoning so the author can inspect the
-  // model's thinking per step (rendered in the trace). This is the provider-
-  // agnostic signal the host's `getModel` honors; scoped to the preview so a
-  // real run keeps its own default. A model that can't reason simply emits none.
+  // The playground reproduces the agent AS CONFIGURED, including whether it
+  // reasons. It used to force `reasoning: true` so the author could always
+  // inspect the model's thinking in the trace — reasonable when the setting
+  // didn't exist, and wrong now that it does: the whole point of testing an
+  // agent with reasoning off is to see what it actually costs and returns.
+  // Forcing it on would make the playground the one place the setting has no
+  // effect. This stays as the FALLBACK (see `getModel` below) for anything that
+  // passes no intent of its own; the agent's own value takes precedence.
   const runContext: RunContext = { ...opts.runContext, reasoning: true }
   const sink = createMemorySink()
   // Simulated tools are stood in for by the agent's own model.
@@ -145,12 +149,14 @@ export async function executeAgentPreview<TDeps>(opts: {
 
   const result = await executeAgentNode<unknown>({
     node,
-    // Playground always reasons (runContext.reasoning) so the trace shows the
-    // model's thinking, regardless of the synthetic node's inform-user flags.
+    // The agent's own intent wins; the playground default only fills the gap.
+    // Same precedence as `executor.ts`, so a preview and a real run resolve
+    // reasoning identically — which is the only way the playground can be
+    // trusted to predict production latency.
     getModel: (modelId, opts) =>
       wfConfig.getModel(modelId, {
         ...runContext,
-        reasoning: runContext.reasoning ?? opts?.reasoning,
+        reasoning: opts?.reasoning ?? runContext.reasoning,
       }),
     toolRegistry,
     // Every entry closes over what it needs (the simulator model, or the real

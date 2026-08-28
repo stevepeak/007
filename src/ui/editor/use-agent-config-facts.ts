@@ -44,6 +44,10 @@ const modelCaps = selectedModel?.capabilities
 const modelLacksTools = modelCaps != null && !modelCaps.tools
 const modelLacksStructuredOutput =
   modelCaps != null && !modelCaps.structuredOutput
+// Same "gated only when reported" rule: a model the catalog says cannot reason
+// makes the reasoning control meaningless, so it is disabled rather than
+// silently ignored at run time.
+const modelLacksReasoning = modelCaps != null && !modelCaps.reasoning
 
 // What the Copilot needs to talk about this agent's output shape: what it is
 // told to do, and what it can call. Tool IDS are resolved to names because the
@@ -97,6 +101,7 @@ const requireToolReason = !hasToolsOrSubAgents
     selectedModel,
     modelLacksTools,
     modelLacksStructuredOutput,
+    modelLacksReasoning,
     schemaCopilotContext,
     hasToolsOrSubAgents,
     requireToolReason,
