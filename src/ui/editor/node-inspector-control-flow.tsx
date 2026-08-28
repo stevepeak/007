@@ -1,4 +1,4 @@
-import { Sparkles } from 'lucide-react'
+import { Sparkles, X } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 
 import {
@@ -58,7 +58,7 @@ export function BranchInspector({
   onChange,
   itemSchema,
 }: NodeInspectorProps) {
-  const { Input, Label, Select } = useWfComponents()
+  const { Input, Label } = useWfComponents()
   // Called before the kind guard, because a hook can't sit behind an early
   // return. When the tested value declares an enum, the operand is one OF those
   // values, so the box becomes a picker of them rather than a spelling test.
@@ -105,8 +105,8 @@ export function BranchInspector({
           {branchOperatorTakesValue(node.config.operator) ? (
             <div className="min-w-0 flex-1">
               {options ? (
-                <Select
-                  className="border-input bg-card text-foreground h-8 w-full rounded-md border px-1.5 text-xs"
+                <select
+                  className="border-input bg-card text-foreground focus:border-ring h-9 w-full rounded-md border px-2 text-sm outline-none"
                   value={scalarText(node.config.value)}
                   onChange={(e) => {
                     // Round-tripped through the declared options so a numeric or
@@ -127,7 +127,7 @@ export function BranchInspector({
                       {toText(o)}
                     </option>
                   ))}
-                </Select>
+                </select>
               ) : (
                 <Input
                   placeholder="value…"
@@ -195,25 +195,29 @@ function literalText(binding: ArgBinding): string {
   return binding.kind === 'literal' ? scalarText(binding.value) : ''
 }
 
-// The look every case marker wears — the quiet chip at the head of the row.
-// Shared so the editable name and the fixed `else` sit on the same baseline and
-// read as the same thing.
+// The compact fields inside a case card are RAW elements, not the injected
+// `Input`/`Select`. Those carry their own `h-9 px-3 text-sm`, and `cn` is plain
+// clsx with no tailwind-merge, so a className can't shrink them — whichever
+// class Tailwind happens to emit later wins, which is how a "text-xs" box kept
+// rendering full size. Styled here to match the data connector above it.
+const CASE_FIELD =
+  'border-input bg-card text-foreground placeholder:text-muted-foreground h-8 w-full rounded-md border px-2 text-xs outline-none focus:border-ring'
+
+// The routing key, as a quiet badge — the letter an outgoing edge is actually
+// keyed on. Shared by the case cards and the `else` fallback so the two read as
+// the same kind of thing.
 const CASE_MARKER =
-  'border-input bg-muted text-muted-foreground h-auto shrink-0 rounded-md border px-2 py-1.5 text-center font-mono text-xs'
+  'border-input bg-muted text-muted-foreground rounded border px-1.5 py-0.5 text-center font-mono text-[11px]'
 
-// The fixed marker: the `else` arm, which has no case row to rename.
-function CaseMarker({ children }: { children: ReactNode }) {
-  return <span className={cn(CASE_MARKER, 'min-w-9')}>{children}</span>
-}
-
-// The Switch inspector. A Switch matches ONE upstream value against a list of
-// cases, so the editor asks for exactly that: pick the value with the same data
-// picker every other node uses, then per case type the value it must equal — or
-// link a second upstream value to compare against. Each case's key is minted as
-// a letter (A, B, C…) and never re-lettered, so an edge stays pointed where the
-// author put it — but the author can TYPE OVER that letter to name the arm, and
-// the name is what the canvas edge reads as, so a graph says 'image' rather
-// than 'A'.
+// The Switch inspector. A Switch has exactly ONE data connection — the input,
+// picked with the same data picker every other node uses — and each case is a
+// value that input is compared against, so a case is a plain field (a dropdown
+// when the input declares an enum), never a second picker.
+//
+// Each case's key is minted as a letter (A, B, C…) and never re-lettered, so an
+// edge stays pointed where the author put it. The author names the path
+// separately, and the name is what the canvas edge reads, so a graph says
+// 'image' rather than 'A'.
 type SwitchCase = SwitchNode['config']['cases'][number]
 
 /**
@@ -242,7 +246,7 @@ export function SwitchInspector({
   onChange,
   itemSchema,
 }: NodeInspectorProps) {
-  const { Input, Label } = useWfComponents()
+  const { Label } = useWfComponents()
   // Called before the kind guard, because a hook can't sit behind an early
   // return. When the matched value declares an enum, the case list stops being
   // free authoring and becomes a checklist over the declared values.
@@ -257,16 +261,8 @@ export function SwitchInspector({
   const cases = node.config.cases
   const setCases = (next: SwitchCase[]) =>
     onChange({ ...node, config: { ...node.config, cases: next } })
-  const setCaseValue = (index: number, value: ArgBinding) =>
-    setCases(cases.map((c, i) => (i === index ? { ...c, value } : c)))
-  // An emptied name field drops the field entirely rather than storing '', so
-  // the arm falls back to its letter instead of rendering as a blank label.
-  const setCaseLabel = (index: number, label: string) =>
-    setCases(
-      cases.map((c, i) =>
-        i === index ? { ...c, label: label || undefined } : c,
-      ),
-    )
+  const setCase = (index: number, patch: Partial<SwitchCase>) =>
+    setCases(cases.map((c, i) => (i === index ? { ...c, ...patch } : c)))
   // Which declared options no case covers yet — what the "add the rest" button
   // offers, so an author never retypes a value the schema already spells out.
   const covered = new Set(
@@ -278,6 +274,9 @@ export function SwitchInspector({
     <>
       <div className={field}>
         <Label>Input</Label>
+        {/* The ONE data connection this node has. Every case below is a value
+            this is compared against — there is nothing else here to link, which
+            is why the case rows are plain fields and not pickers. */}
         <DataRefField
           node={node}
           graph={graph}
@@ -288,87 +287,113 @@ export function SwitchInspector({
           }
         />
         <p className="text-muted-foreground text-xs">
-          Connect the upstream value to match. Leave unset to match the whole
+          The value every case is matched against. Leave unset to match the whole
           incoming input.
         </p>
       </div>
       <div className={field}>
         <Label>Cases</Label>
-        {/* Two named columns. The left box is what the ARM is called; the right
-            box is what the input must EQUAL — the one confusion worth a header
-            row, since the name box shows the routing letter and so reads like a
-            value until something says otherwise. */}
-        <div className="text-muted-foreground flex items-center gap-1.5 text-[10px] tracking-wide uppercase">
-          <span className="w-14 shrink-0">Path</span>
-          <span className="min-w-0 flex-1">Input equals</span>
-          <span className="w-5 shrink-0" />
-        </div>
-        {cases.map((c, i) => (
-          <div key={c.key} className="flex items-start gap-1.5">
-            {/* The marker IS the name field: it shows the minted letter until
-                the author types over it, so renaming an arm costs one click on
-                the thing already labelling it. Left empty it stays the letter —
-                and the key never changes either way, so the edge never moves. */}
-            <Input
-              className={cn(CASE_MARKER, 'w-14')}
-              value={c.label ?? ''}
-              placeholder={c.key}
-              aria-label={`Name for case ${c.key}`}
-              onChange={(e) => setCaseLabel(i, e.target.value)}
-            />
-            <div className="min-w-0 flex-1">
-              <DataRefField
-                node={node}
-                graph={graph}
-                itemSchema={itemSchema}
-                // A ref-valued case shows as a link; anything else is the
-                // author's typed literal, editable in place.
-                value={c.value.kind === 'ref' ? c.value : undefined}
-                emptyLabel="equals…"
-                // The graph reports an unfilled case by NAME; the border says
-                // which row that name belongs to.
-                invalid={
-                  c.value.kind === 'literal' &&
-                  (c.value.value == null || c.value.value === '')
-                }
-                literal={{
-                  value: literalText(c.value),
-                  placeholder: options ? 'pick a value…' : 'equals…',
-                  // An enum input turns each case into a choice among the
-                  // declared values — nothing to spell, nothing to mistype.
-                  options,
-                  onChange: (value) =>
-                    setCaseValue(i, {
-                      kind: 'literal',
-                      // Round-tripped through the options so a numeric or
-                      // boolean enum keeps its type.
-                      value: options?.find((o) => toText(o) === value) ?? value,
-                    }),
-                }}
-                // Clearing the link drops back to an empty typed value, so the
-                // row is never left without a binding.
-                onChange={(ref) =>
-                  setCaseValue(i, ref ?? { kind: 'literal', value: '' })
+        {/* One card per case, each a labelled two-row form. The stacked layout is
+            what makes the two fields tell themselves apart: side by side, a name
+            box showing the routing letter reads like a value. */}
+        <div className="space-y-2">
+          {cases.map((c, i) => (
+          <CaseCard
+            key={c.key}
+            caseKey={c.key}
+            onRemove={() => setCases(cases.filter((_, j) => j !== i))}
+            removeLabel={`Remove case ${c.label?.trim() || c.key}`}
+          >
+            <CaseRow label="Path name">
+              {/* The badge above is the routing key and never changes; this names
+                  the path, and the name is what the canvas edge reads. */}
+              <input
+                className={CASE_FIELD}
+                value={c.label ?? ''}
+                placeholder={c.key}
+                aria-label={`Name for case ${c.key}`}
+                // An emptied name drops the field rather than storing '', so the
+                // path falls back to its letter instead of rendering blank.
+                onChange={(e) =>
+                  setCase(i, { label: e.target.value || undefined })
                 }
               />
-            </div>
-            <button
-              type="button"
-              className="text-muted-foreground hover:text-foreground w-5 shrink-0 rounded py-1.5 text-xs"
-              aria-label={`Remove case ${c.label?.trim() || c.key}`}
-              onClick={() => setCases(cases.filter((_, j) => j !== i))}
-            >
-              ✕
-            </button>
+            </CaseRow>
+            <CaseRow label="Value">
+              {c.value.kind === 'ref' ? (
+                // Legacy: a case authored when a case could point at a second
+                // upstream value. Still honoured at run time, still clearable —
+                // just not something the editor offers to create any more.
+                <div className="border-input flex h-8 items-center gap-1 rounded-md border pr-0.5 pl-2">
+                  <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+                    {c.value.nodeId} · {c.value.path || 'whole output'}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Unlink case ${c.label?.trim() || c.key}`}
+                    className="text-muted-foreground hover:text-foreground hover:bg-accent shrink-0 rounded p-1"
+                    onClick={() =>
+                      setCase(i, { value: { kind: 'literal', value: '' } })
+                    }
+                  >
+                    <X className="size-3" />
+                  </button>
+                </div>
+              ) : options ? (
+                // An enum input: the case is a choice among the declared values,
+                // so there is nothing to spell and nothing to mistype.
+                <select
+                  className={cn(CASE_FIELD, isBlankCase(c) && 'border-destructive')}
+                  aria-label={`Value for case ${c.label?.trim() || c.key}`}
+                  value={literalText(c.value)}
+                  onChange={(e) =>
+                    setCase(i, {
+                      value: {
+                        kind: 'literal',
+                        // Round-tripped through the options so a numeric or
+                        // boolean enum keeps its type.
+                        value:
+                          options.find((o) => toText(o) === e.target.value) ??
+                          '',
+                      },
+                    })
+                  }
+                >
+                  <option value="">Select a value…</option>
+                  {options.map((o) => (
+                    <option key={toText(o)} value={toText(o)}>
+                      {toText(o)}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  className={cn(CASE_FIELD, isBlankCase(c) && 'border-destructive')}
+                  value={literalText(c.value)}
+                  placeholder="the input equals…"
+                  aria-label={`Value for case ${c.label?.trim() || c.key}`}
+                  onChange={(e) =>
+                    setCase(i, {
+                      value: { kind: 'literal', value: e.target.value },
+                    })
+                  }
+                />
+              )}
+            </CaseRow>
+            </CaseCard>
+          ))}
+          {/* The fallback wears the same card so it reads as the last case in
+              the list, but dashed and unfillable — nothing to author on it. */}
+          <div className="border-input flex items-center gap-2 rounded-md border border-dashed px-2 py-2">
+            <span className={cn(CASE_MARKER, 'shrink-0')}>
+              {SWITCH_DEFAULT_CASE}
+            </span>
+            <p className="text-muted-foreground min-w-0 flex-1 text-xs">
+              Anything the cases above didn’t match.
+            </p>
           </div>
-        ))}
-        <div className="flex items-start gap-1.5">
-          <CaseMarker>{SWITCH_DEFAULT_CASE}</CaseMarker>
-          <p className="text-muted-foreground flex-1 py-1.5 text-xs">
-            Anything the cases above didn’t match.
-          </p>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5 pt-1">
           <button
             type="button"
             className="border-input hover:bg-accent rounded-md border px-2 py-1 text-xs"
@@ -396,12 +421,65 @@ export function SwitchInspector({
         </div>
       </div>
       <p className="text-muted-foreground text-xs">
-        Deterministic — no model call. Cases are matched in order, and each one
-        grows its own outgoing edge; a value matching none takes the{' '}
-        <strong>else</strong> edge. The left box only NAMES the path — the canvas
-        edge reads that name, while the routing key stays the letter underneath.
+        Deterministic — no model call. The input above is compared against each
+        case’s value in order and the first match wins; a value matching none
+        takes the <strong>else</strong> edge. A case’s name is only what its
+        canvas edge reads — the routing key stays the letter on the card.
       </p>
     </>
+  )
+}
+
+// A case the author added but never filled in. Flagged here as well as in the
+// graph's issue list, because "case A has no value" means nothing until the row
+// it refers to is the one wearing the red border.
+function isBlankCase(c: SwitchCase): boolean {
+  return (
+    c.value.kind === 'literal' && (c.value.value == null || c.value.value === '')
+  )
+}
+
+// One case, as a card: its routing letter, its remove control, and its two
+// labelled fields.
+function CaseCard({
+  caseKey,
+  onRemove,
+  removeLabel,
+  children,
+}: {
+  caseKey: string
+  onRemove: () => void
+  removeLabel: string
+  children: ReactNode
+}) {
+  return (
+    <div className="border-input space-y-1.5 rounded-md border p-2">
+      <div className="flex items-center justify-between">
+        <span className={CASE_MARKER}>{caseKey}</span>
+        <button
+          type="button"
+          aria-label={removeLabel}
+          className="text-muted-foreground hover:text-foreground hover:bg-accent rounded p-1"
+          onClick={onRemove}
+        >
+          <X className="size-3.5" />
+        </button>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+// A labelled field inside a case card. The label column is fixed so the two
+// fields line up down the card and the eye can read one column of names.
+function CaseRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="flex items-center gap-2">
+      <span className="text-muted-foreground w-16 shrink-0 text-[11px]">
+        {label}
+      </span>
+      <span className="min-w-0 flex-1">{children}</span>
+    </label>
   )
 }
 
