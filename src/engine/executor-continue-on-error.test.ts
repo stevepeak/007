@@ -21,7 +21,10 @@ describe('executor — continueOnError', () => {
 
     const boom = recorder.steps.find((s) => s.nodeId === 'boom')
     expect(boom?.status).toBe('failed')
-    expect(boom?.error).toBe('boom failed')
+    // `errorStored`, matching the Cloudflare backend: the stack for an ordinary
+    // Error, and the provider's status code and response body for an API one.
+    // The message alone reduced a failed model call to a bare "Bad Request".
+    expect(boom?.error).toContain('boom failed')
     // The failure stays visible in the trace, but `after` still completed.
     expect(recorder.steps.find((s) => s.nodeId === 'after')?.status).toBe(
       'completed',

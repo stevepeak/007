@@ -1,4 +1,5 @@
 import type { RunContext, WfSdkConfig } from './config'
+import { errorFeedLine, errorStored } from './error-detail'
 import { isDecisionKind } from './graph'
 import { resolveAnswerNodeIds } from './graph-engine'
 import type { ModelBudget } from './model-budget'
@@ -306,14 +307,20 @@ export async function executeWorkflow<TDeps>(
         },
       }
     } catch (err) {
-      const message = errorMessage(err)
+      // Two different renderings of the same failure, both from `error-detail`
+      // and both already used by the Cloudflare backend. `err.message` alone is
+      // not enough: an AI SDK `APICallError` says only "Bad Request", while the
+      // status code, the provider's response body and what we sent hang off the
+      // error object — the entire diagnosis, discarded the moment it's
+      // stringified. The stored value keeps that; the feed line stays short.
+      const message = errorFeedLine(err)
       await recorder.record({
         nodeId: node.id,
         nodeKind: node.kind,
         sequence: seq,
         input,
         status: 'failed',
-        error: message,
+        error: errorStored(err),
         startedAt,
         finishedAt: new Date(),
       })

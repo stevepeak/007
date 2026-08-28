@@ -1,3 +1,4 @@
+import { simulateReadableStream } from 'ai'
 import type { MockLanguageModelV3 } from 'ai/test'
 
 // Typed shapes for `MockLanguageModelV3`, derived from the constructor rather
@@ -55,4 +56,35 @@ export function mockFinish(
 ): MockGenerateResult['finishReason'] {
   // `raw` is declared `string | undefined`, not optional — it must be present.
   return { unified, raw: unified }
+}
+
+type DoStream = NonNullable<MockCtor['doStream']>
+type StreamFn = Extract<DoStream, (...args: never[]) => unknown>
+
+/** The exact object a mocked `doStream` must return. */
+export type MockStreamResult = Awaited<ReturnType<StreamFn>>
+/** One provider-protocol chunk of that stream. */
+export type MockStreamPart =
+  MockStreamResult['stream'] extends ReadableStream<infer Part> ? Part : never
+
+/**
+ * Build a mocked `doStream` result from a list of provider-protocol chunks.
+ *
+ * The streaming path is driven by `streamText`, which behaves materially
+ * differently from `generateText` on failure — it never rejects, it reports the
+ * fault as an `error` chunk, and it resolves `text` to the empty string. That
+ * divergence is only reachable through `doStream`, so a mock that stubs
+ * `doGenerate` (as every other agent test does) cannot exercise it at all.
+ *
+ * Delays are zeroed: the chunks are already in memory and the tests assert on
+ * the drained result, so simulated pacing would only slow the suite down.
+ */
+export function mockStream(chunks: MockStreamPart[]): MockStreamResult {
+  return {
+    stream: simulateReadableStream({
+      chunks,
+      initialDelayInMs: 0,
+      chunkDelayInMs: 0,
+    }),
+  }
 }

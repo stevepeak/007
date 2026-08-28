@@ -13,6 +13,7 @@ import {
 } from 'ai'
 
 import { BOOLEAN_OUTPUT_SCHEMA } from '../agent-output'
+import { errorFeedLine } from '../error-detail'
 import type { AgentOutput } from '../graph'
 import { MODEL_MAX_RETRIES, type ModelBudget } from '../model-budget'
 import { interpolateUserText } from '../prompt-variables'
@@ -726,10 +727,38 @@ async function runToolLoop(
   // call is made, so consuming has to happen where the guard can classify a
   // stall from a budget overrun.
   const result = await runGuarded(sink, modelId, startedAt, guard, async () => {
-    if (!streamAnswer) return await generateText(callOptions)
+    if (!streamAnswer) {
+      const generated = await generateText(callOptions)
+      return {
+        text: generated.text,
+        finishReason: generated.finishReason,
+        streamError: undefined as unknown,
+      }
+    }
     const stream = streamText(callOptions)
     let streamedChars = 0
+    // `streamText` NEVER rejects — by design. A failed round-trip arrives as an
+    // `error` part, sets `finishReason` to `error`, and leaves `stream.text`
+    // resolving to the empty string; the default `onError` is a bare
+    // `console.error`. Ignoring the part therefore doesn't just lose the
+    // provider's status code and response body — it converts a real failure
+    // into a silent empty answer, which the guard below then has to describe
+    // without knowing anything about it. Keep the first one (later parts are
+    // usually knock-on effects of the same fault) and let the guard decide
+    // whether it mattered.
+    let streamError: unknown
     for await (const part of stream.fullStream) {
+      if (part.type === 'error') {
+        streamError ??= part.error
+        // Named here whether or not it proves fatal: an error the agent went on
+        // to recover from is invisible everywhere else, and it's exactly what
+        // explains a turn that took far longer than its answer suggests.
+        void sink?.log?.({
+          level: 'error',
+          message: `✕ ${modelId} stream error: ${errorFeedLine(part.error)}`,
+        })
+        continue
+      }
       if (part.type === 'text-delta' && stepMustAnswer && part.text) {
         streamedChars += part.text.length
         await sink?.delta?.(part.text)
@@ -750,6 +779,7 @@ async function runToolLoop(
     return {
       text: await stream.text,
       finishReason: await stream.finishReason,
+      streamError,
     }
   })
   logModelCallEnd(sink, modelId, startedAt, {
@@ -764,12 +794,57 @@ async function runToolLoop(
   // emptiness all the way to a blank bubble the reader can only read as "it
   // broke, silently". `prepareStep` above removes the ordinary cause; anything
   // still landing here is a genuine fault, so name it and fail the run.
+  //
+  // WHICH fault, though, is the whole diagnosis, and for a long time this said
+  // "produced no answer after N of M turns" to all of them — including the case
+  // where the model call simply failed on turn 2 of 10. That reads as a turn
+  // ceiling that was never reached, and it sent readers (and the chat's copy)
+  // looking for a prompt problem instead of a provider outage. Three outcomes,
+  // three messages, and only the first is a wall a retry would hit again.
   if (result.text.trim() === '') {
+    const toolCount = stepTraces.reduce((n, s) => n + s.toolCalls.length, 0)
+    // The model call itself failed and we caught the provider's own error on
+    // the way past. Rethrow it UNWRAPPED: `apiErrorDetail` reads `APICallError`
+    // /`RetryError` natively, so the status code, the response body and — the
+    // part that decides whether the engine retries — `isRetryable` all survive.
+    // Wrapping it in a message here would throw every one of those away, which
+    // is what made this class of failure undiagnosable.
+    if (result.streamError instanceof Error) throw result.streamError
+    // The chunk's `error` is typed `unknown` — a provider is free to put a
+    // string or a plain object there, and JS is free to throw one, but nothing
+    // downstream can read a stack off it. Name it instead of rethrowing it.
+    if (result.streamError !== undefined) {
+      throw new Error(
+        `Agent's model call failed: ${errorFeedLine(result.streamError)}`,
+      )
+    }
+    if (result.finishReason === 'error') {
+      // Same fault, but the error part never arrived (or carried nothing) —
+      // deliberately NOT marked fatal, since unlike a turn ceiling there's no
+      // evidence a second attempt hits the same wall.
+      throw new Error(
+        `Agent's model call failed after ${stepTraces.length} of ${maxTurns} turns ` +
+          `(finish reason: error), and the provider reported no error detail. ` +
+          `It called ${toolCount} tools and wrote no text.`,
+      )
+    }
+    if (result.finishReason === 'length') {
+      // The answering turn ran out of output tokens — on a reasoning model,
+      // typically spent entirely inside `<think>`. Fatal: the same prompt
+      // reasons its way to the same cliff.
+      throw markNoOutput(
+        new Error(
+          `Agent was cut off before it wrote an answer, after ${stepTraces.length} of ` +
+            `${maxTurns} turns (finish reason: length). It called ${toolCount} tools ` +
+            `and wrote no text.`,
+        ),
+      )
+    }
     throw markNoOutput(
       new Error(
         `Agent produced no answer after ${stepTraces.length} of ${maxTurns} turns ` +
           `(finish reason: ${result.finishReason}). It called ` +
-          `${stepTraces.reduce((n, s) => n + s.toolCalls.length, 0)} tools and wrote no text.`,
+          `${toolCount} tools and wrote no text.`,
       ),
     )
   }

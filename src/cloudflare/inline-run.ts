@@ -1,6 +1,7 @@
 import { encodeRunPoint } from '../analytics/points'
 import { safeWrite } from '../analytics/sink'
 import type { RunContext, WfSdkConfig } from '../engine/config'
+import { errorFeedLine } from '../engine/error-detail'
 import { executeWorkflow } from '../engine/executor'
 import type { WfRunManifestEntry } from '../engine/graph'
 import { modelBudgetFor } from '../engine/model-budget'
@@ -479,7 +480,10 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
       )
     }
   } catch (err) {
-    const message = errorMessage(err)
+    // `errorFeedLine`, not `err.message`: a failed model call is an AI SDK
+    // `APICallError` whose message is a bare "Bad Request", and the run-level
+    // error is the one string the chat surface and the run header both read.
+    const message = errorFeedLine(err)
     emit('failed', { error: message })
     try {
       await failRun(db, { runId: p.workflowRunId, error: message })
