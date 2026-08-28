@@ -776,10 +776,24 @@ async function runToolLoop(
       meta: { streamedChars },
     })
     // Awaited after the stream is drained, so these are settled.
-    return {
-      text: await stream.text,
-      finishReason: await stream.finishReason,
-      streamError,
+    //
+    // `stream.text` is the one promise here that CAN reject: when the call
+    // produced no output at all — a request that died before any stream existed
+    // (bad model id, revoked key, a 5xx on the first round-trip) — it rejects
+    // with a generic `NoOutputGeneratedError` whose message is "No output
+    // generated. Check the stream for errors." The error it's telling us to go
+    // and check is the part we just captured, and that one is the only copy
+    // carrying the provider's status code and response body. So prefer it, and
+    // fall back to the SDK's when we have nothing better.
+    try {
+      return {
+        text: await stream.text,
+        finishReason: await stream.finishReason,
+        streamError,
+      }
+    } catch (err) {
+      if (streamError instanceof Error) throw streamError
+      throw err
     }
   })
   logModelCallEnd(sink, modelId, startedAt, {

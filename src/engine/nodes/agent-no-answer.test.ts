@@ -253,6 +253,26 @@ describe('agent node — a failed stream reports the provider error', () => {
     expect(sink.logs.some((l) => l.level === 'error')).toBe(true)
   })
 
+  test('a call that dies before the stream exists still names the provider', async () => {
+    // The other half of the same defect, and the likelier one in practice: a bad
+    // model id or a revoked key fails before any stream exists, so `stream.text`
+    // REJECTS with a generic `NoOutputGeneratedError` ("check the stream for
+    // errors") rather than resolving empty. The error it points at is the part
+    // we captured — the only copy with the status code and the body on it.
+    const rejection = providerRejection()
+    const dead = new MockLanguageModelV3({
+      doStream: async () => {
+        throw rejection
+      },
+    })
+
+    const err = await run(dead, 1, streamingSink()).catch((e: unknown) => e)
+
+    expect(err).toBe(rejection)
+    expect((err as Error).message).not.toContain('No output generated')
+    expect(apiErrorDetail(err)?.statusCode).toBe(400)
+  })
+
   test('an empty answer with no error part still names the failed call', async () => {
     const sink = streamingSink()
     const silent = new MockLanguageModelV3({
