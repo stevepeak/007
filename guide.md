@@ -61,7 +61,7 @@ cycles (`ui → server → storage → engine`, `cloudflare → storage → engi
 | `@stevepeak/007/ui`                      | browser (React 19)      | `WfApp`, `WfSdkProvider`, `RunViewer`, hooks    |
 | `@stevepeak/007/ui/run-progress`         | browser (React 19)      | `WorkflowRunProgress` + the progress source, without pulling the editor |
 | `@stevepeak/007/ui/styles.css`           | host CSS (Tailwind v4)  | `@import` once — emits the SDK's utilities + xyflow CSS (§6) |
-| `@stevepeak/007/eval`                    | test                    | `runWorkflowUnderConditions`                    |
+| `@stevepeak/007/eval`                    | test, or any server/CLI | `runWorkflowUnderConditions`; `runEval` — the Goal orchestrator, framework-free |
 
 ¹ Import-safe anywhere (no `cloudflare:workers` at module scope), but its OCR
 path only _runs_ with R2 + Workers AI bindings present.
@@ -1396,6 +1396,21 @@ boundary; it is `unknown` to the SDK and you cast it in `getModel` /
 ---
 
 ## 9. Testing without Cloudflare
+
+The same entry point exports **`runEval`**, the Goal orchestrator: it creates the
+umbrella eval run, starts a real run per Sample, waits for each to reach a
+terminal status, and grades it — concurrency-capped, with `onStart` /
+`onProgress` callbacks. It lived in the eval report's React hook until `wf-mcp`
+needed it, and nothing in it was ever browser code (a `WfDataClient` and
+`setTimeout`); only the module was. `package-exports.test.ts` now walks every
+non-`/ui` entry point's import closure and fails if React or `@tanstack/*`
+reappears in it, because that regression is one added import and is otherwise
+silent — both tsconfig projects still compile.
+
+Note what it is NOT: durable. The orchestration runs in the CALLER's process, so
+if that process exits mid-sweep the remaining cells never launch and the
+umbrella run sits at `running`. A browser tab closing and a CLI being Ctrl-C'd
+are the same failure.
 
 `@stevepeak/007/eval` runs a graph through the in-process executor with a mock model
 and mock tools — no D1, no Workers:

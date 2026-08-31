@@ -46,6 +46,14 @@ export {
 } from './grade'
 export { EVAL_NODE_EXECUTION } from './execution-policy'
 export {
+  DEFAULT_EVAL_CONCURRENCY,
+  EVAL_CONCURRENCY_CHOICES,
+  runEval,
+  type EvalMatrixModel,
+  type EvalMatrixPrompt,
+  type RunEvalInput,
+} from './run-eval'
+export {
   buildAgentWrapperGraph,
   ensureAgentEvalWrapper,
   evalWrapperName,
