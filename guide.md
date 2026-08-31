@@ -1000,6 +1000,22 @@ clean rather than half-right:
   is an opaque string with no foreign key, so without it a hallucinated id stores
   a Goal that fails only when someone runs it.
 
+**Mining samples from real runs.** `draft_sample_from_run` converts one run into
+a draft Sample and returns it without writing — the model reviews it, rewrites
+the rubric, then saves it with `upsert_eval_sample`. It is a **read** tool;
+only saving needs `--write`. Paired with `list_feedback`, whose thumbs-down rows
+name the run whose answer a human called bad, it turns a complaint into a test.
+Two layers produce different samples from the same trace: `trajectory` replays
+the run's real tool results as `mocked` fixtures (keyed on the same tool id the
+grader looks them up under), while `synthesis` folds those results into a seeded
+assistant turn and freezes the tool set so the sample grades the answer alone.
+Synthesis needs a thread to stage the context in, so it is refused for a `task`
+agent rather than silently degraded. The seeded rubric is never the run's own
+output: on a thumbs-down run that would enshrine the failure as correct, and on
+any run it makes the sample a regression test for one exact phrasing. The
+conversion itself lives in `eval/from-run`, shared with the run viewer's
+"Create sample" button.
+
 `upsert_eval_sample` passes `input` / `tools` / `checks` through unparsed — the
 dispatcher validates them against the same schemas the grader reads, and its
 message names the exact path that is wrong, which is what the model needs to fix
