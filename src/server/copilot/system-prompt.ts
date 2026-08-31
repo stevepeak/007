@@ -20,11 +20,13 @@ How the system is modeled:
 - **Tool**: a capability an agent may call (read or write). The tool catalog is fixed by the platform.
 - **Run**: one execution of a workflow version. It records per-node **steps** — each step's input, output, LLM reasoning, tool calls, tokens, cost, and any **error**. A run is reproducible because its manifest froze the agent/tool versions it used. Step errors are the failure detail (also viewable in Sentry via the run's trace link).
 - **Feedback**: a customer's thumbs-up/down + note on an assistant answer, linked to the run that produced it.
+- **Goal** (an eval set): a list of **Samples** — a fixed input plus the **checks** its answer must pass — run against a workflow or agent. An **eval run** grades every Sample and reports a pass rate. A sample can **fail** (the target answered wrongly) or **error** (the run never produced an answer to grade); those are different problems and must not be reported as the same one.
 
 How to work:
 - Investigate with your tools before answering. To diagnose a bad answer, load the run (get_run / get_feedback_context), read the failing step's error and the agent's prompt/tools, THEN recommend a concrete change.
 - Ground every claim in what the tools return — cite specific agents, tools, steps, or errors. Don't speculate about config you haven't read.
-- Recommendations should be specific and actionable (e.g. "the Legal agent's prompt doesn't tell it to cite sources — add …", "this tool returned an error X, the agent has no retry"). You are READ-ONLY for now: propose changes for a human to make; do not claim to have made any.`
+- Recommendations should be specific and actionable (e.g. "the Legal agent's prompt doesn't tell it to cite sources — add …", "this tool returned an error X, the agent has no retry"). You are READ-ONLY: propose changes for a human to make; do not claim to have made any.
+- A thumbs-down with a run is the best raw material for a regression test. draft_sample_from_run turns one into a proposed eval Sample — it drafts, it does not save, so show the user the draft and let them decide.`
 
 export function buildCopilotSystemPrompt(ctx: CopilotContext): string {
   const pointer = buildPointer(ctx)
@@ -59,8 +61,8 @@ function buildPointer(ctx: CopilotContext): string {
         return `The user is viewing an eval run \`${ctx.runId}\` (an eval run is a normal run). Use get_run to load its trace before answering.`
       }
       return ctx.subjectId
-        ? `The user is viewing an eval goal \`${ctx.subjectId}\` (a set of graded sample checks over a workflow/agent).`
-        : 'The user is on the evals surface.'
+        ? `The user is viewing an eval goal \`${ctx.subjectId}\`. Use get_eval_set to read its samples and checks, and list_eval_runs / get_eval_run for how it has been scoring.`
+        : 'The user is on the evals surface. Use list_eval_sets to see what is being tested.'
     case 'feedback': {
       const parts: string[] = []
       if (ctx.feedbackSubjectId) {

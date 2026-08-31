@@ -1,7 +1,12 @@
+import { createWfDataClient } from './data-client'
 import type { WfDataClient } from './protocol'
 
 // Browser-side data client — talks to the host-mounted `createWfSdkHandlers`
-// route over the one-POST RPC protocol. Injected into the UI via `WfSdkProvider`.
+// route over the one-POST RPC protocol. Injected into the UI via `WfSdkProvider`,
+// and used by `wf-mcp` to reach a host it isn't running inside.
+//
+// Only the transport lives here; which method takes what, and which ones need a
+// longer budget, is `data-client.ts`.
 
 export type HttpWfDataClientOptions = {
   /** URL of the mounted handler route, e.g. '/api/wf'. */
@@ -19,11 +24,7 @@ export function createHttpWfDataClient(
 ): WfDataClient {
   const doFetch = opts.fetch ?? fetch
 
-  async function call<T>(
-    method: keyof WfDataClient,
-    params: unknown,
-    timeoutMs?: number,
-  ): Promise<T> {
+  return createWfDataClient(async (method, params, timeoutMs) => {
     // Hard backstop: no single call may hang the UI indefinitely. If the
     // response never arrives (dev-proxy buffering, a stalled connection), abort
     // so the caller settles with an error instead of an eternal spinner.
@@ -37,106 +38,6 @@ export function createHttpWfDataClient(
       const body = (await res.json().catch(() => ({}))) as { error?: string }
       throw new Error(body.error ?? `wf-sdk request failed (${res.status})`)
     }
-    const data = (await res.json()) as T
-    return data
-  }
-
-  // Bind a zero-arg or single-object-input method to its wire call. Constraining
-  // the name to `keyof WfDataClient` AND returning the protocol's own return type
-  // means a typo, a rename the server outpaces, or a copy-pasted wrong method
-  // (whose return shape differs) becomes a COMPILE error — the one wire contract
-  // the shared type otherwise couldn't enforce. Methods that take a POSITIONAL id
-  // (wrapped into `{ key: id }` for the wire) keep an explicit arrow below; their
-  // literal is still `keyof`-checked via `call`.
-  const bind =
-    <K extends keyof WfDataClient>(method: K, timeoutMs?: number) =>
-    (params: unknown = {}): ReturnType<WfDataClient[K]> =>
-      call(method, params, timeoutMs) as ReturnType<WfDataClient[K]>
-
-  return {
-    listModels: bind('listModels'),
-    listProviders: bind('listProviders'),
-    getModelCatalog: bind('getModelCatalog'),
-    getProviderBudgets: bind('getProviderBudgets'),
-    // Fetching a provider's full catalog hits an external `/models` endpoint and
-    // upserts 300+ rows — give it a longer budget than the 20s UI backstop.
-    refreshModels: bind('refreshModels', 120000),
-    setModelEnabled: bind('setModelEnabled'),
-    listTools: bind('listTools'),
-    listToolInvocations: bind('listToolInvocations'),
-    listToolContextFields: bind('listToolContextFields'),
-    // A real tool call can run past the default 20s UI backstop (external
-    // services), so give the playground its own longer budget.
-    runToolPreview: bind('runToolPreview', 120000),
-    listTriggerEvents: bind('listTriggerEvents'),
-    listWorkflows: bind('listWorkflows'),
-    getWorkflow: (workflowId) => call('getWorkflow', { workflowId }),
-    createWorkflow: bind('createWorkflow'),
-    updateDraft: bind('updateDraft'),
-    saveVersion: bind('saveVersion'),
-    summarizeChanges: bind('summarizeChanges'),
-    updateWorkflow: bind('updateWorkflow'),
-    discardDraft: bind('discardDraft'),
-    listVersions: (workflowId) => call('listVersions', { workflowId }),
-    getVersion: (versionId) => call('getVersion', { versionId }),
-    listRuns: bind('listRuns'),
-    listChildRuns: bind('listChildRuns'),
-    listRunTriggerKinds: bind('listRunTriggerKinds'),
-    getRun: (runId, opts) => call('getRun', { runId, ...opts }),
-    getRunStatus: (runId) => call('getRunStatus', { runId }),
-    retryRun: bind('retryRun'),
-    setRunNote: bind('setRunNote'),
-    // A full purge sweeps several tables — give it room past the 20s default.
-    deleteAllRuns: bind('deleteAllRuns', 120000),
-    // Six aggregates, one of which parses every agent step's meta JSON over the
-    // window — slower than a typical read, so allow past the 20s default.
-    getDashboard: bind('getDashboard', 60000),
-    listAgents: bind('listAgents'),
-    getAgent: (agentId) => call('getAgent', { agentId }),
-    createAgent: bind('createAgent'),
-    updateAgentDraft: bind('updateAgentDraft'),
-    publishAgent: bind('publishAgent'),
-    summarizeAgentChanges: bind('summarizeAgentChanges'),
-    listAgentVersions: (agentId) => call('listAgentVersions', { agentId }),
-    getAgentVersion: (versionId) => call('getAgentVersion', { versionId }),
-    updateAgentMeta: bind('updateAgentMeta'),
-    discardAgentDraft: bind('discardAgentDraft'),
-    countAgentReferences: (agentId) =>
-      call('countAgentReferences', { agentId }),
-    listAgentReferences: (agentId) => call('listAgentReferences', { agentId }),
-    archiveAgent: (agentId) => call('archiveAgent', { agentId }),
-    listAgentCalls: bind('listAgentCalls'),
-    // A tool-calling agent can run well past the default 20s UI backstop, so
-    // give the playground its own longer budget.
-    runAgentPreview: bind('runAgentPreview', 120000),
-
-    // Evals.
-    listEvalSets: bind('listEvalSets'),
-    getEvalSet: (setId) => call('getEvalSet', { setId }),
-    createEvalSet: bind('createEvalSet'),
-    updateEvalSet: bind('updateEvalSet'),
-    deleteEvalSet: (setId) => call('deleteEvalSet', { setId }),
-    upsertEvalRow: bind('upsertEvalRow'),
-    deleteEvalRow: (rowId) => call('deleteEvalRow', { rowId }),
-    createEvalRun: bind('createEvalRun'),
-    // Launching a real (simulated) run can outrun the default 20s backstop.
-    startEvalRun: bind('startEvalRun', 120000),
-    // Judge checks call a model — give grading its own longer budget.
-    gradeEvalResult: bind('gradeEvalResult', 120000),
-    // One insert, no model call. It runs on the path where something has
-    // ALREADY gone wrong, so it gets the short default budget deliberately —
-    // a slow failure-recorder would just compound the failure it's recording.
-    recordEvalFailure: bind('recordEvalFailure'),
-    finalizeEvalRun: bind('finalizeEvalRun'),
-    listChanges: bind('listChanges'),
-    listEvalRuns: bind('listEvalRuns'),
-    getEvalRun: (evalRunId) => call('getEvalRun', { evalRunId }),
-
-    // Feedback.
-    submitFeedback: bind('submitFeedback'),
-    listFeedback: bind('listFeedback'),
-    setFeedbackAcknowledged: bind('setFeedbackAcknowledged'),
-    setFeedbackInternalNote: bind('setFeedbackInternalNote'),
-    getFeedbackForSubjects: bind('getFeedbackForSubjects'),
-  }
+    return await res.json()
+  })
 }

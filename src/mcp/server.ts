@@ -2,18 +2,19 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 
 import type { WfDataClient } from '../server/protocol'
 
-import { readTools, type WfMcpTool } from './tools'
-import { draftTools } from './tools-drafts'
-import { evalRunReadTools, evalRunWriteTools } from './tools-eval-runs'
-import { evalReadTools, evalWriteTools } from './tools-evals'
+import { allTools, selectTools } from './catalog'
+import type { WfMcpTool } from './tools'
 
 // Assembling the MCP server from the tool definitions.
 //
-// The write gate is REGISTRATION, not a check inside a handler. A read-only
-// session doesn't merely refuse writes — it has no write tools at all, so
-// nothing in the model's context suggests one exists and no amount of prompting
-// can produce a call to one. Refusing at call time would leave the affordance
-// visible and the refusal a matter of the handler being reached.
+// The definitions themselves are in `tools*.ts` and the catalog in
+// `catalog.ts`, shared with the System Copilot — a tool description is prompt,
+// and two lists of it would diverge in behavior, not just in wording. This file
+// owns only the stdio registration.
+
+// Re-exported: this was their home before the copilot needed them without the
+// MCP SDK attached, and every caller still asks the server for its catalog.
+export { allTools, selectTools } from './catalog'
 
 export type CreateWfMcpServerOptions = {
   client: WfDataClient
@@ -21,22 +22,6 @@ export type CreateWfMcpServerOptions = {
   write?: boolean
   /** Override the tool set (tests). Defaults to the built-in catalog. */
   tools?: WfMcpTool[]
-}
-
-/** Every tool this build knows about, read and write alike. */
-export function allTools(): WfMcpTool[] {
-  return [
-    ...readTools(),
-    ...evalReadTools(),
-    ...evalRunReadTools(),
-    ...draftTools(),
-    ...evalWriteTools(),
-    ...evalRunWriteTools(),
-  ]
-}
-
-export function selectTools(tools: WfMcpTool[], write: boolean): WfMcpTool[] {
-  return write ? tools : tools.filter((t) => t.readOnly)
 }
 
 /**

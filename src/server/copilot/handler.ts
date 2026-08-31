@@ -1,10 +1,10 @@
 import type { UIMessage } from 'ai'
 import { z } from 'zod'
 
-import type { RunContext, WfSdkConfig } from '../../engine/config'
-import { getFeedbackForSubjects } from '../../storage'
-import type { WfDb } from '../../storage/client'
-import type { WfServerContext } from '../handlers/shared'
+import type { RunContext } from '../../engine/config'
+import { createWfSdkHandlers } from '../handlers'
+import type { CreateWfSdkHandlersOptions } from '../handlers/shared'
+import { createLocalWfDataClient } from '../local-client'
 
 import { runCopilot } from './run-copilot'
 import {
@@ -18,10 +18,13 @@ import { createCopilotTools } from './tools'
 // and persists NOTHING: no message rows, no wf_run. The response is a streaming
 // UIMessage stream; the client (useChat) holds the only copy of the conversation.
 //
-// It reuses the SAME host seams the data handler does — `config.getModel`
-// (models are the ONE thing the host supplies), `config.toolRegistry`,
-// `resolveDb`, `resolveEnv`, and `resolveContext` (the host's auth gate). The SDK
-// itself stays auth-free; the host gatekeeps who may reach the mounted route.
+// It reuses the SAME host seams the data handler does — because it now reuses
+// the data handler itself: its tools are the shared `wf-mcp` definitions bound
+// to a client that dispatches in-process through `createWfSdkHandlers`. So a
+// copilot tool call is validated, audited and auth-gated exactly like the same
+// read from the editor, and the copilot cannot see anything the caller's own
+// browser could not ask for. The SDK itself stays auth-free; the host gatekeeps
+// who may reach the mounted route.
 
 const bodySchema = z.object({
   subject: z.enum([
@@ -46,18 +49,14 @@ const bodySchema = z.object({
     .min(1),
 })
 
-export type HandleCopilotOptions<TDeps> = {
-  /** The host injection contract — only the model factory + tool registry are used. */
-  config: Pick<WfSdkConfig<TDeps>, 'getModel' | 'toolRegistry'>
-  /** Request-scoped wf storage (from the host's D1 binding). */
-  resolveDb: (req: Request) => WfDb | Promise<WfDb>
-  /**
-   * The host's auth gate. Throw to reject (the SDK answers 403); the SDK is
-   * otherwise auth-free. Mirrors `createWfSdkHandlers`' `resolveContext`.
-   */
-  resolveContext: (req: Request) => WfServerContext | Promise<WfServerContext>
-  /** Host live bindings (Cloudflare `env`), handed to `config.getModel`. */
-  resolveEnv?: (req: Request) => unknown
+/**
+ * Everything the DATA route needs, plus the two copilot-only knobs.
+ *
+ * Stated as the data handler's own options because the copilot dispatches
+ * through them — a host can hand the same object to both routes, and a seam
+ * added to one surface can't go missing on the other.
+ */
+export type HandleCopilotOptions<TDeps> = CreateWfSdkHandlersOptions<TDeps> & {
   /**
    * Model used when the request carries no `modelId` (first load, before the
    * dock's picker has resolved the enabled-models list). Omit to require one.
@@ -105,14 +104,23 @@ export async function handleCopilotRequest<TDeps>(
     return json({ error: 'No model selected.' }, 400)
   }
 
-  const wfDb = await opts.resolveDb(req)
-  const env = opts.resolveEnv ? opts.resolveEnv(req) : undefined
+  const env = opts.resolveEnv ? await opts.resolveEnv(req) : undefined
+
+  // The copilot's own view of the data surface: the mounted dispatcher, called
+  // in-process with this request's credentials. Built per request because that
+  // is what it is scoped to.
+  const client = createLocalWfDataClient({
+    handler: createWfSdkHandlers(opts),
+    request: req,
+  })
 
   // For the feedback surface, resolve the producing run up front so the system
   // prompt can point the model straight at it.
   let resolvedRunId: string | undefined
   if (subject === 'feedback' && feedbackSubjectId) {
-    const rows = await getFeedbackForSubjects(wfDb, [feedbackSubjectId])
+    const rows = await client.getFeedbackForSubjects({
+      subjectIds: [feedbackSubjectId],
+    })
     resolvedRunId = rows[0]?.runId ?? undefined
   }
 
@@ -134,7 +142,7 @@ export async function handleCopilotRequest<TDeps>(
     model,
     system: buildCopilotSystemPrompt(ctx),
     messages: messages as unknown as UIMessage[],
-    tools: createCopilotTools({ wfDb, toolRegistry: opts.config.toolRegistry }),
+    tools: createCopilotTools(client),
     maxSteps: opts.maxSteps,
   })
 }

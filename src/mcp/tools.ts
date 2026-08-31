@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 import { clip, clipTail } from '../server/clip'
-import type { WfDataClient } from '../server/protocol'
+import type { ToolOption, WfDataClient, WfRunDetail } from '../server/protocol'
 
 // The tools `wf-mcp` exposes, defined over `WfDataClient` — the same ~70-method
 // interface the editor and run viewer use — so an MCP session sees exactly what
@@ -78,6 +78,44 @@ const RUN_OVERVIEW_FIELD_CHARS = 1000
 
 /** A single step, asked for by name. Generous, but still not unbounded. */
 const RUN_STEP_FIELD_CHARS = 60_000
+
+/**
+ * The shape `get_run` reports a trace in, factored out because
+ * `get_feedback_context` answers with the same thing — a complaint is only
+ * actionable next to the run that caused it, and two shapes for one trace would
+ * mean the model learns the fields twice.
+ */
+function runOverview(detail: WfRunDetail): unknown {
+  return {
+    // `run` already carries the workflow name, the run's cost and its token
+    // total — they are fields of the summary, not of the envelope.
+    run: detail.run,
+    versionNumber: detail.versionNumber,
+    workflowVersionId: detail.workflowVersionId,
+    // A log's `meta` is a progress detail, not the payload — it is the
+    // step's own fields that carry what actually happened.
+    logs: clipTail(detail.logs, MAX_LOGS, 'log entries').map((l) =>
+      typeof l === 'string' ? l : { ...l, meta: clip(l.meta, 400) },
+    ),
+    steps: clipTail(detail.steps, MAX_STEPS, 'steps').map((s) =>
+      typeof s === 'string'
+        ? s
+        : {
+            cursor: s.cursor,
+            nodeId: s.nodeId,
+            nodeKind: s.nodeKind,
+            parentNodeId: s.parentNodeId,
+            itemIndex: s.itemIndex,
+            status: s.status,
+            error: s.error,
+            costUsd: s.costUsd,
+            input: clip(s.input, RUN_OVERVIEW_FIELD_CHARS),
+            output: clip(s.output, RUN_OVERVIEW_FIELD_CHARS),
+            meta: clip(s.meta, RUN_OVERVIEW_FIELD_CHARS),
+          },
+    ),
+  }
+}
 
 export function readTools(): WfMcpTool[] {
   return [
@@ -187,33 +225,7 @@ export function readTools(): WfMcpTool[] {
         const runId = reqString(args.runId, 'runId')
         const detail = await client.getRun(runId)
         if (!detail) return { error: `No run found for id ${runId}.` }
-        return {
-          run: detail.run,
-          versionNumber: detail.versionNumber,
-          workflowVersionId: detail.workflowVersionId,
-          // A log's `meta` is a progress detail, not the payload — it is the
-          // step's own fields that carry what actually happened.
-          logs: clipTail(detail.logs, MAX_LOGS, 'log entries').map((l) =>
-            typeof l === 'string' ? l : { ...l, meta: clip(l.meta, 400) },
-          ),
-          steps: clipTail(detail.steps, MAX_STEPS, 'steps').map((s) =>
-            typeof s === 'string'
-              ? s
-              : {
-                  cursor: s.cursor,
-                  nodeId: s.nodeId,
-                  nodeKind: s.nodeKind,
-                  parentNodeId: s.parentNodeId,
-                  itemIndex: s.itemIndex,
-                  status: s.status,
-                  error: s.error,
-                  costUsd: s.costUsd,
-                  input: clip(s.input, RUN_OVERVIEW_FIELD_CHARS),
-                  output: clip(s.output, RUN_OVERVIEW_FIELD_CHARS),
-                  meta: clip(s.meta, RUN_OVERVIEW_FIELD_CHARS),
-                },
-          ),
-        }
+        return runOverview(detail)
       },
     },
 
@@ -293,6 +305,62 @@ export function readTools(): WfMcpTool[] {
             body: clip(r.body, 2000),
           })),
         }
+      },
+    },
+
+    {
+      name: 'get_feedback_context',
+      title: 'Get feedback with its run',
+      description:
+        "One customer feedback item together with the run that produced the answer they rated: the rating, their note, and the producing run's trace in the same shape get_run returns. Use it to go from a complaint to a concrete recommendation in one call.",
+      inputSchema: {
+        subjectId: z
+          .string()
+          .describe('The feedback subject id — the rated message id.'),
+      },
+      readOnly: true,
+      run: async (client, args) => {
+        const subjectId = reqString(args.subjectId, 'subjectId')
+        const rows = await client.getFeedbackForSubjects({
+          subjectIds: [subjectId],
+        })
+        const feedback = rows[0]
+        if (!feedback) {
+          return { error: `No feedback found for subject ${subjectId}.` }
+        }
+        // Rated answers that predate a run, or whose run was purged, still have
+        // a rating and a note worth reading — the missing trace is the whole
+        // answer to "why", not a reason to fail the call.
+        if (!feedback.runId) return { feedback, run: null }
+        const detail = await client.getRun(feedback.runId)
+        return { feedback, run: detail ? runOverview(detail) : null }
+      },
+    },
+
+    {
+      name: 'get_tool_catalog',
+      title: 'Get tool catalog',
+      description:
+        "Every tool the platform can give an agent: its name, what it does, whether it reads or writes, and the ambient run-scope keys it needs. The catalog is fixed by the platform — an agent can be given any of these, and nothing else. Use it to say what a tool does, or what an agent is missing.",
+      inputSchema: {},
+      readOnly: true,
+      run: async (client) => {
+        const tools = await client.listTools()
+        // Projected, not passed through. `icon` is inline SVG markup for the
+        // UI's chips, and the two JSON Schemas are most of a tool's bytes —
+        // together they made this one call 48k, eight times the rest of the
+        // catalog, to answer a question ("what does this tool do") the
+        // description already answers. `requiresContext` stays because it is
+        // short and it is the field whose absence silently makes a tool match
+        // nothing.
+        return tools.map((t: ToolOption) => ({
+          id: t.id,
+          name: t.name,
+          description: t.description,
+          kind: t.kind,
+          sideEffect: t.sideEffect ?? null,
+          requiresContext: t.requiresContext,
+        }))
       },
     },
   ]

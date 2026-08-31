@@ -252,3 +252,97 @@ describe('list_feedback', () => {
     expect(Object.keys(result as object).sort()).toEqual(['rows', 'total'])
   })
 })
+
+describe('get_tool_catalog', () => {
+  const catalog = [
+    {
+      id: 'tavily_search',
+      name: 'Web search',
+      description: 'searches',
+      kind: 'ai-tool',
+      sideEffect: 'read',
+      requiresContext: ['clientOrgId'],
+      // Inline brand markup for the UI's chips — kilobytes that say nothing
+      // about what the tool does, listed once per tool in the catalog.
+      icon: `<svg>${'d'.repeat(30_000)}</svg>`,
+      inputSchema: { type: 'object', properties: { q: { type: 'string' } } },
+      outputSchema: { type: 'object', properties: { r: { type: 'string' } } },
+    },
+  ]
+  const client = stubClient({ listTools: async () => catalog as never })
+
+  test('drops the icon markup the UI needs and a model does not', async () => {
+    const rows = (await toolNamed('get_tool_catalog').run(
+      client,
+      {},
+    )) as Record<string, unknown>[]
+    expect(JSON.stringify(rows)).not.toContain('svg')
+    expect(rows[0]?.name).toBe('Web search')
+    expect(rows[0]?.sideEffect).toBe('read')
+    expect(rows[0]?.requiresContext).toEqual(['clientOrgId'])
+  })
+
+  // The catalog lists every tool at once, and the two JSON Schemas are most of
+  // a tool's bytes — 48k for one call against the real registry, to answer a
+  // question the description already answers.
+  test('leaves the argument schemas out of a listing', async () => {
+    const rows = (await toolNamed('get_tool_catalog').run(
+      client,
+      {},
+    )) as Record<string, unknown>[]
+    expect(rows[0]).not.toHaveProperty('inputSchema')
+    expect(rows[0]).not.toHaveProperty('outputSchema')
+  })
+})
+
+describe('get_feedback_context', () => {
+  const feedback: Partial<WfFeedbackRow> = {
+    subjectId: 'msg_1',
+    rating: 'down',
+    runId: 'run_1',
+  }
+
+  test('answers with the complaint and the run that caused it', async () => {
+    const client = stubClient({
+      getFeedbackForSubjects: async () => [feedback as WfFeedbackRow],
+      getRun: async () =>
+        ({
+          run: { id: 'run_1', status: 'completed' },
+          versionNumber: 1,
+          workflowVersionId: 'ver_1',
+          logs: [],
+          steps: [{ cursor: 0, nodeId: 'n0', meta: { p: 'q'.repeat(9000) } }],
+        }) as never,
+    })
+    const result = (await toolNamed('get_feedback_context').run(client, {
+      subjectId: 'msg_1',
+    })) as { feedback: unknown; run: { steps: { meta: unknown }[] } }
+    expect(result.feedback).toEqual(feedback)
+    // The same shape, and the same budget, `get_run` reports a trace in.
+    expect(String(result.run.steps[0]?.meta)).toContain('truncated')
+  })
+
+  // A rating and a note are worth reading on their own; a purged run is the
+  // answer to "why", not a reason to fail the call.
+  test('still returns the rating when the run is gone', async () => {
+    const client = stubClient({
+      getFeedbackForSubjects: async () => [
+        { ...feedback, runId: null } as WfFeedbackRow,
+      ],
+    })
+    expect(
+      await toolNamed('get_feedback_context').run(client, {
+        subjectId: 'msg_1',
+      }),
+    ).toEqual({ feedback: { ...feedback, runId: null }, run: null })
+  })
+
+  test('says so when nothing was ever rated on that subject', async () => {
+    const client = stubClient({ getFeedbackForSubjects: async () => [] })
+    expect(
+      await toolNamed('get_feedback_context').run(client, {
+        subjectId: 'nope',
+      }),
+    ).toEqual({ error: 'No feedback found for subject nope.' })
+  })
+})

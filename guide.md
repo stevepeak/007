@@ -1056,6 +1056,61 @@ itself. On success it answers with the testing **layer** the Sample landed in
 store fine but grade nothing — a `tool_called` check under `frozen` tools grades
 the absence of a call the agent was never able to make.
 
+
+### 5c. In-app access: the System Copilot
+
+`handleCopilotRequest` mounts an ephemeral agentic chat over the same data — a
+dock the user opens on whatever surface they are looking at. It runs no workflow
+and persists nothing: no message rows, no `wf_run`. The client holds the only
+copy of the conversation.
+
+It takes **the data route's own options type**, plus a fallback model:
+
+```ts
+// app/api/copilot/route.ts
+export function POST(req: Request): Promise<Response> {
+  return handleCopilotRequest(req, {
+    config: wfConfig,
+    resolveDb: () => getWfDb(),
+    resolveEnv: () => getCloudflareContext().env,
+    // Stricter than /api/wf on purpose — see below.
+    resolveContext: firmSessionOnly,
+    // Not optional here: a fault inside a tool call is caught by the
+    // dispatcher and handed to the model as a tool result, so without this
+    // hook it is a console line the model quietly works around.
+    onError: reportWfHandlerError,
+    defaultModelId: 'venice:qwen3-vl-235b-a22b',
+  })
+}
+```
+
+That is not a convenience. The copilot's tools **are** the `wf-mcp` tools — one
+catalog, in `mcp/catalog.ts`, registered two ways: `registerTool` for stdio, and
+an `ai` `ToolSet` for the copilot's `streamText` loop. So it holds a
+`WfDataClient` like any other caller, and the one it holds dispatches
+**in-process through your mounted handler** with the incoming request's own
+headers. Three things follow, and they are the reason it is built this way:
+
+- **A tool description is prompt.** Two hand-maintained lists would not merely
+  drift in wording, they would drift in what the model DID, and each list would
+  read fine on its own. Change a description once and both surfaces change.
+- **Your auth gate runs on every tool call**, against the real caller's
+  credentials — so the copilot cannot read anything that user's own browser
+  could not ask for, and a session that expires mid-conversation stops
+  answering. Same for input validation, the `wf_change` actor, and `onError`.
+  Give this route its OWN `resolveContext` rather than sharing the data route's:
+  the service-token door you opened for `wf-mcp` is a headless credential for
+  reading data, and the copilot spends model calls and answers in prose.
+- **It is read-only, and that is a decision, not an omission.** It gets
+  `selectTools(allTools(), false)` — the same gate as `wf-mcp` without
+  `--write`, so there is no write tool registered for it to be talked into
+  calling. An in-app chat any staffer can open is a different blast radius from
+  a flag a developer types; if that judgement changes it changes by passing
+  `true`, not by re-listing anything.
+
+The host supplies nothing tool-shaped. What it does supply is the model
+(`config.getModel`, resolved from the picker in the dock) and the gate.
+
 ---
 
 ## 6. Step 5 — the UI
