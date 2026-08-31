@@ -45,7 +45,7 @@
     "db:migrate": "sh -c '[ -f ../../.wf-migrate.env ] && . ../../.wf-migrate.env; wrangler d1 migrations apply ${WF_D1_NAME:-DB} --remote --config ${WF_D1_CONFIG:-./wrangler.jsonc}'"
   },
   "dependencies": {
-    "@ai-sdk/react": "^4.0.87",
+    "@ai-sdk/react": "^4.0.88",
     "@autoform/core": "^4.0.0",
     "@autoform/react": "^5.0.0",
     "@cloudflare/puppeteer": "1.4.0",
@@ -61,24 +61,24 @@
     "@tiptap/react": "^3.30.5",
     "@tiptap/starter-kit": "^3.30.5",
     "@xyflow/react": "^12.11.5",
-    "ai": "^7.0.84",
+    "ai": "^7.0.85",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
     "jsonata": "^2.2.2",
-    "lucide-react": "^1.35.0",
-    "react-hook-form": "^7.86.0",
+    "lucide-react": "^1.38.0",
+    "react-hook-form": "^7.87.0",
     "react-is": "^19.2.0",
     "recharts": "^3.10.1",
-    "zod": "^4.5.1"
+    "zod": "^4.5.4"
   },
   "peerDependencies": {
     "react": "^19",
     "react-dom": "^19"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260828.1",
+    "@cloudflare/workers-types": "^5.20260831.1",
     "@dexaai/config": "^0.0.10",
-    "@ocavue/eslint-config": "^4.13.5",
+    "@ocavue/eslint-config": "^4.16.0",
     "@types/bun": "^1.4.0",
     "@types/node": "^26.4.0",
     "@types/react": "^19.2.18",
