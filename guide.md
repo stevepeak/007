@@ -984,6 +984,17 @@ keeps only the newest steps, and says so where it does. Whatever it dropped is
 reachable — `get_run_step` returns one step in full — so the truncation is a
 narrowing, not data loss.
 
+**The surface is a queue, not a checklist.** `WfDataClient` has ~70 methods and
+the server exposes seventeen. A tool description is prompt and a bloated registry
+degrades selection, so a method earns a tool only when something that already
+shipped is unusable without it — which is how `list_models` (nothing told the
+model which ids `run_eval` would accept, and a composite id that loses its
+`provider:` prefix 404s only after the sweep is launched) and `list_changes`
+(`get_eval_run` reports that the target agent was republished, and `wf_change` is
+the only record of who did it — 007 keeps no per-table `updated_by`) got in.
+`get_dashboard`, the playgrounds and the agent write path are on the queue and
+have not.
+
 **Authoring evals is what `--write` is for.** `create_eval_set` /
 `upsert_eval_sample` / `delete_eval_sample` let a model turn what it just read in
 a trace into a Goal that runs tomorrow. Two details make generated Samples land

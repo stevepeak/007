@@ -57,7 +57,7 @@ export function reqString(value: unknown, field: string): string {
 }
 
 /** Clamp a model-supplied count into a sane window without a JSON-Schema bound. */
-function boundedLimit(raw: unknown, fallback: number, max: number): number {
+export function boundedLimit(raw: unknown, fallback: number, max: number): number {
   const n = typeof raw === 'number' && Number.isFinite(raw) ? Math.floor(raw) : fallback
   return Math.min(Math.max(n, 1), max)
 }
