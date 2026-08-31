@@ -80,13 +80,18 @@ describe('the write gate', () => {
     const names = (await readOnly.listTools()).tools.map((t) => t.name)
     expect(names).not.toContain('create_eval_set')
     expect(names).not.toContain('upsert_eval_sample')
+    // Launching a sweep is a write too: it spends real model calls. Reading the
+    // report it produces is not.
+    expect(names).not.toContain('run_eval')
     expect(names).toContain('list_eval_sets')
+    expect(names).toContain('get_eval_run')
 
     const writable = await connect({ write: true, tools: allTools() })
     const writeNames = (await writable.listTools()).tools.map((t) => t.name)
     expect(writeNames).toContain('create_eval_set')
     expect(writeNames).toContain('upsert_eval_sample')
     expect(writeNames).toContain('delete_eval_sample')
+    expect(writeNames).toContain('run_eval')
   })
 
   test('calling an unregistered write tool fails as unknown', async () => {

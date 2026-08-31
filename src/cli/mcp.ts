@@ -17,8 +17,9 @@
  *
  * Flags:
  *   --write            also register the eval-authoring tools (create a Goal,
- *                      write/delete a Sample). Off means they are not
- *                      REGISTERED, so a read-only session has none to reach for.
+ *                      write/delete a Sample) and `run_eval`, which spends real
+ *                      model calls. Off means they are not REGISTERED, so a
+ *                      read-only session has none to reach for.
  *
  * Register it with Claude Code:
  *

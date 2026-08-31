@@ -4,6 +4,7 @@ import type { WfDataClient } from '../server/protocol'
 
 import { readTools, type WfMcpTool } from './tools'
 import { draftTools } from './tools-drafts'
+import { evalRunReadTools, evalRunWriteTools } from './tools-eval-runs'
 import { evalReadTools, evalWriteTools } from './tools-evals'
 
 // Assembling the MCP server from the tool definitions.
@@ -27,8 +28,10 @@ export function allTools(): WfMcpTool[] {
   return [
     ...readTools(),
     ...evalReadTools(),
+    ...evalRunReadTools(),
     ...draftTools(),
     ...evalWriteTools(),
+    ...evalRunWriteTools(),
   ]
 }
 

@@ -24,7 +24,9 @@ function stubClient(partial: Partial<WfDataClient>): WfDataClient {
 }
 
 describe('the tool catalog', () => {
-  test('marks exactly the eval authoring tools as writes', () => {
+  // Authoring a Goal, and running one — the second is a write not because it
+  // edits a definition but because it spends money and persists results.
+  test('marks exactly the authoring and launching tools as writes', () => {
     const writes = allTools()
       .filter((t) => !t.readOnly)
       .map((t) => t.name)
@@ -32,6 +34,7 @@ describe('the tool catalog', () => {
     expect(writes).toEqual([
       'create_eval_set',
       'delete_eval_sample',
+      'run_eval',
       'upsert_eval_sample',
     ])
   })

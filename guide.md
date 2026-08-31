@@ -1016,6 +1016,38 @@ any run it makes the sample a regression test for one exact phrasing. The
 conversion itself lives in `eval/from-run`, shared with the run viewer's
 "Create sample" button.
 
+**Running what it wrote, and reading the report.** `run_eval` executes a Goal's
+Samples for real and `get_eval_run` reads the result, which is what makes the
+authoring half self-checking rather than a write-and-hope. Four things shape
+those two tools:
+
+- **It does not block.** A sweep waits up to fifteen minutes per cell, so
+  `run_eval` returns the `evalRunId` the moment the umbrella run row exists
+  (`onStart`) and the model polls `get_eval_run`. Same behavior as the launch
+  dialog, whose report page is a poller.
+- **The orchestration runs in the caller's process.** End the MCP session
+  mid-sweep and the remaining cells are never launched and the run is never
+  finalized — it sits at `running` forever, exactly as when a browser tab is
+  closed. The tool's `next` says so.
+- **`error` is not `fail`.** A `fail` is the target answering wrongly; an `error`
+  is the run never producing an answer to grade — provider refused, wrapper timed
+  out, the circuit breaker skipped the rest. So `passRate` is computed over
+  **graded** cells only and the errored ones are listed separately with their
+  messages. Rolled together, an outage reads as a total regression.
+- **Drift has two axes and they are reported apart.** `previousSnapshotHash`
+  compares the Sample's own definition, so it catches an edited check and is
+  structurally blind to the target agent being republished under a floating
+  `targetVersion` — which changes everything under test and leaves the hash
+  identical. `get_eval_run`'s `drift` answers both: `samplesEdited` and
+  `agentRepublishedSinceLastRun`.
+
+The sweep is bounded on both ends: node execution is already capped server-side
+by `EVAL_NODE_EXECUTION` (7-minute timeout, no retries), concurrency is clamped
+to the same 1–8 the launch dialog offers, and the tool refuses a request over 100
+cells — a person picking models in a dialog sees the count before pressing Run,
+and a tool call has no such moment. The orchestrator itself is `eval/run-eval`,
+framework-free and shared with the dialog.
+
 `upsert_eval_sample` passes `input` / `tools` / `checks` through unparsed — the
 dispatcher validates them against the same schemas the grader reads, and its
 message names the exact path that is wrong, which is what the model needs to fix
