@@ -45,12 +45,12 @@ export type WfMcpTool = {
  * and get a confidently empty result back. An argument that is not a string is
  * an argument that was not given.
  */
-function optString(value: unknown): string | undefined {
+export function optString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
 
 /** The same, for an id a tool cannot proceed without. */
-function reqString(value: unknown, field: string): string {
+export function reqString(value: unknown, field: string): string {
   const s = optString(value)
   if (!s) throw new Error(`Missing required argument \`${field}\`.`)
   return s

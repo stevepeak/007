@@ -984,6 +984,30 @@ keeps only the newest steps, and says so where it does. Whatever it dropped is
 reachable — `get_run_step` returns one step in full — so the truncation is a
 narrowing, not data loss.
 
+**Authoring evals is what `--write` is for.** `create_eval_set` /
+`upsert_eval_sample` / `delete_eval_sample` let a model turn what it just read in
+a trace into a Goal that runs tomorrow. Two details make generated Samples land
+clean rather than half-right:
+
+- A Sample's `input` is a discriminated union with exactly one legal variant per
+  target — `task` and `conversation` agents take different shapes, and a
+  workflow takes its raw trigger payload. So the target is **resolved first**:
+  `create_eval_set` and `get_eval_set` both return a `target` block carrying the
+  `sampleInputKind`, a ready-to-fill `inputTemplate` with the agent's declared
+  `${vars}` already named, and the trigger kind read off the workflow's own
+  graph. The next call needs no second lookup and no guess.
+- That preflight also refuses a target that doesn't exist. `wf_eval_set.targetId`
+  is an opaque string with no foreign key, so without it a hallucinated id stores
+  a Goal that fails only when someone runs it.
+
+`upsert_eval_sample` passes `input` / `tools` / `checks` through unparsed — the
+dispatcher validates them against the same schemas the grader reads, and its
+message names the exact path that is wrong, which is what the model needs to fix
+itself. On success it answers with the testing **layer** the Sample landed in
+(io / trajectory / synthesis / integration) and warns about combinations that
+store fine but grade nothing — a `tool_called` check under `frozen` tools grades
+the absence of a call the agent was never able to make.
+
 ---
 
 ## 6. Step 5 — the UI

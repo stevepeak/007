@@ -4,7 +4,7 @@ import { describe, expect, test } from 'bun:test'
 
 import type { WfDataClient } from '../server/protocol'
 
-import { createWfMcpServer } from './server'
+import { allTools, createWfMcpServer } from './server'
 import type { WfMcpTool } from './tools'
 
 /**
@@ -71,6 +71,22 @@ describe('the write gate', () => {
       'list_agents',
       'publish_agent',
     ])
+  })
+
+  // Over the REAL catalog, not a fixture: this is the gate a person relies on
+  // when they run `wf-mcp` without `--write` against production.
+  test('the real catalog hides eval authoring until --write', async () => {
+    const readOnly = await connect({ tools: allTools() })
+    const names = (await readOnly.listTools()).tools.map((t) => t.name)
+    expect(names).not.toContain('create_eval_set')
+    expect(names).not.toContain('upsert_eval_sample')
+    expect(names).toContain('list_eval_sets')
+
+    const writable = await connect({ write: true, tools: allTools() })
+    const writeNames = (await writable.listTools()).tools.map((t) => t.name)
+    expect(writeNames).toContain('create_eval_set')
+    expect(writeNames).toContain('upsert_eval_sample')
+    expect(writeNames).toContain('delete_eval_sample')
   })
 
   test('calling an unregistered write tool fails as unknown', async () => {

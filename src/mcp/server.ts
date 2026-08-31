@@ -3,6 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { WfDataClient } from '../server/protocol'
 
 import { readTools, type WfMcpTool } from './tools'
+import { evalReadTools, evalWriteTools } from './tools-evals'
 
 // Assembling the MCP server from the tool definitions.
 //
@@ -22,7 +23,7 @@ export type CreateWfMcpServerOptions = {
 
 /** Every tool this build knows about, read and write alike. */
 export function allTools(): WfMcpTool[] {
-  return [...readTools()]
+  return [...readTools(), ...evalReadTools(), ...evalWriteTools()]
 }
 
 export function selectTools(tools: WfMcpTool[], write: boolean): WfMcpTool[] {

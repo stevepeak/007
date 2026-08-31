@@ -16,7 +16,9 @@
  *   WF_MCP_TIMEOUT_MS  per-call budget (default 120000)
  *
  * Flags:
- *   --write            also register mutating tools (default: reads only)
+ *   --write            also register the eval-authoring tools (create a Goal,
+ *                      write/delete a Sample). Off means they are not
+ *                      REGISTERED, so a read-only session has none to reach for.
  *
  * Register it with Claude Code:
  *

@@ -24,8 +24,16 @@ function stubClient(partial: Partial<WfDataClient>): WfDataClient {
 }
 
 describe('the tool catalog', () => {
-  test('is entirely read-only in this build', () => {
-    expect(allTools().every((t) => t.readOnly)).toBe(true)
+  test('marks exactly the eval authoring tools as writes', () => {
+    const writes = allTools()
+      .filter((t) => !t.readOnly)
+      .map((t) => t.name)
+      .sort()
+    expect(writes).toEqual([
+      'create_eval_set',
+      'delete_eval_sample',
+      'upsert_eval_sample',
+    ])
   })
 
   test('names are unique — a duplicate would silently shadow', () => {
