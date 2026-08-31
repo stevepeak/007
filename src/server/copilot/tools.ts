@@ -12,6 +12,7 @@ import {
   listWorkflows,
 } from '../../storage'
 import type { WfDb } from '../../storage/client'
+import { clip } from '../clip'
 
 // The System Copilot's READ-ONLY tools. Every tool wraps a 007 storage
 // accessor, so the copilot sees exactly what the editor/run-viewer see. These
@@ -21,15 +22,6 @@ import type { WfDb } from '../../storage/client'
 // Payloads can be large (a run's step `meta` carries full LLM prompts + tool
 // I/O), so results are clipped — the model drills in with follow-up calls rather
 // than swallowing one giant blob.
-
-// Clip any value to a bounded JSON string so a single tool result can't blow the
-// context window. Used on the fat fields (step input/output/meta).
-function clip(value: unknown, max = 4000): unknown {
-  if (value == null) return value
-  const json = JSON.stringify(value)
-  if (json.length <= max) return value
-  return `${json.slice(0, max)}… [truncated ${json.length - max} chars — ask for a specific node to see more]`
-}
 
 // Declared as a named schema so `execute` can recover its parsed shape via
 // `z.infer` (the loose-arg pattern the AI SDK's `tool()` needs — see below).

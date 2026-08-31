@@ -31,6 +31,7 @@
   },
   "bin": {
     "wf-dump-run": "./src/cli/dump-run.ts",
+    "wf-mcp": "./src/cli/mcp.ts",
     "wf-spec": "./src/cli/spec.ts"
   },
   "scripts": {
@@ -51,6 +52,7 @@
     "@cloudflare/puppeteer": "1.4.0",
     "@dagrejs/dagre": "^3.1.1",
     "@hookform/resolvers": "^5.9.1",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@sentry/cloudflare": "^10.72.0",
     "@tanstack/react-query": "^5.102.8",
     "@tiptap/core": "^3.30.5",

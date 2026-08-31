@@ -899,6 +899,91 @@ Sentry" deep-link (return `null` to omit it) — the host owns the URL shape sin
 only it knows its Sentry org/region. `evalJudgeModelId` pins which model grades
 `llm_judge` eval checks (defaults to `listModels()[0]`).
 
+### 5b. Headless access: the MCP server (`wf-mcp`)
+
+The same route backs an MCP server the SDK ships as a bin, so an AI client
+(Claude Code, Claude Desktop) can read and — behind a flag — author agents,
+workflows, runs and evals. It is a thin shell over `WfDataClient`: every call
+goes through the mounted route, so it gets the same input validation, the same
+`wf_change` audit log, and every host hook you wired above. Nothing new to
+implement on the server side.
+
+**One thing to add: a headless credential.** The route above is gated by a
+browser session, which an MCP client cannot produce. Check a bearer token
+_before_ your session path and resolve it to a **service identity of its own**,
+never to the human who minted it — `wf_change.actor_id` is the only
+who-touched-this record in 007, and the change feed renders it verbatim:
+
+```ts
+resolveContext: async (req) => {
+  const header = req.headers.get('authorization')
+  if (header?.toLowerCase().startsWith('bearer ')) {
+    // Constant-time compare against your WF_MCP_TOKEN secret. A presented token
+    // is a commitment to this door: a wrong one is a 403, NOT a fall-through to
+    // the session path (which would report itself as a missing session).
+    if (!(await tokenMatches(header.slice(7).trim()))) {
+      throw new UnauthorizedError('Invalid service token')
+    }
+    return { userId: 'svc:mcp' }
+  }
+  const session = await getSession(req.headers)
+  if (!session) throw new UnauthorizedError('Unauthorized')
+  return { userId: session.user.id }
+}
+```
+
+Then register the server. `--write` is off by default, and off means the
+mutating tools are **not registered at all** — a read-only session has no write
+tool to be talked into calling:
+
+```bash
+claude mcp add wf \
+  --env WF_BASE_URL=http://localhost:3000 \
+  --env WF_MCP_TOKEN=$WF_MCP_TOKEN \
+  -- bunx wf-mcp
+```
+
+...or as an `.mcp.json` block:
+
+```jsonc
+{
+  "mcpServers": {
+    "wf": {
+      "command": "bunx",
+      "args": ["wf-mcp"],
+      "env": {
+        "WF_BASE_URL": "http://localhost:3000",
+        "WF_MCP_TOKEN": "…"
+      }
+    }
+  }
+}
+```
+
+| env | meaning |
+| --- | --- |
+| `WF_BASE_URL` | origin of the host app, or the full data-API URL |
+| `WF_API_PATH` | route the handlers are mounted at (default `/api/wf`) |
+| `WF_MCP_TOKEN` | bearer credential; matches the host Worker's secret |
+| `WF_MCP_TIMEOUT_MS` | per-call budget (default `120000`) |
+
+Flags of the same name (`--base-url=`, `--api-path=`, `--token=`, `--timeout=`)
+win over the env, and `--write` registers the mutating tools.
+
+**Why HTTP and not D1 directly.** `wf-spec` and `wf-dump-run` reach D1 straight,
+and copying that here is the tempting mistake. Direct-DB bypasses the
+dispatcher, losing per-method input validation, the `wf_change` log and every
+host-wired hook — and eval runs become structurally impossible, since
+`startEvalRun` is a **host** hook that needs live Workers bindings and rejects
+with "not configured" without them. One HTTP path keeps all ~70 methods working
+identically, local or remote.
+
+**Payloads are clipped.** A run step's `meta` carries the full LLM prompt, the
+reasoning trace and every tool call's I/O; `get_run` truncates fat fields and
+keeps only the newest steps, and says so where it does. Whatever it dropped is
+reachable — `get_run_step` returns one step in full — so the truncation is a
+narrowing, not data loss.
+
 ---
 
 ## 6. Step 5 — the UI
