@@ -15,6 +15,10 @@ change in the host's `getModel`.
 >
 > **Changing the SDK itself?** See [`AGENTS.md`](./AGENTS.md) — where things
 > live, what the compiler will and won't catch, and the conventions.
+>
+> **Upgrading an existing host?** See
+> [`client-changelog.md`](./client-changelog.md) — only what changes the contract
+> you implement: types, entry points, routes, and behavior you inherit.
 
 ---
 

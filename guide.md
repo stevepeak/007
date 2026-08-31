@@ -6,6 +6,10 @@ SDK up end-to-end: the injection config, the D1 storage, the Cloudflare runtime,
 the data API route, and the React UI — plus the parts you must **de-hardcode**
 before reusing the package in a different repo.
 
+Already integrated and pulling a newer 007? Read
+[`client-changelog.md`](./client-changelog.md) first — it carries only the
+changes that break or alter the contract this guide describes.
+
 Everything here is derived from the live wiring in this repo (`@app/wf-host`,
 `apps/web`, `apps/workflows`). Treat those as the reference implementation.
 
@@ -25,6 +29,8 @@ The SDK is deliberately generic. It ships **behavior**; the host supplies
 | Cloudflare runtime (`GraphWorkflow`, `RunRoom`, `startGraphRun`) | ✅                | wrangler bindings                         |
 | RPC dispatch (`createWfSdkHandlers`)                             | ✅                | route auth + `{ userId? }`, the `WfDb`    |
 | Editor / run-viewer / hub UI (`WfApp`)                           | ✅                | router adapter, design-system primitives  |
+| MCP tool catalog + `wf-mcp` bin (`mcp/catalog.ts`)               | ✅                | a headless credential (a bearer secret)   |
+| System Copilot (`handleCopilotRequest`)                          | ✅                | the model + its own auth gate             |
 | Model provider (`getModel` + `listModels` + `listProviders`)     |                   | ✅                                        |
 | Provider spend budgets (`fetchProviderBudget`, optional)         | the cards + meter | ✅ the balance call (omit → no cards)     |
 | Tools (`toolRegistry`; `/tools` + `/cloudflare` ship a few)      |                   | ✅                                        |
@@ -56,7 +62,7 @@ cycles (`ui → server → storage → engine`, `cloudflare → storage → engi
 | `@stevepeak/007/cloudflare/blob-spill`   | any server route        | `createR2BlobSpiller`, `spillTextIfLarge` (the write half of blob refs) |
 | `@stevepeak/007/cloudflare/extract-text` | any server route¹       | `createExtractTextTool` (R2/Vision OCR tool)    |
 | `@stevepeak/007/cloudflare/analytics-engine` | Workers (AE binding) | `createAnalyticsEngineTelemetry` — the write half of run telemetry (§7b) |
-| `@stevepeak/007/server`                  | any server route        | `createWfSdkHandlers`, `createHttpWfDataClient` |
+| `@stevepeak/007/server`                  | any server route        | `createWfSdkHandlers`, `createHttpWfDataClient`, `handleCopilotRequest` |
 | `@stevepeak/007/tools`                   | any (fetch + deps)      | built-in tools (`createTavilyTool`)             |
 | `@stevepeak/007/ui`                      | browser (React 19)      | `WfApp`, `WfSdkProvider`, `RunViewer`, hooks    |
 | `@stevepeak/007/ui/run-progress`         | browser (React 19)      | `WorkflowRunProgress` + the progress source, without pulling the editor |
@@ -970,6 +976,33 @@ claude mcp add wf \
 Flags of the same name (`--base-url=`, `--api-path=`, `--token=`, `--timeout=`)
 win over the env, and `--write` registers the mutating tools.
 
+**What it exposes.** Twenty-one tools — seventeen reads, and four writes that
+exist only with `--write`. The same catalog backs the System Copilot (§5c), so
+this table is both surfaces.
+
+| Tool | Gate | What it does |
+| --- | --- | --- |
+| `list_agents` / `get_agent` | read | the reusable LLM workers, published version + unsaved draft |
+| `list_workflows` / `get_workflow` | read | the graphs, published + draft |
+| `list_runs` | read | run history; filter by `status` to hunt failures |
+| `get_run` | read | one run's trace — steps, errors, reasoning, tool I/O, cost. Clipped |
+| `get_run_step` | read | one step unclipped, by the `cursor` `get_run` showed |
+| `list_feedback` | read | customer thumbs; the down rows name the run that earned them |
+| `get_feedback_context` | read | one complaint **plus** the run that caused it, in one call |
+| `get_tool_catalog` | read | every tool an agent could be given, and whether it writes |
+| `list_models` | read | the enabled models; pass `id` verbatim wherever one is named |
+| `list_changes` | read | the `wf_change` feed — the only who-touched-this record |
+| `list_eval_sets` / `get_eval_set` | read | Goals and their Samples |
+| `list_eval_runs` / `get_eval_run` | read | eval results, per-check, with the `drift` block |
+| `draft_sample_from_run` | read | a run → a proposed Sample, returned rather than written |
+| `create_eval_set` | **write** | a new Goal, target preflighted |
+| `upsert_eval_sample` | **write** | write or replace one Sample |
+| `delete_eval_sample` | **write** | remove one Sample |
+| `run_eval` | **write** | launch a sweep. Spends real model calls; returns before it finishes |
+
+`run_eval` is a write not because it edits a definition but because it **spends
+money** and persists results — which is the line the flag is actually drawing.
+
 **Why HTTP and not D1 directly.** `wf-spec` and `wf-dump-run` reach D1 straight,
 and copying that here is the tempting mistake. Direct-DB bypasses the
 dispatcher, losing per-method input validation, the `wf_change` log and every
@@ -985,7 +1018,7 @@ reachable — `get_run_step` returns one step in full — so the truncation is a
 narrowing, not data loss.
 
 **The surface is a queue, not a checklist.** `WfDataClient` has ~70 methods and
-the server exposes seventeen. A tool description is prompt and a bloated registry
+the server exposes twenty-one. A tool description is prompt and a bloated registry
 degrades selection, so a method earns a tool only when something that already
 shipped is unusable without it — which is how `list_models` (nothing told the
 model which ids `run_eval` would accept, and a composite id that loses its
