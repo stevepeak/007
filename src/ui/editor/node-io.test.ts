@@ -11,6 +11,7 @@ import {
   nodeRequires,
   outputContractIssue,
   refEnumOptions,
+  unwrapNullable,
   type IoMaps,
 } from './node-io'
 
@@ -460,5 +461,62 @@ describe('enum options behind a ref', () => {
     expect(refEnumOptions(accessible, { nodeId: 'a', path: 'note' })).toBeUndefined()
     expect(refEnumOptions(accessible, { nodeId: 'a', path: '' })).toBeUndefined()
     expect(refEnumOptions(accessible, undefined)).toBeUndefined()
+  })
+})
+
+describe('nullable arguments keep their type', () => {
+  // Zod's `.nullable()` converts two ways and neither states a string `type`:
+  // a bare primitive gets `type: [x, 'null']`, a branch with its own keywords
+  // gets `anyOf`. Both must collapse, or the argument reads as opaque and the
+  // editor offers a free-text box where the tool's schema wants a boolean.
+  test('a `T | null` collapses to T, keeping the wrapper description', () => {
+    expect(unwrapNullable({ type: ['boolean', 'null'], description: 'l' })).toEqual({
+      type: 'boolean',
+      description: 'l',
+    })
+    expect(
+      unwrapNullable({
+        anyOf: [{ type: 'string', maxLength: 2000 }, { type: 'null' }],
+        description: 'n',
+      }),
+    ).toEqual({ type: 'string', maxLength: 2000, description: 'n' })
+  })
+
+  test('a real union stays opaque — no single control fits it', () => {
+    const union = { anyOf: [{ type: 'string' }, { type: 'number' }] }
+    expect(unwrapNullable(union)).toEqual(union)
+    const multi = { type: ['string', 'number', 'null'] }
+    expect(unwrapNullable(multi)).toEqual(multi)
+  })
+
+  test("a tool's nullable boolean arg is a boolean, so only booleans map to it", () => {
+    const maps = {
+      toolsById: new Map([
+        [
+          't1',
+          {
+            inputSchema: {
+              type: 'object',
+              required: ['lock'],
+              properties: {
+                lock: {
+                  type: ['boolean', 'null'],
+                  description: 'Locks the thread.',
+                },
+              },
+            },
+          },
+        ],
+      ]),
+      agentsById: new Map(),
+      triggersByKind: new Map(),
+      workflowsById: new Map(),
+    } as unknown as IoMaps
+    const toolNode = node('t', 'tool', 'Escalate', { toolId: 't1' })
+    const [lock] = nodeRequires(toolNode as never, maps)
+    expect(lock?.type).toBe('boolean')
+    expect(lock?.description).toBe('Locks the thread.')
+    expect(acceptsValueType(lock?.type, 'string')).toBe(false)
+    expect(acceptsValueType(lock?.type, 'boolean')).toBe(true)
   })
 })

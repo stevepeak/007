@@ -109,23 +109,64 @@ function calleeInputSchema(
   return maps.triggersByKind.get(kind)?.inputSchema
 }
 
+/**
+ * A nullable schema reduced to the branch that isn't `null`.
+ *
+ * Zod's `.nullable()` converts two different ways, and NEITHER states a plain
+ * string `type`: a bare primitive becomes `type: ['boolean', 'null']`, while a
+ * branch carrying its own keywords becomes `anyOf: [{…}, { type: 'null' }]`.
+ * Without unwrapping, every nullable argument read as opaque — so a
+ * `z.boolean().nullable()` like the escalate tool's `lock` got a free-text box
+ * (where typing "true" stores the STRING "true", which the tool's Zod schema
+ * then rejects at run time) instead of its two-state toggle, and the picker
+ * offered it every upstream field regardless of type.
+ *
+ * The parent's `description` wins — that's where `.describe()` lands when it is
+ * called on the nullable wrapper.
+ */
+export function unwrapNullable(
+  schema: JsonSchema | undefined,
+): JsonSchema | undefined {
+  if (!schema) return schema
+  const type = schema.type
+  if (Array.isArray(type)) {
+    const rest = type.filter((t) => t !== 'null')
+    return rest.length === 1 ? { ...schema, type: rest[0] } : schema
+  }
+  const branches = (schema.anyOf ?? schema.oneOf) as JsonSchema[] | undefined
+  if (!Array.isArray(branches)) return schema
+  const rest = branches.filter((b) => b?.type !== 'null')
+  // Only a plain `X | null` collapses. A real union (two non-null branches)
+  // stays opaque, which is the honest answer — no single control fits it.
+  if (rest.length !== 1 || branches.length === rest.length) return schema
+  const branch = rest[0]
+  return typeof schema.description === 'string'
+    ? { ...branch, description: schema.description }
+    : branch
+}
+
 /** Object-schema properties as bindable inputs. Shared by tool + workflow nodes. */
 function inputsOfSchema(schema: JsonSchema | undefined): NodeInput[] {
   if (!schema || schema.type !== 'object') return []
   const props = (schema.properties ?? {}) as Record<string, JsonSchema>
   const required = new Set((schema.required as string[] | undefined) ?? [])
-  return Object.entries(props).map(([key, s]) => ({
-    key,
-    label: key,
-    required: required.has(key),
-    description: typeof s.description === 'string' ? s.description : undefined,
-    type: schemaType(s),
-    enum: Array.isArray(s.enum) ? s.enum : undefined,
-  }))
+  return Object.entries(props).map(([key, raw]) => {
+    const s = unwrapNullable(raw) ?? raw
+    return {
+      key,
+      label: key,
+      required: required.has(key),
+      description:
+        typeof s.description === 'string' ? s.description : undefined,
+      type: schemaType(s),
+      enum: Array.isArray(s.enum) ? s.enum : undefined,
+    }
+  })
 }
 
 function schemaType(schema: JsonSchema | undefined): string {
-  return typeof schema?.type === 'string' ? schema.type : 'unknown'
+  const s = unwrapNullable(schema)
+  return typeof s?.type === 'string' ? s.type : 'unknown'
 }
 
 // ---------------------------------------------------------------------------
@@ -281,9 +322,10 @@ function fieldTypeAtPath(
 // to signal "each element" — they are for display only (the binding picker never
 // offers them, since a real index isn't known at author time).
 function itemFieldsOf(
-  itemSchema: JsonSchema | undefined,
+  raw: JsonSchema | undefined,
   arrayPath: string,
 ): DataField[] | undefined {
+  const itemSchema = unwrapNullable(raw)
   if (!itemSchema) return undefined
   const elemPath = `${arrayPath}[]`
   if (itemSchema.type === 'object') return fieldsOf(itemSchema, elemPath)
@@ -311,7 +353,8 @@ function fieldsOf(
 ): DataField[] {
   if (!schema || schema.type !== 'object') return []
   const props = (schema.properties ?? {}) as Record<string, JsonSchema>
-  return Object.entries(props).map(([key, s]) => {
+  return Object.entries(props).map(([key, raw]) => {
+    const s = unwrapNullable(raw) ?? raw
     const path = parentPath ? `${parentPath}.${key}` : key
     return {
       key,
