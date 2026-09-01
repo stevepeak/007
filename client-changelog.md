@@ -15,6 +15,73 @@ without you and is still probably wrong to skip.
 
 ---
 
+## 2026-09-01 — the agent edit loop, and a health rollup
+
+ART-111. Three tools and one argument, which together let an AI client close the
+loop it could previously only describe: read a failing eval, change the agent,
+and find out whether the change helped — without publishing anything.
+
+### Action
+
+**Wire `runAgentPreview` if you want `run_agent_preview` to work.** It is a host
+hook, not SDK behavior — the SDK has no model seam of its own — so on a host that
+does not supply it the tool answers `The agent playground is not configured on
+this host.` and nothing else breaks. If your agent editor's playground already
+works, you have it.
+
+**Know what `--write` now grants.** It was four tools that authored and ran evals.
+It is now six, and two of them touch an agent: `update_agent_draft` replaces an
+agent's draft config, and `run_agent_preview` spends a model call. Neither
+publishes and neither runs a live tool (below), but a token handed out as
+"read/write for evals" now also edits drafts. If that is not what you meant, hand
+out a session without `--write`.
+
+**Drafts are written as your service identity.** `update_agent_draft` records a
+`wf_change` row under whatever `resolveContext` returns for the MCP credential —
+`svc:mcp`, if you followed §5b — and the agent editor will show an unsaved draft
+that no person typed. That is the intended outcome, but somebody's editor is
+going to show it.
+
+### New
+
+| | |
+| --- | --- |
+| `get_dashboard` (read) | The health rollup — failure rate, in-flight runs, spend per model, feedback queue depth, and the newest failed runs with their errors. Also reaches the **System Copilot**, which now has eighteen read tools rather than seventeen. Per-bucket chart series are dropped in the projection; the panel totals survive. |
+| `update_agent_draft` (**write**) | Replace an agent's draft config. Reports every field that now differs from the published version. |
+| `run_agent_preview` (**write**) | One throwaway run of an agent, **every tool simulated**. |
+| `run_eval({ draftAgentId })` | Grade an agent's draft instead of its published version — `RunEvalInput.configOverride`, which the editor already used, reachable from a tool call. |
+
+### Two things deliberately withheld
+
+Neither is an oversight, and both are worth knowing before you ask for them.
+
+**`publish_agent` is not in the catalog.** A published version floats into every
+workflow referencing that agent, which makes it the one action in this
+neighborhood that changes what your customers get. `update_agent_draft` stops one
+step short on purpose: a draft is reversible, invisible to production, and
+undone wholesale by the editor's discard. The model proposes; a person ships.
+
+**`run_agent_preview` does not accept `liveToolIds`**, so a previewed run touches
+nothing outside the process — the model writes stand-in tool results and they are
+labelled `simulatedOutput` on every call. Your UI playground does offer live
+tools, behind a per-tool toggle a person flips having read the warning; a tool
+call has no equivalent of that moment, and the tools in question search real
+client matters and write real records. `run_tool_preview` is absent for the same
+reason, more bluntly.
+
+### One behavior worth predicting
+
+A draft row exists alongside nearly every agent, and publishing leaves it
+matching the version it published — so `getAgent().draft !== null` is true almost
+always and says nothing about whether anyone has edits in flight. Both new tools
+therefore return `unsavedFields` (the config keys that actually differ from live)
+and say so loudly when it is empty. Expect `run_eval({ draftAgentId })` on an
+untouched agent to run and to warn, rather than to fail: the run is exactly as
+valid as one without the argument, it just answers a different question than the
+caller thinks it does.
+
+---
+
 ## 2026-08-31 — headless + in-app access to the data surface
 
 Six tickets (ART-104 → ART-111) put the same data behind two new front doors: an

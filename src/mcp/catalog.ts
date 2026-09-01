@@ -1,4 +1,5 @@
 import { readTools, type WfMcpTool } from './tools'
+import { agentWriteTools } from './tools-agents'
 import { draftTools } from './tools-drafts'
 import { evalRunReadTools, evalRunWriteTools } from './tools-eval-runs'
 import { evalReadTools, evalWriteTools } from './tools-evals'
@@ -22,6 +23,7 @@ export function allTools(): WfMcpTool[] {
     ...draftTools(),
     ...evalWriteTools(),
     ...evalRunWriteTools(),
+    ...agentWriteTools(),
   ]
 }
 

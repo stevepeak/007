@@ -7,9 +7,14 @@ import {
   type RunEvalInput,
 } from '../eval/run-eval'
 import { clip } from '../server/clip'
-import type { WfEvalResultDTO, WfEvalRunDetail } from '../server/protocol'
+import type {
+  AgentConfig,
+  WfEvalResultDTO,
+  WfEvalRunDetail,
+} from '../server/protocol'
 
-import { reqString, type WfMcpTool } from './tools'
+import { optString, reqString, type WfMcpTool } from './tools'
+import { draftOrPublished } from './tools-agents'
 
 // Running a Goal and reading its report — the half of the loop that makes the
 // authoring half self-checking. Without these, a model can write a Sample and
@@ -324,7 +329,7 @@ export function evalRunWriteTools(): WfMcpTool[] {
       name: 'run_eval',
       title: 'Run eval goals',
       description:
-        'Run one or more Goals: every Sample is executed against its target for real and graded by its checks. Returns the evalRunId immediately — the sweep keeps running in this MCP session, so poll get_eval_run until `status` is `completed`, and do not end the session before it is (the remaining cells would never launch). Optionally sweep across models and alternate prompts. Each cell is a real model call; keep sweeps small.',
+        'Run one or more Goals: every Sample is executed against its target for real and graded by its checks. Returns the evalRunId immediately — the sweep keeps running in this MCP session, so poll get_eval_run until `status` is `completed`, and do not end the session before it is (the remaining cells would never launch). Optionally sweep across models and alternate prompts, or grade an agent’s unsaved draft with draftAgentId. Each cell is a real model call; keep sweeps small.',
       inputSchema: {
         setIds: z
           .array(z.string())
@@ -346,6 +351,12 @@ export function evalRunWriteTools(): WfMcpTool[] {
           .nullish()
           .describe(
             'Best-of-N: run every sample this many times per model, to see variance. Default 1. Requires models.',
+          ),
+        draftAgentId: z
+          .string()
+          .nullish()
+          .describe(
+            'Grade this agent’s UNSAVED draft instead of its published version — the way to find out whether an update_agent_draft edit helped without publishing it. Every named Goal must target this same agent.',
           ),
         prompts: z
           .array(
@@ -410,6 +421,46 @@ export function evalRunWriteTools(): WfMcpTool[] {
               'Those goals have no samples, so there is nothing to run. Add samples with upsert_eval_sample first.',
           }
         }
+        // The draft override rides on every cell of the sweep and the server
+        // applies it without checking WHOSE config it is — the editor can't hit
+        // that because it only ever runs its own agent's goals, but a tool call
+        // naming an unrelated setId would silently grade agent A's draft against
+        // agent B's samples and report the result as B's.
+        const draftAgentId = optString(args.draftAgentId)
+        let configOverride: AgentConfig | undefined
+        let unsavedFields: string[] = []
+        if (draftAgentId) {
+          const mismatched = sets.filter(
+            (s) =>
+              s &&
+              (s.set.targetKind !== 'agent' || s.set.targetId !== draftAgentId),
+          )
+          if (mismatched.length > 0) {
+            return {
+              error: `draftAgentId only applies to goals that target that agent, and ${mismatched
+                .map((s) => `"${s?.set.name ?? '?'}"`)
+                .join(', ')} does not. Run those separately, without draftAgentId.`,
+            }
+          }
+          const detail = await client.getAgent(draftAgentId)
+          if (!detail) {
+            return { error: `No agent found for id ${draftAgentId}.` }
+          }
+          const chosen = draftOrPublished(detail)
+          if (!chosen || chosen.source !== 'draft') {
+            return {
+              error: `Agent ${draftAgentId} has no draft to override with. Drop draftAgentId to grade the published version.`,
+            }
+          }
+          configOverride = chosen.config
+          // NOT a refusal: this run is exactly as valid as the one you get by
+          // dropping the argument, and its results are real. But a draft row
+          // exists for nearly every agent and usually matches what was last
+          // published, so a sweep launched to answer "did my edit help?" can
+          // measure the live config and read as though it measured the edit.
+          unsavedFields = chosen.unsavedFields
+        }
+
         const columns = Math.max(1, models.length) * attempts * (1 + prompts.length)
         const cells = samples * columns
         if (cells > MAX_CELLS) {
@@ -420,6 +471,7 @@ export function evalRunWriteTools(): WfMcpTool[] {
 
         const input: RunEvalInput = {
           setIds,
+          configOverride,
           concurrency:
             typeof args.concurrency === 'number' ? args.concurrency : undefined,
           matrix:
@@ -472,7 +524,25 @@ export function evalRunWriteTools(): WfMcpTool[] {
 
         return {
           evalRunId,
-          launched: { samples, cellsPerSample: columns, totalRuns: cells },
+          launched: {
+            samples,
+            cellsPerSample: columns,
+            totalRuns: cells,
+            // Stated on the way out because the report itself doesn't say it:
+            // a draft run and a published run look identical afterwards.
+            target: configOverride
+              ? `the draft of agent ${draftAgentId ?? ''}`
+              : 'each goal’s published target',
+            ...(configOverride
+              ? {
+                  unsavedFields,
+                  draftWarning:
+                    unsavedFields.length === 0
+                      ? 'That draft is IDENTICAL to the published version, so this sweep measures the live agent — not an edit. If you meant to grade a change, write it with update_agent_draft first.'
+                      : undefined,
+                }
+              : {}),
+          },
           next: `The sweep is running in this session. Poll get_eval_run("${evalRunId}") every 20-30s until status is "completed". Read \`errored\` separately from \`failed\` — an errored cell never produced an answer to grade.`,
         }
       },

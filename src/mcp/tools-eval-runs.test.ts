@@ -581,3 +581,145 @@ describe('list_eval_runs', () => {
     expect(out[0].id).toBe('er_1')
   })
 })
+
+describe('run_eval — grading an unsaved draft', () => {
+  const agentSet = (targetId: string, name = 'Goal') =>
+    ({
+      set: { id: 'set_1', name, rowCount: 1, targetKind: 'agent', targetId },
+      rows: [{ id: 'row_0', archived: false }],
+    }) as never
+
+  const draftConfig = { prompt: 'Be very brief.' }
+
+  function stub(over: Partial<WfDataClient> = {}): {
+    started: Record<string, unknown>[]
+    client: WfDataClient
+  } {
+    const started: Record<string, unknown>[] = []
+    return {
+      started,
+      client: stubClient({
+        getEvalSet: async () => agentSet('a1'),
+        getAgent: async () =>
+          ({
+            agent: { id: 'a1' },
+            draft: { config: draftConfig },
+            currentVersion: { id: 'v1', versionNumber: 1, config: {} },
+          }) as never,
+        createEvalRun: async () => ({ evalRunId: 'er_1' }),
+        startEvalRun: async (input) => {
+          started.push(input)
+          return await new Promise<never>(() => {})
+        },
+        finalizeEvalRun: async () => ({}) as never,
+        ...over,
+      }),
+    }
+  }
+
+  test('rides the draft config onto every cell', async () => {
+    const { started, client } = stub()
+    const out = (await toolNamed('run_eval').run(client, {
+      setIds: ['set_1'],
+      draftAgentId: 'a1',
+    })) as { launched: { target: string } }
+    expect(started[0]?.config).toEqual(draftConfig)
+    // A draft run and a published run look identical in the report afterwards,
+    // so which one this was gets said on the way out.
+    expect(out.launched.target).toContain('draft')
+  })
+
+  // The guard the UI can't need and a tool call can: the server applies the
+  // override to every cell without checking WHOSE config it is, so one stray
+  // setId would grade agent A's draft against agent B's samples and file the
+  // result under B — passing, plausibly, and about nothing.
+  test('refuses a goal that targets a different agent', async () => {
+    const { started, client } = stub({
+      getEvalSet: async () => agentSet('a2', 'Conflicts'),
+    })
+    const out = (await toolNamed('run_eval').run(client, {
+      setIds: ['set_1'],
+      draftAgentId: 'a1',
+    })) as { error: string }
+    expect(out.error).toContain('Conflicts')
+    expect(started).toHaveLength(0)
+  })
+
+  test('refuses a goal that targets a workflow rather than an agent', async () => {
+    const { started, client } = stub({
+      getEvalSet: async () =>
+        ({
+          set: {
+            id: 'set_1',
+            name: 'Intake end to end',
+            rowCount: 1,
+            targetKind: 'workflow',
+            targetId: 'a1',
+          },
+          rows: [{ id: 'row_0', archived: false }],
+        }) as never,
+    })
+    const out = (await toolNamed('run_eval').run(client, {
+      setIds: ['set_1'],
+      draftAgentId: 'a1',
+    })) as { error: string }
+    expect(out.error).toContain('Intake end to end')
+    expect(started).toHaveLength(0)
+  })
+
+  test('says so rather than silently running the published version', async () => {
+    const { started, client } = stub({
+      getAgent: async () =>
+        ({ agent: { id: 'a1' }, draft: null, currentVersion: null }) as never,
+    })
+    const out = (await toolNamed('run_eval').run(client, {
+      setIds: ['set_1'],
+      draftAgentId: 'a1',
+    })) as { error: string }
+    expect(out.error).toContain('no draft to override with')
+    expect(started).toHaveLength(0)
+  })
+
+  // A draft row exists for nearly every agent and usually equals what was last
+  // published, so "ran the draft" is a statement that is routinely accurate and
+  // useless. A sweep launched to answer "did my edit help?" would otherwise
+  // measure the live config and read as though it measured the edit.
+  test('warns when the draft is identical to what is published', async () => {
+    const { started, client } = stub({
+      getAgent: async () =>
+        ({
+          agent: { id: 'a1' },
+          draft: { config: draftConfig },
+          currentVersion: { id: 'v1', versionNumber: 1, config: draftConfig },
+        }) as never,
+    })
+    const out = (await toolNamed('run_eval').run(client, {
+      setIds: ['set_1'],
+      draftAgentId: 'a1',
+    })) as { launched: { unsavedFields: string[]; draftWarning: string } }
+    // Not a refusal — the run is as valid as any other, it just answers a
+    // different question than the caller thinks.
+    expect(started).toHaveLength(1)
+    expect(out.launched.unsavedFields).toEqual([])
+    expect(out.launched.draftWarning).toContain('IDENTICAL')
+  })
+
+  test('names the fields a real edit changed', async () => {
+    const { client } = stub()
+    const out = (await toolNamed('run_eval').run(client, {
+      setIds: ['set_1'],
+      draftAgentId: 'a1',
+    })) as { launched: { unsavedFields: string[]; draftWarning?: string } }
+    expect(out.launched.unsavedFields).toEqual(['prompt'])
+    expect(out.launched.draftWarning).toBeUndefined()
+  })
+
+  test('without draftAgentId nothing is overridden', async () => {
+    const { started, client } = stub()
+    const out = (await toolNamed('run_eval').run(client, {
+      setIds: ['set_1'],
+    })) as { launched: { target: string } }
+    expect(started[0]?.config).toBeUndefined()
+    expect(out.launched.target).toContain('published')
+  })
+})

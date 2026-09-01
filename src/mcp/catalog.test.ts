@@ -21,6 +21,9 @@ const guide = readFileSync(
 const WORDS: Record<number, string> = {
   3: 'three',
   4: 'four',
+  5: 'five',
+  6: 'six',
+  7: 'seven',
   15: 'fifteen',
   16: 'sixteen',
   17: 'seventeen',
@@ -32,6 +35,8 @@ const WORDS: Record<number, string> = {
   23: 'twenty-three',
   24: 'twenty-four',
   25: 'twenty-five',
+  26: 'twenty-six',
+  27: 'twenty-seven',
 }
 
 describe('the tool catalog ↔ guide.md', () => {

@@ -24,9 +24,15 @@ function stubClient(partial: Partial<WfDataClient>): WfDataClient {
 }
 
 describe('the tool catalog', () => {
-  // Authoring a Goal, and running one — the second is a write not because it
-  // edits a definition but because it spends money and persists results.
-  test('marks exactly the authoring and launching tools as writes', () => {
+  // Pinned as a LIST, not a count: `readOnly` is the only thing standing between
+  // a read-only session and a mutation, and it is one boolean per definition. A
+  // tool added with the flag left at its neighbor's value would otherwise reach
+  // both the copilot and an un-flagged `wf-mcp` in silence.
+  //
+  // Two of these are writes for a reason other than editing a definition:
+  // `run_eval` and `run_agent_preview` spend real model calls, which is the line
+  // the flag is actually drawing.
+  test('marks exactly the authoring, launching and editing tools as writes', () => {
     const writes = allTools()
       .filter((t) => !t.readOnly)
       .map((t) => t.name)
@@ -34,9 +40,26 @@ describe('the tool catalog', () => {
     expect(writes).toEqual([
       'create_eval_set',
       'delete_eval_sample',
+      'run_agent_preview',
       'run_eval',
+      'update_agent_draft',
       'upsert_eval_sample',
     ])
+  })
+
+  // The line drawn in `tools-agents.ts`: a draft is reversible and invisible to
+  // customers, a publish floats into every workflow that references the agent.
+  // Neither belongs to a surface that can be prompted into using it.
+  test('exposes no publish and no live tool execution at all', () => {
+    const names = new Set(allTools().map((t) => t.name))
+    for (const forbidden of [
+      'publish_agent',
+      'run_tool_preview',
+      'delete_eval_set',
+      'delete_all_runs',
+    ]) {
+      expect(names.has(forbidden)).toBe(false)
+    }
   })
 
   test('names are unique — a duplicate would silently shadow', () => {

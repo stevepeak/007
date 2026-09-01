@@ -976,7 +976,7 @@ claude mcp add wf \
 Flags of the same name (`--base-url=`, `--api-path=`, `--token=`, `--timeout=`)
 win over the env, and `--write` registers the mutating tools.
 
-**What it exposes.** Twenty-one tools — seventeen reads, and four writes that
+**What it exposes.** Twenty-four tools — eighteen reads, and six writes that
 exist only with `--write`. The same catalog backs the System Copilot (§5c), so
 this table is both surfaces.
 
@@ -992,6 +992,7 @@ this table is both surfaces.
 | `get_tool_catalog` | read | every tool an agent could be given, and whether it writes |
 | `list_models` | read | the enabled models; pass `id` verbatim wherever one is named |
 | `list_changes` | read | the `wf_change` feed — the only who-touched-this record |
+| `get_dashboard` | read | the health rollup — failures, spend, in-flight, feedback queue |
 | `list_eval_sets` / `get_eval_set` | read | Goals and their Samples |
 | `list_eval_runs` / `get_eval_run` | read | eval results, per-check, with the `drift` block |
 | `draft_sample_from_run` | read | a run → a proposed Sample, returned rather than written |
@@ -999,9 +1000,22 @@ this table is both surfaces.
 | `upsert_eval_sample` | **write** | write or replace one Sample |
 | `delete_eval_sample` | **write** | remove one Sample |
 | `run_eval` | **write** | launch a sweep. Spends real model calls; returns before it finishes |
+| `update_agent_draft` | **write** | replace an agent's unsaved draft. Never publishes |
+| `run_agent_preview` | **write** | one throwaway run of an agent. **Every tool simulated** |
 
-`run_eval` is a write not because it edits a definition but because it **spends
-money** and persists results — which is the line the flag is actually drawing.
+`run_eval` and `run_agent_preview` are writes not because they edit a definition
+but because they **spend money** — which is the line the flag is actually
+drawing.
+
+**Two things are withheld on purpose**, and both are about who holds the
+consequence. `publish_agent` is not in the catalog: a published version floats
+into every workflow referencing that agent, so it is the one action here that
+changes what customers get, and `update_agent_draft` deliberately stops one step
+short of it. And `run_agent_preview` does not accept `liveToolIds`, so a
+previewed run touches nothing outside the process — the UI playground does offer
+live tools, behind a per-tool toggle a person flips having read the warning, and
+a tool call has no equivalent of that moment. `run_tool_preview`, whose whole
+purpose is executing the real thing, is absent for the same reason.
 
 **Why HTTP and not D1 directly.** `wf-spec` and `wf-dump-run` reach D1 straight,
 and copying that here is the tempting mistake. Direct-DB bypasses the
@@ -1018,15 +1032,43 @@ reachable — `get_run_step` returns one step in full — so the truncation is a
 narrowing, not data loss.
 
 **The surface is a queue, not a checklist.** `WfDataClient` has ~70 methods and
-the server exposes twenty-one. A tool description is prompt and a bloated registry
-degrades selection, so a method earns a tool only when something that already
-shipped is unusable without it — which is how `list_models` (nothing told the
-model which ids `run_eval` would accept, and a composite id that loses its
-`provider:` prefix 404s only after the sweep is launched) and `list_changes`
+the server exposes twenty-four. A tool description is prompt and a bloated
+registry degrades selection, so a method earns a tool only when something that
+already shipped is unusable without it — which is how `list_models` (nothing told
+the model which ids `run_eval` would accept, and a composite id that loses its
+`provider:` prefix 404s only after the sweep is launched), `list_changes`
 (`get_eval_run` reports that the target agent was republished, and `wf_change` is
-the only record of who did it — 007 keeps no per-table `updated_by`) got in.
-`get_dashboard`, the playgrounds and the agent write path are on the queue and
-have not.
+the only record of who did it — 007 keeps no per-table `updated_by`) and
+`get_dashboard` (every other read answers a question you already knew to ask;
+nothing answered "what is wrong right now") got in. `list_tool_invocations`,
+`get_model_catalog` and `summarize_agent_changes` are on the queue and have not.
+
+**The edit loop.** `get_eval_run` → `update_agent_draft` → `run_agent_preview`
+→ `run_eval({ draftAgentId })` is the one path these tools were added to make
+possible: read a graded failure, change the agent, smoke-test it for one model
+call, then grade the change against every sample — all of it against the DRAFT,
+so nothing a customer runs moves until a person publishes.
+
+Two things about that loop are load-bearing and neither is obvious:
+
+- **`draftAgentId` checks whose draft it is.** The server applies a
+  `configOverride` to every cell without checking which agent the config belongs
+  to — the editor can't hit that, since it only ever runs its own agent's goals,
+  but one stray `setId` in a tool call would grade agent A's draft against agent
+  B's samples and file the result under B, passing plausibly and about nothing.
+- **A draft row is not evidence of an edit.** 007 keeps one alongside nearly
+  every agent and publishing leaves it matching the version it published, so
+  `draft !== null` is true almost always. Both tools therefore report
+  `unsavedFields` — the config keys that actually differ from the live version —
+  and say so loudly when it is empty. Without that, "ran the unsaved draft" is a
+  sentence that is simultaneously accurate and useless: the caller reads it as
+  evidence their change was measured when the run measured what is already live.
+
+`update_agent_draft` reports the same diff for the opposite reason. It REPLACES
+the draft, so a config re-sent with one field quietly dropped writes something
+wrong that nothing else would report — the write succeeds, and the loss surfaces
+later as an eval regression. Listing every field that now differs from published
+turns that into something visible one line after causing it.
 
 **Authoring evals is what `--write` is for.** `create_eval_set` /
 `upsert_eval_sample` / `delete_eval_sample` let a model turn what it just read in
@@ -1150,7 +1192,10 @@ headers. Three things follow, and they are the reason it is built this way:
   `--write`, so there is no write tool registered for it to be talked into
   calling. An in-app chat any staffer can open is a different blast radius from
   a flag a developer types; if that judgement changes it changes by passing
-  `true`, not by re-listing anything.
+  `true`, not by re-listing anything. That gate got heavier when the agent write
+  path landed: on the other side of it are now `update_agent_draft` and
+  `run_agent_preview`, so a chat window that anyone can open is one boolean away
+  from editing agents.
 
 The host supplies nothing tool-shaped. What it does supply is the model
 (`config.getModel`, resolved from the picker in the dock) and the gate.
