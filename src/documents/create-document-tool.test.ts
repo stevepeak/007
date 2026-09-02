@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
+import { interpolateUserText } from '../engine/prompt-variables'
+
 import {
   createDocumentTool,
   documentFilename,
@@ -189,5 +191,23 @@ describe('documentFilename', () => {
     expect(documentFilename('a/b\\c')).toBe('abc.docx')
     expect(documentFilename('   ')).toBe('document.docx')
     expect(documentFilename('…')).toBe('document.docx')
+  })
+})
+
+describe('the user-facing status label', () => {
+  test('renders as prose, never as a leaked token or a dumped document', () => {
+    // What the end user sees while the agent works, when the node's "inform
+    // user" toggle is on. `interpolateUserText` reads TOP-LEVEL arg keys only,
+    // so a nested `${document.title}` is not a token and would surface to the
+    // user verbatim — and a bare `${document}` would stringify the whole
+    // document into the feed.
+    const { entry } = harness()
+    const rendered = interpolateUserText(entry.statusLabel!, {
+      facts: FACTS,
+      document: DOCUMENT,
+    })
+    expect(rendered).toBe('Writing the document')
+    expect(rendered).not.toContain('${')
+    expect(rendered).not.toContain('{"')
   })
 })

@@ -147,6 +147,9 @@ export function createDocumentTool<TDeps>(
 ): ToolRegistryEntry<TDeps> {
   return {
     id: opts.id ?? 'create_document',
+    // Shipped by the SDK — see `ToolMeta.origin`. True even when the host
+    // renames it: `opts.name` re-labels the tool, it does not re-author it.
+    origin: 'sdk',
     name: opts.name ?? 'Create Document',
     description:
       opts.description ??
@@ -154,7 +157,12 @@ export function createDocumentTool<TDeps>(
     icon: opts.icon,
     iconName: opts.iconName,
     color: opts.color,
-    statusLabel: opts.statusLabel ?? 'Writing ${document.title}',
+    // Static, and it has to be: a `statusLabel` is interpolated from the tool
+    // call's TOP-LEVEL args only (`PROMPT_VARIABLE_RE` is `[\w-]+`, no dots), so
+    // `${document.title}` is not a token at all — it would reach the end user as
+    // that literal string. `${document}` would resolve, and JSON-stringify the
+    // whole document into the progress feed.
+    statusLabel: opts.statusLabel ?? 'Writing the document',
     requiresContext: opts.requiresContext,
     // A document that reaches storage is a side effect, so an eval that runs
     // under `simulate` must not write one.
