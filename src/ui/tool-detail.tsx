@@ -94,6 +94,19 @@ function ToolHeader({ tool }: { tool: ToolOption }) {
           <Badge className="border border-neutral-200 bg-neutral-50 text-neutral-500">
             {tool.kind === 'function' ? 'function' : 'AI tool'}
           </Badge>
+          {/* Where a change to this tool would have to be made — inside the
+              SDK, or in this deployment's own repo. */}
+          <span
+            title={
+              tool.origin === 'sdk'
+                ? 'Defined in the workflow SDK. This deployment supplies its credentials and storage, not its behaviour.'
+                : 'Written for this deployment.'
+            }
+          >
+            <Badge className="border border-neutral-200 bg-neutral-50 text-neutral-500">
+              {tool.origin === 'sdk' ? 'built-in' : 'custom'}
+            </Badge>
+          </span>
         </div>
         <p className="mt-1 text-sm text-neutral-500">
           {tool.description || 'No description yet.'}

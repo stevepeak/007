@@ -3,6 +3,7 @@ import {
   Bot,
   Boxes,
   History,
+  Plug,
   Target,
   ThumbsUp,
   Wrench,
@@ -25,6 +26,7 @@ type WfSectionKey =
   | 'models'
   | 'activity'
   | 'feedback'
+  | 'mcp'
 
 const SECTIONS: Record<
   WfSectionKey,
@@ -38,6 +40,7 @@ const SECTIONS: Record<
   models: { title: 'Models', icon: Boxes, iconClassName: 'text-amber-500', to: 'models' },
   activity: { title: 'Activity', icon: History, iconClassName: 'text-slate-500', to: 'activity' },
   feedback: { title: 'Feedback', icon: ThumbsUp, iconClassName: 'text-teal-500', to: 'feedback' },
+  mcp: { title: 'MCP', icon: Plug, iconClassName: 'text-fuchsia-500', to: 'mcp' },
 }
 
 /**

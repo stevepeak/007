@@ -77,6 +77,9 @@ export function createTavilyTool<TDeps>(
   const endpoint = opts.endpoint ?? 'https://api.tavily.com/search'
   return {
     id: opts.id ?? 'tavily_search',
+    // Shipped by the SDK — see `ToolMeta.origin`. Set here rather than by the
+    // host so it cannot be forgotten or claimed.
+    origin: 'sdk',
     name: 'Tavily Web Search',
     description:
       'Search the public web for current information, with ranked results and citations.',

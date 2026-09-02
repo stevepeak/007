@@ -66,6 +66,9 @@ export function buildModelHandlers<TDeps>(
     iconName: entry.iconName,
     color: entry.color,
     kind: entry.kind,
+    // Unmarked means the host's: only the SDK's own factories set `origin`, so
+    // the default cannot mislabel a deployment's tool as built-in.
+    origin: entry.origin ?? ('host' as const),
     sideEffect: entry.sideEffect,
     requiresContext: entry.requiresContext
       ? [...entry.requiresContext]

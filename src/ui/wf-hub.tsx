@@ -3,6 +3,7 @@ import {
   Bot,
   Boxes,
   History,
+  Plug,
   Target,
   ThumbsUp,
   Wrench,
@@ -128,6 +129,17 @@ export const DEFAULT_WF_SECTIONS: WfHubSection[] = [
     accent: {
       card: 'hover:border-teal-300 hover:shadow-lg hover:shadow-teal-100',
       icon: 'group-hover:bg-teal-100 group-hover:text-teal-600 group-hover:shadow-md group-hover:shadow-teal-200',
+    },
+  },
+  {
+    key: 'mcp',
+    title: 'MCP',
+    description:
+      'Point an AI client at this console over the Model Context Protocol — how to connect, and every tool it gets.',
+    icon: Plug,
+    accent: {
+      card: 'hover:border-fuchsia-300 hover:shadow-lg hover:shadow-fuchsia-100',
+      icon: 'group-hover:bg-fuchsia-100 group-hover:text-fuchsia-600 group-hover:shadow-md group-hover:shadow-fuchsia-200',
     },
   },
 ]

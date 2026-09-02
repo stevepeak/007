@@ -234,6 +234,8 @@ export function createExtractTextTool<TDeps>(
   const visionModel = opts.visionModel ?? DEFAULT_VISION_MODEL
   return {
     id: opts.id ?? 'extract_text',
+    // Shipped by the SDK — see `ToolMeta.origin`.
+    origin: 'sdk',
     name: 'Extract Text',
     description: 'Extract text from an uploaded document.',
     icon: opts.icon,

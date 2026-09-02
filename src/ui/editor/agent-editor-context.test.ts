@@ -24,6 +24,7 @@ function tool (id: string, requiresContext?: string[]): ToolOption {
   name: id,
   description: id,
   kind: 'ai-tool',
+  origin: 'host',
   requiresContext,
 }
 }

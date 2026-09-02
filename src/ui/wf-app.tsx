@@ -16,6 +16,7 @@ import { EvalsList } from './evals/evals-list'
 import { FeedbackDetail } from './feedback-detail'
 import { FeedbackList } from './feedback-list'
 import { useTools } from './hooks'
+import { McpConnect } from './mcp/mcp-connect'
 import { ModelsList } from './models-list'
 import { useWfNav, WfNavProvider } from './nav'
 import { RunPage } from './run-page'
@@ -57,6 +58,12 @@ export type WfAppProps = {
    * that wants the hub as a bare launcher.
    */
   dashboard?: boolean
+  /**
+   * How this host's checkout starts the `wf-mcp` server, shown on the MCP
+   * section. Defaults to the SDK's own bin (`bunx wf-mcp`); pass the bin's
+   * source path from a monorepo whose root does not depend on the package.
+   */
+  mcpCommand?: string
 }
 
 export function WfApp({
@@ -65,11 +72,16 @@ export function WfApp({
   navigate,
   sections = DEFAULT_WF_SECTIONS,
   dashboard = true,
+  mcpCommand,
 }: WfAppProps) {
   return (
     <WfNavProvider basePath={basePath} path={path} navigate={navigate}>
       <WfTabsProvider path={path} navigate={navigate}>
-        <WfTabbedShell sections={sections} dashboard={dashboard} />
+        <WfTabbedShell
+          sections={sections}
+          dashboard={dashboard}
+          mcpCommand={mcpCommand}
+        />
       </WfTabsProvider>
     </WfNavProvider>
   )
@@ -81,9 +93,11 @@ export function WfApp({
 function WfTabbedShell({
   sections,
   dashboard,
+  mcpCommand,
 }: {
   sections: WfHubSection[]
   dashboard: boolean
+  mcpCommand?: string
 }) {
   const { tabs, activeId, homePath } = useWfTabs()
 
@@ -109,6 +123,7 @@ function WfTabbedShell({
               path={homePath}
               sections={sections}
               dashboard={dashboard}
+              mcpCommand={mcpCommand}
             />
           </TabPane>
           {tabs.map((tab) => (
@@ -154,10 +169,12 @@ function HomeRoutes({
   path,
   sections,
   dashboard,
+  mcpCommand,
 }: {
   path: string
   sections: WfHubSection[]
   dashboard: boolean
+  mcpCommand?: string
 }) {
   const { navigate } = useWfNav()
   // Split path from any query string, then into segments.
@@ -237,6 +254,13 @@ function HomeRoutes({
       return (
         <WfShell crumbs={[sectionCrumb('feedback', { current: true })]} scroll>
           <FeedbackList />
+        </WfShell>
+      )
+    }
+    if (key === 'mcp') {
+      return (
+        <WfShell crumbs={[sectionCrumb('mcp', { current: true })]} scroll>
+          <McpConnect command={mcpCommand} />
         </WfShell>
       )
     }

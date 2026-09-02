@@ -1,6 +1,8 @@
 import type { JsonSchema } from '../engine/agent-output'
+import type { ToolOrigin } from '../engine/tool-registry'
 
 export type { JsonSchema } from '../engine/agent-output'
+export type { ToolOrigin } from '../engine/tool-registry'
 
 export type ToolOption = {
   id: string
@@ -15,6 +17,17 @@ export type ToolOption = {
   /** Optional appearance-palette color key that tints the tool's icon chip. */
   color?: string
   kind: 'ai-tool' | 'function'
+  /**
+   * Who authored the tool: `sdk` for one 007 ships (the host wires its deps but
+   * owns neither its behavior nor its schemas), `host` for one this deployment
+   * wrote. Resolved server-side from `ToolMeta.origin`, so it is always a
+   * concrete value here even though the registry field is optional.
+   *
+   * It is worth showing. The two are indistinguishable in the picker and are
+   * not interchangeable in practice: a built-in is fixed until the SDK is
+   * bumped, and a host tool is a file in this repo.
+   */
+  origin: ToolOrigin
   /**
    * Side-effect classification, when the tool declares one: `read` → it only
    * looks at data, `write` → calling it can change real data or bill an external

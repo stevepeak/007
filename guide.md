@@ -62,7 +62,7 @@ cycles (`ui → server → storage → engine`, `cloudflare → storage → engi
 | `@stevepeak/007/cloudflare/blob-spill`       | any server route        | `createR2BlobSpiller`, `spillTextIfLarge` (the write half of blob refs)                      |
 | `@stevepeak/007/cloudflare/extract-text`     | any server route¹       | `createExtractTextTool` (R2/Vision OCR tool)                                                 |
 | `@stevepeak/007/cloudflare/analytics-engine` | Workers (AE binding)    | `createAnalyticsEngineTelemetry` — the write half of run telemetry (§7b)                     |
-| `@stevepeak/007/server`                      | any server route        | `createWfSdkHandlers`, `createHttpWfDataClient`, `handleCopilotRequest`                      |
+| `@stevepeak/007/server`                      | any server route        | `createWfSdkHandlers`, `createHttpWfDataClient`, `handleCopilotRequest`, `describeToolCatalog` |
 | `@stevepeak/007/tools`                       | any (fetch + deps)      | built-in tools (`createTavilyTool`)                                                          |
 | `@stevepeak/007/documents`                   | any (needs `docx`³)     | `documentModelSchema` + `renderDocx` — model → `.docx` bytes                                 |
 | `@stevepeak/007/ui`                          | browser (React 19)      | `WfApp`, `WfSdkProvider`, `RunViewer`, hooks                                                 |
@@ -226,6 +226,15 @@ Key rules:
   _inside_ each `step.do`, where live bindings exist. Do the work there.
 - **`toolRegistry` is a `Map<string, ToolRegistryEntry<TDeps>>`.** Each entry's
   `build(deps)` is called per-run with your `TDeps`.
+- **Leave `origin` alone.** `ToolMeta.origin` says who wrote a tool — `sdk` for
+  one 007 ships, `host` for one you wrote — and the console groups the Tools
+  page by it, badges it on a tool's detail page, and returns it from
+  `get_tool_catalog`, so a reader can tell where a change to a tool would have
+  to be made. It defaults to `host` and the SDK's own factories
+  (`createTavilyTool`, `createExtractTextTool`, `createDocumentTool`) set `sdk`
+  at the source. Wiring a built-in's deps — or renaming it via `opts.name` — is
+  not authorship and does not change the answer, so there is nothing for a host
+  to set.
 - **`resolveBlobRef` is optional.** Supply it only if a tool returns a `WfBlobRef`
   pointer instead of a large value (the built-in `extract_text` tool does when its
   output exceeds ~128 KB); it reads the pointer back to text inside the consuming
@@ -997,7 +1006,7 @@ this table is both surfaces.
 | `get_run_step`                    | read      | one step unclipped, by the `cursor` `get_run` showed                |
 | `list_feedback`                   | read      | customer thumbs; the down rows name the run that earned them        |
 | `get_feedback_context`            | read      | one complaint **plus** the run that caused it, in one call          |
-| `get_tool_catalog`                | read      | every tool an agent could be given, and whether it writes           |
+| `get_tool_catalog`                | read      | every tool an agent could be given: what it does, whether it writes, and whether it is the SDK's or the host's |
 | `list_models`                     | read      | the enabled models; pass `id` verbatim wherever one is named        |
 | `list_changes`                    | read      | the `wf_change` feed — the only who-touched-this record             |
 | `get_dashboard`                   | read      | the health rollup — failures, spend, in-flight, feedback queue      |
@@ -1014,6 +1023,35 @@ this table is both surfaces.
 `run_eval` and `run_agent_preview` are writes not because they edit a definition
 but because they **spend money** — which is the line the flag is actually
 drawing.
+
+**Documenting the surface.** The table above is hand-written and will drift the
+day someone adds the twenty-fifth tool, so nothing else should retype it.
+`describeToolCatalog()` (from `@stevepeak/007/server`) returns the same
+definitions as plain JSON — name, title, the description the model is shown, the
+`readOnly` flag, and each argument's type, optionality and `.describe()` text.
+Documentation only: no handler, no client, nothing callable.
+
+The console already renders it. **MCP** is a section of `WfApp` (`<basePath>/mcp`,
+a card on the hub under Feedback): the registration snippets for Claude Code,
+`.mcp.json` and Claude Desktop, the env/flag table, and every tool with its real
+description. The origin comes from `window.location`, the tool list from the
+catalog, so the page describes the deployment it is being read on and cannot
+document a server that isn't running.
+
+Being inside the console rather than at a host route is deliberate: this is the
+_workflow_ MCP, and a host that later exposes an MCP for its own product needs
+that not to be the same page. The one thing the SDK cannot know is how your
+checkout starts the process, so pass `mcpCommand` to `WfApp` when `bunx wf-mcp`
+is wrong for it — a monorepo root does not usually depend on the package, and
+bun links bins per workspace:
+
+```tsx
+<WfApp basePath="/wf" path={path} navigate={navigate}
+       mcpCommand="bun ~/app/packages/007/src/cli/mcp.ts" />
+```
+
+`McpConnect` is also exported from `@stevepeak/007/ui` for a host that wants it
+somewhere else. It renders no credential — only the variable's name.
 
 **Two things are withheld on purpose**, and both are about who holds the
 consequence. `publish_agent` is not in the catalog: a published version floats

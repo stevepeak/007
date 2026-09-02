@@ -341,7 +341,7 @@ export function readTools(): WfMcpTool[] {
       name: 'get_tool_catalog',
       title: 'Get tool catalog',
       description:
-        "Every tool the platform can give an agent: its name, what it does, whether it reads or writes, and the ambient run-scope keys it needs. The catalog is fixed by the platform — an agent can be given any of these, and nothing else. Use it to say what a tool does, or what an agent is missing.",
+        "Every tool the platform can give an agent: its name, what it does, whether it reads or writes, the ambient run-scope keys it needs, and its `origin` — `sdk` for a tool the workflow SDK ships (fixed until the package is bumped) versus `host` for one this deployment wrote (a file in its own repo, changeable today). The catalog is fixed by the platform — an agent can be given any of these, and nothing else. Use it to say what a tool does, what an agent is missing, or where a tool would have to be changed.",
       inputSchema: {},
       readOnly: true,
       run: async (client) => {
@@ -358,6 +358,9 @@ export function readTools(): WfMcpTool[] {
           name: t.name,
           description: t.description,
           kind: t.kind,
+          // Cheap (one word) and it decides where a fix would even go, which
+          // the name and description never reveal.
+          origin: t.origin,
           sideEffect: t.sideEffect ?? null,
           requiresContext: t.requiresContext,
         }))

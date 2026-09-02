@@ -180,6 +180,7 @@ export {
   simulatedToolOutput,
   type SimulateContext,
   type ToolMeta,
+  type ToolOrigin,
   type ToolRegistry,
   type ToolRegistryEntry,
   type ToolSideEffect,

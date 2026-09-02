@@ -283,6 +283,7 @@ describe('get_tool_catalog', () => {
       name: 'Web search',
       description: 'searches',
       kind: 'ai-tool',
+      origin: 'sdk',
       sideEffect: 'read',
       requiresContext: ['clientOrgId'],
       // Inline brand markup for the UI's chips — kilobytes that say nothing
@@ -290,6 +291,14 @@ describe('get_tool_catalog', () => {
       icon: `<svg>${'d'.repeat(30_000)}</svg>`,
       inputSchema: { type: 'object', properties: { q: { type: 'string' } } },
       outputSchema: { type: 'object', properties: { r: { type: 'string' } } },
+    },
+    {
+      id: 'search_knowledge_base',
+      name: 'Knowledge base',
+      description: 'searches the client corpus',
+      kind: 'ai-tool',
+      origin: 'host',
+      sideEffect: 'read',
     },
   ]
   const client = stubClient({ listTools: async () => catalog as never })
@@ -303,6 +312,19 @@ describe('get_tool_catalog', () => {
     expect(rows[0]?.name).toBe('Web search')
     expect(rows[0]?.sideEffect).toBe('read')
     expect(rows[0]?.requiresContext).toEqual(['clientOrgId'])
+  })
+
+  // One word, and it is the only thing in the payload that says where a fix
+  // would have to be made: inside the SDK, or in this deployment's own repo.
+  test('keeps each tool’s origin', async () => {
+    const rows = (await toolNamed('get_tool_catalog').run(
+      client,
+      {},
+    )) as Record<string, unknown>[]
+    expect(rows.map((r) => [r.id, r.origin])).toEqual([
+      ['tavily_search', 'sdk'],
+      ['search_knowledge_base', 'host'],
+    ])
   })
 
   // The catalog lists every tool at once, and the two JSON Schemas are most of

@@ -79,6 +79,21 @@ export type ToolMeta = {
    */
   requiresContext?: readonly string[]
   /**
+   * Who authored this tool, for a UI that has to tell them apart.
+   *
+   * `sdk` is set by the SDK's own factories (`createTavilyTool`,
+   * `createExtractTextTool`, `createDocumentTool`) — the host wires their deps
+   * but does not own their behavior, their schemas, or their descriptions, and
+   * cannot fix a bug in one without a version bump. `host` is everything the
+   * deployment wrote itself.
+   *
+   * The default is `host`, and the direction of that default is the point: the
+   * SDK knows exactly which tools it ships and marks them at the source, so a
+   * host cannot mislabel its own tool as built-in by forgetting a field, and a
+   * tool added to the SDK tomorrow is labelled without anyone updating a list.
+   */
+  origin?: ToolOrigin
+  /**
    * Optional human-readable status shown to the end user each time this tool is
    * called — but only when the calling agent's node has "expose thinking" on. A
    * `${arg}` template interpolated from the tool call's input args (e.g.
@@ -90,6 +105,9 @@ export type ToolMeta = {
 
 /** How a tool behaves under the eval `simulate` signal. See {@link ToolMeta}. */
 export type ToolSideEffect = 'read' | 'write'
+
+/** Who authored a tool — the SDK, or the host that registered it. */
+export type ToolOrigin = 'sdk' | 'host'
 
 /** The `simulate` slice of the run context threaded to the tool dispatch. */
 export type SimulateContext = {
