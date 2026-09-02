@@ -1038,6 +1038,19 @@ description. The origin comes from `window.location`, the tool list from the
 catalog, so the page describes the deployment it is being read on and cannot
 document a server that isn't running.
 
+**Development / Production is a picker, not two setups.** `wf-mcp` speaks stdio:
+the client spawns it on the reader's own machine, so there is no deployed copy
+of it and "connect to production" is one environment variable. Readers reliably
+assume the opposite — a local path next to an origin looks like a local-only
+recipe — so the page says it outright and lets you flip the target.
+
+Only ONE target is ever knowable: the deployment serving the page. The other is
+labelled `placeholder` and filled with `localhost:3000` or an RFC 2606
+`example.com` host, and the page says which is which. Nothing here guesses a
+deployed hostname or a checkout path — a plausible-looking wrong URL is worse
+than an obvious stand-in, because it gets pasted. Open the page on the
+deployment you want and it fills its own URL in.
+
 Being inside the console rather than at a host route is deliberate: this is the
 _workflow_ MCP, and a host that later exposes an MCP for its own product needs
 that not to be the same page. The one thing the SDK cannot know is how your
@@ -1047,8 +1060,13 @@ bun links bins per workspace:
 
 ```tsx
 <WfApp basePath="/wf" path={path} navigate={navigate}
-       mcpCommand="bun ~/app/packages/007/src/cli/mcp.ts" />
+       mcpCommand="bun /path/to/checkout/packages/007/src/cli/mcp.ts" />
 ```
+
+Keep the checkout path a placeholder like that one. It is per-machine — nobody
+clones to the same directory — so a real path is right for exactly one reader
+and silently wrong for everyone else, surfacing only as a server that never
+starts.
 
 `McpConnect` is also exported from `@stevepeak/007/ui` for a host that wants it
 somewhere else. It renders no credential — only the variable's name.

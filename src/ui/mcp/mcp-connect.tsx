@@ -9,6 +9,13 @@ import { cn } from '../cn'
 import { Tabs } from '../filters'
 
 import { CodeBlock } from './code-block'
+import {
+  isLocalOrigin,
+  PLACEHOLDER,
+  resolveTarget,
+  toAbsolute,
+  type Target,
+} from './target'
 
 // "Connect a client" — how an MCP client points itself at THIS deployment, and
 // what it gets when it does.
@@ -23,6 +30,13 @@ import { CodeBlock } from './code-block'
 // Deliberately says nothing about the credential beyond its NAME. A page inside
 // the workflow console is not a place to put a shared secret, and the person
 // reading it either has the token already or has to be given it out of band.
+//
+// The one thing readers get wrong: `wf-mcp` is a stdio server, so the process
+// always runs on the READER'S machine, whichever deployment it is pointed at.
+// Nothing is deployed and there is no production instance of it. Only
+// `WF_BASE_URL` moves. The page used to imply otherwise by showing one origin
+// next to a local path, hence the Development / Production picker — it changes
+// the target, never the command.
 
 /** Default route the SDK's handlers are mounted at (`createWfSdkHandlers`). */
 const DEFAULT_API_PATH = '/api/wf'
@@ -58,8 +72,18 @@ export function McpConnect({
 
   // Rendered client-side only, so the origin is simply where the reader is.
   // Guarded anyway: the SDK is imported by hosts that server-render.
-  const baseUrl =
-    typeof window === 'undefined' ? 'http://localhost:3000' : window.location.origin
+  const origin =
+    typeof window === 'undefined'
+      ? PLACEHOLDER.development
+      : window.location.origin
+
+  // Open on whichever target this page is being served from — the one whose URL
+  // is real. Someone reading the console on production is almost always there
+  // to connect to production.
+  const [target, setTarget] = useState<Target>(() => {
+    return isLocalOrigin(origin) ? 'development' : 'production'
+  })
+  const { url: baseUrl, known } = resolveTarget(target, origin)
 
   return (
     <div className={cn('mx-auto max-w-4xl space-y-10 p-6', className)}>
@@ -84,8 +108,10 @@ export function McpConnect({
 
       <Section
         title="Register the server"
-        lead="Three ways to say the same thing. Supply the token out of band — it is a deployment secret, and this page deliberately does not know it."
+        lead="Pick which deployment to talk to, then copy the snippet for your client. Supply the token out of band — it is a deployment secret, and this page deliberately does not know it."
       >
+        <TargetPicker target={target} onChange={setTarget} origin={origin} />
+        <TargetNote target={target} known={known} />
         <ConnectSnippets
           baseUrl={baseUrl}
           command={command}
@@ -192,6 +218,111 @@ function Limit({
 
 // ── Connect ───────────────────────────────────────────────────────────────────
 
+const TARGETS: { value: Target; title: string; blurb: string }[] = [
+  {
+    value: 'development',
+    title: 'Development',
+    blurb: 'The app running on your own machine.',
+  },
+  {
+    value: 'production',
+    title: 'Production',
+    blurb: 'Your deployed app. Same client, different URL and token.',
+  },
+]
+
+/**
+ * Which deployment the snippets below point at.
+ *
+ * Two large buttons rather than a third row of tabs: this choice decides which
+ * database a client is about to read and which secret it needs, and it deserves
+ * more weight than the client picker underneath it. Each shows the URL it will
+ * produce, so the difference is visible before anything is copied.
+ */
+function TargetPicker({
+  target,
+  onChange,
+  origin,
+}: {
+  target: Target
+  onChange: (t: Target) => void
+  origin: string
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {TARGETS.map((t) => {
+        const on = t.value === target
+        const { url, known } = resolveTarget(t.value, origin)
+        return (
+          <button
+            key={t.value}
+            type="button"
+            aria-pressed={on}
+            onClick={() => onChange(t.value)}
+            className={cn(
+              'rounded-xl border p-4 text-left transition',
+              on
+                ? 'border-neutral-900 bg-white shadow-sm ring-1 ring-neutral-900'
+                : 'border-neutral-200 bg-white hover:border-neutral-300 hover:shadow-sm',
+            )}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-base font-medium text-neutral-900">
+                {t.title}
+              </span>
+              {known ? (
+                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                  you are here
+                </span>
+              ) : (
+                <span className="rounded-full border border-neutral-200 bg-neutral-50 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500">
+                  placeholder
+                </span>
+              )}
+            </div>
+            <p className="mt-0.5 text-xs text-neutral-500">{t.blurb}</p>
+            <code className="mt-2 block truncate font-mono text-[11px] text-neutral-600">
+              {url}
+            </code>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
+ * The sentence the picker exists to make sayable.
+ *
+ * `wf-mcp` speaks stdio: the client spawns it as a subprocess on the reader's
+ * own machine and there is no deployed copy of it anywhere. So "connecting to
+ * production" is one environment variable, not a different install — and the
+ * command below is identical under both buttons. Readers reliably assume the
+ * opposite.
+ */
+function TargetNote({ target, known }: { target: Target; known: boolean }) {
+  return (
+    <p className="text-xs text-neutral-500">
+      The server runs on <strong className="font-medium">your machine</strong>{' '}
+      either way — it is a stdio subprocess your client spawns, not something
+      deployed. Only <code className="font-mono">WF_BASE_URL</code> and the
+      token change.{' '}
+      {known ? (
+        <>
+          This is the deployment serving this page, so the URL below is exact.
+        </>
+      ) : (
+        <>
+          This page is not being served from {target}, so it cannot know that
+          URL — replace the placeholder with your own origin, and use{' '}
+          <strong className="font-medium">that deployment’s</strong> token, not
+          this one’s. Opening this page there fills it in for you.
+        </>
+      )}
+    </p>
+  )
+}
+
 /** Render a command string as an MCP config's `command` + `args` pair. */
 function serverBlock(
   command: string,
@@ -259,9 +390,7 @@ function ConnectSnippets({
     `  -- ${command}`,
   ].join('\n')
 
-  const desktopCommand = command
-    .replace(/^bun /, '/opt/homebrew/bin/bun ')
-    .replace('~/', '/Users/you/')
+  const desktopCommand = toAbsolute(command)
 
   return (
     <div className="space-y-3">
@@ -300,9 +429,11 @@ function ConnectSnippets({
           />
           <p className="text-xs text-neutral-500">
             The same block with nothing left to a shell: Claude Desktop inherits
-            no environment, so the runtime needs its full path (
-            <code className="font-mono">which bun</code>), the script path must
-            be absolute, and the token has to be a literal value.
+            no environment, so every{' '}
+            <code className="font-mono">/absolute/path/to/…</code> above has to
+            become a real one (<code className="font-mono">which bun</code>{' '}
+            finds the runtime), and the token has to be a literal value rather
+            than a variable reference.
           </p>
         </>
       )}
