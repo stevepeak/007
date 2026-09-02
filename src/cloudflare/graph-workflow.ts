@@ -50,6 +50,7 @@ import {
 } from './graph-workflow-telemetry'
 import type { RunRoom } from './run-room'
 import { createCountingStep, createRunCounters } from './step-counter'
+import { runContextFor } from './run-context'
 
 // The minimal binding contract a host Env must satisfy for the durable backend.
 // The host's full Env is a superset; this is what `GraphWorkflow` touches.
@@ -621,10 +622,10 @@ export function makeGraphWorkflow<
         await reportToParent(ctx, { ok: false, error: message })
         if (config.onRunFailed) {
           await notifyHost(step, 'on-failed', () =>
-            config.onRunFailed!(
-              { ...p.runContext, env },
-              { error: message, workflowRunId: p.workflowRunId },
-            ),
+            config.onRunFailed!(runContextFor(p, env), {
+              error: message,
+              workflowRunId: p.workflowRunId,
+            }),
           )
         }
         throw err

@@ -9,6 +9,7 @@ import {
 
 import { calleeEventType, toCalleeWire } from './callee-protocol'
 import { AI_STEP_OPTS } from './graph-workflow-dispatch-step-opts'
+import { runContextFor } from './run-context'
 
 // Assertions that genuinely span the engine↔cloudflare seam.
 //
@@ -48,5 +49,48 @@ describe('callee handshake', () => {
     const wire = toCalleeWire({ ok: true, output: undefined })
     expect(wire).toEqual({ ok: true, outputJson: 'null' })
     expect(JSON.parse((wire as { outputJson: string }).outputJson)).toBeNull()
+  })
+})
+
+describe('every engine stamps the run it is executing', () => {
+  // The failure this guards is silent. `RunContext.runId` was added so a host
+  // tool could name its own run — which is how a generated document is linked
+  // back to the chat turn that produced it — and only the DURABLE backend was
+  // given it. The inline runner (which is what our chat workflow actually runs
+  // on) handed every tool an undefined id: no error, no failed run, just a null
+  // column and a file that never appeared in the thread.
+  //
+  // Both backends now build the context through one constructor, so the test is
+  // of that constructor rather than of two call sites remembering.
+  test('the run id reaches the context the host receives', () => {
+    const ctx = runContextFor(
+      {
+        runContext: { triggerKind: 'chat_message', subjectId: 'chat-1' },
+        workflowRunId: 'run-1',
+      },
+      { DB: 'binding' },
+    )
+    expect(ctx.runId).toBe('run-1')
+    // …without disturbing anything the caller already put on it.
+    expect(ctx.subjectId).toBe('chat-1')
+    expect(ctx.triggerKind).toBe('chat_message')
+    expect(ctx.env).toEqual({ DB: 'binding' })
+  })
+
+  test('the manifest is added only once it is resolved', () => {
+    const source = {
+      runContext: { triggerKind: 'chat_message' },
+      workflowRunId: 'run-1',
+    }
+    // Before resolution: no `manifest` key at all, rather than an empty one —
+    // an agent node reads its frozen prompt from there, and an empty manifest
+    // is a different thing from an absent one.
+    expect('manifest' in runContextFor(source, {})).toBe(false)
+    const manifest = [
+      { kind: 'agent' as const, id: 'a1', version: 3, name: 'A', config: {} },
+    ]
+    expect(
+      runContextFor(source, {}, { manifest: manifest as never }).manifest,
+    ).toEqual(manifest as never)
   })
 })

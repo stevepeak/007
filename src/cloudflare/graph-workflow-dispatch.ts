@@ -59,6 +59,7 @@ import {
   recordTerminal,
 } from './graph-workflow-dispatch-logs'
 import type { RunCtx } from './graph-workflow-dispatch-run-ctx'
+import { runContextFor } from './run-context'
 import {
   rehydrateAtBoundary,
   spillAtBoundary,
@@ -191,7 +192,7 @@ async function runItemInline<TDeps, E extends GraphWorkflowEnv>(
     `iter:${node.id}:${index}`,
     stepOptsFor(node),
     async () => {
-      const rc = { ...p.runContext, env, runId: p.workflowRunId }
+      const rc = runContextFor(p, env)
       const toolDeps = await config.buildRunDeps(rc)
       const itemResult = await executeSubgraph(
         node.config.subgraph,
@@ -710,7 +711,7 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
         `run:${node.id}`,
         stepOptsFor(node),
         async () => {
-          const rc = { ...p.runContext, env, runId: p.workflowRunId }
+          const rc = runContextFor(p, env)
           const toolDeps = await config.buildRunDeps(rc)
           // Bound the node's model work from INSIDE the step, derived from the
           // very timeout Cloudflare would otherwise enforce from outside. The
@@ -1024,10 +1025,10 @@ export async function deliverOutput<TDeps, E extends GraphWorkflowEnv>(
       step,
       'on-complete',
       async () =>
-        await config.onRunComplete!(
-          { ...p.runContext, env, runId: p.workflowRunId },
-          { output: await answerFor(), outputNodeId },
-        ),
+        await config.onRunComplete!(runContextFor(p, env), {
+          output: await answerFor(),
+          outputNodeId,
+        }),
     )
   }
   return { output: rawOutput, outputNodeId }

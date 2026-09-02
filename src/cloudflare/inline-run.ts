@@ -33,6 +33,7 @@ import {
   type SpawnedChildRun,
 } from './child-run'
 import type { GraphWorkflowEnv, GraphWorkflowParams } from './graph-workflow'
+import { runContextFor } from './run-context'
 import {
   createTelemeteredRecorder,
   resolveTelemetrySink,
@@ -169,7 +170,10 @@ async function notifyHost(
   try {
     await fn()
   } catch (err) {
-    console.error(`[wf] lifecycle callback '${name}' failed:`, errorMessage(err))
+    console.error(
+      `[wf] lifecycle callback '${name}' failed:`,
+      errorMessage(err),
+    )
   }
 }
 
@@ -263,7 +267,7 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
   const { env, room, params: p } = deps
   const db = createWfDb(env.WF_DB)
   const sink = createInlineSink(db, room, p.workflowRunId)
-  let runContext: RunContext = { ...p.runContext, env }
+  let runContext: RunContext = runContextFor(p, env)
 
   // Telemetry, on equal footing with the durable backend — this is a real
   // production path (a graph's trigger picks its engine), so leaving it out
@@ -384,7 +388,7 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
     // is itself the marker that a run executed inline.
     await markRunRunning(db, { runId: p.workflowRunId })
 
-    runContext = { ...p.runContext, manifest, env }
+    runContext = runContextFor(p, env, { manifest })
 
     const result = await executeWorkflow({
       graph: version.graph,
