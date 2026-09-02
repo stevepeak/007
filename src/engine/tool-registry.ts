@@ -42,6 +42,14 @@ export type ToolMeta = {
    * (converted to JSON Schema) so authors see what a tool *requires* and can map
    * upstream data into each argument. Use `.describe()` on fields to document
    * them for end users.
+   *
+   * AUTHORING CONVENTION — write `.nullish()`, never `.optional()`, for a field
+   * the MODEL fills. Providers constrain structured output with a strict JSON
+   * Schema dialect in which every property is required, so an optional field is
+   * one the model answers with `null`. `.nullish()` is the shape that matches.
+   * Bounds (`.min()`, `.regex()`, …) are fine to write but never reach the
+   * model — they are stripped on the way out and enforced by zod on the way
+   * back. See `./strict-schema`.
    */
   inputSchema?: z.ZodType
   /**

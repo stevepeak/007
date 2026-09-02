@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { errorFeedLine } from '../engine/error-detail'
 import type { AgentNodeMeta } from '../engine/nodes/agent'
 import type { ToolNodeMeta } from '../engine/nodes/tool'
+import { strictSchema } from '../engine/strict-schema'
 
 import {
   JUDGE_CONFIDENCE_MAX,
@@ -351,7 +352,11 @@ async function gradeJudge(
   let object: z.infer<typeof judgeSchema>
   for (let attempt = 1; ; attempt++) {
     try {
-      ;({ object } = await generateObject({ model, schema: judgeSchema, prompt }))
+      ;({ object } = await generateObject({
+        model,
+        schema: strictSchema(judgeSchema),
+        prompt,
+      }))
       break
     } catch (err) {
       if (attempt >= JUDGE_MAX_ATTEMPTS || !NoObjectGeneratedError.isInstance(err)) {

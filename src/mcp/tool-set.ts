@@ -1,6 +1,7 @@
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
 
+import { strictifyToolSet } from '../engine/strict-schema'
 import type { WfDataClient } from '../server/protocol'
 
 import type { WfMcpTool } from './tools'
@@ -46,5 +47,10 @@ export function createWfToolSet(
       },
     })
   }
-  return set
+  // Same treatment the engine gives an agent's tool set: what the model is shown
+  // is the strict JSON Schema dialect, what validates the call is still the zod
+  // schema above. Applied here rather than at each definition because this is
+  // the adapter that hands these tools to a model — the stdio MCP server speaks
+  // its own protocol and is not affected.
+  return strictifyToolSet(set)
 }

@@ -5,9 +5,8 @@ import {
   tool,
   type LanguageModel,
 } from 'ai'
-import { z } from 'zod'
 
-import type { JsonSchema } from '../engine/agent-output'
+import { toStrictJsonSchema } from '../engine/strict-schema'
 import type { ToolRegistry, ToolRegistryEntry } from '../engine/tool-registry'
 
 // Playground tool dispatch. Each tool an agent can call is either *simulated*
@@ -57,13 +56,11 @@ async function simulateToolResult(
 
   try {
     if (entry.outputSchema) {
-      // `unrepresentable: 'any'` so a transform/pipe anywhere in the output
-      // schema degrades to `{}` instead of throwing (which would drop us to the
-      // `stub` fallback for every call).
-      const schema = z.toJSONSchema(entry.outputSchema, {
-        io: 'output',
-        unrepresentable: 'any',
-      }) as JsonSchema
+      // Strict dialect, for the same reason a real tool's input schema gets it:
+      // a provider that silently drops an unsupported keyword fabricates a
+      // result in the wrong shape, and the agent under test then fails for a
+      // reason that has nothing to do with the agent.
+      const schema = toStrictJsonSchema(entry.outputSchema, 'output')
       const { object } = await generateObject({
         model,
         schema: jsonSchema(schema),

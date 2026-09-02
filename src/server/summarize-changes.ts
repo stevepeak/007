@@ -3,6 +3,7 @@ import { z } from 'zod'
 
 import type { RunContext } from '../engine/config'
 import type { AgentConfig, WorkflowGraph } from '../engine/graph'
+import { strictSchema } from '../engine/strict-schema'
 
 import type { WfChangeSummary } from './protocol'
 
@@ -133,7 +134,7 @@ async function summarizePayloadChanges(
 
   const { object } = await generateObject({
     model,
-    schema: summarySchema,
+    schema: strictSchema(summarySchema),
     // See `repairSummaryText`: models routinely return this particular task's
     // answer as a markdown-fenced commit message rather than JSON.
     repairText: ({ text }) => Promise.resolve(repairSummaryText(text)),

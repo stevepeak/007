@@ -20,24 +20,24 @@ Everything here is derived from the live wiring in this repo (`@app/wf-host`,
 The SDK is deliberately generic. It ships **behavior**; the host supplies
 **identity, provider, tools, storage handle, and design system**.
 
-| Concern                                                          | Owned by the SDK  | Injected by the host                      |
-| ---------------------------------------------------------------- | ----------------- | ----------------------------------------- |
-| Graph model + validation (zod)                                   | ✅                |                                           |
-| Execution engine (scheduler, nodes)                              | ✅                |                                           |
-| `wf_*` D1 schema + migrations + data access                      | ✅                | the D1 binding + when to migrate          |
-| Reusable Agents (float-to-latest entities + versions)            | ✅                |                                           |
-| Cloudflare runtime (`GraphWorkflow`, `RunRoom`, `startGraphRun`) | ✅                | wrangler bindings                         |
-| RPC dispatch (`createWfSdkHandlers`)                             | ✅                | route auth + `{ userId? }`, the `WfDb`    |
-| Editor / run-viewer / hub UI (`WfApp`)                           | ✅                | router adapter, design-system primitives  |
-| MCP tool catalog + `wf-mcp` bin (`mcp/catalog.ts`)               | ✅                | a headless credential (a bearer secret)   |
-| System Copilot (`handleCopilotRequest`)                          | ✅                | the model + its own auth gate             |
-| Model provider (`getModel` + `listModels` + `listProviders`)     |                   | ✅                                        |
-| Provider spend budgets (`fetchProviderBudget`, optional)         | the cards + meter | ✅ the balance call (omit → no cards)     |
-| Tools (`toolRegistry`; `/tools` + `/cloudflare` ship a few)      |                   | ✅                                        |
-| Event catalog + input schemas (`triggers`)                       |                   | ✅ (manual/periodic built in)             |
-| Per-run deps (`buildRunDeps`)                                    |                   | ✅                                        |
-| Blob-ref resolver (`resolveBlobRef`, optional)                   | marker shape only | ✅ if a tool spills large values          |
-| Run identity (`subjectId` / `correlationId` / `promptVariables`) |                   | ✅ (opaque text)                          |
+| Concern                                                          | Owned by the SDK  | Injected by the host                            |
+| ---------------------------------------------------------------- | ----------------- | ----------------------------------------------- |
+| Graph model + validation (zod)                                   | ✅                |                                                 |
+| Execution engine (scheduler, nodes)                              | ✅                |                                                 |
+| `wf_*` D1 schema + migrations + data access                      | ✅                | the D1 binding + when to migrate                |
+| Reusable Agents (float-to-latest entities + versions)            | ✅                |                                                 |
+| Cloudflare runtime (`GraphWorkflow`, `RunRoom`, `startGraphRun`) | ✅                | wrangler bindings                               |
+| RPC dispatch (`createWfSdkHandlers`)                             | ✅                | route auth + `{ userId? }`, the `WfDb`          |
+| Editor / run-viewer / hub UI (`WfApp`)                           | ✅                | router adapter, design-system primitives        |
+| MCP tool catalog + `wf-mcp` bin (`mcp/catalog.ts`)               | ✅                | a headless credential (a bearer secret)         |
+| System Copilot (`handleCopilotRequest`)                          | ✅                | the model + its own auth gate                   |
+| Model provider (`getModel` + `listModels` + `listProviders`)     |                   | ✅                                              |
+| Provider spend budgets (`fetchProviderBudget`, optional)         | the cards + meter | ✅ the balance call (omit → no cards)           |
+| Tools (`toolRegistry`; `/tools` + `/cloudflare` ship a few)      |                   | ✅                                              |
+| Event catalog + input schemas (`triggers`)                       |                   | ✅ (manual/periodic built in)                   |
+| Per-run deps (`buildRunDeps`)                                    |                   | ✅                                              |
+| Blob-ref resolver (`resolveBlobRef`, optional)                   | marker shape only | ✅ if a tool spills large values                |
+| Run identity (`subjectId` / `correlationId` / `promptVariables`) |                   | ✅ (opaque text)                                |
 | Tenant isolation                                                 |                   | ✅ (one D1 database per tenant — no SDK column) |
 
 The one object that carries most of the injection is `WfSdkConfig<TDeps>`
@@ -49,30 +49,34 @@ inspects it, it only threads it into your tools.
 Import only the layer you need; the dependency direction is one-way with no
 cycles (`ui → server → storage → engine`, `cloudflare → storage → engine`).
 
-| Import                                | Runtime                 | Use it in                                       |
-| ------------------------------------- | ----------------------- | ----------------------------------------------- |
-| `@stevepeak/007`                         | any                     | barrel: engine + storage + eval                 |
-| `@stevepeak/007/engine`                  | any (only `ai` + `zod`) | custom backends, graph types                    |
-| `@stevepeak/007/analytics`               | any server route        | `AnalyticsQuery` + dashboard aggregates over the telemetry dataset |
-| `@stevepeak/007/storage`                 | Workers (D1)            | `createWfDb`, data access, schema               |
-| `@stevepeak/007/storage/schema`          | build-time              | drizzle-kit / migrations                        |
-| `@stevepeak/007/cloudflare`              | any server route²       | `startGraphRun`, `createHttpGraphRunClient`, `createR2BlobResolver`, `createExtractTextTool` |
-| `@stevepeak/007/cloudflare/runtime`      | Workers **only**        | `makeGraphWorkflow`, `RunRoom` (durable classes — import `cloudflare:workers`) |
-| `@stevepeak/007/cloudflare/blob-resolver`| any server route        | `createR2BlobResolver` (engine-only leaf)       |
-| `@stevepeak/007/cloudflare/blob-spill`   | any server route        | `createR2BlobSpiller`, `spillTextIfLarge` (the write half of blob refs) |
-| `@stevepeak/007/cloudflare/extract-text` | any server route¹       | `createExtractTextTool` (R2/Vision OCR tool)    |
-| `@stevepeak/007/cloudflare/analytics-engine` | Workers (AE binding) | `createAnalyticsEngineTelemetry` — the write half of run telemetry (§7b) |
-| `@stevepeak/007/server`                  | any server route        | `createWfSdkHandlers`, `createHttpWfDataClient`, `handleCopilotRequest` |
-| `@stevepeak/007/tools`                   | any (fetch + deps)      | built-in tools (`createTavilyTool`)             |
-| `@stevepeak/007/ui`                      | browser (React 19)      | `WfApp`, `WfSdkProvider`, `RunViewer`, hooks    |
-| `@stevepeak/007/ui/run-progress`         | browser (React 19)      | `WorkflowRunProgress` + the progress source, without pulling the editor |
-| `@stevepeak/007/ui/styles.css`           | host CSS (Tailwind v4)  | `@import` once — emits the SDK's utilities + xyflow CSS (§6) |
-| `@stevepeak/007/eval`                    | test, or any server/CLI | `runWorkflowUnderConditions`; `runEval` — the Goal orchestrator, framework-free |
+| Import                                       | Runtime                 | Use it in                                                                                    |
+| -------------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------- |
+| `@stevepeak/007`                             | any                     | barrel: engine + storage + eval                                                              |
+| `@stevepeak/007/engine`                      | any (only `ai` + `zod`) | custom backends, graph types                                                                 |
+| `@stevepeak/007/analytics`                   | any server route        | `AnalyticsQuery` + dashboard aggregates over the telemetry dataset                           |
+| `@stevepeak/007/storage`                     | Workers (D1)            | `createWfDb`, data access, schema                                                            |
+| `@stevepeak/007/storage/schema`              | build-time              | drizzle-kit / migrations                                                                     |
+| `@stevepeak/007/cloudflare`                  | any server route²       | `startGraphRun`, `createHttpGraphRunClient`, `createR2BlobResolver`, `createExtractTextTool` |
+| `@stevepeak/007/cloudflare/runtime`          | Workers **only**        | `makeGraphWorkflow`, `RunRoom` (durable classes — import `cloudflare:workers`)               |
+| `@stevepeak/007/cloudflare/blob-resolver`    | any server route        | `createR2BlobResolver` (engine-only leaf)                                                    |
+| `@stevepeak/007/cloudflare/blob-spill`       | any server route        | `createR2BlobSpiller`, `spillTextIfLarge` (the write half of blob refs)                      |
+| `@stevepeak/007/cloudflare/extract-text`     | any server route¹       | `createExtractTextTool` (R2/Vision OCR tool)                                                 |
+| `@stevepeak/007/cloudflare/analytics-engine` | Workers (AE binding)    | `createAnalyticsEngineTelemetry` — the write half of run telemetry (§7b)                     |
+| `@stevepeak/007/server`                      | any server route        | `createWfSdkHandlers`, `createHttpWfDataClient`, `handleCopilotRequest`                      |
+| `@stevepeak/007/tools`                       | any (fetch + deps)      | built-in tools (`createTavilyTool`)                                                          |
+| `@stevepeak/007/documents`                   | any (needs `docx`³)     | `documentModelSchema` + `renderDocx` — model → `.docx` bytes                                 |
+| `@stevepeak/007/ui`                          | browser (React 19)      | `WfApp`, `WfSdkProvider`, `RunViewer`, hooks                                                 |
+| `@stevepeak/007/ui/run-progress`             | browser (React 19)      | `WorkflowRunProgress` + the progress source, without pulling the editor                      |
+| `@stevepeak/007/ui/styles.css`               | host CSS (Tailwind v4)  | `@import` once — emits the SDK's utilities + xyflow CSS (§6)                                 |
+| `@stevepeak/007/eval`                        | test, or any server/CLI | `runWorkflowUnderConditions`; `runEval` — the Goal orchestrator, framework-free              |
 
 ¹ Import-safe anywhere (no `cloudflare:workers` at module scope), but its OCR
 path only _runs_ with R2 + Workers AI bindings present.
 ² The barrel value-exports only import-safe modules; the two durable classes that
 `import 'cloudflare:workers'` are isolated in `/cloudflare/runtime`.
+³ `docx` is an **optional** peer dependency (~106 KB gzip, no Node builtins).
+Install it in the host only if you import this subpath; nothing else in the SDK
+reaches it, so a host that never generates documents never pays for it.
 
 > ⚠️ **Keep `cloudflare:workers` out of `wfConfig`'s module graph — import the
 > durable classes only from `/cloudflare/runtime`, only in your Worker.**
@@ -80,14 +84,14 @@ path only _runs_ with R2 + Workers AI bindings present.
 > host's data-API route (§5), which runs in the host's Node/edge server (Next.js,
 > etc.), where `cloudflare:workers` does not exist. The two durable classes —
 > `makeGraphWorkflow` and `RunRoom` — `import { WorkflowEntrypoint, DurableObject }
-> from 'cloudflare:workers'` at module scope, so they are isolated in the
+from 'cloudflare:workers'` at module scope, so they are isolated in the
 > **Worker-only** `@stevepeak/007/cloudflare/runtime` subpath. Import them **only
 > from your Worker entry** (§4). The `@stevepeak/007/cloudflare` barrel and the
 > `/cloudflare/*` leaf subpaths are import-safe from any runtime.
 >
 > Historically the barrel re-exported the durable classes, so pulling `wfConfig`
 > into a Node route crashed at module-eval with `Cannot find module
-> 'cloudflare:workers'` (an import trace ending at your config; every `/api/wf`
+'cloudflare:workers'` (an import trace ending at your config; every `/api/wf`
 > call 500s). Splitting `/runtime` out removed the trap. Belt-and-suspenders: add
 > a `no-restricted-imports` eslint rule in the web app forbidding
 > `@stevepeak/007/cloudflare/runtime` and `cloudflare:workers`, so the mistake
@@ -177,10 +181,14 @@ export const wfConfig: WfSdkConfig<HostDeps> = {
   // that only exist INSIDE a step.do boundary (never at module load).
   getModel: (modelId, ctx) =>
     getModel((ctx.env as HostEnv).MODEL_API_KEY, modelId),
-  listModels: () => [{ id: 'model-a', label: 'Model A', providerId: 'my-provider' }],
+  listModels: () => [
+    { id: 'model-a', label: 'Model A', providerId: 'my-provider' },
+  ],
   // The providers the editor groups models by; every listModels entry references
   // one by `providerId`. Return a single entry for a one-provider host.
-  listProviders: () => [{ id: 'my-provider', label: 'My Provider', kind: 'openai-compatible' }],
+  listProviders: () => [
+    { id: 'my-provider', label: 'My Provider', kind: 'openai-compatible' },
+  ],
   toolRegistry,
   // Your event catalog. Every key is an "on an event" trigger option; the
   // built-in `manual` / `periodic` modes are always available on top of these.
@@ -396,7 +404,7 @@ generated SQL lives in `migrations/` (append-only; regenerate with
 `bun run db:generate`).
 
 > **Give the SDK its own D1.** Because it is self-contained, the `wf_*` tables
-> *can* sit in a host's database — but don't. Two reasons, in order of how much
+> _can_ sit in a host's database — but don't. Two reasons, in order of how much
 > they will hurt:
 >
 > 1. **Migration ledgers collide.** D1 tracks applied migrations in a single
@@ -494,7 +502,7 @@ wrangler d1 migrations apply your-db --local \
 
 > ⚠️ **Shared local D1 across processes.** In dev the data route (web, running
 > under `next dev`/OpenNext miniflare) and the workflows Worker (`wrangler dev
-> --persist-to X`) are **separate processes** that must open the **same** local
+--persist-to X`) are **separate processes** that must open the **same** local
 > SQLite, or the editor writes rows the runtime can't see (and vice versa).
 > Miniflare keys local D1 by `database_id`, so both bindings need the **same
 > id**, and the web side must be pointed at the Worker's persist dir — with
@@ -520,7 +528,7 @@ then commit the new SQL here and let the host apply it.
 > config → `law-wf`, and wraps both in a single `bun run db:migrate`.
 >
 > **Migrating from a shared database?** The order that matters is: create the new
-> D1 and apply the migrations to it *first* (inert — nothing reads it yet), then
+> D1 and apply the migrations to it _first_ (inert — nothing reads it yet), then
 > deploy the `WF_DB` binding, and only then ship code that reads `env.WF_DB`. A
 > binding with no reader is harmless; a reader with no binding is
 > `createWfDb(undefined)` and a live outage. Copy the data with a data-only
@@ -542,11 +550,11 @@ script — fill the `wrangler.jsonc` placeholders with real IDs first, or pass
 > repo root** — so both the shipped `.githooks/post-merge` and a manual
 > `cd packages/007 && bun run db:migrate:local` pick up the same target:
 >
-> | var            | default                 | meaning                                            |
-> | -------------- | ----------------------- | -------------------------------------------------- |
-> | `WF_D1_NAME`   | `WF_DB`                 | D1 name **or binding** to migrate                  |
+> | var            | default                 | meaning                                                   |
+> | -------------- | ----------------------- | --------------------------------------------------------- |
+> | `WF_D1_NAME`   | `WF_DB`                 | D1 name **or binding** to migrate                         |
 > | `WF_D1_CONFIG` | `./wrangler.jsonc`      | wrangler config providing that binding + `migrations_dir` |
-> | `WF_D1_STATE`  | `../../.wrangler/state` | local persist dir (repo-root state)                |
+> | `WF_D1_STATE`  | `../../.wrangler/state` | local persist dir (repo-root state)                       |
 >
 > Paths are **relative to `packages/007`** (the CWD the scripts run in). Point
 > `WF_D1_CONFIG` at a host config whose `migrations_dir` resolves back to this
@@ -804,12 +812,12 @@ isn't wired, `createWfSdkHandlers` answers with `"… is not configured for this
 host."` (the SDK's `requireHook` guard). They split into two kinds by _what
 runtime binding they need_:
 
-| Hook                              | What it does                                  | Where it must run                                                            |
-| --------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------- |
-| `retryRun`                        | Run viewer's **Retry** (restart / resume)     | **Workflows Worker** — needs `GRAPH_WORKFLOW` / `RUN_ROOM` to start a run    |
-| `startEvalRun`                    | **Evals** — start one graded sample run       | **Workflows Worker** — same durable bindings                                |
-| `runAgentPreview`                 | Agent editor **playground** (tools simulated) | **In-process** — needs only the model seam (`config.getModel`)              |
-| `runToolPreview` + `toolContextFields` | Tool detail **playground** (real execution)   | **In-process** — needs the tools' _real per-run deps_ (`buildRunDeps`)      |
+| Hook                                   | What it does                                  | Where it must run                                                         |
+| -------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------- |
+| `retryRun`                             | Run viewer's **Retry** (restart / resume)     | **Workflows Worker** — needs `GRAPH_WORKFLOW` / `RUN_ROOM` to start a run |
+| `startEvalRun`                         | **Evals** — start one graded sample run       | **Workflows Worker** — same durable bindings                              |
+| `runAgentPreview`                      | Agent editor **playground** (tools simulated) | **In-process** — needs only the model seam (`config.getModel`)            |
+| `runToolPreview` + `toolContextFields` | Tool detail **playground** (real execution)   | **In-process** — needs the tools' _real per-run deps_ (`buildRunDeps`)    |
 
 > ⚠️ **The default `createWfSdkHandlers` config wires none of these.** Omitting
 > them isn't an error at mount time — the data plane (editor, lists, run viewer)
@@ -959,19 +967,19 @@ claude mcp add wf \
       "args": ["wf-mcp"],
       "env": {
         "WF_BASE_URL": "http://localhost:3000",
-        "WF_MCP_TOKEN": "…"
-      }
-    }
-  }
+        "WF_MCP_TOKEN": "…",
+      },
+    },
+  },
 }
 ```
 
-| env | meaning |
-| --- | --- |
-| `WF_BASE_URL` | origin of the host app, or the full data-API URL |
-| `WF_API_PATH` | route the handlers are mounted at (default `/api/wf`) |
-| `WF_MCP_TOKEN` | bearer credential; matches the host Worker's secret |
-| `WF_MCP_TIMEOUT_MS` | per-call budget (default `120000`) |
+| env                 | meaning                                               |
+| ------------------- | ----------------------------------------------------- |
+| `WF_BASE_URL`       | origin of the host app, or the full data-API URL      |
+| `WF_API_PATH`       | route the handlers are mounted at (default `/api/wf`) |
+| `WF_MCP_TOKEN`      | bearer credential; matches the host Worker's secret   |
+| `WF_MCP_TIMEOUT_MS` | per-call budget (default `120000`)                    |
 
 Flags of the same name (`--base-url=`, `--api-path=`, `--token=`, `--timeout=`)
 win over the env, and `--write` registers the mutating tools.
@@ -980,28 +988,28 @@ win over the env, and `--write` registers the mutating tools.
 exist only with `--write`. The same catalog backs the System Copilot (§5c), so
 this table is both surfaces.
 
-| Tool | Gate | What it does |
-| --- | --- | --- |
-| `list_agents` / `get_agent` | read | the reusable LLM workers, published version + unsaved draft |
-| `list_workflows` / `get_workflow` | read | the graphs, published + draft |
-| `list_runs` | read | run history; filter by `status` to hunt failures |
-| `get_run` | read | one run's trace — steps, errors, reasoning, tool I/O, cost. Clipped |
-| `get_run_step` | read | one step unclipped, by the `cursor` `get_run` showed |
-| `list_feedback` | read | customer thumbs; the down rows name the run that earned them |
-| `get_feedback_context` | read | one complaint **plus** the run that caused it, in one call |
-| `get_tool_catalog` | read | every tool an agent could be given, and whether it writes |
-| `list_models` | read | the enabled models; pass `id` verbatim wherever one is named |
-| `list_changes` | read | the `wf_change` feed — the only who-touched-this record |
-| `get_dashboard` | read | the health rollup — failures, spend, in-flight, feedback queue |
-| `list_eval_sets` / `get_eval_set` | read | Goals and their Samples |
-| `list_eval_runs` / `get_eval_run` | read | eval results, per-check, with the `drift` block |
-| `draft_sample_from_run` | read | a run → a proposed Sample, returned rather than written |
-| `create_eval_set` | **write** | a new Goal, target preflighted |
-| `upsert_eval_sample` | **write** | write or replace one Sample |
-| `delete_eval_sample` | **write** | remove one Sample |
-| `run_eval` | **write** | launch a sweep. Spends real model calls; returns before it finishes |
-| `update_agent_draft` | **write** | replace an agent's unsaved draft. Never publishes |
-| `run_agent_preview` | **write** | one throwaway run of an agent. **Every tool simulated** |
+| Tool                              | Gate      | What it does                                                        |
+| --------------------------------- | --------- | ------------------------------------------------------------------- |
+| `list_agents` / `get_agent`       | read      | the reusable LLM workers, published version + unsaved draft         |
+| `list_workflows` / `get_workflow` | read      | the graphs, published + draft                                       |
+| `list_runs`                       | read      | run history; filter by `status` to hunt failures                    |
+| `get_run`                         | read      | one run's trace — steps, errors, reasoning, tool I/O, cost. Clipped |
+| `get_run_step`                    | read      | one step unclipped, by the `cursor` `get_run` showed                |
+| `list_feedback`                   | read      | customer thumbs; the down rows name the run that earned them        |
+| `get_feedback_context`            | read      | one complaint **plus** the run that caused it, in one call          |
+| `get_tool_catalog`                | read      | every tool an agent could be given, and whether it writes           |
+| `list_models`                     | read      | the enabled models; pass `id` verbatim wherever one is named        |
+| `list_changes`                    | read      | the `wf_change` feed — the only who-touched-this record             |
+| `get_dashboard`                   | read      | the health rollup — failures, spend, in-flight, feedback queue      |
+| `list_eval_sets` / `get_eval_set` | read      | Goals and their Samples                                             |
+| `list_eval_runs` / `get_eval_run` | read      | eval results, per-check, with the `drift` block                     |
+| `draft_sample_from_run`           | read      | a run → a proposed Sample, returned rather than written             |
+| `create_eval_set`                 | **write** | a new Goal, target preflighted                                      |
+| `upsert_eval_sample`              | **write** | write or replace one Sample                                         |
+| `delete_eval_sample`              | **write** | remove one Sample                                                   |
+| `run_eval`                        | **write** | launch a sweep. Spends real model calls; returns before it finishes |
+| `update_agent_draft`              | **write** | replace an agent's unsaved draft. Never publishes                   |
+| `run_agent_preview`               | **write** | one throwaway run of an agent. **Every tool simulated**             |
 
 `run_eval` and `run_agent_preview` are writes not because they edit a definition
 but because they **spend money** — which is the line the flag is actually
@@ -1141,7 +1149,6 @@ itself. On success it answers with the testing **layer** the Sample landed in
 (io / trajectory / synthesis / integration) and warns about combinations that
 store fine but grade nothing — a `tool_called` check under `frozen` tools grades
 the absence of a call the agent was never able to make.
-
 
 ### 5c. In-app access: the System Copilot
 
@@ -1320,6 +1327,7 @@ polls `getRun`.
   when the SDK source isn't scanned: the editor/list render with correct
   structure but **no styling** (utilities like `flex`, `text-neutral-500` were
   never emitted).
+
 - **Tailwind v3:** the CSS `@source` entry above is v4-only. Instead add
   `./node_modules/@stevepeak/007/src/**/*.{ts,tsx}` (or the workspace path) to
   your `content` array, and `@import '@xyflow/react/dist/style.css';` yourself
@@ -1371,8 +1379,7 @@ Cloudflare Workflows **steps** your runs actually burn.
 A graph's step count is not proportional to its size. Every node costs three
 (`enter:` + `run:` + `record:`), an **iteration spends one step per ITEM**
 instead of one per node, a durable sub-workflow adds `spawn:` + `await:`, and the
-run envelope adds ~8. A 6-node graph iterating a 50-item list is ~70 steps, not
-18. That is the Workflows billing line, and nothing in SQL counts it — the SDK
+run envelope adds ~8. A 6-node graph iterating a 50-item list is ~70 steps, not 18. That is the Workflows billing line, and nothing in SQL counts it — the SDK
 counts real `step.*` calls with a proxy over `WorkflowStep`, so the number cannot
 drift as steps are added.
 
@@ -1381,12 +1388,12 @@ drift as steps are added.
 The write side and the read side are deliberately separate, and neither Worker
 holds the other's credential.
 
-| | Writes points | Reads points |
-| --- | --- | --- |
-| Where | the Worker that EXECUTES runs | the Worker that serves the data API |
-| How | an `analytics_engine_datasets` **binding** | the AE **SQL API** over HTTPS |
-| Credential | the binding itself | an API token scoped to **Account Analytics Read** |
-| Hook | `WfSdkConfig.resolveTelemetry` | `createWfSdkHandlers({ resolveAnalytics })` |
+|            | Writes points                              | Reads points                                      |
+| ---------- | ------------------------------------------ | ------------------------------------------------- |
+| Where      | the Worker that EXECUTES runs              | the Worker that serves the data API               |
+| How        | an `analytics_engine_datasets` **binding** | the AE **SQL API** over HTTPS                     |
+| Credential | the binding itself                         | an API token scoped to **Account Analytics Read** |
+| Hook       | `WfSdkConfig.resolveTelemetry`             | `createWfSdkHandlers({ resolveAnalytics })`       |
 
 Write side — in the executing Worker's `wrangler.jsonc`:
 
@@ -1585,20 +1592,20 @@ project is: write a `WfSdkConfig`, mount one API route, mount `WfApp`, export
 
 ## Reference: the reference implementation in this repo
 
-| Piece                            | File                                             |
-| -------------------------------- | ------------------------------------------------ |
-| Host config (`WfSdkConfig`)      | `packages/wf-host/src/config.ts`                 |
-| Provider registry + budgets      | `packages/wf-host/src/model.ts`                  |
-| Sync agents/workflows (spec CLI) | `docs/sync.md` + agent rule `docs/wf-spec-sync.mdc` |
-| Seed helper + template (legacy)  | `packages/wf-host/src/{seed,template}.ts`        |
-| RPC contract (`WorkflowsRpc`)    | `packages/wf-host/src/rpc.ts`                    |
-| Data API route + run-exec hooks  | `apps/web/app/api/wf/route.ts`                   |
-| RPC client (binding + HTTP fallback) | `apps/web/lib/workflows.ts`                   |
-| UI provider                      | `apps/web/components/wf/provider.tsx`            |
-| UI mount (catch-all)             | `apps/web/app/(app)/wf/[[...slug]]/page.tsx`     |
-| Run viewer embed                 | `apps/web/components/wf/run-sheet.tsx`           |
-| Workflows Worker + `startGraphRun` RPC | `apps/workflows/src/index.ts` + `wrangler.jsonc` |
-| Chat consumer                    | `apps/web/app/api/chat/route.ts`                 |
+| Piece                                  | File                                                |
+| -------------------------------------- | --------------------------------------------------- |
+| Host config (`WfSdkConfig`)            | `packages/wf-host/src/config.ts`                    |
+| Provider registry + budgets            | `packages/wf-host/src/model.ts`                     |
+| Sync agents/workflows (spec CLI)       | `docs/sync.md` + agent rule `docs/wf-spec-sync.mdc` |
+| Seed helper + template (legacy)        | `packages/wf-host/src/{seed,template}.ts`           |
+| RPC contract (`WorkflowsRpc`)          | `packages/wf-host/src/rpc.ts`                       |
+| Data API route + run-exec hooks        | `apps/web/app/api/wf/route.ts`                      |
+| RPC client (binding + HTTP fallback)   | `apps/web/lib/workflows.ts`                         |
+| UI provider                            | `apps/web/components/wf/provider.tsx`               |
+| UI mount (catch-all)                   | `apps/web/app/(app)/wf/[[...slug]]/page.tsx`        |
+| Run viewer embed                       | `apps/web/components/wf/run-sheet.tsx`              |
+| Workflows Worker + `startGraphRun` RPC | `apps/workflows/src/index.ts` + `wrangler.jsonc`    |
+| Chat consumer                          | `apps/web/app/api/chat/route.ts`                    |
 
 </content>
 </invoke>

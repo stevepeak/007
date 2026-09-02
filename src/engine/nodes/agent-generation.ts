@@ -18,6 +18,7 @@ import type { AgentOutput } from '../graph'
 import { MODEL_MAX_RETRIES, type ModelBudget } from '../model-budget'
 import { interpolateUserText } from '../prompt-variables'
 import type { StreamSink } from '../stream-sink'
+import { strictifyJsonSchema, strictifyToolSet } from '../strict-schema'
 
 // The shared model-loop core, factored out of `executeAgentNode` so a spawned
 // sub-agent (see `nodes/sub-agent.ts`) runs the IDENTICAL generation logic — one
@@ -350,8 +351,13 @@ async function runStructuredGeneration(
 ): Promise<AgentNodeResult> {
   const { model, modelId, output, systemPrompt, messages, sink, budget } = args
   // Only reached for the object / boolean kinds; `object` carries the schema.
-  const schema =
-    output.kind === 'object' ? output.schema : BOOLEAN_OUTPUT_SCHEMA
+  // Run through `strictifyJsonSchema` even though the Zod-source compiler
+  // already emits the strict shape: an `object` schema can also arrive from a
+  // stored agent config written before the compiler enforced it, and a schema
+  // the provider silently drops looks like a flaky model, not a bad schema.
+  const schema = strictifyJsonSchema(
+    output.kind === 'object' ? output.schema : BOOLEAN_OUTPUT_SCHEMA,
+  )
   const startedAt = logModelCallStart(sink, modelId, { mode: output.kind })
   // `generateObject` accepts no `timeout` config — only `abortSignal` — and
   // every attempt shares the one guard, so the total budget bounds the node
@@ -880,8 +886,17 @@ async function runToolLoop(
 export async function runAgentGeneration(
   args: RunAgentGenerationArgs,
 ): Promise<AgentNodeResult> {
-  if (args.output.kind === 'object' || args.output.kind === 'boolean') {
-    return await runStructuredGeneration(args)
+  // The one place every tool set reaches a model — the agent node's registry
+  // tools, a sub-agent's synthesized spawn tools, the playground's mocks — so it
+  // is the one place the strict-dialect conversion belongs. Doing it per tool
+  // definition instead would mean a tool authored anywhere else silently ships a
+  // schema the provider drops. See `../strict-schema`.
+  const prepared: RunAgentGenerationArgs = {
+    ...args,
+    tools: strictifyToolSet(args.tools),
   }
-  return await runToolLoop(args)
+  if (prepared.output.kind === 'object' || prepared.output.kind === 'boolean') {
+    return await runStructuredGeneration(prepared)
+  }
+  return await runToolLoop(prepared)
 }

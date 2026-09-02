@@ -3,7 +3,7 @@
   "type": "module",
   "version": "0.0.0",
   "private": true,
-  "description": "Whitelabeled AI-workflow SDK — host-injected engine, Cloudflare Workflows execution, SQL storage, and editor/run-viewer UI",
+  "description": "Whitelabeled AI-workflow SDK \u2014 host-injected engine, Cloudflare Workflows execution, SQL storage, and editor/run-viewer UI",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -19,6 +19,7 @@
     "./cloudflare/blob-spill": "./src/cloudflare/blob-spill.ts",
     "./cloudflare/extract-text": "./src/cloudflare/extract-text.ts",
     "./cloudflare/runtime": "./src/cloudflare/runtime.ts",
+    "./documents": "./src/documents/index.ts",
     "./engine": "./src/engine/index.ts",
     "./eval": "./src/eval/index.ts",
     "./server": "./src/server/index.ts",
@@ -75,7 +76,8 @@
   },
   "peerDependencies": {
     "react": "^19",
-    "react-dom": "^19"
+    "react-dom": "^19",
+    "docx": "^9.7.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260901.1",
@@ -85,11 +87,17 @@
     "@types/node": "^26.4.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
+    "docx": "^9.7.1",
     "drizzle-kit": "^0.31.8",
     "eslint": "^10.9.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "typescript": "^5.9.3",
     "wrangler": "^4.128.0"
+  },
+  "peerDependenciesMeta": {
+    "docx": {
+      "optional": true
+    }
   }
 }

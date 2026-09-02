@@ -185,6 +185,14 @@ export {
   type ToolSideEffect,
 } from './tool-registry'
 export {
+  strictifyJsonSchema,
+  strictifySchema,
+  strictifyToolSet,
+  strictSchema,
+  stripDialectNulls,
+  toStrictJsonSchema,
+} from './strict-schema'
+export {
   describeTriggerEvents,
   ITERATION_ITEM_TRIGGER_KIND,
   MANUAL_TRIGGER_KIND,
