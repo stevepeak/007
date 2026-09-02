@@ -3,11 +3,7 @@ import type { LanguageModel } from 'ai'
 import type { TelemetrySink } from '../analytics/sink'
 
 import type { WfBlobRef } from './blob-ref'
-import type {
-  AgentOverride,
-  NodeExecution,
-  WfRunManifestEntry,
-} from './graph'
+import type { AgentOverride, NodeExecution, WfRunManifestEntry } from './graph'
 import type {
   ModelCatalogEntry,
   ModelOption,
@@ -126,6 +122,16 @@ export type BlobSpiller<TDeps> = (
  * boundary.
  */
 export type RunContext = {
+  /**
+   * The `wf_run` this context belongs to.
+   *
+   * Filled in by the engine at dispatch, so a host tool can name the run it is
+   * executing inside — which is what lets a host record "this row was produced
+   * by that run" and link the two back together later. Absent where there is no
+   * durable run to name: a playground preview, and any context a host builds
+   * itself before starting one.
+   */
+  runId?: string
   subjectId?: string
   correlationId?: string
   /**
@@ -343,7 +349,10 @@ export interface WfSdkConfig<TDeps = unknown> {
    * — a callback that ultimately throws is logged and does NOT fail the run
    * (the run already produced its output). Symmetric with {@link onRunFailed}.
    */
-  onRunComplete?: (ctx: RunContext, result: RunCompletion) => void | Promise<void>
+  onRunComplete?: (
+    ctx: RunContext,
+    result: RunCompletion,
+  ) => void | Promise<void>
   /**
    * Optional: called once when a run aborts (a node failed, or the graph
    * stalled), so the host can mark its own entity failed with the error — the
@@ -402,13 +411,22 @@ export function defineWfConfig<TDeps = unknown>(
   if (config.triggers == null || typeof config.triggers !== 'object') {
     problems.push('`triggers` must be an object (`{}` if you have no events)')
   }
-  if (config.fetchModelCatalog != null && typeof config.fetchModelCatalog !== 'function') {
+  if (
+    config.fetchModelCatalog != null &&
+    typeof config.fetchModelCatalog !== 'function'
+  ) {
     problems.push('`fetchModelCatalog`, if set, must be a function')
   }
-  if (config.resolveBlobRef != null && typeof config.resolveBlobRef !== 'function') {
+  if (
+    config.resolveBlobRef != null &&
+    typeof config.resolveBlobRef !== 'function'
+  ) {
     problems.push('`resolveBlobRef`, if set, must be a function')
   }
-  if (config.spillBlobRef != null && typeof config.spillBlobRef !== 'function') {
+  if (
+    config.spillBlobRef != null &&
+    typeof config.spillBlobRef !== 'function'
+  ) {
     problems.push('`spillBlobRef`, if set, must be a function')
   }
   if (config.spillBlobRef != null && config.resolveBlobRef == null) {
@@ -425,7 +443,10 @@ export function defineWfConfig<TDeps = unknown>(
     problems.push('`spillThresholdBytes`, if set, must be a positive number')
   }
 
-  if (config.onRunComplete != null && typeof config.onRunComplete !== 'function') {
+  if (
+    config.onRunComplete != null &&
+    typeof config.onRunComplete !== 'function'
+  ) {
     problems.push('`onRunComplete`, if set, must be a function')
   }
   if (config.onRunFailed != null && typeof config.onRunFailed !== 'function') {

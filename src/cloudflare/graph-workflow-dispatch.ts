@@ -135,8 +135,7 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
     node.config.itemExecution === 'durable'
       ? (item: unknown, index: number) =>
           runItemAsChildInstance(ctx, node, item, index)
-      : (item: unknown, index: number) =>
-          runItemInline(ctx, node, item, index)
+      : (item: unknown, index: number) => runItemInline(ctx, node, item, index)
 
   // The fan-out fence throws before a single step is taken or a single instance
   // created, and the list it rejected is the same list every replay resolves —
@@ -192,49 +191,49 @@ async function runItemInline<TDeps, E extends GraphWorkflowEnv>(
     `iter:${node.id}:${index}`,
     stepOptsFor(node),
     async () => {
-        const rc = { ...p.runContext, env }
-        const toolDeps = await config.buildRunDeps(rc)
-        const itemResult = await executeSubgraph(
-          node.config.subgraph,
-          item,
-          {
-            getModel: (modelId, opts) =>
-              config.getModel(modelId, { ...rc, reasoning: opts?.reasoning }),
-            toolRegistry: config.toolRegistry,
-            toolDeps,
-            modelBudget: modelBudgetFor(resolveStepTimeoutMs(node)),
-            // Overridden per item inside executeSubgraph.
-            nodeOutputs: new Map(),
-            promptVariables: p.runContext.promptVariables,
-            manifest,
-            sink: itemSink,
-            resolveBlobRef: config.resolveBlobRef,
-            simulate: p.runContext.simulate,
-            fixtures: p.runContext.fixtures,
-            liveReads: p.runContext.liveReads,
-            freezeTools: p.runContext.freezeTools,
-            agentOverride: p.runContext.agentOverride,
-          },
-          // Record each inner node once per item. The recorder is
-          // built inside this `iter:` step.do closure (a D1 binding
-          // can't cross a step boundary); the whole closure replays
-          // on retry, and the `(run_id, node_id, item_index)` upsert
-          // makes that replay idempotent.
-          {
-            recorder: createTelemeteredRecorder({
-              db: createWfDb(env.WF_DB),
-              runId: p.workflowRunId,
-              telemetry: ctx.telemetry,
-              dims: ctx.dims,
-              prices: ctx.prices,
-            }),
-            parentNodeId: node.id,
-            itemIndex: index,
-          },
-        )
-        // This return IS the boundary: one item's whole subgraph result is
-        // journaled as this step's output. Spilling here is also what keeps the
-        // collection below small, since the collection is these returns.
+      const rc = { ...p.runContext, env, runId: p.workflowRunId }
+      const toolDeps = await config.buildRunDeps(rc)
+      const itemResult = await executeSubgraph(
+        node.config.subgraph,
+        item,
+        {
+          getModel: (modelId, opts) =>
+            config.getModel(modelId, { ...rc, reasoning: opts?.reasoning }),
+          toolRegistry: config.toolRegistry,
+          toolDeps,
+          modelBudget: modelBudgetFor(resolveStepTimeoutMs(node)),
+          // Overridden per item inside executeSubgraph.
+          nodeOutputs: new Map(),
+          promptVariables: p.runContext.promptVariables,
+          manifest,
+          sink: itemSink,
+          resolveBlobRef: config.resolveBlobRef,
+          simulate: p.runContext.simulate,
+          fixtures: p.runContext.fixtures,
+          liveReads: p.runContext.liveReads,
+          freezeTools: p.runContext.freezeTools,
+          agentOverride: p.runContext.agentOverride,
+        },
+        // Record each inner node once per item. The recorder is
+        // built inside this `iter:` step.do closure (a D1 binding
+        // can't cross a step boundary); the whole closure replays
+        // on retry, and the `(run_id, node_id, item_index)` upsert
+        // makes that replay idempotent.
+        {
+          recorder: createTelemeteredRecorder({
+            db: createWfDb(env.WF_DB),
+            runId: p.workflowRunId,
+            telemetry: ctx.telemetry,
+            dims: ctx.dims,
+            prices: ctx.prices,
+          }),
+          parentNodeId: node.id,
+          itemIndex: index,
+        },
+      )
+      // This return IS the boundary: one item's whole subgraph result is
+      // journaled as this step's output. Spilling here is also what keeps the
+      // collection below small, since the collection is these returns.
       return await spillAtBoundary(
         config,
         toolDeps,
@@ -711,7 +710,7 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
         `run:${node.id}`,
         stepOptsFor(node),
         async () => {
-          const rc = { ...p.runContext, env }
+          const rc = { ...p.runContext, env, runId: p.workflowRunId }
           const toolDeps = await config.buildRunDeps(rc)
           // Bound the node's model work from INSIDE the step, derived from the
           // very timeout Cloudflare would otherwise enforce from outside. The
@@ -979,7 +978,12 @@ export async function deliverOutput<TDeps, E extends GraphWorkflowEnv>(
       ? rawOutput
       : await rehydrateAtBoundary(
           config,
-          () => config.buildRunDeps({ ...p.runContext, env }),
+          () =>
+            config.buildRunDeps({
+              ...p.runContext,
+              env,
+              runId: p.workflowRunId,
+            }),
           rawOutput,
         )
     if (p.subRun) return answer
@@ -1000,24 +1004,30 @@ export async function deliverOutput<TDeps, E extends GraphWorkflowEnv>(
       )
     }
   }
-  await stepDo(step, 'finalize', async () =>
-    await markRunDone(createWfDb(env.WF_DB), {
-      runId: p.workflowRunId,
-      output: await answerFor(),
-      settled: !pendingWork,
-      pendingNodes: scheduler.inFlightCount(),
-    }),
+  await stepDo(
+    step,
+    'finalize',
+    async () =>
+      await markRunDone(createWfDb(env.WF_DB), {
+        runId: p.workflowRunId,
+        output: await answerFor(),
+        settled: !pendingWork,
+        pendingNodes: scheduler.inFlightCount(),
+      }),
   )
   // The callee reports its pointer as-is: the parent hands it to a node that
   // rehydrates inside its own step, so the payload never touches the 1 MiB
   // event cap. `rawOutput` is already contract-free for a sub-run.
   await reportToParent(ctx, { ok: true, output: rawOutput })
   if (config.onRunComplete) {
-    await notifyHost(step, 'on-complete', async () =>
-      await config.onRunComplete!(
-        { ...p.runContext, env },
-        { output: await answerFor(), outputNodeId },
-      ),
+    await notifyHost(
+      step,
+      'on-complete',
+      async () =>
+        await config.onRunComplete!(
+          { ...p.runContext, env, runId: p.workflowRunId },
+          { output: await answerFor(), outputNodeId },
+        ),
     )
   }
   return { output: rawOutput, outputNodeId }

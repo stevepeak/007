@@ -9,6 +9,23 @@
 // host into it.
 
 export {
+  createDocumentTool,
+  documentFilename,
+  DOCX_MIME_TYPE,
+  FactCheckFailedError,
+  type CreateDocumentToolOptions,
+  type GeneratedDocument,
+  type StoredDocument,
+} from './create-document-tool'
+export {
+  checkFacts,
+  documentText,
+  factCheckErrorMessage,
+  factValues,
+  type FactCheckResult,
+  type UnsupportedFigure,
+} from './check-facts'
+export {
   documentBlockSchema,
   documentLetterheadSchema,
   documentModelSchema,
