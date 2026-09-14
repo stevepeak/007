@@ -15,6 +15,32 @@ without you and is still probably wrong to skip.
 
 ---
 
+## 2026-09-14 — Tavily web search removed
+
+The built-in `tavily_search` tool is gone, and with it the
+`@stevepeak/007/tools` subpath — it held nothing else.
+
+### Breaking
+
+**`@stevepeak/007/tools` no longer resolves.** If you import `createTavilyTool`,
+`TAVILY_ICON_SVG`, or the `CreateTavilyToolOptions` / `TavilyResult` types, your
+build fails. Drop the import and the registry entry; the tool's whole surface was
+an API key and a `fetch`, so there is nothing to migrate to.
+
+**Check your agents and graphs for `tavily_search` before upgrading.** A
+registry that no longer has the id fails the run with `Tool 'tavily_search' is
+not registered.` at the node that calls it, not at startup. Point those nodes
+somewhere else first. (1121law had none — no spec, no agent version, no workflow
+graph referenced it.)
+
+Web search, if you want it back, is now a connector: any MCP server that offers
+it plugs in through `/wf/connectors` without shipping a tool in this package.
+
+### Also
+
+`TAVILY_API_KEY` is dead config wherever you set it — there is no longer anything
+that reads it.
+
 ## 2026-09-14 — MCP connectors
 
 ART-152. The inbound half of MCP: sign in to a remote MCP server and its tools

@@ -52,7 +52,6 @@ src/
 ├── storage/     Drizzle over Cloudflare D1 — the wf_* tables + data access
 ├── cloudflare/  Workers runtime — GraphWorkflow, RunRoom, startGraphRun, tools
 ├── server/      framework-agnostic RPC data layer — one POST route
-├── tools/       built-in provider-agnostic tools (e.g. Tavily web search)
 ├── ui/          React editor + run-viewer, with injectable design-system chrome
 └── eval/        run a graph in-process with mock model/tools — no DB, no CF
 ```
@@ -69,7 +68,7 @@ host app → (injects WfSdkConfig) → engine
 publishable and reusable.
 
 Import only the layer you need via subpaths: `@stevepeak/007/engine`,
-`/storage`, `/cloudflare`, `/server`, `/tools`, `/ui`, `/eval`. (The full table
+`/storage`, `/cloudflare`, `/server`, `/documents`, `/ui`, `/eval`. (The full table
 is in [`guide.md`](./guide.md).)
 
 ---

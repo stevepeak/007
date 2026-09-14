@@ -143,7 +143,7 @@ describe('argument validation', () => {
 describe('merging into the host registry', () => {
   test('adds connector tools alongside host tools', () => {
     const host: ToolRegistry<Deps> = new Map([
-      ['tavily_search', hostEntry('tavily_search')],
+      ['search_knowledge_base', hostEntry('search_knowledge_base')],
     ])
     const merged = withConnectorTools<Deps, WfSdkConfig<Deps>>(
       configWith(host),
@@ -152,7 +152,7 @@ describe('merging into the host registry', () => {
     )
     expect([...merged.toolRegistry.keys()].sort()).toEqual([
       'mcp:linear:create_issue',
-      'tavily_search',
+      'search_knowledge_base',
     ])
   })
 
@@ -160,14 +160,14 @@ describe('merging into the host registry', () => {
   // isolate. Mutating it would leak one run's catalog snapshot into the next.
   test('never mutates the host registry', () => {
     const host: ToolRegistry<Deps> = new Map([
-      ['tavily_search', hostEntry('tavily_search')],
+      ['search_knowledge_base', hostEntry('search_knowledge_base')],
     ])
     withConnectorTools<Deps, WfSdkConfig<Deps>>(
       configWith(host),
       [catalogEntry()],
       runtime,
     )
-    expect([...host.keys()]).toEqual(['tavily_search'])
+    expect([...host.keys()]).toEqual(['search_knowledge_base'])
   })
 
   // Namespacing is supposed to make this impossible; if a host does it anyway,

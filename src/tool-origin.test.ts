@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, test } from 'bun:test'
 
 import { createDocumentTool } from './documents/create-document-tool'
-import { createTavilyTool } from './tools/tavily'
 
 // `ToolMeta.origin` defaults to `host`, and that default is load-bearing: it is
 // what lets a deployment register a tool without thinking about provenance and
@@ -19,7 +18,6 @@ import { createTavilyTool } from './tools/tavily'
 // Add a factory to the SDK → add it here.
 
 const SDK_TOOL_FACTORIES = {
-  tavily_search: () => createTavilyTool<unknown>({ getApiKey: () => 'k' }),
   create_document: () =>
     createDocumentTool<unknown>({ store: () => Promise.resolve({}) as never }),
 }

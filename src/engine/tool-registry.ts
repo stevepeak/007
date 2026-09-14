@@ -11,16 +11,16 @@ import type { z } from 'zod'
 // referenced by agents/graphs; `name`/`icon`/`description` are what the UI shows
 // a human choosing tools — never the raw id.
 export type ToolMeta = {
-  /** Stable registry key (e.g. `tavily_search`) — referenced by agents. */
+  /** Stable registry key (e.g. `create_document`) — referenced by agents. */
   id: string
-  /** Human-readable name shown to end users (e.g. "Tavily Web Search"). */
+  /** Human-readable name shown to end users (e.g. "Create Document"). */
   name: string
   /** One-line description of the service/capability. */
   description: string
   /**
    * Optional inline SVG markup for the tool's brand/icon, rendered in the tool
    * picker. Trusted content (SDK- or host-defined), not user input. Use this for
-   * third-party brand marks (e.g. Tavily); for first-party tools prefer
+   * third-party brand marks (an MCP connector's, say); for first-party tools prefer
    * `iconName` + `color` below, which draw from the shared appearance palette.
    * When both are set the SVG `icon` wins.
    */
@@ -81,8 +81,9 @@ export type ToolMeta = {
   /**
    * Who authored this tool, for a UI that has to tell them apart.
    *
-   * `sdk` is set by the SDK's own factories (`createTavilyTool`,
-   * `createExtractTextTool`, `createDocumentTool`) — the host wires their deps
+   * `sdk` is set by the SDK's own factories (`createExtractTextTool`,
+   * `createDocumentTool`) and by every MCP connector tool — the host wires
+   * their deps
    * but does not own their behavior, their schemas, or their descriptions, and
    * cannot fix a bug in one without a version bump. `host` is everything the
    * deployment wrote itself.

@@ -33,7 +33,7 @@ The SDK is deliberately generic. It ships **behavior**; the host supplies
 | System Copilot (`handleCopilotRequest`)                          | ✅                | the model + its own auth gate                   |
 | Model provider (`getModel` + `listModels` + `listProviders`)     |                   | ✅                                              |
 | Provider spend budgets (`fetchProviderBudget`, optional)         | the cards + meter | ✅ the balance call (omit → no cards)           |
-| Tools (`toolRegistry`; `/tools` + `/cloudflare` ship a few)      |                   | ✅                                              |
+| Tools (`toolRegistry`; `/documents` + `/cloudflare` ship a few)  |                   | ✅                                              |
 | Event catalog + input schemas (`triggers`)                       |                   | ✅ (manual/periodic built in)                   |
 | Per-run deps (`buildRunDeps`)                                    |                   | ✅                                              |
 | Blob-ref resolver (`resolveBlobRef`, optional)                   | marker shape only | ✅ if a tool spills large values                |
@@ -63,7 +63,6 @@ cycles (`ui → server → storage → engine`, `cloudflare → storage → engi
 | `@stevepeak/007/cloudflare/extract-text`     | any server route¹       | `createExtractTextTool` (R2/Vision OCR tool)                                                 |
 | `@stevepeak/007/cloudflare/analytics-engine` | Workers (AE binding)    | `createAnalyticsEngineTelemetry` — the write half of run telemetry (§7b)                     |
 | `@stevepeak/007/server`                      | any server route        | `createWfSdkHandlers`, `createHttpWfDataClient`, `handleCopilotRequest`, `describeToolCatalog` |
-| `@stevepeak/007/tools`                       | any (fetch + deps)      | built-in tools (`createTavilyTool`)                                                          |
 | `@stevepeak/007/documents`                   | any (needs `docx`³)     | `documentModelSchema` + `renderDocx` — model → `.docx` bytes                                 |
 | `@stevepeak/007/ui`                          | browser (React 19)      | `WfApp`, `WfSdkProvider`, `RunViewer`, hooks                                                 |
 | `@stevepeak/007/ui/run-progress`             | browser (React 19)      | `WorkflowRunProgress` + the progress source, without pulling the editor                      |
@@ -231,8 +230,8 @@ Key rules:
   page by it, badges it on a tool's detail page, and returns it from
   `get_tool_catalog`, so a reader can tell where a change to a tool would have
   to be made. It defaults to `host` and the SDK's own factories
-  (`createTavilyTool`, `createExtractTextTool`, `createDocumentTool`) set `sdk`
-  at the source. Wiring a built-in's deps — or renaming it via `opts.name` — is
+  (`createExtractTextTool`, `createDocumentTool`) set `sdk` at the source, as
+  does every MCP connector tool. Wiring a built-in's deps — or renaming it via `opts.name` — is
   not authorship and does not change the answer, so there is nothing for a host
   to set.
 - **`resolveBlobRef` is optional.** Supply it only if a tool returns a `WfBlobRef`

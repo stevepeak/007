@@ -90,12 +90,12 @@ describe('encodeStepPoint', () => {
       nodeKind: 'tool',
       status: 'completed',
       sequence: 1,
-      meta: { toolId: 'tavily_search', args: { q: 'x' } },
+      meta: { toolId: 'extract_text', args: { q: 'x' } },
     })
 
     expect(point.blobs[10]).toBe('') // blob11 modelId
     expect(point.blobs[11]).toBe('') // blob12 agentId
-    expect(point.blobs[12]).toBe('tavily_search') // blob13 toolId
+    expect(point.blobs[12]).toBe('extract_text') // blob13 toolId
     // double6..double13 — tokens, cost, turns, stop flags
     expect(point.doubles.slice(5)).toEqual([0, 0, 0, 0, 0, 0, 0, 0])
   })

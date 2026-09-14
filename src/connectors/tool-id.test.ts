@@ -19,7 +19,7 @@ describe('connector tool ids', () => {
 
   // Host tools must fall through to the static registry untouched.
   test('does not claim host tool ids', () => {
-    for (const id of ['tavily_search', 'create_document', 'mcp', 'mcpx:a:b']) {
+    for (const id of ['search_knowledge_base', 'create_document', 'mcp', 'mcpx:a:b']) {
       expect(isConnectorToolId(id)).toBe(false)
       expect(parseConnectorToolId(id)).toBeNull()
     }

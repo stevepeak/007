@@ -17,7 +17,8 @@ import type { ToolRegistry, ToolRegistryEntry } from '../engine/tool-registry'
 // Simulation is the safe default and the only mode this file used to have: a
 // playground runs on scratch input with no real client context, and several
 // tools mutate the vector store / DB (`embed_and_upsert`, `update_document`) or
-// bill external calls (`tavily_search`). Either way the model sees the same tool
+// bill external calls (an MCP connector's write tools). Either way the model
+// sees the same tool
 // *schemas* and decides which to call with which arguments — only execution
 // differs, so the trace reads the same in both modes.
 //

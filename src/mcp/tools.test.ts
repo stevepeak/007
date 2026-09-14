@@ -279,9 +279,9 @@ describe('list_feedback', () => {
 describe('get_tool_catalog', () => {
   const catalog = [
     {
-      id: 'tavily_search',
-      name: 'Web search',
-      description: 'searches',
+      id: 'extract_text',
+      name: 'Extract text',
+      description: 'extracts text',
       kind: 'ai-tool',
       origin: 'sdk',
       sideEffect: 'read',
@@ -309,7 +309,7 @@ describe('get_tool_catalog', () => {
       {},
     )) as Record<string, unknown>[]
     expect(JSON.stringify(rows)).not.toContain('svg')
-    expect(rows[0]?.name).toBe('Web search')
+    expect(rows[0]?.name).toBe('Extract text')
     expect(rows[0]?.sideEffect).toBe('read')
     expect(rows[0]?.requiresContext).toEqual(['clientOrgId'])
   })
@@ -322,7 +322,7 @@ describe('get_tool_catalog', () => {
       {},
     )) as Record<string, unknown>[]
     expect(rows.map((r) => [r.id, r.origin])).toEqual([
-      ['tavily_search', 'sdk'],
+      ['extract_text', 'sdk'],
       ['search_knowledge_base', 'host'],
     ])
   })
