@@ -135,8 +135,7 @@ export const DEFAULT_WF_SECTIONS: WfHubSection[] = [
   {
     key: 'connectors',
     title: 'Connectors',
-    description:
-      'Sign in to an MCP server — Linear, or any other — and choose which of its tools your agents may call.',
+    description: 'Sign in to an MCP server and choose which tools agents get.',
     icon: Cable,
     accent: {
       card: 'hover:border-amber-300 hover:shadow-lg hover:shadow-amber-100',
