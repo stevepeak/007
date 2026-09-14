@@ -13,6 +13,8 @@ const KIND_NOUNS: Record<WfChangeDTO['entityKind'], string> = {
   eval_row: 'sample',
   model: 'model',
   assignment: 'assignment',
+  connector: 'connector',
+  connector_tool: 'connector tool',
 }
 
 /** What the change did, as a verb phrase — "published", "edited". */

@@ -25,6 +25,12 @@ export const WF_CHANGE_ENTITY_KINDS = [
   'eval_row',
   'model',
   'assignment',
+  // The inbound MCP surface: a configured remote server, and one tool from its
+  // discovered catalog. Both are curated by hand — enabling a connector tool is
+  // what makes a third party's code callable by an agent — so both belong in
+  // the who-touched-this log.
+  'connector',
+  'connector_tool',
 ] as const
 
 export type WfChangeEntityKind = (typeof WF_CHANGE_ENTITY_KINDS)[number]

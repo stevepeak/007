@@ -35,7 +35,22 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
     | 'fetchProviderBudget'
     | 'toolRegistry'
     | 'triggers'
+    | 'resolveConnectorSecret'
   >
+  /**
+   * Absolute path the connector OAuth callback route is mounted at. Must match
+   * where the host actually routes `createWfConnectorCallback`, because it is
+   * registered with the authorization server as the redirect URI — a mismatch
+   * is rejected at authorization time, not at startup.
+   * Defaults to `/api/wf/connectors/callback`.
+   */
+  connectorCallbackPath?: string
+  /**
+   * Permit http / private-address connector URLs. For pointing a local build at
+   * an MCP server on localhost — an explicit opt-in rather than an environment
+   * sniff, so nothing decides on its own that a deployment is "dev enough".
+   */
+  connectorAllowInsecureUrls?: boolean
   resolveDb: (req: Request) => WfDb | Promise<WfDb>
   resolveContext: (req: Request) => WfServerContext | Promise<WfServerContext>
   /**

@@ -10,6 +10,7 @@ import {
 
 import { buildAgentHandlers } from './handlers/agents'
 import { buildChangeHandlers } from './handlers/changes'
+import { buildConnectorHandlers } from './handlers/connectors'
 import { buildDashboardHandlers } from './handlers/dashboard'
 import { buildEvalHandlers } from './handlers/evals'
 import { buildFeedbackHandlers } from './handlers/feedback'
@@ -95,6 +96,43 @@ const wfInputSchemas: Record<keyof WfDataClient, z.ZodType> = {
     args: z.record(z.string(), z.unknown()),
     context: z.record(z.string(), z.string()).optional(),
   }),
+
+  // ---- MCP connectors -----------------------------------------------------
+  getConnectorCapability: NO_INPUT,
+  listConnectors: NO_INPUT,
+  getConnector: z.object({ connectorId: z.string() }),
+  saveConnector: z.object({
+    id: z.string(),
+    label: z.string(),
+    url: z.string(),
+    transport: z.enum(['http', 'sse']).optional(),
+    authKind: z.enum(['oauth2', 'bearer', 'none']).optional(),
+    scopes: z.string().nullable().optional(),
+    icon: z.string().nullable().optional(),
+    iconName: z.string().nullable().optional(),
+    color: z.string().nullable().optional(),
+    note: z.string().nullable().optional(),
+  }),
+  deleteConnector: z.object({ connectorId: z.string() }),
+  setConnectorEnabled: z.object({
+    connectorId: z.string(),
+    enabled: z.boolean(),
+  }),
+  refreshConnector: z.object({ connectorId: z.string() }),
+  setConnectorToolEnabled: z.object({
+    toolId: z.string(),
+    enabled: z.boolean(),
+  }),
+  setConnectorToolSideEffect: z.object({
+    toolId: z.string(),
+    sideEffect: z.enum(['read', 'write']),
+  }),
+  startConnectorAuth: z.object({
+    connectorId: z.string(),
+    returnTo: z.string().optional(),
+  }),
+  saveConnectorToken: z.object({ connectorId: z.string(), token: z.string() }),
+  disconnectConnector: z.object({ connectorId: z.string() }),
 
   // ---- triggers -----------------------------------------------------------
   listTriggerEvents: NO_INPUT,
@@ -365,6 +403,7 @@ function buildHandlers<TDeps>(
     ...buildChangeHandlers(),
     ...buildEvalHandlers(opts),
     ...buildFeedbackHandlers(opts),
+    ...buildConnectorHandlers(opts),
   }
   return handlers
 }

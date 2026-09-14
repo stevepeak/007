@@ -62,6 +62,24 @@ export function createWfDataClient(call: WfDataTransport): WfDataClient {
     // A real tool call can run past the default 20s UI backstop (external
     // services), so give the playground its own longer budget.
     runToolPreview: bind('runToolPreview', 120000),
+    // ---- MCP connectors ---------------------------------------------------
+    getConnectorCapability: bind('getConnectorCapability'),
+    listConnectors: bind('listConnectors'),
+    getConnector: bind('getConnector'),
+    saveConnector: bind('saveConnector'),
+    deleteConnector: bind('deleteConnector'),
+    setConnectorEnabled: bind('setConnectorEnabled'),
+    // A refresh opens a session to a third-party server and re-reads its whole
+    // catalog; give it the same longer budget a model-catalog refresh gets.
+    refreshConnector: bind('refreshConnector', 120000),
+    setConnectorToolEnabled: bind('setConnectorToolEnabled'),
+    setConnectorToolSideEffect: bind('setConnectorToolSideEffect'),
+    // Discovery + dynamic client registration are two round trips to servers we
+    // don't control before this returns a URL.
+    startConnectorAuth: bind('startConnectorAuth', 60000),
+    saveConnectorToken: bind('saveConnectorToken'),
+    disconnectConnector: bind('disconnectConnector'),
+
     listTriggerEvents: bind('listTriggerEvents'),
     listWorkflows: bind('listWorkflows'),
     getWorkflow: (workflowId) => send('getWorkflow', { workflowId }),

@@ -30,8 +30,15 @@ export type WfMcpTool = {
   name: string
   title: string
   description: string
-  /** A zod raw shape — what `McpServer.registerTool` takes as `inputSchema`. */
-  inputSchema: z.ZodRawShape
+  /**
+   * A zod raw shape — what `McpServer.registerTool` takes as `inputSchema`.
+   *
+   * Spelled as a mutable `Record` rather than `z.ZodRawShape`: as of zod 4.6
+   * that alias is `Readonly<...>`, which no longer satisfies the MCP SDK's
+   * `ZodRawShapeCompat` (`Record<string, AnySchema>`), and every tool
+   * registration stops compiling.
+   */
+  inputSchema: Record<string, z.ZodType>
   /** False for anything that mutates; gates registration. See `server.ts`. */
   readOnly: boolean
   run: (client: WfDataClient, args: Record<string, unknown>) => Promise<unknown>

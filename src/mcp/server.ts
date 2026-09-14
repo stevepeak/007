@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { ZodRawShapeCompat } from '@modelcontextprotocol/sdk/server/zod-compat.js'
 
 import type { WfDataClient } from '../server/protocol'
 
@@ -53,7 +54,13 @@ export function createWfMcpServer(opts: CreateWfMcpServerOptions): McpServer {
       {
         title: t.title,
         description: t.description,
-        inputSchema: t.inputSchema,
+        // Cast across a dual-zod boundary. The lockfile resolves zod 4.6.5 for
+        // this package but nests 4.5.4 under `@modelcontextprotocol/sdk`, so
+        // our `ZodType` and the SDK's `$ZodType` are two structurally identical
+        // types from two copies and TS refuses the assignment. The runtime
+        // shape is exactly what `registerTool` documents; only the nominal
+        // identity of the schema class differs.
+        inputSchema: t.inputSchema as unknown as ZodRawShapeCompat,
         annotations: { readOnlyHint: t.readOnly },
       },
       async (args: Record<string, unknown>) => {

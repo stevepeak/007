@@ -82,7 +82,7 @@ export function describeToolCatalog(): WfMcpToolDescription[] {
     description: tool.description,
     readOnly: tool.readOnly,
     args: Object.entries(tool.inputSchema).map(([name, schema]) =>
-      describeArg(name, schema as z.ZodType),
+      describeArg(name, schema),
     ),
   }))
 }

@@ -4,6 +4,7 @@ import type {
   ProviderBudget,
 } from '../../engine/config'
 import { describeTriggerEvents } from '../../engine/trigger-registry'
+import { loadConnectorCatalog } from '../../connectors/registry'
 import {
   getModelCatalog,
   getModelUsage,
@@ -15,7 +16,7 @@ import {
   touchModelProvider,
   upsertModels,
 } from '../../storage/data'
-import type { WfToolInvocation } from '../protocol'
+import type { JsonSchema, WfToolInvocation } from '../protocol'
 
 import {
   requireStr,
@@ -261,7 +262,37 @@ export function buildModelHandlers<TDeps>(
       return { ok: true as const }
     },
 
-    listTools: () => toolList,
+    // Host tools (memoized above) plus every CALLABLE connector tool — enabled,
+    // still advertised by its server, on an enabled connector. The picker must
+    // offer exactly what can actually run.
+    //
+    // The connector half is a plain D1 read with no per-request CPU cost: MCP
+    // hands us JSON Schema already, so none of it goes through the
+    // `z.toJSONSchema` conversion that forced the host half to be memoized.
+    listTools: async (c) => {
+      const catalog = await loadConnectorCatalog(c.db)
+      return [
+        ...toolList,
+        ...catalog.map((entry) => ({
+          id: entry.id,
+          name: `${entry.connectorLabel}: ${entry.title ?? entry.toolName}`,
+          description:
+            entry.description ??
+            `${entry.toolName} via ${entry.connectorLabel}`,
+          icon: entry.icon ?? undefined,
+          iconName: entry.iconName ?? undefined,
+          color: entry.color ?? undefined,
+          kind: 'ai-tool' as const,
+          // Neither the host's nor strictly the SDK's — but a deployment can't
+          // fix a third party's tool by editing this repo, which is the
+          // distinction `origin` is actually drawing.
+          origin: 'sdk' as const,
+          sideEffect: entry.sideEffect,
+          inputSchema: (entry.inputSchema as JsonSchema | null) ?? undefined,
+          outputSchema: (entry.outputSchema as JsonSchema | null) ?? undefined,
+        })),
+      ]
+    },
 
     listToolInvocations: async (c) => {
       const toolId = requireStr(c.params, 'toolId')

@@ -1,4 +1,12 @@
 import type {
+  ConnectorCapability,
+  ConnectorDetail,
+  ConnectorRefreshResult,
+  ConnectorSummary,
+  WfConnectorAuthKind,
+  WfConnectorTransport,
+} from './protocol-connectors'
+import type {
   ModelCatalog,
   ModelOption,
   ModelProvider,
@@ -95,6 +103,74 @@ export interface WfDataClient {
     enabled: boolean
   }): Promise<{ ok: true }>
   listTools(): Promise<ToolOption[]>
+
+  // ---- MCP connectors -----------------------------------------------------
+  /** Whether this deployment can store connector credentials at all. */
+  getConnectorCapability(): Promise<ConnectorCapability>
+  /** Every configured connector, with its connection status and tool counts. */
+  listConnectors(): Promise<ConnectorSummary[]>
+  /** One connector and its full discovered tool catalog. */
+  getConnector(input: { connectorId: string }): Promise<ConnectorDetail>
+  /**
+   * Create or update a connector. `id` is the permanent slug — it is embedded
+   * in every tool id and therefore in published agent configs, so an update
+   * never rewrites it.
+   */
+  saveConnector(input: {
+    id: string
+    label: string
+    url: string
+    transport?: WfConnectorTransport
+    authKind?: WfConnectorAuthKind
+    scopes?: string | null
+    icon?: string | null
+    iconName?: string | null
+    color?: string | null
+    note?: string | null
+  }): Promise<{ ok: true }>
+  /** Remove a connector, its catalog, and its credential. */
+  deleteConnector(input: { connectorId: string }): Promise<{ ok: true }>
+  /** Platform-level off switch — withdraws every one of its tools at once. */
+  setConnectorEnabled(input: {
+    connectorId: string
+    enabled: boolean
+  }): Promise<{ ok: true }>
+  /**
+   * Pull the server's `tools/list` and persist it, preserving which tools are
+   * enabled and any side-effect overrides.
+   */
+  refreshConnector(input: {
+    connectorId: string
+  }): Promise<ConnectorRefreshResult>
+  /** Make one discovered tool available to agents and Tool nodes. */
+  setConnectorToolEnabled(input: {
+    toolId: string
+    enabled: boolean
+  }): Promise<{ ok: true }>
+  /**
+   * Override a tool's read/write classification. Sticky: the next refresh
+   * leaves it alone rather than reverting to the server's annotation.
+   */
+  setConnectorToolSideEffect(input: {
+    toolId: string
+    sideEffect: 'read' | 'write'
+  }): Promise<{ ok: true }>
+  /**
+   * Begin an OAuth authorization: returns the URL to send the browser to. The
+   * caller navigates there; the server finishes at the mounted callback route.
+   */
+  startConnectorAuth(input: {
+    connectorId: string
+    /** Where to land once the round trip completes. */
+    returnTo?: string
+  }): Promise<{ authorizationUrl: string }>
+  /** Store a pasted API key / PAT for a `bearer` connector. */
+  saveConnectorToken(input: {
+    connectorId: string
+    token: string
+  }): Promise<{ ok: true }>
+  /** Forget a connector's credential, leaving its configuration in place. */
+  disconnectConnector(input: { connectorId: string }): Promise<{ ok: true }>
   /** Recent times a tool was called across all runs (tool detail page). */
   listToolInvocations(input: {
     toolId: string
