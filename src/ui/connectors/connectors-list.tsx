@@ -333,8 +333,7 @@ function AddConnectorForm({ onDone }: { onDone: () => void }) {
           <Select
             id="wf-connector-auth"
             value={authKind}
-            onChange={(e) =>
-              setAuthKind(e.target.value as 'oauth2' | 'bearer' | 'none')
+            onChange={(e) => { return setAuthKind(e.target.value as 'oauth2' | 'bearer' | 'none') }
             }
           >
             <option value="oauth2">Sign in with OAuth</option>
@@ -374,7 +373,7 @@ function AddConnectorForm({ onDone }: { onDone: () => void }) {
 function slugify(value: string): string {
   return value
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
+    .replaceAll(/[^a-z0-9]+/g, '-')
+    .replaceAll(/^-+|-+$/g, '')
     .slice(0, 63)
 }

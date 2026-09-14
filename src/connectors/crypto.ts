@@ -28,13 +28,13 @@ export class ConnectorCryptoError extends Error {
 function toBase64Url(bytes: Uint8Array): string {
   let binary = ''
   for (const b of bytes) binary += String.fromCharCode(b)
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
 }
 
 // Annotated over `ArrayBuffer` rather than the default `ArrayBufferLike`, which
 // no longer satisfies WebCrypto's `BufferSource`.
 function fromBase64Url(value: string): Uint8Array<ArrayBuffer> {
-  const padded = value.replace(/-/g, '+').replace(/_/g, '/')
+  const padded = value.replaceAll('-', '+').replaceAll('_', '/')
   const binary = atob(padded.padEnd(Math.ceil(padded.length / 4) * 4, '='))
   const bytes = new Uint8Array(binary.length)
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)

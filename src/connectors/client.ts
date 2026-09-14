@@ -220,9 +220,8 @@ export function normalizeToolResult(result: {
   const blocks = Array.isArray(result.content) ? result.content : []
   const text = blocks
     .filter(
-      (b): b is { type: 'text'; text: string } =>
-        (b as { type?: unknown })?.type === 'text' &&
-        typeof (b as { text?: unknown })?.text === 'string',
+      (b): b is { type: 'text'; text: string } => { return (b as { type?: unknown })?.type === 'text' &&
+        typeof (b as { text?: unknown })?.text === 'string' },
     )
     .map((b) => b.text)
     .join('\n')

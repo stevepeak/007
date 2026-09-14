@@ -1,6 +1,9 @@
 import { discoverTools } from '../../connectors/client'
-import { beginAuthorization, saveBearerToken } from '../../connectors/oauth'
-import { resolveAccessToken } from '../../connectors/oauth'
+import {
+  beginAuthorization,
+  resolveAccessToken,
+  saveBearerToken,
+} from '../../connectors/oauth'
 import { CONNECTOR_ID_PATTERN } from '../../connectors/tool-id'
 import { assertConnectorUrl } from '../../connectors/url'
 import type { JsonSchema } from '../../engine/agent-output'
@@ -178,11 +181,10 @@ export function buildConnectorHandlers<TDeps>(
    * sync — and so a deployment can't authorize against an origin it isn't
    * actually served from.
    */
-  const callbackUrl = (c: HandlerCtx): string =>
-    new URL(
+  const callbackUrl = (c: HandlerCtx): string => { return new URL(
       opts.connectorCallbackPath ?? DEFAULT_CALLBACK_PATH,
       new URL(c.req.url).origin,
-    ).toString()
+    ).href }
 
   return {
     getConnectorCapability: async (c) => ({
@@ -196,12 +198,11 @@ export function buildConnectorHandlers<TDeps>(
       ])
       const byConnector = new Map(connections.map((r) => [r.connectorId, r]))
       return await Promise.all(
-        connectors.map(async (connector) =>
-          summarize(
+        connectors.map(async (connector) => { return summarize(
             connector,
             byConnector.get(connector.id) ?? null,
             await listConnectorTools(c.db, connector.id),
-          ),
+          ) },
         ),
       )
     },

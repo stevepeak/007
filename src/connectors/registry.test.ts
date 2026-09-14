@@ -98,8 +98,7 @@ describe('argument validation', () => {
     const built = entry.build({ marker: 'x' }) as {
       execute: (args: unknown, opts: unknown) => Promise<unknown>
     }
-    return (args: Record<string, unknown>) =>
-      built.execute(args, { toolCallId: 't', messages: [] })
+    return (args: Record<string, unknown>) => { return built.execute(args, { toolCallId: 't', messages: [] }) }
   }
 
   // The drift guard. A published Tool node's bound args can stop matching the

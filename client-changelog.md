@@ -15,6 +15,106 @@ without you and is still probably wrong to skip.
 
 ---
 
+## 2026-09-14 — MCP connectors
+
+ART-152. The inbound half of MCP: sign in to a remote MCP server and its tools
+become ordinary 007 tools — pickable in the agent tool list, droppable as Tool
+nodes, visible on the Tools page, runnable in the playground. Nothing about a
+particular service ships in code; a connector is a row.
+
+Not to be confused with `/wf/mcp`, which is the outbound direction (how a client
+points itself at *your* deployment). They now sit side by side in the hub and
+are named apart everywhere: **Connectors** is inbound, **MCP** is outbound.
+
+### Action
+
+**Apply migration 0030.** Five new `wf_connector*` tables in your 007 database.
+`assertWfSchema` probes one of them, so a dev server will tell you if you forget.
+
+**Wire `resolveConnectorSecret` to turn the feature on.** Connector OAuth tokens
+are the one secret the SDK persists itself — they are minted by a user clicking
+Connect and rotate on refresh, so unlike a model provider's key they cannot live
+in your env. They are stored AES-GCM-encrypted under a key you supply:
+
+```ts
+resolveConnectorSecret: ({ env }) => (env as Env).WF_CONNECTOR_KEY,
+```
+
+Omit it and connectors are **off**: the catalog resolves to nothing, no connector
+tool is registered, and the Connectors page says what to configure rather than
+failing at the moment somebody presses Connect. That is deliberate — a
+deployment that has not thought about key management does not get token storage
+by default.
+
+Rotating the key does not lose data, but every connector must be reconnected:
+the old ciphertext becomes unreadable, on purpose.
+
+**Mount the OAuth callback.** One GET route, because a redirect cannot go through
+the JSON data plane:
+
+```ts
+// app/api/wf/connectors/callback/route.ts
+export const GET = createWfConnectorCallback({
+  resolveDb, resolveContext, resolveSecret, defaultReturnTo: '/wf/connectors',
+})
+```
+
+Then tell the data handler where you put it, with
+`connectorCallbackPath: '/api/wf/connectors/callback'`. **The two must match**:
+that path is registered with each authorization server as the redirect URI, and
+a mismatch is rejected at authorization time rather than at startup. Gate the
+route as tightly as your editor — it stores a credential.
+
+**Pass `connectors` to the playgrounds** if you want connector tools to appear
+there: `executeAgentPreview` and `executeToolPreview` both take an optional
+`{ db, secret }`. Skip it and the playground quietly disagrees with production
+about what an agent can do.
+
+**Add `@cfworker/json-schema`** — it is an optional peer of the MCP SDK and the
+client will not start without it. See below for why it is not optional here.
+
+### New
+
+| | |
+| --- | --- |
+| `createWfConnectorCallback` | The OAuth redirect handler, from `@stevepeak/007/server`. |
+| `WfSdkConfig.resolveConnectorSecret` | The credential encryption key. Absent = feature off. |
+| 12 data-plane methods | `listConnectors`, `getConnector`, `saveConnector`, `deleteConnector`, `setConnectorEnabled`, `refreshConnector`, `setConnectorToolEnabled`, `setConnectorToolSideEffect`, `startConnectorAuth`, `saveConnectorToken`, `disconnectConnector`, `getConnectorCapability`. |
+| `ConnectorsList`, `ConnectorDetail` | The two UI pages, from `@stevepeak/007/ui`. |
+| `wf_change` kinds | `connector` and `connector_tool`. If you render change rows from a map keyed by entity kind, add them or your build breaks. |
+
+### Behavior worth knowing
+
+**Nothing a server advertises is callable until a human enables it.** Discovery
+inserts every tool **disabled**; a refresh preserves what was enabled and never
+re-enables what was turned off. Linear's server ships write tools, and a catalog
+pull that quietly widened what your agents could do would be the wrong default.
+
+**A withdrawn tool is marked, not deleted.** An agent may still reference it, and
+"the server withdrew this" is a better answer than an unresolvable id.
+
+**Tool ids are namespaced `mcp:<connector>:<tool>`** and the connector id is
+permanent — it is frozen into published agent configs, so renaming is a delete
+and a re-create.
+
+**The catalog is frozen per run**, in its own durable step, exactly as prompts
+and agents already are. A refresh mid-run cannot change what that run is doing.
+
+**Remote tool descriptions are untrusted text that reaches your model.** They are
+rendered as text and never as markup, each tool is enabled by hand, and the
+connector's identity is shown beside its tools everywhere. Treat a connector the
+way you would treat any third party writing into your prompts.
+
+### One dependency, and why
+
+The MCP SDK's `Client` compiles tool output schemas with Ajv, which uses
+`new Function`, which workerd forbids. It throws inside `listTools()` — the one
+call discovery cannot skip — and **only** for servers whose tools declare an
+`outputSchema`, so it passes a simple smoke test and breaks on a real connector.
+The SDK ships `CfWorkerJsonSchemaValidator` for edge runtimes; we always inject
+it, and a test reads the source to make sure nobody constructs a bare `Client`.
+That is why `@cfworker/json-schema` is required rather than optional.
+
 ## 2026-09-01 — the agent edit loop, and a health rollup
 
 ART-111. Three tools and one argument, which together let an AI client close the

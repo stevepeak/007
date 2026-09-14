@@ -57,7 +57,7 @@ function landing(
   const path = candidate.startsWith('/') ? candidate : fallback
   const url = new URL(path, origin)
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
-  return url.toString()
+  return url.href
 }
 
 /**
@@ -97,12 +97,16 @@ export function createWfConnectorCallback(
     }
 
     try {
-      const [db, ctx, secret] = await Promise.all([
+      // `resolveContext` is called for its GATE, not its value: it throws for
+      // anyone who may not manage connectors, and this route stores a
+      // credential. The identity it returns is already recorded on the
+      // authorization attempt (`wf_connector_oauth_state.user_id`), written
+      // when the flow started.
+      const [db, , secret] = await Promise.all([
         opts.resolveDb(req),
         opts.resolveContext(req),
         opts.resolveSecret(req),
       ])
-      void ctx
       if (!secret) {
         throw new Error(
           'Connector credentials are not configured on this deployment.',

@@ -174,8 +174,7 @@ function ConnectorHeader({
         ) : connector.authKind === 'oauth2' ? (
           <Button
             size="sm"
-            onClick={() =>
-              startAuth.mutate(
+            onClick={() => { return startAuth.mutate(
                 {
                   connectorId: connector.id,
                   returnTo: `/wf/connectors/${connector.id}`,
@@ -185,7 +184,7 @@ function ConnectorHeader({
                     window.location.href = authorizationUrl
                   },
                 },
-              )
+              ) }
             }
             disabled={startAuth.isPending}
           >
@@ -207,11 +206,10 @@ function ConnectorHeader({
         <Button
           size="sm"
           variant="ghost"
-          onClick={() =>
-            setEnabled.mutate({
+          onClick={() => { return setEnabled.mutate({
               connectorId: connector.id,
               enabled: !connector.enabled,
-            })
+            }) }
           }
           disabled={setEnabled.isPending}
         >
@@ -371,11 +369,10 @@ function ToolRow({ tool }: { tool: ConnectorToolInfo }) {
           */}
           <select
             value={tool.sideEffect}
-            onChange={(e) =>
-              setSideEffect.mutate({
+            onChange={(e) => { return setSideEffect.mutate({
                 toolId: tool.id,
                 sideEffect: e.target.value as 'read' | 'write',
-              })
+              }) }
             }
             className="h-7 rounded-md border border-neutral-300 bg-white px-1.5 text-xs outline-none"
             title={
@@ -392,11 +389,10 @@ function ToolRow({ tool }: { tool: ConnectorToolInfo }) {
               type="checkbox"
               checked={tool.enabled}
               disabled={withdrawn || setEnabled.isPending}
-              onChange={(e) =>
-                setEnabled.mutate({
+              onChange={(e) => { return setEnabled.mutate({
                   toolId: tool.id,
                   enabled: e.target.checked,
-                })
+                }) }
               }
               className="h-3.5 w-3.5"
             />

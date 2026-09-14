@@ -57,8 +57,7 @@ describe('connector URL validation', () => {
   // An explicit per-call opt-in, never an environment sniff — nothing gets to
   // decide on its own that a deployment is "dev enough" to fetch localhost.
   test('allowInsecure opens the door only when asked', () => {
-    expect(() =>
-      assertConnectorUrl('http://localhost:8080/mcp', { allowInsecure: true }),
+    expect(() => { return assertConnectorUrl('http://localhost:8080/mcp', { allowInsecure: true }) },
     ).not.toThrow()
     expect(() => assertConnectorUrl('http://localhost:8080/mcp')).toThrow(
       ConnectorUrlError,

@@ -210,8 +210,7 @@ function toRegistryEntry<TDeps>(
     origin: 'sdk',
     statusLabel: `Using ${entry.connectorLabel}`,
     kind: 'ai-tool',
-    build: () =>
-      tool({
+    build: () => { return tool({
         description:
           entry.description ?? `${entry.toolName} via ${entry.connectorLabel}`,
         inputSchema: jsonSchema(
@@ -221,7 +220,7 @@ function toRegistryEntry<TDeps>(
           },
         ),
         execute: (args: unknown) => execute(args as Record<string, unknown>),
-      }),
+      }) },
   }
 }
 

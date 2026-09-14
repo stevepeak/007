@@ -95,8 +95,11 @@ export function ConnectorIcon({
     return (
       <span
         className={cn('inline-flex h-8 w-8 items-center justify-center', className)}
-        // Trusted, admin-supplied brand markup — never the remote server's own
-        // content, which is only ever rendered as text.
+        // Trusted, admin-supplied brand markup, and the same treatment
+        // `ToolMeta.icon` already gets for built-in tools. Explicitly NOT the
+        // remote server's own content — descriptions and tool names are third
+        // party and are only ever rendered as text.
+        // eslint-disable-next-line @eslint-react/dom-no-dangerously-set-innerhtml
         dangerouslySetInnerHTML={{ __html: icon }}
       />
     )

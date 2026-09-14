@@ -62,8 +62,7 @@ function useConnectorMutation<TInput, TResult>(
 }
 
 export function useSaveConnector() {
-  return useConnectorMutation((client, input: Parameters<typeof client.saveConnector>[0]) =>
-    client.saveConnector(input),
+  return useConnectorMutation((client, input: Parameters<typeof client.saveConnector>[0]) => { return client.saveConnector(input) },
   )
 }
 
@@ -76,8 +75,7 @@ export function useDeleteConnector() {
 
 export function useSetConnectorEnabled() {
   return useConnectorMutation(
-    (client, input: { connectorId: string; enabled: boolean }) =>
-      client.setConnectorEnabled(input),
+    (client, input: { connectorId: string; enabled: boolean }) => { return client.setConnectorEnabled(input) },
     // A disabled connector withdraws every one of its tools at once.
     { invalidatesTools: true },
   )
@@ -93,30 +91,26 @@ export function useRefreshConnector() {
 
 export function useSetConnectorToolEnabled() {
   return useConnectorMutation(
-    (client, input: { toolId: string; enabled: boolean }) =>
-      client.setConnectorToolEnabled(input),
+    (client, input: { toolId: string; enabled: boolean }) => { return client.setConnectorToolEnabled(input) },
     { invalidatesTools: true },
   )
 }
 
 export function useSetConnectorToolSideEffect() {
   return useConnectorMutation(
-    (client, input: { toolId: string; sideEffect: 'read' | 'write' }) =>
-      client.setConnectorToolSideEffect(input),
+    (client, input: { toolId: string; sideEffect: 'read' | 'write' }) => { return client.setConnectorToolSideEffect(input) },
     { invalidatesTools: true },
   )
 }
 
 export function useSaveConnectorToken() {
   return useConnectorMutation(
-    (client, input: { connectorId: string; token: string }) =>
-      client.saveConnectorToken(input),
+    (client, input: { connectorId: string; token: string }) => { return client.saveConnectorToken(input) },
   )
 }
 
 export function useDisconnectConnector() {
-  return useConnectorMutation((client, input: { connectorId: string }) =>
-    client.disconnectConnector(input),
+  return useConnectorMutation((client, input: { connectorId: string }) => { return client.disconnectConnector(input) },
   )
 }
 
@@ -130,7 +124,6 @@ export function useDisconnectConnector() {
 export function useStartConnectorAuth() {
   const client = useWfClient()
   return useMutation({
-    mutationFn: (input: { connectorId: string; returnTo?: string }) =>
-      client.startConnectorAuth(input),
+    mutationFn: (input: { connectorId: string; returnTo?: string }) => { return client.startConnectorAuth(input) },
   })
 }

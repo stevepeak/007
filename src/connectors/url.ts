@@ -65,7 +65,7 @@ export function assertConnectorUrl(
     throw new ConnectorUrlError(`"${raw}" is not a valid URL.`)
   }
 
-  if (opts.allowInsecure) return url.toString()
+  if (opts.allowInsecure) return url.href
 
   if (url.protocol !== 'https:') {
     throw new ConnectorUrlError(
@@ -83,7 +83,7 @@ export function assertConnectorUrl(
         'be a publicly reachable server.',
     )
   }
-  return url.toString()
+  return url.href
 }
 
 /** Non-throwing form, for a UI that wants to show the reason inline. */

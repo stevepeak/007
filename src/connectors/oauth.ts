@@ -201,7 +201,7 @@ export async function beginAuthorization(input: {
     secret,
   )
 
-  const state = crypto.randomUUID().replace(/-/g, '')
+  const state = crypto.randomUUID().replaceAll('-', '')
   const { authorizationUrl, codeVerifier } = await startAuthorization(
     discovery.authorizationServerUrl,
     {
@@ -247,7 +247,7 @@ function accountLabelFrom(tokens: OAuthTokens): string | null {
   const payload = idToken.split('.')[1]
   if (!payload) return null
   try {
-    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'))
+    const json = atob(payload.replaceAll('-', '+').replaceAll('_', '/'))
     const claims = JSON.parse(json) as {
       email?: string
       name?: string
