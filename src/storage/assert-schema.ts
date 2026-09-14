@@ -33,6 +33,9 @@ export async function assertWfSchema(db: WfDb): Promise<void> {
     // Probe the change log, so a DB migrated before 0026 surfaces the same
     // actionable error rather than failing on the first edit anyone makes.
     await db.run(sql`select 1 from wf_change limit 1`)
+    // Probe the connector catalog, so a DB migrated before 0030 surfaces the
+    // same actionable error rather than an empty Connectors page.
+    await db.run(sql`select 1 from wf_connector_tool limit 1`)
     // Probe a COLUMN, not just a table: an unmigrated 0028 has a perfectly
     // valid wf_run and would surface only as a permanently empty children list
     // under every parent run — a wrong answer, not an error.

@@ -27,6 +27,22 @@ export {
   type WfChangeEntityKind,
   type WfChangeSource,
 } from './schema-change'
+export {
+  WF_CONNECTION_OWNER_SCOPES,
+  WF_CONNECTION_STATUSES,
+  WF_CONNECTION_WORKSPACE_OWNER,
+  WF_CONNECTOR_AUTH_KINDS,
+  WF_CONNECTOR_TRANSPORTS,
+  wfConnector,
+  wfConnectorClient,
+  wfConnectorConnection,
+  wfConnectorOauthState,
+  wfConnectorTool,
+  type WfConnectionOwnerScope,
+  type WfConnectionStatus,
+  type WfConnectorAuthKind,
+  type WfConnectorTransport,
+} from './schema-connectors'
 export { wfFeedback } from './schema-feedback'
 export {
   wfEvalResult,
@@ -45,6 +61,13 @@ export {
 
 import { wfAgent, wfAgentDraft, wfAgentVersion } from './schema-agents'
 import { wfChange } from './schema-change'
+import {
+  wfConnector,
+  wfConnectorClient,
+  wfConnectorConnection,
+  wfConnectorOauthState,
+  wfConnectorTool,
+} from './schema-connectors'
 import {
   wfEvalResult,
   wfEvalRow,
@@ -80,4 +103,9 @@ export const wfSchema = {
   wfModel,
   wfFeedback,
   wfChange,
+  wfConnector,
+  wfConnectorConnection,
+  wfConnectorTool,
+  wfConnectorClient,
+  wfConnectorOauthState,
 }
