@@ -20,6 +20,10 @@ import type { RecordStepArgs } from '../engine/run-recorder'
 import { Scheduler, WorkflowStalledError } from '../engine/scheduler'
 import type { StreamSink } from '../engine/stream-sink'
 import { resolveTriggerInput } from '../engine/trigger-registry'
+import {
+  loadConnectorCatalog,
+  withConnectorTools,
+} from '../connectors/registry'
 import { createWfDb } from '../storage/client'
 import {
   failRun,
@@ -378,13 +382,36 @@ export function makeGraphWorkflow<
             p.triggerInput,
           )
 
+      // MCP connector tools join the registry for the length of this run.
+      //
+      // Snapshotted in its own durable step, so the set of tools a run may call
+      // — and the schema each one had — is frozen at run start and survives a
+      // replay. A catalog refresh mid-run cannot change what this run is doing,
+      // which is the same guarantee `resolve-manifest` gives prompts and agents.
+      //
+      // The snapshot carries no credential: the token is resolved lazily inside
+      // each node's own step (see `connectors/registry`), where a live D1
+      // binding is legal. Off entirely unless the host wired an encryption key.
+      const connectorSecret = config.resolveConnectorSecret?.({ env })
+      const connectorCatalog = connectorSecret
+        ? await stepDo(step, 'load-connectors', async () =>
+            await loadConnectorCatalog(createWfDb(env.WF_DB)),
+          )
+        : []
+      const runConfig = connectorSecret
+        ? withConnectorTools(config, connectorCatalog, {
+            resolveDb: () => createWfDb(env.WF_DB),
+            resolveSecret: () => connectorSecret,
+          })
+        : config
+
       // Shared run-level locals threaded into the hoisted dispatch/log/finish
       // helpers (defined in ./graph-workflow-dispatch) so they can live at
       // module scope instead of nested inside this method.
       const ctx: RunCtx<TDeps, E> = {
         step,
         env,
-        config,
+        config: runConfig,
         p,
         manifest,
         sink,

@@ -366,6 +366,22 @@ export interface WfSdkConfig<TDeps = unknown> {
    */
   limits?: WfRunLimits
   /**
+   * Optional: the key MCP connector credentials are encrypted with at rest.
+   *
+   * Connector tokens are the one secret the SDK persists itself — they are
+   * minted by a user clicking Connect and rotate on refresh, so unlike a model
+   * provider's API key they cannot live in the host env. They are stored
+   * AES-GCM-encrypted under this key, which the host holds (a Worker secret,
+   * e.g. `WF_CONNECTOR_KEY`) and the database never sees.
+   *
+   * Omit it and connectors are simply off: the catalog resolves to nothing, no
+   * connector tool is registered, and the connectors page says what to wire.
+   * That is the safe direction — a deployment that hasn't thought about key
+   * management does not get token storage by default.
+   */
+  resolveConnectorSecret?: (ctx: { env?: unknown }) => string | undefined
+
+  /**
    * Optional: where per-step and per-run telemetry points go. Called once per
    * Worker invocation (a Workflow's `run()` re-executes on every wake, so the
    * sink's per-invocation point cap scopes itself naturally), and handed the
