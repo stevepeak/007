@@ -51,15 +51,21 @@ export function ConnectorsList({
   return (
     <div className={cn('mx-auto max-w-4xl space-y-4 p-6', className)}>
       <header className="flex items-start justify-between gap-4">
-        <div>
+        {/* `min-w-0` lets the prose column be the one that gives, so the button
+            beside it keeps its natural width instead of being squeezed. */}
+        <div className="min-w-0">
           <h1 className="text-lg font-semibold text-neutral-900">Connectors</h1>
           <p className="mt-1 text-sm text-neutral-500">
             Sign in to an MCP server and its tools become available to your
             agents and Tool nodes — the same as any built-in tool.
           </p>
         </div>
-        <Button onClick={() => setAdding((v) => !v)} variant="outline">
-          <Plus className="h-4 w-4" />
+        <Button
+          onClick={() => setAdding((v) => !v)}
+          variant="outline"
+          className="shrink-0 whitespace-nowrap"
+        >
+          <Plus className="h-4 w-4 shrink-0" />
           Add connector
         </Button>
       </header>
