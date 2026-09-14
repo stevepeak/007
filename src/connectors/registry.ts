@@ -1,7 +1,6 @@
 import { Validator } from '@cfworker/json-schema'
 import { jsonSchema, tool } from 'ai'
 
-import type { WfSdkConfig } from '../engine/config'
 import type {
   ToolRegistry,
   ToolRegistryEntry,
@@ -245,11 +244,14 @@ export function connectorToolEntries<TDeps>(
  * starting `mcp:`, which the namespacing exists to prevent; if someone does it
  * anyway, the tool they wrote and can debug is the safer one to keep.
  */
-export function withConnectorTools<TDeps>(
-  config: WfSdkConfig<TDeps>,
+export function withConnectorTools<
+  TDeps,
+  TConfig extends { toolRegistry: ToolRegistry<TDeps> },
+>(
+  config: TConfig,
   catalog: ConnectorCatalogEntry[],
   runtime: ConnectorRuntime,
-): WfSdkConfig<TDeps> {
+): TConfig {
   if (catalog.length === 0) return config
   const merged: ToolRegistry<TDeps> = new Map(config.toolRegistry)
   for (const entry of connectorToolEntries<TDeps>(catalog, runtime)) {

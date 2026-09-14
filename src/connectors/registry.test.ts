@@ -146,7 +146,7 @@ describe('merging into the host registry', () => {
     const host: ToolRegistry<Deps> = new Map([
       ['tavily_search', hostEntry('tavily_search')],
     ])
-    const merged = withConnectorTools(
+    const merged = withConnectorTools<Deps, WfSdkConfig<Deps>>(
       configWith(host),
       [catalogEntry()],
       runtime,
@@ -163,7 +163,11 @@ describe('merging into the host registry', () => {
     const host: ToolRegistry<Deps> = new Map([
       ['tavily_search', hostEntry('tavily_search')],
     ])
-    withConnectorTools(configWith(host), [catalogEntry()], runtime)
+    withConnectorTools<Deps, WfSdkConfig<Deps>>(
+      configWith(host),
+      [catalogEntry()],
+      runtime,
+    )
     expect([...host.keys()]).toEqual(['tavily_search'])
   })
 
@@ -173,7 +177,7 @@ describe('merging into the host registry', () => {
     const host: ToolRegistry<Deps> = new Map([
       ['mcp:linear:create_issue', hostEntry('mcp:linear:create_issue')],
     ])
-    const merged = withConnectorTools(
+    const merged = withConnectorTools<Deps, WfSdkConfig<Deps>>(
       configWith(host),
       [catalogEntry()],
       runtime,
@@ -185,6 +189,8 @@ describe('merging into the host registry', () => {
 
   test('an empty catalog returns the config untouched', () => {
     const config = configWith(new Map())
-    expect(withConnectorTools(config, [], runtime)).toBe(config)
+    expect(
+      withConnectorTools<Deps, WfSdkConfig<Deps>>(config, [], runtime),
+    ).toBe(config)
   })
 })

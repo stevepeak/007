@@ -1,6 +1,7 @@
 import {
   Activity,
   BrushCleaning,
+  Cable,
   Goal,
   Home,
   Microscope,
@@ -15,6 +16,7 @@ import { Fragment, useMemo, type ReactNode } from 'react'
 import { agentColor, agentIcon } from './agent-appearance'
 import { cn } from './cn'
 import { useAgent, useEvalSet, useRun, useTools, useWorkflow } from './hooks'
+import { useConnector } from './hooks-connectors'
 import { useFeedbackForSubjects } from './hooks-feedback'
 import { WfLink } from './nav'
 import { toolText } from './tool-appearance'
@@ -240,6 +242,8 @@ function TabItem({
       return <EvalRunTab asset={asset} {...common} />
     case 'feedbackItem':
       return <FeedbackTab asset={asset} {...common} />
+    case 'connector':
+      return <ConnectorTab asset={asset} {...common} />
   }
 }
 
@@ -248,6 +252,19 @@ type KindProps<T extends WfAsset['type']> = {
   active: boolean
   onSelect: () => void
   onClose: () => void
+}
+
+function ConnectorTab({ asset, ...rest }: KindProps<'connector'>) {
+  const { data } = useConnector(asset.connectorId)
+  const name = data?.connector.label || 'Connector'
+  return (
+    <TabChrome
+      icon={sectionIcon(Cable, 'text-amber-500')}
+      label={name}
+      trail={[name]}
+      {...rest}
+    />
+  )
 }
 
 function WorkflowTab({ asset, ...rest }: KindProps<'workflow'>) {

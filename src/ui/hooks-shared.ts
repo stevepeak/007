@@ -30,6 +30,12 @@ export const keys = {
   toolInvocationsAll: (toolId: string) =>
     ['wf', 'tool-invocations', toolId] as const,
   triggerEvents: ['wf', 'trigger-events'] as const,
+  connectors: ['wf', 'connectors'] as const,
+  connector: (id: string) => ['wf', 'connector', id] as const,
+  // Prefix key: invalidates every connector's detail at once, which is what a
+  // list-level mutation (delete, refresh) actually affects.
+  connectorAll: ['wf', 'connector'] as const,
+  connectorCapability: ['wf', 'connector-capability'] as const,
   workflows: ['wf', 'workflows'] as const,
   workflow: (id: string) => ['wf', 'workflow', id] as const,
   versions: (id: string) => ['wf', 'versions', id] as const,

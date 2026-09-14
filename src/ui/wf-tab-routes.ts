@@ -16,6 +16,7 @@ export type WfAsset =
   | { type: 'evalSample'; setId: string; sampleId: string }
   | { type: 'evalRun'; evalRunId: string }
   | { type: 'feedbackItem'; subjectId: string }
+  | { type: 'connector'; connectorId: string }
 
 /** Strip any query/hash and split a path into non-empty segments. */
 function segments(path: string): string[] {
@@ -45,6 +46,12 @@ export function classifyAssetPath(path: string): WfAsset | null {
   // `tools/<toolId>` — tool detail / playground.
   if (parts.length === 2 && parts[0] === 'tools') {
     return { type: 'tool', toolId: parts[1] }
+  }
+
+  // `connectors/<id>` — one connector's detail + tool catalog. `connectors`
+  // alone (len 1) is the list, a home route.
+  if (parts.length === 2 && parts[0] === 'connectors') {
+    return { type: 'connector', connectorId: parts[1] }
   }
 
   // `feedback/<subjectId>` — one rated item's detail (note + producing run +
@@ -142,6 +149,9 @@ export function tabGroup(path: string): WfTabGroup {
     case 'run':
       return 'run'
     case 'tool':
+    // A connector sits with the tools: it is where they come from, and the
+    // `default` below would otherwise file it under Workflows silently.
+    case 'connector':
       return 'tool'
     case 'evalSet':
     case 'evalSample':

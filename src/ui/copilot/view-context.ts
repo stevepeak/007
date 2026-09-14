@@ -34,5 +34,10 @@ export function deriveCopilotContext(
       return { subject: 'eval', subjectId: asset.setId }
     case 'feedbackItem':
       return { subject: 'feedback', subjectId: asset.subjectId }
+    case 'connector':
+      // Platform configuration rather than an authored asset: there is no
+      // connector subject for the copilot to ground on, and answering
+      // platform-wide is the honest fallback.
+      return { subject: 'system' }
   }
 }

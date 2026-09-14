@@ -1,6 +1,11 @@
 import type { UIMessage } from 'ai'
 
+import {
+  loadConnectorCatalog,
+  withConnectorTools,
+} from '../connectors/registry'
 import type { RunContext, WfSdkConfig } from '../engine/config'
+import type { WfDb } from '../storage/client'
 import type { AgentConfig, AgentNode } from '../engine/graph'
 import { executeAgentNode } from '../engine/nodes/agent'
 import { createMemorySink } from '../engine/stream-sink'
@@ -79,8 +84,25 @@ export async function executeAgentPreview<TDeps>(opts: {
    * the values for the prompt's `${…}` variables.
    */
   runContext: RunContext
+  /**
+   * Optional: also resolve MCP connector tools, so an agent under test sees the
+   * same tool set it will see in a real run. Omit and connector tools simply
+   * aren't offered here — which would make the playground quietly lie about
+   * what the agent can do.
+   */
+  connectors?: { db: WfDb; secret: string }
 }): Promise<AgentPreviewResult> {
-  const { config, wfConfig } = opts
+  const { config } = opts
+  const wfConfig = opts.connectors
+    ? withConnectorTools<TDeps, WfSdkConfig<TDeps>>(
+        opts.wfConfig,
+        await loadConnectorCatalog(opts.connectors.db),
+        {
+          resolveDb: () => opts.connectors!.db,
+          resolveSecret: () => opts.connectors!.secret,
+        },
+      )
+    : opts.wfConfig
   // The playground reproduces the agent AS CONFIGURED, including whether it
   // reasons. It used to force `reasoning: true` so the author could always
   // inspect the model's thinking in the trace — reasonable when the setting

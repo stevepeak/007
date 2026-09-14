@@ -2,6 +2,7 @@ import {
   Activity,
   Bot,
   Boxes,
+  Cable,
   History,
   Plug,
   Target,
@@ -129,6 +130,17 @@ export const DEFAULT_WF_SECTIONS: WfHubSection[] = [
     accent: {
       card: 'hover:border-teal-300 hover:shadow-lg hover:shadow-teal-100',
       icon: 'group-hover:bg-teal-100 group-hover:text-teal-600 group-hover:shadow-md group-hover:shadow-teal-200',
+    },
+  },
+  {
+    key: 'connectors',
+    title: 'Connectors',
+    description:
+      'Sign in to an MCP server — Linear, or any other — and choose which of its tools your agents may call.',
+    icon: Cable,
+    accent: {
+      card: 'hover:border-amber-300 hover:shadow-lg hover:shadow-amber-100',
+      icon: 'group-hover:bg-amber-100 group-hover:text-amber-600 group-hover:shadow-md group-hover:shadow-amber-200',
     },
   },
   {

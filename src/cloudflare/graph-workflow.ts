@@ -399,7 +399,7 @@ export function makeGraphWorkflow<
           )
         : []
       const runConfig = connectorSecret
-        ? withConnectorTools(config, connectorCatalog, {
+        ? withConnectorTools<TDeps, WfSdkConfig<TDeps>>(config, connectorCatalog, {
             resolveDb: () => createWfDb(env.WF_DB),
             resolveSecret: () => connectorSecret,
           })

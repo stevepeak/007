@@ -42,6 +42,18 @@ describe('classifyAssetPath — asset routes', () => {
     })
   })
 
+  test('connector detail', () => {
+    expect(classifyAssetPath('connectors/linear')).toEqual({
+      type: 'connector',
+      connectorId: 'linear',
+    })
+  })
+
+  // `connectors` alone is the list — a home route, never a tab.
+  test('the connectors list is not an asset', () => {
+    expect(classifyAssetPath('connectors')).toBeNull()
+  })
+
   test('eval set', () => {
     expect(classifyAssetPath('evals/set_1')).toEqual({
       type: 'evalSet',
@@ -119,6 +131,7 @@ describe('tabGroup', () => {
     ['evals/set_1/samples/s_1?check=0', 'evals'],
     ['evals/runs/er_1', 'evals'],
     ['feedback/fb_1', 'feedback'],
+    ['connectors/linear', 'tool'],
   ])('%s → %s', (path, group) => {
     expect(tabGroup(path)).toBe(group as ReturnType<typeof tabGroup>)
   })

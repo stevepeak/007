@@ -5,6 +5,10 @@ export {
   type WfServerContext,
 } from './handlers'
 export {
+  createWfConnectorCallback,
+  type CreateWfConnectorCallbackOptions,
+} from './connector-callback'
+export {
   createHttpWfDataClient,
   type HttpWfDataClientOptions,
 } from './http-client'
@@ -39,6 +43,12 @@ export type {
   EvalToolMode,
   EvalTools,
   ModelOption,
+  ConnectorCapability,
+  ConnectorConnectionInfo,
+  ConnectorDetail,
+  ConnectorRefreshResult,
+  ConnectorSummary,
+  ConnectorToolInfo,
   ToolContextField,
   ToolOption,
   WfChangeSummary,

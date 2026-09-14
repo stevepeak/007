@@ -137,6 +137,14 @@ export {
 } from './appearance-picker'
 export { ComingSoon, type ComingSoonProps } from './coming-soon'
 export { FeedbackList, type FeedbackListProps } from './feedback-list'
+export {
+  ConnectorDetail,
+  type ConnectorDetailProps,
+} from './connectors/connector-detail'
+export {
+  ConnectorsList,
+  type ConnectorsListProps,
+} from './connectors/connectors-list'
 export { McpConnect, type McpConnectProps } from './mcp/mcp-connect'
 export {
   MessageFeedback,

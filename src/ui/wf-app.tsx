@@ -16,6 +16,8 @@ import { EvalsList } from './evals/evals-list'
 import { FeedbackDetail } from './feedback-detail'
 import { FeedbackList } from './feedback-list'
 import { useTools } from './hooks'
+import { ConnectorDetail } from './connectors/connector-detail'
+import { ConnectorsList } from './connectors/connectors-list'
 import { McpConnect } from './mcp/mcp-connect'
 import { ModelsList } from './models-list'
 import { useWfNav, WfNavProvider } from './nav'
@@ -257,6 +259,20 @@ function HomeRoutes({
         </WfShell>
       )
     }
+    if (key === 'connectors') {
+      // `?connected=<id>` / `?connector_error=<msg>` are set by the OAuth
+      // callback redirect — the only way the round trip can report itself, since
+      // the browser comes back from a server we don't control.
+      const params = new URLSearchParams(queryString)
+      return (
+        <WfShell crumbs={[sectionCrumb('connectors', { current: true })]} scroll>
+          <ConnectorsList
+            connectedId={params.get('connected')}
+            errorMessage={params.get('connector_error')}
+          />
+        </WfShell>
+      )
+    }
     if (key === 'mcp') {
       return (
         <WfShell crumbs={[sectionCrumb('mcp', { current: true })]} scroll>
@@ -328,6 +344,8 @@ function AssetRoute({ path }: { path: string }) {
 
     case 'tool':
       return <ToolDetailPage toolId={asset.toolId} />
+    case 'connector':
+      return <ConnectorDetail connectorId={asset.connectorId} />
     case 'evalRun':
       return (
         <EvalRunReport

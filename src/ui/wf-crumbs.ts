@@ -1,5 +1,6 @@
 import {
   Activity,
+  Cable,
   Bot,
   Boxes,
   History,
@@ -26,6 +27,7 @@ type WfSectionKey =
   | 'models'
   | 'activity'
   | 'feedback'
+  | 'connectors'
   | 'mcp'
 
 const SECTIONS: Record<
@@ -40,6 +42,7 @@ const SECTIONS: Record<
   models: { title: 'Models', icon: Boxes, iconClassName: 'text-amber-500', to: 'models' },
   activity: { title: 'Activity', icon: History, iconClassName: 'text-slate-500', to: 'activity' },
   feedback: { title: 'Feedback', icon: ThumbsUp, iconClassName: 'text-teal-500', to: 'feedback' },
+  connectors: { title: 'Connectors', icon: Cable, iconClassName: 'text-amber-500', to: 'connectors' },
   mcp: { title: 'MCP', icon: Plug, iconClassName: 'text-fuchsia-500', to: 'mcp' },
 }
 

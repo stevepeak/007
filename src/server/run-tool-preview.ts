@@ -2,6 +2,11 @@ import { rehydrateBlobRefs } from '../engine/blob-ref'
 import type { RunContext, WfSdkConfig } from '../engine/config'
 import type { ToolNode } from '../engine/graph'
 import { executeToolNode } from '../engine/nodes/tool'
+import {
+  loadConnectorCatalog,
+  withConnectorTools,
+} from '../connectors/registry'
+import type { WfDb } from '../storage/client'
 
 import type { WfToolPreviewResult } from './protocol'
 
@@ -36,8 +41,25 @@ export async function executeToolPreview<TDeps>(opts: {
   >
   /** Per-run context carrying `env` + tenant scope, passed to `buildRunDeps`. */
   runContext: RunContext
+  /**
+   * Optional: also resolve MCP connector tools, so one can be tested here
+   * before anybody points an agent at it. Omit and only host tools resolve.
+   */
+  connectors?: { db: WfDb; secret: string }
 }): Promise<WfToolPreviewResult> {
-  const { toolId, args, wfConfig, runContext } = opts
+  const { toolId, args, runContext } = opts
+  const wfConfig = opts.connectors
+    ? withConnectorTools<
+        TDeps,
+        Pick<
+          WfSdkConfig<TDeps>,
+          'toolRegistry' | 'buildRunDeps' | 'resolveBlobRef'
+        >
+      >(opts.wfConfig, await loadConnectorCatalog(opts.connectors.db), {
+        resolveDb: () => opts.connectors!.db,
+        resolveSecret: () => opts.connectors!.secret,
+      })
+    : opts.wfConfig
 
   // Build the REAL per-run deps — this is what makes the call hit live services.
   const toolDeps = await wfConfig.buildRunDeps(runContext)
