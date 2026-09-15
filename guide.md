@@ -707,6 +707,10 @@ type StartGraphRunInput = {
 }
 ```
 
+Secrets are per-Worker, so anything BOTH runtimes read has to be set twice with
+the same value — `WF_CONNECTOR_KEY` most of all, since the web Worker encrypts a
+connector credential and this one decrypts it mid-run (§5d).
+
 If your web Worker starts runs, add a **service binding** from web → workflows
 (this repo calls it `WORKFLOWS`) and call `startGraphRun` over RPC, falling back
 to `POST /graph-runs` in local dev. For that fallback, don't hand-roll the fetch —
@@ -929,6 +933,14 @@ workflows, runs and evals. It is a thin shell over `WfDataClient`: every call
 goes through the mounted route, so it gets the same input validation, the same
 `wf_change` audit log, and every host hook you wired above. Nothing new to
 implement on the server side.
+
+> ⚠️ **If your host app also ships an MCP server of its own, name the two apart
+> now.** They are unrelated servers with unrelated tool catalogs and unrelated
+> credentials: yours is likely per-user and minted in your UI, while `wf-mcp`'s
+> is ONE shared secret for the deployment and is minted nowhere. "Get me an MCP
+> token" is then an ambiguous sentence, and the wrong answer looks plausible
+> right up until every call 403s. The reference host calls them "kitchen MCP"
+> and "007 MCP" and keeps a table of which is which.
 
 **One thing to add: a headless credential.** The route above is gated by a
 browser session, which an MCP client cannot produce. Check a bearer token
@@ -1261,6 +1273,113 @@ headers. Three things follow, and they are the reason it is built this way:
 
 The host supplies nothing tool-shaped. What it does supply is the model
 (`config.getModel`, resolved from the picker in the dock) and the gate.
+
+### 5d. Inbound: MCP connectors
+
+The mirror image of 5b. `wf-mcp` points an outside client at YOUR deployment;
+a **connector** points your deployment at an outside MCP server, and its tools
+become ordinary 007 tools — pickable in an agent's tool list, droppable as Tool
+nodes, visible on the Tools page, runnable in the playground. Nothing about a
+particular service ships in code: a connector is a row, added in the UI at
+`/connectors`. They are named apart everywhere for this reason — **Connectors is
+inbound, MCP is outbound**.
+
+Four things to wire, and the first one is the switch.
+
+**1. An encryption key (`resolveConnectorSecret`).** Connector credentials are
+the one secret the SDK persists itself — an OAuth token is minted by a user
+clicking Connect and rotates on refresh, so unlike a model provider's key it
+cannot live in your env. They are stored AES-GCM-encrypted under a key you
+supply, on `WfSdkConfig` so BOTH runtimes see it:
+
+```ts
+// host config — read late off the live env, like resolveTelemetry
+resolveConnectorSecret: ({ env }) => (env as HostEnv | undefined)?.WF_CONNECTOR_KEY,
+```
+
+Omit it and connectors are **off**: the catalog resolves to nothing, no
+connector tool is registered, and the Connectors page says what to configure
+rather than failing at the moment somebody presses Connect. That is deliberate —
+a deployment that has not thought about key management does not get token
+storage by default.
+
+The value must be **identical on the web Worker and the workflows Worker**. The
+web one encrypts at Connect time; the workflows one decrypts inside a run
+(`graph-workflow` reads it per wake). A mismatch surfaces as an unreadable
+credential mid-run, not as a config error at startup. Generate it with
+`openssl rand -base64 32` and set it on each Worker:
+
+```bash
+openssl rand -base64 32          # once — the same value for both
+wrangler secret put WF_CONNECTOR_KEY --config apps/web/wrangler.jsonc
+wrangler secret put WF_CONNECTOR_KEY --config apps/workflows/wrangler.jsonc
+```
+
+Rotating the key loses no data, but every connector must be reconnected: the old
+ciphertext becomes unreadable, on purpose.
+
+**2. The OAuth callback route.** One GET, because a redirect cannot go through
+the JSON data plane — the browser arrives from a server you do not control,
+carrying `code` and `state` as query parameters:
+
+```ts
+// app/api/wf/connectors/callback/route.ts
+export const GET = createWfConnectorCallback({
+  resolveDb,
+  resolveContext,                     // gate it exactly as tightly as the editor
+  resolveSecret: () => env.WF_CONNECTOR_KEY,
+  defaultReturnTo: '/workflows/connectors',   // wherever YOUR UI is mounted
+})
+```
+
+Then tell the data handler where you put it:
+
+```ts
+connectorCallbackPath: '/api/wf/connectors/callback',
+```
+
+**The two must match.** That path is registered with each authorization server
+as the redirect URI, so a mismatch is rejected at authorization time rather than
+at startup. The route stores a credential — gate it with the same check as
+`/api/wf`, not a looser one.
+
+**3. The playgrounds.** `executeAgentPreview` and `executeToolPreview` each take
+an optional `{ db, secret }`. Skip it and the playground quietly disagrees with
+production about what an agent can call, because `mcp:*` tools are merged into
+the registry per run:
+
+```ts
+connectors: secret ? { db: wfDb, secret } : undefined,
+```
+
+**4. Migrations + peer dep.** Apply migration `0030_wf_connectors.sql`
+(§3 covers how); `assertWfSchema` probes one of its tables, so a dev server tells
+you if you forget. `@cfworker/json-schema` is an optional peer of the MCP SDK
+and the client will not start without it.
+
+For pointing a local build at an MCP server on `http://localhost:…`, pass
+`connectorAllowInsecureUrls: true` on the data handler — an explicit opt-in
+rather than an environment sniff, so nothing decides on its own that a
+deployment is "dev enough".
+
+#### What to expect once it is on
+
+- **Nothing a server advertises is callable until a human enables it.** Discovery
+  inserts every tool **disabled**; a refresh preserves what was enabled and never
+  re-enables what was turned off. A catalog pull that quietly widened what your
+  agents could do would be the wrong default.
+- **`authKind` is `oauth2`, `bearer` or `none`.** A pasted API key / PAT is a
+  first-class option, and the only one for servers that publish no OAuth
+  metadata at all — including, usually, your own app's MCP endpoint.
+- **Tool ids are namespaced `mcp:<connector>:<tool>`** and the connector id is
+  permanent — it is frozen into published agent configs, so renaming is a delete
+  and a re-create.
+- **The catalog is frozen per run**, in its own durable step, exactly as prompts
+  and agents already are. A refresh mid-run cannot change what that run is doing.
+- **Remote tool descriptions are untrusted text that reaches your model.** They
+  are rendered as text and never as markup, and each tool is enabled by hand.
+- **A withdrawn tool is marked, not deleted.** An agent may still reference it,
+  and "the server withdrew this" is a better answer than an unresolvable id.
 
 ---
 
@@ -1655,6 +1774,7 @@ project is: write a `WfSdkConfig`, mount one API route, mount `WfApp`, export
 | Seed helper + template (legacy)        | `packages/wf-host/src/{seed,template}.ts`           |
 | RPC contract (`WorkflowsRpc`)          | `packages/wf-host/src/rpc.ts`                       |
 | Data API route + run-exec hooks        | `apps/web/app/api/wf/route.ts`                      |
+| Connector OAuth callback               | `apps/web/app/api/wf/connectors/callback/route.ts`  |
 | RPC client (binding + HTTP fallback)   | `apps/web/lib/workflows.ts`                         |
 | UI provider                            | `apps/web/components/wf/provider.tsx`               |
 | UI mount (catch-all)                   | `apps/web/app/(app)/wf/[[...slug]]/page.tsx`        |
