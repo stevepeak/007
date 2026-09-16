@@ -36,10 +36,10 @@
   },
   "scripts": {
     "clean": "rm -rf node_modules dist .turbo",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.ui.json && tsc --noEmit -p tsconfig.test.json",
+    "typecheck": "sh -c 'tsc --noEmit & a=$!; tsc --noEmit -p tsconfig.ui.json & b=$!; tsc --noEmit -p tsconfig.test.json & c=$!; rc=0; for p in $a $b $c; do wait $p || rc=1; done; exit $rc'",
     "test": "bun test",
-    "lint": "eslint --ignore-pattern='./migrations/' .",
-    "fix": "eslint --fix --quiet --ignore-pattern='./migrations/' .",
+    "lint": "eslint --cache --ignore-pattern='./migrations/' .",
+    "fix": "eslint --cache --fix --quiet --ignore-pattern='./migrations/' .",
     "lock": "sh -c 'd=$(mktemp -d); cp package.json bun.lock \"$d\"; (cd \"$d\" && bun install --lockfile-only); cp \"$d/bun.lock\" ./bun.lock; rm -rf \"$d\"; echo \"[007] bun.lock regenerated standalone\"'",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "sh -c '[ -f ../../.wf-migrate.env ] && . ../../.wf-migrate.env; wrangler d1 migrations apply ${WF_D1_NAME:-DB} --local --persist-to ${WF_D1_STATE:-../../.wrangler/state} --config ${WF_D1_CONFIG:-./wrangler.jsonc}'",

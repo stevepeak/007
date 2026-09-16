@@ -6,8 +6,27 @@ on:
   pull_request:
   workflow_dispatch:
 
+# typecheck, lint and test were one serial job. They share no state and none
+# produces anything the others read, so the only thing serialising them bought
+# was a longer wall clock: lint alone is roughly twice typecheck and test put
+# together. Split, a run costs the slowest step instead of the sum. `bun install`
+# takes about a second here, so paying it three times is cheaper than waiting.
 jobs:
-  ci:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      # --frozen-lockfile fails when bun.lock and package.json disagree, which
+      # is what every run from 2026-09-03 to 2026-09-15 died on: dependency
+      # bumps landed in package.json without `bun run lock` regenerating the
+      # standalone lockfile, so CI never reached a single check for two weeks.
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,6 +34,18 @@ jobs:
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
-      - run: bun run typecheck
+      # ESLint's own --cache is deliberately NOT persisted between runs. It keys
+      # on file content and ESLint config only, so with type-aware rules it can
+      # serve a stale pass after a change in a *different* file. Locally that is
+      # a fair trade for the speed; in CI a cold run is the point.
       - run: bun run lint
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
       - run: bun test

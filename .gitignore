@@ -1,6 +1,7 @@
 node_modules
 dist
 .turbo
+.eslintcache
 .wrangler
 *.tsbuildinfo
 .DS_Store
