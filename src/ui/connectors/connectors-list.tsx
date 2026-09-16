@@ -300,7 +300,6 @@ function AddConnectorForm({ onDone }: { onDone: () => void }) {
           <Input
             id="wf-connector-label"
             value={label}
-            placeholder="Linear"
             onChange={(e) => {
               setLabel(e.target.value)
               // Offer a slug, but let it be overridden — it is permanent.
@@ -314,7 +313,6 @@ function AddConnectorForm({ onDone }: { onDone: () => void }) {
           <Input
             id="wf-connector-id"
             value={id}
-            placeholder="linear"
             onChange={(e) => setId(e.target.value)}
             required
           />
@@ -328,7 +326,6 @@ function AddConnectorForm({ onDone }: { onDone: () => void }) {
         <Input
           id="wf-connector-url"
           value={url}
-          placeholder="https://mcp.linear.app/mcp"
           onChange={(e) => setUrl(e.target.value)}
           required
         />
@@ -352,7 +349,6 @@ function AddConnectorForm({ onDone }: { onDone: () => void }) {
           <Input
             id="wf-connector-scopes"
             value={scopes}
-            placeholder="read"
             onChange={(e) => setScopes(e.target.value)}
           />
           <p className="text-xs text-neutral-500">
