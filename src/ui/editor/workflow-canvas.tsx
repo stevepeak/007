@@ -245,6 +245,10 @@ function CanvasInner({
               // React Flow's default maxZoom is 2, which blows small graphs up to
               // fill the viewport. Cap at 1 so the entire graph stays visible.
               fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
+              // React Flow's default minZoom is 0.5, which is not far enough out
+              // to see a large workflow whole — and it clamps fitView too, so big
+              // graphs opened cropped. 0.1 lets the whole graph fit on screen.
+              minZoom={0.1}
               proOptions={{ hideAttribution: true }}
             >
               <Background gap={20} />
