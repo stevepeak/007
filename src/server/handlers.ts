@@ -143,6 +143,11 @@ const wfInputSchemas: Record<keyof WfDataClient, z.ZodType> = {
   discardDraft: z.object({ workflowId: z.string() }),
   listVersions: z.object({ workflowId: z.string() }),
   getVersion: z.object({ versionId: z.string() }),
+  validateGraph: z.object({
+    workflowId: z.string().optional(),
+    versionId: z.string().optional(),
+    graph: PASSED_THROUGH.optional(),
+  }),
   createWorkflow: z.object({
     name: z.string(),
     description: z.string().optional(),

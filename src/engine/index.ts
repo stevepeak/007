@@ -146,6 +146,10 @@ export {
   type GraphIssueSeverity,
 } from './graph-issues'
 export {
+  collectToolArgIssues,
+  type ToolInputSchemas,
+} from './graph-tool-args'
+export {
   DEFAULT_NODE_BUDGET,
   Scheduler,
   WorkflowBudgetError,

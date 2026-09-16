@@ -24,6 +24,7 @@ const WORDS: Record<number, string> = {
   5: 'five',
   6: 'six',
   7: 'seven',
+  10: 'ten',
   15: 'fifteen',
   16: 'sixteen',
   17: 'seventeen',
@@ -37,6 +38,10 @@ const WORDS: Record<number, string> = {
   25: 'twenty-five',
   26: 'twenty-six',
   27: 'twenty-seven',
+  28: 'twenty-eight',
+  29: 'twenty-nine',
+  30: 'thirty',
+  31: 'thirty-one',
 }
 
 describe('the tool catalog ↔ guide.md', () => {

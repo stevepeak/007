@@ -62,6 +62,7 @@ import type {
 import type {
   WfChangeSummary,
   WfVersionSummary,
+  WfGraphValidation,
   WfWorkflowDetail,
   WfWorkflowListItem,
 } from './protocol-workflows'
@@ -234,6 +235,18 @@ export interface WfDataClient {
   getVersion(
     versionId: string,
   ): Promise<{ graph: WorkflowGraph; versionNumber: number } | null>
+  /**
+   * Lint a graph the way the editor's Issues panel does, plus the checks only
+   * the server can make (Tool-node args against the live tool catalog). Pass
+   * exactly one of `graph` (as authored), `versionId`, or `workflowId` — the
+   * last resolves to the workflow's draft, falling back to its published
+   * version. Never writes.
+   */
+  validateGraph(input: {
+    workflowId?: string
+    versionId?: string
+    graph?: WorkflowGraph
+  }): Promise<WfGraphValidation>
   listRuns(input: WfRunListInput): Promise<WfRunListResult>
   /**
    * The runs one run spawned — a durable iteration's items, or a workflow-call

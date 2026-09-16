@@ -2,7 +2,9 @@ import { useMemo } from 'react'
 
 import {
   collectGraphIssues,
+  collectToolArgIssues,
   type GraphIssue,
+  type JsonSchema,
   type WorkflowGraph,
   type WorkflowNode,
 } from '../../engine'
@@ -26,6 +28,11 @@ export function useGraphIssues(graph: WorkflowGraph): GraphIssue[] {
 
     const bindingIssues: GraphIssue[] = []
     const checkBindings = (node: WorkflowNode) => {
+      // Tool nodes are linted below by `collectToolArgIssues`, which reports
+      // an unbound required arg AND the drift this check can't see — a literal
+      // of the wrong type, an arg the tool no longer declares. One report per
+      // problem: listing the unbound arg here as well showed it twice.
+      if (node.kind === 'tool') return
       const missing = missingRequiredInputs(node, maps)
       if (missing.length === 0) return
       // Every `${variable}` an agent declares — across its system prompt AND its
@@ -128,7 +135,21 @@ export function useGraphIssues(graph: WorkflowGraph): GraphIssue[] {
       }
     }
 
-    const all = [...structural, ...bindingIssues]
+    // Tool-node args against the tool catalog — the server runs the same
+    // function for `validateGraph`, so the panel and the MCP agree on what is
+    // wrong. Skipped until the catalog has loaded: an empty catalog would
+    // report every tool as unknown for one render.
+    const toolArgIssues =
+      maps.toolsById.size > 0
+        ? collectToolArgIssues(
+            graph,
+            new Map<string, JsonSchema | undefined>(
+              [...maps.toolsById].map(([id, t]) => [id, t.inputSchema]),
+            ),
+          )
+        : []
+
+    const all = [...structural, ...bindingIssues, ...toolArgIssues]
     // Errors before warnings; otherwise stable in discovery order.
     return all
       .map((issue, i) => ({ issue, i }))

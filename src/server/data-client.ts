@@ -91,6 +91,7 @@ export function createWfDataClient(call: WfDataTransport): WfDataClient {
     discardDraft: bind('discardDraft'),
     listVersions: (workflowId) => send('listVersions', { workflowId }),
     getVersion: (versionId) => send('getVersion', { versionId }),
+    validateGraph: bind('validateGraph'),
     listRuns: bind('listRuns'),
     listChildRuns: bind('listChildRuns'),
     listRunTriggerKinds: bind('listRunTriggerKinds'),

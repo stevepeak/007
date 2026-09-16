@@ -4,6 +4,7 @@ import { draftTools } from './tools-drafts'
 import { evalRunReadTools, evalRunWriteTools } from './tools-eval-runs'
 import { evalReadTools, evalWriteTools } from './tools-evals'
 import { platformReadTools } from './tools-platform'
+import { workflowReadTools, workflowWriteTools } from './tools-workflows'
 
 // The catalog — every tool this build knows about, and the gate that decides
 // which of them a surface gets.
@@ -20,10 +21,12 @@ export function allTools(): WfMcpTool[] {
     ...platformReadTools(),
     ...evalReadTools(),
     ...evalRunReadTools(),
+    ...workflowReadTools(),
     ...draftTools(),
     ...evalWriteTools(),
     ...evalRunWriteTools(),
     ...agentWriteTools(),
+    ...workflowWriteTools(),
   ]
 }
 

@@ -1,4 +1,14 @@
-import { changedEntityMetaFields } from '../../engine'
+import { loadConnectorCatalog } from '../../connectors/registry'
+import {
+  changedEntityMetaFields,
+  collectGraphIssues,
+  collectToolArgIssues,
+  workflowGraphSchema,
+  type GraphIssue,
+  type JsonSchema,
+  type ToolInputSchemas,
+  type WorkflowGraph,
+} from '../../engine'
 import {
   createWorkflow,
   discardDraft,
@@ -14,6 +24,7 @@ import {
 } from '../../storage/data'
 import type {
   WfChangeSummary,
+  WfGraphValidation,
   WfWorkflowDetail,
   WfWorkflowSummary,
 } from '../protocol'
@@ -21,11 +32,14 @@ import type {
 import { computeChangeSummary } from './change-summary'
 import {
   NotFoundError,
+  BadRequestError,
   parseGraph,
   requireExists,
   requireStr,
   toEpoch,
+  toJsonSchema,
   type CreateWfSdkHandlersOptions,
+  type HandlerCtx,
   type WfHandlers,
 } from './shared'
 
@@ -59,7 +73,27 @@ export function buildWorkflowHandlers<TDeps>(
   | 'discardDraft'
   | 'listVersions'
   | 'getVersion'
+  | 'validateGraph'
 > {
+  // Host tools' input schemas, converted once per isolate and only if a
+  // validation ever asks — the same `z.toJSONSchema` cost `listTools` memoizes,
+  // for the same reason (see handlers/models.ts). Connector tools already carry
+  // JSON Schema and are read per call.
+  let hostToolInputs: Map<string, JsonSchema | undefined> | null = null
+  const toolInputs = async (db: HandlerCtx['db']): Promise<ToolInputSchemas> => {
+    hostToolInputs ??= new Map(
+      [...opts.config.toolRegistry].map(([id, entry]) => [
+        id,
+        toJsonSchema(entry.inputSchema, 'input'),
+      ]),
+    )
+    const all = new Map(hostToolInputs)
+    for (const entry of await loadConnectorCatalog(db)) {
+      all.set(entry.id, (entry.inputSchema as JsonSchema | null) ?? undefined)
+    }
+    return all
+  }
+
   return {
     listWorkflows: async (c) => {
       const rows = await listWorkflowsWithStats(c.db)
@@ -273,6 +307,78 @@ export function buildWorkflowHandlers<TDeps>(
       return {
         graph: v.graph,
         versionNumber: v.versionNumber,
+      }
+    },
+
+    validateGraph: async (c) => {
+      const p = c.params as {
+        workflowId?: string
+        versionId?: string
+        graph?: unknown
+      }
+      let graph: WorkflowGraph
+      let source: WfGraphValidation['source']
+      let versionNumber: number | null = null
+      if (p.graph !== undefined) {
+        graph = parseGraph(p)
+        source = 'supplied'
+      } else if (p.versionId) {
+        const v = await getVersionGraph(c.db, p.versionId)
+        if (!v) throw new NotFoundError('Version not found')
+        graph = v.graph
+        source = 'version'
+        versionNumber = v.versionNumber
+      } else if (p.workflowId) {
+        const owner = await getWorkflow(c.db, p.workflowId)
+        if (!owner) throw new NotFoundError('Workflow not found')
+        // A draft row exists beside nearly every workflow (publishing leaves it
+        // matching the version it published), so "has a draft" means nothing on
+        // its own — report `draft` only when it actually differs from live.
+        const draftGraph = owner.draft
+          ? parseStoredGraph(owner.draft.graph)
+          : null
+        const liveGraph = owner.currentVersion
+          ? parseStoredGraph(owner.currentVersion.graph)
+          : null
+        if (
+          draftGraph &&
+          (!liveGraph || JSON.stringify(draftGraph) !== JSON.stringify(liveGraph))
+        ) {
+          graph = draftGraph
+          source = 'draft'
+        } else if (owner.currentVersion) {
+          graph = parseStoredGraph(owner.currentVersion.graph)
+          source = 'published'
+          versionNumber = owner.currentVersion.versionNumber
+        } else {
+          throw new NotFoundError('Workflow has no draft and no version')
+        }
+      } else {
+        throw new BadRequestError(
+          'validateGraph needs one of graph, versionId or workflowId',
+        )
+      }
+
+      const issues: GraphIssue[] = collectGraphIssues(graph)
+      // The strict runtime gate, second: `collectGraphIssues` mirrors its
+      // structural checks but is allowed to diverge (it guides, the schema
+      // rejects), so anything the Scheduler would refuse is listed in its own
+      // words too. A duplicate line beats a graph that lints clean and cannot
+      // run.
+      const strict = workflowGraphSchema.safeParse(graph)
+      if (!strict.success) {
+        for (const i of strict.error.issues) {
+          issues.push({ severity: 'error', message: `Runtime check: ${i.message}` })
+        }
+      }
+      issues.push(...collectToolArgIssues(graph, await toolInputs(c.db)))
+
+      return {
+        source,
+        versionNumber,
+        issues,
+        errors: issues.filter((i) => i.severity === 'error').length,
+        warnings: issues.filter((i) => i.severity === 'warning').length,
       }
     },
   }

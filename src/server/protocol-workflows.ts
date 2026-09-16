@@ -1,4 +1,5 @@
 import type { WorkflowGraph } from '../engine/graph'
+import type { GraphIssue } from '../engine/graph-issues'
 
 export type WfWorkflowSummary = {
   id: string
@@ -69,4 +70,22 @@ export type WfVersionSummary = {
   aiSummaryLong: string | null
   createdAt: number
   publishedAt: number | null
+}
+
+/**
+ * The author-time lint of one graph, as the server sees it: the engine's
+ * structural checks, the strict runtime schema, and — because only the server
+ * holds every tool's input schema in one place — Tool-node argument drift
+ * against the live tool catalog (`collectToolArgIssues`).
+ *
+ * `errors` is the number that gates a publish: each one is a graph the engine
+ * would reject or a node that would throw on its first message.
+ */
+export type WfGraphValidation = {
+  /** Which graph was checked — what the caller asked for, resolved. */
+  source: 'supplied' | 'draft' | 'published' | 'version'
+  versionNumber: number | null
+  issues: GraphIssue[]
+  errors: number
+  warnings: number
 }

@@ -15,6 +15,45 @@ without you and is still probably wrong to skip.
 
 ---
 
+## 2026-09-16 — Workflow write tools on `wf-mcp`, and a Tool-arg lint
+
+The MCP catalog (and the System Copilot, which shares it) can now change and
+publish **workflows**. Seven tools: `list_workflow_versions`,
+`get_workflow_version` and `validate_workflow_graph` (reads, on every server);
+`patch_workflow_draft`, `update_workflow_draft`, `publish_workflow` and
+`discard_workflow_draft` (writes, behind `--write`). Agents are unchanged —
+`publish_agent` is still deliberately absent; guide §5b says why the line falls
+differently for workflows.
+
+### Action
+
+**`WfDataClient` gained `validateGraph`.** If you implement the interface
+yourself rather than using `createHttpWfDataClient` / `createWfSdkHandlers`,
+add it. It lints a draft, a version, or a supplied graph: the engine's
+`collectGraphIssues`, the strict runtime schema, and the new
+`collectToolArgIssues` — every Tool node's args against the tool catalog (an arg
+the tool no longer declares, a required arg left unbound, a literal of the wrong
+type, an unknown tool id). Each of those is a run that fails at that node; the
+one that prompted this shipped to a customer as a boolean stored as the text
+`"false"`.
+
+**The editor's Issues panel now reports the same tool-arg drift**, as errors.
+A graph that published clean yesterday may show errors today if a tool's input
+schema changed underneath it — that is the point, not a regression. Fix the
+args (the message says what type to store), or the run fails where the panel
+says it will.
+
+### Also
+
+- `publish_workflow` requires the `baseVersionNumber` the caller read and
+  refuses if a newer version is live — one draft row per workflow means the
+  last publish wins, and this is what stops it winning silently.
+- `collectToolArgIssues` / `ToolInputSchemas` are exported from
+  `@stevepeak/007/engine`. Pure over JSON Schema, so a host can run it wherever
+  it holds a tool catalog.
+
+---
+
 ## 2026-09-14 — Tavily web search removed
 
 The built-in `tavily_search` tool is gone, and with it the

@@ -1004,7 +1004,7 @@ claude mcp add wf \
 Flags of the same name (`--base-url=`, `--api-path=`, `--token=`, `--timeout=`)
 win over the env, and `--write` registers the mutating tools.
 
-**What it exposes.** Twenty-four tools — eighteen reads, and six writes that
+**What it exposes.** Thirty-one tools — twenty-one reads, and ten writes that
 exist only with `--write`. The same catalog backs the System Copilot (§5c), so
 this table is both surfaces.
 
@@ -1012,6 +1012,8 @@ this table is both surfaces.
 | --------------------------------- | --------- | ------------------------------------------------------------------- |
 | `list_agents` / `get_agent`       | read      | the reusable LLM workers, published version + unsaved draft         |
 | `list_workflows` / `get_workflow` | read      | the graphs, published + draft                                       |
+| `list_workflow_versions` / `get_workflow_version` | read | the version history and any one published graph — what a publish changed |
+| `validate_workflow_graph`         | read      | the editor's lint plus Tool-node args against the live tool catalog |
 | `list_runs`                       | read      | run history; filter by `status` to hunt failures                    |
 | `get_run`                         | read      | one run's trace — steps, errors, reasoning, tool I/O, cost. Clipped |
 | `get_run_step`                    | read      | one step unclipped, by the `cursor` `get_run` showed                |
@@ -1030,6 +1032,10 @@ this table is both surfaces.
 | `run_eval`                        | **write** | launch a sweep. Spends real model calls; returns before it finishes |
 | `update_agent_draft`              | **write** | replace an agent's unsaved draft. Never publishes                   |
 | `run_agent_preview`               | **write** | one throwaway run of an agent. **Every tool simulated**             |
+| `patch_workflow_draft`            | **write** | named ops on a workflow's draft — set a tool arg, an edge, a label. Lints the result |
+| `update_workflow_draft`           | **write** | replace a workflow's draft graph outright                           |
+| `publish_workflow`                | **write** | the draft → a new version. Refused on a lint error or a stale `baseVersionNumber` |
+| `discard_workflow_draft`          | **write** | drop the draft; says what was lost                                  |
 
 `run_eval` and `run_agent_preview` are writes not because they edit a definition
 but because they **spend money** — which is the line the flag is actually
@@ -1086,7 +1092,13 @@ somewhere else. It renders no credential — only the variable's name.
 consequence. `publish_agent` is not in the catalog: a published version floats
 into every workflow referencing that agent, so it is the one action here that
 changes what customers get, and `update_agent_draft` deliberately stops one step
-short of it. And `run_agent_preview` does not accept `liveToolIds`, so a
+short of it. (`publish_workflow` IS here, because a workflow version changes
+only its own trigger — and the two ways a workflow publish went wrong in
+practice were gaps a person fell through as well: a Tool node whose args had
+drifted from the tool's schema, and a second author publishing from a stale
+draft over the first author's fix. So it refuses while `validate_workflow_graph`
+reports an error, and requires the `baseVersionNumber` the caller read, refusing
+if a newer one is live.) And `run_agent_preview` does not accept `liveToolIds`, so a
 previewed run touches nothing outside the process — the UI playground does offer
 live tools, behind a per-tool toggle a person flips having read the warning, and
 a tool call has no equivalent of that moment. `run_tool_preview`, whose whole
@@ -1107,7 +1119,7 @@ reachable — `get_run_step` returns one step in full — so the truncation is a
 narrowing, not data loss.
 
 **The surface is a queue, not a checklist.** `WfDataClient` has ~70 methods and
-the server exposes twenty-four. A tool description is prompt and a bloated
+the server exposes thirty-one. A tool description is prompt and a bloated
 registry degrades selection, so a method earns a tool only when something that
 already shipped is unusable without it — which is how `list_models` (nothing told
 the model which ids `run_eval` would accept, and a composite id that loses its
