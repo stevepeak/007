@@ -46,7 +46,7 @@
     "db:migrate": "sh -c '[ -f ../../.wf-migrate.env ] && . ../../.wf-migrate.env; wrangler d1 migrations apply ${WF_D1_NAME:-DB} --remote --config ${WF_D1_CONFIG:-./wrangler.jsonc}'"
   },
   "dependencies": {
-    "@ai-sdk/react": "^4.0.105",
+    "@ai-sdk/react": "^4.0.106",
     "@autoform/core": "^4.0.0",
     "@autoform/react": "^5.0.0",
     "@cfworker/json-schema": "^4.1.1",
@@ -54,8 +54,8 @@
     "@dagrejs/dagre": "^3.1.1",
     "@hookform/resolvers": "^5.9.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "@sentry/cloudflare": "^10.74.0",
-    "@tanstack/react-query": "^5.103.0",
+    "@sentry/cloudflare": "^10.75.0",
+    "@tanstack/react-query": "^5.103.1",
     "@tiptap/core": "^3.31.2",
     "@tiptap/extension-placeholder": "^3.31.3",
     "@tiptap/extensions": "^3.31.3",
@@ -64,7 +64,7 @@
     "@tiptap/react": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",
     "@xyflow/react": "^12.11.6",
-    "ai": "^7.0.102",
+    "ai": "^7.0.103",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
     "jsonata": "^2.2.2",
