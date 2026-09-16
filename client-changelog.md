@@ -31,9 +31,10 @@ differently for workflows.
 yourself rather than using `createHttpWfDataClient` / `createWfSdkHandlers`,
 add it. It lints a draft, a version, or a supplied graph: the engine's
 `collectGraphIssues`, the strict runtime schema, and the new
-`collectToolArgIssues` — every Tool node's args against the tool catalog (an arg
-the tool no longer declares, a required arg left unbound, a literal of the wrong
-type, an unknown tool id). Each of those is a run that fails at that node; the
+`collectToolArgIssues` — every Tool node's args against the tool catalog (a
+required arg left unbound, a literal of the wrong type, an unknown tool id — all
+errors, each a run that fails at that node; and an arg the tool no longer
+declares — a warning, since zod strips it and the value is silently lost). The
 one that prompted this shipped to a customer as a boolean stored as the text
 `"false"`.
 

@@ -50,7 +50,7 @@ function graph(...nodes: WorkflowNode[]): WorkflowGraph {
 const ref = { kind: 'ref' as const, nodeId: 'up', path: 'attorney_rationale' }
 
 describe('collectToolArgIssues', () => {
-  test('the ART-146 v25 node: renamed field + string boolean → three errors', () => {
+  test('the ART-146 v25 node: renamed field + string boolean → three errors, one warning', () => {
     const g = graph(
       toolNode('esc', 'escalate_chat', {
         note: ref,
@@ -58,7 +58,9 @@ describe('collectToolArgIssues', () => {
       }),
     )
     const issues = collectToolArgIssues(g, schemas())
-    expect(issues.every((i) => i.severity === 'error' && i.nodeId === 'esc')).toBe(true)
+    expect(issues.every((i) => i.nodeId === 'esc')).toBe(true)
+    // The dropped key is the one WARNING: zod strips it, the run goes on.
+    expect(issues.map((i) => i.severity).sort()).toEqual(['error', 'error', 'error', 'warning'])
     const messages = issues.map((i) => i.message)
     const has = (needle: string) =>
       messages.some((m) => m.includes(needle))

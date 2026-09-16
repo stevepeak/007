@@ -137,11 +137,12 @@ describe('validateGraph handler', () => {
     db = freshDb()
   })
 
-  test('a supplied graph: the ART-146 args are four errors, the fixed args none', async () => {
+  test('a supplied graph: the ART-146 args are three errors + a warning, the fixed args none', async () => {
     const handlers = buildWorkflowHandlers(options())
     const bad = await handlers.validateGraph(ctx(db, { graph: graphWith(v25Args) }))
     expect(bad.source).toBe('supplied')
-    expect(bad.errors).toBe(4)
+    expect(bad.errors).toBe(3)
+    expect(bad.warnings).toBe(1)
     expect(bad.issues.map((i) => i.message).join('\n')).toContain(
       'Store the boolean or null false, not the text "false"',
     )
@@ -166,7 +167,7 @@ describe('validateGraph handler', () => {
     await updateDraft(db, { workflowId, graph: graphWith(v25Args), lastEditedBy: 'tester' })
     const draft = await handlers.validateGraph(ctx(db, { workflowId }))
     expect(draft.source).toBe('draft')
-    expect(draft.errors).toBe(4)
+    expect(draft.errors).toBe(3)
   })
 
   test('versionId lints that version; nothing to lint is a 400', async () => {
@@ -179,7 +180,7 @@ describe('validateGraph handler', () => {
     const v = await handlers.validateGraph(ctx(db, { versionId }))
     expect(v.source).toBe('version')
     expect(v.versionNumber).toBe(1)
-    expect(v.errors).toBe(4)
+    expect(v.errors).toBe(3)
     expect(workflowId).toBeTruthy()
 
     await expect(handlers.validateGraph(ctx(db, {}))).rejects.toThrow(

@@ -102,15 +102,15 @@ function* toolNodes(nodes: WorkflowNode[]): Generator<ToolNode> {
  * - the tool id is not in the catalog at all (renamed, or a connector that
  *   was disconnected) — error
  * - an arg key the schema does not declare (a field that was renamed away;
- *   the engine drops it silently and the value is lost) — error
+ *   the engine drops it silently and the value is lost) — warning
  * - a required field with no binding at all (the engine sends `undefined`) —
  *   error
  * - a literal whose JSON type the field does not admit, or a value outside the
  *   field's enum — error
  *
- * Errors, all of them, because each one is a guaranteed ZodError at the node
- * rather than a degraded run. A tool with no input schema, or a property whose
- * schema is opaque, is not judged.
+ * Everything but the dropped key is an error, because each one is a guaranteed
+ * ZodError at the node rather than a degraded run. A tool with no input schema,
+ * or a property whose schema is opaque, is not judged.
  */
 export function collectToolArgIssues(
   graph: WorkflowGraph,
@@ -147,10 +147,14 @@ export function collectToolArgIssues(
     for (const [key, binding] of Object.entries(args)) {
       const prop = props[key]
       if (!prop) {
+        // zod STRIPS an undeclared key rather than rejecting it, so this is
+        // silent data loss, not a failed run — a warning. When the field was
+        // renamed and its replacement is required, the unbound-required error
+        // above is what fails the run; this line says where the value went.
         issues.push({
           ...base,
-          severity: 'error',
-          message: `Argument "${key}" is not an input of ${toolId} any more — the value is dropped before the tool runs. Remove it, or bind the field it was renamed to.`,
+          severity: 'warning',
+          message: `Argument "${key}" is not an input of ${toolId} any more — the value is silently dropped before the tool runs. Remove it, or bind the field it was renamed to.`,
         })
         continue
       }
