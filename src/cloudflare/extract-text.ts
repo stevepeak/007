@@ -1,3 +1,4 @@
+import type { BrowserWorker } from '@cloudflare/puppeteer'
 import { z } from 'zod'
 
 import type { WfBlobRef } from '../engine/blob-ref'
@@ -221,7 +222,11 @@ async function spillIfLarge<TDeps>(
   })
   // Below threshold → identity string → nothing changed.
   if (typeof spilled === 'string') return result
-  return { text: spilled, mode: result.mode, meta: { ...result.meta, spilled: true } }
+  return {
+    text: spilled,
+    mode: result.mode,
+    meta: { ...result.meta, spilled: true },
+  }
 }
 
 /**
@@ -285,7 +290,16 @@ export function createExtractTextTool<TDeps>(
             : cloudflareVisionRecognizer(ai, visionModel)
           try {
             const { text, pages } = await ocrPdf(
-              opts.getBrowser(deps),
+              // The Browser Rendering binding is the object puppeteer
+              // launches from, but `BrowserWorker.fetch` is declared as
+              // `typeof fetch`, and a host whose program also loads
+              // `@types/bun` (for `bun:test`) sees that widened to require
+              // Bun's `fetch.preconnect` — which no Workers `Fetcher` carries.
+              // Bridged here so every host gets to keep passing its binding.
+              // In this package's own program (no bun types) the assertion is
+              // a no-op, which is what the lint rule objects to.
+              // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- needed only when a host's program also loads @types/bun
+              opts.getBrowser(deps) as unknown as BrowserWorker,
               bytes,
               recognize,
               { pdfjsBaseUrl: opts.getPdfjsBaseUrl?.(deps) },
