@@ -12,9 +12,7 @@ import { executeAgentNode } from './agent'
 // dispatcher threads into `branchResult` so the node's outgoing yes/no edges
 // route. Its full `{ answer, reason }` object stays the node output.
 
-function manifest(output: {
-  kind: 'boolean' | 'text'
-}): WfRunManifestEntry[] {
+function manifest(output: { kind: 'boolean' | 'text' }): WfRunManifestEntry[] {
   return [
     {
       kind: 'agent',
@@ -87,15 +85,16 @@ describe('agent node — YES/NO output as a decision', () => {
   test('a text-output agent produces no decision', async () => {
     const r = await executeAgentNode<unknown>({
       node: gateNode,
-      getModel: () =>
-        new MockLanguageModelV3({
+      getModel: () => {
+        return new MockLanguageModelV3({
           doGenerate: async () => ({
             content: [{ type: 'text', text: 'just some prose' }],
             finishReason: mockFinish('stop'),
             usage: mockUsage(1, 1),
             warnings: [],
           }),
-        }),
+        })
+      },
       toolRegistry: new Map(),
       toolDeps: {},
       promptVariables: {},

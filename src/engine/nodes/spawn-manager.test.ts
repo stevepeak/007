@@ -128,8 +128,9 @@ describe('SpawnManager', () => {
   })
 
   test('a thrown sub-run is reported failed, not rejected', async () => {
-    const runSubAgent: RunSubAgent = () =>
-      Promise.reject(new Error('kaboom'))
+    const runSubAgent: RunSubAgent = () => {
+      return Promise.reject(new Error('kaboom'))
+    }
     const m = new SpawnManager({ maxConcurrent: 2, maxSpawns: 10, runSubAgent })
     m.spawn(AGENT, {})
     const res = await m.join()

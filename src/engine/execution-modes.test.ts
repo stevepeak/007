@@ -14,52 +14,52 @@ import {
 
 const pos = { x: 0, y: 0 }
 
-function parse (nodes: unknown[]) {
+function parse(nodes: unknown[]) {
   return workflowGraphShapeSchema.parse({ version: 1, nodes, edges: [] })
 }
 
-function iterationNode (config: Record<string, unknown> = {}) {
+function iterationNode(config: Record<string, unknown> = {}) {
   return {
-  id: 'loop',
-  kind: 'iteration',
-  position: pos,
-  label: 'Loop',
-  config: {
-    source: { kind: 'ref', nodeId: 't', path: '' },
-    // Minimal valid subgraph: the Item bookend wired to its Output.
-    subgraph: {
-      version: 1,
-      nodes: [
-        {
-          id: 'it',
-          kind: 'trigger',
-          position: pos,
-          label: 'Item',
-          config: { triggerKind: 'iteration_item' },
-        },
-        {
-          id: 'res',
-          kind: 'output',
-          position: pos,
-          label: 'Result',
-          config: { source: { kind: 'ref', nodeId: 'it', path: '' } },
-        },
-      ],
-      edges: [{ id: 'e', source: 'it', target: 'res', condition: null }],
+    id: 'loop',
+    kind: 'iteration',
+    position: pos,
+    label: 'Loop',
+    config: {
+      source: { kind: 'ref', nodeId: 't', path: '' },
+      // Minimal valid subgraph: the Item bookend wired to its Output.
+      subgraph: {
+        version: 1,
+        nodes: [
+          {
+            id: 'it',
+            kind: 'trigger',
+            position: pos,
+            label: 'Item',
+            config: { triggerKind: 'iteration_item' },
+          },
+          {
+            id: 'res',
+            kind: 'output',
+            position: pos,
+            label: 'Result',
+            config: { source: { kind: 'ref', nodeId: 'it', path: '' } },
+          },
+        ],
+        edges: [{ id: 'e', source: 'it', target: 'res', condition: null }],
+      },
+      ...config,
     },
-    ...config,
-  },
-}
+  }
 }
 
-function workflowNode (config: Record<string, unknown> = {}) {
+function workflowNode(config: Record<string, unknown> = {}) {
   return {
-  id: 'call',
-  kind: 'workflow',
-  position: pos,
-  label: 'Call',
-  config: { workflowId: 'w1', ...config },
-}
+    id: 'call',
+    kind: 'workflow',
+    position: pos,
+    label: 'Call',
+    config: { workflowId: 'w1', ...config },
+  }
 }
 
 describe('execution modes', () => {
@@ -69,11 +69,16 @@ describe('execution modes', () => {
   test('a graph with no setting means inline', () => {
     const g = parse([iterationNode(), workflowNode()])
     const [loop] = g.nodes
-    expect(loop.kind === 'iteration' && loop.config.itemExecution).toBe('inline')
+    expect(loop.kind === 'iteration' && loop.config.itemExecution).toBe(
+      'inline',
+    )
   })
 
   test('an explicit durable setting round-trips', () => {
-    const g = parse([iterationNode({ itemExecution: 'durable' }), workflowNode()])
+    const g = parse([
+      iterationNode({ itemExecution: 'durable' }),
+      workflowNode(),
+    ])
     const [loop] = g.nodes
     expect(loop.kind === 'iteration' && loop.config.itemExecution).toBe(
       'durable',
@@ -81,16 +86,19 @@ describe('execution modes', () => {
   })
 
   test('an unknown mode is rejected rather than silently defaulted', () => {
-    expect(() =>
-      parse([iterationNode({ itemExecution: 'spawn' }), workflowNode()]),
-    ).toThrow()
+    expect(() => {
+      return parse([iterationNode({ itemExecution: 'spawn' }), workflowNode()])
+    }).toThrow()
   })
 
   // A workflow-call node has no execution setting of its own: the callee runs
   // as its own child run, on the engine ITS trigger declares. A stored graph
   // carrying the setting this replaced parses clean, without it.
   test('a workflow-call node keeps no execution setting', () => {
-    const g = parse([iterationNode(), workflowNode({ calleeExecution: 'durable' })])
+    const g = parse([
+      iterationNode(),
+      workflowNode({ calleeExecution: 'durable' }),
+    ])
     const [, call] = g.nodes
     expect(call.kind === 'workflow' && call.config).toEqual({
       workflowId: 'w1',
@@ -105,8 +113,9 @@ describe('execution modes', () => {
 // Issues panel reports and the run-time fallback answers.
 describe('iteration fan-out bound', () => {
   // The shape schema needs two nodes; the workflow node is inert filler.
-  const graphWith = (config: Record<string, unknown> = {}) =>
-    parse([iterationNode(config), workflowNode()])
+  const graphWith = (config: Record<string, unknown> = {}) => {
+    return parse([iterationNode(config), workflowNode()])
+  }
 
   const boundOf = (graph: ReturnType<typeof parse>) => {
     const [loop] = graph.nodes

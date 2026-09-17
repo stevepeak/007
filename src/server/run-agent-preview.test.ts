@@ -56,8 +56,8 @@ function fakeConfig(opts: {
   onBuildDeps?: (ctx: RunContext) => void
 }): WfSdkConfig<Deps> {
   return {
-    getModel: () =>
-      new MockLanguageModelV3({
+    getModel: () => {
+      return new MockLanguageModelV3({
         doGenerate: async (o) => {
           opts.seen.prompt = (o as { prompt: unknown }).prompt
           return {
@@ -67,7 +67,8 @@ function fakeConfig(opts: {
             warnings: [],
           }
         },
-      }),
+      })
+    },
     toolRegistry: opts.registry ?? new Map(),
     buildRunDeps: (ctx: RunContext) => {
       opts.onBuildDeps?.(ctx)
@@ -262,14 +263,15 @@ describe('executeAgentPreview — a live tool actually executes', () => {
       description: id,
       kind: 'ai-tool' as const,
       inputSchema: z.object({}),
-      build: () =>
-        tool({
+      build: () => {
+        return tool({
           inputSchema: z.object({}),
           execute: async () => {
             mark()
             return { source: 'real', tool: id }
           },
-        }),
+        })
+      },
     })
     return new Map([
       [

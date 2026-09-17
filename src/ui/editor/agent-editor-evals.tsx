@@ -67,13 +67,11 @@ export function AgentEvalsPanel({
   // This agent's goals. Filtered client-side from the catalog the evals list
   // already loads — a goal is a pointer at a target, so "this agent's evals" is
   // just that pointer read the other way round, and it needs no new endpoint.
-  const goals = useMemo(
-    () =>
-      (setsQuery.data ?? []).filter(
-        (s) => s.targetKind === 'agent' && s.targetId === agentId,
-      ),
-    [setsQuery.data, agentId],
-  )
+  const goals = useMemo(() => {
+    return (setsQuery.data ?? []).filter(
+      (s) => s.targetKind === 'agent' && s.targetId === agentId,
+    )
+  }, [setsQuery.data, agentId])
 
   // Which goals this run covers. Absent an explicit choice everything runnable is
   // in — the common case is "run my evals", not "run this subset" — so the map
@@ -134,9 +132,9 @@ export function AgentEvalsPanel({
                   key={g.id}
                   goal={g}
                   checked={g.rowCount > 0 && !excluded[g.id]}
-                  onToggle={(on) =>
-                    setExcluded((prev) => ({ ...prev, [g.id]: !on }))
-                  }
+                  onToggle={(on) => {
+                    return setExcluded((prev) => ({ ...prev, [g.id]: !on }))
+                  }}
                 />
               ))}
             </ul>
@@ -263,8 +261,8 @@ function EmptyGoals({
         </p>
       ) : null}
       <p className="mt-1.5 text-[11px] text-neutral-400">
-        Grades this agent, floating to its latest version — opens in a new tab so
-        you can add samples without losing your draft.
+        Grades this agent, floating to its latest version — opens in a new tab
+        so you can add samples without losing your draft.
       </p>
     </div>
   )

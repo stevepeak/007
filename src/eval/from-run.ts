@@ -175,12 +175,13 @@ function outputForNode(
   nodeId: string,
 ): unknown {
   if (step.parentNodeId != null) {
-    const sibling = steps.find(
-      (s) =>
+    const sibling = steps.find((s) => {
+      return (
         s.nodeId === nodeId &&
         s.parentNodeId === step.parentNodeId &&
-        s.itemIndex === step.itemIndex,
-    )
+        s.itemIndex === step.itemIndex
+      )
+    })
     if (sibling) return sibling.output
   }
   return steps.find((s) => s.nodeId === nodeId && s.parentNodeId == null)

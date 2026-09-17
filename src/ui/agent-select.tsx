@@ -45,14 +45,14 @@ export function AgentSelect({
       options={agents}
       value={value.agentId}
       getKey={(a) => a.id}
-      onChange={(a) =>
+      onChange={(a) => {
         // Switching agents resets the pin to Latest — a version number is only
         // meaningful for the agent it came from.
         onChange({
           agentId: a.id,
           version: a.id === value.agentId ? value.version : null,
         })
-      }
+      }}
       disabled={disabled}
       placeholder={placeholder}
       className={cn('flex items-stretch gap-1.5', className)}
@@ -136,14 +136,12 @@ function VersionStepper({
   const versionsQuery = useAgentVersions(agentId)
 
   // Published versions, newest first. Only published versions are pinnable.
-  const numbers = useMemo(
-    () =>
-      (versionsQuery.data ?? [])
-        .filter((v) => v.publishedAt != null)
-        .map((v) => v.versionNumber)
-        .sort((a, b) => b - a),
-    [versionsQuery.data],
-  )
+  const numbers = useMemo(() => {
+    return (versionsQuery.data ?? [])
+      .filter((v) => v.publishedAt != null)
+      .map((v) => v.versionNumber)
+      .sort((a, b) => b - a)
+  }, [versionsQuery.data])
 
   // The pin ladder: null (Latest) then each version number, newest → oldest.
   const options = useMemo<(number | null)[]>(

@@ -85,7 +85,7 @@ function cents(value: number): number {
 const FIGURE_RE = /(?:\$ ?)?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/g
 
 function parseFigure(raw: string): number | null {
-  const cleaned = raw.replace(/[$,\s]/g, '')
+  const cleaned = raw.replaceAll(/[$,\s]/g, '')
   const value = Number(cleaned)
   return Number.isFinite(value) ? value : null
 }
@@ -129,7 +129,7 @@ function contextAround(text: string, index: number, length: number): string {
   const end = Math.min(text.length, index + length + 60)
   const prefix = start > 0 ? '…' : ''
   const suffix = end < text.length ? '…' : ''
-  return `${prefix}${text.slice(start, end).replace(/\s+/g, ' ').trim()}${suffix}`
+  return `${prefix}${text.slice(start, end).replaceAll(/\s+/g, ' ').trim()}${suffix}`
 }
 
 /** Every numeric value mentioned anywhere in the bound facts. */
@@ -172,7 +172,7 @@ export function factValues(facts: unknown): number[] {
 function derivationTerms(values: readonly number[]): number[] {
   return values.filter((v) => {
     if (v < 100) return false
-    return !(Number.isInteger(v) && v >= 1900 && v <= 2100)
+    return !(Number.isSafeInteger(v) && v >= 1900 && v <= 2100)
   })
 }
 

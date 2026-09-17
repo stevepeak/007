@@ -79,8 +79,9 @@ export function analyzeJoinTopology(graph: WorkflowGraph): JoinTopology {
     incoming,
     outgoing,
     decisionIds,
-    isConditional: (nodeId) =>
-      decisionIds.has(nodeId) || conditional.has(nodeId),
+    isConditional: (nodeId) => {
+      return decisionIds.has(nodeId) || conditional.has(nodeId)
+    },
     ancestorCone,
   }
 }

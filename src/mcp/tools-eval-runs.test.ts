@@ -80,7 +80,13 @@ function detail(over: {
 /** A snapshot carrying just the fields the report reads off it. */
 function snapshot(name: string, checks: unknown[]) {
   return {
-    row: { name, description: null, input: {}, tools: {}, checks: { op: 'and', checks } },
+    row: {
+      name,
+      description: null,
+      input: {},
+      tools: {},
+      checks: { op: 'and', checks },
+    },
     target: {},
   } as never
 }
@@ -88,8 +94,8 @@ function snapshot(name: string, checks: unknown[]) {
 describe('get_eval_run — error is not fail', () => {
   test('counts errors apart and computes the pass rate over graded cells only', async () => {
     const client = stubClient({
-      getEvalRun: async () =>
-        detail({
+      getEvalRun: async () => {
+        return detail({
           results: [
             result({ rowId: 'a', status: 'pass' }),
             result({ rowId: 'b', status: 'fail' }),
@@ -100,15 +106,27 @@ describe('get_eval_run — error is not fail', () => {
             }),
             result({ rowId: 'd', status: 'error', error: 'Provider 429' }),
           ],
-        }),
+        })
+      },
     })
     const out = (await toolNamed('get_eval_run').run(client, {
       evalRunId: 'er_1',
     })) as {
-      summary: { passed: number; failed: number; errored: number; graded: number; passRate: number | null }
+      summary: {
+        passed: number
+        failed: number
+        errored: number
+        graded: number
+        passRate: number | null
+      }
       errors: { rowId: string; error: string }[]
     }
-    expect(out.summary).toMatchObject({ passed: 1, failed: 1, errored: 2, graded: 2 })
+    expect(out.summary).toMatchObject({
+      passed: 1,
+      failed: 1,
+      errored: 2,
+      graded: 2,
+    })
     // 1/2, NOT 1/4. Over `total` a provider outage reads as the agent
     // regressing, which is the one misreading this report must not allow.
     expect(out.summary.passRate).toBe(0.5)
@@ -121,10 +139,11 @@ describe('get_eval_run — error is not fail', () => {
   // contradictory numbers and no way to know which one to believe.
   test('does not pass the stored run summary’s conflated counts through', async () => {
     const client = stubClient({
-      getEvalRun: async () =>
-        detail({
+      getEvalRun: async () => {
+        return detail({
           results: [result({ rowId: 'a', status: 'error', error: 'boom' })],
-        }),
+        })
+      },
     })
     const out = (await toolNamed('get_eval_run').run(client, {
       evalRunId: 'er_1',
@@ -137,13 +156,14 @@ describe('get_eval_run — error is not fail', () => {
 
   test('a run of nothing but errors reports no pass rate, not zero', async () => {
     const client = stubClient({
-      getEvalRun: async () =>
-        detail({
+      getEvalRun: async () => {
+        return detail({
           results: [
             result({ rowId: 'a', status: 'error', error: 'boom' }),
             result({ rowId: 'b', status: 'error', error: 'boom' }),
           ],
-        }),
+        })
+      },
     })
     const out = (await toolNamed('get_eval_run').run(client, {
       evalRunId: 'er_1',
@@ -154,12 +174,13 @@ describe('get_eval_run — error is not fail', () => {
 
   test('counts cells that have not reported yet as pending', async () => {
     const client = stubClient({
-      getEvalRun: async () =>
-        detail({
+      getEvalRun: async () => {
+        return detail({
           status: 'running',
           total: 10,
           results: [result({ rowId: 'a', status: 'pass' })],
-        }),
+        })
+      },
     })
     const out = (await toolNamed('get_eval_run').run(client, {
       evalRunId: 'er_1',
@@ -171,8 +192,8 @@ describe('get_eval_run — error is not fail', () => {
 describe('get_eval_run — what a check actually asserted', () => {
   test('zips verdicts onto the snapshot checks by position', async () => {
     const client = stubClient({
-      getEvalRun: async () =>
-        detail({
+      getEvalRun: async () => {
+        return detail({
           results: [
             result({
               rowId: 'a',
@@ -183,15 +204,30 @@ describe('get_eval_run — what a check actually asserted', () => {
               ]),
               checkResults: [
                 { pass: true },
-                { pass: false, confidence: 8, reason: 'It gave advice anyway.' },
+                {
+                  pass: false,
+                  confidence: 8,
+                  reason: 'It gave advice anyway.',
+                },
               ],
             }),
           ],
-        }),
+        })
+      },
     })
     const out = (await toolNamed('get_eval_run').run(client, {
       evalRunId: 'er_1',
-    })) as { results: { sample: string; checks: { type: string; pass: boolean; reason?: string; check?: unknown }[] }[] }
+    })) as {
+      results: {
+        sample: string
+        checks: {
+          type: string
+          pass: boolean
+          reason?: string
+          check?: unknown
+        }[]
+      }[]
+    }
     const row = out.results[0]
     expect(row.sample).toBe('Refuses a conflicted matter')
     // A binary check has no `reason`; without its config a failing one says only
@@ -207,12 +243,17 @@ describe('get_eval_run — what a check actually asserted', () => {
 
   test('survives a result graded before snapshots existed', async () => {
     const client = stubClient({
-      getEvalRun: async () =>
-        detail({
+      getEvalRun: async () => {
+        return detail({
           results: [
-            result({ rowId: 'a', status: 'fail', checkResults: [{ pass: false }] }),
+            result({
+              rowId: 'a',
+              status: 'fail',
+              checkResults: [{ pass: false }],
+            }),
           ],
-        }),
+        })
+      },
     })
     const out = (await toolNamed('get_eval_run').run(client, {
       evalRunId: 'er_1',
@@ -225,8 +266,8 @@ describe('get_eval_run — what a check actually asserted', () => {
 describe('get_eval_run — drift has two axes', () => {
   test('separates an edited sample from a republished agent', async () => {
     const client = stubClient({
-      getEvalRun: async () =>
-        detail({
+      getEvalRun: async () => {
+        return detail({
           results: [
             result({
               rowId: 'a',
@@ -249,7 +290,8 @@ describe('get_eval_run — drift has two axes', () => {
             goalChanges: [],
             targetChanges: [],
           },
-        }),
+        })
+      },
     })
     const out = (await toolNamed('get_eval_run').run(client, {
       evalRunId: 'er_1',
@@ -271,8 +313,8 @@ describe('get_eval_run — drift has two axes', () => {
 
   test('an unchanged sample on an unchanged agent moves neither axis', async () => {
     const client = stubClient({
-      getEvalRun: async () =>
-        detail({
+      getEvalRun: async () => {
+        return detail({
           results: [
             result({
               rowId: 'a',
@@ -294,11 +336,14 @@ describe('get_eval_run — drift has two axes', () => {
             goalChanges: [],
             targetChanges: [],
           },
-        }),
+        })
+      },
     })
     const out = (await toolNamed('get_eval_run').run(client, {
       evalRunId: 'er_1',
-    })) as { drift: { samplesEdited: boolean; agentRepublishedSinceLastRun: boolean } }
+    })) as {
+      drift: { samplesEdited: boolean; agentRepublishedSinceLastRun: boolean }
+    }
     expect(out.drift.samplesEdited).toBe(false)
     expect(out.drift.agentRepublishedSinceLastRun).toBe(false)
   })
@@ -318,9 +363,9 @@ describe('get_eval_run — drift has two axes', () => {
 describe('get_eval_run — bounding a matrix report', () => {
   test('truncates worst-first, so failures survive and passes are dropped', async () => {
     const results = [
-      ...Array.from({ length: 80 }, (_, i) =>
-        result({ id: `p${i}`, rowId: `p${i}`, status: 'pass' }),
-      ),
+      ...Array.from({ length: 80 }, (_, i) => {
+        return result({ id: `p${i}`, rowId: `p${i}`, status: 'pass' })
+      }),
       result({ id: 'f1', rowId: 'f1', status: 'fail' }),
       result({ id: 'e1', rowId: 'e1', status: 'error', error: 'boom' }),
     ]
@@ -338,19 +383,23 @@ describe('get_eval_run — bounding a matrix report', () => {
 
   test('rowId drills into one sample and returns every cell of it', async () => {
     const client = stubClient({
-      getEvalRun: async () =>
-        detail({
+      getEvalRun: async () => {
+        return detail({
           results: [
             result({ rowId: 'a', modelId: 'm1', promptLabel: 'P', attempt: 0 }),
             result({ rowId: 'a', modelId: 'm2', promptLabel: 'P', attempt: 0 }),
             result({ rowId: 'b' }),
           ],
-        }),
+        })
+      },
     })
     const out = (await toolNamed('get_eval_run').run(client, {
       evalRunId: 'er_1',
       rowId: 'a',
-    })) as { results: { cell: { modelId: string } }[]; summary: { passed: number } }
+    })) as {
+      results: { cell: { modelId: string } }[]
+      summary: { passed: number }
+    }
     expect(out.results.length).toBe(2)
     expect(out.results.map((r) => r.cell.modelId).sort()).toEqual(['m1', 'm2'])
     // The roll-up stays over the WHOLE run — drilling in must not change what
@@ -392,7 +441,10 @@ describe('get_eval_run — bounding a matrix report', () => {
 describe('run_eval — bounding the sweep', () => {
   const setWith = (rows: number) => ({
     set: { id: 'set_1', name: 'Goal', rowCount: rows },
-    rows: Array.from({ length: rows }, (_, i) => ({ id: `row_${i}`, archived: false })),
+    rows: Array.from({ length: rows }, (_, i) => ({
+      id: `row_${i}`,
+      archived: false,
+    })),
   })
 
   test('refuses a sweep over the cell cap and launches nothing', async () => {
@@ -436,14 +488,15 @@ describe('run_eval — bounding the sweep', () => {
 
   test('archived samples do not count toward the sweep', async () => {
     const client = stubClient({
-      getEvalSet: async () =>
-        ({
+      getEvalSet: async () => {
+        return {
           set: { id: 'set_1', name: 'Goal' },
           rows: [
             { id: 'row_0', archived: false },
             { id: 'row_1', archived: true },
           ],
-        }) as never,
+        } as never
+      },
       createEvalRun: async () => ({ evalRunId: 'er_1' }),
       startEvalRun: async () => ({ wfRunId: 'run_1' }),
       getRunStatus: async () => ({ status: 'done', error: null }) as never,
@@ -498,8 +551,12 @@ describe('run_eval — returning before the sweep finishes', () => {
     let finalized = false
     let releaseCell: (() => void) | undefined
     const client = stubClient({
-      getEvalSet: async () =>
-        ({ set: { id: 'set_1' }, rows: [{ id: 'row_0', archived: false }] }) as never,
+      getEvalSet: async () => {
+        return {
+          set: { id: 'set_1' },
+          rows: [{ id: 'row_0', archived: false }],
+        } as never
+      },
       createEvalRun: async () => ({ evalRunId: 'er_1' }),
       startEvalRun: async () => {
         // Hold the only cell open — a tool that awaited the sweep would hang
@@ -527,8 +584,12 @@ describe('run_eval — returning before the sweep finishes', () => {
 
   test('a failure BEFORE the run row exists still reaches the caller', async () => {
     const client = stubClient({
-      getEvalSet: async () =>
-        ({ set: { id: 'set_1' }, rows: [{ id: 'row_0', archived: false }] }) as never,
+      getEvalSet: async () => {
+        return {
+          set: { id: 'set_1' },
+          rows: [{ id: 'row_0', archived: false }],
+        } as never
+      },
       createEvalRun: async () => {
         throw new Error('Invalid service token')
       },
@@ -542,8 +603,12 @@ describe('run_eval — returning before the sweep finishes', () => {
 describe('list_eval_runs', () => {
   test('names the goals a run covered', async () => {
     const client = stubClient({
-      listEvalRuns: async () => [{ id: 'er_1', setIds: ['set_1', 'gone'] }] as never,
-      listEvalSets: async () => [{ id: 'set_1', name: 'Conflict check' }] as never,
+      listEvalRuns: async () => {
+        return [{ id: 'er_1', setIds: ['set_1', 'gone'] }] as never
+      },
+      listEvalSets: async () => {
+        return [{ id: 'set_1', name: 'Conflict check' }] as never
+      },
     })
     const out = (await toolNamed('list_eval_runs').run(client, {})) as {
       goals: string[]
@@ -553,8 +618,11 @@ describe('list_eval_runs', () => {
 
   test('renames the conflated `failed` rather than passing it through', async () => {
     const client = stubClient({
-      listEvalRuns: async () =>
-        [{ id: 'er_1', setIds: [], passed: 1, failed: 3, score: 0.5 }] as never,
+      listEvalRuns: async () => {
+        return [
+          { id: 'er_1', setIds: [], passed: 1, failed: 3, score: 0.5 },
+        ] as never
+      },
       listEvalSets: async () => [],
     })
     const out = (await toolNamed('list_eval_runs').run(client, {})) as {
@@ -583,11 +651,12 @@ describe('list_eval_runs', () => {
 })
 
 describe('run_eval — grading an unsaved draft', () => {
-  const agentSet = (targetId: string, name = 'Goal') =>
-    ({
+  const agentSet = (targetId: string, name = 'Goal') => {
+    return {
       set: { id: 'set_1', name, rowCount: 1, targetKind: 'agent', targetId },
       rows: [{ id: 'row_0', archived: false }],
-    }) as never
+    } as never
+  }
 
   const draftConfig = { prompt: 'Be very brief.' }
 
@@ -600,12 +669,13 @@ describe('run_eval — grading an unsaved draft', () => {
       started,
       client: stubClient({
         getEvalSet: async () => agentSet('a1'),
-        getAgent: async () =>
-          ({
+        getAgent: async () => {
+          return {
             agent: { id: 'a1' },
             draft: { config: draftConfig },
             currentVersion: { id: 'v1', versionNumber: 1, config: {} },
-          }) as never,
+          } as never
+        },
         createEvalRun: async () => ({ evalRunId: 'er_1' }),
         startEvalRun: async (input) => {
           started.push(input)
@@ -647,8 +717,8 @@ describe('run_eval — grading an unsaved draft', () => {
 
   test('refuses a goal that targets a workflow rather than an agent', async () => {
     const { started, client } = stub({
-      getEvalSet: async () =>
-        ({
+      getEvalSet: async () => {
+        return {
           set: {
             id: 'set_1',
             name: 'Intake end to end',
@@ -657,7 +727,8 @@ describe('run_eval — grading an unsaved draft', () => {
             targetId: 'a1',
           },
           rows: [{ id: 'row_0', archived: false }],
-        }) as never,
+        } as never
+      },
     })
     const out = (await toolNamed('run_eval').run(client, {
       setIds: ['set_1'],
@@ -669,8 +740,13 @@ describe('run_eval — grading an unsaved draft', () => {
 
   test('says so rather than silently running the published version', async () => {
     const { started, client } = stub({
-      getAgent: async () =>
-        ({ agent: { id: 'a1' }, draft: null, currentVersion: null }) as never,
+      getAgent: async () => {
+        return {
+          agent: { id: 'a1' },
+          draft: null,
+          currentVersion: null,
+        } as never
+      },
     })
     const out = (await toolNamed('run_eval').run(client, {
       setIds: ['set_1'],
@@ -686,12 +762,13 @@ describe('run_eval — grading an unsaved draft', () => {
   // measure the live config and read as though it measured the edit.
   test('warns when the draft is identical to what is published', async () => {
     const { started, client } = stub({
-      getAgent: async () =>
-        ({
+      getAgent: async () => {
+        return {
           agent: { id: 'a1' },
           draft: { config: draftConfig },
           currentVersion: { id: 'v1', versionNumber: 1, config: draftConfig },
-        }) as never,
+        } as never
+      },
     })
     const out = (await toolNamed('run_eval').run(client, {
       setIds: ['set_1'],

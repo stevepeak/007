@@ -57,7 +57,6 @@ export type WfTabsState = {
 
 const WfTabsContext = createContext<WfTabsState | null>(null)
 
-
 /**
  * Ask before discarding unsaved work. Returns true when it is safe to proceed.
  *
@@ -102,10 +101,9 @@ function readStored(): StoredTabs | null {
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<StoredTabs>
     if (!parsed || !Array.isArray(parsed.tabs)) return null
-    const tabs = parsed.tabs.filter(
-      (t): t is WfTab =>
-        !!t && typeof t.id === 'string' && typeof t.path === 'string',
-    )
+    const tabs = parsed.tabs.filter((t): t is WfTab => {
+      return !!t && typeof t.id === 'string' && typeof t.path === 'string'
+    })
     return {
       tabs,
       homePath: typeof parsed.homePath === 'string' ? parsed.homePath : '',
@@ -267,9 +265,9 @@ export function WfTabsProvider({
         const existing = findTab(tabsRef.current, to)
         if (existing) {
           const eid = existing.id
-          setTabs((prev) =>
-            prev.map((t) => (t.id === eid ? { ...t, path: to } : t)),
-          )
+          setTabs((prev) => {
+            return prev.map((t) => (t.id === eid ? { ...t, path: to } : t))
+          })
           setActiveId(eid)
         } else {
           const id = genId()
@@ -278,9 +276,9 @@ export function WfTabsProvider({
         }
       } else {
         // Replace the active tab's asset in place.
-        setTabs((prev) =>
-          prev.map((t) => (t.id === activeId ? { ...t, path: to } : t)),
-        )
+        setTabs((prev) => {
+          return prev.map((t) => (t.id === activeId ? { ...t, path: to } : t))
+        })
       }
       navigate(to)
     },

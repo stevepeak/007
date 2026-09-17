@@ -116,9 +116,9 @@ function VariablesEditor({
             <Input
               value={field.value[f] ?? ''}
               placeholder="value"
-              onChange={(e) =>
-                field.onChange({ ...field.value, [f]: e.target.value })
-              }
+              onChange={(e) => {
+                return field.onChange({ ...field.value, [f]: e.target.value })
+              }}
               onBlur={field.onBlur}
               className="h-8 flex-1 font-mono text-xs"
             />
@@ -164,9 +164,9 @@ function VariablesEditor({
           <Input
             value={v}
             placeholder="value"
-            onChange={(e) =>
-              field.onChange({ ...field.value, [k]: e.target.value })
-            }
+            onChange={(e) => {
+              return field.onChange({ ...field.value, [k]: e.target.value })
+            }}
             onBlur={field.onBlur}
             className="h-8 flex-1 font-mono text-xs"
           />

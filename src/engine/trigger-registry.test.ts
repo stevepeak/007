@@ -28,15 +28,15 @@ describe('enforceOutputContract', () => {
   })
 
   test('throws when the output violates the contract', () => {
-    expect(() =>
-      enforceOutputContract(triggers, 'chat_message', { notText: 1 }),
-    ).toThrow(/does not satisfy the 'chat_message' trigger contract/)
+    expect(() => {
+      return enforceOutputContract(triggers, 'chat_message', { notText: 1 })
+    }).toThrow(/does not satisfy the 'chat_message' trigger contract/)
   })
 
   test('throws when a contract-required run produced no output', () => {
-    expect(() =>
-      enforceOutputContract(triggers, 'chat_message', undefined),
-    ).toThrow()
+    expect(() => {
+      return enforceOutputContract(triggers, 'chat_message', undefined)
+    }).toThrow()
   })
 
   test('passes through untouched when the trigger declares no contract', () => {

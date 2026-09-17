@@ -117,20 +117,22 @@ export function buildPlaygroundRegistry<TDeps>(opts: {
       kind: 'ai-tool',
       build: isLive
         ? () => entry.build(deps)
-        : () =>
-            tool({
+        : () => {
+            return tool({
               description: entry.description,
               inputSchema: entry.inputSchema ?? jsonSchema({ type: 'object' }),
-              execute: (args: unknown) =>
-                simulateToolResult(
+              execute: (args: unknown) => {
+                return simulateToolResult(
                   model,
                   entry as Extract<
                     ToolRegistryEntry<unknown>,
                     { kind: 'ai-tool' }
                   >,
                   args,
-                ),
-            }),
+                )
+              },
+            })
+          },
     })
   }
   return built

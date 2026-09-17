@@ -78,12 +78,12 @@ export function BranchInspector({
           graph={graph}
           value={node.config.source}
           itemSchema={itemSchema}
-          onChange={(source) =>
-            onChange({
+          onChange={(source) => {
+            return onChange({
               ...node,
               config: { ...node.config, source },
             })
-          }
+          }}
         />
         <p className="text-muted-foreground text-xs">
           Connect the upstream value to test. Leave unset to test the whole
@@ -98,9 +98,9 @@ export function BranchInspector({
         <div className="flex items-center gap-1.5">
           <BranchOperatorSelect
             value={node.config.operator}
-            onChange={(operator) =>
-              onChange({ ...node, config: { ...node.config, operator } })
-            }
+            onChange={(operator) => {
+              return onChange({ ...node, config: { ...node.config, operator } })
+            }}
           />
           {branchOperatorTakesValue(node.config.operator) ? (
             <div className="min-w-0 flex-1">
@@ -132,12 +132,12 @@ export function BranchInspector({
                 <Input
                   placeholder="value…"
                   value={scalarText(node.config.value)}
-                  onChange={(e) =>
-                    onChange({
+                  onChange={(e) => {
+                    return onChange({
                       ...node,
                       config: { ...node.config, value: e.target.value },
                     })
-                  }
+                  }}
                 />
               )}
             </div>
@@ -149,8 +149,8 @@ export function BranchInspector({
         </div>
       </div>
       <p className="text-muted-foreground text-xs">
-        Deterministic — no model call. The <strong>yes</strong> edge is
-        taken when the condition holds.
+        Deterministic — no model call. The <strong>yes</strong> edge is taken
+        when the condition holds.
       </p>
     </>
   )
@@ -170,12 +170,12 @@ export function OutputInspector({
         graph={graph}
         value={node.config.source}
         itemSchema={itemSchema}
-        onChange={(source) =>
-          onChange({
+        onChange={(source) => {
+          return onChange({
             ...node,
             config: { ...node.config, source },
           })
-        }
+        }}
       />
       <p className="text-muted-foreground text-xs">
         Pick the upstream value the user receives.
@@ -259,10 +259,12 @@ export function SwitchInspector({
   if (node.kind !== 'switch') return null
 
   const cases = node.config.cases
-  const setCases = (next: SwitchCase[]) =>
-    onChange({ ...node, config: { ...node.config, cases: next } })
-  const setCase = (index: number, patch: Partial<SwitchCase>) =>
-    setCases(cases.map((c, i) => (i === index ? { ...c, ...patch } : c)))
+  const setCases = (next: SwitchCase[]) => {
+    return onChange({ ...node, config: { ...node.config, cases: next } })
+  }
+  const setCase = (index: number, patch: Partial<SwitchCase>) => {
+    return setCases(cases.map((c, i) => (i === index ? { ...c, ...patch } : c)))
+  }
   // Which declared options no case covers yet — what the "add the rest" button
   // offers, so an author never retypes a value the schema already spells out.
   const covered = new Set(
@@ -282,13 +284,13 @@ export function SwitchInspector({
           graph={graph}
           value={node.config.source}
           itemSchema={itemSchema}
-          onChange={(source) =>
-            onChange({ ...node, config: { ...node.config, source } })
-          }
+          onChange={(source) => {
+            return onChange({ ...node, config: { ...node.config, source } })
+          }}
         />
         <p className="text-muted-foreground text-xs">
-          The value every case is matched against. Leave unset to match the whole
-          incoming input.
+          The value every case is matched against. Leave unset to match the
+          whole incoming input.
         </p>
       </div>
       <div className={field}>
@@ -298,88 +300,96 @@ export function SwitchInspector({
             box showing the routing letter reads like a value. */}
         <div className="space-y-2">
           {cases.map((c, i) => (
-          <CaseCard
-            key={c.key}
-            caseKey={c.key}
-            onRemove={() => setCases(cases.filter((_, j) => j !== i))}
-            removeLabel={`Remove case ${c.label?.trim() || c.key}`}
-          >
-            <CaseRow label="Path name">
-              {/* The badge above is the routing key and never changes; this names
+            <CaseCard
+              key={c.key}
+              caseKey={c.key}
+              onRemove={() => setCases(cases.filter((_, j) => j !== i))}
+              removeLabel={`Remove case ${c.label?.trim() || c.key}`}
+            >
+              <CaseRow label="Path name">
+                {/* The badge above is the routing key and never changes; this names
                   the path, and the name is what the canvas edge reads. */}
-              <input
-                className={CASE_FIELD}
-                value={c.label ?? ''}
-                placeholder={c.key}
-                aria-label={`Name for case ${c.key}`}
-                // An emptied name drops the field rather than storing '', so the
-                // path falls back to its letter instead of rendering blank.
-                onChange={(e) =>
-                  setCase(i, { label: e.target.value || undefined })
-                }
-              />
-            </CaseRow>
-            <CaseRow label="Value">
-              {c.value.kind === 'ref' ? (
-                // Legacy: a case authored when a case could point at a second
-                // upstream value. Still honoured at run time, still clearable —
-                // just not something the editor offers to create any more.
-                <div className="border-input flex h-8 items-center gap-1 rounded-md border pr-0.5 pl-2">
-                  <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
-                    {c.value.nodeId} · {c.value.path || 'whole output'}
-                  </span>
-                  <button
-                    type="button"
-                    aria-label={`Unlink case ${c.label?.trim() || c.key}`}
-                    className="text-muted-foreground hover:text-foreground hover:bg-accent shrink-0 rounded p-1"
-                    onClick={() =>
-                      setCase(i, { value: { kind: 'literal', value: '' } })
-                    }
-                  >
-                    <X className="size-3" />
-                  </button>
-                </div>
-              ) : options ? (
-                // An enum input: the case is a choice among the declared values,
-                // so there is nothing to spell and nothing to mistype.
-                <select
-                  className={cn(CASE_FIELD, isBlankCase(c) && 'border-destructive')}
-                  aria-label={`Value for case ${c.label?.trim() || c.key}`}
-                  value={literalText(c.value)}
-                  onChange={(e) =>
-                    setCase(i, {
-                      value: {
-                        kind: 'literal',
-                        // Round-tripped through the options so a numeric or
-                        // boolean enum keeps its type.
-                        value:
-                          options.find((o) => toText(o) === e.target.value) ??
-                          '',
-                      },
-                    })
-                  }
-                >
-                  <option value="">Select a value…</option>
-                  {options.map((o) => (
-                    <option key={toText(o)} value={toText(o)}>
-                      {toText(o)}
-                    </option>
-                  ))}
-                </select>
-              ) : (
                 <input
-                  className={cn(CASE_FIELD, isBlankCase(c) && 'border-destructive')}
-                  value={literalText(c.value)}
-                  placeholder="the input equals…"
-                  aria-label={`Value for case ${c.label?.trim() || c.key}`}
-                  onChange={(e) =>
-                    setCase(i, {
-                      value: { kind: 'literal', value: e.target.value },
-                    })
-                  }
+                  className={CASE_FIELD}
+                  value={c.label ?? ''}
+                  placeholder={c.key}
+                  aria-label={`Name for case ${c.key}`}
+                  // An emptied name drops the field rather than storing '', so the
+                  // path falls back to its letter instead of rendering blank.
+                  onChange={(e) => {
+                    return setCase(i, { label: e.target.value || undefined })
+                  }}
                 />
-              )}
-            </CaseRow>
+              </CaseRow>
+              <CaseRow label="Value">
+                {c.value.kind === 'ref' ? (
+                  // Legacy: a case authored when a case could point at a second
+                  // upstream value. Still honoured at run time, still clearable —
+                  // just not something the editor offers to create any more.
+                  <div className="border-input flex h-8 items-center gap-1 rounded-md border pr-0.5 pl-2">
+                    <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+                      {c.value.nodeId} · {c.value.path || 'whole output'}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`Unlink case ${c.label?.trim() || c.key}`}
+                      className="text-muted-foreground hover:text-foreground hover:bg-accent shrink-0 rounded p-1"
+                      onClick={() => {
+                        return setCase(i, {
+                          value: { kind: 'literal', value: '' },
+                        })
+                      }}
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </div>
+                ) : options ? (
+                  // An enum input: the case is a choice among the declared values,
+                  // so there is nothing to spell and nothing to mistype.
+                  <select
+                    className={cn(
+                      CASE_FIELD,
+                      isBlankCase(c) && 'border-destructive',
+                    )}
+                    aria-label={`Value for case ${c.label?.trim() || c.key}`}
+                    value={literalText(c.value)}
+                    onChange={(e) => {
+                      return setCase(i, {
+                        value: {
+                          kind: 'literal',
+                          // Round-tripped through the options so a numeric or
+                          // boolean enum keeps its type.
+                          value:
+                            options.find((o) => toText(o) === e.target.value) ??
+                            '',
+                        },
+                      })
+                    }}
+                  >
+                    <option value="">Select a value…</option>
+                    {options.map((o) => (
+                      <option key={toText(o)} value={toText(o)}>
+                        {toText(o)}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    className={cn(
+                      CASE_FIELD,
+                      isBlankCase(c) && 'border-destructive',
+                    )}
+                    value={literalText(c.value)}
+                    placeholder="the input equals…"
+                    aria-label={`Value for case ${c.label?.trim() || c.key}`}
+                    onChange={(e) => {
+                      return setCase(i, {
+                        value: { kind: 'literal', value: e.target.value },
+                      })
+                    }}
+                  />
+                )}
+              </CaseRow>
             </CaseCard>
           ))}
           {/* The fallback wears the same card so it reads as the last case in
@@ -405,14 +415,14 @@ export function SwitchInspector({
             <button
               type="button"
               className="border-input hover:bg-accent rounded-md border px-2 py-1 text-xs"
-              onClick={() =>
-                setCases(
+              onClick={() => {
+                return setCases(
                   appendCases(
                     cases,
                     uncovered.map((o) => ({ value: o, label: toText(o) })),
                   ),
                 )
-              }
+              }}
             >
               + Add the {uncovered.length} remaining option
               {uncovered.length > 1 ? 's' : ''}
@@ -435,7 +445,8 @@ export function SwitchInspector({
 // it refers to is the one wearing the red border.
 function isBlankCase(c: SwitchCase): boolean {
   return (
-    c.value.kind === 'literal' && (c.value.value == null || c.value.value === '')
+    c.value.kind === 'literal' &&
+    (c.value.value == null || c.value.value === '')
   )
 }
 
@@ -500,8 +511,8 @@ export function IterationInspector({
           graph={graph}
           value={node.config.source}
           itemSchema={itemSchema}
-          onSelect={(source, elemSchema) =>
-            onChange({
+          onSelect={(source, elemSchema) => {
+            return onChange({
               ...node,
               config: {
                 ...node.config,
@@ -509,12 +520,12 @@ export function IterationInspector({
                 itemSchema: elemSchema,
               },
             })
-          }
+          }}
         />
         <p className="text-muted-foreground text-xs">
-          Drill into any upstream node's data and pick the{' '}
-          <strong>list</strong> to loop over — each element becomes the{' '}
-          <strong>Item</strong>. Only arrays can be selected.
+          Drill into any upstream node's data and pick the <strong>list</strong>{' '}
+          to loop over — each element becomes the <strong>Item</strong>. Only
+          arrays can be selected.
         </p>
       </div>
       <div className={field}>
@@ -530,9 +541,7 @@ export function IterationInspector({
               ...node,
               config: {
                 ...node.config,
-                concurrency: Number.isNaN(n)
-                  ? 1
-                  : Math.min(20, Math.max(1, n)),
+                concurrency: Number.isNaN(n) ? 1 : Math.min(20, Math.max(1, n)),
               },
             })
           }}
@@ -545,15 +554,15 @@ export function IterationInspector({
         <Label>Item execution</Label>
         <Select
           value={node.config.itemExecution}
-          onChange={(e) =>
-            onChange({
+          onChange={(e) => {
+            return onChange({
               ...node,
               config: {
                 ...node.config,
                 itemExecution: e.target.value as IterationItemExecution,
               },
             })
-          }
+          }}
         >
           <option value="inline">Inline (whole item as one step)</option>
           <option value="durable">Durable (one run per item)</option>
@@ -598,12 +607,12 @@ export function IterationInspector({
       <label className="flex items-center gap-2 text-sm">
         <Checkbox
           checked={node.config.stopOnError}
-          onChange={(e) =>
-            onChange({
+          onChange={(e) => {
+            return onChange({
               ...node,
               config: { ...node.config, stopOnError: e.target.checked },
             })
-          }
+          }}
         />
         Stop on first error
       </label>
@@ -692,8 +701,8 @@ export function TransformInspector({
   // Hand the Copilot the question already written, carrying the real shape of
   // the data this step will receive. Writing JSONata against a remembered field
   // list is the slow, error-prone part; the editor already knows that list.
-  const askForExpression = () =>
-    askCopilot(
+  const askForExpression = () => {
+    return askCopilot(
       buildTransformCopilotPrompt({
         nodeLabel: node.label || 'Transform',
         sourceLabel: sourceShape?.label ?? null,
@@ -703,11 +712,15 @@ export function TransformInspector({
         currentExpression: expression,
       }),
     )
+  }
 
-  const patch = (config: Partial<typeof node.config>) =>
-    onChange({ ...node, config: { ...node.config, ...config } })
+  const patch = (config: Partial<typeof node.config>) => {
+    return onChange({ ...node, config: { ...node.config, ...config } })
+  }
 
-  const setInputs = (next: Record<string, ArgBinding>) => patch({ inputs: next })
+  const setInputs = (next: Record<string, ArgBinding>) => {
+    return patch({ inputs: next })
+  }
 
   // Rename a variable by index, preserving order and the bound value.
   const renameInput = (index: number, nextKey: string) => {
@@ -730,8 +743,8 @@ export function TransformInspector({
           onChange={(binding) => patch({ source: binding })}
         />
         <p className="text-muted-foreground text-xs">
-          The value the expression runs over, written as <code>$</code>. Leave it
-          unset to use whatever the incoming step produced.
+          The value the expression runs over, written as <code>$</code>. Leave
+          it unset to use whatever the incoming step produced.
         </p>
       </div>
 
@@ -742,7 +755,9 @@ export function TransformInspector({
           rows={8}
           spellCheck={false}
           value={expression}
-          placeholder={'[$.{\n  "role": role,\n  "parts": [{ "type": "text", "text": body }]\n}]'}
+          placeholder={
+            '[$.{\n  "role": role,\n  "parts": [{ "type": "text", "text": body }]\n}]'
+          }
           onChange={(e) => patch({ expression: e.target.value })}
         />
         <p className="text-muted-foreground text-xs">
@@ -769,14 +784,14 @@ export function TransformInspector({
         <Label>Emits</Label>
         <Select
           value={outputShape ?? ''}
-          onChange={(e) =>
-            patch({
+          onChange={(e) => {
+            return patch({
               outputShape:
                 e.target.value === ''
                   ? undefined
                   : (e.target.value as TransformOutputShape),
             })
-          }
+          }}
         >
           <option value="">Anything (not checked)</option>
           {TRANSFORM_OUTPUT_SHAPES.map((shape) => (
@@ -810,19 +825,19 @@ export function TransformInspector({
             binding={binding}
             onRename={(next) => renameInput(i, next)}
             onBind={(next) => setInputs({ ...inputs, [key]: next })}
-            onRemove={() =>
-              setInputs(
+            onRemove={() => {
+              return setInputs(
                 Object.fromEntries(entries.filter((_, j) => j !== i)),
               )
-            }
+            }}
           />
         ))}
         <button
           type="button"
           className="text-muted-foreground hover:text-foreground w-fit text-xs underline"
-          onClick={() =>
-            setInputs({ ...inputs, '': { kind: 'literal', value: '' } })
-          }
+          onClick={() => {
+            return setInputs({ ...inputs, '': { kind: 'literal', value: '' } })
+          }}
         >
           Add a value
         </button>
@@ -917,8 +932,9 @@ export function PassthroughInspector({
     else onChange({ ...node, config: { fields: node.config.fields ?? {} } })
   }
 
-  const setFields = (nextFields: Record<string, ArgBinding>) =>
-    onChange({ ...node, config: { fields: nextFields } })
+  const setFields = (nextFields: Record<string, ArgBinding>) => {
+    return onChange({ ...node, config: { fields: nextFields } })
+  }
 
   // Rename a field key by index, preserving order and the bound value.
   const renameField = (index: number, nextKey: string) => {
@@ -935,13 +951,13 @@ export function PassthroughInspector({
     setFields({ ...fields, [key]: binding })
   }
 
-  const removeField = (index: number) =>
-    setFields(
-      Object.fromEntries(entries.filter((_, i) => i !== index)),
-    )
+  const removeField = (index: number) => {
+    return setFields(Object.fromEntries(entries.filter((_, i) => i !== index)))
+  }
 
-  const addField = () =>
-    setFields({ ...fields, '': { kind: 'literal', value: '' } })
+  const addField = () => {
+    return setFields({ ...fields, '': { kind: 'literal', value: '' } })
+  }
 
   return (
     <>
@@ -1008,9 +1024,12 @@ export function PassthroughInspector({
                 graph={graph}
                 itemSchema={itemSchema}
                 binding={binding}
-                onChange={(next) =>
-                  setFieldBinding(key, next ?? { kind: 'literal', value: '' })
-                }
+                onChange={(next) => {
+                  return setFieldBinding(
+                    key,
+                    next ?? { kind: 'literal', value: '' },
+                  )
+                }}
               />
             </div>
           ))}
@@ -1023,8 +1042,8 @@ export function PassthroughInspector({
           </button>
           <p className="text-muted-foreground text-xs">
             Builds an object — one key per field. Point each at the upstream
-            value that holds it, so this arm matches a sibling like an agent that
-            emits <code>{'{ name }'}</code>.
+            value that holds it, so this arm matches a sibling like an agent
+            that emits <code>{'{ name }'}</code>.
           </p>
         </div>
       ) : null}

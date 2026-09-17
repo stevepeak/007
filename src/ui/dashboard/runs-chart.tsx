@@ -47,15 +47,13 @@ export function RunsChart({
   )
 
   // Recharts wants one object per x position with a field per series.
-  const rows = useMemo<Row[]>(
-    () =>
-      data.buckets.map((bucket, i) => {
-        const row = { bucket } as Row
-        for (const s of series) row[s.key || '__other'] = s.points[i] ?? 0
-        return row
-      }),
-    [data.buckets, series],
-  )
+  const rows = useMemo<Row[]>(() => {
+    return data.buckets.map((bucket, i) => {
+      const row = { bucket } as Row
+      for (const s of series) row[s.key || '__other'] = s.points[i] ?? 0
+      return row
+    })
+  }, [data.buckets, series])
 
   const legend: LegendItem[] = series.map((s) => ({
     key: s.key,
@@ -90,7 +88,10 @@ export function RunsChart({
       ) : (
         <>
           <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={rows} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
+            <LineChart
+              data={rows}
+              margin={{ top: 4, right: 8, bottom: 0, left: -16 }}
+            >
               <CartesianGrid {...gridProps} />
               <XAxis
                 dataKey="bucket"
@@ -122,10 +123,9 @@ export function RunsChart({
                         value: formatCount(byKey.get(s.key || '__other') ?? 0),
                       }))}
                       total={`${formatCount(
-                        series.reduce(
-                          (sum, s) => sum + (byKey.get(s.key || '__other') ?? 0),
-                          0,
-                        ),
+                        series.reduce((sum, s) => {
+                          return sum + (byKey.get(s.key || '__other') ?? 0)
+                        }, 0),
                       )} runs`}
                     />
                   )

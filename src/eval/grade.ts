@@ -91,7 +91,8 @@ function collectToolCalls(steps: GradeStep[]): ToolInvocation[] {
   for (const s of steps) {
     if (s.nodeKind === 'tool') {
       const m = s.meta as Partial<ToolNodeMeta> | undefined
-      if (m?.toolId) calls.push({ toolId: m.toolId, args: m.args, output: s.output })
+      if (m?.toolId)
+        calls.push({ toolId: m.toolId, args: m.args, output: s.output })
     } else if (s.nodeKind === 'agent') {
       const m = s.meta as AgentNodeMeta | undefined
       for (const st of m?.steps ?? []) {
@@ -130,12 +131,12 @@ function deepEqual(a: unknown, b: unknown): boolean {
     const kb = Object.keys(b)
     return (
       ka.length === kb.length &&
-      ka.every((k) =>
-        deepEqual(
+      ka.every((k) => {
+        return deepEqual(
           (a as Record<string, unknown>)[k],
           (b as Record<string, unknown>)[k],
-        ),
-      )
+        )
+      })
     )
   }
   return false
@@ -148,14 +149,19 @@ function deepEqual(a: unknown, b: unknown): boolean {
  * `jsonpath` is a v1 alias for `equals` after `path` selection (richer JSONPath
  * matching is parked — see the plan's ideas list).
  */
-function matches(actual: unknown, match: EvalMatch, expected: unknown): boolean {
+function matches(
+  actual: unknown,
+  match: EvalMatch,
+  expected: unknown,
+): boolean {
   switch (match) {
     case 'equals':
     case 'jsonpath':
       return deepEqual(actual, expected)
     case 'contains':
       if (typeof actual === 'string') return actual.includes(String(expected))
-      if (Array.isArray(actual)) return actual.some((x) => deepEqual(x, expected))
+      if (Array.isArray(actual))
+        return actual.some((x) => deepEqual(x, expected))
       return false
     case 'regex':
       try {
@@ -193,9 +199,13 @@ function gradeBinary(check: EvalCheck, input: GradeRowInput): CheckResult {
       if (forTool.length === 0) {
         return { pass: false, reason: `${check.toolId} was never called` }
       }
-      const pass = forTool.some((c) =>
-        matches(valueAtPath(c.args, check.path), check.match, check.value),
-      )
+      const pass = forTool.some((c) => {
+        return matches(
+          valueAtPath(c.args, check.path),
+          check.match,
+          check.value,
+        )
+      })
       return pass
         ? { pass }
         : {
@@ -319,7 +329,9 @@ async function gradeJudge(
   // The judge grades the whole output, or — when the check pins a `path` — only
   // the value at that path, so a rubric can target one known field.
   const graded = valueAtPath(input.output, check.path)
-  const outputLabel = check.path ? `RUN OUTPUT (at \`${check.path}\`)` : 'RUN OUTPUT'
+  const outputLabel = check.path
+    ? `RUN OUTPUT (at \`${check.path}\`)`
+    : 'RUN OUTPUT'
   // Built once, outside the retry loop, so a re-issue re-sends an IDENTICAL
   // request — a retry that also changed the prompt would be a different
   // experiment, not a second attempt at the same one.
@@ -359,7 +371,10 @@ async function gradeJudge(
       }))
       break
     } catch (err) {
-      if (attempt >= JUDGE_MAX_ATTEMPTS || !NoObjectGeneratedError.isInstance(err)) {
+      if (
+        attempt >= JUDGE_MAX_ATTEMPTS ||
+        !NoObjectGeneratedError.isInstance(err)
+      ) {
         throw err
       }
     }
@@ -485,13 +500,19 @@ export async function gradeRow(input: GradeRowInput): Promise<GradeRowResult> {
     status,
     score,
     checkResults: results,
-    error: status === 'error' && judgeErrors.length > 0 ? judgeErrors.join('; ') : undefined,
+    error:
+      status === 'error' && judgeErrors.length > 0
+        ? judgeErrors.join('; ')
+        : undefined,
   }
 }
 
 // ── aggregation ─────────────────────────────────────────────────────────────
 
-export type RowOutcome = { status: 'pass' | 'fail' | 'error'; score: number | null }
+export type RowOutcome = {
+  status: 'pass' | 'fail' | 'error'
+  score: number | null
+}
 
 export type Rollup = {
   total: number

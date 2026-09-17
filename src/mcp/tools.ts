@@ -64,8 +64,13 @@ export function reqString(value: unknown, field: string): string {
 }
 
 /** Clamp a model-supplied count into a sane window without a JSON-Schema bound. */
-export function boundedLimit(raw: unknown, fallback: number, max: number): number {
-  const n = typeof raw === 'number' && Number.isFinite(raw) ? Math.floor(raw) : fallback
+export function boundedLimit(
+  raw: unknown,
+  fallback: number,
+  max: number,
+): number {
+  const n =
+    typeof raw === 'number' && Number.isFinite(raw) ? Math.floor(raw) : fallback
   return Math.min(Math.max(n, 1), max)
 }
 
@@ -101,11 +106,11 @@ function runOverview(detail: WfRunDetail): unknown {
     workflowVersionId: detail.workflowVersionId,
     // A log's `meta` is a progress detail, not the payload — it is the
     // step's own fields that carry what actually happened.
-    logs: clipTail(detail.logs, MAX_LOGS, 'log entries').map((l) =>
-      typeof l === 'string' ? l : { ...l, meta: clip(l.meta, 400) },
-    ),
-    steps: clipTail(detail.steps, MAX_STEPS, 'steps').map((s) =>
-      typeof s === 'string'
+    logs: clipTail(detail.logs, MAX_LOGS, 'log entries').map((l) => {
+      return typeof l === 'string' ? l : { ...l, meta: clip(l.meta, 400) }
+    }),
+    steps: clipTail(detail.steps, MAX_STEPS, 'steps').map((s) => {
+      return typeof s === 'string'
         ? s
         : {
             cursor: s.cursor,
@@ -119,8 +124,8 @@ function runOverview(detail: WfRunDetail): unknown {
             input: clip(s.input, RUN_OVERVIEW_FIELD_CHARS),
             output: clip(s.output, RUN_OVERVIEW_FIELD_CHARS),
             meta: clip(s.meta, RUN_OVERVIEW_FIELD_CHARS),
-          },
-    ),
+          }
+    }),
   }
 }
 
@@ -190,7 +195,10 @@ export function readTools(): WfMcpTool[] {
           .describe(
             'One of: running, done, completed, failed, cancelled. Omit for all.',
           ),
-        workflowId: z.string().nullish().describe('Only runs of this workflow.'),
+        workflowId: z
+          .string()
+          .nullish()
+          .describe('Only runs of this workflow.'),
         triggerKind: z
           .string()
           .nullish()
@@ -201,12 +209,15 @@ export function readTools(): WfMcpTool[] {
           .describe(
             'Matches workflow name, trigger kind, subject, correlation or note.',
           ),
-        limit: z.number().nullish().describe('How many runs (default 20, max 100).'),
+        limit: z
+          .number()
+          .nullish()
+          .describe('How many runs (default 20, max 100).'),
         offset: z.number().nullish().describe('Rows to skip, for paging.'),
       },
       readOnly: true,
-      run: async (client, args) =>
-        await client.listRuns({
+      run: async (client, args) => {
+        return await client.listRuns({
           status: optString(args.status),
           workflowId: optString(args.workflowId),
           triggerKind: optString(args.triggerKind),
@@ -216,7 +227,8 @@ export function readTools(): WfMcpTool[] {
             typeof args.offset === 'number' && args.offset > 0
               ? Math.floor(args.offset)
               : undefined,
-        }),
+        })
+      },
     },
 
     {
@@ -252,7 +264,9 @@ export function readTools(): WfMcpTool[] {
         const runId = reqString(args.runId, 'runId')
         const cursor = args.cursor
         if (typeof cursor !== 'number') {
-          throw new TypeError('`cursor` must be the number get_run showed for the step.')
+          throw new TypeError(
+            '`cursor` must be the number get_run showed for the step.',
+          )
         }
         const detail = await client.getRun(runId)
         if (!detail) return { error: `No run found for id ${runId}.` }
@@ -276,7 +290,7 @@ export function readTools(): WfMcpTool[] {
       name: 'list_feedback',
       title: 'List feedback',
       description:
-        "Customer thumbs ratings, newest first, each with the run that produced the rated answer. Thumbs-down rows with a runId are the highest-value input for authoring eval samples — they are real failures someone complained about. Pair with get_run to read what actually happened.",
+        'Customer thumbs ratings, newest first, each with the run that produced the rated answer. Thumbs-down rows with a runId are the highest-value input for authoring eval samples — they are real failures someone complained about. Pair with get_run to read what actually happened.',
       inputSchema: {
         rating: z
           .string()
@@ -287,15 +301,17 @@ export function readTools(): WfMcpTool[] {
           .nullish()
           .describe('Filter to "acknowledged" or "unacknowledged".'),
         search: z.string().nullish().describe('Free-text match over the rows.'),
-        limit: z.number().nullish().describe('How many rows (default 25, max 100).'),
+        limit: z
+          .number()
+          .nullish()
+          .describe('How many rows (default 25, max 100).'),
       },
       readOnly: true,
       run: async (client, args) => {
         const rating = optString(args.rating)
         const ackState = optString(args.ackState)
         const result = await client.listFeedback({
-          ratings:
-            rating === 'up' || rating === 'down' ? [rating] : undefined,
+          ratings: rating === 'up' || rating === 'down' ? [rating] : undefined,
           ackState:
             ackState === 'acknowledged' || ackState === 'unacknowledged'
               ? ackState
@@ -348,7 +364,7 @@ export function readTools(): WfMcpTool[] {
       name: 'get_tool_catalog',
       title: 'Get tool catalog',
       description:
-        "Every tool the platform can give an agent: its name, what it does, whether it reads or writes, the ambient run-scope keys it needs, and its `origin` — `sdk` for a tool the workflow SDK ships (fixed until the package is bumped) versus `host` for one this deployment wrote (a file in its own repo, changeable today). The catalog is fixed by the platform — an agent can be given any of these, and nothing else. Use it to say what a tool does, what an agent is missing, or where a tool would have to be changed.",
+        'Every tool the platform can give an agent: its name, what it does, whether it reads or writes, the ambient run-scope keys it needs, and its `origin` — `sdk` for a tool the workflow SDK ships (fixed until the package is bumped) versus `host` for one this deployment wrote (a file in its own repo, changeable today). The catalog is fixed by the platform — an agent can be given any of these, and nothing else. Use it to say what a tool does, what an agent is missing, or where a tool would have to be changed.',
       inputSchema: {},
       readOnly: true,
       run: async (client) => {

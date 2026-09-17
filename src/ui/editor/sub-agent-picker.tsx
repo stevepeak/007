@@ -94,12 +94,13 @@ export function SubAgentPicker({
     const q = query.trim().toLowerCase()
     return options
       .filter((o) => !selectedKeys.has(o.key))
-      .filter(
-        (o) =>
+      .filter((o) => {
+        return (
           q.length === 0 ||
           o.name.toLowerCase().includes(q) ||
-          o.description.toLowerCase().includes(q),
-      )
+          o.description.toLowerCase().includes(q)
+        )
+      })
       .sort((x, y) => x.name.localeCompare(y.name))
   }, [options, query, selectedKeys])
 
@@ -121,18 +122,16 @@ export function SubAgentPicker({
 
   // Live preview of the synthesized spawn tools, resolving each target's display
   // name + (agent) prompt variables from the loaded summaries.
-  const preview = useMemo(
-    () =>
-      previewSpawnTools(cfg.targets, (t) => {
-        const o = byKey.get(targetKey(t))
-        return {
-          displayName: o?.name ?? t.id,
-          promptVariables:
-            t.kind === 'agent' ? (o?.agent?.inputVariables ?? []) : undefined,
-        }
-      }),
-    [cfg.targets, byKey],
-  )
+  const preview = useMemo(() => {
+    return previewSpawnTools(cfg.targets, (t) => {
+      const o = byKey.get(targetKey(t))
+      return {
+        displayName: o?.name ?? t.id,
+        promptVariables:
+          t.kind === 'agent' ? (o?.agent?.inputVariables ?? []) : undefined,
+      }
+    })
+  }, [cfg.targets, byKey])
 
   return (
     <div className="space-y-4">
@@ -251,7 +250,9 @@ function TargetSearch({
         <div className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-md border border-neutral-200 bg-white p-1 shadow-lg">
           {results.length === 0 ? (
             <div className="p-2 text-xs text-neutral-400">
-              {anyOptions ? 'Nothing matches.' : 'No agents or workflows available.'}
+              {anyOptions
+                ? 'Nothing matches.'
+                : 'No agents or workflows available.'}
             </div>
           ) : (
             results.map((o) => (
@@ -301,11 +302,14 @@ function Guardrails({
             min={1}
             max={20}
             value={cfg.maxConcurrent}
-            onChange={(e) =>
-              onPatch({
-                maxConcurrent: Math.max(1, Number.parseInt(e.target.value, 10) || 1),
+            onChange={(e) => {
+              return onPatch({
+                maxConcurrent: Math.max(
+                  1,
+                  Number.parseInt(e.target.value, 10) || 1,
+                ),
               })
-            }
+            }}
           />
         </div>
         <div className="space-y-1">
@@ -315,11 +319,14 @@ function Guardrails({
             min={1}
             max={50}
             value={cfg.maxSpawns}
-            onChange={(e) =>
-              onPatch({
-                maxSpawns: Math.max(1, Number.parseInt(e.target.value, 10) || 1),
+            onChange={(e) => {
+              return onPatch({
+                maxSpawns: Math.max(
+                  1,
+                  Number.parseInt(e.target.value, 10) || 1,
+                ),
               })
-            }
+            }}
           />
         </div>
       </div>
@@ -340,11 +347,7 @@ function Guardrails({
  * between "pick a target" and "the agent gains a `spawn_x` tool" is otherwise
  * invisible until a run.
  */
-function SpawnToolPreview({
-  preview,
-}: {
-  preview: { toolName: string }[]
-}) {
+function SpawnToolPreview({ preview }: { preview: { toolName: string }[] }) {
   if (preview.length === 0) return null
   return (
     <div className="space-y-1.5 rounded-md border border-neutral-200 bg-neutral-50/60 p-3">

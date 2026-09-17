@@ -30,13 +30,12 @@ export function FeedbackDetail({ subjectId }: { subjectId: string }) {
   const row = query.data?.[0]
 
   return (
-    <WfShell
-      crumbs={[sectionCrumb('feedback'), { label: 'Item' }]}
-      scroll
-    >
+    <WfShell crumbs={[sectionCrumb('feedback'), { label: 'Item' }]} scroll>
       <QueryState
         query={{ isLoading: query.isLoading, error: query.error, data: row }}
-        loading={<p className="p-6 text-sm text-neutral-500">Loading feedback…</p>}
+        loading={
+          <p className="p-6 text-sm text-neutral-500">Loading feedback…</p>
+        }
         empty={
           <p className="p-6 text-sm text-neutral-500">
             This feedback item no longer exists — it may have been cleared.
@@ -83,7 +82,10 @@ function FeedbackDetailBody({ row }: { row: WfFeedbackRow }) {
             </span>
             <Badge className="gap-1.5 whitespace-nowrap font-normal">
               {acknowledged ? null : (
-                <span className="size-1.5 rounded-full bg-amber-500" aria-hidden />
+                <span
+                  className="size-1.5 rounded-full bg-amber-500"
+                  aria-hidden
+                />
               )}
               {acknowledged ? 'Acknowledged' : 'Unacknowledged'}
             </Badge>
@@ -177,8 +179,9 @@ function TeamNote({
   const trimmed = value.trim()
   const stored = initialNote ?? ''
   const dirty = trimmed !== stored
-  const commit = () =>
-    save.mutate({ subjectId, note: trimmed ? trimmed : null })
+  const commit = () => {
+    return save.mutate({ subjectId, note: trimmed ? trimmed : null })
+  }
 
   return (
     <section className="space-y-1.5 rounded-md border border-amber-200 bg-amber-50/50 p-3">
@@ -199,11 +202,7 @@ function TeamNote({
         className="bg-white"
       />
       <div className="flex items-center gap-2">
-        <Button
-          size="sm"
-          onClick={commit}
-          disabled={!dirty || save.isPending}
-        >
+        <Button size="sm" onClick={commit} disabled={!dirty || save.isPending}>
           {save.isPending ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (

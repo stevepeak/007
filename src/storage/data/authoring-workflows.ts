@@ -44,7 +44,6 @@ export async function listWorkflows(
     .orderBy(desc(wfWorkflow.createdAt))
 }
 
-
 /**
  * Find a hidden workflow by exact name — the lookup behind the agent-eval
  * wrapper cache. Returns the id, or null. Unlike {@link listWorkflows} this does
@@ -132,12 +131,12 @@ export async function deleteWorkflow(db: WfDb, workflowId: string) {
     .where(eq(wfWorkflowVersion.workflowId, workflowId))
   const versionIds = versions.map((v) => v.id)
   if (versionIds.length > 0) {
-    const runs = await selectChunked(versionIds, (ids) =>
-      db
+    const runs = await selectChunked(versionIds, (ids) => {
+      return db
         .select({ id: wfRun.id })
         .from(wfRun)
-        .where(inArray(wfRun.workflowVersionId, ids)),
-    )
+        .where(inArray(wfRun.workflowVersionId, ids))
+    })
     // A busy workflow has thousands of runs, so the cascade deletes go a chunk
     // at a time — sequentially, matching the other bulk writes in this package.
     // Not `db.batch`: the HTTP client replays batches non-atomically anyway
@@ -215,8 +214,8 @@ export async function latestVersionGraphs(
     .from(inner)
     .where(eq(inner.workflowId, wfWorkflowVersion.workflowId))
   const isLatest = eq(wfWorkflowVersion.versionNumber, latestVersionNumber)
-  const select = (where: SQL | undefined) =>
-    db
+  const select = (where: SQL | undefined) => {
+    return db
       .select({
         workflowId: wfWorkflowVersion.workflowId,
         id: wfWorkflowVersion.id,
@@ -226,13 +225,16 @@ export async function latestVersionGraphs(
       })
       .from(wfWorkflowVersion)
       .where(where)
+  }
   // Callers scope this by "every workflow I just listed", which is unbounded —
   // chunk the id list so it can't blow D1's parameter budget. Each row keys
   // back to one workflow id, so the chunks concatenate cleanly.
   const rows = ids
-    ? await selectChunked(ids, (chunkIds) =>
-        select(and(isLatest, inArray(wfWorkflowVersion.workflowId, chunkIds))),
-      )
+    ? await selectChunked(ids, (chunkIds) => {
+        return select(
+          and(isLatest, inArray(wfWorkflowVersion.workflowId, chunkIds)),
+        )
+      })
     : await select(isLatest)
   return new Map(
     rows.map((r) => [
@@ -392,4 +394,3 @@ export async function updateWorkflow(
 export async function discardDraft(db: WfDb, input: { workflowId: string }) {
   await workflowVersions.discardDraft(db, input.workflowId)
 }
-

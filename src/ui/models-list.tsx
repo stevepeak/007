@@ -1,10 +1,7 @@
 import { ExternalLink, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
-import type {
-  ModelCapabilities,
-  ModelCatalogEntry,
-} from '../server/protocol'
+import type { ModelCapabilities, ModelCatalogEntry } from '../server/protocol'
 
 import { cn } from './cn'
 import { EmptyState } from './evals/shared'
@@ -93,13 +90,14 @@ export function ModelsList({ className }: ModelsListProps) {
   const anyActive =
     query.trim() !== '' || caps.size > 0 || chosen !== 'all' || age !== 'any'
 
-  const toggleCap = (key: keyof ModelCapabilities) =>
-    setCaps((prev) => {
+  const toggleCap = (key: keyof ModelCapabilities) => {
+    return setCaps((prev) => {
       const next = new Set(prev)
       if (next.has(key)) next.delete(key)
       else next.add(key)
       return next
     })
+  }
 
   const clearFilters = () => {
     setQuery('')

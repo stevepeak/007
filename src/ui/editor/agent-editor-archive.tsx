@@ -29,7 +29,7 @@ export function ArchiveAgentDialog({
 
   const workflows = refs.data?.workflows ?? []
   const blocked = workflows.length > 0
-  const archiveError = (archive.error)?.message ?? null
+  const archiveError = archive.error?.message ?? null
 
   return (
     <Modal
@@ -56,8 +56,8 @@ export function ArchiveAgentDialog({
             <span className="text-red-600">{error.message}</span>
           )}
         >
-          {() =>
-            blocked ? (
+          {() => {
+            return blocked ? (
               <div className="space-y-3">
                 <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">
                   <AlertTriangle className="mt-0.5 size-4 shrink-0" />
@@ -96,7 +96,7 @@ export function ArchiveAgentDialog({
                 workflows. Existing runs are unaffected.
               </span>
             )
-          }
+          }}
         </QueryState>
         {archiveError ? (
           <p className="mt-2 text-xs text-red-600">{archiveError}</p>

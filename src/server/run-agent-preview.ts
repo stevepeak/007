@@ -5,10 +5,10 @@ import {
   withConnectorTools,
 } from '../connectors/registry'
 import type { RunContext, WfSdkConfig } from '../engine/config'
-import type { WfDb } from '../storage/client'
 import type { AgentConfig, AgentNode } from '../engine/graph'
 import { executeAgentNode } from '../engine/nodes/agent'
 import { createMemorySink } from '../engine/stream-sink'
+import type { WfDb } from '../storage/client'
 
 import type { AgentPreviewMessage, AgentPreviewResult } from './protocol'
 import { buildPlaygroundRegistry } from './simulated-tools'
@@ -118,9 +118,9 @@ export async function executeAgentPreview<TDeps>(opts: {
   // Unknown ids are dropped so a stale toggle can't fail the run. Real deps are
   // built ONLY when something is actually going to run live — an all-simulated
   // playground never constructs a DB/vector client at all.
-  const liveToolIds = (opts.liveToolIds ?? []).filter((id) =>
-    wfConfig.toolRegistry.has(id),
-  )
+  const liveToolIds = (opts.liveToolIds ?? []).filter((id) => {
+    return wfConfig.toolRegistry.has(id)
+  })
   const toolDeps =
     liveToolIds.length > 0 ? await wfConfig.buildRunDeps(runContext) : undefined
   const toolRegistry = buildPlaygroundRegistry({
@@ -147,7 +147,9 @@ export async function executeAgentPreview<TDeps>(opts: {
     config.inputKind === 'conversation'
       ? [
           ...toUiMessages(history),
-          ...(currentTurn ? toUiMessages([{ role: 'user', text: currentTurn }]) : []),
+          ...(currentTurn
+            ? toUiMessages([{ role: 'user', text: currentTurn }])
+            : []),
         ]
       : undefined
 
@@ -175,11 +177,12 @@ export async function executeAgentPreview<TDeps>(opts: {
     // Same precedence as `executor.ts`, so a preview and a real run resolve
     // reasoning identically — which is the only way the playground can be
     // trusted to predict production latency.
-    getModel: (modelId, opts) =>
-      wfConfig.getModel(modelId, {
+    getModel: (modelId, opts) => {
+      return wfConfig.getModel(modelId, {
         ...runContext,
         reasoning: opts?.reasoning ?? runContext.reasoning,
-      }),
+      })
+    },
     toolRegistry,
     // Every entry closes over what it needs (the simulator model, or the real
     // deps bound above), so the node itself has nothing to thread through.

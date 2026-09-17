@@ -236,9 +236,9 @@ function FeedbackControls({
       <Button
         variant="outline"
         className="h-7 px-2 text-xs"
-        onClick={() =>
-          onFeedback?.({ kind: 'action', actionId: item.actionId })
-        }
+        onClick={() => {
+          return onFeedback?.({ kind: 'action', actionId: item.actionId })
+        }}
       >
         {item.label}
       </Button>

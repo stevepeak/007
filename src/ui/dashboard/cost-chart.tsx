@@ -35,7 +35,7 @@ import {
 
 type Row = Record<string, number | string> & { bucket: number; __top: string }
 
-function axisUsd (v: number) {
+function axisUsd(v: number) {
   return v >= 1 ? `$${v.toFixed(0)}` : v > 0 ? `$${v.toFixed(2)}` : '$0'
 }
 
@@ -46,21 +46,19 @@ export function CostChart({ data }: { data: WfDashboardResult }) {
     [series],
   )
 
-  const rows = useMemo<Row[]>(
-    () =>
-      data.buckets.map((bucket, i) => {
-        const row = { bucket, __top: '' } as Row
-        // Track the highest non-zero segment so only the stack's data-end gets
-        // the rounded cap — a rounded corner mid-stack reads as a gap.
-        for (const s of series) {
-          const v = s.points[i] ?? 0
-          row[s.key] = v
-          if (v > 0) row.__top = s.key
-        }
-        return row
-      }),
-    [data.buckets, series],
-  )
+  const rows = useMemo<Row[]>(() => {
+    return data.buckets.map((bucket, i) => {
+      const row = { bucket, __top: '' } as Row
+      // Track the highest non-zero segment so only the stack's data-end gets
+      // the rounded cap — a rounded corner mid-stack reads as a gap.
+      for (const s of series) {
+        const v = s.points[i] ?? 0
+        row[s.key] = v
+        if (v > 0) row.__top = s.key
+      }
+      return row
+    })
+  }, [data.buckets, series])
 
   const legend: LegendItem[] = series.map((s) => ({
     key: s.key,
@@ -91,9 +89,9 @@ export function CostChart({ data }: { data: WfDashboardResult }) {
               spent, while the D1 fallback re-prices history on every read. */}
           {data.cost.pricedAtRunTime ? (
             <>
-              Cost was priced when each agent call ran, so it doesn&apos;t change
-              when the model catalog does. Sampled from Analytics Engine — the
-              newest bucket may still be filling in.
+              Cost was priced when each agent call ran, so it doesn&apos;t
+              change when the model catalog does. Sampled from Analytics Engine
+              — the newest bucket may still be filling in.
             </>
           ) : (
             <>
@@ -124,7 +122,10 @@ export function CostChart({ data }: { data: WfDashboardResult }) {
       ) : (
         <>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={rows} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
+            <BarChart
+              data={rows}
+              margin={{ top: 4, right: 8, bottom: 0, left: -16 }}
+            >
               <CartesianGrid {...gridProps} />
               <XAxis
                 dataKey="bucket"
@@ -138,7 +139,9 @@ export function CostChart({ data }: { data: WfDashboardResult }) {
                 content={(props: TooltipContentProps) => {
                   if (!props.active || !props.payload?.length) return null
                   const byKey = tooltipValues(props.payload)
-                  const shown = series.filter((s) => (byKey.get(s.key) ?? 0) > 0)
+                  const shown = series.filter(
+                    (s) => (byKey.get(s.key) ?? 0) > 0,
+                  )
                   if (shown.length === 0) return null
                   return (
                     <ChartTooltip
@@ -151,7 +154,10 @@ export function CostChart({ data }: { data: WfDashboardResult }) {
                         value: formatUsd(byKey.get(s.key) ?? 0),
                       }))}
                       total={formatUsd(
-                        shown.reduce((sum, s) => sum + (byKey.get(s.key) ?? 0), 0),
+                        shown.reduce(
+                          (sum, s) => sum + (byKey.get(s.key) ?? 0),
+                          0,
+                        ),
                       )}
                     />
                   )
@@ -172,7 +178,9 @@ export function CostChart({ data }: { data: WfDashboardResult }) {
                   shape={(props: BarShapeProps) => (
                     <StackedBarShape
                       {...props}
-                      rounded={(props.payload as Row | undefined)?.__top === s.key}
+                      rounded={
+                        (props.payload as Row | undefined)?.__top === s.key
+                      }
                     />
                   )}
                 />

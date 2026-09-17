@@ -103,7 +103,8 @@ const broken: WfGraphValidation = {
       nodeId: 'esc',
       nodeLabel: 'Escalate',
       severity: 'error',
-      message: 'Argument "lock" of escalate_chat expects boolean or null but the literal is string "false".',
+      message:
+        'Argument "lock" of escalate_chat expects boolean or null but the literal is string "false".',
     },
   ],
   errors: 1,
@@ -125,29 +126,33 @@ describe('applyPatchOp', () => {
 
   test('set_tool_arg rejects a malformed binding and a ref to nowhere', () => {
     const g = structuredClone(published)
-    expect(() =>
-      applyPatchOp(g, {
+    expect(() => {
+      return applyPatchOp(g, {
         op: 'set_tool_arg',
         nodeId: 'esc',
         arg: 'lock',
         binding: { value: false },
-      }),
-    ).toThrow('must be { kind: "literal", value }')
-    expect(() =>
-      applyPatchOp(g, {
+      })
+    }).toThrow('must be { kind: "literal", value }')
+    expect(() => {
+      return applyPatchOp(g, {
         op: 'set_tool_arg',
         nodeId: 'esc',
         arg: 'lock',
         binding: { kind: 'ref', nodeId: 'ghost', path: '' },
-      }),
-    ).toThrow('missing node ghost')
+      })
+    }).toThrow('missing node ghost')
   })
 
   test('remove_tool_arg names the args that exist when the target does not', () => {
     const g = structuredClone(published)
-    expect(() =>
-      applyPatchOp(g, { op: 'remove_tool_arg', nodeId: 'esc', arg: 'nope' }),
-    ).toThrow('has: note, lock')
+    expect(() => {
+      return applyPatchOp(g, {
+        op: 'remove_tool_arg',
+        nodeId: 'esc',
+        arg: 'nope',
+      })
+    }).toThrow('has: note, lock')
     applyPatchOp(g, { op: 'remove_tool_arg', nodeId: 'esc', arg: 'note' })
     const node = g.nodes[1] as Extract<WorkflowNode, { kind: 'tool' }>
     expect(Object.keys(node.config.args)).toEqual(['lock'])
@@ -163,10 +168,15 @@ describe('applyPatchOp', () => {
 
   test('add_edge refuses a duplicate; remove_edge works by id or endpoints', () => {
     const g = structuredClone(published)
-    expect(() =>
-      applyPatchOp(g, { op: 'add_edge', source: 't', target: 'esc' }),
-    ).toThrow('already exists (e1)')
-    applyPatchOp(g, { op: 'add_edge', source: 't', target: 'o', condition: 'yes' })
+    expect(() => {
+      return applyPatchOp(g, { op: 'add_edge', source: 't', target: 'esc' })
+    }).toThrow('already exists (e1)')
+    applyPatchOp(g, {
+      op: 'add_edge',
+      source: 't',
+      target: 'o',
+      condition: 'yes',
+    })
     expect(g.edges).toHaveLength(3)
     applyPatchOp(g, { op: 'remove_edge', edgeId: 'e1' })
     applyPatchOp(g, { op: 'remove_edge', source: 't', target: 'o' })
@@ -206,7 +216,12 @@ describe('patch_workflow_draft', () => {
     const result = (await tool.run(client, {
       workflowId: 'w1',
       ops: [
-        { op: 'set_tool_arg', nodeId: 'esc', arg: 'lock', binding: { kind: 'literal', value: false } },
+        {
+          op: 'set_tool_arg',
+          nodeId: 'esc',
+          arg: 'lock',
+          binding: { kind: 'literal', value: false },
+        },
         { op: 'remove_tool_arg', nodeId: 'esc', arg: 'note' },
       ],
     })) as {
@@ -222,8 +237,12 @@ describe('patch_workflow_draft', () => {
     expect(writes).toHaveLength(1)
     const written = (writes[0] as { graph: WorkflowGraph }).graph
     const node = written.nodes[1] as Extract<WorkflowNode, { kind: 'tool' }>
-    expect(node.config.args).toEqual({ lock: { kind: 'literal', value: false } })
-    expect(result.draftDiffersFromPublished.nodesChanged).toEqual(['Escalate (esc)'])
+    expect(node.config.args).toEqual({
+      lock: { kind: 'literal', value: false },
+    })
+    expect(result.draftDiffersFromPublished.nodesChanged).toEqual([
+      'Escalate (esc)',
+    ])
     expect(result.next).toContain('baseVersionNumber: 28')
   })
 
@@ -240,7 +259,12 @@ describe('patch_workflow_draft', () => {
       workflowId: 'w1',
       ops: [
         { op: 'set_node_label', nodeId: 'esc', label: 'Escalate (No Lock)' },
-        { op: 'set_tool_arg', nodeId: 'ghost', arg: 'lock', binding: { kind: 'literal', value: false } },
+        {
+          op: 'set_tool_arg',
+          nodeId: 'ghost',
+          arg: 'lock',
+          binding: { kind: 'literal', value: false },
+        },
       ],
     })) as { error: string; applied: unknown[] }
     expect(result.error).toContain('ops[1] failed: set_tool_arg: no node ghost')
@@ -293,7 +317,12 @@ describe('publish_workflow', () => {
   const tool = toolNamed('publish_workflow')
   const draftGraph = (() => {
     const g = structuredClone(published)
-    applyPatchOp(g, { op: 'set_tool_arg', nodeId: 'esc', arg: 'lock', binding: { kind: 'literal', value: false } })
+    applyPatchOp(g, {
+      op: 'set_tool_arg',
+      nodeId: 'esc',
+      arg: 'lock',
+      binding: { kind: 'literal', value: false },
+    })
     return g
   })()
 
@@ -316,12 +345,20 @@ describe('publish_workflow', () => {
       workflowId: 'w1',
       changeNote: 'ART-146: lock as a real boolean',
       baseVersionNumber: 28,
-    })) as { ok: boolean; published: { versionNumber: number }; changed: { nodesChanged: string[] } }
+    })) as {
+      ok: boolean
+      published: { versionNumber: number }
+      changed: { nodesChanged: string[] }
+    }
     expect(result.ok).toBe(true)
     expect(result.published.versionNumber).toBe(29)
     expect(result.changed.nodesChanged).toEqual(['Escalate (esc)'])
     expect(saves).toEqual([
-      { workflowId: 'w1', graph: draftGraph, changeNote: 'ART-146: lock as a real boolean' },
+      {
+        workflowId: 'w1',
+        graph: draftGraph,
+        changeNote: 'ART-146: lock as a real boolean',
+      },
     ])
   })
 
@@ -363,7 +400,10 @@ describe('publish_workflow', () => {
     expect(noDraft.error).toContain('no draft to publish')
 
     const same = (await tool.run(
-      client({ saves, getWorkflow: async () => detail({ draft: { graph: published } }) }),
+      client({
+        saves,
+        getWorkflow: async () => detail({ draft: { graph: published } }),
+      }),
       { workflowId: 'w1', changeNote: 'x', baseVersionNumber: 28 },
     )) as { error: string }
     expect(same.error).toContain('identical to v28')

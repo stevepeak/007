@@ -54,18 +54,18 @@ const SCHEMA_HELP = (
       The schema is parsed, never executed.
     </p>
     <p className="mt-2">
-      Supported:{' '}
-      <code className="rounded bg-neutral-100 px-1">z.string()</code>,{' '}
-      <code className="rounded bg-neutral-100 px-1">z.number()</code>,{' '}
+      Supported: <code className="rounded bg-neutral-100 px-1">z.string()</code>
+      , <code className="rounded bg-neutral-100 px-1">z.number()</code>,{' '}
       <code className="rounded bg-neutral-100 px-1">z.boolean()</code>,{' '}
       <code className="rounded bg-neutral-100 px-1">z.enum([…])</code>,{' '}
       <code className="rounded bg-neutral-100 px-1">z.array(…)</code>, nested{' '}
-      <code className="rounded bg-neutral-100 px-1">z.object({'{…}'})</code>, and
-      the <code className="rounded bg-neutral-100 px-1">.optional()</code> /{' '}
+      <code className="rounded bg-neutral-100 px-1">z.object({'{…}'})</code>,
+      and the <code className="rounded bg-neutral-100 px-1">.optional()</code> /{' '}
       <code className="rounded bg-neutral-100 px-1">.nullable()</code> /{' '}
       <code className="rounded bg-neutral-100 px-1">.nullish()</code> /{' '}
       <code className="rounded bg-neutral-100 px-1">.int()</code> /{' '}
-      <code className="rounded bg-neutral-100 px-1">.describe("…")</code> chains.
+      <code className="rounded bg-neutral-100 px-1">.describe("…")</code>{' '}
+      chains.
     </p>
   </>
 )
@@ -131,20 +131,20 @@ export function AgentOutputEditor({
   // (the single source of truth) so the author always sees the real shape; never
   // the placeholder, so an untouched agent's schema is never overwritten by
   // example text.
-  const [localSource, setLocalSource] = useState(() =>
-    value.kind === 'object' ? zodSourceFromJsonSchema(value.schema) : '',
-  )
+  const [localSource, setLocalSource] = useState(() => {
+    return value.kind === 'object' ? zodSourceFromJsonSchema(value.schema) : ''
+  })
   const controlled = controlledSource !== undefined
   const source = controlled ? controlledSource : localSource
 
   // Only compile once there's actually a source to compile. When the source is
   // empty (e.g. a schema authored in code, with no round-trip source), stay
   // neutral rather than flagging the untouched agent as "invalid".
-  const compiled = useMemo(
-    () =>
-      value.kind === 'object' && source.trim() ? compileZodSource(source) : null,
-    [value.kind, source],
-  )
+  const compiled = useMemo(() => {
+    return value.kind === 'object' && source.trim()
+      ? compileZodSource(source)
+      : null
+  }, [value.kind, source])
 
   function selectKind(kind: Kind) {
     if (kind === value.kind) return
@@ -200,7 +200,10 @@ export function AgentOutputEditor({
   const askForSchema = () => {
     if (!copilotContext) return
     askCopilot(
-      buildAgentSchemaCopilotPrompt({ ...copilotContext, currentSource: source }),
+      buildAgentSchemaCopilotPrompt({
+        ...copilotContext,
+        currentSource: source,
+      }),
     )
   }
 
@@ -217,7 +220,12 @@ export function AgentOutputEditor({
       hint: 'A single decision',
       Icon: ToggleLeft,
     },
-    { kind: 'object', label: 'Structured', hint: 'A typed object', Icon: Braces },
+    {
+      kind: 'object',
+      label: 'Structured',
+      hint: 'A typed object',
+      Icon: Braces,
+    },
   ]
 
   return (

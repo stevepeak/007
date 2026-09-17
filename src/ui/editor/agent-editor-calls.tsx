@@ -54,10 +54,12 @@ export function AgentCallMetrics({ agentId }: { agentId: string }) {
   // total is divided by the executions that actually contributed it — rows with
   // no recorded duration, or an unpriced model, are left out of that divisor
   // rather than dragging their average toward zero.
-  const totalOf = (pick: (r: (typeof rows)[number]) => number) =>
-    rows.reduce((sum, r) => sum + pick(r), 0)
-  const callsWhere = (has: (r: (typeof rows)[number]) => boolean) =>
-    rows.filter(has).reduce((sum, r) => sum + r.callCount, 0)
+  const totalOf = (pick: (r: (typeof rows)[number]) => number) => {
+    return rows.reduce((sum, r) => sum + pick(r), 0)
+  }
+  const callsWhere = (has: (r: (typeof rows)[number]) => boolean) => {
+    return rows.filter(has).reduce((sum, r) => sum + r.callCount, 0)
+  }
 
   const totalCalls = callsWhere(() => true)
   const per = (total: number, over: number) => (over > 0 ? total / over : null)
@@ -197,40 +199,40 @@ export function AgentCallsList({
       }
     >
       {(rows) => (
-      <div className="space-y-2">
-        <div className="overflow-x-auto">
-          <div className="min-w-[56rem] space-y-1">
-            <div
-              className={cn(
-                ROW_COLS,
-                'px-3 pb-1 text-[11px] font-medium text-neutral-400',
-              )}
-            >
-              <span>Run</span>
-              <span className="text-right">Turns</span>
-              <span className="text-right">Tokens</span>
-              <span className="text-right">Cost</span>
-              <span className="text-right">Elapsed</span>
-              <span>Tools</span>
-              <span className="text-right">When</span>
+        <div className="space-y-2">
+          <div className="overflow-x-auto">
+            <div className="min-w-[56rem] space-y-1">
+              <div
+                className={cn(
+                  ROW_COLS,
+                  'px-3 pb-1 text-[11px] font-medium text-neutral-400',
+                )}
+              >
+                <span>Run</span>
+                <span className="text-right">Turns</span>
+                <span className="text-right">Tokens</span>
+                <span className="text-right">Cost</span>
+                <span className="text-right">Elapsed</span>
+                <span>Tools</span>
+                <span className="text-right">When</span>
+              </div>
+              {rows.map((call) => (
+                <CallRow
+                  key={callKey(call)}
+                  call={call}
+                  tools={tools.data ?? []}
+                  selected={selectedKey === callKey(call)}
+                  onSelect={onSelect}
+                />
+              ))}
             </div>
-            {rows.map((call) => (
-              <CallRow
-                key={callKey(call)}
-                call={call}
-                tools={tools.data ?? []}
-                selected={selectedKey === callKey(call)}
-                onSelect={onSelect}
-              />
-            ))}
           </div>
+          {rows.length === CALL_LIMIT ? (
+            <p className="text-[11px] text-neutral-400">
+              The {CALL_LIMIT} most recent calls.
+            </p>
+          ) : null}
         </div>
-        {rows.length === CALL_LIMIT ? (
-          <p className="text-[11px] text-neutral-400">
-            The {CALL_LIMIT} most recent calls.
-          </p>
-        ) : null}
-      </div>
       )}
     </QueryState>
   )

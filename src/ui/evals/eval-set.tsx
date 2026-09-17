@@ -8,7 +8,13 @@ import { AgentSelect, type AgentSelectValue } from '../agent-select'
 import { ArchiveButton } from '../archive-button'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
-import { useAgents, useEvalRuns, useEvalSet, useUpdateEvalSet, useUpsertEvalRow } from '../hooks'
+import {
+  useAgents,
+  useEvalRuns,
+  useEvalSet,
+  useUpdateEvalSet,
+  useUpsertEvalRow,
+} from '../hooks'
 import { IdeaSpark } from '../idea-spark'
 import { useOpenAsset, useWfNav, WfLink } from '../nav'
 import { pendingLabel, QueryState } from '../query-state'
@@ -18,10 +24,7 @@ import { useUndoStack } from '../undo/use-undo-stack'
 import { useUnsavedGuard } from '../undo/use-unsaved-guard'
 import { sectionCrumb } from '../wf-crumbs'
 
-import {
-  describeGoalChange,
-  type GoalDraft,
-} from './describe-sample-change'
+import { describeGoalChange, type GoalDraft } from './describe-sample-change'
 import { RunConfigDialog } from './run-config-dialog'
 import { EmptyState, EvalRunsTable, Tabs } from './shared'
 
@@ -60,8 +63,9 @@ export function EvalSet({ setId, className }: EvalSetProps) {
   const history = useUndoStack<GoalDraft>({
     initial: { name: '', description: '' },
     describe: describeGoalChange,
-    coalesce: (_a, _b, label) =>
-      label.startsWith('Edited') ? { key: label, windowMs: 600 } : null,
+    coalesce: (_a, _b, label) => {
+      return label.startsWith('Edited') ? { key: label, windowMs: 600 } : null
+    },
     enabled: set != null,
   })
   const { name, description } = history.state
@@ -114,7 +118,9 @@ export function EvalSet({ setId, className }: EvalSetProps) {
           ? {
               editable: {
                 value: name,
-                onChange: (next) => history.record({ ...history.state, name: next }),
+                onChange: (next) => {
+                  return history.record({ ...history.state, name: next })
+                },
                 // Blur ends the edit; the Save button owns the write.
                 onCommit: () => {},
                 ariaLabel: 'Goal name',
@@ -126,8 +132,9 @@ export function EvalSet({ setId, className }: EvalSetProps) {
         set
           ? {
               value: description,
-              onChange: (next) =>
-                history.record({ ...history.state, description: next }),
+              onChange: (next) => {
+                return history.record({ ...history.state, description: next })
+              },
               onCommit: () => {},
               ariaLabel: 'Goal description',
             }
@@ -193,10 +200,11 @@ export function EvalSet({ setId, className }: EvalSetProps) {
                 <strong>most likely to perform best</strong>.
               </p>
               <p>
-                You&apos;d see a short, reasoned shortlist — “these three fit the
-                tool-use and latency this goal needs” — so the model picker is an
-                informed choice instead of a shot in the dark. It could even flag
-                models that are likely to fail outright and save you a run.
+                You&apos;d see a short, reasoned shortlist — “these three fit
+                the tool-use and latency this goal needs” — so the model picker
+                is an informed choice instead of a shot in the dark. It could
+                even flag models that are likely to fail outright and save you a
+                run.
               </p>
             </IdeaSpark>
           </>
@@ -406,11 +414,11 @@ function SamplesTable({
         <button
           key={r.id}
           type="button"
-          onClick={(e) =>
-            open(`evals/${setId}/samples/${r.id}`, {
+          onClick={(e) => {
+            return open(`evals/${setId}/samples/${r.id}`, {
               newTab: e.metaKey || e.ctrlKey,
             })
-          }
+          }}
           className="grid w-full grid-cols-[1fr_auto] items-center gap-4 border-b border-neutral-100 px-4 py-3 text-left last:border-b-0 hover:bg-neutral-50"
         >
           <div className="min-w-0">
@@ -457,9 +465,9 @@ function RunsForSet({ setId }: { setId: string }) {
       isLoading={runsQuery.isLoading}
       loadingMessage="Loading test runs…"
       emptyMessage="No test runs yet. Run this goal to see results here."
-      onOpenRun={(id, e) =>
-        open(`evals/runs/${id}`, { newTab: e.metaKey || e.ctrlKey })
-      }
+      onOpenRun={(id, e) => {
+        return open(`evals/runs/${id}`, { newTab: e.metaKey || e.ctrlKey })
+      }}
     />
   )
 }

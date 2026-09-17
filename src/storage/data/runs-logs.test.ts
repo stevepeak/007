@@ -265,9 +265,9 @@ describe('getRunLogs read cap', () => {
     await replaceNodeLogs(db, {
       runId: RUN,
       nodeId: NODE,
-      entries: Array.from({ length: n }, (_, i) =>
-        entry('info', `line ${i}`, i + 1),
-      ),
+      entries: Array.from({ length: n }, (_, i) => {
+        return entry('info', `line ${i}`, i + 1)
+      }),
     })
   }
 

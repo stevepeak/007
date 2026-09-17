@@ -209,9 +209,11 @@ describe('executor — switch (multi-way routing)', () => {
 
   test('rejects an outgoing edge matching no declared case', () => {
     const g = switchGraph()
-    g.edges = g.edges.map((e) =>
-      e.id === 'e-a' ? { ...e, condition: 'nope' } : e,
+    g.edges = g.edges.map((e) => {
+      return e.id === 'e-a' ? { ...e, condition: 'nope' } : e
+    })
+    expect(() => workflowGraphSchema.parse(g)).toThrow(
+      /matches no declared case/,
     )
-    expect(() => workflowGraphSchema.parse(g)).toThrow(/matches no declared case/)
   })
 })

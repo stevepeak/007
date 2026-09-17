@@ -156,8 +156,13 @@ export function makeRunRoom<TDeps, E extends GraphWorkflowEnv>(
     private readonly keeper: InflightKeeper = createInflightKeeper({
       storage: this.ctx.storage,
       launch: (params, resume) => this.launch(params, resume),
-      abandon: (params, message) =>
-        recordInlineRunFailure(config, { env: this.env, params }, message),
+      abandon: (params, message) => {
+        return recordInlineRunFailure(
+          config,
+          { env: this.env, params },
+          message,
+        )
+      },
     })
 
     /**

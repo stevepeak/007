@@ -91,7 +91,9 @@ describe('selectTools', () => {
   ]
 
   test('omits mutating tools entirely when writes are off', () => {
-    expect(selectTools(tools, false).map((t) => t.name)).toEqual(['list_agents'])
+    expect(selectTools(tools, false).map((t) => t.name)).toEqual([
+      'list_agents',
+    ])
   })
 
   test('includes them when writes are on', () => {
@@ -270,12 +272,13 @@ describe('list_feedback', () => {
   // that filters by naming the value it wants.
   test('drops the filter facets', async () => {
     const client = stubClient({
-      listFeedback: async () =>
-        ({
+      listFeedback: async () => {
+        return {
           rows: [],
           correlations: [{ id: 'c1', label: 'A' }],
           raters: [{ id: 'r1', label: 'B' }],
-        }),
+        }
+      },
     })
     const result = await toolNamed('list_feedback').run(client, {})
     expect(Object.keys(result as object).sort()).toEqual(['rows', 'total'])
@@ -356,14 +359,15 @@ describe('get_feedback_context', () => {
   test('answers with the complaint and the run that caused it', async () => {
     const client = stubClient({
       getFeedbackForSubjects: async () => [feedback as WfFeedbackRow],
-      getRun: async () =>
-        ({
+      getRun: async () => {
+        return {
           run: { id: 'run_1', status: 'completed' },
           versionNumber: 1,
           workflowVersionId: 'ver_1',
           logs: [],
           steps: [{ cursor: 0, nodeId: 'n0', meta: { p: 'q'.repeat(9000) } }],
-        }) as never,
+        } as never
+      },
     })
     const result = (await toolNamed('get_feedback_context').run(client, {
       subjectId: 'msg_1',

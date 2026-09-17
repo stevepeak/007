@@ -77,9 +77,9 @@ export function AppearancePicker({
       return pin ? [icon, ...curated] : curated
     }
     const terms = q.split(/\s+/)
-    return SEARCH_INDEX.filter((e) =>
-      terms.every((t) => e.haystack.includes(t)),
-    ).map((e) => e.name)
+    return SEARCH_INDEX.filter((e) => {
+      return terms.every((t) => e.haystack.includes(t))
+    }).map((e) => e.name)
   }, [query, icon])
 
   const shown = results.slice(0, MAX_ICON_RESULTS)

@@ -172,7 +172,7 @@ export type DashboardStats<TFailure> = DashboardWindow & {
 // Pure shaping — unit-tested; the SQL above is verified against a live D1.
 // ---------------------------------------------------------------------------
 
-function bucketSeconds (bucket: DashboardBucket) {
+function bucketSeconds(bucket: DashboardBucket) {
   return bucket === 'hour' ? HOUR_SEC : DAY_SEC
 }
 
@@ -206,7 +206,8 @@ export function resolveWindow(
   const firstOrdinal = firstOf(size)
   const lastOrdinal = lastOf(size)
   const buckets: number[] = []
-  for (let o = firstOrdinal; o <= lastOrdinal; o++) buckets.push(o * size * 1000)
+  for (let o = firstOrdinal; o <= lastOrdinal; o++)
+    buckets.push(o * size * 1000)
   return { since, until, bucket, buckets, firstOrdinal }
 }
 
@@ -224,7 +225,12 @@ const zeros = (n: number) => new Array<number>(n).fill(0)
 function accumulate<R>(
   rows: R[],
   window: Pick<DashboardWindow, 'buckets' | 'firstOrdinal'>,
-  read: (row: R) => { key: string; label: string; ordinal: number; value: number },
+  read: (row: R) => {
+    key: string
+    label: string
+    ordinal: number
+    value: number
+  },
 ): DashboardSeries[] {
   const byKey = new Map<string, DashboardSeries>()
   for (const row of rows) {
@@ -542,8 +548,8 @@ export async function loadDashboard(
   // The two migrated panels are LAZY: when analytics answers them, these never
   // run at all — which is the entire point, since the spend query is the
   // expensive one. They stay here, unchanged, as the fallback.
-  const d1RunVolume = () =>
-    db
+  const d1RunVolume = () => {
+    return db
       .select({
         workflowId: wfWorkflowVersion.workflowId,
         workflowName: wfWorkflow.name,
@@ -559,12 +565,13 @@ export async function loadDashboard(
       .innerJoin(wfWorkflow, eq(wfWorkflowVersion.workflowId, wfWorkflow.id))
       .where(inWindow)
       .groupBy(wfWorkflowVersion.workflowId, wfWorkflow.name, runBucket)
+  }
 
   // Only agent steps carry usage; the filter through `wf_run` is what keeps
   // this off a full step-table scan. `json_extract` still has to parse each
   // step's whole `meta` blob, tool inputs and outputs included.
-  const d1Spend = () =>
-    db
+  const d1Spend = () => {
+    return db
       .select({
         ordinal: runBucket,
         model: sql<string | null>`json_extract(${wfRunStep.meta}, '$.model')`,
@@ -575,48 +582,45 @@ export async function loadDashboard(
       .innerJoin(wfRun, eq(wfRunStep.runId, wfRun.id))
       .where(and(eq(wfRunStep.nodeKind, 'agent'), inWindow))
       .groupBy(runBucket, sql`json_extract(${wfRunStep.meta}, '$.model')`)
+  }
 
-  const [inFlightRows, queueRows, trendRows] =
-    await Promise.all([
-      // In-flight is a "right now" reading, so it ignores the window.
-      db
-        .select({ count: sql<number>`count(*)` })
-        .from(wfRun)
-        .where(
-          and(
-            eq(wfRun.isEval, false),
-            inArray(wfRun.status, ['queued', 'running']),
-          ),
+  const [inFlightRows, queueRows, trendRows] = await Promise.all([
+    // In-flight is a "right now" reading, so it ignores the window.
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(wfRun)
+      .where(
+        and(
+          eq(wfRun.isEval, false),
+          inArray(wfRun.status, ['queued', 'running']),
         ),
+      ),
 
-      // Triage queue depth — all outstanding items, not just this window's.
-      db
-        .select({
-          rating: wfFeedback.rating,
-          acknowledged: sql<number>`case when ${wfFeedback.ackAt} is null then 0 else 1 end`,
-          count: sql<number>`count(*)`,
-        })
-        .from(wfFeedback)
-        .groupBy(
-          wfFeedback.rating,
-          sql`case when ${wfFeedback.ackAt} is null then 0 else 1 end`,
-        ),
+    // Triage queue depth — all outstanding items, not just this window's.
+    db
+      .select({
+        rating: wfFeedback.rating,
+        acknowledged: sql<number>`case when ${wfFeedback.ackAt} is null then 0 else 1 end`,
+        count: sql<number>`count(*)`,
+      })
+      .from(wfFeedback)
+      .groupBy(
+        wfFeedback.rating,
+        sql`case when ${wfFeedback.ackAt} is null then 0 else 1 end`,
+      ),
 
-      db
-        .select({
-          rating: wfFeedback.rating,
-          ordinal: feedbackBucket,
-          count: sql<number>`count(*)`,
-        })
-        .from(wfFeedback)
-        .where(
-          and(
-            gte(wfFeedback.createdAt, since),
-            lte(wfFeedback.createdAt, until),
-          ),
-        )
-        .groupBy(wfFeedback.rating, feedbackBucket),
-    ])
+    db
+      .select({
+        rating: wfFeedback.rating,
+        ordinal: feedbackBucket,
+        count: sql<number>`count(*)`,
+      })
+      .from(wfFeedback)
+      .where(
+        and(gte(wfFeedback.createdAt, since), lte(wfFeedback.createdAt, until)),
+      )
+      .groupBy(wfFeedback.rating, feedbackBucket),
+  ])
 
   // The errors panel reuses the runs list wholesale — it already resolves the
   // workflow name, error text, timing and per-run cost. It loads the price map
@@ -676,13 +680,19 @@ export async function loadDashboard(
     useAnalytics
       ? orFallBack(
           'spend',
-          async () =>
-            foldPricedCostRows(
+          async () => {
+            return foldPricedCostRows(
               await loadSpend(analytics.query, analytics.dataset, aeWindow),
               window,
-            ),
-          async () =>
-            foldCostRows(await d1Spend(), await loadModelPriceMap(db), window),
+            )
+          },
+          async () => {
+            return foldCostRows(
+              await d1Spend(),
+              await loadModelPriceMap(db),
+              window,
+            )
+          },
         )
       : foldCostRows(await d1Spend(), await loadModelPriceMap(db), window),
 
@@ -725,11 +735,11 @@ async function workflowNames(
 ): Promise<Map<string, string>> {
   const unique = [...new Set(ids.filter(Boolean))]
   // Deduped, but bounded only by how many workflows the window touched.
-  const rows = await selectChunked(unique, (chunkIds) =>
-    db
+  const rows = await selectChunked(unique, (chunkIds) => {
+    return db
       .select({ id: wfWorkflow.id, name: wfWorkflow.name })
       .from(wfWorkflow)
-      .where(inArray(wfWorkflow.id, chunkIds)),
-  )
+      .where(inArray(wfWorkflow.id, chunkIds))
+  })
   return new Map(rows.map((r) => [r.id, r.name]))
 }

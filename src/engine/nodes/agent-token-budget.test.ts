@@ -30,42 +30,44 @@ const PER_TURN_TOKENS = 1000
 // hands `onStepFinish`. Getting this wrong doesn't fail loudly: the SDK maps no
 // usage at all, `step.usage` arrives as `{}`, and every token-based assertion
 // silently sees a budget that is never spent.
-function usage (input: number, output: number) {
+function usage(input: number, output: number) {
   return {
-  inputTokens: {
-    total: input,
-    noCache: input,
-    cacheRead: undefined,
-    cacheWrite: undefined,
-  },
-  outputTokens: { total: output, text: output, reasoning: undefined },
-}
+    inputTokens: {
+      total: input,
+      noCache: input,
+      cacheRead: undefined,
+      cacheWrite: undefined,
+    },
+    outputTokens: { total: output, text: output, reasoning: undefined },
+  }
 }
 
-function MANIFEST (maxTurns: number,
+function MANIFEST(
+  maxTurns: number,
   toolTokenBudget: number | null,
-  contextLength?: number): WfRunManifestEntry[] {
+  contextLength?: number,
+): WfRunManifestEntry[] {
   return [
-  {
-    kind: 'agent',
-    id: 'bot',
-    pinnedVersion: null,
-    versionId: 'v1',
-    versionNumber: 1,
-    name: 'Researcher',
-    ...(contextLength != null ? { contextLength } : {}),
-    config: makeAgentConfig({
-      modelId: 'mock',
-      prompt: 'Research, then answer.',
-      userPrompt: 'Go.',
-      inputKind: 'task' as const,
-      toolIds: ['lookup'],
-      maxTurns,
-      toolTokenBudget,
-      output: { kind: 'text' },
-    }),
-  },
-]
+    {
+      kind: 'agent',
+      id: 'bot',
+      pinnedVersion: null,
+      versionId: 'v1',
+      versionNumber: 1,
+      name: 'Researcher',
+      ...(contextLength != null ? { contextLength } : {}),
+      config: makeAgentConfig({
+        modelId: 'mock',
+        prompt: 'Research, then answer.',
+        userPrompt: 'Go.',
+        inputKind: 'task' as const,
+        toolIds: ['lookup'],
+        maxTurns,
+        toolTokenBudget,
+        output: { kind: 'text' },
+      }),
+    },
+  ]
 }
 
 const NODE: AgentNode = {
@@ -85,12 +87,13 @@ const REGISTRY: ToolRegistry<unknown> = new Map([
       kind: 'ai-tool' as const,
       name: 'Lookup',
       description: 'Looks something up.',
-      build: () =>
-        tool({
+      build: () => {
+        return tool({
           description: 'Looks something up.',
           inputSchema: z.object({ q: z.string() }),
           execute: async () => ({ hit: 'something' }),
-        }),
+        })
+      },
     },
   ],
 ])
@@ -124,8 +127,7 @@ function insatiableResearcher(seen: { toolChoices: unknown[] }) {
   })
 }
 
-function run (model: MockLanguageModelV3,
-  manifest: WfRunManifestEntry[]) {
+function run(model: MockLanguageModelV3, manifest: WfRunManifestEntry[]) {
   return executeAgentNode<unknown>({
     node: NODE,
     getModel: () => model,

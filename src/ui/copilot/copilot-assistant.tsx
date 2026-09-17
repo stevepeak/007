@@ -66,13 +66,11 @@ export function CopilotAssistant({
   const modelsQuery = useModels()
   const models = useMemo(() => modelsQuery.data ?? [], [modelsQuery.data])
   // Only tool-capable (or unknown-capability) models can drive the copilot.
-  const selectable = useMemo(
-    () =>
-      models.filter(
-        (m) => unmetRequirements(m, COPILOT_REQUIREMENTS).length === 0,
-      ),
-    [models],
-  )
+  const selectable = useMemo(() => {
+    return models.filter(
+      (m) => unmetRequirements(m, COPILOT_REQUIREMENTS).length === 0,
+    )
+  }, [models])
   const [modelId, setModelId] = useState<string | undefined>(readStoredModel)
 
   // Default to the first tool-capable model once the list loads (and heal a
@@ -94,21 +92,19 @@ export function CopilotAssistant({
     }
   }
 
-  const transport = useMemo(
-    () =>
-      new DefaultChatTransport({
-        api: endpoint,
-        body: {
-          subject,
-          subjectId,
-          runId,
-          modelId,
-          // On the feedback surface the subjectId IS the rated message id.
-          feedbackSubjectId: subject === 'feedback' ? subjectId : undefined,
-        },
-      }),
-    [endpoint, subject, subjectId, runId, modelId],
-  )
+  const transport = useMemo(() => {
+    return new DefaultChatTransport({
+      api: endpoint,
+      body: {
+        subject,
+        subjectId,
+        runId,
+        modelId,
+        // On the feedback surface the subjectId IS the rated message id.
+        feedbackSubjectId: subject === 'feedback' ? subjectId : undefined,
+      },
+    })
+  }, [endpoint, subject, subjectId, runId, modelId])
 
   // ONE continuous thread that follows the user as they navigate the workflow
   // app (the persistent right-rail panel mounts this once). The `id` is a fixed
@@ -126,22 +122,20 @@ export function CopilotAssistant({
   // Transform inspector's "have the Copilot write this expression" link is the
   // first caller. It lands in the composer rather than being sent: the user
   // reads and edits it, and chooses to spend the turn.
-  useEffect(
-    () =>
-      registerCopilotSeed((prompt) => {
-        setInput(prompt)
-        // The rail may be expanding in the same commit, so focus on the next
-        // frame — the textarea isn't laid out yet. Put the caret at the end so
-        // the user can keep typing.
-        requestAnimationFrame(() => {
-          const el = inputRef.current
-          if (!el) return
-          el.focus()
-          el.setSelectionRange(prompt.length, prompt.length)
-        })
-      }),
-    [],
-  )
+  useEffect(() => {
+    return registerCopilotSeed((prompt) => {
+      setInput(prompt)
+      // The rail may be expanding in the same commit, so focus on the next
+      // frame — the textarea isn't laid out yet. Put the caret at the end so
+      // the user can keep typing.
+      requestAnimationFrame(() => {
+        const el = inputRef.current
+        if (!el) return
+        el.focus()
+        el.setSelectionRange(prompt.length, prompt.length)
+      })
+    })
+  }, [])
 
   // Auto-grow the composer to fit its content, up to a cap (then it scrolls).
   useEffect(() => {
@@ -282,8 +276,8 @@ function ModelPicker({
         </button>
       )}
     >
-      {({ close }) =>
-        models.length === 0 ? (
+      {({ close }) => {
+        return models.length === 0 ? (
           <div className="px-3 py-6 text-center text-xs text-neutral-500">
             No models enabled. Enable one on the Models page.
           </div>
@@ -338,7 +332,7 @@ function ModelPicker({
             )
           })
         )
-      }
+      }}
     </Popover>
   )
 }

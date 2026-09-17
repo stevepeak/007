@@ -9,18 +9,20 @@ import { buildSimulatedItems } from './use-workflow-simulation'
 // nodes stay silent (no derived-title fallback) — plus sample `item i of n` ticks
 // for iterations. Bookends never appear.
 
-function node (id: string,
+function node(
+  id: string,
   kind: string,
   label: string,
-  extra: Record<string, unknown> = {}) {
+  extra: Record<string, unknown> = {},
+) {
   return {
-  id,
-  kind,
-  label,
-  position: { x: 0, y: 0 },
-  informUser: { mode: 'off' },
-  ...extra,
-}
+    id,
+    kind,
+    label,
+    position: { x: 0, y: 0 },
+    informUser: { mode: 'off' },
+    ...extra,
+  }
 }
 
 describe('buildSimulatedItems', () => {
@@ -51,8 +53,8 @@ describe('buildSimulatedItems', () => {
   })
 
   // The iteration graph under test; `informUser` is the knob, the rest is fixed.
-  const iterationGraph = (informUser: unknown) =>
-    ({
+  const iterationGraph = (informUser: unknown) => {
+    return {
       version: 1,
       nodes: [
         node('t', 'trigger', 'Go', { config: { triggerKind: 'manual' } }),
@@ -82,7 +84,8 @@ describe('buildSimulatedItems', () => {
         { id: 'e1', source: 't', target: 'loop', condition: null },
         { id: 'e2', source: 'loop', target: 'o', condition: null },
       ],
-    }) as unknown as WorkflowGraph
+    } as unknown as WorkflowGraph
+  }
 
   test('an iteration note interpolates ${n} from the sample size', () => {
     // The preview has no real list, so it feeds the sample count in — otherwise
@@ -131,9 +134,9 @@ describe('buildSimulatedItems', () => {
       ],
     } as unknown as WorkflowGraph
 
-    const messages = buildSimulatedItems(graph).map((i) =>
-      i.kind === 'progress' ? i.message : '',
-    )
+    const messages = buildSimulatedItems(graph).map((i) => {
+      return i.kind === 'progress' ? i.message : ''
+    })
     expect(messages[0]).toBe('Reviewing documents')
     expect(messages).toContain('Processing item 1 of 3')
     expect(messages).toContain('Processing item 3 of 3')

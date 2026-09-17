@@ -8,11 +8,7 @@ import type {
 } from '../../engine'
 import { useAgents, useTools, useTriggerEvents, useWorkflows } from '../hooks'
 
-import {
-  accessibleData,
-  buildIoMaps,
-  withIterationItemSchema,
-} from './node-io'
+import { accessibleData, buildIoMaps, withIterationItemSchema } from './node-io'
 
 // The data-mapping surface for the inspector: the node's required inputs (each
 // bindable to an upstream node's output or a literal) and a read-only tree of
@@ -73,16 +69,14 @@ export function useIoMaps() {
   // CALLEE's trigger payload, and the callee's trigger kind rides on the list
   // item (the same query the callee picker already uses, so it's cached).
   const workflows = useWorkflows()
-  return useMemo(
-    () =>
-      buildIoMaps(
-        tools.data ?? [],
-        agents.data ?? [],
-        triggerEvents.data ?? [],
-        workflows.data ?? [],
-      ),
-    [tools.data, agents.data, triggerEvents.data, workflows.data],
-  )
+  return useMemo(() => {
+    return buildIoMaps(
+      tools.data ?? [],
+      agents.data ?? [],
+      triggerEvents.data ?? [],
+      workflows.data ?? [],
+    )
+  }, [tools.data, agents.data, triggerEvents.data, workflows.data])
 }
 
 // Shared hook: resolve the metadata maps (folding in the enclosing loop's `Item`

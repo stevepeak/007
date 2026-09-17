@@ -836,13 +836,14 @@ function shapeSignature(out: {
 }): string | null {
   const OPAQUE = new Set(['unknown', 'passthrough', 'workflow'])
   if (OPAQUE.has(out.type) && out.fields.length === 0) return null
-  const norm = (fields: DataField[]): string =>
-    fields
+  const norm = (fields: DataField[]): string => {
+    return fields
       .map(
         (f) => `${f.key}:${f.type}${f.children ? `{${norm(f.children)}}` : ''}`,
       )
       .sort()
       .join(',')
+  }
   return `${out.type}|${norm(out.fields)}`
 }
 

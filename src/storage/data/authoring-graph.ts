@@ -37,9 +37,9 @@ export function distinctFromNodes(
 
 // Distinct agent ids referenced by agent nodes in a graph (incl. subgraphs).
 export function agentIdsInGraph(graph: WorkflowGraph): string[] {
-  return distinctFromNodes(graph, (node) =>
-    node.kind === 'agent' ? node.config.agentId : undefined,
-  )
+  return distinctFromNodes(graph, (node) => {
+    return node.kind === 'agent' ? node.config.agentId : undefined
+  })
 }
 
 // Distinct (agentId, version-pin) pairs referenced by agent nodes (incl. those
@@ -63,9 +63,9 @@ export function agentPinsInGraph(
 
 // Distinct workflow ids called by workflow nodes in a graph (incl. subgraphs).
 export function workflowIdsInGraph(graph: WorkflowGraph): string[] {
-  return distinctFromNodes(graph, (node) =>
-    node.kind === 'workflow' ? node.config.workflowId : undefined,
-  )
+  return distinctFromNodes(graph, (node) => {
+    return node.kind === 'workflow' ? node.config.workflowId : undefined
+  })
 }
 
 // Hard cap on nested-workflow depth. A guard against pathological chains; real

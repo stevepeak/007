@@ -196,20 +196,27 @@ export async function executeWorkflow<TDeps>(
   // handed to exactly the node that writes the answer.
   const answerNodeIds = resolveAnswerNodeIds(deps.graph)
 
-  const sinkFor = (node: ExecutableNode, seq: number): StreamSink | undefined =>
-    sink && {
-      log: (entry: RunLogEntry) =>
-        sink.log?.({
-          ...entry,
-          ts: entry.ts ?? Date.now(),
-          nodeId: entry.nodeId ?? node.id,
-          nodeKind: entry.nodeKind ?? node.kind,
-          sequence: entry.sequence ?? seq,
-        }),
-      // Handed ONLY to the answer-producing node, and only when the backend can
-      // carry a stream at all — see `deltaChannelFor`.
-      delta: deltaChannelFor(sink, answerNodeIds, node.id),
-    }
+  const sinkFor = (
+    node: ExecutableNode,
+    seq: number,
+  ): StreamSink | undefined => {
+    return (
+      sink && {
+        log: (entry: RunLogEntry) => {
+          return sink.log?.({
+            ...entry,
+            ts: entry.ts ?? Date.now(),
+            nodeId: entry.nodeId ?? node.id,
+            nodeKind: entry.nodeKind ?? node.kind,
+            sequence: entry.sequence ?? seq,
+          })
+        },
+        // Handed ONLY to the answer-producing node, and only when the backend can
+        // carry a stream at all — see `deltaChannelFor`.
+        delta: deltaChannelFor(sink, answerNodeIds, node.id),
+      }
+    )
+  }
 
   const validatedTriggerInput = deps.spawned
     ? deps.triggerInput
@@ -292,11 +299,12 @@ export async function executeWorkflow<TDeps>(
       const result = await runNode(
         { type: 'execute', node, input },
         {
-          getModel: (modelId, opts) =>
-            config.getModel(modelId, {
+          getModel: (modelId, opts) => {
+            return config.getModel(modelId, {
               ...runContext,
               reasoning: opts?.reasoning ?? runContext.reasoning,
-            }),
+            })
+          },
           toolRegistry: config.toolRegistry,
           toolDeps,
           nodeOutputs: scheduler.getOutputs(),
@@ -409,9 +417,9 @@ export async function executeWorkflow<TDeps>(
       pendingNodes: scheduler.inFlightCount(),
     })
     if (config.onRunComplete) {
-      await notifyHost(() =>
-        config.onRunComplete!(runContext, { output, outputNodeId }),
-      )
+      await notifyHost(() => {
+        return config.onRunComplete!(runContext, { output, outputNodeId })
+      })
     }
     return { output, outputNodeId }
   }
@@ -547,9 +555,9 @@ export async function executeWorkflow<TDeps>(
     }
     await drainInflight()
     if (config.onRunFailed) {
-      await notifyHost(() =>
-        config.onRunFailed!(runContext, { error: errorMessage(err) }),
-      )
+      await notifyHost(() => {
+        return config.onRunFailed!(runContext, { error: errorMessage(err) })
+      })
     }
     throw err
   }

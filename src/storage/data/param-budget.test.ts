@@ -70,11 +70,12 @@ function probeDb(): Probe {
   // callable keeps the reflection honest instead of leaking `any` through every
   // proxied member.
   type AnyFn = (this: unknown, ...args: unknown[]) => unknown
-  const asFn = (v: unknown): AnyFn | null =>
-    typeof v === 'function' ? (v as AnyFn) : null
+  const asFn = (v: unknown): AnyFn | null => {
+    return typeof v === 'function' ? (v as AnyFn) : null
+  }
 
-  const wrapStatement = (stmt: object) =>
-    new Proxy(stmt, {
+  const wrapStatement = (stmt: object) => {
+    return new Proxy(stmt, {
       get(target, prop, receiver) {
         const value: unknown = Reflect.get(target, prop, receiver)
         const fn = asFn(value)
@@ -92,6 +93,7 @@ function probeDb(): Probe {
         }
       },
     })
+  }
 
   const proxied = new Proxy(sqlite, {
     get(target, prop, receiver) {
@@ -99,8 +101,9 @@ function probeDb(): Probe {
       const fn = asFn(value)
       if (!fn) return value
       if (prop === 'prepare' || prop === 'query') {
-        return (...args: unknown[]) =>
-          wrapStatement(Reflect.apply(fn, target, args) as object)
+        return (...args: unknown[]) => {
+          return wrapStatement(Reflect.apply(fn, target, args) as object)
+        }
       }
       return fn.bind(target)
     },
@@ -125,12 +128,12 @@ function expectWithinBudget(probe: Probe) {
   expect(probe.peak()).toBeLessThanOrEqual(D1_MAX_BOUND_PARAMS)
 }
 
-function agentMeta (model: string, inputTokens: number, outputTokens: number) {
+function agentMeta(model: string, inputTokens: number, outputTokens: number) {
   return {
-  model,
-  steps: [{ stepNumber: 1, toolCalls: [] }],
-  totalUsage: { inputTokens, outputTokens },
-}
+    model,
+    steps: [{ stepNumber: 1, toolCalls: [] }],
+    totalUsage: { inputTokens, outputTokens },
+  }
 }
 
 // Comfortably past 90 (the chunk size) and past 100 (D1's ceiling), and enough
@@ -182,16 +185,16 @@ describe('D1 parameter budget', () => {
     // Two agent steps per run, so the per-run token sum is only right if the
     // fold sees both — i.e. if chunks are concatenated rather than overwritten.
     await db.insert(wfRunStep).values(
-      runIds.flatMap((runId, i) =>
-        [1, 2].map((sequence) => ({
+      runIds.flatMap((runId, i) => {
+        return [1, 2].map((sequence) => ({
           runId,
           nodeId: `node-${sequence}`,
           nodeKind: 'agent',
           sequence,
           status: 'completed' as const,
           meta: agentMeta('m', 10 + i, 5),
-        })),
-      ),
+        }))
+      }),
     )
 
     probe.record(true)

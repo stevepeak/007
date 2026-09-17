@@ -1,8 +1,4 @@
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import type { WorkflowGraph } from '../engine/graph'
 
@@ -49,8 +45,9 @@ export function useCreateWorkflow() {
 
 export function useSaveDraft() {
   return useWfMutation(
-    (client, input: { workflowId: string; graph: WorkflowGraph }) =>
-      client.updateDraft(input),
+    (client, input: { workflowId: string; graph: WorkflowGraph }) => {
+      return client.updateDraft(input)
+    },
     (input) => [keys.workflow(input.workflowId)],
   )
 }
@@ -75,8 +72,9 @@ export function useSaveVersion() {
 export function useSummarizeChanges() {
   const client = useWfClient()
   return useMutation({
-    mutationFn: (input: { workflowId: string; graph: WorkflowGraph }) =>
-      client.summarizeChanges(input),
+    mutationFn: (input: { workflowId: string; graph: WorkflowGraph }) => {
+      return client.summarizeChanges(input)
+    },
   })
 }
 
@@ -92,12 +90,13 @@ export function useVersions(workflowId: string) {
     refetchInterval: (query) => {
       const rows = query.state.data
       if (!rows) return false
-      const pending = rows.some(
-        (v) =>
+      const pending = rows.some((v) => {
+        return (
           !v.aiSummaryShort &&
           v.publishedAt != null &&
-          Date.now() - v.publishedAt < 90_000,
-      )
+          Date.now() - v.publishedAt < 90_000
+        )
+      })
       return pending ? 3000 : false
     },
   })

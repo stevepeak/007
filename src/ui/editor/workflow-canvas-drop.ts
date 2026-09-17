@@ -2,10 +2,7 @@ import { useReactFlow } from '@xyflow/react'
 import { useCallback, type DragEvent as ReactDragEvent } from 'react'
 
 import { PALETTE_DATA_TYPE } from './node-palette'
-import {
-  editorTypeForKind,
-  type EditorNodeData,
-} from './node-renderers'
+import { editorTypeForKind, type EditorNodeData } from './node-renderers'
 import {
   BOOKEND_KINDS,
   DEFAULT_ITER_H,
@@ -18,7 +15,10 @@ import {
   type EditorEdge,
   type EditorNode,
 } from './workflow-canvas-graph'
-import { defaultDataForKind, type NodeDefaults } from './workflow-canvas-palette'
+import {
+  defaultDataForKind,
+  type NodeDefaults,
+} from './workflow-canvas-palette'
 
 // MEMBERSHIP: which node belongs to which iteration container, and how a node
 // gets there. There are exactly two ways in — dropping from the palette over a
@@ -56,7 +56,11 @@ export type CanvasDropOptions = {
   setEdges: React.Dispatch<React.SetStateAction<EditorEdge[]>>
 }
 
-export function useCanvasDrop({ defaults, setNodes, setEdges }: CanvasDropOptions) {
+export function useCanvasDrop({
+  defaults,
+  setNodes,
+  setEdges,
+}: CanvasDropOptions) {
   const { screenToFlowPosition, getIntersectingNodes, getInternalNode } =
     useReactFlow()
 
@@ -132,8 +136,8 @@ export function useCanvasDrop({ defaults, setNodes, setEdges }: CanvasDropOption
         const cAbs =
           getInternalNode(container.id)?.internals.positionAbsolute ??
           container.position
-        setNodes((ns) =>
-          orderParentsFirst([
+        setNodes((ns) => {
+          return orderParentsFirst([
             ...ns,
             {
               id,
@@ -143,8 +147,8 @@ export function useCanvasDrop({ defaults, setNodes, setEdges }: CanvasDropOption
               extent: 'parent',
               data: newData,
             },
-          ]),
-        )
+          ])
+        })
         return
       }
       setNodes((ns) => [
@@ -186,15 +190,20 @@ export function useCanvasDrop({ defaults, setNodes, setEdges }: CanvasDropOption
         getInternalNode(dragged.id)?.measured,
         getInternalNode(container.id)?.measured,
       )
-      setNodes((ns) =>
-        orderParentsFirst(
-          ns.map((n) =>
-            n.id === dragged.id
-              ? { ...n, parentId: container.id, extent: 'parent', position: rel }
-              : n,
-          ),
-        ),
-      )
+      setNodes((ns) => {
+        return orderParentsFirst(
+          ns.map((n) => {
+            return n.id === dragged.id
+              ? {
+                  ...n,
+                  parentId: container.id,
+                  extent: 'parent',
+                  position: rel,
+                }
+              : n
+          }),
+        )
+      })
     },
     [getIntersectingNodes, getInternalNode, setNodes],
   )

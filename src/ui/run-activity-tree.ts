@@ -70,11 +70,15 @@ export function buildActivityTree(input: {
   // them. Falls back to the node-start bookend, then to +Infinity for a node
   // that never ran — so a marker lands before the nodes an early branch
   // skipped rather than after them.
-  const startTsOf = (nodeId: string, step?: WfRunStepDTO | null): number =>
-    step?.startedAt ?? timingFor(nodeId)?.start ?? Infinity
+  const startTsOf = (nodeId: string, step?: WfRunStepDTO | null): number => {
+    return step?.startedAt ?? timingFor(nodeId)?.start ?? Infinity
+  }
 
-  const interleave = (nodes: Array<{ row: ActivityNodeRow; startTs: number }>) =>
-    interleaveStateRows(nodes, placement)
+  const interleave = (
+    nodes: Array<{ row: ActivityNodeRow; startTs: number }>,
+  ) => {
+    return interleaveStateRows(nodes, placement)
+  }
 
   // --- Top-level ordering: graph order, refined by executed sequence. ---
   if (graph) {
@@ -121,8 +125,7 @@ export function flattenTree(
     }
     const hasChildren = row.children.length > 0
     const ov = overrides.get(row.key)
-    const expanded =
-      hasChildren && (ov ? ov === 'open' : row.defaultOpen)
+    const expanded = hasChildren && (ov ? ov === 'open' : row.defaultOpen)
     out.push({ row, depth, expanded, hasChildren })
     if (expanded) for (const c of row.children) walk(c, depth + 1)
   }

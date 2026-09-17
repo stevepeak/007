@@ -55,7 +55,11 @@ export function parseField(
   }
 
   if (t === 'object' && asObject(p.properties)) {
-    return { ...base, type: 'object' satisfies FieldKind, schema: parseFields(p) }
+    return {
+      ...base,
+      type: 'object' satisfies FieldKind,
+      schema: parseFields(p),
+    }
   }
 
   if (t === 'array' && p.items !== undefined) {
@@ -77,9 +81,9 @@ export function parseFields(schema: Record<string, unknown>): ParsedField[] {
   const required = new Set(
     Array.isArray(schema.required) ? (schema.required as string[]) : [],
   )
-  return Object.entries(props).map(([name, raw], i) =>
-    parseField(name, raw, required.has(name), i),
-  )
+  return Object.entries(props).map(([name, raw], i) => {
+    return parseField(name, raw, required.has(name), i)
+  })
 }
 
 // Initial form values, so every control is controlled from the first render.

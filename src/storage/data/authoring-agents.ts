@@ -34,12 +34,13 @@ export async function listAgents(db: WfDb) {
   // ACROSS chunks, and every version of a given agent lands in one chunk.
   const versions = await selectChunked(
     agents.map((a) => a.id),
-    (ids) =>
-      db
+    (ids) => {
+      return db
         .select()
         .from(wfAgentVersion)
         .where(inArray(wfAgentVersion.agentId, ids))
-        .orderBy(desc(wfAgentVersion.versionNumber)),
+        .orderBy(desc(wfAgentVersion.versionNumber))
+    },
   )
   const latestByAgent = new Map<string, (typeof versions)[number]>()
   for (const v of versions) {

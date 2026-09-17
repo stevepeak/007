@@ -130,15 +130,17 @@ export async function withNodeSpan<T>(
     }
   }
 
-  const runSpan = async (): Promise<T> =>
-    await Sentry.startSpan(
+  const runSpan = async (): Promise<T> => {
+    return await Sentry.startSpan(
       {
-        name: info.label ?? `wf.node ${info.nodeKind} · ${info.nodeId.slice(0, 8)}`,
+        name:
+          info.label ?? `wf.node ${info.nodeKind} · ${info.nodeId.slice(0, 8)}`,
         op: 'wf.node',
         attributes,
       },
       captured,
     )
+  }
 
   if (!info.traceId) return await runSpan()
 

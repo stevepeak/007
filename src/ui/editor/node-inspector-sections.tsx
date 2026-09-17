@@ -58,12 +58,12 @@ export function TriggerInspector({ node, onChange }: NodeInspectorProps) {
           <Input
             value={node.config.cron ?? ''}
             placeholder="0 9 * * *"
-            onChange={(e) =>
-              onChange({
+            onChange={(e) => {
+              return onChange({
                 ...node,
                 config: { ...node.config, cron: e.target.value },
               })
-            }
+            }}
           />
         </div>
       ) : node.config.triggerKind !== MANUAL_TRIGGER_KIND ? (
@@ -85,15 +85,15 @@ export function TriggerInspector({ node, onChange }: NodeInspectorProps) {
           <Label>Engine</Label>
           <Select
             value={engine}
-            onChange={(e) =>
-              onChange({
+            onChange={(e) => {
+              return onChange({
                 ...node,
                 config: {
                   ...node.config,
                   engine: e.target.value as WfEngine,
                 },
               })
-            }
+            }}
           >
             <option value="durable">Durable (checkpointed)</option>
             <option value="inline">Inline (fast, no checkpoints)</option>
@@ -124,12 +124,12 @@ export function AgentInspector({ node, onChange }: NodeInspectorProps) {
         agentId: node.config.agentId,
         version: node.config.version ?? null,
       }}
-      onChange={({ agentId, version }) =>
-        onChange({
+      onChange={({ agentId, version }) => {
+        return onChange({
           ...node,
           config: { ...node.config, agentId, version },
         })
-      }
+      }}
     />
   )
 }
@@ -147,12 +147,12 @@ export function ToolInspector({ node, onChange }: NodeInspectorProps) {
     <ToolSelect
       tools={toolOptions}
       value={node.config.toolId}
-      onChange={(toolId) =>
-        onChange({
+      onChange={(toolId) => {
+        return onChange({
           ...node,
           config: { ...node.config, toolId },
         })
-      }
+      }}
     />
   )
 }
@@ -175,17 +175,17 @@ export function WorkflowInspector({
         <WorkflowSelect
           workflows={workflowOptions}
           value={node.config.workflowId}
-          onChange={(workflowId) =>
-            onChange({
+          onChange={(workflowId) => {
+            return onChange({
               ...node,
               config: { ...node.config, workflowId },
             })
-          }
+          }}
         />
         <p className="text-muted-foreground text-xs">
-          Runs the selected workflow's latest published version and waits for its
-          result, which becomes this node's output. The upstream input is passed
-          straight through as the called workflow's trigger input.
+          Runs the selected workflow's latest published version and waits for
+          its result, which becomes this node's output. The upstream input is
+          passed straight through as the called workflow's trigger input.
         </p>
         <p className="text-muted-foreground text-xs">
           It gets a run of its own — its own trace, nested under this one, on
@@ -197,7 +197,10 @@ export function WorkflowInspector({
   )
 }
 
-export function FeatureRequestInspector({ node, onChange }: NodeInspectorProps) {
+export function FeatureRequestInspector({
+  node,
+  onChange,
+}: NodeInspectorProps) {
   const { Label, Textarea } = useWfComponents()
   if (node.kind !== 'feature-request') return null
   return (
@@ -206,12 +209,12 @@ export function FeatureRequestInspector({ node, onChange }: NodeInspectorProps) 
       <Textarea
         rows={4}
         value={node.config.description}
-        onChange={(e) =>
-          onChange({
+        onChange={(e) => {
+          return onChange({
             ...node,
             config: { ...node.config, description: e.target.value },
           })
-        }
+        }}
       />
     </div>
   )
@@ -262,9 +265,9 @@ export function TextInspector({ node, onChange }: NodeInspectorProps) {
         placeholder={
           'Write the text… use Markdown to format and ${variable} to pull in a value from an earlier step.'
         }
-        onChange={(body) =>
-          onChange({ ...node, config: { ...node.config, body } })
-        }
+        onChange={(body) => {
+          return onChange({ ...node, config: { ...node.config, body } })
+        }}
       />
       <p className="text-muted-foreground text-xs">
         Every <code>{'${name}'}</code> you write appears under “Needs” below —
@@ -289,12 +292,12 @@ export function NoteInspector({ node, onChange }: NodeInspectorProps) {
           className="pr-9 font-mono text-xs"
           value={node.config.text}
           placeholder={'# Title\n\nNotes with **bold**, `code`, and\n- lists'}
-          onChange={(e) =>
-            onChange({
+          onChange={(e) => {
+            return onChange({
               ...node,
               config: { ...node.config, text: e.target.value },
             })
-          }
+          }}
         />
       </MarkdownField>
       <p className="text-muted-foreground text-xs">

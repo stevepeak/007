@@ -42,11 +42,11 @@ describe('executor — node bookends', () => {
       const opened = sink.logs.filter(
         (e) => e.nodeId === nodeId && e.level === 'node-start',
       ).length
-      const closed = sink.logs.filter(
-        (e) =>
-          e.nodeId === nodeId &&
-          (e.level === 'node-end' || e.level === 'error'),
-      ).length
+      const closed = sink.logs.filter((e) => {
+        return (
+          e.nodeId === nodeId && (e.level === 'node-end' || e.level === 'error')
+        )
+      }).length
       expect(closed).toBe(opened)
     }
   })
@@ -95,7 +95,11 @@ describe('executor — node bookends', () => {
     const raw: { nodeId?: string; nodeKind?: string; sequence?: number }[] = []
     const sink: StreamSink = {
       log: (e) => {
-        raw.push({ nodeId: e.nodeId, nodeKind: e.nodeKind, sequence: e.sequence })
+        raw.push({
+          nodeId: e.nodeId,
+          nodeKind: e.nodeKind,
+          sequence: e.sequence,
+        })
       },
     }
     await executeWorkflow({

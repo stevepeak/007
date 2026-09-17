@@ -41,7 +41,9 @@ describe('buildAgentWrapperGraph', () => {
     // One agent call with a caller waiting on it — none of what the durable
     // backend exists for, and its step-retry replay is what made a provider
     // outage take ~21 minutes per cell to report.
-    expect(resolveGraphEngine(buildAgentWrapperGraph('agent-123'))).toBe('inline')
+    expect(resolveGraphEngine(buildAgentWrapperGraph('agent-123'))).toBe(
+      'inline',
+    )
   })
 
   test('binds the Output to the agent', () => {
@@ -87,8 +89,9 @@ describe('buildAgentWrapperGraph', () => {
   })
 
   test('the pin reaches the agent node, which is what the manifest reads', () => {
-    const nodeOf = (g: ReturnType<typeof buildAgentWrapperGraph>) =>
-      g.nodes.find((n) => n.kind === 'agent')
+    const nodeOf = (g: ReturnType<typeof buildAgentWrapperGraph>) => {
+      return g.nodes.find((n) => n.kind === 'agent')
+    }
     expect(nodeOf(buildAgentWrapperGraph('x', 3))?.config).toMatchObject({
       version: 3,
     })
@@ -125,6 +128,8 @@ describe('evalWrapperName', () => {
   test('an explicit null pin keeps the historic unpinned name', () => {
     // Backward compatibility: wrappers created before pins existed are stored
     // under the bare name. Changing it would orphan every one of them.
-    expect(evalWrapperName('agent-abc', null)).toBe(evalWrapperName('agent-abc'))
+    expect(evalWrapperName('agent-abc', null)).toBe(
+      evalWrapperName('agent-abc'),
+    )
   })
 })

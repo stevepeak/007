@@ -1,8 +1,4 @@
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useWfClient } from './context'
 import { keys } from './hooks-shared'
@@ -69,8 +65,9 @@ export function useSetModelEnabled() {
   const client = useWfClient()
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (input: { modelId: string; enabled: boolean }) =>
-      client.setModelEnabled(input),
+    mutationFn: (input: { modelId: string; enabled: boolean }) => {
+      return client.setModelEnabled(input)
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.modelCatalog })
       void qc.invalidateQueries({ queryKey: keys.models })

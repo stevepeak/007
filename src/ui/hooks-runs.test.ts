@@ -2,7 +2,11 @@ import { describe, expect, test } from 'bun:test'
 
 import type { WfRunDetail, WfRunStepDTO } from '../server/protocol'
 
-import { mergeStepBlock, mergeVersionBlock, settledStepCursor } from './hooks-runs'
+import {
+  mergeStepBlock,
+  mergeVersionBlock,
+  settledStepCursor,
+} from './hooks-runs'
 
 // The five fields `getRun` derives from the workflow version row. If the server
 // ever derives a sixth and this list doesn't grow, that field arrives as its
@@ -50,9 +54,22 @@ describe('mergeVersionBlock', () => {
       graph: null,
       versionNumber: null,
       versionOmitted: true,
-      run: { ...detail().run, workflowId: '', workflowName: '(unknown workflow)', versionNumber: 0 },
+      run: {
+        ...detail().run,
+        workflowId: '',
+        workflowName: '(unknown workflow)',
+        versionNumber: 0,
+      },
       logs: [
-        { nodeId: 'n1', nodeKind: 'agent', sequence: 1, level: 'info', message: 'hi', meta: null, ts: 5 },
+        {
+          nodeId: 'n1',
+          nodeKind: 'agent',
+          sequence: 1,
+          level: 'info',
+          message: 'hi',
+          meta: null,
+          ts: 5,
+        },
       ],
     })
 
@@ -140,8 +157,12 @@ describe('settledStepCursor', () => {
 })
 
 describe('mergeStepBlock', () => {
-  const withSteps = (steps: WfRunStepDTO[], over: Partial<WfRunDetail> = {}) =>
-    detail({ steps, ...over })
+  const withSteps = (
+    steps: WfRunStepDTO[],
+    over: Partial<WfRunDetail> = {},
+  ) => {
+    return detail({ steps, ...over })
+  }
 
   test('splices the delta onto the steps already held', () => {
     const prev = withSteps([step(1, 0, 'completed'), step(2, 1, 'running')])

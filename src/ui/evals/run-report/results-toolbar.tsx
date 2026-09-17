@@ -58,9 +58,12 @@ export function ResultsToolbar({ view }: { view: ResultsView }) {
         <button
           type="button"
           aria-label={sort.dir === 'asc' ? 'Ascending' : 'Descending'}
-          onClick={() =>
-            setSort({ key: sort.key, dir: sort.dir === 'asc' ? 'desc' : 'asc' })
-          }
+          onClick={() => {
+            return setSort({
+              key: sort.key,
+              dir: sort.dir === 'asc' ? 'desc' : 'asc',
+            })
+          }}
           className="inline-flex size-6 items-center justify-center rounded-md border border-neutral-200 bg-white text-neutral-500 transition hover:border-neutral-300 hover:text-neutral-800"
         >
           {sort.dir === 'asc' ? (
@@ -136,12 +139,20 @@ export function Th({
 }) {
   const active = sort.key === k
   return (
-    <th className={cn('py-1.5 pr-3 font-medium', align === 'right' && 'text-right')}>
+    <th
+      className={cn(
+        'py-1.5 pr-3 font-medium',
+        align === 'right' && 'text-right',
+      )}
+    >
       <button
         type="button"
-        onClick={() =>
-          setSort({ key: k, dir: active && sort.dir === 'asc' ? 'desc' : 'asc' })
-        }
+        onClick={() => {
+          return setSort({
+            key: k,
+            dir: active && sort.dir === 'asc' ? 'desc' : 'asc',
+          })
+        }}
         className={cn(
           'inline-flex items-center gap-1 uppercase tracking-wide transition hover:text-neutral-700',
           align === 'right' && 'flex-row-reverse',

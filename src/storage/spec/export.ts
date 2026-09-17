@@ -36,7 +36,10 @@ export async function exportBundle(db: WfDb): Promise<SpecBundle> {
   // 1. Load every entity. Agents include archived (archived state is part of the
   //    desired state). Workflows exclude `hidden` — eval-wrapper machinery is
   //    generated, not authored content — but include archived.
-  const agents = await db.select().from(wfAgent).orderBy(desc(wfAgent.createdAt))
+  const agents = await db
+    .select()
+    .from(wfAgent)
+    .orderBy(desc(wfAgent.createdAt))
   const workflows = await db
     .select()
     .from(wfWorkflow)
@@ -44,12 +47,12 @@ export async function exportBundle(db: WfDb): Promise<SpecBundle> {
     .orderBy(desc(wfWorkflow.createdAt))
 
   // 2. Backfill + persist any missing slug, then build id→slug maps.
-  const agentSlugById = await backfillSlugs(agents, (id, slug) =>
-    db.update(wfAgent).set({ slug }).where(eq(wfAgent.id, id)),
-  )
-  const workflowSlugById = await backfillSlugs(workflows, (id, slug) =>
-    db.update(wfWorkflow).set({ slug }).where(eq(wfWorkflow.id, id)),
-  )
+  const agentSlugById = await backfillSlugs(agents, (id, slug) => {
+    return db.update(wfAgent).set({ slug }).where(eq(wfAgent.id, id))
+  })
+  const workflowSlugById = await backfillSlugs(workflows, (id, slug) => {
+    return db.update(wfWorkflow).set({ slug }).where(eq(wfWorkflow.id, id))
+  })
 
   // 3. Agents → specs (only those with a published version).
   const agentSpecs: AgentSpec[] = []
@@ -133,8 +136,9 @@ export async function exportBundle(db: WfDb): Promise<SpecBundle> {
   }
 
   // Sort by slug for deterministic, review-friendly output.
-  const bySlug = (a: { slug: string }, b: { slug: string }) =>
-    a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0
+  const bySlug = (a: { slug: string }, b: { slug: string }) => {
+    return a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0
+  }
   return specBundleSchema.parse({
     formatVersion: SPEC_FORMAT_VERSION,
     agents: agentSpecs.sort(bySlug),

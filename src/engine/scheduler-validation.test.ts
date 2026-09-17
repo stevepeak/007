@@ -1,7 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 
 import { Scheduler } from './scheduler'
-import { agent, branch, drive, edge, output, race, trigger } from './scheduler-test-helpers'
+import {
+  agent,
+  branch,
+  drive,
+  edge,
+  output,
+  race,
+  trigger,
+} from './scheduler-test-helpers'
 
 describe('Scheduler', () => {
   test('stalls when a node depends on an unreachable predecessor', () => {
@@ -37,28 +45,27 @@ describe('Scheduler', () => {
     // branch → yes:x, no:y, then x & y both feed a non-Output `join`. Only one
     // arm ever runs, so the join's all-incoming-alive rule can never be met —
     // it would stall. Validation should reject it at construction.
-    expect(
-      () =>
-        new Scheduler({
-          version: 1,
-          nodes: [
-            trigger('t'),
-            branch('b'),
-            agent('x'),
-            agent('y'),
-            agent('join'),
-            output('o'),
-          ],
-          edges: [
-            edge('t', 'b'),
-            edge('b', 'x', 'yes'),
-            edge('b', 'y', 'no'),
-            edge('x', 'join'),
-            edge('y', 'join'),
-            edge('join', 'o'),
-          ],
-        }),
-    ).toThrow(/joins both arms/)
+    expect(() => {
+      return new Scheduler({
+        version: 1,
+        nodes: [
+          trigger('t'),
+          branch('b'),
+          agent('x'),
+          agent('y'),
+          agent('join'),
+          output('o'),
+        ],
+        edges: [
+          edge('t', 'b'),
+          edge('b', 'x', 'yes'),
+          edge('b', 'y', 'no'),
+          edge('x', 'join'),
+          edge('y', 'join'),
+          edge('join', 'o'),
+        ],
+      })
+    }).toThrow(/joins both arms/)
   })
 
   test('allows a work node downstream of a race that joined both branch arms', () => {
@@ -66,8 +73,8 @@ describe('Scheduler', () => {
     // The race collapses the branch (fires on whichever arm is live, always
     // completes), so `join`'s all-incoming-alive rule is always satisfiable — it
     // must NOT be rejected as a both-arms stall, and must run under either arm.
-    const build = () =>
-      new Scheduler({
+    const build = () => {
+      return new Scheduler({
         version: 1,
         nodes: [
           trigger('t'),
@@ -86,6 +93,7 @@ describe('Scheduler', () => {
           edge('join', 'o'),
         ],
       })
+    }
     expect(build).not.toThrow()
     for (const decision of ['yes', 'no'] as const) {
       const s = build()
@@ -103,8 +111,8 @@ describe('Scheduler', () => {
     // The real "Ingest document" shape: a producer fans into two branches, each
     // collapsed by its own race, and both races (plus the producer) converge on
     // one work node. Every race always completes, so the join is satisfiable.
-    const build = () =>
-      new Scheduler({
+    const build = () => {
+      return new Scheduler({
         version: 1,
         nodes: [
           trigger('t'),
@@ -134,6 +142,7 @@ describe('Scheduler', () => {
           edge('save', 'o'),
         ],
       })
+    }
     expect(build).not.toThrow()
     const s = build()
     s.seedTrigger({})
@@ -149,26 +158,25 @@ describe('Scheduler', () => {
     // branch → yes:race→join, but no arm feeds `join` DIRECTLY (bypassing the
     // race). The direct no-arm edge keeps both arms in the join's cone, so it can
     // still stall — the race seal must not mask this real case.
-    expect(
-      () =>
-        new Scheduler({
-          version: 1,
-          nodes: [
-            trigger('t'),
-            branch('b'),
-            race('r'),
-            agent('join'),
-            output('o'),
-          ],
-          edges: [
-            edge('t', 'b'),
-            edge('b', 'r', 'yes'),
-            edge('r', 'join'),
-            edge('b', 'join', 'no'), // no arm bypasses the race
-            edge('join', 'o'),
-          ],
-        }),
-    ).toThrow(/joins both arms/)
+    expect(() => {
+      return new Scheduler({
+        version: 1,
+        nodes: [
+          trigger('t'),
+          branch('b'),
+          race('r'),
+          agent('join'),
+          output('o'),
+        ],
+        edges: [
+          edge('t', 'b'),
+          edge('b', 'r', 'yes'),
+          edge('r', 'join'),
+          edge('b', 'join', 'no'), // no arm bypasses the race
+          edge('join', 'o'),
+        ],
+      })
+    }).toThrow(/joins both arms/)
   })
 
   test('allows a work node that joins parallel paths on the same branch arm', () => {
@@ -210,64 +218,56 @@ describe('Scheduler', () => {
   test('rejects an Output that merges parallel (non-branch) paths', () => {
     // trigger fans out to a & c, both feeding one Output. Both edges are always
     // live, so one arm's result would be silently dropped. Validation rejects it.
-    expect(
-      () =>
-        new Scheduler({
-          version: 1,
-          nodes: [trigger('t'), agent('a'), agent('c'), output('o')],
-          edges: [
-            edge('t', 'a'),
-            edge('t', 'c'),
-            edge('a', 'o'),
-            edge('c', 'o'),
-          ],
-        }),
-    ).toThrow(/parallel paths/)
+    expect(() => {
+      return new Scheduler({
+        version: 1,
+        nodes: [trigger('t'), agent('a'), agent('c'), output('o')],
+        edges: [edge('t', 'a'), edge('t', 'c'), edge('a', 'o'), edge('c', 'o')],
+      })
+    }).toThrow(/parallel paths/)
   })
 
   test('still accepts branch arms converging on a single Output', () => {
-    expect(
-      () =>
-        new Scheduler({
-          version: 1,
-          nodes: [
-            trigger('t'),
-            branch('b'),
-            agent('yes'),
-            agent('no'),
-            output('o'),
-          ],
-          edges: [
-            edge('t', 'b'),
-            edge('b', 'yes', 'yes'),
-            edge('b', 'no', 'no'),
-            edge('yes', 'o'),
-            edge('no', 'o'),
-          ],
-        }),
-    ).not.toThrow()
+    expect(() => {
+      return new Scheduler({
+        version: 1,
+        nodes: [
+          trigger('t'),
+          branch('b'),
+          agent('yes'),
+          agent('no'),
+          output('o'),
+        ],
+        edges: [
+          edge('t', 'b'),
+          edge('b', 'yes', 'yes'),
+          edge('b', 'no', 'no'),
+          edge('yes', 'o'),
+          edge('no', 'o'),
+        ],
+      })
+    }).not.toThrow()
   })
 
   test('still accepts parallel fan-in to a non-Output join (no branch)', () => {
-    expect(
-      () =>
-        new Scheduler({
-          version: 1,
-          nodes: [
-            trigger('t'),
-            agent('a'),
-            agent('b'),
-            agent('join'),
-            output('o'),
-          ],
-          edges: [
-            edge('t', 'a'),
-            edge('t', 'b'),
-            edge('a', 'join'),
-            edge('b', 'join'),
-            edge('join', 'o'),
-          ],
-        }),
-    ).not.toThrow()
+    expect(() => {
+      return new Scheduler({
+        version: 1,
+        nodes: [
+          trigger('t'),
+          agent('a'),
+          agent('b'),
+          agent('join'),
+          output('o'),
+        ],
+        edges: [
+          edge('t', 'a'),
+          edge('t', 'b'),
+          edge('a', 'join'),
+          edge('b', 'join'),
+          edge('join', 'o'),
+        ],
+      })
+    }).not.toThrow()
   })
 })

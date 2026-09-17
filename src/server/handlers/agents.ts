@@ -116,14 +116,14 @@ export function buildAgentHandlers<TDeps>(
     listAgents: async (c) => {
       const rows = await listAgents(c.db)
       const byAgent = await listWorkflowsReferencingAllAgents(c.db)
-      return rows.map((r) =>
-        agentSummary(
+      return rows.map((r) => {
+        return agentSummary(
           r,
           r.config,
           byAgent.get(r.id) ?? [],
           r.latestVersionNumber,
-        ),
-      )
+        )
+      })
     },
 
     getAgent: async (c) => {
@@ -223,7 +223,9 @@ export function buildAgentHandlers<TDeps>(
         entityKind: 'agent',
         entityId: agentId,
         action: 'publish',
-        fields: previousConfig ? changedFields(previousConfig, config) : ['initial'],
+        fields: previousConfig
+          ? changedFields(previousConfig, config)
+          : ['initial'],
         after: { versionId: out.versionId, versionNumber: out.versionNumber },
         note: p.changeNote ?? null,
       })
@@ -328,7 +330,9 @@ export function buildAgentHandlers<TDeps>(
         entityId: agentId,
         action: 'update',
         fields:
-          before && after ? changedEntityMetaFields(before, after) : Object.keys(p),
+          before && after
+            ? changedEntityMetaFields(before, after)
+            : Object.keys(p),
         before,
         after,
         note: after?.name ?? null,

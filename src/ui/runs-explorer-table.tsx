@@ -36,15 +36,14 @@ export function RunsTable({
   hasFilters: boolean
 }) {
   // Which parents are open, keyed by run id so a poll refresh can't close them.
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  )
-  const toggle = (id: string) =>
-    setExpanded((prev) => {
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
+  const toggle = (id: string) => {
+    return setExpanded((prev) => {
       const next = new Set(prev)
       if (!next.delete(id)) next.add(id)
       return next
     })
+  }
 
   return (
     <div className="min-h-0 flex-1 overflow-auto">
@@ -261,7 +260,10 @@ function ChildRows({ parentRunId }: { parentRunId: string }) {
   if (error) {
     return (
       <tr className="border-b border-neutral-100 bg-neutral-50/60">
-        <td colSpan={COLUMN_COUNT} className="px-3 py-2 pl-10 text-xs text-rose-600">
+        <td
+          colSpan={COLUMN_COUNT}
+          className="px-3 py-2 pl-10 text-xs text-rose-600"
+        >
           Could not load the child runs: {error.message}
         </td>
       </tr>

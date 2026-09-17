@@ -35,7 +35,7 @@ function node(
  * ever produced; this states that expectation once instead of casting at each
  * assertion.
  */
-function nodeRows (rows: ActivityTopRow[]): ActivityNodeRow[] {
+function nodeRows(rows: ActivityTopRow[]): ActivityNodeRow[] {
   return rows.filter((r): r is ActivityNodeRow => r.kind === 'node')
 }
 
@@ -77,7 +77,16 @@ function log(
   ts: number,
   extra: Partial<WfRunLogDTO> = {},
 ): WfRunLogDTO {
-  return { nodeId, nodeKind: null, sequence: null, level, message, meta: null, ts, ...extra }
+  return {
+    nodeId,
+    nodeKind: null,
+    sequence: null,
+    level,
+    message,
+    meta: null,
+    ts,
+    ...extra,
+  }
 }
 
 function byKey(rows: ActivityNodeRow[], key: string): ActivityNodeRow {
@@ -95,53 +104,66 @@ const GRAPH = graphOf([
 
 describe('buildActivityTree — top level', () => {
   test('excludes bookend kinds and orders by executed sequence', () => {
-    const rows = nodeRows(buildActivityTree({
-      graph: GRAPH,
-      steps: [step('read', 'tool', 1, 'completed'), step('draft', 'agent', 2, 'running')],
-      logs: [],
-    }))
+    const rows = nodeRows(
+      buildActivityTree({
+        graph: GRAPH,
+        steps: [
+          step('read', 'tool', 1, 'completed'),
+          step('draft', 'agent', 2, 'running'),
+        ],
+        logs: [],
+      }),
+    )
     expect(rows.map((r) => r.nodeId)).toEqual(['read', 'draft'])
   })
 
   test('not-yet-run graph nodes surface as pending rows', () => {
-    const rows = nodeRows(buildActivityTree({ graph: GRAPH, steps: [], logs: [] }))
+    const rows = nodeRows(
+      buildActivityTree({ graph: GRAPH, steps: [], logs: [] }),
+    )
     expect(rows.map((r) => r.status)).toEqual(['pending', 'pending'])
     expect(rows.every((r) => !r.expandable)).toBe(true)
   })
 
   test('duration from step timing, fallback to node-start/end log pairing', () => {
-    const rows = nodeRows(buildActivityTree({
-      graph: GRAPH,
-      steps: [
-        step('read', 'tool', 1, 'completed', { startedAt: 1000, finishedAt: 1350 }),
-        step('draft', 'agent', 2, 'completed'),
-      ],
-      logs: [
-        log('draft', 'node-start', '▶ Draft', 2000),
-        log('draft', 'node-end', '✓ Draft', 2500),
-      ],
-    }))
+    const rows = nodeRows(
+      buildActivityTree({
+        graph: GRAPH,
+        steps: [
+          step('read', 'tool', 1, 'completed', {
+            startedAt: 1000,
+            finishedAt: 1350,
+          }),
+          step('draft', 'agent', 2, 'completed'),
+        ],
+        logs: [
+          log('draft', 'node-start', '▶ Draft', 2000),
+          log('draft', 'node-end', '✓ Draft', 2500),
+        ],
+      }),
+    )
     expect(byKey(rows, 'read').durationMs).toBe(350)
     expect(byKey(rows, 'draft').durationMs).toBe(500)
   })
 
   test('attaches thinking/tool leaves but not the node bookends', () => {
-    const rows = nodeRows(buildActivityTree({
-      graph: GRAPH,
-      steps: [step('draft', 'agent', 1, 'completed')],
-      logs: [
-        log('draft', 'node-start', '▶ Draft', 1),
-        log('draft', 'thinking', 'pondering', 2),
-        log('draft', 'tool', 'Called search', 3),
-        log('draft', 'node-end', '✓ Draft', 4),
-      ],
-    }))
+    const rows = nodeRows(
+      buildActivityTree({
+        graph: GRAPH,
+        steps: [step('draft', 'agent', 1, 'completed')],
+        logs: [
+          log('draft', 'node-start', '▶ Draft', 1),
+          log('draft', 'thinking', 'pondering', 2),
+          log('draft', 'tool', 'Called search', 3),
+          log('draft', 'node-end', '✓ Draft', 4),
+        ],
+      }),
+    )
     const draft = byKey(rows, 'draft')
     expect(draft.children.map((c) => c.kind)).toEqual(['log', 'log'])
-    expect(draft.children.map((c) => (c.kind === 'log' ? c.level : ''))).toEqual([
-      'thinking',
-      'tool',
-    ])
+    expect(
+      draft.children.map((c) => (c.kind === 'log' ? c.level : '')),
+    ).toEqual(['thinking', 'tool'])
   })
 })
 
@@ -174,7 +196,10 @@ describe('buildActivityTree — iterations', () => {
         finishedAt: 40,
       }),
       // item 1 failed; also a bookend trigger step that must be filtered out
-      step('it', 'trigger', 0, 'completed', { parentNodeId: 'loop', itemIndex: 1 }),
+      step('it', 'trigger', 0, 'completed', {
+        parentNodeId: 'loop',
+        itemIndex: 1,
+      }),
       step('save', 'tool', 1, 'failed', {
         parentNodeId: 'loop',
         itemIndex: 1,
@@ -184,7 +209,9 @@ describe('buildActivityTree — iterations', () => {
   }
 
   test('surfaces done/total item counts on the iteration row', () => {
-    const rows = nodeRows(buildActivityTree({ graph: ITER_GRAPH, steps: iterSteps(), logs: [] }))
+    const rows = nodeRows(
+      buildActivityTree({ graph: ITER_GRAPH, steps: iterSteps(), logs: [] }),
+    )
     const loop = byKey(rows, 'loop')
     // Two of three items recorded; both terminal (completed + failed) → 2/3.
     expect(loop.itemsTotal).toBe(3)
@@ -192,13 +219,14 @@ describe('buildActivityTree — iterations', () => {
   })
 
   test('groups inner steps by item, labels from subgraph, rolls up status', () => {
-    const rows = nodeRows(buildActivityTree({ graph: ITER_GRAPH, steps: iterSteps(), logs: [] }))
+    const rows = nodeRows(
+      buildActivityTree({ graph: ITER_GRAPH, steps: iterSteps(), logs: [] }),
+    )
     const loop = byKey(rows, 'loop')
     expect(loop.status).toBe('running')
-    expect(loop.children.map((c) => (c.kind === 'group' ? c.label : ''))).toEqual([
-      'Item 1 / 3',
-      'Item 2 / 3',
-    ])
+    expect(
+      loop.children.map((c) => (c.kind === 'group' ? c.label : '')),
+    ).toEqual(['Item 1 / 3', 'Item 2 / 3'])
     const item0 = loop.children[0]
     const item1 = loop.children[1]
     if (item0.kind !== 'group' || item1.kind !== 'group')
@@ -209,7 +237,9 @@ describe('buildActivityTree — iterations', () => {
     expect(item0.children).toHaveLength(1)
     expect((item0.children[0] as ActivityNodeRow).label).toBe('Save one')
     expect((item0.children[0] as ActivityNodeRow).durationMs).toBe(30)
-    expect((item0.children[0] as ActivityNodeRow).parentIterationId).toBe('loop')
+    expect((item0.children[0] as ActivityNodeRow).parentIterationId).toBe(
+      'loop',
+    )
     expect((item0.children[0] as ActivityNodeRow).itemIndex).toBe(0)
   })
 
@@ -239,7 +269,9 @@ describe('buildActivityTree — iterations', () => {
 
   function titledSteps(items: Array<Record<string, unknown>>): WfRunStepDTO[] {
     return [
-      step('loop', 'iteration', 1, 'running', { meta: { total: items.length } }),
+      step('loop', 'iteration', 1, 'running', {
+        meta: { total: items.length },
+      }),
       ...items.flatMap((output, i) => [
         step('it', 'trigger', 0, 'completed', {
           parentNodeId: 'loop',
@@ -266,7 +298,9 @@ describe('buildActivityTree — iterations', () => {
     // Numbered AND named: the position is how someone came looking, the name is
     // what they are looking for.
     expect(
-      byKey(rows, 'loop').children.map((c) => (c.kind === 'group' ? c.label : '')),
+      byKey(rows, 'loop').children.map((c) => {
+        return c.kind === 'group' ? c.label : ''
+      }),
     ).toEqual(['1. Chocolate Mousse', '2. Tarte'])
   })
 
@@ -283,7 +317,9 @@ describe('buildActivityTree — iterations', () => {
     )
 
     expect(
-      byKey(rows, 'loop').children.map((c) => (c.kind === 'group' ? c.label : '')),
+      byKey(rows, 'loop').children.map((c) => {
+        return c.kind === 'group' ? c.label : ''
+      }),
     ).toEqual(['Item 1 / 2', 'Item 2 / 2'])
   })
 
@@ -293,38 +329,48 @@ describe('buildActivityTree — iterations', () => {
     )
 
     expect(
-      byKey(rows, 'loop').children.map((c) => (c.kind === 'group' ? c.label : '')),
+      byKey(rows, 'loop').children.map((c) => {
+        return c.kind === 'group' ? c.label : ''
+      }),
     ).toEqual(['Item 1 / 3', 'Item 2 / 3'])
   })
 
   test('running loop with no items yet shows a live placeholder', () => {
-    const rows = nodeRows(buildActivityTree({
-      graph: ITER_GRAPH,
-      steps: [step('loop', 'iteration', 1, 'running', { meta: { total: 5 } })],
-      logs: [],
-      live: true,
-    }))
+    const rows = nodeRows(
+      buildActivityTree({
+        graph: ITER_GRAPH,
+        steps: [
+          step('loop', 'iteration', 1, 'running', { meta: { total: 5 } }),
+        ],
+        logs: [],
+        live: true,
+      }),
+    )
     const loop = byKey(rows, 'loop')
     expect(loop.children).toHaveLength(1)
     expect(loop.children[0].kind).toBe('log')
-    expect(loop.children[0].kind === 'log' && loop.children[0].message).toContain('5')
+    expect(
+      loop.children[0].kind === 'log' && loop.children[0].message,
+    ).toContain('5')
   })
 })
 
 describe('buildActivityTree — sub-agents & null graph', () => {
   test('sub-agent delegations nest under the agent and select the parent', () => {
-    const rows = nodeRows(buildActivityTree({
-      graph: GRAPH,
-      steps: [
-        step('draft', 'agent', 1, 'completed'),
-        step('sub:draft:0', 'agent', 0, 'completed', {
-          parentNodeId: 'draft',
-          itemIndex: 0,
-          meta: { subAgentName: 'researcher' },
-        }),
-      ],
-      logs: [],
-    }))
+    const rows = nodeRows(
+      buildActivityTree({
+        graph: GRAPH,
+        steps: [
+          step('draft', 'agent', 1, 'completed'),
+          step('sub:draft:0', 'agent', 0, 'completed', {
+            parentNodeId: 'draft',
+            itemIndex: 0,
+            meta: { subAgentName: 'researcher' },
+          }),
+        ],
+        logs: [],
+      }),
+    )
     const draft = byKey(rows, 'draft')
     const sub = draft.children[0]
     if (sub.kind !== 'node') throw new Error('expected sub-agent node row')
@@ -333,24 +379,31 @@ describe('buildActivityTree — sub-agents & null graph', () => {
   })
 
   test('agent rows carry step cost; non-agents leave it null', () => {
-    const rows = nodeRows(buildActivityTree({
-      graph: GRAPH,
-      steps: [
-        step('draft', 'agent', 2, 'completed', { costUsd: 0.0123 }),
-        step('read', 'tool', 1, 'completed', { costUsd: null }),
-      ],
-      logs: [],
-    }))
+    const rows = nodeRows(
+      buildActivityTree({
+        graph: GRAPH,
+        steps: [
+          step('draft', 'agent', 2, 'completed', { costUsd: 0.0123 }),
+          step('read', 'tool', 1, 'completed', { costUsd: null }),
+        ],
+        logs: [],
+      }),
+    )
     expect(byKey(rows, 'draft').costUsd).toBe(0.0123)
     expect(byKey(rows, 'read').costUsd).toBeNull()
   })
 
   test('null graph builds from steps, ordered by sequence', () => {
-    const rows = nodeRows(buildActivityTree({
-      graph: null,
-      steps: [step('b', 'tool', 2, 'completed'), step('a', 'agent', 1, 'running')],
-      logs: [],
-    }))
+    const rows = nodeRows(
+      buildActivityTree({
+        graph: null,
+        steps: [
+          step('b', 'tool', 2, 'completed'),
+          step('a', 'agent', 1, 'running'),
+        ],
+        logs: [],
+      }),
+    )
     expect(rows.map((r) => r.nodeId)).toEqual(['a', 'b'])
     expect(rows.map((r) => r.label)).toEqual(['a', 'b'])
   })
@@ -374,7 +427,6 @@ describe('flattenTree', () => {
   })
 })
 
-
 // --- Run lifecycle markers -------------------------------------------------
 
 /** A run-level state entry as the storage writer produces it. */
@@ -391,7 +443,9 @@ function stateLog(
     message: extra.message ?? status,
     meta: {
       status,
-      ...(extra.pendingNodes != null ? { pendingNodes: extra.pendingNodes } : {}),
+      ...(extra.pendingNodes != null
+        ? { pendingNodes: extra.pendingNodes }
+        : {}),
     },
     ts,
   }
@@ -423,9 +477,14 @@ describe('buildActivityTree — run lifecycle markers', () => {
         stateLog('completed', 9_500_000),
       ],
     })
-    expect(
-      rows.map((r) => (isState(r) ? `@${r.status}` : (r).nodeId)),
-    ).toEqual(['@queued', '@running', 'read', '@done', 'draft', '@completed'])
+    expect(rows.map((r) => (isState(r) ? `@${r.status}` : r.nodeId))).toEqual([
+      '@queued',
+      '@running',
+      'read',
+      '@done',
+      'draft',
+      '@completed',
+    ])
   })
 
   test('queued and running lead even when a node claims an earlier start', () => {
@@ -443,9 +502,12 @@ describe('buildActivityTree — run lifecycle markers', () => {
       ],
       logs: [stateLog('queued', 9_000_000), stateLog('running', 9_000_001)],
     })
-    expect(
-      rows.map((r) => (isState(r) ? `@${r.status}` : (r).nodeId)),
-    ).toEqual(['@queued', '@running', 'read', 'draft'])
+    expect(rows.map((r) => (isState(r) ? `@${r.status}` : r.nodeId))).toEqual([
+      '@queued',
+      '@running',
+      'read',
+      'draft',
+    ])
   })
 
   test('a terminal marker closes the list even with nodes that never ran', () => {
@@ -461,17 +523,24 @@ describe('buildActivityTree — run lifecycle markers', () => {
       ],
       logs: [stateLog('completed', 1_500_000)],
     })
-    expect(
-      rows.map((r) => (isState(r) ? `@${r.status}` : (r).nodeId)),
-    ).toEqual(['read', 'draft', '@completed'])
+    expect(rows.map((r) => (isState(r) ? `@${r.status}` : r.nodeId))).toEqual([
+      'read',
+      'draft',
+      '@completed',
+    ])
   })
 
   test('node ordering is untouched by the markers', () => {
-    const withMarkers = nodeRows(buildActivityTree({
-      graph: GRAPH,
-      steps: [step('read', 'tool', 1, 'completed'), step('draft', 'agent', 2, 'running')],
-      logs: [stateLog('running', 1), stateLog('done', 2)],
-    }))
+    const withMarkers = nodeRows(
+      buildActivityTree({
+        graph: GRAPH,
+        steps: [
+          step('read', 'tool', 1, 'completed'),
+          step('draft', 'agent', 2, 'running'),
+        ],
+        logs: [stateLog('running', 1), stateLog('done', 2)],
+      }),
+    )
     expect(withMarkers.filter(isNode).map((r) => r.nodeId)).toEqual([
       'read',
       'draft',
@@ -488,7 +557,9 @@ describe('buildActivityTree — run lifecycle markers', () => {
     expect(rows.filter(isState)).toHaveLength(1)
     for (const r of rows) {
       if (!isNode(r)) continue
-      expect(r.children.some((c) => c.kind === 'log' && c.level === RUN_STATE_LEVEL)).toBe(false)
+      expect(
+        r.children.some((c) => c.kind === 'log' && c.level === RUN_STATE_LEVEL),
+      ).toBe(false)
     }
   })
 
@@ -534,7 +605,9 @@ describe('buildActivityTree — marker timing', () => {
     const rows = buildActivityTree({
       graph: GRAPH,
       steps: [step('read', 'tool', 1, 'completed')],
-      logs: [stateLog('completed', 1_100_000, { message: 'Workflow completed' })],
+      logs: [
+        stateLog('completed', 1_100_000, { message: 'Workflow completed' }),
+      ],
     })
     const marker = rows.find(isState)
     expect(marker).toBeDefined()
@@ -605,7 +678,9 @@ describe('buildActivityTree — durable items and callees (NEW-177)', () => {
     const rows = nodeRows(
       buildActivityTree({
         graph: DURABLE_GRAPH,
-        steps: [step('loop', 'iteration', 1, 'running', { meta: { total: 2 } })],
+        steps: [
+          step('loop', 'iteration', 1, 'running', { meta: { total: 2 } }),
+        ],
         logs: [],
         childRuns: [
           childRun('run-a', 'loop', 0, {
@@ -625,7 +700,9 @@ describe('buildActivityTree — durable items and callees (NEW-177)', () => {
     )
 
     expect(
-      byKey(rows, 'loop').children.map((c) => (c.kind === 'group' ? c.label : '')),
+      byKey(rows, 'loop').children.map((c) => {
+        return c.kind === 'group' ? c.label : ''
+      }),
     ).toEqual(['1. Chocolate Mousse', 'Item 2 / 2'])
   })
 
@@ -636,7 +713,9 @@ describe('buildActivityTree — durable items and callees (NEW-177)', () => {
     const rows = nodeRows(
       buildActivityTree({
         graph: DURABLE_GRAPH,
-        steps: [step('loop', 'iteration', 1, 'running', { meta: { total: 2 } })],
+        steps: [
+          step('loop', 'iteration', 1, 'running', { meta: { total: 2 } }),
+        ],
         logs: [],
         childRuns: [
           childRun('run-a', 'loop', 0, { costUsd: 0.25 }),
@@ -687,7 +766,9 @@ describe('buildActivityTree — durable items and callees (NEW-177)', () => {
     const rows = nodeRows(
       buildActivityTree({
         graph: DURABLE_GRAPH,
-        steps: [step('loop', 'iteration', 1, 'running', { meta: { total: 3 } })],
+        steps: [
+          step('loop', 'iteration', 1, 'running', { meta: { total: 3 } }),
+        ],
         logs: [],
         childRuns: [
           childRun('run-a', 'loop', 0),
@@ -708,7 +789,9 @@ describe('buildActivityTree — durable items and callees (NEW-177)', () => {
     const rows = nodeRows(
       buildActivityTree({
         graph: DURABLE_GRAPH,
-        steps: [step('loop', 'iteration', 1, 'running', { meta: { total: 3 } })],
+        steps: [
+          step('loop', 'iteration', 1, 'running', { meta: { total: 3 } }),
+        ],
         logs: [],
         childRuns: [
           childRun('run-c', 'loop', 2),
@@ -718,9 +801,9 @@ describe('buildActivityTree — durable items and callees (NEW-177)', () => {
       }),
     )
     expect(
-      byKey(rows, 'loop').children.map((c) =>
-        c.kind === 'group' ? c.childRunId : null,
-      ),
+      byKey(rows, 'loop').children.map((c) => {
+        return c.kind === 'group' ? c.childRunId : null
+      }),
     ).toEqual(['run-a', 'run-b', 'run-c'])
   })
 

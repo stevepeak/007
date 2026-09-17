@@ -167,12 +167,13 @@ function driftReport(detail: WfEvalRunDetail): unknown {
       note: 'No earlier run covered any of these samples, so there is nothing to compare against.',
     }
   }
-  const edited = detail.results.some(
-    (r) =>
+  const edited = detail.results.some((r) => {
+    return (
       r.previousSnapshotHash != null &&
       r.snapshotHash != null &&
-      r.previousSnapshotHash !== r.snapshotHash,
-  )
+      r.previousSnapshotHash !== r.snapshotHash
+    )
+  })
   return {
     previousRunId: drift.previousRunId,
     previousRunAt: drift.previousRunAt,
@@ -199,7 +200,10 @@ export function evalRunReadTools(): WfMcpTool[] {
       description:
         'Past eval runs, newest first — which goals each covered, its status, and its totals. `notPassed` lumps failed and errored cells together; get_eval_run separates them, and only it can tell a regression from an outage. Use to find a run to read, or to see whether a goal has ever been run.',
       inputSchema: {
-        limit: z.number().nullish().describe('How many runs (default 20, max 100).'),
+        limit: z
+          .number()
+          .nullish()
+          .describe('How many runs (default 20, max 100).'),
       },
       readOnly: true,
       run: async (client, args) => {
@@ -212,7 +216,9 @@ export function evalRunReadTools(): WfMcpTool[] {
         // a readable history and a list of uuids.
         const names = new Map<string, string>()
         try {
-          for (const s of await client.listEvalSets({ includeArchived: true })) {
+          for (const s of await client.listEvalSets({
+            includeArchived: true,
+          })) {
             names.set(s.id, s.name)
           }
         } catch {
@@ -240,7 +246,9 @@ export function evalRunReadTools(): WfMcpTool[] {
       description:
         "One eval run's report: per-sample verdict, the reason each check gave, cost/tokens/model of the graded call, and what changed since the last comparable run. READ THE COUNTS BEFORE THE PASS RATE — `errored` cells never produced an answer to grade (provider refused, run timed out) and are not the target being wrong. Poll this after run_eval until `status` is `completed`.",
       inputSchema: {
-        evalRunId: z.string().describe('Eval run id, from run_eval or list_eval_runs.'),
+        evalRunId: z
+          .string()
+          .describe('Eval run id, from run_eval or list_eval_runs.'),
         rowId: z
           .string()
           .nullish()
@@ -362,7 +370,9 @@ export function evalRunWriteTools(): WfMcpTool[] {
           .array(
             z.object({
               label: z.string().describe('Names the column in the report.'),
-              body: z.string().describe('System prompt to use instead of the saved one.'),
+              body: z
+                .string()
+                .describe('System prompt to use instead of the saved one.'),
             }),
           )
           .nullish()
@@ -404,8 +414,10 @@ export function evalRunWriteTools(): WfMcpTool[] {
         // Count the cells before launching. The sets have to be read anyway to
         // know how many samples there are, and a model that asks for a 400-cell
         // sweep should be told so rather than billed for it.
-        const sets = await Promise.all(setIds.map((id) => client.getEvalSet(id)))
-        const missing = setIds.filter((_, i) => !sets[i])
+        const sets = await Promise.all(
+          setIds.map((id) => client.getEvalSet(id)),
+        )
+        const missing = setIds.filter((_, i) => sets[i] === null)
         if (missing.length > 0) {
           return {
             error: `No eval goal found for id ${missing.join(', ')}. Ids come from list_eval_sets.`,
@@ -430,16 +442,19 @@ export function evalRunWriteTools(): WfMcpTool[] {
         let configOverride: AgentConfig | undefined
         let unsavedFields: string[] = []
         if (draftAgentId) {
-          const mismatched = sets.filter(
-            (s) =>
+          const mismatched = sets.filter((s) => {
+            return (
               s &&
-              (s.set.targetKind !== 'agent' || s.set.targetId !== draftAgentId),
-          )
+              (s.set.targetKind !== 'agent' || s.set.targetId !== draftAgentId)
+            )
+          })
           if (mismatched.length > 0) {
             return {
               error: `draftAgentId only applies to goals that target that agent, and ${mismatched
                 .map((s) => `"${s?.set.name ?? '?'}"`)
-                .join(', ')} does not. Run those separately, without draftAgentId.`,
+                .join(
+                  ', ',
+                )} does not. Run those separately, without draftAgentId.`,
             }
           }
           const detail = await client.getAgent(draftAgentId)
@@ -461,7 +476,8 @@ export function evalRunWriteTools(): WfMcpTool[] {
           unsavedFields = chosen.unsavedFields
         }
 
-        const columns = Math.max(1, models.length) * attempts * (1 + prompts.length)
+        const columns =
+          Math.max(1, models.length) * attempts * (1 + prompts.length)
         const cells = samples * columns
         if (cells > MAX_CELLS) {
           return {

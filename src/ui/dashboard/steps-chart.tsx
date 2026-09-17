@@ -47,19 +47,17 @@ export function StepsChart({ data }: { data: WfDashboardResult }) {
     [series],
   )
 
-  const rows = useMemo<Row[]>(
-    () =>
-      data.buckets.map((bucket, i) => {
-        const row = { bucket, __top: '' } as Row
-        for (const s of series) {
-          const v = s.points[i] ?? 0
-          row[s.key] = v
-          if (v > 0) row.__top = s.key
-        }
-        return row
-      }),
-    [data.buckets, series],
-  )
+  const rows = useMemo<Row[]>(() => {
+    return data.buckets.map((bucket, i) => {
+      const row = { bucket, __top: '' } as Row
+      for (const s of series) {
+        const v = s.points[i] ?? 0
+        row[s.key] = v
+        if (v > 0) row.__top = s.key
+      }
+      return row
+    })
+  }, [data.buckets, series])
 
   // Unconfigured analytics is ABSENT, not empty: D1 records no step counts, so
   // rendering a zeroed chart would assert something we never measured.
@@ -124,7 +122,9 @@ export function StepsChart({ data }: { data: WfDashboardResult }) {
                 content={(props: TooltipContentProps) => {
                   if (!props.active || !props.payload?.length) return null
                   const byKey = tooltipValues(props.payload)
-                  const shown = series.filter((s) => (byKey.get(s.key) ?? 0) > 0)
+                  const shown = series.filter(
+                    (s) => (byKey.get(s.key) ?? 0) > 0,
+                  )
                   if (shown.length === 0) return null
                   return (
                     <ChartTooltip

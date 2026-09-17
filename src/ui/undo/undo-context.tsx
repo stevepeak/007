@@ -94,10 +94,11 @@ export function WfUndoProvider({ children }: { children: ReactNode }) {
       nextId: () => ++unsavedIdRef.current,
       set: (id, entry) => unsavedRef.current.set(id, entry),
       clear: (id) => unsavedRef.current.delete(id),
-      inTab: (tabId) =>
-        [...unsavedRef.current.values()]
+      inTab: (tabId) => {
+        return [...unsavedRef.current.values()]
           .filter((e) => e.tabId === tabId)
-          .map((e) => e.label),
+          .map((e) => e.label)
+      },
     }),
     [],
   )

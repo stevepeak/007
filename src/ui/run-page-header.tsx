@@ -148,13 +148,11 @@ function SiblingMenu({
   // Item order, not spawn order. Children are created as the pool frees slots,
   // so a concurrency-4 loop lands them interleaved — and an author looking for
   // "the third recipe" means the third item.
-  const ordered = useMemo(
-    () =>
-      [...siblings].sort(
-        (a, b) => (a.parent?.itemIndex ?? 0) - (b.parent?.itemIndex ?? 0),
-      ),
-    [siblings],
-  )
+  const ordered = useMemo(() => {
+    return [...siblings].sort(
+      (a, b) => (a.parent?.itemIndex ?? 0) - (b.parent?.itemIndex ?? 0),
+    )
+  }, [siblings])
   // Numbered by the run's own `itemIndex`, not by where it lands in this array,
   // so the button and the breadcrumb can never disagree — a fan-out missing a
   // child would otherwise shift every position after the gap.
@@ -318,7 +316,6 @@ function RetryMenu({
   )
 }
 
-
 /**
  * The header's cost figure — the run's own total, or the TREE total once it has
  * spawned children.
@@ -336,7 +333,9 @@ function RunCostStat({ run }: { run: WfRunSummary }) {
   if (cost == null) return null
   const title = [
     tokens != null ? `${tokens.toLocaleString()} tokens` : null,
-    tree ? `Across ${tree.runCount} runs, including everything this one spawned` : null,
+    tree
+      ? `Across ${tree.runCount} runs, including everything this one spawned`
+      : null,
     tree?.computeMs != null
       ? `${formatDurationMs(tree.computeMs)} of compute, run concurrently`
       : null,

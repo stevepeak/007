@@ -39,7 +39,8 @@ import { strictifyJsonSchema, strictifyToolSet } from '../strict-schema'
  * Takes `unknown` because every caller reads it off a stored `meta` column.
  */
 export function stepAgentVersion(meta: unknown): number | null {
-  const v = (meta as { agentVersion?: unknown } | null | undefined)?.agentVersion
+  const v = (meta as { agentVersion?: unknown } | null | undefined)
+    ?.agentVersion
   return typeof v === 'number' ? v : null
 }
 
@@ -364,8 +365,8 @@ async function runStructuredGeneration(
   // however many times the call is re-issued.
   const guard = armTotalBudget(budget)
   const messagesForModel = await convertToModelMessages(messages)
-  const issue = () =>
-    generateObject({
+  const issue = () => {
+    return generateObject({
       model,
       system: systemPrompt,
       messages: messagesForModel,
@@ -373,6 +374,7 @@ async function runStructuredGeneration(
       abortSignal: guard.signal,
       maxRetries: MODEL_MAX_RETRIES,
     })
+  }
   const result = await runGuarded(sink, modelId, startedAt, guard, async () => {
     for (let attempt = 1; ; attempt++) {
       try {
@@ -530,196 +532,196 @@ async function runToolLoop(
   let stepMustAnswer = false
 
   const callOptions = {
-      model,
-      system: systemPrompt,
-      messages: messagesForModel,
-      tools,
-      stopWhen: stepCountIs(maxTurns),
-      // The last turn is for answering, not for opening another line of
-      // research the loop has no room to follow up on. Without this, a model
-      // that spends every turn calling tools stops mid-investigation and
-      // `result.text` is the empty string — a completed run with nothing in it,
-      // which is how a $0.64 chat turn rendered as a blank message. Denying
-      // tools on the final turn forces the model to commit what it has to
-      // prose, caveats and all, which is what the reader needed anyway.
-      // Three rules, in strict precedence. The two that DENY tools come first and
-      // are never overridden: whatever else is configured, an agent that is out
-      // of turns or out of budget has to write its answer now.
-      // `stepNumber` is annotated because `callOptions` is a bare literal with
-      // no contextual type (it feeds both generateText and streamText), so the
-      // SDK's own parameter types don't flow in — same reason `onStepFinish`
-      // below spells out `StepResult<ToolSet>`.
-      prepareStep: ({ stepNumber }: { stepNumber: number }) => {
-        // Re-decided per step: an agent with no tools always answers, otherwise
-        // only the branches below that deny tools qualify. See `streamAnswer`.
-        stepMustAnswer = !hasTools
-        if (stepNumber >= maxTurns - 1) {
+    model,
+    system: systemPrompt,
+    messages: messagesForModel,
+    tools,
+    stopWhen: stepCountIs(maxTurns),
+    // The last turn is for answering, not for opening another line of
+    // research the loop has no room to follow up on. Without this, a model
+    // that spends every turn calling tools stops mid-investigation and
+    // `result.text` is the empty string — a completed run with nothing in it,
+    // which is how a $0.64 chat turn rendered as a blank message. Denying
+    // tools on the final turn forces the model to commit what it has to
+    // prose, caveats and all, which is what the reader needed anyway.
+    // Three rules, in strict precedence. The two that DENY tools come first and
+    // are never overridden: whatever else is configured, an agent that is out
+    // of turns or out of budget has to write its answer now.
+    // `stepNumber` is annotated because `callOptions` is a bare literal with
+    // no contextual type (it feeds both generateText and streamText), so the
+    // SDK's own parameter types don't flow in — same reason `onStepFinish`
+    // below spells out `StepResult<ToolSet>`.
+    prepareStep: ({ stepNumber }: { stepNumber: number }) => {
+      // Re-decided per step: an agent with no tools always answers, otherwise
+      // only the branches below that deny tools qualify. See `streamAnswer`.
+      stepMustAnswer = !hasTools
+      if (stepNumber >= maxTurns - 1) {
+        stepMustAnswer = true
+        void sink?.log?.({
+          level: 'info',
+          message: `→ ${modelId} (turn ${stepNumber + 1}/${maxTurns}, answering — no more tools)`,
+        })
+        return { toolChoice: 'none' as const }
+      }
+      // Would one more tool turn leave room to write the answer? Checked BEFORE
+      // the spend budget because overflowing the window is a hard error and
+      // the budget is a preference.
+      //
+      // With no growth sample yet (turn 2), the conversation's current size
+      // stands in for its growth — i.e. assume it could double. That's
+      // deliberately pessimistic and costs nothing in the normal case, where an
+      // opening prompt is a rounding error against the window; where it DOES
+      // bite, the conversation is already vast and stopping is right.
+      if (answerReserveTokens != null && lastInputTokens > 0) {
+        const growth = observedGrowth > 0 ? observedGrowth : lastInputTokens
+        const projected = lastInputTokens + growth
+        if (projected + answerReserveTokens > contextLength!) {
+          stoppedOnContextLimit = true
           stepMustAnswer = true
           void sink?.log?.({
             level: 'info',
-            message: `→ ${modelId} (turn ${stepNumber + 1}/${maxTurns}, answering — no more tools)`,
+            message: `→ ${modelId} (turn ${stepNumber + 1}/${maxTurns}, another turn would reach ~${projected.toLocaleString()} of ${contextLength!.toLocaleString()} — answering while there is room to)`,
+            meta: {
+              lastInputTokens,
+              observedGrowth: growth,
+              projected,
+              answerReserveTokens,
+              contextLength,
+            },
           })
           return { toolChoice: 'none' as const }
         }
-        // Would one more tool turn leave room to write the answer? Checked BEFORE
-        // the spend budget because overflowing the window is a hard error and
-        // the budget is a preference.
+      }
+      // Spend ceiling reached. Deliberately NOT an error: the whole point of
+      // the budget is to reach the end of the money with an answer in hand,
+      // rather than let the node's wall-clock guard fail the run outright with
+      // nothing to show for what it already spent.
+      const spent = totalUsage.inputTokens + totalUsage.outputTokens
+      if (toolTokenBudget != null && spent >= toolTokenBudget) {
+        stoppedOnTokenBudget = true
+        stepMustAnswer = true
+        void sink?.log?.({
+          level: 'info',
+          message: `→ ${modelId} (turn ${stepNumber + 1}/${maxTurns}, token budget reached at ${spent.toLocaleString()} — answering with what it has)`,
+          meta: { spent, toolTokenBudget },
+        })
+        return { toolChoice: 'none' as const }
+      }
+      // Opt-in: deny the model the option of answering turn 1 from what it
+      // already "knows". Only turn 1 — every later turn is free to answer, so
+      // this buys a first look at the tools without trapping the loop.
+      if (stepNumber === 0 && forceFirstTool) {
+        void sink?.log?.({
+          level: 'info',
+          message: `→ ${modelId} (turn 1/${maxTurns}, tool call required)`,
+        })
+        return { toolChoice: 'required' as const }
+      }
+      return {}
+    },
+    // Per-round-trip and per-tool watchdogs, native to the AI SDK: each is
+    // armed and cleared around its own call, so a single stalled request or
+    // hung tool fails fast instead of silently consuming the node's whole
+    // window. `abortSignal` carries our separate total-budget guard.
+    timeout: budget && { stepMs: budget.stepMs, toolMs: budget.toolMs },
+    abortSignal: guard.signal,
+    maxRetries: MODEL_MAX_RETRIES,
+    onStepFinish: (step: StepResult<ToolSet>) => {
+      const toolCalls = (step.toolCalls ?? []).map((tc) => {
+        const r = step.toolResults?.find(
+          (rr) => rr.toolCallId === tc.toolCallId,
+        )
+        return {
+          toolCallId: tc.toolCallId,
+          toolName: tc.toolName,
+          input: tc.input as unknown,
+          output: r && 'output' in r ? (r.output as unknown) : null,
+        }
+      })
+      stepTraces.push({
+        stepNumber: step.stepNumber,
+        finishReason: step.finishReason,
+        reasoning: step.reasoningText,
+        text: step.text,
+        toolCalls,
+        usage: step.usage
+          ? {
+              inputTokens: step.usage.inputTokens,
+              outputTokens: step.usage.outputTokens,
+            }
+          : undefined,
+      })
+      totalUsage.inputTokens += step.usage?.inputTokens ?? 0
+      totalUsage.outputTokens += step.usage?.outputTokens ?? 0
+      // Not cumulative — this is the size of the conversation as sent for THIS
+      // turn, which is exactly what the context guard needs to read. The jump
+      // since the previous turn is what one more turn would add again; keep the
+      // largest seen, since the guard has to survive the worst tool result this
+      // agent actually produces, not the average one.
+      const input = step.usage?.inputTokens
+      if (input != null) {
+        if (lastInputTokens > 0) {
+          observedGrowth = Math.max(observedGrowth, input - lastInputTokens)
+        }
+        lastInputTokens = input
+      }
+      if (sink) {
+        // DEV feed (always): the model's reasoning + a raw line per tool call.
+        // These power the run viewer's Logs panel and never reach the end user.
+        const reasoning = step.reasoningText?.trim()
+        if (reasoning) {
+          void sink.log?.({ level: 'thinking', message: reasoning })
+        }
+        for (const tc of toolCalls) {
+          void sink.log?.({
+            level: 'tool',
+            message: `Called ${tc.toolName}`,
+            meta: { tool: tc.toolName, input: tc.input },
+          })
+        }
+        // USER-FACING feed: mirror the agent's internals into the curated
+        // `progress` level so the end-user progress surface can show reasoning
+        // interleaved with human-readable tool statements. Each stream is gated
+        // independently (the node's dynamic "Inform user" sub-toggles): reasoning
+        // by `streamReasoning`, tool announcements by `streamToolCalls`. A tool
+        // without a `statusLabel` template contributes nothing.
         //
-        // With no growth sample yet (turn 2), the conversation's current size
-        // stands in for its growth — i.e. assume it could double. That's
-        // deliberately pessimistic and costs nothing in the normal case, where an
-        // opening prompt is a rounding error against the window; where it DOES
-        // bite, the conversation is already vast and stopping is right.
-        if (answerReserveTokens != null && lastInputTokens > 0) {
-          const growth = observedGrowth > 0 ? observedGrowth : lastInputTokens
-          const projected = lastInputTokens + growth
-          if (projected + answerReserveTokens > contextLength!) {
-            stoppedOnContextLimit = true
-            stepMustAnswer = true
-            void sink?.log?.({
-              level: 'info',
-              message: `→ ${modelId} (turn ${stepNumber + 1}/${maxTurns}, another turn would reach ~${projected.toLocaleString()} of ${contextLength!.toLocaleString()} — answering while there is room to)`,
-              meta: {
-                lastInputTokens,
-                observedGrowth: growth,
-                projected,
-                answerReserveTokens,
-                contextLength,
-              },
-            })
-            return { toolChoice: 'none' as const }
-          }
-        }
-        // Spend ceiling reached. Deliberately NOT an error: the whole point of
-        // the budget is to reach the end of the money with an answer in hand,
-        // rather than let the node's wall-clock guard fail the run outright with
-        // nothing to show for what it already spent.
-        const spent = totalUsage.inputTokens + totalUsage.outputTokens
-        if (toolTokenBudget != null && spent >= toolTokenBudget) {
-          stoppedOnTokenBudget = true
-          stepMustAnswer = true
-          void sink?.log?.({
-            level: 'info',
-            message: `→ ${modelId} (turn ${stepNumber + 1}/${maxTurns}, token budget reached at ${spent.toLocaleString()} — answering with what it has)`,
-            meta: { spent, toolTokenBudget },
+        // `meta.progress` tags WHICH of the two a line is, so a progress
+        // surface can render them distinctly (a thinking vs a tool icon)
+        // instead of one undifferentiated list. An untagged progress line is
+        // a plain node step (see `emitNodeStartProgress`).
+        if (streamReasoning && reasoning) {
+          void sink.log?.({
+            level: 'progress',
+            message: reasoning,
+            meta: { progress: 'reasoning' },
           })
-          return { toolChoice: 'none' as const }
         }
-        // Opt-in: deny the model the option of answering turn 1 from what it
-        // already "knows". Only turn 1 — every later turn is free to answer, so
-        // this buys a first look at the tools without trapping the loop.
-        if (stepNumber === 0 && forceFirstTool) {
-          void sink?.log?.({
-            level: 'info',
-            message: `→ ${modelId} (turn 1/${maxTurns}, tool call required)`,
-          })
-          return { toolChoice: 'required' as const }
-        }
-        return {}
-      },
-      // Per-round-trip and per-tool watchdogs, native to the AI SDK: each is
-      // armed and cleared around its own call, so a single stalled request or
-      // hung tool fails fast instead of silently consuming the node's whole
-      // window. `abortSignal` carries our separate total-budget guard.
-      timeout: budget && { stepMs: budget.stepMs, toolMs: budget.toolMs },
-      abortSignal: guard.signal,
-      maxRetries: MODEL_MAX_RETRIES,
-      onStepFinish: (step: StepResult<ToolSet>) => {
-        const toolCalls = (step.toolCalls ?? []).map((tc) => {
-          const r = step.toolResults?.find(
-            (rr) => rr.toolCallId === tc.toolCallId,
-          )
-          return {
-            toolCallId: tc.toolCallId,
-            toolName: tc.toolName,
-            input: tc.input as unknown,
-            output: r && 'output' in r ? (r.output as unknown) : null,
-          }
-        })
-        stepTraces.push({
-          stepNumber: step.stepNumber,
-          finishReason: step.finishReason,
-          reasoning: step.reasoningText,
-          text: step.text,
-          toolCalls,
-          usage: step.usage
-            ? {
-                inputTokens: step.usage.inputTokens,
-                outputTokens: step.usage.outputTokens,
-              }
-            : undefined,
-        })
-        totalUsage.inputTokens += step.usage?.inputTokens ?? 0
-        totalUsage.outputTokens += step.usage?.outputTokens ?? 0
-        // Not cumulative — this is the size of the conversation as sent for THIS
-        // turn, which is exactly what the context guard needs to read. The jump
-        // since the previous turn is what one more turn would add again; keep the
-        // largest seen, since the guard has to survive the worst tool result this
-        // agent actually produces, not the average one.
-        const input = step.usage?.inputTokens
-        if (input != null) {
-          if (lastInputTokens > 0) {
-            observedGrowth = Math.max(observedGrowth, input - lastInputTokens)
-          }
-          lastInputTokens = input
-        }
-        if (sink) {
-          // DEV feed (always): the model's reasoning + a raw line per tool call.
-          // These power the run viewer's Logs panel and never reach the end user.
-          const reasoning = step.reasoningText?.trim()
-          if (reasoning) {
-            void sink.log?.({ level: 'thinking', message: reasoning })
-          }
+        if (streamToolCalls) {
           for (const tc of toolCalls) {
-            void sink.log?.({
-              level: 'tool',
-              message: `Called ${tc.toolName}`,
-              meta: { tool: tc.toolName, input: tc.input },
-            })
-          }
-          // USER-FACING feed: mirror the agent's internals into the curated
-          // `progress` level so the end-user progress surface can show reasoning
-          // interleaved with human-readable tool statements. Each stream is gated
-          // independently (the node's dynamic "Inform user" sub-toggles): reasoning
-          // by `streamReasoning`, tool announcements by `streamToolCalls`. A tool
-          // without a `statusLabel` template contributes nothing.
-          //
-          // `meta.progress` tags WHICH of the two a line is, so a progress
-          // surface can render them distinctly (a thinking vs a tool icon)
-          // instead of one undifferentiated list. An untagged progress line is
-          // a plain node step (see `emitNodeStartProgress`).
-          if (streamReasoning && reasoning) {
-            void sink.log?.({
-              level: 'progress',
-              message: reasoning,
-              meta: { progress: 'reasoning' },
-            })
-          }
-          if (streamToolCalls) {
-            for (const tc of toolCalls) {
-              const template = toolStatusLabels?.[tc.toolName]
-              const message =
-                template && interpolateUserText(template, tc.input).trim()
-              if (message) {
-                void sink.log?.({
-                  level: 'progress',
-                  message,
-                  meta: { progress: 'tool', tool: tc.toolName },
-                })
-              }
+            const template = toolStatusLabels?.[tc.toolName]
+            const message =
+              template && interpolateUserText(template, tc.input).trim()
+            if (message) {
+              void sink.log?.({
+                level: 'progress',
+                message,
+                meta: { progress: 'tool', tool: tc.toolName },
+              })
             }
           }
-          // A step that called tools isn't the last one: the loop is about to
-          // open another round-trip, and go quiet again for however long that
-          // takes. Mark the boundary so the gap in the feed is attributable.
-          if (toolCalls.length > 0 && step.stepNumber + 1 < maxTurns) {
-            void sink.log?.({
-              level: 'info',
-              message: `→ ${modelId} (turn ${step.stepNumber + 2}/${maxTurns})`,
-            })
-          }
         }
-      },
+        // A step that called tools isn't the last one: the loop is about to
+        // open another round-trip, and go quiet again for however long that
+        // takes. Mark the boundary so the gap in the feed is attributable.
+        if (toolCalls.length > 0 && step.stepNumber + 1 < maxTurns) {
+          void sink.log?.({
+            level: 'info',
+            message: `→ ${modelId} (turn ${step.stepNumber + 2}/${maxTurns})`,
+          })
+        }
+      }
+    },
   }
 
   // ONE options object, driven two ways. `streamText` and `generateText` take

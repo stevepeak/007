@@ -34,9 +34,9 @@ export function buildDashboardHandlers<TDeps>(
       // so this assignment is what makes any drift between them a compile error.
       const result: WfDashboardResult = {
         ...stats,
-        recentFailures: stats.recentFailures.map((r) =>
-          runSummary(r, opts.sentryTraceUrl),
-        ),
+        recentFailures: stats.recentFailures.map((r) => {
+          return runSummary(r, opts.sentryTraceUrl)
+        }),
       }
       return result
     },

@@ -118,237 +118,223 @@ export function AgentConfigPanel({
     )
   }
 
-
   return (
-      <div className="space-y-6">
-        {/* Model */}
-        <EditorSection
-          icon={Cpu}
-          title="Model"
-          description="The LLM that powers this agent."
-        >
-          <ModelSelect
-            value={config.modelId}
-            onChange={patchModel}
-            // Gate the picker on what THIS agent needs: a tool-calling model
-            // when tools are attached, structured output for a Yes/No or
-            // structured result (both go through `generateObject`), and a
-            // reasoning model when the agent is set to think before answering.
-            // The picker is the PRIMARY guard — a model that can't meet a
-            // requirement is never offered — and the per-section disabled states
-            // below are the backstop for a config that arrived some other way
-            // (a spec import, or a catalog refresh that changed a model).
-            requirements={{
-              tools: config.toolIds.length > 0,
-              structuredOutput:
-                config.output.kind === 'object' ||
-                config.output.kind === 'boolean',
-              reasoning: config.reasoning,
-            }}
-          />
-        </EditorSection>
+    <div className="space-y-6">
+      {/* Model */}
+      <EditorSection
+        icon={Cpu}
+        title="Model"
+        description="The LLM that powers this agent."
+      >
+        <ModelSelect
+          value={config.modelId}
+          onChange={patchModel}
+          // Gate the picker on what THIS agent needs: a tool-calling model
+          // when tools are attached, structured output for a Yes/No or
+          // structured result (both go through `generateObject`), and a
+          // reasoning model when the agent is set to think before answering.
+          // The picker is the PRIMARY guard — a model that can't meet a
+          // requirement is never offered — and the per-section disabled states
+          // below are the backstop for a config that arrived some other way
+          // (a spec import, or a catalog refresh that changed a model).
+          requirements={{
+            tools: config.toolIds.length > 0,
+            structuredOutput:
+              config.output.kind === 'object' ||
+              config.output.kind === 'boolean',
+            reasoning: config.reasoning,
+          }}
+        />
+      </EditorSection>
 
-        {/* System Prompt */}
-        <EditorSection
-          icon={MessageSquareText}
-          title="System Prompt"
-          description="The system instructions that define what this agent does."
-        >
-          <PromptBodyEditor
-            initialBody={initialConfig.prompt}
-            onChange={(body) => patch({ prompt: body })}
-            registerSetBody={registerSetBody}
-          />
-        </EditorSection>
+      {/* System Prompt */}
+      <EditorSection
+        icon={MessageSquareText}
+        title="System Prompt"
+        description="The system instructions that define what this agent does."
+      >
+        <PromptBodyEditor
+          initialBody={initialConfig.prompt}
+          onChange={(body) => patch({ prompt: body })}
+          registerSetBody={registerSetBody}
+        />
+      </EditorSection>
 
-        {/* Input — the peer of "Expected output": what this agent
+      {/* Input — the peer of "Expected output": what this agent
         receives. Sits directly under the system prompt because the two
         are one authoring act now that nothing arrives implicitly. */}
-        <EditorSection
-          icon={MessagesSquare}
-          title="Input"
-          description="Where this agent's messages come from, and the data it runs on."
-        >
-          <AgentInputEditor
-            inputKind={config.inputKind}
-            userPrompt={config.userPrompt}
-            initialUserPrompt={initialConfig.userPrompt}
-            onChange={patch}
-            registerSetUserPrompt={registerSetUserPrompt}
-          />
-        </EditorSection>
+      <EditorSection
+        icon={MessagesSquare}
+        title="Input"
+        description="Where this agent's messages come from, and the data it runs on."
+      >
+        <AgentInputEditor
+          inputKind={config.inputKind}
+          userPrompt={config.userPrompt}
+          initialUserPrompt={initialConfig.userPrompt}
+          onChange={patch}
+          registerSetUserPrompt={registerSetUserPrompt}
+        />
+      </EditorSection>
 
-        {/* Tools — folded away when the agent has none, same as
+      {/* Tools — folded away when the agent has none, same as
         Sub-agents: the header stays discoverable, the picker doesn't
         take the space until it's actually in use. */}
-        <EditorSection
-          icon={Wrench}
-          title="Tools"
-          collapsible
-          defaultCollapsed={config.toolIds.length === 0}
-          description="Tools the agent may call while it works."
-        >
-          <ToolPicker
-            tools={aiTools}
-            selectedIds={config.toolIds}
-            onChange={(toolIds) =>
-              patchToolsAndRetireLoop({ toolIds })
-            }
-            disabled={modelLacksTools}
-            disabledReason={`${selectedModel?.label ?? 'The selected model'} can’t call tools — pick a tool-calling model to attach tools.`}
-          />
-        </EditorSection>
+      <EditorSection
+        icon={Wrench}
+        title="Tools"
+        collapsible
+        defaultCollapsed={config.toolIds.length === 0}
+        description="Tools the agent may call while it works."
+      >
+        <ToolPicker
+          tools={aiTools}
+          selectedIds={config.toolIds}
+          onChange={(toolIds) => {
+            return patchToolsAndRetireLoop({ toolIds })
+          }}
+          disabled={modelLacksTools}
+          disabledReason={`${selectedModel?.label ?? 'The selected model'} can’t call tools — pick a tool-calling model to attach tools.`}
+        />
+      </EditorSection>
 
-        {/* Sub-agents (delegation) — delegation is the exception, not the
+      {/* Sub-agents (delegation) — delegation is the exception, not the
         norm, so an agent with none opens folded: the header keeps it
         discoverable without spending a screenful of picker and
         guardrails on a feature this agent isn't using. */}
-        <EditorSection
-          icon={Users}
-          title="Sub-agents"
-          collapsible
-          defaultCollapsed={config.subAgents.targets.length === 0}
-          description={
-            <>
-              Agents or workflows this agent may spawn as sub-agents.
-              It gets a tool to launch each in the background and an{' '}
-              <code className="text-[11px]">await_subagents</code>{' '}
-              tool to gather their results — like Claude Code's
-              sub-agents.
-            </>
-          }
-        >
-          <SubAgentPicker
-            value={config.subAgents}
-            onChange={(subAgents) =>
-              patchToolsAndRetireLoop({ subAgents })
-            }
-            currentAgentId={agentId}
-          />
-        </EditorSection>
-
-        {/* Expected output */}
-        <EditorSection
-          icon={Braces}
-          title="Expected output"
-          description="The shape of the result the agent must return."
-        >
-          <AgentOutputEditor
-            value={config.output}
-            onChange={(output) => patch({ output })}
-            structuredDisabled={modelLacksStructuredOutput}
-            structuredDisabledReason={`${selectedModel?.label ?? 'The selected model'} doesn’t support structured output — only a Text result is available.`}
-            copilotContext={schemaCopilotContext}
-            source={zodSource}
-            onSourceEdit={editZodSource}
-          />
-        </EditorSection>
-
-        <AgentBudgetSection
-          config={config}
-          patch={patch}
-          hasToolsOrSubAgents={hasToolsOrSubAgents}
-          modelLabel={selectedModel?.label}
-          contextLength={selectedModel?.contextLength}
-          costPerMTok={selectedModel?.costPerMTok}
+      <EditorSection
+        icon={Users}
+        title="Sub-agents"
+        collapsible
+        defaultCollapsed={config.subAgents.targets.length === 0}
+        description={
+          <>
+            Agents or workflows this agent may spawn as sub-agents. It gets a
+            tool to launch each in the background and an{' '}
+            <code className="text-[11px]">await_subagents</code> tool to gather
+            their results — like Claude Code's sub-agents.
+          </>
+        }
+      >
+        <SubAgentPicker
+          value={config.subAgents}
+          onChange={(subAgents) => {
+            return patchToolsAndRetireLoop({ subAgents })
+          }}
+          currentAgentId={agentId}
         />
+      </EditorSection>
 
-        {/* Settings — behavior switches that aren't limits. What the
+      {/* Expected output */}
+      <EditorSection
+        icon={Braces}
+        title="Expected output"
+        description="The shape of the result the agent must return."
+      >
+        <AgentOutputEditor
+          value={config.output}
+          onChange={(output) => patch({ output })}
+          structuredDisabled={modelLacksStructuredOutput}
+          structuredDisabledReason={`${selectedModel?.label ?? 'The selected model'} doesn’t support structured output — only a Text result is available.`}
+          copilotContext={schemaCopilotContext}
+          source={zodSource}
+          onSourceEdit={editZodSource}
+        />
+      </EditorSection>
+
+      <AgentBudgetSection
+        config={config}
+        patch={patch}
+        hasToolsOrSubAgents={hasToolsOrSubAgents}
+        modelLabel={selectedModel?.label}
+        contextLength={selectedModel?.contextLength}
+        costPerMTok={selectedModel?.costPerMTok}
+      />
+
+      {/* Settings — behavior switches that aren't limits. What the
       agent is FED moved out to its own "Input" section, next to the
       prompt it belongs with. */}
-        <EditorSection
-          icon={Settings2}
-          title="Settings"
-          description="How the agent behaves while it works."
+      <EditorSection
+        icon={Settings2}
+        title="Settings"
+        description="How the agent behaves while it works."
+      >
+        <label
+          className={cn(
+            'flex items-start gap-2.5',
+            requireToolReason
+              ? 'cursor-not-allowed opacity-60'
+              : 'cursor-pointer',
+          )}
         >
-          <label
-            className={cn(
-              'flex items-start gap-2.5',
-              requireToolReason
-                ? 'cursor-not-allowed opacity-60'
-                : 'cursor-pointer',
-            )}
-          >
-            <span className="min-w-0 flex-1">
-              <span className="text-foreground block text-sm font-medium">
-                Require a tool or agent call on the first turn
-              </span>
-              <span className="mt-0.5 block text-xs text-neutral-400">
-                The agent must call a tool or spawn a sub-agent before
-                it may answer, instead of replying from what the model
-                already knows. Use it when an answer is only
-                trustworthy if the agent looked something up or
-                delegated first. Later turns are unaffected — it may
-                answer as soon as it has read the results.
-              </span>
+          <span className="min-w-0 flex-1">
+            <span className="text-foreground block text-sm font-medium">
+              Require a tool or agent call on the first turn
             </span>
-            <Checkbox
-              className="mt-0.5"
-              checked={
-                config.requireToolFirstTurn && !requireToolReason
-              }
-              disabled={!!requireToolReason}
-              onChange={(e) =>
-                patch({ requireToolFirstTurn: e.target.checked })
-              }
-            />
-          </label>
-          {requireToolReason ? (
-            <p className="text-xs text-amber-600">
-              {requireToolReason}
-            </p>
-          ) : null}
-          <label
-            className={cn(
-              'flex items-start gap-2.5',
-              modelLacksReasoning
-                ? 'cursor-not-allowed opacity-60'
-                : 'cursor-pointer',
-            )}
-          >
-            <span className="min-w-0 flex-1">
-              <span className="text-foreground block text-sm font-medium">
-                Think before answering
-              </span>
-              <span className="mt-0.5 block text-xs text-neutral-400">
-                The model reasons through the problem in a separate
-                pass before it starts answering. It costs a full extra
-                generation — seconds on a short task, minutes on a
-                long one — so it is off unless the work earns it.
-                <br />
-                <strong className="text-neutral-300">
-                  Turn it on
-                </strong>{' '}
-                when the agent has to decide something and a wrong
-                call is expensive: weighing documents against each
-                other, judgement calls like conflict or risk checks,
-                long tool loops where the next step depends on reading
-                the last one properly, or open-ended questions.
-                <br />
-                <strong className="text-neutral-300">
-                  Leave it off
-                </strong>{' '}
-                when the answer is already in the input and the job is
-                to reshape it: extracting to a schema, classifying,
-                summarizing one passage — and especially for per-item
-                work inside a loop, where the cost multiplies by the
-                number of items.
-              </span>
+            <span className="mt-0.5 block text-xs text-neutral-400">
+              The agent must call a tool or spawn a sub-agent before it may
+              answer, instead of replying from what the model already knows. Use
+              it when an answer is only trustworthy if the agent looked
+              something up or delegated first. Later turns are unaffected — it
+              may answer as soon as it has read the results.
             </span>
-            <Checkbox
-              className="mt-0.5"
-              checked={config.reasoning && !modelLacksReasoning}
-              disabled={modelLacksReasoning}
-              onChange={(e) => patch({ reasoning: e.target.checked })}
-            />
-          </label>
-          {modelLacksReasoning ? (
-            <p className="text-xs text-amber-600">
-              {selectedModel?.label ?? 'This model'} does not support
-              reasoning.
-            </p>
-          ) : null}
-        </EditorSection>
-      </div>
+          </span>
+          <Checkbox
+            className="mt-0.5"
+            checked={config.requireToolFirstTurn && !requireToolReason}
+            disabled={!!requireToolReason}
+            onChange={(e) => {
+              return patch({ requireToolFirstTurn: e.target.checked })
+            }}
+          />
+        </label>
+        {requireToolReason ? (
+          <p className="text-xs text-amber-600">{requireToolReason}</p>
+        ) : null}
+        <label
+          className={cn(
+            'flex items-start gap-2.5',
+            modelLacksReasoning
+              ? 'cursor-not-allowed opacity-60'
+              : 'cursor-pointer',
+          )}
+        >
+          <span className="min-w-0 flex-1">
+            <span className="text-foreground block text-sm font-medium">
+              Think before answering
+            </span>
+            <span className="mt-0.5 block text-xs text-neutral-400">
+              The model reasons through the problem in a separate pass before it
+              starts answering. It costs a full extra generation — seconds on a
+              short task, minutes on a long one — so it is off unless the work
+              earns it.
+              <br />
+              <strong className="text-neutral-300">Turn it on</strong> when the
+              agent has to decide something and a wrong call is expensive:
+              weighing documents against each other, judgement calls like
+              conflict or risk checks, long tool loops where the next step
+              depends on reading the last one properly, or open-ended questions.
+              <br />
+              <strong className="text-neutral-300">Leave it off</strong> when
+              the answer is already in the input and the job is to reshape it:
+              extracting to a schema, classifying, summarizing one passage — and
+              especially for per-item work inside a loop, where the cost
+              multiplies by the number of items.
+            </span>
+          </span>
+          <Checkbox
+            className="mt-0.5"
+            checked={config.reasoning && !modelLacksReasoning}
+            disabled={modelLacksReasoning}
+            onChange={(e) => patch({ reasoning: e.target.checked })}
+          />
+        </label>
+        {modelLacksReasoning ? (
+          <p className="text-xs text-amber-600">
+            {selectedModel?.label ?? 'This model'} does not support reasoning.
+          </p>
+        ) : null}
+      </EditorSection>
+    </div>
   )
 }

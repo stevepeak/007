@@ -128,13 +128,14 @@ export async function executeSubgraph<TDeps>(
   // scope onto every row. Omitted entirely when no recorder is wired.
   let seq = 0
   const rec = record
-    ? (args: Omit<Parameters<RunRecorder['record']>[0], 'sequence'>) =>
-        record.recorder.record({
+    ? (args: Omit<Parameters<RunRecorder['record']>[0], 'sequence'>) => {
+        return record.recorder.record({
           ...args,
           parentNodeId: record.parentNodeId,
           itemIndex: record.itemIndex,
           sequence: seq++,
         })
+      }
     : null
 
   // The subgraph trigger is identity — its output IS the item.

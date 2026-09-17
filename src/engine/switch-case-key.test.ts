@@ -16,9 +16,9 @@ describe('nextSwitchCaseKey', () => {
   })
 
   test('rolls past Z into the two-letter range', () => {
-    const alphabet = Array.from({ length: 26 }, (_, i) =>
-      String.fromCharCode(65 + i),
-    )
+    const alphabet = Array.from({ length: 26 }, (_, i) => {
+      return String.fromCharCode(65 + i)
+    })
     expect(nextSwitchCaseKey(alphabet)).toBe('AA')
     expect(nextSwitchCaseKey([...alphabet, 'AA'])).toBe('AB')
   })

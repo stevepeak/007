@@ -4,6 +4,10 @@ import {
   type WorkflowStep,
 } from 'cloudflare:workers'
 
+import {
+  loadConnectorCatalog,
+  withConnectorTools,
+} from '../connectors/registry'
 import type { WfSdkConfig } from '../engine/config'
 import {
   isDecisionKind,
@@ -20,10 +24,6 @@ import type { RecordStepArgs } from '../engine/run-recorder'
 import { Scheduler, WorkflowStalledError } from '../engine/scheduler'
 import type { StreamSink } from '../engine/stream-sink'
 import { resolveTriggerInput } from '../engine/trigger-registry'
-import {
-  loadConnectorCatalog,
-  withConnectorTools,
-} from '../connectors/registry'
 import { createWfDb } from '../storage/client'
 import {
   failRun,
@@ -52,9 +52,9 @@ import {
   resolveTelemetrySink,
   runDims,
 } from './graph-workflow-telemetry'
+import { runContextFor } from './run-context'
 import type { RunRoom } from './run-room'
 import { createCountingStep, createRunCounters } from './step-counter'
-import { runContextFor } from './run-context'
 
 // The minimal binding contract a host Env must satisfy for the durable backend.
 // The host's full Env is a superset; this is what `GraphWorkflow` touches.
@@ -321,14 +321,15 @@ export function makeGraphWorkflow<
 
       // Each recorder is built inside a step.do closure — `createWfDb` wraps a
       // live binding that cannot cross a step boundary.
-      const recordOne = (args: RecordStepArgs) =>
-        createTelemeteredRecorder({
+      const recordOne = (args: RecordStepArgs) => {
+        return createTelemeteredRecorder({
           db: createWfDb(env.WF_DB),
           runId: p.workflowRunId,
           telemetry,
           dims,
           prices,
         }).record(args)
+      }
 
       // Resolve every floating reference (prompts) to its latest published
       // version once, freeze it onto the run, and reuse it for the whole walk —
@@ -394,15 +395,19 @@ export function makeGraphWorkflow<
       // binding is legal. Off entirely unless the host wired an encryption key.
       const connectorSecret = config.resolveConnectorSecret?.({ env })
       const connectorCatalog = connectorSecret
-        ? await stepDo(step, 'load-connectors', async () =>
-            await loadConnectorCatalog(createWfDb(env.WF_DB)),
-          )
+        ? await stepDo(step, 'load-connectors', async () => {
+            return await loadConnectorCatalog(createWfDb(env.WF_DB))
+          })
         : []
       const runConfig = connectorSecret
-        ? withConnectorTools<TDeps, WfSdkConfig<TDeps>>(config, connectorCatalog, {
-            resolveDb: () => createWfDb(env.WF_DB),
-            resolveSecret: () => connectorSecret,
-          })
+        ? withConnectorTools<TDeps, WfSdkConfig<TDeps>>(
+            config,
+            connectorCatalog,
+            {
+              resolveDb: () => createWfDb(env.WF_DB),
+              resolveSecret: () => connectorSecret,
+            },
+          )
         : config
 
       // Shared run-level locals threaded into the hoisted dispatch/log/finish
@@ -432,16 +437,16 @@ export function makeGraphWorkflow<
       // replay.
       let sequence = 0
       const triggerSeq = sequence++
-      await stepDo(step, `step:${trigger.id}`, () =>
-        recordOne({
+      await stepDo(step, `step:${trigger.id}`, () => {
+        return recordOne({
           nodeId: trigger.id,
           nodeKind: 'trigger',
           sequence: triggerSeq,
           input: validatedTriggerInput,
           status: 'completed',
           output: validatedTriggerInput,
-        }),
-      )
+        })
+      })
       scheduler.seedTrigger(validatedTriggerInput)
 
       // Resume: replay a prior failed run's completed steps into this fresh run
@@ -452,9 +457,9 @@ export function makeGraphWorkflow<
       // returns them and they re-execute normally below.
       const resumeFromRunId = p.resumeFromRunId
       if (resumeFromRunId) {
-        const prior = await stepDo(step, 'load-resume', () =>
-          loadResumeSteps(createWfDb(env.WF_DB), resumeFromRunId),
-        )
+        const prior = await stepDo(step, 'load-resume', () => {
+          return loadResumeSteps(createWfDb(env.WF_DB), resumeFromRunId)
+        })
         for (const s of prior) {
           const seedSeq = sequence++
           const branchResult = s.branchResult as {
@@ -466,8 +471,8 @@ export function makeGraphWorkflow<
           // decision for the trace, but seed the scheduler with the passthrough
           // input so downstream `ref`s resolve exactly as they did originally.
           const isDecision = isDecisionKind(s.nodeKind)
-          await stepDo(step, `seed:${s.nodeId}`, () =>
-            recordOne({
+          await stepDo(step, `seed:${s.nodeId}`, () => {
+            return recordOne({
               nodeId: s.nodeId,
               nodeKind: s.nodeKind as WfNodeKind,
               sequence: seedSeq,
@@ -476,8 +481,8 @@ export function makeGraphWorkflow<
               output: s.output,
               meta: s.meta,
               branchResult,
-            }),
-          )
+            })
+          })
           scheduler.report(s.nodeId, {
             output: isDecision ? s.input : s.output,
             branchResult: branchResult?.result,
@@ -517,16 +522,16 @@ export function makeGraphWorkflow<
             const outSeq = sequence++
             const outputNodeId = out.nodeId
             const output = out.output
-            await stepDo(step, `step:${outputNodeId}`, () =>
-              recordOne({
+            await stepDo(step, `step:${outputNodeId}`, () => {
+              return recordOne({
                 nodeId: outputNodeId,
                 nodeKind: 'output',
                 sequence: outSeq,
                 input: output,
                 status: 'completed',
                 output,
-              }),
-            )
+              })
+            })
             // Settle it so the walk moves on to whatever else is ready instead
             // of being handed the same Output forever. A second Output on
             // another arm is recorded for the trace but never re-delivers: the
@@ -648,12 +653,12 @@ export function makeGraphWorkflow<
         // node's timeout, turning a legible failure into a long stall.
         await reportToParent(ctx, { ok: false, error: message })
         if (config.onRunFailed) {
-          await notifyHost(step, 'on-failed', () =>
-            config.onRunFailed!(runContextFor(p, env), {
+          await notifyHost(step, 'on-failed', () => {
+            return config.onRunFailed!(runContextFor(p, env), {
               error: message,
               workflowRunId: p.workflowRunId,
-            }),
-          )
+            })
+          })
         }
         throw err
       }

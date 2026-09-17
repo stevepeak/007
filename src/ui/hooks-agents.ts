@@ -1,8 +1,4 @@
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import type { AgentConfig } from '../engine/graph'
 import type { AgentPreviewInput, WfChangeSummary } from '../server/protocol'
@@ -40,12 +36,13 @@ export function useAgentVersions(agentId: string) {
     refetchInterval: (query) => {
       const rows = query.state.data
       if (!rows) return false
-      const pending = rows.some(
-        (v) =>
+      const pending = rows.some((v) => {
+        return (
           !v.aiSummaryShort &&
           v.publishedAt != null &&
-          Date.now() - v.publishedAt < 90_000,
-      )
+          Date.now() - v.publishedAt < 90_000
+        )
+      })
       return pending ? 3000 : false
     },
   })
@@ -54,8 +51,9 @@ export function useAgentVersions(agentId: string) {
 export function useSummarizeAgentChanges() {
   const client = useWfClient()
   return useMutation({
-    mutationFn: (input: { agentId: string; config: AgentConfig }) =>
-      client.summarizeAgentChanges(input),
+    mutationFn: (input: { agentId: string; config: AgentConfig }) => {
+      return client.summarizeAgentChanges(input)
+    },
   })
 }
 
@@ -77,8 +75,9 @@ export function useCreateAgent() {
 
 export function useSaveAgentDraft() {
   return useWfMutation(
-    (client, input: { agentId: string; config: AgentConfig }) =>
-      client.updateAgentDraft(input),
+    (client, input: { agentId: string; config: AgentConfig }) => {
+      return client.updateAgentDraft(input)
+    },
     (input) => [keys.agent(input.agentId)],
   )
 }

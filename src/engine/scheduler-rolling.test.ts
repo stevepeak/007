@@ -9,13 +9,19 @@ describe('Scheduler — rolling dispatch', () => {
   // trigger fans out to the answer arm and to a background arm nothing waits on.
   //   t → answer → o
   //   t → side
-  const fanOut = () =>
-    new Scheduler({
+  const fanOut = () => {
+    return new Scheduler({
       version: 1,
       // `side` declared first, so declaration order alone would put it ahead.
-      nodes: [trigger('t'), agent('side'), agent('answer'), output('o', 'answer')],
+      nodes: [
+        trigger('t'),
+        agent('side'),
+        agent('answer'),
+        output('o', 'answer'),
+      ],
       edges: [edge('t', 'side'), edge('t', 'answer'), edge('answer', 'o')],
     })
+  }
 
   test('takeReady puts answer-critical nodes ahead of background ones', () => {
     const s = fanOut()
@@ -105,7 +111,12 @@ describe('Scheduler — rolling dispatch', () => {
       ],
     })
     s.seedTrigger({})
-    expect(s.takeReady().map((i) => i.node.id).sort()).toEqual(['a', 'b'])
+    expect(
+      s
+        .takeReady()
+        .map((i) => i.node.id)
+        .sort(),
+    ).toEqual(['a', 'b'])
 
     s.report('a', { output: { from: 'a' } })
     const claimed = s.takeReady()

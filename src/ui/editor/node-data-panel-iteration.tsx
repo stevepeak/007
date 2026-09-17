@@ -183,9 +183,12 @@ function IterationField({
       <button
         type="button"
         disabled={!isList}
-        onClick={() =>
-          onPick({ kind: 'ref', nodeId, path: field.path }, field.itemSchema)
-        }
+        onClick={() => {
+          return onPick(
+            { kind: 'ref', nodeId, path: field.path },
+            field.itemSchema,
+          )
+        }}
         title={field.description}
         style={{ paddingLeft: depth * 12 + 6 }}
         className={cn(

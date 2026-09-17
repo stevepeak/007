@@ -1,7 +1,11 @@
 import { RUN_STATE_LEVEL } from '../engine/stream-sink'
 import type { WfRunLogDTO } from '../server/protocol'
 
-import type { ActivityNodeRow, ActivityStateRow, ActivityTopRow } from './run-activity-model'
+import type {
+  ActivityNodeRow,
+  ActivityStateRow,
+  ActivityTopRow,
+} from './run-activity-model'
 
 // The run's LIFECYCLE MARKERS — queued / running / done / completed / failed /
 // cancelled — and where each one sits among the node rows.
@@ -67,17 +71,19 @@ export function buildStateRows(logs: WfRunLogDTO[]): StateRowPlacement {
     }
   })
 
-  const pinnedRank = (status: string): number =>
-    status === 'queued' ? 0 : status === 'running' ? 1 : 2
+  const pinnedRank = (status: string): number => {
+    return status === 'queued' ? 0 : status === 'running' ? 1 : 2
+  }
   const leading = rows
     .filter((r) => r.status === 'queued' || r.status === 'running')
     .sort((a, b) => pinnedRank(a.status) - pinnedRank(b.status))
-  const trailing = rows.filter(
-    (r) =>
+  const trailing = rows.filter((r) => {
+    return (
       r.status === 'completed' ||
       r.status === 'failed' ||
-      r.status === 'cancelled',
-  )
+      r.status === 'cancelled'
+    )
+  })
   const floating = rows.filter(
     (r) => !leading.includes(r) && !trailing.includes(r),
   )
@@ -97,8 +103,9 @@ export function interleaveStateRows(
   nodes: Array<{ row: ActivityNodeRow; startTs: number }>,
   { leading, trailing, floating }: StateRowPlacement,
 ): ActivityTopRow[] {
-  const toSeconds = (ms: number): number =>
-    Number.isFinite(ms) ? Math.floor(ms / 1000) : ms
+  const toSeconds = (ms: number): number => {
+    return Number.isFinite(ms) ? Math.floor(ms / 1000) : ms
+  }
 
   const out: ActivityTopRow[] = [...leading]
   let s = 0

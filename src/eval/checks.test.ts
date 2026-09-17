@@ -52,9 +52,9 @@ describe('eval checks schema', () => {
   })
 
   test('rejects an unknown check type', () => {
-    expect(() =>
-      evalCheckSchema.parse({ type: 'telepathy', vibes: 'good' }),
-    ).toThrow()
+    expect(() => {
+      return evalCheckSchema.parse({ type: 'telepathy', vibes: 'good' })
+    }).toThrow()
   })
 
   test('a judge is rubric + where to look + who looks — nothing else', () => {
@@ -82,9 +82,9 @@ describe('eval checks schema', () => {
       ],
     }
     expect(checkTreeSchema.parse(tree)).toEqual(tree)
-    expect(checkTreeSchema.parse(tree).checks.filter(isJudgeCheck)).toHaveLength(
-      1,
-    )
+    expect(
+      checkTreeSchema.parse(tree).checks.filter(isJudgeCheck),
+    ).toHaveLength(1)
   })
 
   test('a sample input is one tagged variant, never a bag of everything', () => {
@@ -99,21 +99,23 @@ describe('eval checks schema', () => {
     }
     expect(evalSampleInputSchema.parse(convo)).toEqual(convo)
     // The old shape is not a valid input — it has to go through the upgrade.
-    expect(() =>
-      evalSampleInputSchema.parse({ promptVariables: { a: 'b' } }),
-    ).toThrow()
+    expect(() => {
+      return evalSampleInputSchema.parse({ promptVariables: { a: 'b' } })
+    }).toThrow()
   })
 
   test('tools are a tri-state; only `mocked` can carry fixtures', () => {
-    expect(evalToolsSchema.parse({ mode: 'frozen' })).toEqual({ mode: 'frozen' })
+    expect(evalToolsSchema.parse({ mode: 'frozen' })).toEqual({
+      mode: 'frozen',
+    })
     expect(evalToolsSchema.parse({ mode: 'mocked' })).toEqual({
       mode: 'mocked',
       fixtures: {},
     })
     // The combination that used to be authorable — and silently meaningless.
-    expect(evalToolsSchema.parse({ mode: 'frozen', fixtures: { a: 1 } })).toEqual(
-      { mode: 'frozen' },
-    )
+    expect(
+      evalToolsSchema.parse({ mode: 'frozen', fixtures: { a: 1 } }),
+    ).toEqual({ mode: 'frozen' })
   })
 })
 
@@ -178,9 +180,9 @@ describe('derived sample layer', () => {
   test('names the layer a sample actually belongs to', () => {
     expect(evalSampleLayer(convo, { mode: 'frozen' })).toBe('synthesis')
     expect(evalSampleLayer(task, { mode: 'live' })).toBe('integration')
-    expect(
-      evalSampleLayer(task, { mode: 'mocked', fixtures: { s: {} } }),
-    ).toBe('trajectory')
+    expect(evalSampleLayer(task, { mode: 'mocked', fixtures: { s: {} } })).toBe(
+      'trajectory',
+    )
     expect(evalSampleLayer(task, { mode: 'mocked', fixtures: {} })).toBe('io')
   })
 
@@ -204,8 +206,8 @@ describe('derived sample layer', () => {
       checkResultSchema.parse({ pass: false, confidence: 9, reason: 'nope' }),
     ).toEqual({ pass: false, confidence: 9, reason: 'nope' })
     // Confidence is out of 10, not a 0..1 float.
-    expect(() =>
-      checkResultSchema.parse({ pass: true, confidence: 11 }),
-    ).toThrow()
+    expect(() => {
+      return checkResultSchema.parse({ pass: true, confidence: 11 })
+    }).toThrow()
   })
 })

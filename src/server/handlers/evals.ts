@@ -1,7 +1,4 @@
-import {
-  changedEvalRowFields,
-  changedEvalSetFields,
-} from '../../engine'
+import { changedEvalRowFields, changedEvalSetFields } from '../../engine'
 import { agentConfigSchema } from '../../engine/graph'
 import {
   collectSeededToolCalls,
@@ -80,7 +77,6 @@ function toGradeSteps(
     meta: s.meta,
   }))
 }
-
 
 // What changed between an eval run and the last one that measured the same
 // samples — the question a moved pass rate always raises.
@@ -251,7 +247,9 @@ export function buildEvalHandlers<TDeps>(
         entityId: setId,
         action: p.archived === true ? 'archive' : 'update',
         fields:
-          before && after ? changedEvalSetFields(before, after) : Object.keys(p),
+          before && after
+            ? changedEvalSetFields(before, after)
+            : Object.keys(p),
         before,
         after,
         note: after?.name ?? before?.name ?? null,
@@ -307,7 +305,9 @@ export function buildEvalHandlers<TDeps>(
         parentId: setId,
         action: before ? 'update' : 'create',
         fields:
-          before && after ? changedEvalRowFields(before, after) : ['input', 'checks'],
+          before && after
+            ? changedEvalRowFields(before, after)
+            : ['input', 'checks'],
         before,
         after,
         note: name,
@@ -453,8 +453,9 @@ export function buildEvalHandlers<TDeps>(
       const steps = toGradeSteps(runResult.steps)
       const env = await c.env()
       // Judge checks resolve their model through the host's live seam.
-      const getModel: GradeModelFactory = (modelId) =>
-        opts.config.getModel(modelId, { triggerKind: 'eval', env })
+      const getModel: GradeModelFactory = (modelId) => {
+        return opts.config.getModel(modelId, { triggerKind: 'eval', env })
+      }
       const defaultJudgeModelId =
         opts.evalJudgeModelId ?? (await opts.config.listModels({ env }))[0]?.id
       const graded = await gradeRow({
@@ -609,13 +610,13 @@ export function buildEvalHandlers<TDeps>(
       })
       return {
         run: evalRunSummary(result.run),
-        results: result.results.map((r) =>
-          evalResultDTO(
+        results: result.results.map((r) => {
+          return evalResultDTO(
             r,
             r.wfRunId ? stats.get(r.wfRunId) : null,
             previous.get(r.rowId)?.hash ?? null,
-          ),
-        ),
+          )
+        }),
         drift: await loadDrift(c, {
           previous,
           setIds: Array.isArray(result.run.setIds)
@@ -624,7 +625,9 @@ export function buildEvalHandlers<TDeps>(
           rowIds: [...new Set(result.results.map((r) => r.rowId))],
           targetId: firstSnapshot?.target.targetId ?? null,
           targetKind:
-            firstSnapshot?.target.targetKind === 'workflow' ? 'workflow' : 'agent',
+            firstSnapshot?.target.targetKind === 'workflow'
+              ? 'workflow'
+              : 'agent',
           until: result.run.createdAt,
         }),
       }

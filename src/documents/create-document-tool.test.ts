@@ -42,12 +42,12 @@ function harness(opts?: { getFacts?: (deps: Deps) => unknown }) {
   })
   if (entry.kind !== 'ai-tool') throw new Error('expected an ai-tool')
   const built = entry.build({ orgId: 'org-1' })
-  const call = (args: unknown): Promise<StoredDocument> =>
+  const call = (args: unknown): Promise<StoredDocument> => {
     // The AI SDK types `execute` loosely; the tool re-parses its own input.
-    (built.execute as (a: unknown, o: unknown) => Promise<StoredDocument>)(
-      args,
-      {},
-    )
+    return (
+      built.execute as (a: unknown, o: unknown) => Promise<StoredDocument>
+    )(args, {})
+  }
   return { entry, call, stored }
 }
 
@@ -188,7 +188,7 @@ describe('documentFilename', () => {
       'Halberd-v.-Sterling-engagement.docx',
     )
     // No path separators can reach the object key.
-    expect(documentFilename('a/b\\c')).toBe('abc.docx')
+    expect(documentFilename(String.raw`a/b\c`)).toBe('abc.docx')
     expect(documentFilename('   ')).toBe('document.docx')
     expect(documentFilename('…')).toBe('document.docx')
   })

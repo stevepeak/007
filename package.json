@@ -75,9 +75,14 @@
     "zod": "^4.6.5"
   },
   "peerDependencies": {
+    "docx": "^9.7.1",
     "react": "^19",
-    "react-dom": "^19",
-    "docx": "^9.7.1"
+    "react-dom": "^19"
+  },
+  "peerDependenciesMeta": {
+    "docx": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260917.1",
@@ -94,10 +99,5 @@
     "react-dom": "^19.3.0",
     "typescript": "^5.9.3",
     "wrangler": "^4.133.0"
-  },
-  "peerDependenciesMeta": {
-    "docx": {
-      "optional": true
-    }
   }
 }

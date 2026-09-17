@@ -9,12 +9,11 @@ export function stableStringify(value: unknown): string {
   if (value && typeof value === 'object') {
     return `{${Object.keys(value as Record<string, unknown>)
       .sort()
-      .map(
-        (k) =>
-          `${JSON.stringify(k)}:${stableStringify(
-            (value as Record<string, unknown>)[k],
-          )}`,
-      )
+      .map((k) => {
+        return `${JSON.stringify(k)}:${stableStringify(
+          (value as Record<string, unknown>)[k],
+        )}`
+      })
       .join(',')}}`
   }
   return JSON.stringify(value ?? null)

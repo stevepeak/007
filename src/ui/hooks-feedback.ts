@@ -40,12 +40,10 @@ export function useSubmitFeedback() {
 // Acknowledge / reopen a subject's feedback (staff triage).
 export function useSetFeedbackAck() {
   return useWfMutation(
-    (client, input: { subjectId: string; acknowledged: boolean }) =>
-      client.setFeedbackAcknowledged(input),
-    (input) => [
-      keys.feedbackAll,
-      keys.feedbackForSubjects([input.subjectId]),
-    ],
+    (client, input: { subjectId: string; acknowledged: boolean }) => {
+      return client.setFeedbackAcknowledged(input)
+    },
+    (input) => [keys.feedbackAll, keys.feedbackForSubjects([input.subjectId])],
   )
 }
 
@@ -53,11 +51,9 @@ export function useSetFeedbackAck() {
 // Invalidates the list + the per-subject hydration the detail view reads.
 export function useSetFeedbackInternalNote() {
   return useWfMutation(
-    (client, input: { subjectId: string; note: string | null }) =>
-      client.setFeedbackInternalNote(input),
-    (input) => [
-      keys.feedbackAll,
-      keys.feedbackForSubjects([input.subjectId]),
-    ],
+    (client, input: { subjectId: string; note: string | null }) => {
+      return client.setFeedbackInternalNote(input)
+    },
+    (input) => [keys.feedbackAll, keys.feedbackForSubjects([input.subjectId])],
   )
 }

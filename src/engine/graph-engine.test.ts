@@ -9,9 +9,9 @@ function graphWithEngine(engine?: string) {
   const g = chainGraph()
   return {
     ...g,
-    nodes: g.nodes.map((n) =>
-      n.id === 't' ? { ...n, config: { ...n.config, engine } } : n,
-    ),
+    nodes: g.nodes.map((n) => {
+      return n.id === 't' ? { ...n, config: { ...n.config, engine } } : n
+    }),
   }
 }
 
@@ -45,9 +45,11 @@ describe('resolveGraphEngine', () => {
     const g = chainGraph()
     const withEngineOnTool = {
       ...g,
-      nodes: g.nodes.map((n) =>
-        n.id === 'boom' ? { ...n, config: { ...n.config, engine: 'inline' } } : n,
-      ),
+      nodes: g.nodes.map((n) => {
+        return n.id === 'boom'
+          ? { ...n, config: { ...n.config, engine: 'inline' } }
+          : n
+      }),
     }
     expect(resolveGraphEngine(withEngineOnTool)).toBe(DEFAULT_WF_ENGINE)
   })

@@ -4,6 +4,8 @@ import { ActivityList } from './activity/activity-list'
 import { AgentsList } from './agents-list'
 import { cn } from './cn'
 import { ComingSoon } from './coming-soon'
+import { ConnectorDetail } from './connectors/connector-detail'
+import { ConnectorsList } from './connectors/connectors-list'
 import { CopilotPanel } from './copilot/copilot-panel'
 import { deriveCopilotContext } from './copilot/view-context'
 import { WfDashboard } from './dashboard'
@@ -16,8 +18,6 @@ import { EvalsList } from './evals/evals-list'
 import { FeedbackDetail } from './feedback-detail'
 import { FeedbackList } from './feedback-list'
 import { useTools } from './hooks'
-import { ConnectorDetail } from './connectors/connector-detail'
-import { ConnectorsList } from './connectors/connectors-list'
 import { McpConnect } from './mcp/mcp-connect'
 import { ModelsList } from './models-list'
 import { useWfNav, WfNavProvider } from './nav'
@@ -265,7 +265,10 @@ function HomeRoutes({
       // the browser comes back from a server we don't control.
       const params = new URLSearchParams(queryString)
       return (
-        <WfShell crumbs={[sectionCrumb('connectors', { current: true })]} scroll>
+        <WfShell
+          crumbs={[sectionCrumb('connectors', { current: true })]}
+          scroll
+        >
           <ConnectorsList
             connectedId={params.get('connected')}
             errorMessage={params.get('connector_error')}
@@ -332,7 +335,9 @@ function AssetRoute({ path }: { path: string }) {
         <RunPage
           runId={asset.runId}
           initialNodeId={query.get('node')}
-          initialItemIndex={Number.isSafeInteger(item) && item >= 0 ? item : null}
+          initialItemIndex={
+            Number.isSafeInteger(item) && item >= 0 ? item : null
+          }
           className="h-full"
         />
       )

@@ -28,26 +28,26 @@ import { AGENT_NO_OUTPUT, isFatalAgentError } from './agent-generation'
 // write its answer, and an empty answer that arrives anyway fails the node
 // loudly instead of propagating.
 
-function MANIFEST (maxTurns: number): WfRunManifestEntry[] {
+function MANIFEST(maxTurns: number): WfRunManifestEntry[] {
   return [
-  {
-    kind: 'agent',
-    id: 'bot',
-    pinnedVersion: null,
-    versionId: 'v1',
-    versionNumber: 1,
-    name: 'Researcher',
-    config: makeAgentConfig({
-      modelId: 'mock',
-      prompt: 'Research, then answer.',
-      userPrompt: 'Go.',
-      inputKind: 'task' as const,
-      toolIds: ['lookup'],
-      maxTurns,
-      output: { kind: 'text' },
-    }),
-  },
-]
+    {
+      kind: 'agent',
+      id: 'bot',
+      pinnedVersion: null,
+      versionId: 'v1',
+      versionNumber: 1,
+      name: 'Researcher',
+      config: makeAgentConfig({
+        modelId: 'mock',
+        prompt: 'Research, then answer.',
+        userPrompt: 'Go.',
+        inputKind: 'task' as const,
+        toolIds: ['lookup'],
+        maxTurns,
+        output: { kind: 'text' },
+      }),
+    },
+  ]
 }
 
 const NODE: AgentNode = {
@@ -67,12 +67,13 @@ const REGISTRY: ToolRegistry<unknown> = new Map([
       kind: 'ai-tool' as const,
       name: 'Lookup',
       description: 'Looks something up.',
-      build: () =>
-        tool({
+      build: () => {
+        return tool({
           description: 'Looks something up.',
           inputSchema: z.object({ q: z.string() }),
           execute: async () => ({ hit: 'something' }),
-        }),
+        })
+      },
     },
   ],
 ])
@@ -99,7 +100,9 @@ function insatiableResearcher(seen: { toolChoices: unknown[] }) {
                 input: JSON.stringify({ q: 'again' }),
               },
             ],
-        finishReason: toolsDenied ? mockFinish('stop') : mockFinish('tool-calls'),
+        finishReason: toolsDenied
+          ? mockFinish('stop')
+          : mockFinish('tool-calls'),
         usage: mockUsage(1, 1),
         warnings: [],
       }
@@ -107,11 +110,7 @@ function insatiableResearcher(seen: { toolChoices: unknown[] }) {
   })
 }
 
-function run (
-  model: MockLanguageModelV3,
-  maxTurns: number,
-  sink?: StreamSink,
-) {
+function run(model: MockLanguageModelV3, maxTurns: number, sink?: StreamSink) {
   return executeAgentNode<unknown>({
     node: NODE,
     getModel: () => model,
@@ -137,7 +136,9 @@ function streamingSink(): StreamSink & {
     streamed,
     logs,
     delta: (t: string) => void streamed.push(t),
-    log: (entry) => void logs.push({ level: entry.level, message: entry.message }),
+    log: (entry) => {
+      return void logs.push({ level: entry.level, message: entry.message })
+    },
   }
 }
 
@@ -160,10 +161,7 @@ function providerRejection(): APICallError {
  * default `onError` is a bare `console.error`, and it fires before we ever see
  * the chunk. It is not a failing assertion.
  */
-function failingStream(
-  error: unknown,
-  answer?: string,
-): MockLanguageModelV3 {
+function failingStream(error: unknown, answer?: string): MockLanguageModelV3 {
   const chunks: MockStreamPart[] = [{ type: 'stream-start', warnings: [] }]
   if (answer !== undefined) {
     chunks.push(
@@ -205,9 +203,7 @@ describe('agent node — never finishes empty', () => {
     expect(err).toBeInstanceOf(Error)
     expect((err as Error).message).toContain('produced no answer')
     // Marked fatal: a retry burns the same turns to reach the same silence.
-    expect((err as Record<string, unknown>)[AGENT_NO_OUTPUT]).toBe(
-      true,
-    )
+    expect((err as Record<string, unknown>)[AGENT_NO_OUTPUT]).toBe(true)
   })
 })
 
@@ -229,7 +225,9 @@ describe('agent node — a failed stream reports the provider error', () => {
     // readable downstream instead of a message that has to be parsed back out.
     expect(err).toBe(rejection)
     expect(apiErrorDetail(err)?.statusCode).toBe(400)
-    expect(apiErrorDetail(err)?.responseBody).toContain('tool role not supported')
+    expect(apiErrorDetail(err)?.responseBody).toContain(
+      'tool role not supported',
+    )
     // NOT fatal: unlike a spent turn ceiling, the engine's own retry policy
     // decides this one (here, `isRetryable: false` will stop it).
     expect(isFatalAgentError(err)).toBe(false)
@@ -247,7 +245,9 @@ describe('agent node — a failed stream reports the provider error', () => {
 
     // The reader already watched this stream in; throwing it away now would
     // replace a good answer with an error message.
-    expect((result.output as { text: string }).text).toBe('Here is what I found.')
+    expect((result.output as { text: string }).text).toBe(
+      'Here is what I found.',
+    )
     expect(sink.streamed.join('')).toBe('Here is what I found.')
     // Still named in the feed — a recovered-from fault is invisible otherwise.
     expect(sink.logs.some((l) => l.level === 'error')).toBe(true)
@@ -276,20 +276,21 @@ describe('agent node — a failed stream reports the provider error', () => {
   test('an empty answer with no error part still names the failed call', async () => {
     const sink = streamingSink()
     const silent = new MockLanguageModelV3({
-      doStream: async () =>
-        mockStream([
+      doStream: async () => {
+        return mockStream([
           { type: 'stream-start', warnings: [] },
           {
             type: 'finish',
             finishReason: mockFinish('error'),
             usage: mockUsage(1, 0),
           },
-        ]),
+        ])
+      },
     })
 
     const err = await run(silent, 1, sink).catch((e: unknown) => e)
 
-    expect((err as Error).message).toContain("model call failed")
+    expect((err as Error).message).toContain('model call failed')
     expect((err as Error).message).not.toContain('produced no answer')
     // No evidence a second attempt hits the same wall, so not marked fatal.
     expect(isFatalAgentError(err)).toBe(false)
@@ -312,7 +313,9 @@ describe('agent node — cut off before answering', () => {
 
     const err = await run(cutOff, 2).catch((e: unknown) => e)
 
-    expect((err as Error).message).toContain('cut off before it wrote an answer')
+    expect((err as Error).message).toContain(
+      'cut off before it wrote an answer',
+    )
     expect((err as Error).message).not.toContain('produced no answer')
     expect((err as Record<string, unknown>)[AGENT_NO_OUTPUT]).toBe(true)
   })

@@ -76,7 +76,9 @@ end)`
  * frozen manifest, so any one of them is the answer — and an aggregate that
  * doesn't depend on row order is one fewer thing to be flaky about.
  */
-const agentVersionExpr = sql<number | null>`min(json_extract(${wfRunStep.meta}, '$.agentVersion'))`
+const agentVersionExpr = sql<
+  number | null
+>`min(json_extract(${wfRunStep.meta}, '$.agentVersion'))`
 
 /** One run's usage of one model. A run that fired no agents produces no rows. */
 export type RunUsageRow = {
@@ -107,8 +109,8 @@ export async function selectRunUsage(
   // Chunked, and grouped by the chunked column — so per-chunk results
   // concatenate without merging (see `selectChunked`'s correctness rule). The
   // second grouping key, `model`, rides along inside a run and never spans one.
-  return await selectChunked(runIds, (ids) =>
-    db
+  return await selectChunked(runIds, (ids) => {
+    return db
       .select({
         runId: wfRunStep.runId,
         model: modelExpr,
@@ -119,8 +121,8 @@ export async function selectRunUsage(
       })
       .from(wfRunStep)
       .where(and(inArray(wfRunStep.runId, ids), agentStepCondition()))
-      .groupBy(wfRunStep.runId, modelExpr),
-  )
+      .groupBy(wfRunStep.runId, modelExpr)
+  })
 }
 
 /**

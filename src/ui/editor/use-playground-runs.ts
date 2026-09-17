@@ -53,7 +53,6 @@ function agentInputSchema(
   }
 }
 
-
 /** One playground run, kept in the editor's history until the page is left. */
 export type PlaygroundRun = {
   id: number
@@ -85,7 +84,6 @@ export type PlaygroundRun = {
   result: AgentPreviewResult | null
   error: string | null
 }
-
 
 export function usePlaygroundRuns(config: AgentConfig) {
   // Both prompts, since either can declare a variable and both interpolate from
@@ -133,14 +131,12 @@ export function usePlaygroundRuns(config: AgentConfig) {
   // Simulated tools ask for nothing, so an all-simulated run stays one click.
   const contextFields = useToolContextFields().data
   const [context, setContext] = useState<Record<string, string>>({})
-  const neededContext = useMemo(
-    () =>
-      contextFieldsFor(
-        contextFields ?? [],
-        requiredContextKeys(attachedTools, liveTools),
-      ),
-    [contextFields, attachedTools, liveTools],
-  )
+  const neededContext = useMemo(() => {
+    return contextFieldsFor(
+      contextFields ?? [],
+      requiredContextKeys(attachedTools, liveTools),
+    )
+  }, [contextFields, attachedTools, liveTools])
   // Blocking the run is the point: an unscoped live tool doesn't fail, it
   // matches nothing and reports "found nothing" — the one answer you must never
   // be shown while judging whether an agent works.
@@ -161,9 +157,7 @@ export function usePlaygroundRuns(config: AgentConfig) {
 
   function onRun(values: Record<string, unknown>) {
     const input: Record<string, string> = hasVars
-      ? Object.fromEntries(
-          variables.map((v) => [v, toText(values[v]).trim()]),
-        )
+      ? Object.fromEntries(variables.map((v) => [v, toText(values[v]).trim()]))
       : { input: toText(values.input).trim() }
 
     const id = nextIdRef.current++
@@ -218,27 +212,28 @@ export function usePlaygroundRuns(config: AgentConfig) {
             },
       )
       .then(
-        (result) =>
-          setRuns((prev) =>
-            prev.map((r) =>
-              r.id === id ? { ...r, status: 'done', result } : r,
-            ),
-          ),
-        (err: unknown) =>
-          setRuns((prev) =>
-            prev.map((r) =>
-              r.id === id
+        (result) => {
+          return setRuns((prev) => {
+            return prev.map((r) => {
+              return r.id === id ? { ...r, status: 'done', result } : r
+            })
+          })
+        },
+        (err: unknown) => {
+          return setRuns((prev) => {
+            return prev.map((r) => {
+              return r.id === id
                 ? {
                     ...r,
                     status: 'error',
                     error: err instanceof Error ? err.message : String(err),
                   }
-                : r,
-            ),
-          ),
+                : r
+            })
+          })
+        },
       )
   }
-
 
   return {
     variables,

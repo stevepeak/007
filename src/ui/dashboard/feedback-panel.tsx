@@ -23,7 +23,14 @@ import {
   StackedBarShape,
   tooltipValues,
 } from './chart-parts'
-import { CHROME, STATUS, axisProps, formatBucket, formatCount, gridProps } from './chart-theme'
+import {
+  CHROME,
+  STATUS,
+  axisProps,
+  formatBucket,
+  formatCount,
+  gridProps,
+} from './chart-theme'
 
 // Thumbs are polarity, not identity, so this is a diverging bar centred on zero:
 // up above the line, down below it. That shape answers "which way is sentiment
@@ -37,16 +44,14 @@ type Row = { bucket: number; up: number; down: number }
 
 export function FeedbackPanel({ data }: { data: WfDashboardResult }) {
   const { feedback } = data
-  const rows = useMemo<Row[]>(
-    () =>
-      data.buckets.map((bucket, i) => ({
-        bucket,
-        up: feedback.upPoints[i] ?? 0,
-        // Negative so the bar grows downward from the zero line.
-        down: -(feedback.downPoints[i] ?? 0),
-      })),
-    [data.buckets, feedback.upPoints, feedback.downPoints],
-  )
+  const rows = useMemo<Row[]>(() => {
+    return data.buckets.map((bucket, i) => ({
+      bucket,
+      up: feedback.upPoints[i] ?? 0,
+      // Negative so the bar grows downward from the zero line.
+      down: -(feedback.downPoints[i] ?? 0),
+    }))
+  }, [data.buckets, feedback.upPoints, feedback.downPoints])
   const hasTrend = feedback.up > 0 || feedback.down > 0
 
   return (
@@ -111,7 +116,10 @@ export function FeedbackPanel({ data }: { data: WfDashboardResult }) {
         />
       ) : (
         <ResponsiveContainer width="100%" height={140}>
-          <BarChart data={rows} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
+          <BarChart
+            data={rows}
+            margin={{ top: 4, right: 8, bottom: 0, left: -16 }}
+          >
             <CartesianGrid {...gridProps} />
             <XAxis
               dataKey="bucket"

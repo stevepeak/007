@@ -101,16 +101,17 @@ export function ModelSelect({
             <div className="mt-1 flex items-center gap-1 text-xs text-amber-600">
               <AlertTriangle className="size-3 shrink-0" />
               <span>
-                This model has {selectedUnmet.map((k) => REQUIREMENT_REASON[k]).join(', ')}
-                {' '}— pick one that meets what's required here.
+                This model has{' '}
+                {selectedUnmet.map((k) => REQUIREMENT_REASON[k]).join(', ')} —
+                pick one that meets what's required here.
               </span>
             </div>
           ) : null}
         </>
       )}
     >
-      {({ close }) =>
-        loading ? (
+      {({ close }) => {
+        return loading ? (
           <div className="px-3 py-6 text-center text-sm text-neutral-400">
             Loading models…
           </div>
@@ -147,7 +148,7 @@ export function ModelSelect({
             </div>
           ))
         )
-      }
+      }}
     </Popover>
   )
 }
@@ -190,7 +191,9 @@ function ModelOptionRow({
       </span>
       <CapabilityBadges capabilities={model.capabilities} />
       {disabled ? (
-        <span className="shrink-0 text-xs text-amber-600">{disabledReason}</span>
+        <span className="shrink-0 text-xs text-amber-600">
+          {disabledReason}
+        </span>
       ) : (
         <>
           {model.costPerMTok != null ? (

@@ -65,22 +65,18 @@ export function FeedbackList({ className }: FeedbackListProps) {
     search: search.trim() || undefined,
   })
 
-  const clientOptions = useMemo(
-    () =>
-      (query.data?.correlations ?? []).map((c) => ({
-        value: c.id,
-        label: c.label || c.id,
-      })),
-    [query.data?.correlations],
-  )
-  const raterOptions = useMemo(
-    () =>
-      (query.data?.raters ?? []).map((r) => ({
-        value: r.id,
-        label: r.label || 'Unknown user',
-      })),
-    [query.data?.raters],
-  )
+  const clientOptions = useMemo(() => {
+    return (query.data?.correlations ?? []).map((c) => ({
+      value: c.id,
+      label: c.label || c.id,
+    }))
+  }, [query.data?.correlations])
+  const raterOptions = useMemo(() => {
+    return (query.data?.raters ?? []).map((r) => ({
+      value: r.id,
+      label: r.label || 'Unknown user',
+    }))
+  }, [query.data?.raters])
 
   const rows = useMemo(() => query.data?.rows ?? [], [query.data?.rows])
   const groups = useMemo(() => groupRows(rows, groupBy), [rows, groupBy])
@@ -107,8 +103,8 @@ export function FeedbackList({ className }: FeedbackListProps) {
       <div>
         <h1 className="text-lg font-semibold text-neutral-900">Feedback</h1>
         <p className="text-sm text-neutral-500">
-          What people thought of the AI&apos;s answers — thumbs up and down, with
-          their comments. Acknowledge each once your team has acted on it.
+          What people thought of the AI&apos;s answers — thumbs up and down,
+          with their comments. Acknowledge each once your team has acted on it.
         </p>
       </div>
 
@@ -257,9 +253,7 @@ function FeedbackItem({ row }: { row: WfFeedbackRow }) {
           <p className="text-sm italic text-neutral-500">No comment left.</p>
         )}
 
-        {row.body ? (
-          <SubjectLine body={row.body} url={row.subjectUrl} />
-        ) : null}
+        {row.body ? <SubjectLine body={row.body} url={row.subjectUrl} /> : null}
 
         {acknowledged ? (
           <p className="pt-0.5 text-xs text-neutral-500">
@@ -285,10 +279,7 @@ function FeedbackItem({ row }: { row: WfFeedbackRow }) {
       <div className="flex shrink-0 items-center gap-2">
         <Badge className="gap-1.5 whitespace-nowrap font-normal">
           {acknowledged ? null : (
-            <span
-              className="size-1.5 rounded-full bg-amber-500"
-              aria-hidden
-            />
+            <span className="size-1.5 rounded-full bg-amber-500" aria-hidden />
           )}
           {acknowledged ? 'Acknowledged' : 'Unacknowledged'}
         </Badge>
@@ -305,9 +296,12 @@ function FeedbackItem({ row }: { row: WfFeedbackRow }) {
           variant="outline"
           size="sm"
           disabled={ack.isPending}
-          onClick={() =>
-            ack.mutate({ subjectId: row.subjectId, acknowledged: !acknowledged })
-          }
+          onClick={() => {
+            return ack.mutate({
+              subjectId: row.subjectId,
+              acknowledged: !acknowledged,
+            })
+          }}
         >
           {acknowledged ? (
             <>
@@ -395,7 +389,6 @@ function groupRows(rows: WfFeedbackRow[], groupBy: GroupBy): Group[] {
   return groups
 }
 
-
 // Lightweight multi-select filter — a native <details> disclosure holding a
 // checkbox list. No popover primitive needed; closes on outside interaction via
 // the browser's default <details> behavior when another opens is not automatic,
@@ -412,8 +405,11 @@ function MultiFilter({
   onChange: (next: string[]) => void
 }) {
   const count = value.length
-  const toggle = (v: string) =>
-    onChange(value.includes(v) ? value.filter((x) => x !== v) : [...value, v])
+  const toggle = (v: string) => {
+    return onChange(
+      value.includes(v) ? value.filter((x) => x !== v) : [...value, v],
+    )
+  }
 
   return (
     <details className="relative">

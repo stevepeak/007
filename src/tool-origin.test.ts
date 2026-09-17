@@ -18,8 +18,11 @@ import { createDocumentTool } from './documents/create-document-tool'
 // Add a factory to the SDK → add it here.
 
 const SDK_TOOL_FACTORIES = {
-  create_document: () =>
-    createDocumentTool<unknown>({ store: () => Promise.resolve({}) as never }),
+  create_document: () => {
+    return createDocumentTool<unknown>({
+      store: () => Promise.resolve({}) as never,
+    })
+  },
 }
 
 describe('tools the SDK ships', () => {

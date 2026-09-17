@@ -1,7 +1,14 @@
 import { describe, expect, test } from 'bun:test'
 
 import { Scheduler } from './scheduler'
-import { agent, branch, drive, edge, output, trigger } from './scheduler-test-helpers'
+import {
+  agent,
+  branch,
+  drive,
+  edge,
+  output,
+  trigger,
+} from './scheduler-test-helpers'
 
 describe('Scheduler', () => {
   test('linear graph runs trigger → agent → output and forwards output', () => {
@@ -61,11 +68,11 @@ describe('Scheduler', () => {
       ],
     })
     s.seedTrigger({})
-    const r = drive(s, (id, kind) =>
-      kind === 'branch'
+    const r = drive(s, (id, kind) => {
+      return kind === 'branch'
         ? { output: { branched: true }, branchResult: 'yes' }
-        : { output: { ran: id } },
-    )
+        : { output: { ran: id } }
+    })
     expect(r.fired).toEqual(['b', 'yes'])
     expect(r.output).toEqual({ ran: 'yes' })
   })
@@ -89,11 +96,11 @@ describe('Scheduler', () => {
       ],
     })
     s.seedTrigger({})
-    const r = drive(s, (id, kind) =>
-      kind === 'branch'
+    const r = drive(s, (id, kind) => {
+      return kind === 'branch'
         ? { output: {}, branchResult: 'no' }
-        : { output: { ran: id } },
-    )
+        : { output: { ran: id } }
+    })
     expect(r.fired).toEqual(['b', 'no'])
     expect(r.output).toEqual({ ran: 'no' })
   })
@@ -171,11 +178,7 @@ describe('Scheduler', () => {
     const s = new Scheduler({
       version: 1,
       nodes: [trigger('t'), agent('ask'), agent('yes'), output('o', 'yes')],
-      edges: [
-        edge('t', 'ask'),
-        edge('ask', 'yes', 'yes'),
-        edge('yes', 'o'),
-      ],
+      edges: [edge('t', 'ask'), edge('ask', 'yes', 'yes'), edge('yes', 'o')],
     })
     s.seedTrigger({})
     let armInput: unknown
@@ -216,11 +219,11 @@ describe('Scheduler', () => {
       ],
     })
     s.seedTrigger({})
-    const r = drive(s, (id, kind) =>
-      kind === 'branch'
+    const r = drive(s, (id, kind) => {
+      return kind === 'branch'
         ? { output: {}, branchResult: 'no' }
-        : { output: { ran: id } },
-    )
+        : { output: { ran: id } }
+    })
     expect(r.outputNodeId).toBe('o')
     expect(r.output).toEqual({ ran: 'no' })
   })

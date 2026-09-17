@@ -3,10 +3,7 @@ import { z } from 'zod'
 import { errorLogText } from '../engine/error-detail'
 import { errorMessage } from '../engine/run-node'
 import { recordChange, type DashboardAnalytics } from '../storage/data'
-import {
-  WF_CHANGE_ENTITY_KINDS,
-  WF_EVAL_TARGET_KINDS,
-} from '../storage/schema'
+import { WF_CHANGE_ENTITY_KINDS, WF_EVAL_TARGET_KINDS } from '../storage/schema'
 
 import { buildAgentHandlers } from './handlers/agents'
 import { buildChangeHandlers } from './handlers/changes'
@@ -482,8 +479,9 @@ export function createWfSdkHandlers<TDeps>(
       // Bound once per request so a handler can never record a change without
       // the actor who made it.
       const actor = { userId: ctx?.userId ?? null, source: 'ui' as const }
-      const change: HandlerCtx['change'] = (input) =>
-        recordChange(db, { ...input, actor })
+      const change: HandlerCtx['change'] = (input) => {
+        return recordChange(db, { ...input, actor })
+      }
       const result = await handler({
         params,
         ctx,

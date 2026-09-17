@@ -328,41 +328,44 @@ export async function listAgentCalls(
   // execution count. `wfRun.createdAt` and the workflow identity are bare
   // columns under the GROUP BY, which is sound because they're all functionally
   // determined by `runId`.
-  const groupPage = (matchesAgent: SQL) =>
-    db
-      .select({
-        runId: wfRunStep.runId,
-        nodeId: wfRunStep.nodeId,
-        callCount: sql<number>`count(*)`,
-        lastStartedAt: sql<number | null>`max(${wfRunStep.startedAt})`,
-        runCreatedAt: wfRun.createdAt,
-        workflowId: wfWorkflowVersion.workflowId,
-        workflowName: wfWorkflow.name,
-        versionNumber: wfWorkflowVersion.versionNumber,
-      })
-      .from(wfRunStep)
-      .innerJoin(wfRun, eq(wfRunStep.runId, wfRun.id))
-      .innerJoin(
-        wfWorkflowVersion,
-        eq(wfRun.workflowVersionId, wfWorkflowVersion.id),
-      )
-      .innerJoin(wfWorkflow, eq(wfWorkflowVersion.workflowId, wfWorkflow.id))
-      // Real runs only. An eval's runs are simulated and can outnumber
-      // production traffic many times over, so mixing them in would make the
-      // metrics say nothing about what this agent actually costs — the eval
-      // report is where a simulated run belongs.
-      .where(
-        and(
-          eq(wfRunStep.nodeKind, 'agent'),
-          matchesAgent,
-          eq(wfRun.isEval, false),
-        ),
-      )
-      .groupBy(wfRunStep.runId, wfRunStep.nodeId)
-      // A queued/running step has no `startedAt` yet, so order by the run's own
-      // creation time — a live call still sorts to the top where it belongs.
-      .orderBy(desc(wfRun.createdAt), desc(sql`max(${wfRunStep.startedAt})`))
-      .limit(limit)
+  const groupPage = (matchesAgent: SQL) => {
+    return (
+      db
+        .select({
+          runId: wfRunStep.runId,
+          nodeId: wfRunStep.nodeId,
+          callCount: sql<number>`count(*)`,
+          lastStartedAt: sql<number | null>`max(${wfRunStep.startedAt})`,
+          runCreatedAt: wfRun.createdAt,
+          workflowId: wfWorkflowVersion.workflowId,
+          workflowName: wfWorkflow.name,
+          versionNumber: wfWorkflowVersion.versionNumber,
+        })
+        .from(wfRunStep)
+        .innerJoin(wfRun, eq(wfRunStep.runId, wfRun.id))
+        .innerJoin(
+          wfWorkflowVersion,
+          eq(wfRun.workflowVersionId, wfWorkflowVersion.id),
+        )
+        .innerJoin(wfWorkflow, eq(wfWorkflowVersion.workflowId, wfWorkflow.id))
+        // Real runs only. An eval's runs are simulated and can outnumber
+        // production traffic many times over, so mixing them in would make the
+        // metrics say nothing about what this agent actually costs — the eval
+        // report is where a simulated run belongs.
+        .where(
+          and(
+            eq(wfRunStep.nodeKind, 'agent'),
+            matchesAgent,
+            eq(wfRun.isEval, false),
+          ),
+        )
+        .groupBy(wfRunStep.runId, wfRunStep.nodeId)
+        // A queued/running step has no `startedAt` yet, so order by the run's own
+        // creation time — a live call still sorts to the top where it belongs.
+        .orderBy(desc(wfRun.createdAt), desc(sql`max(${wfRunStep.startedAt})`))
+        .limit(limit)
+    )
+  }
 
   const pages = await Promise.all(attributions.map(groupPage))
   type GroupRow = (typeof pages)[number][number]
@@ -392,12 +395,12 @@ export async function listAgentCalls(
   // Phase 2 — every step behind those groups. Matched as explicit (run, node)
   // pairs rather than two `inArray`s, so a run holding a big fan-out for some
   // OTHER agent node isn't dragged over the wire to be filtered away here.
-  const pairs = groups.map((g) =>
-    and(eq(wfRunStep.runId, g.runId), eq(wfRunStep.nodeId, g.nodeId)),
-  )
+  const pairs = groups.map((g) => {
+    return and(eq(wfRunStep.runId, g.runId), eq(wfRunStep.nodeId, g.nodeId))
+  })
   const stepPages = await Promise.all(
-    chunk(pairs, PAIR_CHUNK_SIZE).map((pairChunk) =>
-      db
+    chunk(pairs, PAIR_CHUNK_SIZE).map((pairChunk) => {
+      return db
         .select({
           runId: wfRunStep.runId,
           nodeId: wfRunStep.nodeId,
@@ -411,8 +414,8 @@ export async function listAgentCalls(
         .from(wfRunStep)
         .where(and(eq(wfRunStep.nodeKind, 'agent'), or(...pairChunk)))
         .orderBy(desc(wfRunStep.startedAt), wfRunStep.itemIndex)
-        .limit(AGENT_CALL_STEP_MAX),
-    ),
+        .limit(AGENT_CALL_STEP_MAX)
+    }),
   )
 
   const stepsByGroup = new Map<string, (typeof stepPages)[number][number][]>()

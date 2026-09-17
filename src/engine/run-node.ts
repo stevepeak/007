@@ -17,10 +17,7 @@ import { executeSwitchNode } from './nodes/switch'
 import { executeTextNode } from './nodes/text'
 import { executeToolNode } from './nodes/tool'
 import { executeTransformNode } from './nodes/transform'
-import {
-  executeWorkflowNode,
-  type ChildWorkflowRunner,
-} from './nodes/workflow'
+import { executeWorkflowNode, type ChildWorkflowRunner } from './nodes/workflow'
 import type { RunRecorder } from './run-recorder'
 import type { ExecuteInstruction } from './scheduler'
 import { withoutUserProgress, type StreamSink } from './stream-sink'
@@ -112,12 +109,12 @@ export async function runNode<TDeps>(
   // it to rehydrate any blob-ref input inside their own step. Undefined when the
   // host declares no resolver (no tool spills large values).
   const rehydrate = ctx.resolveBlobRef
-    ? (value: unknown) =>
-        rehydrateBlobRefs(value, (ref) =>
-          ctx.resolveBlobRef!(ref, ctx.toolDeps),
-        )
+    ? (value: unknown) => {
+        return rehydrateBlobRefs(value, (ref) => {
+          return ctx.resolveBlobRef!(ref, ctx.toolDeps)
+        })
+      }
     : undefined
-
 
   switch (node.kind) {
     case 'agent': {
@@ -316,8 +313,8 @@ export async function runNode<TDeps>(
         list: resolveIterationList(node, ctx.nodeOutputs),
         sink: ctx.sink,
         promptVariables: ctx.promptVariables,
-        runItem: (item, index) =>
-          executeSubgraph(
+        runItem: (item, index) => {
+          return executeSubgraph(
             node.config.subgraph,
             item,
             itemCtx,
@@ -328,7 +325,8 @@ export async function runNode<TDeps>(
                   itemIndex: index,
                 }
               : undefined,
-          ),
+          )
+        },
       })
       return {
         schedulerOutput: r.results,

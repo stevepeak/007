@@ -86,9 +86,9 @@ export function PlaygroundPanel({
           contextFields={pg.contextFields}
           unmetContext={new Set(pg.missing.map((f) => f.key))}
           disabled={pg.pending}
-          onToggle={(toolId, isLive) =>
-            pg.setToolModes((m) => ({ ...m, [toolId]: isLive }))
-          }
+          onToggle={(toolId, isLive) => {
+            return pg.setToolModes((m) => ({ ...m, [toolId]: isLive }))
+          }}
         />
         {config.subAgents.targets.length > 0 && pg.attachedTools.length > 0 ? (
           <p className="text-[11px] text-neutral-400">
@@ -102,9 +102,9 @@ export function PlaygroundPanel({
           values={pg.context}
           missing={pg.missing}
           disabled={pg.pending}
-          onChange={(key, value) =>
-            pg.setContext((c) => ({ ...c, [key]: value }))
-          }
+          onChange={(key, value) => {
+            return pg.setContext((c) => ({ ...c, [key]: value }))
+          }}
         />
 
         <WfAutoForm
@@ -129,9 +129,9 @@ export function PlaygroundPanel({
           run={r}
           number={r.id}
           expanded={pg.expandedId === r.id}
-          onToggle={() =>
-            pg.setExpandedId(pg.expandedId === r.id ? null : r.id)
-          }
+          onToggle={() => {
+            return pg.setExpandedId(pg.expandedId === r.id ? null : r.id)
+          }}
           changed={changedFields(r.config, config)}
           onRestore={onRestore ? () => onRestore(r.config) : undefined}
         />

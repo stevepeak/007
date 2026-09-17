@@ -28,7 +28,10 @@ describe('answerCriticalIds', () => {
           config: { toolId: 'noop', args: {} },
         },
       ],
-      edges: [...g.edges, { id: 'e-side', source: 't', target: 'side', condition: null }],
+      edges: [
+        ...g.edges,
+        { id: 'e-side', source: 't', target: 'side', condition: null },
+      ],
     }
     const ids = answerCriticalIds(parse(withSide))
     expect(ids.has('side')).toBe(false)
@@ -130,9 +133,9 @@ describe('answerCriticalIds', () => {
     const g = chainGraph()
     const demoted = {
       ...g,
-      nodes: g.nodes.map((n) =>
-        n.id === 'after' ? { ...n, execution: { background: true } } : n,
-      ),
+      nodes: g.nodes.map((n) => {
+        return n.id === 'after' ? { ...n, execution: { background: true } } : n
+      }),
     }
     const ids = answerCriticalIds(parse(demoted))
     expect(ids.has('after')).toBe(false)

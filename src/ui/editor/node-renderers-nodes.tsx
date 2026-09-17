@@ -68,10 +68,11 @@ export const TriggerNodeRenderer = defineNode({
   // renders as a tight pill so the loop container stays compact.
   hasTarget: false,
   useExtra: useTriggerEvents,
-  pill: (data) =>
-    data.config.triggerKind === ITERATION_ITEM_TRIGGER_KIND
+  pill: (data) => {
+    return data.config.triggerKind === ITERATION_ITEM_TRIGGER_KIND
       ? { label: 'Current item' }
-      : null,
+      : null
+  },
   subtitle: (data, events) => {
     const { triggerKind, cron, engine } = data.config
     // The Item bookend of an iteration subgraph isn't a startable trigger, so
@@ -98,10 +99,11 @@ export const AgentNodeRenderer = defineNode({
   // A YES/NO (boolean) output agent doubles as a branch: it exposes yes/no source
   // handles and routes its outgoing edges by the answer, so the author wires the
   // two arms directly instead of dropping a separate Branch node.
-  source: (data, extra) =>
-    resolveAgent(data.config, extra.agents)?.output?.kind === 'boolean'
+  source: (data, extra) => {
+    return resolveAgent(data.config, extra.agents)?.output?.kind === 'boolean'
       ? 'decision'
-      : 'single',
+      : 'single'
+  },
   // "Legal Researcher · v4" — the version matters as much as the name, since an
   // agent node is a pointer that usually floats. See `agentNodeVersion`.
   subtitle: (data, extra, props) => {
@@ -255,10 +257,11 @@ export const OutputNodeRenderer = defineNode({
   subtitle: 'Returns the bound value to the caller',
   // The `Result` bookend inside an iteration (a nested child has a `parentId`)
   // renders as a tiny pill; a top-level output keeps the full card.
-  pill: (data, props) =>
-    props.parentId != null
+  pill: (data, props) => {
+    return props.parentId != null
       ? { label: data.label, subtitle: 'Returns the bound value' }
-      : null,
+      : null
+  },
 })
 
 // Multi-way routing: one source handle per case plus the `else` fallback,
@@ -324,14 +327,14 @@ export function IterationNodeRenderer(props: NodeProps) {
         isVisible={props.selected}
         minWidth={320}
         minHeight={160}
-        onResizeEnd={(_evt, params) =>
-          setNodes((ns) =>
-            ns.map((n) =>
-              n.id === props.id
+        onResizeEnd={(_evt, params) => {
+          return setNodes((ns) => {
+            return ns.map((n) => {
+              return n.id === props.id
                 ? {
                     ...n,
                     data: {
-                      ...(n.data),
+                      ...n.data,
                       config: {
                         ...((n.data as { config: Record<string, unknown> })
                           .config ?? {}),
@@ -340,10 +343,10 @@ export function IterationNodeRenderer(props: NodeProps) {
                       },
                     },
                   }
-                : n,
-            ),
-          )
-        }
+                : n
+            })
+          })
+        }}
       />
       <Handle type="target" position={Position.Left} />
       <div
@@ -407,14 +410,14 @@ export function NoteNodeRenderer(props: NodeProps) {
         isVisible={props.selected}
         minWidth={160}
         minHeight={100}
-        onResizeEnd={(_evt, params) =>
-          setNodes((ns) =>
-            ns.map((n) =>
-              n.id === props.id
+        onResizeEnd={(_evt, params) => {
+          return setNodes((ns) => {
+            return ns.map((n) => {
+              return n.id === props.id
                 ? {
                     ...n,
                     data: {
-                      ...(n.data),
+                      ...n.data,
                       config: {
                         ...((n.data as { config: Record<string, unknown> })
                           .config ?? {}),
@@ -423,10 +426,10 @@ export function NoteNodeRenderer(props: NodeProps) {
                       },
                     },
                   }
-                : n,
-            ),
-          )
-        }
+                : n
+            })
+          })
+        }}
       />
       <div
         className={cn(

@@ -219,8 +219,9 @@ export function useDeleteAllRuns() {
 // there, so a page holding the edited run is now stale either way.
 export function useSetRunNote() {
   return useWfMutation(
-    (client, input: { runId: string; note: string | null }) =>
-      client.setRunNote(input),
+    (client, input: { runId: string; note: string | null }) => {
+      return client.setRunNote(input)
+    },
     (input) => [keys.run(input.runId), keys.runsAll],
   )
 }
@@ -232,8 +233,9 @@ export function useRetryRun() {
   const client = useWfClient()
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (input: { runId: string; mode: RetryRunMode }) =>
-      client.retryRun(input),
+    mutationFn: (input: { runId: string; mode: RetryRunMode }) => {
+      return client.retryRun(input)
+    },
     onSuccess: (_r, input) => {
       void qc.invalidateQueries({ queryKey: keys.run(input.runId) })
       void qc.invalidateQueries({ queryKey: keys.runsAll })

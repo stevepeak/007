@@ -1,7 +1,12 @@
 import { asc, eq, inArray, sql } from 'drizzle-orm'
 
 import type { WfDb } from '../client'
-import { TOP_LEVEL_ITEM_INDEX, wfRun, wfWorkflow, wfWorkflowVersion } from '../schema'
+import {
+  TOP_LEVEL_ITEM_INDEX,
+  wfRun,
+  wfWorkflow,
+  wfWorkflowVersion,
+} from '../schema'
 
 import { aggregateRunCost } from './runs-cost'
 import { selectChunked } from './shared'
@@ -23,7 +28,11 @@ import { selectChunked } from './shared'
 // there is something to watch.
 
 /** Run statuses that can never change again — what "settled" counts here. */
-export const TERMINAL_RUN_STATUSES = ['completed', 'failed', 'cancelled'] as const
+export const TERMINAL_RUN_STATUSES = [
+  'completed',
+  'failed',
+  'cancelled',
+] as const
 
 /**
  * How a parent's children are doing, without loading them.
@@ -91,8 +100,8 @@ export async function countChildRuns(
   // Chunked, and the fold is keyed by the chunked column — so `GROUP BY
   // parent_run_id` results can be concatenated without merging (see
   // `selectChunked`'s correctness rule).
-  const rows = await selectChunked(parentRunIds, (ids) =>
-    db
+  const rows = await selectChunked(parentRunIds, (ids) => {
+    return db
       .select({
         parentRunId: wfRun.parentRunId,
         total: sql<number>`count(*)`,
@@ -101,8 +110,8 @@ export async function countChildRuns(
       })
       .from(wfRun)
       .where(inArray(wfRun.parentRunId, ids))
-      .groupBy(wfRun.parentRunId),
-  )
+      .groupBy(wfRun.parentRunId)
+  })
   for (const r of rows) {
     if (!r.parentRunId) continue
     out.set(r.parentRunId, {
@@ -264,11 +273,14 @@ export async function descendantRunIds(
     // One query for the whole level, even where two roots are walking through
     // the same run — the fan-out below re-attaches each child to every root
     // that reached it.
-    const rows = await selectChunked([...new Set(frontier.map((f) => f.id))], (ids) =>
-      db
-        .select({ id: wfRun.id, parentRunId: wfRun.parentRunId })
-        .from(wfRun)
-        .where(inArray(wfRun.parentRunId, ids)),
+    const rows = await selectChunked(
+      [...new Set(frontier.map((f) => f.id))],
+      (ids) => {
+        return db
+          .select({ id: wfRun.id, parentRunId: wfRun.parentRunId })
+          .from(wfRun)
+          .where(inArray(wfRun.parentRunId, ids))
+      },
     )
     const byParent = new Map<string, string[]>()
     for (const r of rows) {

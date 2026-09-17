@@ -34,21 +34,23 @@ export function useResultsView(results: WfEvalResultDTO[]) {
     [results, modelById],
   )
 
-  const isMatrix = rows.some((r) => r.modelLabel != null || r.promptLabel != null)
+  const isMatrix = rows.some(
+    (r) => r.modelLabel != null || r.promptLabel != null,
+  )
   const goals = useMemo(
     () => [...new Set(rows.map((r) => r.goalName))].sort(),
     [rows],
   )
-  const modelNames = useMemo(
-    () =>
-      [...new Set(rows.map((r) => r.modelLabel).filter(Boolean) as string[])].sort(),
-    [rows],
-  )
-  const promptNames = useMemo(
-    () =>
-      [...new Set(rows.map((r) => r.promptLabel).filter(Boolean) as string[])].sort(),
-    [rows],
-  )
+  const modelNames = useMemo(() => {
+    return [
+      ...new Set(rows.map((r) => r.modelLabel).filter(Boolean) as string[]),
+    ].sort()
+  }, [rows])
+  const promptNames = useMemo(() => {
+    return [
+      ...new Set(rows.map((r) => r.promptLabel).filter(Boolean) as string[]),
+    ].sort()
+  }, [rows])
 
   const [status, setStatus] = useState('all')
   const [model, setModel] = useState('all')
@@ -61,13 +63,14 @@ export function useResultsView(results: WfEvalResultDTO[]) {
     () => new Set(),
   )
 
-  const filtered = rows.filter(
-    (r) =>
+  const filtered = rows.filter((r) => {
+    return (
       (status === 'all' || r.status === status) &&
       (model === 'all' || r.modelLabel === model) &&
       (prompt === 'all' || r.promptLabel === prompt) &&
-      (goal === 'all' || r.goalName === goal),
-  )
+      (goal === 'all' || r.goalName === goal)
+    )
+  })
   const sorted = sortRows(filtered, sort)
 
   // Crown markers, each a stable property of the whole run (computed over every

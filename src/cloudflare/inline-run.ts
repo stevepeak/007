@@ -37,13 +37,13 @@ import {
   type SpawnedChildRun,
 } from './child-run'
 import type { GraphWorkflowEnv, GraphWorkflowParams } from './graph-workflow'
-import { runContextFor } from './run-context'
 import {
   createTelemeteredRecorder,
   resolveTelemetrySink,
   runDims,
   withRunCounts,
 } from './graph-workflow-telemetry'
+import { runContextFor } from './run-context'
 import { createRunCounters } from './step-counter'
 
 // The INLINE backend — the peer of `graph-workflow.ts`.
@@ -299,12 +299,12 @@ export async function recordInlineRunFailure<TDeps, E extends GraphWorkflowEnv>(
       }
     }
     if (config.onRunFailed) {
-      await notifyHost('on-failed', () =>
-        config.onRunFailed!(runContext, {
+      await notifyHost('on-failed', () => {
+        return config.onRunFailed!(runContext, {
           error: message,
           workflowRunId: p.workflowRunId,
-        }),
-      )
+        })
+      })
     }
   } catch (recordErr) {
     // Nothing left to report to — log and let the run sit in whatever state
@@ -350,8 +350,8 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
     runContext: p.runContext,
   })
   let deliveredOutputNodeId: string | null = null
-  const emit = (status: 'completed' | 'failed', args: { error?: string }) =>
-    safeWrite(
+  const emit = (status: 'completed' | 'failed', args: { error?: string }) => {
+    return safeWrite(
       telemetry,
       encodeRunPoint(dims, {
         status,
@@ -369,6 +369,7 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
         droppedPoints: telemetry.dropped(),
       }),
     )
+  }
 
   // The lifecycle callbacks are driven from HERE, not from inside
   // `executeWorkflow`, so they fire in the same order the durable backend's
@@ -528,10 +529,11 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
       // The run-scoped override applies here too: the two backends must never
       // disagree about how long a node may run, or a workflow behaves one way
       // under an eval and another in production.
-      resolveModelBudget: (node) =>
-        modelBudgetFor(
+      resolveModelBudget: (node) => {
+        return modelBudgetFor(
           resolveNodeTimeoutMs(node, p.runContext.executionOverride),
-        ),
+        )
+      },
       // The answer landed. Publish it and release the reader NOW — the walk
       // may still have arms to drain (a `branch → tool` side effect that the
       // Output never depended on), and making a chat turn wait on those is
@@ -557,9 +559,9 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
         // answer should wait behind work they never depended on.
         await report({ ok: true, output })
         if (config.onRunComplete) {
-          await notifyHost('on-complete', () =>
-            config.onRunComplete!(runContext, { output, outputNodeId }),
-          )
+          await notifyHost('on-complete', () => {
+            return config.onRunComplete!(runContext, { output, outputNodeId })
+          })
         }
       },
     })

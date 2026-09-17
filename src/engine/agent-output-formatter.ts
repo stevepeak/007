@@ -118,8 +118,9 @@ export function formatZodSource(source: string): string {
     }
     out += s
   }
-  const isComment = (t: FmtToken | undefined) =>
-    t?.kind === 'line-comment' || t?.kind === 'block-comment'
+  const isComment = (t: FmtToken | undefined) => {
+    return t?.kind === 'line-comment' || t?.kind === 'block-comment'
+  }
   // Next token that isn't a comment — used to spot empty `{}` bodies.
   const nextCode = (from: number): FmtToken | undefined => {
     for (let k = from; k < toks.length; k++) {

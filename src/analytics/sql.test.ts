@@ -97,18 +97,20 @@ describe('assertDatasetName', () => {
   }
 
   test('createAnalyticsQuery validates at construction, not at first query', () => {
-    expect(() =>
-      createAnalyticsQuery({
+    expect(() => {
+      return createAnalyticsQuery({
         accountId: 'acct',
         apiToken: 'token',
         dataset: 'bad name',
-      }),
-    ).toThrow(/Invalid Analytics Engine/)
+      })
+    }).toThrow(/Invalid Analytics Engine/)
   })
 })
 
 describe('createAnalyticsQuery', () => {
-  function stubFetch(res: Partial<Response> & { json?: () => Promise<unknown> }) {
+  function stubFetch(
+    res: Partial<Response> & { json?: () => Promise<unknown> },
+  ) {
     const calls: { url: string; init: RequestInit }[] = []
     const impl = (async (url: string, init: RequestInit) => {
       calls.push({ url, init })
@@ -149,12 +151,13 @@ describe('createAnalyticsQuery', () => {
   })
 
   test('a non-2xx surfaces the body — AE reports schema errors as plain text', async () => {
-    const impl = (async () =>
-      ({
+    const impl = (async () => {
+      return {
         ok: false,
         status: 403,
         text: async () => 'authentication error',
-      }) as unknown as Response) as unknown as typeof fetch
+      } as unknown as Response
+    }) as unknown as typeof fetch
     const query = createAnalyticsQuery({
       accountId: 'a',
       apiToken: 't',

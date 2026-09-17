@@ -92,9 +92,12 @@ function BinaryTypePicker({
   hasTools?: boolean | null
 }) {
   const [open, setOpen] = useState(false)
-  const applies = (t: BinaryType) =>
-    (targetKind !== 'agent' || !NODE_TYPES.includes(t)) &&
-    (hasTools !== false || !TOOL_TYPES.includes(t))
+  const applies = (t: BinaryType) => {
+    return (
+      (targetKind !== 'agent' || !NODE_TYPES.includes(t)) &&
+      (hasTools !== false || !TOOL_TYPES.includes(t))
+    )
+  }
   const types = BINARY_TYPES.filter(applies)
   // The stored type can be one this target can't satisfy. The trigger still
   // names it — reading "Select a check…" over a config it plainly has would be
@@ -116,7 +119,7 @@ function BinaryTypePicker({
     if (!open) return
     reposition()
     const onScroll = () => reposition()
-    window.addEventListener('scroll', onScroll, {capture: true})
+    window.addEventListener('scroll', onScroll, { capture: true })
     window.addEventListener('resize', onScroll)
     return () => {
       window.removeEventListener('scroll', onScroll, true)

@@ -80,8 +80,9 @@ export async function spillAtBoundary<TDeps>(
   const spilled = await spillLargeLeaves(value, {
     thresholdBytes: config.spillThresholdBytes ?? DEFAULT_SPILL_THRESHOLD_BYTES,
     previewChars: SPILL_PREVIEW_CHARS,
-    write: ({ text, contentType, path }) =>
-      spill({ text, contentType }, { ...ctx, path }, deps),
+    write: ({ text, contentType, path }) => {
+      return spill({ text, contentType }, { ...ctx, path }, deps)
+    },
   })
   assertFitsBoundary(spilled, ctx)
   return spilled

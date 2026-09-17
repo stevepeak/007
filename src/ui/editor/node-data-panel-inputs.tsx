@@ -55,13 +55,11 @@ export function NodeInputsPanel({
   // How the prior conversation reaches this agent: whether the AGENT declares it
   // takes a thread at all, and — if so — where this node links it from. Drives
   // the editable "conversation" field below. See `agentThreadSource`.
-  const thread = useMemo<ThreadStatus>(
-    () =>
-      node.kind === 'agent'
-        ? agentThreadSource(graph, node.id, maps)
-        : { status: 'none' },
-    [node, graph, maps],
-  )
+  const thread = useMemo<ThreadStatus>(() => {
+    return node.kind === 'agent'
+      ? agentThreadSource(graph, node.id, maps)
+      : { status: 'none' }
+  }, [node, graph, maps])
   const bindings = bindingsOf(node)
   if (
     node.kind !== 'agent' &&
@@ -266,9 +264,9 @@ function BindingField({
 }) {
   const setHovered = useHoverHighlightSetter()
   const [open, setOpen] = useState(false)
-  const [literal, setLiteral] = useState(() =>
-    binding?.kind === 'literal' ? toText(binding.value) : '',
-  )
+  const [literal, setLiteral] = useState(() => {
+    return binding?.kind === 'literal' ? toText(binding.value) : ''
+  })
   // Only what this input can actually take. An upstream `string` is not offered
   // to a `boolean` argument, because the run would just fail Zod validation on
   // it — see `acceptsValueType` for how permissive the rule is.

@@ -216,9 +216,7 @@ function iterationExecutionIssue(node: WorkflowNode): GraphIssue | null {
   const heavy = hasExpensiveNode || workNodes > HEAVY_SUBGRAPH_NODE_COUNT
 
   if (node.config.itemExecution === 'inline' && heavy) {
-    const why = hasExpensiveNode
-      ? 'runs an agent'
-      : `has ${workNodes} steps`
+    const why = hasExpensiveNode ? 'runs an agent' : `has ${workNodes} steps`
     return {
       ...base,
       severity: 'warning',
@@ -405,11 +403,12 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
       // A case the author added but never filled in. It isn't inert — an empty
       // literal MATCHES an empty input, so the arm can fire for a reason nobody
       // intended, which reads as a routing bug rather than an unfinished case.
-      const blank = node.config.cases.filter(
-        (c) =>
+      const blank = node.config.cases.filter((c) => {
+        return (
           c.value.kind === 'literal' &&
-          (c.value.value == null || c.value.value === ''),
-      )
+          (c.value.value == null || c.value.value === '')
+        )
+      })
       if (blank.length > 0) {
         const many = blank.length > 1
         issues.push({
@@ -417,7 +416,9 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
           severity: 'error',
           message: `Switch case${many ? 's' : ''} ${blank
             .map((c) => `"${switchArmName(node.config.cases, c.key)}"`)
-            .join(', ')} ${many ? 'have' : 'has'} no value to match — type the value, or link the upstream data it should equal.`,
+            .join(
+              ', ',
+            )} ${many ? 'have' : 'has'} no value to match — type the value, or link the upstream data it should equal.`,
         })
       }
     }

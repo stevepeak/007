@@ -71,11 +71,11 @@ export function ConversationBuilder({
               <RoleToggle
                 role={m.role}
                 disabled={disabled}
-                onToggle={() =>
-                  patch(i, {
+                onToggle={() => {
+                  return patch(i, {
                     role: m.role === 'user' ? 'assistant' : 'user',
                   })
-                }
+                }}
               />
               <Textarea
                 value={m.text}

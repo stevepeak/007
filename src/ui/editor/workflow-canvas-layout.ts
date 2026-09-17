@@ -43,8 +43,9 @@ export function layoutNodes(
   // a symmetric branch never does. So inserting `yes` arms before `no` arms
   // pins `yes` above `no` out of every branch node. (Stable sort keeps the
   // original order among same-priority edges.)
-  const handlePriority = (h: EditorEdge['sourceHandle']) =>
-    h === 'yes' ? 0 : h === 'no' ? 1 : 2
+  const handlePriority = (h: EditorEdge['sourceHandle']) => {
+    return h === 'yes' ? 0 : h === 'no' ? 1 : 2
+  }
   const ordered = [...edges].sort(
     (a, b) => handlePriority(a.sourceHandle) - handlePriority(b.sourceHandle),
   )

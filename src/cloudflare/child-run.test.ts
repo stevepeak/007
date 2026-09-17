@@ -9,7 +9,12 @@ import { z } from 'zod'
 
 import type { WfWorkflowManifestEntry, WorkflowGraph } from '../engine/graph'
 import type { WfDb } from '../storage/client'
-import { wfRun, wfSchema, wfWorkflow, wfWorkflowVersion } from '../storage/schema'
+import {
+  wfRun,
+  wfSchema,
+  wfWorkflow,
+  wfWorkflowVersion,
+} from '../storage/schema'
 
 import { InvalidEventTypeError } from './callee-protocol'
 import {
@@ -97,13 +102,14 @@ function spyBindings(): Spy {
         created.push(opts.params)
         return Promise.resolve({ id: 'instance-1' })
       },
-      get: (instanceId: string) =>
-        Promise.resolve({
+      get: (instanceId: string) => {
+        return Promise.resolve({
           sendEvent: (e: { type: string; payload: unknown }) => {
             events.push({ instanceId, ...e })
             return Promise.resolve()
           },
-        }),
+        })
+      },
     },
     RUN_ROOM: {
       idFromName: (name: string) => name,
@@ -126,7 +132,9 @@ let db: WfDb
 
 beforeEach(async () => {
   db = freshDb()
-  await db.insert(wfWorkflow).values([{ id: 'wf-callee', name: 'Enrich prices' }])
+  await db
+    .insert(wfWorkflow)
+    .values([{ id: 'wf-callee', name: 'Enrich prices' }])
   await db
     .insert(wfWorkflowVersion)
     .values([
@@ -152,7 +160,7 @@ const baseArgs = {
 }
 
 describe('the callee picks its own engine', () => {
-  test("a callee whose trigger says durable is started as an instance", async () => {
+  test('a callee whose trigger says durable is started as an instance', async () => {
     const spy = spyBindings()
     const spawned = await spawnCalleeRun(spy.env, db, {
       ...baseArgs,
@@ -223,7 +231,7 @@ describe('a callee is always a child run', () => {
     expect(row.isEval).toBe(true)
   })
 
-  test('the child is handed the caller\'s frozen manifest and a raw trigger input', async () => {
+  test("the child is handed the caller's frozen manifest and a raw trigger input", async () => {
     const spy = spyBindings()
     await spawnCalleeRun(spy.env, db, {
       ...baseArgs,
@@ -244,7 +252,7 @@ describe('a callee is always a child run', () => {
 })
 
 describe('a callee is a run of its own trigger', () => {
-  test('the child row records the callee trigger kind, not the caller\'s', async () => {
+  test("the child row records the callee trigger kind, not the caller's", async () => {
     const spy = spyBindings()
     const spawned = await spawnCalleeRun(spy.env, db, {
       ...baseArgs,
@@ -259,7 +267,7 @@ describe('a callee is a run of its own trigger', () => {
     expect(spy.created[0].runContext.triggerKind).toBe('chat_message')
   })
 
-  test('identity comes from the callee trigger\'s resolveIdentity, field by field', async () => {
+  test("identity comes from the callee trigger's resolveIdentity, field by field", async () => {
     // The caller is about an email; the callee is about the chat the caller
     // just posted into. Every tool in the child reads `subjectId`, so
     // inheriting the caller's would point the chat tools at the email.
@@ -294,7 +302,7 @@ describe('a callee is a run of its own trigger', () => {
     })
   })
 
-  test('a trigger with no resolveIdentity inherits the caller\'s identity wholesale', async () => {
+  test("a trigger with no resolveIdentity inherits the caller's identity wholesale", async () => {
     const spy = spyBindings()
     const spawned = await spawnCalleeRun(spy.env, db, {
       ...baseArgs,
@@ -354,7 +362,10 @@ describe('reporting back', () => {
     await expect(
       reportCalleeResult(
         spy.env,
-        { eventType: 'wf:callee', parent: { kind: 'instance', instanceId: 'p' } },
+        {
+          eventType: 'wf:callee',
+          parent: { kind: 'instance', instanceId: 'p' },
+        },
         { ok: true, output: null },
       ),
     ).rejects.toBeInstanceOf(InvalidEventTypeError)

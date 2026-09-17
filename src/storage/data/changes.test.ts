@@ -111,8 +111,8 @@ describe('recordChange', () => {
   })
 
   describe('coalescing', () => {
-    const edit = (after: unknown, fields = ['checks']) =>
-      recordChange(db, {
+    const edit = (after: unknown, fields = ['checks']) => {
+      return recordChange(db, {
         entityKind: 'eval_row',
         entityId: 'row-1',
         action: 'update',
@@ -121,6 +121,7 @@ describe('recordChange', () => {
         after,
         actor: steve,
       })
+    }
 
     test('folds a burst of edits to the same fields into one row', async () => {
       await edit({ v: 1 })

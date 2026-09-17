@@ -100,7 +100,11 @@ export interface VersionedEntity<
   load(
     db: WfDb,
     ownerId: string,
-  ): Promise<{ entity: ERow; draft: DRow | null; currentVersion: VRow | null } | null>
+  ): Promise<{
+    entity: ERow
+    draft: DRow | null
+    currentVersion: VRow | null
+  } | null>
   /** Insert version 1 + a matching draft. Returns the new version id. */
   seed(db: WfDb, input: SeedInput<Payload>): Promise<{ versionId: string }>
   /**
@@ -147,8 +151,8 @@ export function createVersionedEntity<
     payload: Payload,
     who: string | null,
     extra: Record<string, unknown> | undefined,
-  ): VInsert =>
-    ({
+  ): VInsert => {
+    return {
       id: crypto.randomUUID(),
       [cfg.ownerKey]: ownerId,
       versionNumber,
@@ -157,21 +161,23 @@ export function createVersionedEntity<
       publishedBy: who,
       publishedAt: new Date(),
       ...extra,
-    })
+    }
+  }
 
   const draftValues = (
     ownerId: string,
     payload: Payload,
     baseVersionId: string | null,
     lastEditedBy: string | null,
-  ): DInsert =>
-    ({
+  ): DInsert => {
+    return {
       [cfg.ownerKey]: ownerId,
       [cfg.payloadKey]: payload,
       baseVersionId,
       lastEditedBy,
       updatedAt: new Date(),
-    })
+    }
+  }
 
   const latest = async (db: WfDb, ownerId: string) => {
     const rows = await db
@@ -183,11 +189,7 @@ export function createVersionedEntity<
     return rows[0] as VRow | undefined
   }
 
-  const byNumber = async (
-    db: WfDb,
-    ownerId: string,
-    versionNumber: number,
-  ) => {
+  const byNumber = async (db: WfDb, ownerId: string, versionNumber: number) => {
     const rows = await db
       .select()
       .from(cfg.versionTable)
@@ -251,7 +253,13 @@ export function createVersionedEntity<
       const versionId = crypto.randomUUID()
       const who = input.createdBy ?? null
       await db.insert(cfg.versionTable).values({
-        ...versionValues(input.ownerId, 1, input.payload, who, input.versionExtra),
+        ...versionValues(
+          input.ownerId,
+          1,
+          input.payload,
+          who,
+          input.versionExtra,
+        ),
         id: versionId,
       } as VInsert)
       await db
@@ -316,7 +324,9 @@ export function createVersionedEntity<
       await db
         .update(cfg.draftTable)
         .set({
-          [cfg.payloadKey]: (version as Record<string, unknown>)[cfg.payloadKey],
+          [cfg.payloadKey]: (version as Record<string, unknown>)[
+            cfg.payloadKey
+          ],
           baseVersionId: version.id,
           updatedAt: new Date(),
         } as DInsert)

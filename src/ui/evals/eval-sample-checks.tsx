@@ -103,7 +103,10 @@ export function ChecksList({
     const current = checks.checks[index]
     if (!current || familyOf(current) === family) return
     const binaryDefault = hasTools === false ? 'output_match' : 'tool_called'
-    replace(index, defaultCheck(family === 'scored' ? 'llm_judge' : binaryDefault))
+    replace(
+      index,
+      defaultCheck(family === 'scored' ? 'llm_judge' : binaryDefault),
+    )
   }
 
   return (
@@ -113,9 +116,9 @@ export function ChecksList({
           <span>Passes when</span>
           <select
             value={checks.op}
-            onChange={(e) =>
-              onChange({ ...checks, op: e.target.value as 'and' | 'or' })
-            }
+            onChange={(e) => {
+              return onChange({ ...checks, op: e.target.value as 'and' | 'or' })
+            }}
             className="h-7 rounded-md border border-neutral-300 bg-transparent px-1.5 text-xs outline-none focus:border-neutral-500"
           >
             <option value="and">all</option>
@@ -136,8 +139,8 @@ export function ChecksList({
             This sample has no checks.
           </p>
           <p className="mt-1 text-[11px] text-amber-600">
-            It will report as an <strong>error</strong>, not a pass — a run needs
-            at least one check to verify. Add one to assert an outcome.
+            It will report as an <strong>error</strong>, not a pass — a run
+            needs at least one check to verify. Add one to assert an outcome.
           </p>
         </div>
       ) : (
@@ -307,9 +310,9 @@ export function RunsForSample({ setId }: { setId: string }) {
       isLoading={runsQuery.isLoading}
       loadingMessage="Loading test runs…"
       emptyMessage="No test runs yet. Run the goal to see results here."
-      onOpenRun={(id, e) =>
-        open(`evals/runs/${id}`, { newTab: e.metaKey || e.ctrlKey })
-      }
+      onOpenRun={(id, e) => {
+        return open(`evals/runs/${id}`, { newTab: e.metaKey || e.ctrlKey })
+      }}
     />
   )
 }

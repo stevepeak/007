@@ -206,12 +206,13 @@ export function useWorkflowEditorState({
     graph,
     name,
     dirty,
-    onRestore: (stored) =>
-      history.loadSnapshot({
+    onRestore: (stored) => {
+      return history.loadSnapshot({
         graph: stored.graph,
         name: stored.name,
         label: 'Restored unsaved edit',
-      }),
+      })
+    },
   })
 
   const publishVersion = useCallback(

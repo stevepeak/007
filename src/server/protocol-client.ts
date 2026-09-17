@@ -1,12 +1,4 @@
 import type {
-  ConnectorCapability,
-  ConnectorDetail,
-  ConnectorRefreshResult,
-  ConnectorSummary,
-  WfConnectorAuthKind,
-  WfConnectorTransport,
-} from './protocol-connectors'
-import type {
   ModelCatalog,
   ModelOption,
   ModelProvider,
@@ -14,11 +6,7 @@ import type {
 } from '../engine/config'
 import type { AgentConfig, WorkflowGraph } from '../engine/graph'
 import type { TriggerEventOption } from '../engine/trigger-registry'
-import type {
-  CheckTree,
-  EvalSampleInput,
-  EvalTools,
-} from '../eval/checks'
+import type { CheckTree, EvalSampleInput, EvalTools } from '../eval/checks'
 
 import type {
   AgentPreviewInput,
@@ -29,6 +17,14 @@ import type {
   WfAgentVersionSummary,
 } from './protocol-agents'
 import type { WfChangeDTO, WfChangeListInput } from './protocol-changes'
+import type {
+  ConnectorCapability,
+  ConnectorDetail,
+  ConnectorRefreshResult,
+  ConnectorSummary,
+  WfConnectorAuthKind,
+  WfConnectorTransport,
+} from './protocol-connectors'
 import type { WfDashboardInput, WfDashboardResult } from './protocol-dashboard'
 import type {
   WfEvalResultDTO,

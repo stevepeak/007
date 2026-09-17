@@ -59,7 +59,6 @@ import {
   recordTerminal,
 } from './graph-workflow-dispatch-logs'
 import type { RunCtx } from './graph-workflow-dispatch-run-ctx'
-import { runContextFor } from './run-context'
 import {
   rehydrateAtBoundary,
   spillAtBoundary,
@@ -75,6 +74,7 @@ import {
   createTelemeteredRecorder,
   emitRunPoint,
 } from './graph-workflow-telemetry'
+import { runContextFor } from './run-context'
 import { withNodeSpan } from './tracing'
 
 // Re-export the extracted helpers so every symbol that historically lived in
@@ -134,8 +134,9 @@ async function dispatchIteration<TDeps, E extends GraphWorkflowEnv>(
   // then cannot drift between them.
   const runItem =
     node.config.itemExecution === 'durable'
-      ? (item: unknown, index: number) =>
-          runItemAsChildInstance(ctx, node, item, index)
+      ? (item: unknown, index: number) => {
+          return runItemAsChildInstance(ctx, node, item, index)
+        }
       : (item: unknown, index: number) => runItemInline(ctx, node, item, index)
 
   // The fan-out fence throws before a single step is taken or a single instance
@@ -198,8 +199,12 @@ async function runItemInline<TDeps, E extends GraphWorkflowEnv>(
         node.config.subgraph,
         item,
         {
-          getModel: (modelId, opts) =>
-            config.getModel(modelId, { ...rc, reasoning: opts?.reasoning }),
+          getModel: (modelId, opts) => {
+            return config.getModel(modelId, {
+              ...rc,
+              reasoning: opts?.reasoning,
+            })
+          },
           toolRegistry: config.toolRegistry,
           toolDeps,
           modelBudget: modelBudgetFor(resolveStepTimeoutMs(node)),
@@ -448,8 +453,8 @@ async function dispatchCallee<TDeps, E extends GraphWorkflowEnv>(
     step,
     `spawn:${node.id}`,
     DEFAULT_STEP_OPTS,
-    async () =>
-      await spawnCalleeRun(env, createWfDb(env.WF_DB), {
+    async () => {
+      return await spawnCalleeRun(env, createWfDb(env.WF_DB), {
         entry,
         triggers: ctx.config.triggers,
         triggerInput,
@@ -462,7 +467,8 @@ async function dispatchCallee<TDeps, E extends GraphWorkflowEnv>(
         traceId,
         parent: { kind: 'instance', instanceId },
         eventType,
-      }),
+      })
+    },
   )
 
   // Park. The timeout is the node's own declared step timeout, so the author's
@@ -802,8 +808,8 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
             (c) => {
               captured = c
             },
-            () =>
-              withNodeSpan(
+            () => {
+              return withNodeSpan(
                 {
                   traceId,
                   runId: p.workflowRunId,
@@ -815,8 +821,8 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
                   subjectId: p.runContext.subjectId,
                   correlationId: p.runContext.correlationId,
                 },
-                () =>
-                  runNode(
+                () => {
+                  return runNode(
                     { type: 'execute', node, input },
                     {
                       // Bridge the per-call reasoning intent through to the
@@ -827,11 +833,12 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
                       // silently have it ignored. There is no run-level
                       // reasoning on this path to fall back to: `start-run.ts`
                       // never sets one.
-                      getModel: (modelId, opts) =>
-                        config.getModel(modelId, {
+                      getModel: (modelId, opts) => {
+                        return config.getModel(modelId, {
                           ...rc,
                           reasoning: opts?.reasoning,
-                        }),
+                        })
+                      },
                       toolRegistry: config.toolRegistry,
                       toolDeps,
                       modelBudget,
@@ -861,8 +868,10 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
                             })
                           : undefined,
                     },
-                  ),
-              ),
+                  )
+                },
+              )
+            },
           )
           // Last thing before the value crosses the durable boundary: anything
           // too big to journal is written out and replaced by a pointer. Inside
@@ -980,12 +989,13 @@ export async function deliverOutput<TDeps, E extends GraphWorkflowEnv>(
       ? rawOutput
       : await rehydrateAtBoundary(
           config,
-          () =>
-            config.buildRunDeps({
+          () => {
+            return config.buildRunDeps({
               ...p.runContext,
               env,
               runId: p.workflowRunId,
-            }),
+            })
+          },
           rawOutput,
         )
     if (p.subRun) return answer
@@ -1006,31 +1016,25 @@ export async function deliverOutput<TDeps, E extends GraphWorkflowEnv>(
       )
     }
   }
-  await stepDo(
-    step,
-    'finalize',
-    async () =>
-      await markRunDone(createWfDb(env.WF_DB), {
-        runId: p.workflowRunId,
-        output: await answerFor(),
-        settled: !pendingWork,
-        pendingNodes: scheduler.inFlightCount(),
-      }),
-  )
+  await stepDo(step, 'finalize', async () => {
+    return await markRunDone(createWfDb(env.WF_DB), {
+      runId: p.workflowRunId,
+      output: await answerFor(),
+      settled: !pendingWork,
+      pendingNodes: scheduler.inFlightCount(),
+    })
+  })
   // The callee reports its pointer as-is: the parent hands it to a node that
   // rehydrates inside its own step, so the payload never touches the 1 MiB
   // event cap. `rawOutput` is already contract-free for a sub-run.
   await reportToParent(ctx, { ok: true, output: rawOutput })
   if (config.onRunComplete) {
-    await notifyHost(
-      step,
-      'on-complete',
-      async () =>
-        await config.onRunComplete!(runContextFor(p, env), {
-          output: await answerFor(),
-          outputNodeId,
-        }),
-    )
+    await notifyHost(step, 'on-complete', async () => {
+      return await config.onRunComplete!(runContextFor(p, env), {
+        output: await answerFor(),
+        outputNodeId,
+      })
+    })
   }
   return { output: rawOutput, outputNodeId }
 }

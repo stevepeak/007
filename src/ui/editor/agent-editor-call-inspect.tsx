@@ -49,11 +49,12 @@ export function AgentCallInspect({
   const itemIndex = hasItems ? itemIndexes[at] : null
 
   const step =
-    run.data?.steps.find(
-      (s) =>
+    run.data?.steps.find((s) => {
+      return (
         s.nodeId === call.nodeId &&
-        (itemIndex == null || s.itemIndex === itemIndex),
-    ) ?? null
+        (itemIndex == null || s.itemIndex === itemIndex)
+      )
+    }) ?? null
 
   const tabs: TrayTab[] = [
     {

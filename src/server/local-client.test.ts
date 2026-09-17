@@ -76,10 +76,10 @@ describe('createLocalWfDataClient', () => {
     expect(calls[0]?.headers.get('content-type')).toBe('application/json')
   })
 
-  test('raises the dispatcher\'s own error text', async () => {
-    const { handler } = capture(() =>
-      Response.json({ error: 'Forbidden' }, { status: 403 }),
-    )
+  test("raises the dispatcher's own error text", async () => {
+    const { handler } = capture(() => {
+      return Response.json({ error: 'Forbidden' }, { status: 403 })
+    })
     const client = createLocalWfDataClient({ handler, request: request() })
     expect(client.listAgents()).rejects.toThrow('Forbidden')
   })

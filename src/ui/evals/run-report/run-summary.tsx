@@ -142,7 +142,13 @@ function liveTotals(results: WfEvalResultDTO[]) {
 }
 
 // A thin "N of M complete" progress bar shown while the run is still executing.
-function RunProgress({ completed, total }: { completed: number; total: number }) {
+function RunProgress({
+  completed,
+  total,
+}: {
+  completed: number
+  total: number
+}) {
   const pct = total > 0 ? Math.round((completed / total) * 100) : 0
   return (
     <span className="inline-flex items-center gap-2">
@@ -167,8 +173,9 @@ function agentAverages(results: WfEvalResultDTO[]) {
   const stats = results
     .map((r) => r.runStats)
     .filter((s): s is WfEvalResultRunStats => s != null)
-  const nums = (pick: (s: WfEvalResultRunStats) => number | null) =>
-    stats.map(pick).filter((v): v is number => v != null)
+  const nums = (pick: (s: WfEvalResultRunStats) => number | null) => {
+    return stats.map(pick).filter((v): v is number => v != null)
+  }
   const costs = nums((s) => s.costUsd)
   return {
     count: stats.length,
@@ -259,7 +266,10 @@ function TargetBreadcrumb({
           {sep}
         </>
       ) : null}
-      <span className="font-mono text-sm text-neutral-500" title={`Run ${runId}`}>
+      <span
+        className="font-mono text-sm text-neutral-500"
+        title={`Run ${runId}`}
+      >
         Run {runId.slice(0, 8)}
       </span>
     </div>

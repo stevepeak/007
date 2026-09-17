@@ -1,11 +1,11 @@
-import { rehydrateBlobRefs } from '../engine/blob-ref'
-import type { RunContext, WfSdkConfig } from '../engine/config'
-import type { ToolNode } from '../engine/graph'
-import { executeToolNode } from '../engine/nodes/tool'
 import {
   loadConnectorCatalog,
   withConnectorTools,
 } from '../connectors/registry'
+import { rehydrateBlobRefs } from '../engine/blob-ref'
+import type { RunContext, WfSdkConfig } from '../engine/config'
+import type { ToolNode } from '../engine/graph'
+import { executeToolNode } from '../engine/nodes/tool'
 import type { WfDb } from '../storage/client'
 
 import type { WfToolPreviewResult } from './protocol'
@@ -91,10 +91,11 @@ export async function executeToolPreview<TDeps>(opts: {
     toolRegistry: wfConfig.toolRegistry,
     toolDeps,
     rehydrate: wfConfig.resolveBlobRef
-      ? (value) =>
-          rehydrateBlobRefs(value, (ref) =>
-            wfConfig.resolveBlobRef!(ref, toolDeps),
-          )
+      ? (value) => {
+          return rehydrateBlobRefs(value, (ref) => {
+            return wfConfig.resolveBlobRef!(ref, toolDeps)
+          })
+        }
       : undefined,
   })
   const durationMs = Date.now() - startedAt

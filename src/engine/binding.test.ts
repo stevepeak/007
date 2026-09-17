@@ -12,7 +12,7 @@ const NODES = [
   { id: 'n-b4', label: 'Result', kind: 'output' },
 ]
 
-function outputs (seed: Record<string, unknown> = {}) {
+function outputs(seed: Record<string, unknown> = {}) {
   const map = new NodeOutputs(NODES)
   for (const [id, value] of Object.entries(seed)) map.set(id, value)
   return map
@@ -49,25 +49,25 @@ describe('resolveBinding', () => {
 
   test('names both nodes when the producer never ran', () => {
     // The converging-branch-arms shape: an Output bound to the arm that lost.
-    expect(() =>
-      resolveBinding(
+    expect(() => {
+      return resolveBinding(
         { kind: 'ref', nodeId: 'n-a8', path: 'document' },
         outputs({ 'n-a4': { text: 'hello' } }),
         { nodeId: 'n-b4', name: 'output' },
-      ),
-    ).toThrow(
+      )
+    }).toThrow(
       /"Result" \(output\) can't resolve its 'output' input: it reads "Mark complete" \(tool\)\.document, but that node produced no output in this run/,
     )
   })
 
   test('calls out a ref that points outside the graph', () => {
-    expect(() =>
-      resolveBinding(
+    expect(() => {
+      return resolveBinding(
         { kind: 'ref', nodeId: 'n-deleted', path: 'text' },
         outputs(),
         { nodeId: 'n-b4', name: 'output' },
-      ),
-    ).toThrow(/references node n-deleted, which isn't part of this graph/)
+      )
+    }).toThrow(/references node n-deleted, which isn't part of this graph/)
   })
 
   test('a literal binding never touches the outputs map', () => {

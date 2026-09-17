@@ -20,22 +20,22 @@ import { synthesizeDelegationTools } from './sub-agent'
 // loop) so the test is deterministic; the sub-agents run through the genuine
 // `runAgentGeneration` path against a mock model.
 
-function baseConfig (over: Partial<AgentConfig>): AgentConfig {
+function baseConfig(over: Partial<AgentConfig>): AgentConfig {
   return makeAgentConfig({
-  modelId: 'mock',
-  prompt: 'PRIMARY orchestrator.',
-  userPrompt: 'Go.',
-  inputKind: 'task' as const,
-  toolIds: [],
-  maxTurns: 3,
-  output: { kind: 'text' },
-  subAgents: {
-    targets: [],
-    maxConcurrent: 4,
-    maxSpawns: 10,
-    allowStopSignal: true,
-  },
-  ...over,
+    modelId: 'mock',
+    prompt: 'PRIMARY orchestrator.',
+    userPrompt: 'Go.',
+    inputKind: 'task' as const,
+    toolIds: [],
+    maxTurns: 3,
+    output: { kind: 'text' },
+    subAgents: {
+      targets: [],
+      maxConcurrent: 4,
+      maxSpawns: 10,
+      allowStopSignal: true,
+    },
+    ...over,
   })
 }
 
@@ -68,8 +68,9 @@ const PRIMARY_SUBAGENTS: SubAgentsConfig = {
 }
 
 function systemMarker(options: unknown): string {
-  const prompt = (options as { prompt?: Array<{ role: string; content: unknown }> })
-    .prompt
+  const prompt = (
+    options as { prompt?: Array<{ role: string; content: unknown }> }
+  ).prompt
   const sys = prompt?.find((m) => m.role === 'system')
   return typeof sys?.content === 'string'
     ? sys.content
@@ -100,7 +101,6 @@ async function call(tool: unknown, args: unknown): Promise<unknown> {
   return execute(args, { toolCallId: 'call', messages: [] })
 }
 
-
 describe('sub-agent delegation — end to end', () => {
   test('join collects every sub-agent result and records child steps', async () => {
     const manifest = [
@@ -113,8 +113,8 @@ describe('sub-agent delegation — end to end', () => {
       agentEntry('critic', 'Critic', baseConfig({ prompt: 'CRITIC review.' })),
     ]
     // One model instance per getModel call; branch on the system prompt marker.
-    const getModel = () =>
-      new MockLanguageModelV3({
+    const getModel = () => {
+      return new MockLanguageModelV3({
         doGenerate: async (options) => {
           const m = systemMarker(options)
           const text = m.includes('RESEARCH') ? 'finding 42' : 'looks fine'
@@ -126,6 +126,7 @@ describe('sub-agent delegation — end to end', () => {
           }
         },
       })
+    }
     const { ctx, recorder } = makeCtx(getModel, manifest)
     const tools = synthesizeDelegationTools(PRIMARY_SUBAGENTS, {
       ctx,
@@ -181,8 +182,8 @@ describe('sub-agent delegation — end to end', () => {
         baseConfig({ prompt: 'CRITIC decisively.', output: criticOutput }),
       ),
     ]
-    const getModel = () =>
-      new MockLanguageModelV3({
+    const getModel = () => {
+      return new MockLanguageModelV3({
         doGenerate: async (options) => {
           const m = systemMarker(options)
           if (m.includes('RESEARCH')) {
@@ -202,6 +203,7 @@ describe('sub-agent delegation — end to end', () => {
           }
         },
       })
+    }
     const { ctx, recorder } = makeCtx(getModel, manifest)
     const tools = synthesizeDelegationTools(PRIMARY_SUBAGENTS, {
       ctx,
@@ -237,7 +239,11 @@ describe('sub-agent delegation — end to end', () => {
     'sub-agent inherits the primary node reasoning intent (%o)',
     async ({ streamReasoning, expected }) => {
       const manifest = [
-        agentEntry('p', 'Primary', baseConfig({ subAgents: PRIMARY_SUBAGENTS })),
+        agentEntry(
+          'p',
+          'Primary',
+          baseConfig({ subAgents: PRIMARY_SUBAGENTS }),
+        ),
         agentEntry(
           'researcher',
           'Researcher',
@@ -245,8 +251,8 @@ describe('sub-agent delegation — end to end', () => {
         ),
         agentEntry('critic', 'Critic', baseConfig({ prompt: 'CRITIC.' })),
       ]
-      const getModel = () =>
-        new MockLanguageModelV3({
+      const getModel = () => {
+        return new MockLanguageModelV3({
           doGenerate: async () => ({
             content: [
               { type: 'reasoning' as const, text: 'weighing the angle' },
@@ -257,6 +263,7 @@ describe('sub-agent delegation — end to end', () => {
             warnings: [],
           }),
         })
+      }
       const { ctx } = makeCtx(getModel, manifest)
       const sink = createMemorySink()
       ctx.sink = sink

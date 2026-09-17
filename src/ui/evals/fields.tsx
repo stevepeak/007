@@ -79,7 +79,11 @@ export function EvalToolPicker({
                 toolChip(selected?.color ?? null),
               )}
             >
-              <ToolIcon icon={selected?.icon} iconName={selected?.iconName} className="size-3.5" />
+              <ToolIcon
+                icon={selected?.icon}
+                iconName={selected?.iconName}
+                className="size-3.5"
+              />
             </span>
             <span
               className={cn(
@@ -104,7 +108,11 @@ export function EvalToolPicker({
       >
         {({ close }) => (
           <QueryState
-            query={{ isLoading: toolsQuery.isLoading, error: null, data: tools }}
+            query={{
+              isLoading: toolsQuery.isLoading,
+              error: null,
+              data: tools,
+            }}
             loading={
               <div className="px-3 py-6 text-center text-sm text-neutral-400">
                 Loading tools…
@@ -117,8 +125,8 @@ export function EvalToolPicker({
               </div>
             }
           >
-            {(tools) =>
-              tools.map((t) => {
+            {(tools) => {
+              return tools.map((t) => {
                 const isSel = t.id === value
                 return (
                   <button
@@ -141,7 +149,11 @@ export function EvalToolPicker({
                         toolChip(t.color),
                       )}
                     >
-                      <ToolIcon icon={t.icon} iconName={t.iconName} className="size-3.5" />
+                      <ToolIcon
+                        icon={t.icon}
+                        iconName={t.iconName}
+                        className="size-3.5"
+                      />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium text-neutral-800">
@@ -156,7 +168,7 @@ export function EvalToolPicker({
                   </button>
                 )
               })
-            }
+            }}
           </QueryState>
         )}
       </Popover>
@@ -271,12 +283,12 @@ export function MatchRow({
   }) => void
 }) {
   const { Input, Label } = useWfComponents()
-  const pathField = useCommittedField(path ?? '', (p) =>
-    onChange({ path: p || undefined }),
-  )
-  const valueField = useCommittedField(valueToStr(value), (v) =>
-    onChange({ value: parseValue(v) }),
-  )
+  const pathField = useCommittedField(path ?? '', (p) => {
+    return onChange({ path: p || undefined })
+  })
+  const valueField = useCommittedField(valueToStr(value), (v) => {
+    return onChange({ value: parseValue(v) })
+  })
 
   const selectedField = pathOptions?.find((o) => o.value === (path ?? ''))
   // Preserve a stored path that isn't in the schema (nested/custom) as its own

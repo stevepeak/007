@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test'
 
 import type { WfDataClient } from '../server/protocol'
 
-import { platformReadTools } from './tools-platform'
 import type { WfMcpTool } from './tools'
+import { platformReadTools } from './tools-platform'
 
 function toolNamed(name: string): WfMcpTool {
   const found = platformReadTools().find((t) => t.name === name)
@@ -155,7 +155,10 @@ describe('get_dashboard', () => {
     } as never
   }
 
-  function run(over: Record<string, unknown> = {}, args: Record<string, unknown> = {}) {
+  function run(
+    over: Record<string, unknown> = {},
+    args: Record<string, unknown> = {},
+  ) {
     const client = stubClient({ getDashboard: async () => dashboard(over) })
     return toolNamed('get_dashboard').run(client, args) as Promise<
       Record<string, never>

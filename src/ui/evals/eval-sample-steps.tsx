@@ -135,14 +135,14 @@ function KindMismatchNotice({
       </p>
       <button
         type="button"
-        onClick={() =>
-          state.edit({
+        onClick={() => {
+          return state.edit({
             ...draft,
             input: emptyInputFor(
               state.expectedKind === 'conversation' ? 'conversation' : 'task',
             ),
           })
-        }
+        }}
         className="ml-auto shrink-0 text-[11px] font-medium text-amber-800 underline"
       >
         Switch to {state.expectedKind}

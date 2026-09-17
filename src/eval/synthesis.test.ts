@@ -95,12 +95,13 @@ function config(model: MockLanguageModelV3): WfSdkConfig<unknown> {
         kind: 'ai-tool',
         description: 'Semantic search.',
         sideEffect: 'read',
-        build: () =>
-          tool({
+        build: () => {
+          return tool({
             description: 'Semantic search.',
             inputSchema: z.object({ query: z.string() }),
             execute: async () => ({ chunks: ['LIVE — should never run'] }),
-          }),
+          })
+        },
       },
     ],
   ])
@@ -122,9 +123,30 @@ function config(model: MockLanguageModelV3): WfSdkConfig<unknown> {
 const graph = {
   version: 1,
   nodes: [
-    { id: 't', kind: 'trigger', label: 'Chat', position: { x: 0, y: 0 }, config: { triggerKind: 'chat' } },
-    { id: 'a', kind: 'agent', label: 'Assistant', position: { x: 200, y: 0 }, config: { agentId: 'assistant', conversation: { kind: 'ref', nodeId: 't', path: 'messages' } } },
-    { id: 'o', kind: 'output', label: 'Out', position: { x: 400, y: 0 }, config: { source: { kind: 'ref', nodeId: 'a', path: '' } } },
+    {
+      id: 't',
+      kind: 'trigger',
+      label: 'Chat',
+      position: { x: 0, y: 0 },
+      config: { triggerKind: 'chat' },
+    },
+    {
+      id: 'a',
+      kind: 'agent',
+      label: 'Assistant',
+      position: { x: 200, y: 0 },
+      config: {
+        agentId: 'assistant',
+        conversation: { kind: 'ref', nodeId: 't', path: 'messages' },
+      },
+    },
+    {
+      id: 'o',
+      kind: 'output',
+      label: 'Out',
+      position: { x: 400, y: 0 },
+      config: { source: { kind: 'ref', nodeId: 'a', path: '' } },
+    },
   ],
   edges: [
     { id: 'e1', source: 't', target: 'a', condition: null },
@@ -198,7 +220,8 @@ describe('freezeTools — synthesis mode', () => {
       manifest,
       runContext: { freezeTools: true },
     })
-    const meta = run.steps.find((s) => s.nodeKind === 'agent')?.meta as AgentNodeMeta
+    const meta = run.steps.find((s) => s.nodeKind === 'agent')
+      ?.meta as AgentNodeMeta
     expect(meta.model).toBe('mock')
     expect(meta.steps.length).toBeGreaterThan(0)
   })

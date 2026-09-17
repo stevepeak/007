@@ -82,7 +82,7 @@ describe('canSpawnChildRuns', () => {
 // The per-item picker's label. Same resolution as the activity feed's inline
 // path — from the item's own trigger step — so the two can't disagree about
 // what item 3 is called while you page through it.
-describe('resolveRunSelection — the focused item\'s title', () => {
+describe("resolveRunSelection — the focused item's title", () => {
   function step(over: Partial<WfRunStepDTO>): WfRunStepDTO {
     return {
       nodeId: 'x',
@@ -114,7 +114,14 @@ describe('resolveRunSelection — the focused item\'s title', () => {
         itemTitle: '${title}',
         subgraph: {
           version: 1,
-          nodes: [{ id: 'save', kind: 'tool', label: 'Save', position: { x: 0, y: 0 } }],
+          nodes: [
+            {
+              id: 'save',
+              kind: 'tool',
+              label: 'Save',
+              position: { x: 0, y: 0 },
+            },
+          ],
           edges: [],
         },
       },
@@ -139,8 +146,8 @@ describe('resolveRunSelection — the focused item\'s title', () => {
     }),
   ]
 
-  const select = (selectedItemIndex: number) =>
-    resolveRunSelection({
+  const select = (selectedItemIndex: number) => {
+    return resolveRunSelection({
       graph,
       steps,
       runStatus: 'completed',
@@ -148,6 +155,7 @@ describe('resolveRunSelection — the focused item\'s title', () => {
       selectedItemIndex,
       topLevel: new Map(),
     })
+  }
 
   test('names the item currently focused, not the first one', () => {
     expect(select(0).itemTitle).toBe('Chocolate Mousse')
@@ -165,7 +173,12 @@ describe('resolveRunSelection — the focused item\'s title', () => {
           subgraph: {
             version: 1,
             nodes: [
-              { id: 'save', kind: 'tool', label: 'Save', position: { x: 0, y: 0 } },
+              {
+                id: 'save',
+                kind: 'tool',
+                label: 'Save',
+                position: { x: 0, y: 0 },
+              },
             ],
             edges: [],
           },

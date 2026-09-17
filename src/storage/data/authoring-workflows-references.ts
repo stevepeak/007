@@ -69,9 +69,9 @@ export async function listWorkflowsReferencingAgent(
 ): Promise<{ id: string; name: string }[]> {
   const all = await loadWorkflowReferenceGraphs(db)
   return all
-    .filter((wf) =>
-      wf.graphs.some((g) => agentIdsInGraph(g).includes(input.agentId)),
-    )
+    .filter((wf) => {
+      return wf.graphs.some((g) => agentIdsInGraph(g).includes(input.agentId))
+    })
     .map((wf) => ({ id: wf.id, name: wf.name }))
 }
 

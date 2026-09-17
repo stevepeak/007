@@ -105,15 +105,14 @@ type RenderState = {
 }
 
 function textRuns(runs: readonly DocumentRun[]): TextRun[] {
-  return runs.map(
-    (r) =>
-      new TextRun({
-        text: r.text,
-        bold: r.bold ?? false,
-        italics: r.italic ?? false,
-        underline: r.underline ? {} : undefined,
-      }),
-  )
+  return runs.map((r) => {
+    return new TextRun({
+      text: r.text,
+      bold: r.bold ?? false,
+      italics: r.italic ?? false,
+      underline: r.underline ? {} : undefined,
+    })
+  })
 }
 
 const HEADING_BY_LEVEL = {
@@ -142,10 +141,11 @@ export function stripReLabel(subject: string): string {
 
 function letterheadChildren(head: DocumentLetterhead): BodyChild[] {
   const out: BodyChild[] = []
-  const line = (text: string, opts?: { bold?: boolean }) =>
-    new Paragraph({
+  const line = (text: string, opts?: { bold?: boolean }) => {
+    return new Paragraph({
       children: [new TextRun({ text, bold: opts?.bold ?? false })],
     })
+  }
 
   for (const l of head.senderLines ?? []) out.push(line(l, { bold: true }))
   if (head.senderLines?.length) out.push(new Paragraph({}))
@@ -298,8 +298,8 @@ function renderBlock(
       // A fresh instance per list block, so two lists in one document each start
       // at 1 rather than the second continuing the first.
       const instance = ++state.instances
-      return block.items.map((item) =>
-        block.ordered
+      return block.items.map((item) => {
+        return block.ordered
           ? new Paragraph({
               numbering: { reference: LIST_NUMBERING, level: 0, instance },
               children: textRuns(item.runs),
@@ -307,17 +307,18 @@ function renderBlock(
           : new Paragraph({
               bullet: { level: 0 },
               children: textRuns(item.runs),
-            }),
-      )
+            })
+      })
     }
 
     case 'table': {
-      const cell = (text: string, bold: boolean) =>
-        new TableCell({
+      const cell = (text: string, bold: boolean) => {
+        return new TableCell({
           children: [
             new Paragraph({ children: [new TextRun({ text, bold })] }),
           ],
         })
+      }
       const rows: TableRow[] = []
       if (block.header?.length) {
         rows.push(

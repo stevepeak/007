@@ -17,7 +17,9 @@ import type { SpecBundle } from './spec-schema'
 
 // ── in-memory WfDb built from the real migration chain ────────────────────────
 
-const MIGRATIONS_DIR = fileURLToPath(new URL('../../../migrations', import.meta.url))
+const MIGRATIONS_DIR = fileURLToPath(
+  new URL('../../../migrations', import.meta.url),
+)
 
 function freshDb(): WfDb {
   const sqlite = new Database(':memory:')
@@ -118,7 +120,11 @@ describe('graph-refs', () => {
     const dbGraph = {
       version: 1,
       nodes: [
-        { id: 'a', kind: 'agent', config: { agentId: 'uuid-1', version: null } },
+        {
+          id: 'a',
+          kind: 'agent',
+          config: { agentId: 'uuid-1', version: null },
+        },
         {
           id: 'i',
           kind: 'iteration',
@@ -151,12 +157,15 @@ describe('graph-refs', () => {
   })
 
   test('unknown slug throws with context', () => {
-    expect(() =>
-      graphSlugsToIds(
-        { version: 1, nodes: [{ id: 'a', kind: 'agent', config: { agentSlug: 'missing' } }] },
+    expect(() => {
+      return graphSlugsToIds(
+        {
+          version: 1,
+          nodes: [{ id: 'a', kind: 'agent', config: { agentSlug: 'missing' } }],
+        },
         { agentIdBySlug: new Map(), workflowIdBySlug: new Map() },
-      ),
-    ).toThrow(/agent slug "missing"/)
+      )
+    }).toThrow(/agent slug "missing"/)
   })
 })
 
@@ -168,7 +177,11 @@ describe('import/export round-trip', () => {
 
   test('import creates entities, export reproduces the bundle', async () => {
     const report = await importBundle(db, sampleBundle())
-    expect(report.changes.map((c) => c.action)).toEqual(['create', 'create', 'create'])
+    expect(report.changes.map((c) => c.action)).toEqual([
+      'create',
+      'create',
+      'create',
+    ])
 
     const out = await exportBundle(db)
     expect(out.agents.map((a) => a.slug)).toEqual(['greeter'])
@@ -198,7 +211,10 @@ describe('import/export round-trip', () => {
 
   test('a changed agent config publishes a new version', async () => {
     await importBundle(db, sampleBundle())
-    const report = await importBundle(db, sampleBundle('A different prompt ${name}.'))
+    const report = await importBundle(
+      db,
+      sampleBundle('A different prompt ${name}.'),
+    )
     const agent = report.changes.find((c) => c.kind === 'agent')!
     expect(agent.action).toBe('update')
 

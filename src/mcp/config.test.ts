@@ -81,8 +81,8 @@ describe('resolveWfMcpConfig', () => {
   })
 
   test('refuses to start without a credential', () => {
-    expect(() =>
-      resolveWfMcpConfig([], { WF_BASE_URL: 'http://localhost:3000' }),
-    ).toThrow(/WF_MCP_TOKEN/)
+    expect(() => {
+      return resolveWfMcpConfig([], { WF_BASE_URL: 'http://localhost:3000' })
+    }).toThrow(/WF_MCP_TOKEN/)
   })
 })

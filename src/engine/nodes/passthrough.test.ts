@@ -94,8 +94,9 @@ describe('executePassthroughNode', () => {
       }),
       input: undefined,
       nodeOutputs: outputs,
-      rehydrate: (v) =>
-        Promise.resolve(v === 'blob:123' ? 'real text' : v),
+      rehydrate: (v) => {
+        return Promise.resolve(v === 'blob:123' ? 'real text' : v)
+      },
     })
     expect(r.output).toEqual({ text: 'real text' })
   })

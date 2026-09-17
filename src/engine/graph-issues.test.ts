@@ -24,59 +24,61 @@ const trigger: WorkflowNode = {
   informUser: { mode: 'off' },
   config: { triggerKind: 'chat_message' },
 }
-function output (id = 'o', source?: string): WorkflowNode {
+function output(id = 'o', source?: string): WorkflowNode {
   return {
-  id,
-  kind: 'output',
-  position: pos,
-  label: id,
-  informUser: { mode: 'off' },
-  config: source ? { source: { kind: 'ref', nodeId: source, path: '' } } : {},
+    id,
+    kind: 'output',
+    position: pos,
+    label: id,
+    informUser: { mode: 'off' },
+    config: source ? { source: { kind: 'ref', nodeId: source, path: '' } } : {},
+  }
 }
-}
-function agent (id: string, agentId = 'a1'): WorkflowNode {
+function agent(id: string, agentId = 'a1'): WorkflowNode {
   return {
-  id,
-  kind: 'agent',
-  position: pos,
-  label: id,
-  informUser: { mode: 'off' },
-  config: { agentId, version: null, inputs: {} },
+    id,
+    kind: 'agent',
+    position: pos,
+    label: id,
+    informUser: { mode: 'off' },
+    config: { agentId, version: null, inputs: {} },
+  }
 }
-}
-function branch (id: string): WorkflowNode {
+function branch(id: string): WorkflowNode {
   return {
-  id,
-  kind: 'branch',
-  position: pos,
-  label: id,
-  informUser: { mode: 'off' },
-  config: { operator: 'is_not_empty' },
+    id,
+    kind: 'branch',
+    position: pos,
+    label: id,
+    informUser: { mode: 'off' },
+    config: { operator: 'is_not_empty' },
+  }
 }
-}
-function tool (id: string): WorkflowNode {
+function tool(id: string): WorkflowNode {
   return {
-  id,
-  kind: 'tool',
-  position: pos,
-  label: id,
-  informUser: { mode: 'off' },
-  config: { toolId: 't1', args: {} },
+    id,
+    kind: 'tool',
+    position: pos,
+    label: id,
+    informUser: { mode: 'off' },
+    config: { toolId: 't1', args: {} },
+  }
 }
-}
-function race (id: string): WorkflowNode {
+function race(id: string): WorkflowNode {
   return {
-  id,
-  kind: 'race',
-  position: pos,
-  label: id,
-  informUser: { mode: 'off' },
-  config: {},
+    id,
+    kind: 'race',
+    position: pos,
+    label: id,
+    informUser: { mode: 'off' },
+    config: {},
+  }
 }
-}
-function edge (source: string,
+function edge(
+  source: string,
   target: string,
-  condition: 'yes' | 'no' | null = null) {
+  condition: 'yes' | 'no' | null = null,
+) {
   return { id: `${source}->${target}`, source, target, condition }
 }
 
@@ -180,9 +182,9 @@ describe('collectGraphIssues', () => {
       ],
     )
     expect(
-      collectGraphIssues(parallel).some((i) =>
-        /parallel|both arms/.test(i.message),
-      ),
+      collectGraphIssues(parallel).some((i) => {
+        return /parallel|both arms/.test(i.message)
+      }),
     ).toBe(false)
 
     // Both arms of a branch converging on a race is legal too — first arm to run
@@ -220,9 +222,9 @@ describe('collectGraphIssues', () => {
         edge('j', 'o'),
       ],
     )
-    expect(
-      collectGraphIssues(g).some((i) => /both arms/.test(i.message)),
-    ).toBe(false)
+    expect(collectGraphIssues(g).some((i) => /both arms/.test(i.message))).toBe(
+      false,
+    )
   })
 
   test('still flags a work node when an arm bypasses the race', () => {
@@ -251,9 +253,11 @@ describe('collectGraphIssues', () => {
       [edge('t', 'a'), edge('a', 'r'), edge('r', 'o')],
     )
     expect(
-      collectGraphIssues(g).some(
-        (i) => i.nodeId === 'r' && i.severity === 'warning' && /2\+/.test(i.message),
-      ),
+      collectGraphIssues(g).some((i) => {
+        return (
+          i.nodeId === 'r' && i.severity === 'warning' && /2\+/.test(i.message)
+        )
+      }),
     ).toBe(true)
   })
 
@@ -272,7 +276,9 @@ describe('collectGraphIssues', () => {
       ],
     )
     expect(
-      collectGraphIssues(converge).some((i) => /parallel|both arms/.test(i.message)),
+      collectGraphIssues(converge).some((i) => {
+        return /parallel|both arms/.test(i.message)
+      }),
     ).toBe(false)
 
     const join = graph(
@@ -380,13 +386,14 @@ describe('collectGraphIssues', () => {
       },
     }
     const issues = collectGraphIssues(
-      graph([trigger, iteration, output()], [edge('t', 'loop'), edge('loop', 'o')]),
+      graph(
+        [trigger, iteration, output()],
+        [edge('t', 'loop'), edge('loop', 'o')],
+      ),
     )
     // The child is flagged — nothing it reports can reach the user…
     expect(
-      issues.some(
-        (i) => i.nodeId === 'child' && /Inform user/.test(i.message),
-      ),
+      issues.some((i) => i.nodeId === 'child' && /Inform user/.test(i.message)),
     ).toBe(true)
     // …while the loop's OWN note is exactly where narration belongs.
     expect(
@@ -440,13 +447,14 @@ describe('collectGraphIssues', () => {
     }
   }
 
-  const loopIssue = (node: WorkflowGraph['nodes'][number]) =>
-    collectGraphIssues(
-      graph([trigger, node, output('o', 'loop')], [
-        edge('t', 'loop'),
-        edge('loop', 'o'),
-      ]),
+  const loopIssue = (node: WorkflowGraph['nodes'][number]) => {
+    return collectGraphIssues(
+      graph(
+        [trigger, node, output('o', 'loop')],
+        [edge('t', 'loop'), edge('loop', 'o')],
+      ),
     ).find((i) => i.nodeId === 'loop' && /item/i.test(i.message))
+  }
 
   test('warns when an inline item runs an agent', () => {
     const issue = loopIssue(loop('inline', [agent('a')]))
@@ -494,13 +502,14 @@ describe('collectGraphIssues', () => {
     }
   }
 
-  const boundIssue = (node: WorkflowGraph['nodes'][number]) =>
-    collectGraphIssues(
+  const boundIssue = (node: WorkflowGraph['nodes'][number]) => {
+    return collectGraphIssues(
       graph(
         [trigger, node, output('o', 'loop')],
         [edge('t', 'loop'), edge('loop', 'o')],
       ),
     ).find((i) => i.nodeId === 'loop' && /limit/i.test(i.message))
+  }
 
   test('errors when an iteration has no item limit', () => {
     const issue = boundIssue(boundedLoop('inline', undefined))

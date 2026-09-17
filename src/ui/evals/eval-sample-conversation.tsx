@@ -23,12 +23,17 @@ export function ConversationEditor({
   const { Button } = useWfComponents()
   const field = useCommittedField(turns, onChange, JSON.stringify)
 
-  const update = (i: number, patch: Partial<SeededMessage>) =>
-    field.onChange(field.value.map((m, j) => (j === i ? { ...m, ...patch } : m)))
-  const remove = (i: number) =>
-    field.commit(field.value.filter((_, j) => j !== i))
-  const add = (role: SeededMessage['role']) =>
-    field.commit([...field.value, { role, text: '' }])
+  const update = (i: number, patch: Partial<SeededMessage>) => {
+    return field.onChange(
+      field.value.map((m, j) => (j === i ? { ...m, ...patch } : m)),
+    )
+  }
+  const remove = (i: number) => {
+    return field.commit(field.value.filter((_, j) => j !== i))
+  }
+  const add = (role: SeededMessage['role']) => {
+    return field.commit([...field.value, { role, text: '' }])
+  }
 
   // A transcript ending on a plain assistant message leaves the model nothing to
   // answer, so it generates a SECOND assistant turn — and the sample grades that
@@ -108,8 +113,12 @@ function TurnCard({
   const isAssistant = message.role === 'assistant'
 
   const setToolCalls = (toolCalls: SeededToolCall[]) => onChange({ toolCalls })
-  const addToolCall = () =>
-    setToolCalls([...(message.toolCalls ?? []), { tool: '', output: {} }])
+  const addToolCall = () => {
+    return setToolCalls([
+      ...(message.toolCalls ?? []),
+      { tool: '', output: {} },
+    ])
+  }
 
   return (
     <div className="space-y-2 rounded-lg border border-neutral-200 p-3">
@@ -150,19 +159,19 @@ function TurnCard({
             <ToolCallEditor
               key={i}
               call={tc}
-              onChange={(patch) =>
-                setToolCalls(
-                  (message.toolCalls ?? []).map((c, j) =>
-                    j === i ? { ...c, ...patch } : c,
-                  ),
+              onChange={(patch) => {
+                return setToolCalls(
+                  (message.toolCalls ?? []).map((c, j) => {
+                    return j === i ? { ...c, ...patch } : c
+                  }),
                 )
-              }
+              }}
               onCommit={onCommit}
-              onRemove={() =>
-                setToolCalls(
+              onRemove={() => {
+                return setToolCalls(
                   (message.toolCalls ?? []).filter((_, j) => j !== i),
                 )
-              }
+              }}
             />
           ))}
           <button
@@ -256,7 +265,9 @@ function JsonField({
       </span>
       <Textarea
         value={text}
-        placeholder={label === 'args' ? '{ } (optional)' : '{ "chunks": [ … ] }'}
+        placeholder={
+          label === 'args' ? '{ } (optional)' : '{ "chunks": [ … ] }'
+        }
         onChange={(e) => onChange(parseLoose(e.target.value))}
         onBlur={onCommit}
         rows={2}

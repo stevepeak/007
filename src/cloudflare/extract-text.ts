@@ -247,14 +247,14 @@ export function createExtractTextTool<TDeps>(
     kind: 'function',
     inputSchema: extractTextInputSchema,
     outputSchema: extractTextOutputSchema,
-    build:
-      (deps) =>
-      async (rawArgs): Promise<ExtractTextResult> => {
+    build: (deps) => {
+      return async (rawArgs): Promise<ExtractTextResult> => {
         const args = extractTextInputSchema.parse(rawArgs)
         // Spill any large extraction to R2 and return a pointer instead of the
         // inline text (transparent to downstream nodes).
-        const finalize = (r: ExtractTextResult) =>
-          spillIfLarge(opts, deps, args, r)
+        const finalize = (r: ExtractTextResult) => {
+          return spillIfLarge(opts, deps, args, r)
+        }
         const obj = await opts.getBucket(deps).get(args.source)
         if (!obj) {
           throw new Error(`extract_text: R2 object not found: ${args.source}`)
@@ -329,6 +329,7 @@ export function createExtractTextTool<TDeps>(
           mode: 'markdown',
           meta: { ocr: false },
         })
-      },
+      }
+    },
   }
 }

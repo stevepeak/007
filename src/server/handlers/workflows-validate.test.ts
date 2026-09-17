@@ -79,8 +79,9 @@ function ctx(db: WfDb, params: unknown): HandlerCtx {
     req: new Request('http://localhost/api/wf', { method: 'POST' }),
     env: async () => ({}),
     analytics: async () => null,
-    change: (input) =>
-      recordChange(db, { ...input, actor: { userId: 'tester' } }),
+    change: (input) => {
+      return recordChange(db, { ...input, actor: { userId: 'tester' } })
+    },
   }
 }
 
@@ -139,7 +140,9 @@ describe('validateGraph handler', () => {
 
   test('a supplied graph: the ART-146 args are three errors + a warning, the fixed args none', async () => {
     const handlers = buildWorkflowHandlers(options())
-    const bad = await handlers.validateGraph(ctx(db, { graph: graphWith(v25Args) }))
+    const bad = await handlers.validateGraph(
+      ctx(db, { graph: graphWith(v25Args) }),
+    )
     expect(bad.source).toBe('supplied')
     expect(bad.errors).toBe(3)
     expect(bad.warnings).toBe(1)
@@ -147,7 +150,9 @@ describe('validateGraph handler', () => {
       'Store the boolean or null false, not the text "false"',
     )
 
-    const good = await handlers.validateGraph(ctx(db, { graph: graphWith(v27Args) }))
+    const good = await handlers.validateGraph(
+      ctx(db, { graph: graphWith(v27Args) }),
+    )
     expect(good.errors).toBe(0)
     expect(good.issues).toEqual([])
   })
@@ -164,7 +169,11 @@ describe('validateGraph handler', () => {
     expect(published.versionNumber).toBe(1)
     expect(published.errors).toBe(0)
 
-    await updateDraft(db, { workflowId, graph: graphWith(v25Args), lastEditedBy: 'tester' })
+    await updateDraft(db, {
+      workflowId,
+      graph: graphWith(v25Args),
+      lastEditedBy: 'tester',
+    })
     const draft = await handlers.validateGraph(ctx(db, { workflowId }))
     expect(draft.source).toBe('draft')
     expect(draft.errors).toBe(3)
@@ -194,7 +203,9 @@ describe('validateGraph handler', () => {
     // Two triggers: the shape schema saves it, the runtime schema rejects it.
     g.nodes.push({ ...g.nodes[0], id: 't2' })
     const r = await handlers.validateGraph(ctx(db, { graph: g }))
-    expect(r.issues.some((i) => i.message.startsWith('Runtime check:'))).toBe(true)
+    expect(r.issues.some((i) => i.message.startsWith('Runtime check:'))).toBe(
+      true,
+    )
     expect(r.errors).toBeGreaterThan(0)
   })
 })

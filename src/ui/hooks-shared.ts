@@ -24,11 +24,13 @@ export const keys = {
   providerBudgets: ['wf', 'provider-budgets'] as const,
   tools: ['wf', 'tools'] as const,
   toolContextFields: ['wf', 'tool-context-fields'] as const,
-  toolInvocations: (toolId: string, limit?: number) =>
-    ['wf', 'tool-invocations', toolId, limit ?? null] as const,
+  toolInvocations: (toolId: string, limit?: number) => {
+    return ['wf', 'tool-invocations', toolId, limit ?? null] as const
+  },
   // Prefix key: invalidates every limit variant of a tool's invocations.
-  toolInvocationsAll: (toolId: string) =>
-    ['wf', 'tool-invocations', toolId] as const,
+  toolInvocationsAll: (toolId: string) => {
+    return ['wf', 'tool-invocations', toolId] as const
+  },
   triggerEvents: ['wf', 'trigger-events'] as const,
   connectors: ['wf', 'connectors'] as const,
   connector: (id: string) => ['wf', 'connector', id] as const,
@@ -52,13 +54,15 @@ export const keys = {
   agent: (id: string) => ['wf', 'agent', id] as const,
   agentVersions: (id: string) => ['wf', 'agent-versions', id] as const,
   agentReferences: (id: string) => ['wf', 'agent-references', id] as const,
-  agentCalls: (id: string, limit?: number) =>
-    ['wf', 'agent-calls', id, limit ?? null] as const,
+  agentCalls: (id: string, limit?: number) => {
+    return ['wf', 'agent-calls', id, limit ?? null] as const
+  },
   changes: (input: WfChangeListInput) => ['wf', 'changes', input] as const,
   // Prefix key: invalidates every filter variant of the change feed.
   changesAll: ['wf', 'changes'] as const,
-  evalSets: (includeArchived?: boolean) =>
-    ['wf', 'eval-sets', includeArchived ?? false] as const,
+  evalSets: (includeArchived?: boolean) => {
+    return ['wf', 'eval-sets', includeArchived ?? false] as const
+  },
   // Prefix key: invalidates both archived/active variants of the eval sets list.
   evalSetsAll: ['wf', 'eval-sets'] as const,
   evalSet: (id: string) => ['wf', 'eval-set', id] as const,
@@ -69,8 +73,9 @@ export const keys = {
   feedback: (input: WfFeedbackListInput) => ['wf', 'feedback', input] as const,
   // Prefix key: invalidates every filter variant of the feedback list.
   feedbackAll: ['wf', 'feedback'] as const,
-  feedbackForSubjects: (subjectIds: string[]) =>
-    ['wf', 'feedback-subjects', subjectIds] as const,
+  feedbackForSubjects: (subjectIds: string[]) => {
+    return ['wf', 'feedback-subjects', subjectIds] as const
+  },
 }
 
 // Collapses the shared mutation ceremony: grab the injected client + query

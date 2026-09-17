@@ -71,11 +71,11 @@ export function useCanvasSync({
   useEffect(() => {
     if (!registerNodePatcher) return
     registerNodePatcher((nodeId, next) => {
-      setNodes((ns) =>
-        ns.map((n) =>
-          n.id === nodeId ? { ...n, data: extractEditorData(next) } : n,
-        ),
-      )
+      setNodes((ns) => {
+        return ns.map((n) => {
+          return n.id === nodeId ? { ...n, data: extractEditorData(next) } : n
+        })
+      })
     })
   }, [registerNodePatcher, setNodes])
 

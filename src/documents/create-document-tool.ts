@@ -170,8 +170,8 @@ export function createDocumentTool<TDeps>(
     kind: 'ai-tool',
     inputSchema: CREATE_DOCUMENT_INPUT_SCHEMA,
     outputSchema: CREATE_DOCUMENT_OUTPUT_SCHEMA,
-    build: (deps) =>
-      tool({
+    build: (deps) => {
+      return tool({
         description:
           opts.description ??
           'Author a Word document (.docx) the user can download and edit. Supply the document as structured blocks — never as raw text or XML — and list every fact it relies on. Returns the stored document id; the bytes are never returned.',
@@ -198,6 +198,7 @@ export function createDocumentTool<TDeps>(
             mimeType: DOCX_MIME_TYPE,
           })
         },
-      }),
+      })
+    },
   }
 }

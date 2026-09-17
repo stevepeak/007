@@ -103,11 +103,11 @@ export function WfAutoForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [signature],
   )
-  const controlDefaults = useMemo(
-    () =>
-      defaultValues ? toControlValues(defaultValues, provider.getFields()) : undefined,
-    [provider, defaultValues],
-  )
+  const controlDefaults = useMemo(() => {
+    return defaultValues
+      ? toControlValues(defaultValues, provider.getFields())
+      : undefined
+  }, [provider, defaultValues])
 
   const [error, setError] = useState<string | null>(null)
   // Seed the raw-JSON fallback from defaultValues when the schema has no fields
@@ -179,7 +179,10 @@ export function WfAutoForm({
   // A disabled <fieldset> is the simplest way to disable every generated
   // control at once (AutoForm has no form-level `disabled`).
   return (
-    <fieldset disabled={disabled} className="m-0 min-w-0 space-y-4 border-0 p-0">
+    <fieldset
+      disabled={disabled}
+      className="m-0 min-w-0 space-y-4 border-0 p-0"
+    >
       {provider.hasFields ? (
         <AutoForm
           key={signature}
@@ -193,7 +196,11 @@ export function WfAutoForm({
           {submit}
         </AutoForm>
       ) : (
-        <form onSubmit={handleRawJson} onKeyDown={onKeyDown} className="space-y-4">
+        <form
+          onSubmit={handleRawJson}
+          onKeyDown={onKeyDown}
+          className="space-y-4"
+        >
           <div className="space-y-1.5">
             <Label htmlFor="wf-raw-args">{emptyLabel}</Label>
             <Textarea

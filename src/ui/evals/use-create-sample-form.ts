@@ -51,13 +51,11 @@ export function useCreateSampleForm({
   // Goals that already test this agent — the sample lands under one of them, or a
   // brand-new goal the author names here.
   const setsQuery = useEvalSets()
-  const goals = useMemo(
-    () =>
-      (setsQuery.data ?? []).filter(
-        (s) => s.targetKind === 'agent' && s.targetId === agentId,
-      ),
-    [setsQuery.data, agentId],
-  )
+  const goals = useMemo(() => {
+    return (setsQuery.data ?? []).filter(
+      (s) => s.targetKind === 'agent' && s.targetId === agentId,
+    )
+  }, [setsQuery.data, agentId])
 
   // The sample's input, reconstructed from what this node actually ran with.
   const given = useMemo(

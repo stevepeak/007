@@ -145,12 +145,12 @@ function CanvasInner({
 
   const handleTidyLayout = useCallback(() => {
     const positions = layoutNodes(nodes, edges)
-    setNodes((ns) =>
-      ns.map((n) => {
+    setNodes((ns) => {
+      return ns.map((n) => {
         const next = positions.get(n.id)
         return next ? { ...n, position: next } : n
-      }),
-    )
+      })
+    })
     requestAnimationFrame(() => fitView({ duration: 300, padding: 0.2 }))
   }, [nodes, edges, setNodes, fitView])
 
@@ -189,11 +189,12 @@ function CanvasInner({
       // Deleting an iteration container takes its children with it.
       const removedContainers = new Set(
         changes
-          .filter(
-            (c) =>
+          .filter((c) => {
+            return (
               c.type === 'remove' &&
-              nodes.find((n) => n.id === c.id)?.data.kind === 'iteration',
-          )
+              nodes.find((n) => n.id === c.id)?.data.kind === 'iteration'
+            )
+          })
           .map((c) => (c as { id: string }).id),
       )
       const filtered = changes.filter(

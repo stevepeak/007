@@ -233,11 +233,12 @@ export function ZodCodeEditor({
       return
     }
     const lower = word.toLowerCase()
-    const matches = COMPLETIONS.filter(
-      (c) =>
+    const matches = COMPLETIONS.filter((c) => {
+      return (
         c.trigger.toLowerCase().startsWith(lower) &&
-        c.trigger.toLowerCase() !== lower,
-    )
+        c.trigger.toLowerCase() !== lower
+      )
+    })
     setItems(matches)
     setActive(0)
     setOpen(matches.length > 0)
@@ -275,15 +276,15 @@ export function ZodCodeEditor({
           )}
         >
           {value ? (
-            tokenize(value).map((t, i) =>
-              t.cls ? (
+            tokenize(value).map((t, i) => {
+              return t.cls ? (
                 <span key={i} className={t.cls}>
                   {t.text}
                 </span>
               ) : (
                 t.text
-              ),
-            )
+              )
+            })
           ) : placeholder ? (
             <span className="text-neutral-400">{placeholder}</span>
           ) : null}
@@ -321,12 +322,12 @@ export function ZodCodeEditor({
           }}
           // Delay so a click on a suggestion (mousedown) still registers, then
           // close the popup and let the parent format the committed source.
-          onBlur={() =>
-            window.setTimeout(() => {
+          onBlur={() => {
+            return window.setTimeout(() => {
               setOpen(false)
               onBlur?.()
             }, 120)
-          }
+          }}
           className={cn(
             'absolute inset-0 h-full w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded-md border bg-transparent px-3 py-2 font-mono text-xs leading-relaxed text-transparent outline-none',
             readOnly

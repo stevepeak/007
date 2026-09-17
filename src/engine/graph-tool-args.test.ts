@@ -31,7 +31,11 @@ function schemas(): ToolInputSchemas {
 function toolNode(
   id: string,
   toolId: string,
-  args: Record<string, { kind: 'literal'; value: unknown } | { kind: 'ref'; nodeId: string; path: string }>,
+  args: Record<
+    string,
+    | { kind: 'literal'; value: unknown }
+    | { kind: 'ref'; nodeId: string; path: string }
+  >,
 ): WorkflowNode {
   return {
     id,
@@ -60,15 +64,23 @@ describe('collectToolArgIssues', () => {
     const issues = collectToolArgIssues(g, schemas())
     expect(issues.every((i) => i.nodeId === 'esc')).toBe(true)
     // The dropped key is the one WARNING: zod strips it, the run goes on.
-    expect(issues.map((i) => i.severity).sort()).toEqual(['error', 'error', 'error', 'warning'])
+    expect(issues.map((i) => i.severity).sort()).toEqual([
+      'error',
+      'error',
+      'error',
+      'warning',
+    ])
     const messages = issues.map((i) => i.message)
-    const has = (needle: string) =>
-      messages.some((m) => m.includes(needle))
+    const has = (needle: string) => {
+      return messages.some((m) => m.includes(needle))
+    }
     expect(has('"internalNote"')).toBe(true)
     expect(has('"publicNote"')).toBe(true)
     expect(has('"note" is not an input')).toBe(true)
     // The string-boolean gets a concrete fix, not just a complaint.
-    expect(has('Store the boolean or null false, not the text "false"')).toBe(true)
+    expect(has('Store the boolean or null false, not the text "false"')).toBe(
+      true,
+    )
     expect(issues).toHaveLength(4)
   })
 
@@ -112,7 +124,9 @@ describe('collectToolArgIssues', () => {
     )
     const issues = collectToolArgIssues(bad, schemas())
     expect(issues).toHaveLength(1)
-    expect(issues[0].message).toContain('must be one of "dense", "sparse", null')
+    expect(issues[0].message).toContain(
+      'must be one of "dense", "sparse", null',
+    )
   })
 
   test('an unknown tool id is one error and nothing else', () => {

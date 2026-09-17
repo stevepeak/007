@@ -36,16 +36,21 @@ export function createWfDataClient(call: WfDataTransport): WfDataClient {
     method: K,
     params: unknown,
     timeoutMs?: number,
-  ): ReturnType<WfDataClient[K]> =>
-    call(method, params, timeoutMs) as ReturnType<WfDataClient[K]>
+  ): ReturnType<WfDataClient[K]> => {
+    return call(method, params, timeoutMs) as ReturnType<WfDataClient[K]>
+  }
 
   // Bind a zero-arg or single-object-input method to its wire call. Methods that
   // take a POSITIONAL id (wrapped into `{ key: id }` for the wire) keep an
   // explicit arrow below; their literal is still `keyof`-checked via `send`.
-  const bind =
-    <K extends keyof WfDataClient>(method: K, timeoutMs?: number) =>
-    (params: unknown = {}): ReturnType<WfDataClient[K]> =>
-      send(method, params, timeoutMs)
+  const bind = <K extends keyof WfDataClient>(
+    method: K,
+    timeoutMs?: number,
+  ) => {
+    return (params: unknown = {}): ReturnType<WfDataClient[K]> => {
+      return send(method, params, timeoutMs)
+    }
+  }
 
   return {
     listModels: bind('listModels'),
@@ -114,8 +119,9 @@ export function createWfDataClient(call: WfDataTransport): WfDataClient {
     getAgentVersion: (versionId) => send('getAgentVersion', { versionId }),
     updateAgentMeta: bind('updateAgentMeta'),
     discardAgentDraft: bind('discardAgentDraft'),
-    countAgentReferences: (agentId) =>
-      send('countAgentReferences', { agentId }),
+    countAgentReferences: (agentId) => {
+      return send('countAgentReferences', { agentId })
+    },
     listAgentReferences: (agentId) => send('listAgentReferences', { agentId }),
     archiveAgent: (agentId) => send('archiveAgent', { agentId }),
     listAgentCalls: bind('listAgentCalls'),

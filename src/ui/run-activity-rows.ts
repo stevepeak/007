@@ -1,5 +1,8 @@
 import type { WorkflowNode } from '../engine'
-import { iterationItemListLabel, iterationItemTitle } from '../engine/item-title'
+import {
+  iterationItemListLabel,
+  iterationItemTitle,
+} from '../engine/item-title'
 import { NON_STEP_KINDS } from '../engine/run-progress'
 import type { WfRunStepDTO, WfRunSummary } from '../server/protocol'
 
@@ -78,16 +81,13 @@ function iterationChildren(
     byItem.set(idx, arr)
   }
 
-  const total =
-    iterationTotal(containerStep) ?? Math.max(...byItem.keys()) + 1
+  const total = iterationTotal(containerStep) ?? Math.max(...byItem.keys()) + 1
   const many = total > MANY_ITEMS
 
   return [...byItem.keys()]
     .sort((a, b) => a - b)
     .map((idx) => {
-      const itemSteps = byItem
-        .get(idx)!
-        .sort((a, b) => a.sequence - b.sequence)
+      const itemSteps = byItem.get(idx)!.sort((a, b) => a.sequence - b.sequence)
       const children: ActivityNodeRow[] = itemSteps.map((s) => {
         const inner = subNodes.get(s.nodeId)
         return {
@@ -193,11 +193,12 @@ function childRunGroups(
   // (callee rows, which all sit at a null index) keep arrival order.
   const ordered = runs
     .map((run, i) => ({ run, i }))
-    .sort(
-      (a, b) =>
+    .sort((a, b) => {
+      return (
         (a.run.parent?.itemIndex ?? -1) - (b.run.parent?.itemIndex ?? -1) ||
-        a.i - b.i,
-    )
+        a.i - b.i
+      )
+    })
     .map(({ run }) => run)
   // The declared item count once the loop has resolved its list; until then the
   // children spawned so far are all we know of — so a loop mid-fan-out reads
@@ -288,10 +289,15 @@ export function makeTopRow(
   let itemsDone: number | null = null
   let itemsTotal: number | null = null
   if (nodeKind === 'iteration') {
-    const groups = spawned.length > 0 ? spawned : iterationChildren(index, nodeId, node, step)
+    const groups =
+      spawned.length > 0
+        ? spawned
+        : iterationChildren(index, nodeId, node, step)
     children = groups
     itemsTotal = iterationTotal(step) ?? (groups.length || null)
-    itemsDone = groups.filter((g) => g.status !== 'running' && g.status !== 'pending').length
+    itemsDone = groups.filter(
+      (g) => g.status !== 'running' && g.status !== 'pending',
+    ).length
     // A running loop that hasn't recorded any item yet shouldn't look stalled.
     if (children.length === 0 && status === 'running' && live) {
       const total = iterationTotal(step)

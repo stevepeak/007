@@ -102,8 +102,8 @@ export async function rollUpRunCost(
   const [priceMap, usage, runRows] = await Promise.all([
     loadModelPriceMap(db),
     selectRunUsage(db, allIds),
-    selectChunked(allIds, (ids) =>
-      db
+    selectChunked(allIds, (ids) => {
+      return db
         .select({
           id: wfRun.id,
           status: wfRun.status,
@@ -111,8 +111,8 @@ export async function rollUpRunCost(
           finishedAt: wfRun.finishedAt,
         })
         .from(wfRun)
-        .where(inArray(wfRun.id, ids)),
-    ),
+        .where(inArray(wfRun.id, ids))
+    }),
   ])
 
   const usageByRun = groupUsageByRun(usage)

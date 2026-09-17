@@ -82,15 +82,15 @@ function botNode(
   }
 }
 
-function uiMessage (text: string) {
+function uiMessage(text: string) {
   return {
-  id: text,
-  role: 'user' as const,
-  parts: [{ type: 'text' as const, text }],
-}
+    id: text,
+    role: 'user' as const,
+    parts: [{ type: 'text' as const, text }],
+  }
 }
 
-async function run (args: {
+async function run(args: {
   node: AgentNode
   manifest: WfRunManifestEntry[]
   nodeOutputs?: Map<string, unknown>
@@ -148,14 +148,10 @@ describe('agent node — task input kind', () => {
         content: { kind: 'ref', nodeId: 'upstream', path: '' },
       }),
       manifest: manifest({ userPrompt: 'foobar ${content}' }),
-      nodeOutputs: new Map<string, unknown>([
-        ['upstream', { a: 1, b: 'two' }],
-      ]),
+      nodeOutputs: new Map<string, unknown>([['upstream', { a: 1, b: 'two' }]]),
       seen,
     })
-    expect(userTextFromPrompt(seen.prompt)).toBe(
-      'foobar {"a":1,"b":"two"}',
-    )
+    expect(userTextFromPrompt(seen.prompt)).toBe('foobar {"a":1,"b":"two"}')
   })
 
   test('a bound conversation is ignored by a task agent', async () => {
@@ -175,8 +171,9 @@ describe('agent node — task input kind', () => {
 })
 
 describe('agent node — conversation input kind', () => {
-  const conversational = (userPrompt = '') =>
-    manifest({ inputKind: 'conversation', userPrompt })
+  const conversational = (userPrompt = '') => {
+    return manifest({ inputKind: 'conversation', userPrompt })
+  }
 
   test('the bound thread is the history', async () => {
     const seen: { prompt: unknown } = { prompt: null }
@@ -184,7 +181,12 @@ describe('agent node — conversation input kind', () => {
       node: botNode({ kind: 'ref', nodeId: 'trigger', path: 'messages' }),
       manifest: conversational(),
       nodeOutputs: new Map<string, unknown>([
-        ['trigger', { messages: [uiMessage('prior turn'), uiMessage('current question')] }],
+        [
+          'trigger',
+          {
+            messages: [uiMessage('prior turn'), uiMessage('current question')],
+          },
+        ],
       ]),
       seen,
     })
@@ -222,7 +224,9 @@ describe('agent node — conversation input kind', () => {
       run({
         node: botNode({ kind: 'ref', nodeId: 'trigger', path: 'notMessages' }),
         manifest: conversational(),
-        nodeOutputs: new Map<string, unknown>([['trigger', { notMessages: 'oops' }]]),
+        nodeOutputs: new Map<string, unknown>([
+          ['trigger', { notMessages: 'oops' }],
+        ]),
         seen,
       }),
     ).rejects.toThrow(/conversation.*not bound/i)

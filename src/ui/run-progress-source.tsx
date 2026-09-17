@@ -114,7 +114,11 @@ export function WorkflowProgressProvider({
     () => ({ fetch, pollMs, maxFailures, maxBackoffMs, maxDurationMs }),
     [fetch, pollMs, maxFailures, maxBackoffMs, maxDurationMs],
   )
-  return <RunProgressContext.Provider value={value}>{children}</RunProgressContext.Provider>
+  return (
+    <RunProgressContext.Provider value={value}>
+      {children}
+    </RunProgressContext.Provider>
+  )
 }
 
 function useProgressContext(): ProgressContext {
@@ -152,9 +156,9 @@ export function useRunProgress(runId: string | null): RunProgressSnapshot {
     // the UI stops spinning; the run itself may well still be going server-side,
     // which is why we leave the timeline we already have intact.
     const giveUp = () => {
-      setSnap((prev) =>
-        prev.status === 'running' ? { ...prev, status: 'failed' } : prev,
-      )
+      setSnap((prev) => {
+        return prev.status === 'running' ? { ...prev, status: 'failed' } : prev
+      })
     }
 
     const tick = async () => {

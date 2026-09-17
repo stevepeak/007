@@ -81,8 +81,8 @@ export function describeToolCatalog(): WfMcpToolDescription[] {
     title: tool.title,
     description: tool.description,
     readOnly: tool.readOnly,
-    args: Object.entries(tool.inputSchema).map(([name, schema]) =>
-      describeArg(name, schema),
-    ),
+    args: Object.entries(tool.inputSchema).map(([name, schema]) => {
+      return describeArg(name, schema)
+    }),
   }))
 }

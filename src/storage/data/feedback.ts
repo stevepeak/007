@@ -210,10 +210,7 @@ export async function listFeedback(
   }
   if (filters.search) {
     const term = `%${filters.search}%`
-    const clause = or(
-      like(wfFeedback.note, term),
-      like(wfFeedback.body, term),
-    )
+    const clause = or(like(wfFeedback.note, term), like(wfFeedback.body, term))
     if (clause) conds.push(clause)
   }
 
@@ -268,7 +265,10 @@ export async function getFeedbackForSubjects(
   db: WfDb,
   subjectIds: string[],
 ): Promise<FeedbackRecord[]> {
-  return await selectChunked(subjectIds, (ids) =>
-    db.select().from(wfFeedback).where(inArray(wfFeedback.subjectId, ids)),
-  )
+  return await selectChunked(subjectIds, (ids) => {
+    return db
+      .select()
+      .from(wfFeedback)
+      .where(inArray(wfFeedback.subjectId, ids))
+  })
 }

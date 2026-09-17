@@ -22,29 +22,31 @@ import { executeAgentNode } from './agent'
 // than an absent field.
 const AUTO = { type: 'auto' }
 
-function MANIFEST (maxTurns: number,
+function MANIFEST(
+  maxTurns: number,
   requireToolFirstTurn: boolean,
-  toolIds: string[] = ['lookup']): WfRunManifestEntry[] {
+  toolIds: string[] = ['lookup'],
+): WfRunManifestEntry[] {
   return [
-  {
-    kind: 'agent',
-    id: 'bot',
-    pinnedVersion: null,
-    versionId: 'v1',
-    versionNumber: 1,
-    name: 'Researcher',
-    config: makeAgentConfig({
-      modelId: 'mock',
-      prompt: 'Research, then answer.',
-      userPrompt: 'Go.',
-      inputKind: 'task' as const,
-      toolIds,
-      maxTurns,
-      requireToolFirstTurn,
-      output: { kind: 'text' },
-    }),
-  },
-]
+    {
+      kind: 'agent',
+      id: 'bot',
+      pinnedVersion: null,
+      versionId: 'v1',
+      versionNumber: 1,
+      name: 'Researcher',
+      config: makeAgentConfig({
+        modelId: 'mock',
+        prompt: 'Research, then answer.',
+        userPrompt: 'Go.',
+        inputKind: 'task' as const,
+        toolIds,
+        maxTurns,
+        requireToolFirstTurn,
+        output: { kind: 'text' },
+      }),
+    },
+  ]
 }
 
 const NODE: AgentNode = {
@@ -64,12 +66,13 @@ const REGISTRY: ToolRegistry<unknown> = new Map([
       kind: 'ai-tool' as const,
       name: 'Lookup',
       description: 'Looks something up.',
-      build: () =>
-        tool({
+      build: () => {
+        return tool({
           description: 'Looks something up.',
           inputSchema: z.object({ q: z.string() }),
           execute: async () => ({ hit: 'the statute' }),
-        }),
+        })
+      },
     },
   ],
 ])
@@ -106,9 +109,11 @@ function eagerAnswerer(seen: { toolChoices: unknown[] }) {
   })
 }
 
-function run (model: MockLanguageModelV3,
+function run(
+  model: MockLanguageModelV3,
   manifest: WfRunManifestEntry[],
-  toolRegistry: ToolRegistry<unknown> = REGISTRY) {
+  toolRegistry: ToolRegistry<unknown> = REGISTRY,
+) {
   return executeAgentNode<unknown>({
     node: NODE,
     getModel: () => model,

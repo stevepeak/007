@@ -127,15 +127,16 @@ describe('eval harness — tool graph', () => {
 
 describe('eval harness — agent graph', () => {
   const config: WfSdkConfig<unknown> = {
-    getModel: () =>
-      new MockLanguageModelV3({
+    getModel: () => {
+      return new MockLanguageModelV3({
         doGenerate: async () => ({
           content: [{ type: 'text', text: 'Hello there' }],
           finishReason: mockFinish('stop'),
           usage: mockUsage(1, 2),
           warnings: [],
         }),
-      }),
+      })
+    },
     listModels: () => [{ id: 'mock', label: 'Mock', providerId: 'mock' }],
     listProviders: () => [{ id: 'mock', label: 'Mock', kind: 'custom' }],
     toolRegistry: new Map(),
@@ -280,15 +281,16 @@ describe('eval harness — blob-ref rehydration', () => {
   ])
 
   const config: WfSdkConfig<Deps> = {
-    getModel: () =>
-      new MockLanguageModelV3({
+    getModel: () => {
+      return new MockLanguageModelV3({
         doGenerate: async () => ({
           content: [{ type: 'text', text: 'ok' }],
           finishReason: mockFinish('stop'),
           usage: mockUsage(1, 1),
           warnings: [],
         }),
-      }),
+      })
+    },
     listModels: () => [{ id: 'mock', label: 'Mock', providerId: 'mock' }],
     listProviders: () => [{ id: 'mock', label: 'Mock', kind: 'custom' }],
     toolRegistry,

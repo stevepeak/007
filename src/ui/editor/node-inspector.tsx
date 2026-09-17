@@ -267,24 +267,24 @@ export function NodeInspector(props: NodeInspectorProps) {
                 title="Tool calling"
                 description="Announce which tool the agent is calling as it works."
                 checked={inform.tools}
-                onChange={(tools) =>
-                  onChange({
+                onChange={(tools) => {
+                  return onChange({
                     ...node,
                     informUser: { ...inform, tools },
                   })
-                }
+                }}
               />
               <ToggleRow
                 icon={Brain}
                 title="Reasoning"
                 description="Stream the model's thinking as it reasons toward the answer."
                 checked={inform.reasoning}
-                onChange={(reasoning) =>
-                  onChange({
+                onChange={(reasoning) => {
+                  return onChange({
                     ...node,
                     informUser: { ...inform, reasoning },
                   })
-                }
+                }}
               />
             </div>
           ) : inform.mode === 'static' ? (
@@ -292,12 +292,12 @@ export function NodeInspector(props: NodeInspectorProps) {
               <Input
                 value={inform.note}
                 placeholder="Searching client documents…"
-                onChange={(e) =>
-                  onChange({
+                onChange={(e) => {
+                  return onChange({
                     ...node,
                     informUser: { mode: 'static', note: e.target.value },
                   })
-                }
+                }}
               />
               <p className="text-muted-foreground text-xs">
                 Shown to the user while this step runs. Use{' '}
@@ -370,12 +370,12 @@ function ItemTitleField({
       <Input
         value={node.config.itemTitle}
         placeholder="${title}"
-        onChange={(e) =>
-          onChange({
+        onChange={(e) => {
+          return onChange({
             ...node,
             config: { ...node.config, itemTitle: e.target.value },
           })
-        }
+        }}
       />
       <p className="text-muted-foreground text-xs">
         Names each item in the run viewer instead of &ldquo;Item 1&rdquo;,
@@ -399,4 +399,3 @@ function ItemTitleField({
     </div>
   )
 }
-

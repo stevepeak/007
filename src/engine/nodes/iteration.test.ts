@@ -26,25 +26,27 @@ import {
 // Builders
 // ---------------------------------------------------------------------------
 
-function iterNode (config: Partial<IterationNode['config']> = {},
+function iterNode(
+  config: Partial<IterationNode['config']> = {},
   // Matches the schema default. Progress is opt-in, so an `off` iteration says
   // nothing to the user — see the announce tests below.
-  informUser: IterationNode['informUser'] = { mode: 'off' }): IterationNode {
+  informUser: IterationNode['informUser'] = { mode: 'off' },
+): IterationNode {
   return {
-  id: 'it',
-  kind: 'iteration',
-  position: { x: 0, y: 0 },
-  label: 'Iterate',
-  informUser,
-  config: {
-    concurrency: 4,
-    stopOnError: false,
-    itemExecution: 'inline',
-    itemTitle: '',
-    subgraph: buildIterationSubgraph(),
-    ...config,
-  },
-}
+    id: 'it',
+    kind: 'iteration',
+    position: { x: 0, y: 0 },
+    label: 'Iterate',
+    informUser,
+    config: {
+      concurrency: 4,
+      stopOnError: false,
+      itemExecution: 'inline',
+      itemTitle: '',
+      subgraph: buildIterationSubgraph(),
+      ...config,
+    },
+  }
 }
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -154,12 +156,12 @@ describe('runIteration', () => {
   })
 
   test('resolveIterationList throws a clear error when the ref is not an array', () => {
-    expect(() =>
-      resolveIterationList(
+    expect(() => {
+      return resolveIterationList(
         iterNode({ source: { kind: 'ref', nodeId: 'src', path: 'words' } }),
         new Map([['src', { words: 'not-an-array' }]]),
-      ),
-    ).toThrow(/expected an array at node src\.words/)
+      )
+    }).toThrow(/expected an array at node src\.words/)
   })
 
   test('resolveIterationList throws when no list is selected', () => {
@@ -485,20 +487,15 @@ describe('executeSubgraph — background arms inside one item', () => {
   test('the dead-end arm is recorded as its own step', async () => {
     const timeline: string[] = []
     const steps: { nodeId: string; status: string }[] = []
-    await executeSubgraph(
-      subgraph('side'),
-      { n: 1 },
-      ctxWithTools(timeline),
-      {
-        parentNodeId: 'it',
-        itemIndex: 0,
-        recorder: {
-          record: async (args) => {
-            steps.push({ nodeId: args.nodeId, status: args.status })
-          },
+    await executeSubgraph(subgraph('side'), { n: 1 }, ctxWithTools(timeline), {
+      parentNodeId: 'it',
+      itemIndex: 0,
+      recorder: {
+        record: async (args) => {
+          steps.push({ nodeId: args.nodeId, status: args.status })
         },
       },
-    )
+    })
 
     const side = steps.find((s) => s.nodeId === 'side')
     expect(side?.status).toBe('completed')
@@ -573,10 +570,11 @@ describe('executeSubgraph under a container budget', () => {
     ],
   })
 
-  const ctxWithBudget = (totalMs: number) =>
-    ({
+  const ctxWithBudget = (totalMs: number) => {
+    return {
       modelBudget: { totalMs, stepMs: totalMs, toolMs: totalMs },
-    }) as unknown as RunNodeContext<unknown>
+    } as unknown as RunNodeContext<unknown>
+  }
 
   test('walks the subgraph while the container has time left', async () => {
     expect(
@@ -651,9 +649,9 @@ describe('iteration schema', () => {
   })
 
   test('buildIterationSubgraph produces a valid runnable subgraph', () => {
-    expect(() =>
-      workflowGraphSchema.parse(buildIterationSubgraph()),
-    ).not.toThrow()
+    expect(() => {
+      return workflowGraphSchema.parse(buildIterationSubgraph())
+    }).not.toThrow()
   })
 
   test('a graph with a well-formed iteration node parses', () => {

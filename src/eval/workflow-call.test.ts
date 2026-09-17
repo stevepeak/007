@@ -158,15 +158,16 @@ describe('eval harness — workflow-calls-workflow (tool callee)', () => {
 
 describe('eval harness — workflow-calls-workflow (agent callee, nested manifest)', () => {
   const config: WfSdkConfig<unknown> = {
-    getModel: () =>
-      new MockLanguageModelV3({
+    getModel: () => {
+      return new MockLanguageModelV3({
         doGenerate: async () => ({
           content: [{ type: 'text', text: 'Hi from callee' }],
           finishReason: mockFinish('stop'),
           usage: mockUsage(1, 2),
           warnings: [],
         }),
-      }),
+      })
+    },
     listModels: () => [{ id: 'mock', label: 'Mock', providerId: 'mock' }],
     listProviders: () => [{ id: 'mock', label: 'Mock', kind: 'custom' }],
     toolRegistry: new Map(),

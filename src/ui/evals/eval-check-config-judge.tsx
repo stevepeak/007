@@ -45,14 +45,14 @@ export function JudgeConfig({
   outputSchema?: JsonSchema | null
 }) {
   const { Input, Label, Textarea } = useWfComponents()
-  const rubricField = useCommittedField(check.rubric, (rubric) =>
-    persist({ ...check, rubric }),
-  )
+  const rubricField = useCommittedField(check.rubric, (rubric) => {
+    return persist({ ...check, rubric })
+  })
   // Only reached for a workflow target, whose output has no single declared
   // shape to offer — an agent target picks from a dropdown instead.
-  const pathField = useCommittedField(check.path ?? '', (path) =>
-    persist({ ...check, path: path.trim() || undefined }),
-  )
+  const pathField = useCommittedField(check.path ?? '', (path) => {
+    return persist({ ...check, path: path.trim() || undefined })
+  })
 
   // The judge model is required, so keep one selected: as soon as the model list
   // loads, seed an empty selection with the first model that can actually judge.
@@ -70,7 +70,9 @@ export function JudgeConfig({
   // field the agent has since dropped) as its own option, so switching targets
   // never silently repoints the judge at the whole output.
   const showsCustom = Boolean(
-    pathOptions && check.path && !pathOptions.some((o) => o.value === check.path),
+    pathOptions &&
+    check.path &&
+    !pathOptions.some((o) => o.value === check.path),
   )
   const selectedField = pathOptions?.find((o) => o.value === (check.path ?? ''))
 
@@ -101,10 +103,10 @@ export function JudgeConfig({
             <Label>Output field</Label>
             <FieldHelp title="Output field">
               <p>
-                Pin the judge to a single field of the target’s output instead of
-                the whole thing. The options are the fields the agent actually
-                declares, so a check can’t end up aimed at a field that will
-                never be there.
+                Pin the judge to a single field of the target’s output instead
+                of the whole thing. The options are the fields the agent
+                actually declares, so a check can’t end up aimed at a field that
+                will never be there.
               </p>
               <p>
                 Leave it on <strong>Entire output</strong> to grade everything.
@@ -117,9 +119,9 @@ export function JudgeConfig({
           {pathOptions ? (
             <select
               value={check.path ?? ''}
-              onChange={(e) =>
-                persist({ ...check, path: e.target.value || undefined })
-              }
+              onChange={(e) => {
+                return persist({ ...check, path: e.target.value || undefined })
+              }}
               className="h-9 w-full rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none focus:border-neutral-500"
             >
               <option value="">Entire output</option>

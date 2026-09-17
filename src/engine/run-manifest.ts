@@ -59,14 +59,15 @@ export function agentFromManifest(
   agentId: string,
   version: number | null = null,
 ): WfAgentManifestEntry | undefined {
-  return manifest.find(
-    (e): e is WfAgentManifestEntry =>
+  return manifest.find((e): e is WfAgentManifestEntry => {
+    return (
       e.kind === 'agent' &&
       e.id === agentId &&
       // Manifests frozen before pinning existed have no `pinnedVersion`; treat
       // a missing value as `null` (float-to-latest) so old runs still resolve.
-      (e.pinnedVersion ?? null) === (version ?? null),
-  )
+      (e.pinnedVersion ?? null) === (version ?? null)
+    )
+  })
 }
 
 /** Look up the resolved workflow entry for a `workflowId` in a run manifest. */
@@ -74,8 +75,7 @@ export function workflowFromManifest(
   manifest: readonly WfRunManifestEntry[],
   workflowId: string,
 ): WfWorkflowManifestEntry | undefined {
-  return manifest.find(
-    (e): e is WfWorkflowManifestEntry =>
-      e.kind === 'workflow' && e.id === workflowId,
-  )
+  return manifest.find((e): e is WfWorkflowManifestEntry => {
+    return e.kind === 'workflow' && e.id === workflowId
+  })
 }

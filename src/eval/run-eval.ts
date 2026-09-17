@@ -75,8 +75,11 @@ const MAX_EVAL_CONCURRENCY = Math.max(...EVAL_CONCURRENCY_CHOICES)
  */
 const MAX_CONSECUTIVE_CELL_ERRORS = 3
 
-function clampConcurrency (n?: number) {
-  return Math.max(1, Math.min(n ?? DEFAULT_EVAL_CONCURRENCY, MAX_EVAL_CONCURRENCY))
+function clampConcurrency(n?: number) {
+  return Math.max(
+    1,
+    Math.min(n ?? DEFAULT_EVAL_CONCURRENCY, MAX_EVAL_CONCURRENCY),
+  )
 }
 
 /**
@@ -195,20 +198,23 @@ export async function runEval(
   // Expand the matrix into per-run cells. Absent matrix → one plain cell (no
   // overrides), so `jobs` stays one-per-sample exactly as before.
   const cells: Omit<EvalJob, 'rowId'>[] = input.matrix
-    ? input.matrix.models.flatMap((m) =>
-        input.matrix!.prompts.flatMap((p) =>
-          Array.from({ length: Math.max(1, m.attempts) }, (_, attempt) => ({
-            modelId: m.modelId,
-            promptLabel: p.label,
-            promptBody: p.body,
-            attempt,
-          })),
-        ),
-      )
+    ? input.matrix.models.flatMap((m) => {
+        return input.matrix!.prompts.flatMap((p) => {
+          return Array.from(
+            { length: Math.max(1, m.attempts) },
+            (_, attempt) => ({
+              modelId: m.modelId,
+              promptLabel: p.label,
+              promptBody: p.body,
+              attempt,
+            }),
+          )
+        })
+      })
     : [{}]
-  const jobs: EvalJob[] = rowIds.flatMap((rowId) =>
-    cells.map((cell) => ({ rowId, ...cell })),
-  )
+  const jobs: EvalJob[] = rowIds.flatMap((rowId) => {
+    return cells.map((cell) => ({ rowId, ...cell }))
+  })
 
   const { evalRunId } = await client.createEvalRun({
     setIds: input.setIds,
@@ -238,12 +244,19 @@ export async function runEval(
     // not merely lose its own verdict — `finalizeEvalRun` rolls up the rows
     // that exist, so a missing row silently shrinks the run's `total` and the
     // report reads as if the cell was never requested.
-    const record = (error: string, wfRunId?: string) =>
-      client
-        .recordEvalFailure({ evalRunId, rowId: job.rowId, wfRunId, error, ...cell })
+    const record = (error: string, wfRunId?: string) => {
+      return client
+        .recordEvalFailure({
+          evalRunId,
+          rowId: job.rowId,
+          wfRunId,
+          error,
+          ...cell,
+        })
         .catch((e: unknown) => {
           console.error(`[wf] eval failure not recorded for ${job.rowId}:`, e)
         })
+    }
 
     let wfRunId: string | undefined
     try {
@@ -278,7 +291,8 @@ export async function runEval(
         // would produce a `fail` verdict that blames the Sample for what was an
         // infrastructure failure — the other half of "pass rate 0, no idea why".
         consecutiveErrors += 1
-        if (consecutiveErrors >= MAX_CONSECUTIVE_CELL_ERRORS) providerDown = true
+        if (consecutiveErrors >= MAX_CONSECUTIVE_CELL_ERRORS)
+          providerDown = true
         await record(
           outcome.error ?? `The run ended as "${outcome.status}".`,
           wfRunId,

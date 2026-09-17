@@ -92,9 +92,7 @@ export function AgentBudgetSection({
       title="Tool Calling Budget"
       collapsible
       defaultCollapsed={!!budgetIrrelevantReason}
-      badge={
-        budgetIrrelevantReason ? 'Not applicable' : undefined
-      }
+      badge={budgetIrrelevantReason ? 'Not applicable' : undefined}
       description="How much work the agent may do, and what it may spend, before it has to answer."
     >
       {budgetIrrelevantReason ? (
@@ -112,41 +110,35 @@ export function AgentBudgetSection({
           className="max-w-[8rem]"
           disabled={!!budgetIrrelevantReason}
           value={effectiveMaxTurns}
-          onChange={(e) =>
-            patch({
+          onChange={(e) => {
+            return patch({
               // Clamp here rather than relying on the `max` attribute,
               // which doesn't stop a typed value — an out-of-range number
               // reaches the server and fails as a raw schema error.
               maxTurns: Math.min(
                 100,
-                Math.max(
-                  1,
-                  Number.parseInt(e.target.value, 10) || 1,
-                ),
+                Math.max(1, Number.parseInt(e.target.value, 10) || 1),
               ),
             })
-          }
+          }}
         />
         <p className="text-xs text-neutral-400">
-          How many turns the agent may take before it must give a
-          final answer. Each turn is one round of calling tools or
-          spawning sub-agents and reading the results; a higher
-          limit lets the agent do more work but costs more and
-          runs longer. Defaults to 5.
+          How many turns the agent may take before it must give a final answer.
+          Each turn is one round of calling tools or spawning sub-agents and
+          reading the results; a higher limit lets the agent do more work but
+          costs more and runs longer. Defaults to 5.
         </p>
         {turnsWarning && !budgetIrrelevantReason ? (
-          <p className="text-xs text-amber-600">
-            ⚠ {turnsWarning}
-          </p>
+          <p className="text-xs text-amber-600">⚠ {turnsWarning}</p>
         ) : null}
       </div>
 
       <div className="border-t border-neutral-200 pt-4">
         <TokenBudgetField
           value={config.toolTokenBudget}
-          onChange={(toolTokenBudget) =>
-            patch({ toolTokenBudget })
-          }
+          onChange={(toolTokenBudget) => {
+            return patch({ toolTokenBudget })
+          }}
           maxTurns={effectiveMaxTurns}
           modelLabel={modelLabel}
           contextLength={contextLength}
@@ -162,9 +154,9 @@ export function AgentBudgetSection({
       <div className="border-t border-neutral-200 pt-4">
         <AnswerReserveField
           value={config.answerReservePercent}
-          onChange={(answerReservePercent) =>
-            patch({ answerReservePercent })
-          }
+          onChange={(answerReservePercent) => {
+            return patch({ answerReservePercent })
+          }}
           contextLength={contextLength}
           modelLabel={modelLabel}
           disabled={!!budgetIrrelevantReason}
@@ -243,9 +235,11 @@ export function TokenBudgetField({
           className="mt-0.5"
           checked={on}
           disabled={!!disabledReason}
-          onChange={(e) =>
-            onChange(e.target.checked ? (suggestedTokens ?? 100_000) : null)
-          }
+          onChange={(e) => {
+            return onChange(
+              e.target.checked ? (suggestedTokens ?? 100_000) : null,
+            )
+          }}
         />
       </label>
 
@@ -323,130 +317,124 @@ function BudgetDetail({
   const { Input, Button } = useWfComponents()
   return (
     <div className="mt-3 space-y-4 rounded-md bg-neutral-50 p-3">
-              {/* What the author is budgeting AGAINST, stated before the input — a
+      {/* What the author is budgeting AGAINST, stated before the input — a
                   budget of "500,000" means nothing until you know whether the model
                   holds 128K or 2 Million. */}
-              <div className="space-y-1.5 border-b border-neutral-200 pb-3">
-                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                  <span className="text-xs text-neutral-500">
-                    Model token allowance
-                  </span>
-                  <span className="text-sm font-medium text-neutral-800">
-                    {contextLength != null ? (
-                      <>
-                        {humanTokens(contextLength)}
-                        <span className="ml-1.5 font-normal text-neutral-400">
-                          per turn{modelLabel ? ` · ${modelLabel}` : ''}
-                        </span>
-                      </>
-                    ) : (
-                      <span className="font-normal text-neutral-400">
-                        Not reported by {modelLabel ?? 'this model'}
-                      </span>
-                    )}
-                  </span>
-                </div>
-                {/* The conversion the whole field depends on. Without it "131K per
+      <div className="space-y-1.5 border-b border-neutral-200 pb-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <span className="text-xs text-neutral-500">
+            Model token allowance
+          </span>
+          <span className="text-sm font-medium text-neutral-800">
+            {contextLength != null ? (
+              <>
+                {humanTokens(contextLength)}
+                <span className="ml-1.5 font-normal text-neutral-400">
+                  per turn{modelLabel ? ` · ${modelLabel}` : ''}
+                </span>
+              </>
+            ) : (
+              <span className="font-normal text-neutral-400">
+                Not reported by {modelLabel ?? 'this model'}
+              </span>
+            )}
+          </span>
+        </div>
+        {/* The conversion the whole field depends on. Without it "131K per
                     turn" and a budget of "328,000" look like they contradict. */}
-                {contextLength != null ? (
-                  <p className="text-xs text-neutral-400">
-                    That&rsquo;s the ceiling on any <em>single</em> turn. Each turn
-                    re-sends the whole conversation, so turn 3 pays for turns 1 and
-                    2 again — your budget below caps that running total, which is
-                    what you&rsquo;re billed for.
-                  </p>
-                ) : null}
-              </div>
+        {contextLength != null ? (
+          <p className="text-xs text-neutral-400">
+            That&rsquo;s the ceiling on any <em>single</em> turn. Each turn
+            re-sends the whole conversation, so turn 3 pays for turns 1 and 2
+            again — your budget below caps that running total, which is what
+            you&rsquo;re billed for.
+          </p>
+        ) : null}
+      </div>
 
-              <div className="space-y-2">
-                <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
-                  <div className="space-y-1">
-                    <span className="block text-xs font-medium text-neutral-600">
-                      Spend on tool calls
-                    </span>
-                    <Input
-                      type="number"
-                      min={1000}
-                      step={1000}
-                      className="max-w-[10rem]"
-                      value={budget}
-                      onChange={(e) =>
-                        onChange(
-                          Math.max(
-                            1000,
-                            Number.parseInt(e.target.value, 10) || 1000,
-                          ),
-                        )
-                      }
-                    />
-                  </div>
-                  {suggestedTokens != null ? (
-                    // Named for what it's derived FROM, not just the number it sets:
-                    // the value moves with Max turns, and a bare "Use 5 Million"
-                    // gives no clue why it changed when the author edited a field in
-                    // a different section.
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onChange(suggestedTokens)}
-                    >
-                      Estimate for {maxTurns} {maxTurns === 1 ? 'turn' : 'turns'}:{' '}
-                      {humanTokens(suggestedTokens)}
-                    </Button>
-                  ) : null}
-                </div>
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
+          <div className="space-y-1">
+            <span className="block text-xs font-medium text-neutral-600">
+              Spend on tool calls
+            </span>
+            <Input
+              type="number"
+              min={1000}
+              step={1000}
+              className="max-w-[10rem]"
+              value={budget}
+              onChange={(e) => {
+                return onChange(
+                  Math.max(1000, Number.parseInt(e.target.value, 10) || 1000),
+                )
+              }}
+            />
+          </div>
+          {suggestedTokens != null ? (
+            // Named for what it's derived FROM, not just the number it sets:
+            // the value moves with Max turns, and a bare "Use 5 Million"
+            // gives no clue why it changed when the author edited a field in
+            // a different section.
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => onChange(suggestedTokens)}
+            >
+              Estimate for {maxTurns} {maxTurns === 1 ? 'turn' : 'turns'}:{' '}
+              {humanTokens(suggestedTokens)}
+            </Button>
+          ) : null}
+        </div>
 
-                <p className="text-xs text-neutral-600">
-                  <span className="text-neutral-400">=</span> stops calling tools at{' '}
-                  <strong className="text-neutral-800">{fmt(budget)}</strong>{' '}
-                  tokens, then writes its answer
-                  {cost != null ? (
-                    <>
-                      {' '}
-                      ·{' '}
-                      <strong className="text-neutral-800">
-                        from {usd(cost)}
-                      </strong>{' '}
-                      per run
-                    </>
-                  ) : null}
-                </p>
-              </div>
+        <p className="text-xs text-neutral-600">
+          <span className="text-neutral-400">=</span> stops calling tools at{' '}
+          <strong className="text-neutral-800">{fmt(budget)}</strong> tokens,
+          then writes its answer
+          {cost != null ? (
+            <>
+              {' '}
+              · <strong className="text-neutral-800">
+                from {usd(cost)}
+              </strong>{' '}
+              per run
+            </>
+          ) : null}
+        </p>
+      </div>
 
-              <div className="space-y-1.5 border-t border-neutral-200 pt-3 text-xs text-neutral-500">
-                <p>
-                  &ldquo;From&rdquo;, not &ldquo;up to&rdquo;: this budget covers
-                  the research. Writing the answer costs whatever it costs on top,
-                  so a run always lands somewhat above {fmt(budget)}.
-                </p>
-                {cost == null ? (
-                  <p>
-                    No pricing reported for {modelLabel ?? 'the selected model'}, so
-                    the cost of this budget can&rsquo;t be estimated.
-                  </p>
-                ) : null}
-                {suggestedTokens != null && worstCaseTokens != null ? (
-                  <p>
-                    The {humanTokens(suggestedTokens)} estimate assumes the
-                    conversation grows steadily to fill{' '}
-                    {humanTokens(contextLength as number)} over your {maxTurns}{' '}
-                    {maxTurns === 1 ? 'turn' : 'turns'}, averaging half a window per
-                    turn. Change Max turns and it moves with it. Unbudgeted and
-                    worst-case, the same {maxTurns}{' '}
-                    {maxTurns === 1 ? 'turn' : 'turns'} could reach{' '}
-                    {humanTokens(worstCaseTokens)}
-                    {worstCaseCost != null ? (
-                      <> — about {usd(worstCaseCost)}</>
-                    ) : null}{' '}
-                    per run.
-                  </p>
-                ) : null}
-              </div>
-            </div>
+      <div className="space-y-1.5 border-t border-neutral-200 pt-3 text-xs text-neutral-500">
+        <p>
+          &ldquo;From&rdquo;, not &ldquo;up to&rdquo;: this budget covers the
+          research. Writing the answer costs whatever it costs on top, so a run
+          always lands somewhat above {fmt(budget)}.
+        </p>
+        {cost == null ? (
+          <p>
+            No pricing reported for {modelLabel ?? 'the selected model'}, so the
+            cost of this budget can&rsquo;t be estimated.
+          </p>
+        ) : null}
+        {suggestedTokens != null && worstCaseTokens != null ? (
+          <p>
+            The {humanTokens(suggestedTokens)} estimate assumes the conversation
+            grows steadily to fill {humanTokens(contextLength as number)} over
+            your {maxTurns} {maxTurns === 1 ? 'turn' : 'turns'}, averaging half
+            a window per turn. Change Max turns and it moves with it. Unbudgeted
+            and worst-case, the same {maxTurns}{' '}
+            {maxTurns === 1 ? 'turn' : 'turns'} could reach{' '}
+            {humanTokens(worstCaseTokens)}
+            {worstCaseCost != null ? (
+              <> — about {usd(worstCaseCost)}</>
+            ) : null}{' '}
+            per run.
+          </p>
+        ) : null}
+      </div>
+    </div>
   )
 }
-
 
 /**
  * How much of the model's context window to keep free for writing the answer.
@@ -493,14 +481,14 @@ export function AnswerReserveField({
           className="max-w-[5rem]"
           disabled={disabled}
           value={value}
-          onChange={(e) =>
-            onChange(
+          onChange={(e) => {
+            return onChange(
               Math.min(
                 50,
                 Math.max(2, Number.parseInt(e.target.value, 10) || 10),
               ),
             )
-          }
+          }}
         />
         <span className="text-sm text-neutral-400">
           % of the context window

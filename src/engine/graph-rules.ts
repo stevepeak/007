@@ -35,10 +35,9 @@ export function graphShapeFacts(graph: WorkflowGraph): {
     (e) => !ids.has(e.source) || !ids.has(e.target),
   )
   const outputIdsMissingIncoming = graph.nodes
-    .filter(
-      (n) =>
-        n.kind === 'output' && !graph.edges.some((e) => e.target === n.id),
-    )
+    .filter((n) => {
+      return n.kind === 'output' && !graph.edges.some((e) => e.target === n.id)
+    })
     .map((n) => n.id)
   return {
     triggerCount,

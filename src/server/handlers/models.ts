@@ -1,10 +1,10 @@
+import { loadConnectorCatalog } from '../../connectors/registry'
 import type {
   ModelProvider,
   ModelProviderStatus,
   ProviderBudget,
 } from '../../engine/config'
 import { describeTriggerEvents } from '../../engine/trigger-registry'
-import { loadConnectorCatalog } from '../../connectors/registry'
 import {
   getModelCatalog,
   getModelUsage,

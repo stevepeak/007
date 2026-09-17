@@ -21,9 +21,9 @@ describe('graph schema — node execution policy', () => {
   })
 
   test('rejects a non-positive timeout', () => {
-    expect(() =>
-      workflowGraphSchema.parse(chainGraph({ timeoutMs: 0 })),
-    ).toThrow()
+    expect(() => {
+      return workflowGraphSchema.parse(chainGraph({ timeoutMs: 0 }))
+    }).toThrow()
   })
 
   test('a node with no execution policy parses (field stays undefined)', () => {

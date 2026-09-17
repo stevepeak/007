@@ -9,7 +9,12 @@ import type {
   WfEvalRowDTO,
 } from '../../server/protocol'
 import { evalSampleLayer } from '../../server/protocol'
-import { useAgents, useDeleteEvalRow, useEvalSet, useUpsertEvalRow } from '../hooks'
+import {
+  useAgents,
+  useDeleteEvalRow,
+  useEvalSet,
+  useUpsertEvalRow,
+} from '../hooks'
 import { useUndoStack } from '../undo/use-undo-stack'
 import { useUnsavedGuard } from '../undo/use-unsaved-guard'
 
@@ -58,7 +63,11 @@ function draftFromRow(row: WfEvalRowDTO): Draft {
 // The check "Add check" starts from. A tool assertion is the most common one to
 // want — except against an agent that has no tools, where it is unsatisfiable by
 // construction, so that target starts from an assertion about the answer.
-const DEFAULT_CHECK: EvalCheck = { type: 'tool_called', toolId: '', called: true }
+const DEFAULT_CHECK: EvalCheck = {
+  type: 'tool_called',
+  toolId: '',
+  called: true,
+}
 const DEFAULT_CHECK_NO_TOOLS: EvalCheck = {
   type: 'output_match',
   match: 'contains',
@@ -124,10 +133,12 @@ export function useEvalSampleDraft({
   // entry, and one Cmd+Z too many would blank the editor.
   const history = useUndoStack<Draft | null>({
     initial: null,
-    describe: (a, b) =>
-      a && b ? describeSampleChange(a, b) : 'Edited sample',
-    coalesce: (a, b, label) =>
-      a && b ? coalesceSampleEdit(a, b, label) : null,
+    describe: (a, b) => {
+      return a && b ? describeSampleChange(a, b) : 'Edited sample'
+    },
+    coalesce: (a, b, label) => {
+      return a && b ? coalesceSampleEdit(a, b, label) : null
+    },
     // Dormant until a row has loaded — an empty editor must not claim Cmd+Z
     // away from whatever else is on screen.
     enabled: row != null,

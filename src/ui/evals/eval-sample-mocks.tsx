@@ -89,24 +89,22 @@ function AgentToolMocks({
   // Which tool's output editor is open (a toolId; null = none).
   const [editing, setEditing] = useState<string | null>(null)
 
-  const toolIds = useMemo(
-    () =>
+  const toolIds = useMemo(() => {
+    return (
       detail.data?.currentVersion?.config.toolIds ??
       detail.data?.draft?.config.toolIds ??
-      [],
-    [detail.data],
-  )
+      []
+    )
+  }, [detail.data])
   const byId = useMemo(
     () => new Map((toolsQuery.data ?? []).map((t) => [t.id, t])),
     [toolsQuery.data],
   )
-  const agentTools = useMemo(
-    () =>
-      toolIds
-        .map((id) => byId.get(id))
-        .filter((t): t is ToolOption => !!t && t.kind === 'ai-tool'),
-    [toolIds, byId],
-  )
+  const agentTools = useMemo(() => {
+    return toolIds
+      .map((id) => byId.get(id))
+      .filter((t): t is ToolOption => !!t && t.kind === 'ai-tool')
+  }, [toolIds, byId])
 
   const mockedIds = Object.keys(fixtures)
   const available = agentTools.filter((t) => !mockedIds.includes(t.id))
@@ -125,7 +123,8 @@ function AgentToolMocks({
   if (!targetId) {
     return (
       <p className="px-1 py-1 text-xs text-neutral-400">
-        This goal has no target agent yet — set one on the goal to mock its tools.
+        This goal has no target agent yet — set one on the goal to mock its
+        tools.
       </p>
     )
   }
@@ -169,7 +168,11 @@ function AgentToolMocks({
                     toolChip(tool?.color ?? null),
                   )}
                 >
-                  <ToolIcon icon={tool?.icon} iconName={tool?.iconName} className="size-3.5" />
+                  <ToolIcon
+                    icon={tool?.icon}
+                    iconName={tool?.iconName}
+                    className="size-3.5"
+                  />
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
@@ -223,7 +226,11 @@ function AgentToolMocks({
                 toolChip(editingTool.color),
               )}
             >
-              <ToolIcon icon={editingTool.icon} iconName={editingTool.iconName} className="size-3.5" />
+              <ToolIcon
+                icon={editingTool.icon}
+                iconName={editingTool.iconName}
+                className="size-3.5"
+              />
             </span>
             <span className="text-sm font-medium text-neutral-800">
               {editingTool.name}
@@ -294,7 +301,11 @@ function MockOutputEditor({
     try {
       parsed = JSON.parse(text)
     } catch {
-      return { object: null, jsonError: 'Output must be valid JSON.', warnings: [] }
+      return {
+        object: null,
+        jsonError: 'Output must be valid JSON.',
+        warnings: [],
+      }
     }
     if (!isPlainObject(parsed)) {
       return {
@@ -339,8 +350,8 @@ function MockOutputEditor({
       ) : warnings.length > 0 ? (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
           <p className="text-xs font-medium text-amber-700">
-            Doesn&apos;t match the tool&apos;s output schema — you can still save
-            it.
+            Doesn&apos;t match the tool&apos;s output schema — you can still
+            save it.
           </p>
           <ul className="mt-1 list-disc pl-4 text-[11px] text-amber-600">
             {warnings.slice(0, 6).map((w, i) => (
@@ -411,7 +422,11 @@ function MockToolPicker({
                 toolChip(t.color),
               )}
             >
-              <ToolIcon icon={t.icon} iconName={t.iconName} className="size-3.5" />
+              <ToolIcon
+                icon={t.icon}
+                iconName={t.iconName}
+                className="size-3.5"
+              />
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium text-neutral-800">

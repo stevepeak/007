@@ -81,8 +81,9 @@ describe('choosing the step', () => {
   // from the wrong one grades the wrong thing.
   test('refuses to pick between several, and lists them', async () => {
     const many = client({
-      getRun: async () =>
-        runDetail([agentStep(2), agentStep(7, { agentId: 'ag_2' })]),
+      getRun: async () => {
+        return runDetail([agentStep(2), agentStep(7, { agentId: 'ag_2' })])
+      },
     })
     const result = (await tool.run(many, { runId: 'run_1' })) as {
       error: string
@@ -103,8 +104,9 @@ describe('choosing the step', () => {
 
   test('says so when the run has no agent step at all', async () => {
     const noAgents = client({
-      getRun: async () =>
-        runDetail([{ ...agentStep(1), nodeKind: 'tool', meta: {} }]),
+      getRun: async () => {
+        return runDetail([{ ...agentStep(1), nodeKind: 'tool', meta: {} }])
+      },
     })
     expect(
       ((await tool.run(noAgents, { runId: 'run_1' })) as { error: string })
@@ -116,8 +118,8 @@ describe('choosing the step', () => {
 describe('resolving the target', () => {
   test('reads the agent contract rather than assuming one', async () => {
     const taskAgent = client({
-      getAgent: async () =>
-        ({
+      getAgent: async () => {
+        return {
           agent: {
             id: 'ag_1',
             name: 'Extractor',
@@ -125,9 +127,11 @@ describe('resolving the target', () => {
             inputVariables: ['doc'],
             latestVersionNumber: 1,
           },
-        }) as never,
-      getRun: async () =>
-        runDetail([{ ...agentStep(5), input: { doc: 'a lease' } }]),
+        } as never
+      },
+      getRun: async () => {
+        return runDetail([{ ...agentStep(5), input: { doc: 'a lease' } }])
+      },
     })
     const result = (await tool.run(taskAgent, { runId: 'run_1' })) as {
       draft: { input: { kind: string; variables: Record<string, string> } }
@@ -159,15 +163,16 @@ describe('resolving the target', () => {
 describe('the surrounding signal', () => {
   test('finds the thumbs-down that makes this run worth a sample', async () => {
     const rated = client({
-      listFeedback: async () =>
-        ({
+      listFeedback: async () => {
+        return {
           rows: [
             { runId: 'other', rating: 'up', note: null },
             { runId: 'run_1', rating: 'down', note: 'Missed the Bex matter.' },
           ],
           correlations: [],
           raters: [],
-        }) as never,
+        } as never
+      },
     })
     const result = (await tool.run(rated, { runId: 'run_1' })) as {
       feedback: { rating: string; note: string }
@@ -198,8 +203,8 @@ describe('the surrounding signal', () => {
 
   test('points at a goal that already targets this agent', async () => {
     const withGoal = client({
-      listEvalSets: async () =>
-        [
+      listEvalSets: async () => {
+        return [
           {
             id: 'set_1',
             name: 'Conflicts',
@@ -207,7 +212,8 @@ describe('the surrounding signal', () => {
             targetId: 'ag_1',
           },
           { id: 'set_2', name: 'Other', targetKind: 'agent', targetId: 'ag_9' },
-        ] as never,
+        ] as never
+      },
     })
     const result = (await tool.run(withGoal, { runId: 'run_1' })) as {
       goals: { setId: string; name: string }[]

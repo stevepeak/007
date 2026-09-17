@@ -43,11 +43,14 @@ export function isRunLive(status: string): boolean {
  */
 export function canSpawnChildRuns(graph: WorkflowGraph | null): boolean {
   if (!graph) return true
-  const spawns = (n: WorkflowNode): boolean =>
-    n.kind === 'workflow' ||
-    (n.kind === 'iteration' &&
-      (n.config.itemExecution === 'durable' ||
-        n.config.subgraph.nodes.some((inner) => inner.kind === 'workflow')))
+  const spawns = (n: WorkflowNode): boolean => {
+    return (
+      n.kind === 'workflow' ||
+      (n.kind === 'iteration' &&
+        (n.config.itemExecution === 'durable' ||
+          n.config.subgraph.nodes.some((inner) => inner.kind === 'workflow')))
+    )
+  }
   return graph.nodes.some(spawns)
 }
 
@@ -70,7 +73,9 @@ export function findNode(
  * The number of items an iteration node fanned out over, read from its recorded
  * step meta. 0 when the node never ran or isn't an iteration.
  */
-export function iterationItemCount(step: WfRunStepDTO | null | undefined): number {
+export function iterationItemCount(
+  step: WfRunStepDTO | null | undefined,
+): number {
   return readIterationTotal(step?.meta) ?? 0
 }
 
@@ -158,7 +163,8 @@ export function resolveRunSelection(input: {
   selectedItemIndex: number
   topLevel: Map<string, string>
 }): RunSelection {
-  const { graph, steps, runStatus, selectedId, selectedItemIndex, topLevel } = input
+  const { graph, steps, runStatus, selectedId, selectedItemIndex, topLevel } =
+    input
 
   const found = selectedId && graph ? findNode(graph, selectedId) : null
   const selectedNode = found?.node ?? null
@@ -168,26 +174,29 @@ export function resolveRunSelection(input: {
   // own aggregate step when it's selected, or the parent container's step when
   // an inner node is selected. Drives the per-item picker + the itemIndex clamp.
   const iterationId =
-    parentIterationId ?? (selectedNode?.kind === 'iteration' ? selectedId : null)
+    parentIterationId ??
+    (selectedNode?.kind === 'iteration' ? selectedId : null)
   const iterationStep = iterationId
     ? (steps.find((s) => s.nodeId === iterationId && !s.parentNodeId) ?? null)
     : null
   const itemCount = iterationItemCount(iterationStep)
   // Clamped at READ time, so a pick survives switching between iterations of
   // different lengths without needing a reset.
-  const itemIndex = itemCount > 0 ? Math.min(selectedItemIndex, itemCount - 1) : 0
+  const itemIndex =
+    itemCount > 0 ? Math.min(selectedItemIndex, itemCount - 1) : 0
 
   // An inner-subgraph node's step is addressed by (nodeId, container, item);
   // a top-level node's step is the single row with no parent.
   const selectedStep = !selectedId
     ? null
     : parentIterationId
-      ? (steps.find(
-          (s) =>
+      ? (steps.find((s) => {
+          return (
             s.nodeId === selectedId &&
             s.parentNodeId === parentIterationId &&
-            s.itemIndex === itemIndex,
-        ) ?? null)
+            s.itemIndex === itemIndex
+          )
+        }) ?? null)
       : (steps.find((s) => s.nodeId === selectedId && !s.parentNodeId) ?? null)
 
   // The focused item's name, from its own trigger step — whose output IS the
@@ -201,12 +210,13 @@ export function resolveRunSelection(input: {
     ? null
     : iterationItemTitle(
         titleTemplate,
-        steps.find(
-          (s) =>
+        steps.find((s) => {
+          return (
             s.parentNodeId === iterationId &&
             s.itemIndex === itemIndex &&
-            s.nodeKind === 'trigger',
-        )?.output,
+            s.nodeKind === 'trigger'
+          )
+        })?.output,
         { index: itemIndex, total: itemCount },
       )
 

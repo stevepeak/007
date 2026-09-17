@@ -176,20 +176,23 @@ export async function getModelUsage(
   // still resolves correctly per agent: an agent's versions never straddle two
   // chunks, so only the ordering BETWEEN agents changes, which nothing reads.
   const agentIds = agents.map((a) => a.id)
-  const versions = await selectChunked(agentIds, (ids) =>
-    db
+  const versions = await selectChunked(agentIds, (ids) => {
+    return db
       .select()
       .from(wfAgentVersion)
       .where(inArray(wfAgentVersion.agentId, ids))
-      .orderBy(desc(wfAgentVersion.versionNumber)),
-  )
+      .orderBy(desc(wfAgentVersion.versionNumber))
+  })
   const latestConfig = new Map<string, unknown>()
   for (const v of versions) {
     if (!latestConfig.has(v.agentId)) latestConfig.set(v.agentId, v.config)
   }
-  const drafts = await selectChunked(agentIds, (ids) =>
-    db.select().from(wfAgentDraft).where(inArray(wfAgentDraft.agentId, ids)),
-  )
+  const drafts = await selectChunked(agentIds, (ids) => {
+    return db
+      .select()
+      .from(wfAgentDraft)
+      .where(inArray(wfAgentDraft.agentId, ids))
+  })
   const draftConfig = new Map(drafts.map((d) => [d.agentId, d.config]))
 
   const modelIdOf = (config: unknown): string | undefined => {
@@ -304,12 +307,12 @@ export async function upsertModels(
   for (let i = 0; i < rows.length; i += rowsPerStatement) {
     chunks.push(rows.slice(i, i + rowsPerStatement))
   }
-  const statements = chunks.map((chunk) =>
-    db
+  const statements = chunks.map((chunk) => {
+    return db
       .insert(wfModel)
       .values(chunk)
-      .onConflictDoUpdate({ target: wfModel.id, set: REFRESH_SET }),
-  )
+      .onConflictDoUpdate({ target: wfModel.id, set: REFRESH_SET })
+  })
   type Statement = (typeof statements)[number]
   // `batch` wants a non-empty tuple; `statements` is non-empty here (entries is).
   await db.batch(statements as [Statement, ...Statement[]])

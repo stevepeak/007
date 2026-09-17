@@ -73,17 +73,17 @@ export async function listWorkflowsWithStats(
   // never straddle two chunks and the per-chunk rows concatenate as-is.
   const [latestByWf, draftRows, runRows] = await Promise.all([
     latestVersionGraphs(db, ids),
-    selectChunked(ids, (chunkIds) =>
-      db
+    selectChunked(ids, (chunkIds) => {
+      return db
         .select({
           workflowId: wfWorkflowDraft.workflowId,
           updatedAt: sql<number | null>`${wfWorkflowDraft.updatedAt}`,
         })
         .from(wfWorkflowDraft)
-        .where(inArray(wfWorkflowDraft.workflowId, chunkIds)),
-    ),
-    selectChunked(ids, (chunkIds) =>
-      db
+        .where(inArray(wfWorkflowDraft.workflowId, chunkIds))
+    }),
+    selectChunked(ids, (chunkIds) => {
+      return db
         .select({
           workflowId: wfWorkflowVersion.workflowId,
           runCount: sql<number>`count(*)`,
@@ -100,8 +100,8 @@ export async function listWorkflowsWithStats(
             inArray(wfWorkflowVersion.workflowId, chunkIds),
           ),
         )
-        .groupBy(wfWorkflowVersion.workflowId),
-    ),
+        .groupBy(wfWorkflowVersion.workflowId)
+    }),
   ])
 
   // Agents each workflow uses, walked out of the latest published version graphs
@@ -124,23 +124,22 @@ export async function listWorkflowsWithStats(
       trigger?.kind === 'trigger' ? trigger.config.triggerKind : null,
     )
   }
-  const agentRows = await selectChunked(
-    [...referencedAgentIds],
-    (agentIds) =>
-      db
-        .select({
-          id: wfAgent.id,
-          name: wfAgent.name,
-          icon: wfAgent.icon,
-          color: wfAgent.color,
-        })
-        .from(wfAgent)
-        .where(inArray(wfAgent.id, agentIds)),
-  )
+  const agentRows = await selectChunked([...referencedAgentIds], (agentIds) => {
+    return db
+      .select({
+        id: wfAgent.id,
+        name: wfAgent.name,
+        icon: wfAgent.icon,
+        color: wfAgent.color,
+      })
+      .from(wfAgent)
+      .where(inArray(wfAgent.id, agentIds))
+  })
   const agentById = new Map(agentRows.map((a) => [a.id, a]))
 
-  const secondsToMs = (s: number | null | undefined) =>
-    s == null ? null : s * 1000
+  const secondsToMs = (s: number | null | undefined) => {
+    return s == null ? null : s * 1000
+  }
   const draftAtByWf = new Map(
     draftRows.map((r) => [r.workflowId, secondsToMs(r.updatedAt)]),
   )
