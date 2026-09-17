@@ -1,0 +1,1 @@
+ALTER TABLE `wf_model` ADD `supports_web_search` integer DEFAULT false NOT NULL;

@@ -3,7 +3,12 @@ import type { LanguageModel } from 'ai'
 import type { TelemetrySink } from '../analytics/sink'
 
 import type { WfBlobRef } from './blob-ref'
-import type { AgentOverride, NodeExecution, WfRunManifestEntry } from './graph'
+import type {
+  AgentOverride,
+  NodeExecution,
+  WebSearchMode,
+  WfRunManifestEntry,
+} from './graph'
 import type {
   ModelCatalogEntry,
   ModelOption,
@@ -62,7 +67,12 @@ export type RunFailure = {
  */
 export type ModelFactory = (
   modelId: string,
-  opts?: { reasoning?: boolean },
+  opts?: {
+    reasoning?: boolean
+    /** The agent's provider-side web search setting; see `WEB_SEARCH_MODES`. */
+    webSearch?: WebSearchMode
+    webCitations?: boolean
+  },
 ) => LanguageModel
 
 /**
@@ -159,6 +169,16 @@ export type RunContext = {
    * …). Undefined means "host default"; the host must not force reasoning off.
    */
   reasoning?: boolean
+  /**
+   * The agent's provider-side web search setting for this generation, when the
+   * calling agent node set one (see `WEB_SEARCH_MODES`). Same split as
+   * `reasoning`: the SDK carries the intent, the host's `getModel` owns the
+   * provider mechanism (a Venice request parameter, an xAI one, …).
+   * Undefined → off; the host must never turn search on by itself.
+   */
+  webSearch?: WebSearchMode
+  /** Request inline source citations alongside `webSearch`. Undefined → off. */
+  webCitations?: boolean
   /** Variables exposed to Agent system-prompt `${name}` interpolation. */
   promptVariables?: Record<string, string | undefined>
   /**

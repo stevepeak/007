@@ -68,6 +68,12 @@ export const wfModel = sqliteTable(
     supportsVision: integer('supports_vision', { mode: 'boolean' })
       .notNull()
       .default(false),
+    // Provider-side web search: the provider can search the web on the
+    // model's behalf during a completion (Venice `supportsWebSearch`, xAI
+    // Live Search, …). Gates the agent editor's "Web search" setting.
+    supportsWebSearch: integer('supports_web_search', { mode: 'boolean' })
+      .notNull()
+      .default(false),
     raw: text('raw', { mode: 'json' }),
     createdAt: createdAt(),
     updatedAt: integer('updated_at', { mode: 'timestamp' }),

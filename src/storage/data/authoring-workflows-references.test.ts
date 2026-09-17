@@ -88,7 +88,9 @@ describe('agent workflow references', () => {
         toolTokenBudget: null,
         answerReservePercent: 10,
         requireToolFirstTurn: false,
-  reasoning: false,
+        reasoning: false,
+        webSearch: 'off',
+        webCitations: false,
         inputKind: 'task',
         output: { kind: 'text' },
         subAgents: {

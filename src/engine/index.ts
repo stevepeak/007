@@ -79,6 +79,8 @@ export {
   type WorkflowEdge,
   type WorkflowGraph,
   type WorkflowNode,
+  WEB_SEARCH_MODES,
+  type WebSearchMode,
 } from './graph'
 export {
   agentOutputJsonSchema,

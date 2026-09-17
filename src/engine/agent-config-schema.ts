@@ -83,6 +83,25 @@ export const subAgentsConfigSchema = z
   })
 export type SubAgentsConfig = z.infer<typeof subAgentsConfigSchema>
 
+/**
+ * Provider-side web search for an agent's completions.
+ *
+ * - `off`  — the model answers from its prompt, tools and context only.
+ * - `auto` — the provider decides per request whether the prompt needs the
+ *            web, and searches only then.
+ * - `on`   — the provider searches before every reply.
+ *
+ * This is the PROVIDER's search, not a tool the agent calls: the provider
+ * composes the query from the full conversation and runs it before the model
+ * answers. The host cannot see or screen that query, so it is only appropriate
+ * for agents whose context holds nothing confidential — a host that needs a
+ * gate between the model and the network should offer a search TOOL instead
+ * and leave this off. Ignored by a model whose catalog lacks `webSearch`; the
+ * editor disables the control when it says so.
+ */
+export const WEB_SEARCH_MODES = ['off', 'on', 'auto'] as const
+export type WebSearchMode = (typeof WEB_SEARCH_MODES)[number]
+
 // The versioned configuration of a reusable **agent** (a `wf_agent`). Workflow
 // agent nodes don't carry this — they point at an agent by id and the run
 // manifest freezes the resolved config. Name/icon/color are display metadata on
@@ -227,6 +246,13 @@ const agentConfigObjectSchema = z.object({
    * latency numbers to say so.
    */
   reasoning: z.boolean().default(false),
+  // Provider-side web search, see {@link WEB_SEARCH_MODES}. Default off: the
+  // query leaves unscreened, so the burden of proof is on turning it on.
+  webSearch: z.enum(WEB_SEARCH_MODES).default('off'),
+  // Ask the provider to have the model footnote claims with the pages it read
+  // (superscript citations in the answer text). Meaningless when `webSearch`
+  // is `off`; the editor hides it then.
+  webCitations: z.boolean().default(false),
   // NOTE: `exposeThinking` used to live here and is gone. Zod strips it from
   // stored configs, so old rows still parse. What a step surfaces to the user is
   // a per-PLACEMENT choice, so it lives on the workflow node (`informUser`) —

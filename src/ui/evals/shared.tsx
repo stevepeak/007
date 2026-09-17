@@ -1,4 +1,4 @@
-import { Braces, Eye, Sparkles, Wrench } from 'lucide-react'
+import { Braces, Eye, Globe, Sparkles, Wrench } from 'lucide-react'
 import type { MouseEvent, ReactNode } from 'react'
 
 import type {
@@ -125,7 +125,7 @@ export function inferModelBrand(idOrLabel: string): ModelBrand | undefined {
 
 // ── Model capability badges ──────────────────────────────────────────────────
 // Compact icon pills for what a model supports (tool calling, reasoning, vision,
-// structured output). Shown on the Models page and in the model picker. Icons
+// structured output, provider-side web search). Shown on the Models page and in the model picker. Icons
 // only (with a title tooltip) so a row of them stays narrow.
 
 const CAPABILITY_META = [
@@ -133,6 +133,7 @@ const CAPABILITY_META = [
   { key: 'reasoning', label: 'Reasoning', icon: Sparkles },
   { key: 'vision', label: 'Vision', icon: Eye },
   { key: 'structuredOutput', label: 'Structured output', icon: Braces },
+  { key: 'webSearch', label: 'Web search', icon: Globe },
 ] as const
 
 export function CapabilityBadges({

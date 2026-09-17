@@ -78,6 +78,8 @@ export function AgentsList({ className }: AgentsListProps) {
           // A new agent doesn't think until its author decides it needs to —
           // same default as the schema.
           reasoning: false,
+          webSearch: 'off',
+          webCitations: false,
           toolTokenBudget: null,
           answerReservePercent: 10,
           output: { kind: 'text' },

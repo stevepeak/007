@@ -117,6 +117,8 @@ function agentConfig(): AgentConfig {
     answerReservePercent: 20,
     requireToolFirstTurn: false,
     reasoning: true,
+    webSearch: 'off',
+    webCitations: false,
     inputKind: 'task',
     output: { kind: 'text' },
     subAgents: {

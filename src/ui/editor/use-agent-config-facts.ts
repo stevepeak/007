@@ -48,6 +48,9 @@ const modelLacksStructuredOutput =
 // makes the reasoning control meaningless, so it is disabled rather than
 // silently ignored at run time.
 const modelLacksReasoning = modelCaps != null && !modelCaps.reasoning
+// Provider-side web search is a per-model feature of the provider's own
+// pipeline, so a model the catalog says can't search makes the setting inert.
+const modelLacksWebSearch = modelCaps != null && !modelCaps.webSearch
 
 // What the Copilot needs to talk about this agent's output shape: what it is
 // told to do, and what it can call. Tool IDS are resolved to names because the
@@ -102,6 +105,7 @@ const requireToolReason = !hasToolsOrSubAgents
     modelLacksTools,
     modelLacksStructuredOutput,
     modelLacksReasoning,
+    modelLacksWebSearch,
     schemaCopilotContext,
     hasToolsOrSubAgents,
     requireToolReason,

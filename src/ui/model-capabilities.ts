@@ -11,6 +11,7 @@ export const REQUIREMENT_REASON: Record<keyof ModelCapabilities, string> = {
   structuredOutput: 'no structured output',
   reasoning: 'no reasoning',
   vision: 'no vision',
+  webSearch: 'no web search',
 }
 
 /**

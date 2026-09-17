@@ -198,6 +198,11 @@ export async function executeAgentNode<TDeps>(
   // minutes per document in a `<think>` pass nobody asked for.
   const model = getModel(modelId, {
     reasoning: agentOverride?.reasoning ?? config.reasoning,
+    // Provider-side web search is the agent's own setting too. No override:
+    // an eval has no business turning on a network path the agent's author
+    // left off.
+    webSearch: config.webSearch,
+    webCitations: config.webCitations,
   })
   // Synthesis eval: an empty tool set forces the model to answer from its seeded
   // history alone. Otherwise resolve the agent's real tools (neutralized under

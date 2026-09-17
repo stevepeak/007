@@ -46,6 +46,12 @@ export type ModelCapabilities = {
   structuredOutput?: boolean
   /** Image/file/other non-text input (`architecture.input_modalities`). */
   vision?: boolean
+  /**
+   * Provider-side web search: the provider can search the web on the model's
+   * behalf inside a completion, when asked to via the agent's `webSearch`
+   * setting (Venice `supportsWebSearch`, xAI Live Search, …).
+   */
+  webSearch?: boolean
 }
 
 /**

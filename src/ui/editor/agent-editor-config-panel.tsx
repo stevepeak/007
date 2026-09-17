@@ -1,6 +1,7 @@
 import {
   Braces,
   Cpu,
+  Globe,
   MessageSquareText,
   MessagesSquare,
   Settings2,
@@ -8,7 +9,7 @@ import {
   Wrench,
 } from 'lucide-react'
 
-import type { AgentConfig, AgentOutput } from '../../engine'
+import type { AgentConfig, AgentOutput, WebSearchMode } from '../../engine'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 
@@ -69,7 +70,7 @@ export function AgentConfigPanel({
   registerSetBody: (set: (body: string) => void) => void
   registerSetUserPrompt: (set: (body: string) => void) => void
 }) {
-  const { Checkbox } = useWfComponents()
+  const { Checkbox, Select } = useWfComponents()
   const {
     aiTools,
     selectedModel,
@@ -77,6 +78,7 @@ export function AgentConfigPanel({
     modelLacksTools,
     modelLacksStructuredOutput,
     modelLacksReasoning,
+    modelLacksWebSearch,
     schemaCopilotContext,
     hasToolsOrSubAgents,
     requireToolReason,
@@ -91,15 +93,23 @@ export function AgentConfigPanel({
   //
   // Unknown capabilities are left alone, matching the rule everywhere else here:
   // only a model KNOWN to lack reasoning clears the flag.
+  //
+  // Web search gets the same treatment, for a sharper reason: a stored
+  // `webSearch: 'on'` against a model that can't search reads like a live
+  // network path in a config review, and the whole point of the setting being
+  // explicit is that a reviewer can trust what it says.
   function patchModel(modelId: string) {
     const next = (models.data ?? []).find((m) => m.id === modelId)
-    const knownToLackReasoning =
-      next?.capabilities != null && !next.capabilities.reasoning
-    patch(
-      knownToLackReasoning && config.reasoning
-        ? { modelId, reasoning: false }
-        : { modelId },
-    )
+    const caps = next?.capabilities
+    const knownToLackReasoning = caps != null && !caps.reasoning
+    const knownToLackWebSearch = caps != null && !caps.webSearch
+    patch({
+      modelId,
+      ...(knownToLackReasoning && config.reasoning ? { reasoning: false } : {}),
+      ...(knownToLackWebSearch && config.webSearch !== 'off'
+        ? { webSearch: 'off' as const, webCitations: false }
+        : {}),
+    })
   }
 
   function patchToolsAndRetireLoop(next: Partial<AgentConfig>) {
@@ -143,6 +153,7 @@ export function AgentConfigPanel({
               config.output.kind === 'object' ||
               config.output.kind === 'boolean',
             reasoning: config.reasoning,
+            webSearch: config.webSearch !== 'off',
           }}
         />
       </EditorSection>
@@ -335,6 +346,93 @@ export function AgentConfigPanel({
           </p>
         ) : null}
       </EditorSection>
+
+      {/* Web search — the PROVIDER's search, run inside the completion, as
+      opposed to a search tool the agent calls. Its own section rather than a
+      switch under Settings because it opens a network path and the author
+      has to understand what leaves before turning it on. */}
+      <EditorSection
+        icon={Globe}
+        title="Web search"
+        description="Let the model provider search the web while answering."
+      >
+        <div
+          className={cn(
+            'space-y-2',
+            modelLacksWebSearch ? 'cursor-not-allowed opacity-60' : null,
+          )}
+        >
+          <Select
+            value={modelLacksWebSearch ? 'off' : config.webSearch}
+            disabled={modelLacksWebSearch}
+            onChange={(e) => {
+              const webSearch = e.target.value as WebSearchMode
+              patch(
+                webSearch === 'off'
+                  ? { webSearch, webCitations: false }
+                  : { webSearch },
+              )
+            }}
+          >
+            {WEB_SEARCH_MODE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+          <p className="text-xs text-neutral-400">
+            {WEB_SEARCH_MODE_HELP[config.webSearch]}
+          </p>
+          {config.webSearch !== 'off' ? (
+            <p className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-800">
+              The provider writes the search query from the full conversation
+              — including anything a client said — and sends it out before the
+              model answers. Nothing here screens or logs that query. Leave
+              this off for any agent whose context can hold privileged or
+              confidential detail; give it a search tool instead.
+            </p>
+          ) : null}
+        </div>
+        {config.webSearch !== 'off' && !modelLacksWebSearch ? (
+          <label className="flex cursor-pointer items-start gap-2.5">
+            <span className="min-w-0 flex-1">
+              <span className="text-foreground block text-sm font-medium">
+                Cite sources
+              </span>
+              <span className="mt-0.5 block text-xs text-neutral-400">
+                Ask the model to footnote claims with the pages it read, as
+                superscript references in the answer. Off, it still reads the
+                results but writes a plain answer.
+              </span>
+            </span>
+            <Checkbox
+              className="mt-0.5"
+              checked={config.webCitations}
+              onChange={(e) => patch({ webCitations: e.target.checked })}
+            />
+          </label>
+        ) : null}
+        {modelLacksWebSearch ? (
+          <p className="text-xs text-amber-600">
+            {selectedModel?.label ?? 'This model'} does not support web search.
+          </p>
+        ) : null}
+      </EditorSection>
     </div>
   )
+}
+
+// One line per mode, in the order the select lists them. `off` first because
+// it is the default and the safe choice; `auto` before `on` because it is the
+// cheaper of the two ways to turn it on.
+const WEB_SEARCH_MODE_OPTIONS: { value: WebSearchMode; label: string }[] = [
+  { value: 'off', label: 'Off' },
+  { value: 'auto', label: 'Auto — search when the question seems to need it' },
+  { value: 'on', label: 'On — search before every reply' },
+]
+
+const WEB_SEARCH_MODE_HELP: Record<WebSearchMode, string> = {
+  off: 'The model answers from its instructions, its tools and the conversation only. Default.',
+  auto: 'The provider decides per message whether a web search would help — recent events, a public fact it may not know — and searches only then. Cheapest, and the model may skip a search you expected.',
+  on: 'The provider searches the web before every reply, whatever the question. Most current, and every turn pays for a search and waits on it.',
 }

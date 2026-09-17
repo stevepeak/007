@@ -1,6 +1,7 @@
 import {
   Braces,
   Eye,
+  Globe,
   Sparkles,
   Wrench,
   type LucideIcon,
@@ -28,6 +29,7 @@ export const CAP_FILTERS: {
   { key: 'reasoning', label: 'Reasoning', icon: Sparkles },
   { key: 'vision', label: 'Vision', icon: Eye },
   { key: 'structuredOutput', label: 'Structured', icon: Braces },
+  { key: 'webSearch', label: 'Web search', icon: Globe },
 ]
 
 export type ChosenFilter = 'all' | 'enabled' | 'disabled'

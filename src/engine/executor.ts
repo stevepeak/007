@@ -303,6 +303,10 @@ export async function executeWorkflow<TDeps>(
             return config.getModel(modelId, {
               ...runContext,
               reasoning: opts?.reasoning ?? runContext.reasoning,
+              // Web search is per-AGENT, never run-wide: only an agent node
+              // that passes its own setting turns it on for its calls.
+              webSearch: opts?.webSearch,
+              webCitations: opts?.webCitations,
             })
           },
           toolRegistry: config.toolRegistry,

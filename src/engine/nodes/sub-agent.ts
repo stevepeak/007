@@ -110,7 +110,11 @@ async function runAgentTarget<TDeps>(
   // Same contract as the primary node: the sub-agent's OWN config decides
   // whether it reasons. It inherits the parent's display choice, never its
   // thinking budget.
-  const model = ctx.getModel(config.modelId, { reasoning: config.reasoning })
+  const model = ctx.getModel(config.modelId, {
+    reasoning: config.reasoning,
+    webSearch: config.webSearch,
+    webCitations: config.webCitations,
+  })
 
   // The sub-agent's own registry tools, plus the injected stop signal. A sub-
   // agent does NOT itself get delegation tools (spawning is one level deep per

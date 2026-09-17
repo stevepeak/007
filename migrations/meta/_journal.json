@@ -218,6 +218,13 @@
       "when": 1789385043972,
       "tag": "0030_wf_connectors",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1789673057172,
+      "tag": "0031_nosy_firestar",
+      "breakpoints": true
     }
   ]
 }
