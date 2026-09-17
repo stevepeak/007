@@ -2,7 +2,7 @@ import { encodeRunPoint } from '../analytics/points'
 import { safeWrite } from '../analytics/sink'
 import type { RunContext, WfSdkConfig } from '../engine/config'
 import { errorFeedLine } from '../engine/error-detail'
-import { executeWorkflow } from '../engine/executor'
+import { executeWorkflow, type ResumeStep } from '../engine/executor'
 import type { WfRunManifestEntry } from '../engine/graph'
 import { modelBudgetFor } from '../engine/model-budget'
 import { resolveNodeTimeoutMs } from '../engine/node-timeout'
@@ -15,9 +15,12 @@ import {
   appendRunLog,
   completeRun,
   failRun,
+  getRunManifest,
   getVersionGraph,
   loadModelPriceMap,
+  loadResumeSteps,
   markRunDone,
+  markRunResumed,
   markRunRunning,
   resolveRunManifest,
   setRunManifest,
@@ -63,10 +66,16 @@ import { createRunCounters } from './step-counter'
 //   • No step-level retry. A transient provider blip fails the node rather than
 //     replaying it. Acceptable where a human is watching and can just ask again;
 //     not acceptable for a 20-minute ingestion pipeline.
-//   • No resume. `resumeFromRunId` is rejected outright rather than silently
-//     ignored — a caller asking to resume must not quietly get a fresh run.
-//   • No durability across eviction. The DO holds the run; if it dies the run
-//     is failed, not resumable.
+//   • No retry-as-a-new-run. `resumeFromRunId` naming a DIFFERENT run is
+//     rejected outright rather than silently ignored — a caller asking for the
+//     durable engine's "retry from the failed node into a fresh run" must not
+//     quietly get a fresh run instead.
+//   • Durability across eviction is IN PLACE, not journaled: if the DO holding
+//     the run is restarted mid-walk (a deploy does this to every DO), the room
+//     notices on its next alarm and calls back in here with `resumeFromRunId`
+//     set to the run's OWN id. The completed `wf_run_step` rows are the journal;
+//     the interrupted node and everything after it re-execute. See
+//     `RunRoom.alarm` for the detection, and `resumeSteps` for the seeding.
 
 /**
  * The slice of `RunRoom` the inline backend drives — now just the answer buffer.
@@ -252,6 +261,60 @@ export type RunInlineGraphDeps<E> = {
   /** The run's own RunRoom. Inside the DO this is `this`. */
   room: InlineRunRoom
   params: GraphWorkflowParams
+  /**
+   * Set when this is the room picking the run back up after a restart: which
+   * attempt this is (1-based) and why. Requires `params.resumeFromRunId ===
+   * params.workflowRunId`. Absent on a first start.
+   */
+  resume?: { attempt: number; reason: string }
+}
+
+/**
+ * Record an inline run as failed and tell everyone who is waiting — the same
+ * three writes the run's own catch performs, exposed so the room can perform
+ * them for a run it has given up resuming (see `RunRoom.alarm`): the row, the
+ * caller parked on this callee, and the host's `onRunFailed`. Never throws.
+ */
+export async function recordInlineRunFailure<TDeps, E extends GraphWorkflowEnv>(
+  config: WfSdkConfig<TDeps>,
+  deps: { env: E; params: GraphWorkflowParams },
+  message: string,
+): Promise<void> {
+  const { env, params: p } = deps
+  const db = createWfDb(env.WF_DB)
+  const runContext = runContextFor(p, env)
+  try {
+    await failRun(db, { runId: p.workflowRunId, error: message })
+    // Wake the caller BEFORE the host callback: a callee that dies silently
+    // leaves its caller parked until the calling node's timeout, turning a
+    // legible failure into a long stall.
+    if (p.subRun) {
+      try {
+        await reportCalleeResult(env, p.subRun, { ok: false, error: message })
+      } catch (err) {
+        console.error(
+          `[wf] inline run ${p.workflowRunId} could not report to its caller:`,
+          errorMessage(err),
+        )
+      }
+    }
+    if (config.onRunFailed) {
+      await notifyHost('on-failed', () =>
+        config.onRunFailed!(runContext, {
+          error: message,
+          workflowRunId: p.workflowRunId,
+        }),
+      )
+    }
+  } catch (recordErr) {
+    // Nothing left to report to — log and let the run sit in whatever state
+    // it reached. The host's poller treats a stalled run as failed.
+    console.error(
+      '[wf] inline run failed AND could not record the failure:',
+      errorMessage(recordErr),
+    )
+  }
+  console.error(`[wf] inline run ${p.workflowRunId} failed:`, message)
 }
 
 /**
@@ -267,7 +330,7 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
   config: WfSdkConfig<TDeps>,
   deps: RunInlineGraphDeps<E>,
 ): Promise<void> {
-  const { env, room, params: p } = deps
+  const { env, room, params: p, resume } = deps
   const db = createWfDb(env.WF_DB)
   const sink = createInlineSink(db, room, p.workflowRunId)
   let runContext: RunContext = runContextFor(p, env)
@@ -344,13 +407,18 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
   }
 
   try {
-    if (p.resumeFromRunId) {
-      // Loud rather than silent: resume replays a prior run's completed steps,
-      // which only means anything when a journal recorded them. Quietly starting
-      // a fresh run would re-execute side-effecting nodes the caller believed
-      // were already done.
+    if (p.resumeFromRunId && p.resumeFromRunId !== p.workflowRunId) {
+      // Loud rather than silent: a resume INTO A FRESH RUN replays a prior
+      // run's completed steps, which only means anything when a journal
+      // recorded them. Quietly starting a fresh run would re-execute
+      // side-effecting nodes the caller believed were already done.
       throw new Error(
-        'Resume is not supported on the inline engine — it has no step journal to replay. Switch the workflow to the durable engine to resume a failed run.',
+        'Resume into a new run is not supported on the inline engine — it has no step journal to replay. Switch the workflow to the durable engine to retry a failed run.',
+      )
+    }
+    if (!!p.resumeFromRunId !== !!resume) {
+      throw new Error(
+        "An in-place resume needs both `resumeFromRunId` (the run's own id) and `resume` — the room sets both.",
       )
     }
 
@@ -382,14 +450,38 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
     // whatever is published at that instant, splitting one logical run across
     // two prompt versions. The inherited copy is still written onto this run, so
     // its trace records exactly which versions it executed.
+    //
+    // A RESUMED run reads the manifest it already froze rather than resolving
+    // again — the whole point of freezing is that a publish between the two
+    // attempts must not change what the second half of the run executes. Only
+    // a first attempt that died before `setRunManifest` has nothing to read,
+    // and it also executed nothing, so resolving fresh is then correct.
+    const frozen = resume ? await getRunManifest(db, p.workflowRunId) : null
     const manifest: WfRunManifestEntry[] =
-      p.inheritedManifest ?? (await resolveRunManifest(db, version.graph))
-    await setRunManifest(db, { runId: p.workflowRunId, manifest })
+      frozen ??
+      p.inheritedManifest ??
+      (await resolveRunManifest(db, version.graph))
+    if (!frozen) await setRunManifest(db, { runId: p.workflowRunId, manifest })
 
     // No `cloudflareRunId`: there is no Workflows instance behind this run. The
     // run viewer keys off `wf_run.id` either way; the column stays null, which
     // is itself the marker that a run executed inline.
-    await markRunRunning(db, { runId: p.workflowRunId })
+    //
+    // On a resume the run is already `running`; what changes is that the node
+    // the dead attempt left mid-flight is closed out as failed, the feed gets a
+    // marker saying the run was picked back up, and the steps that DID finish
+    // are loaded so the walk can skip them.
+    let resumeSteps: ResumeStep[] | undefined
+    if (resume) {
+      await markRunResumed(db, {
+        runId: p.workflowRunId,
+        attempt: resume.attempt,
+        reason: resume.reason,
+      })
+      resumeSteps = await loadResumeSteps(db, p.workflowRunId)
+    } else {
+      await markRunRunning(db, { runId: p.workflowRunId })
+    }
 
     runContext = runContextFor(p, env, { manifest })
 
@@ -398,6 +490,7 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
       triggerInput: p.triggerInput,
       config: execConfig,
       runContext,
+      resumeSteps,
       // Seeded raw, and answering to its caller rather than to its trigger's
       // contract — see `ExecuteWorkflowDeps.spawned`. The durable backend does
       // exactly the same for a run it was handed rather than started.
@@ -493,28 +586,6 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
     // error is the one string the chat surface and the run header both read.
     const message = errorFeedLine(err)
     emit('failed', { error: message })
-    try {
-      await failRun(db, { runId: p.workflowRunId, error: message })
-      // Wake the caller BEFORE the host callback: a callee that dies silently
-      // leaves its caller parked until the calling node's timeout, turning a
-      // legible failure into a long stall.
-      await report({ ok: false, error: message })
-      if (config.onRunFailed) {
-        await notifyHost('on-failed', () =>
-          config.onRunFailed!(runContext, {
-            error: message,
-            workflowRunId: p.workflowRunId,
-          }),
-        )
-      }
-    } catch (recordErr) {
-      // Nothing left to report to — log and let the run sit in whatever state
-      // it reached. The host's poller treats a stalled run as failed.
-      console.error(
-        '[wf] inline run failed AND could not record the failure:',
-        errorMessage(recordErr),
-      )
-    }
-    console.error(`[wf] inline run ${p.workflowRunId} failed:`, message)
+    await recordInlineRunFailure(config, { env, params: p }, message)
   }
 }

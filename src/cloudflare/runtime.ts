@@ -10,6 +10,11 @@
 // Worker entry (see guide §4); never from host config, tools, or the data route.
 export { makeGraphWorkflow } from './graph-workflow'
 export {
+  INLINE_HEARTBEAT_MS,
+  INLINE_INTERRUPTED_REASON,
+  INLINE_MAX_RESUMES,
+} from './inflight'
+export {
   makeRunRoom,
   RunRoomBase,
   type RunRoom,

@@ -7,7 +7,8 @@ import type { RunAnswerChunk } from '../engine/stream-sink'
 import type { CalleeDoneWire } from './callee-protocol'
 import { CalleeWaiters } from './callee-waiters'
 import type { GraphWorkflowEnv, GraphWorkflowParams } from './graph-workflow'
-import { runInlineGraph } from './inline-run'
+import { createInflightKeeper, type InflightKeeper } from './inflight'
+import { recordInlineRunFailure, runInlineGraph } from './inline-run'
 
 // Per-run coordination room. Two responsibilities, both live:
 //
@@ -15,20 +16,20 @@ import { runInlineGraph } from './inline-run'
 // - It holds the run's answer as it is written, so a consumer can watch the text
 //   appear (`appendAnswer` → `getAnswerSince`).
 //
-// Deliberately holds NO durable state. It once persisted the run's status,
-// output, error, label, and a bounded log/progress buffer, and fanned all of it
-// out over a WebSocket — see the history of this file. Nothing ever connected:
-// the upgrade handler had no route in front of it and `getState` had no call
-// site in the entire monorepo, so every one of those writes was paid for and
-// never read. D1 (`wf_run`, `wf_run_log`) was and remains the source of truth
-// that consumers actually read, via the poll path.
+// Holds ONE piece of durable state, and only while a run is in flight: the
+// run's start parameters (`INFLIGHT_KEY`), guarded by a heartbeat alarm. It is
+// what lets the room survive its own restart. A deploy restarts every Durable
+// Object; the walk was an in-memory promise, so before this the run simply
+// stopped — `wf_run` said `running` forever and nothing ever came back to say
+// otherwise. Now the alarm outlives the isolate (alarms are persisted), fires
+// into a fresh instance that finds the record but no walk, and resumes the run
+// in place from its completed `wf_run_step` rows. See `alarm()`.
 //
-// That removal is why there is no cleanup alarm here and nothing to bound: a
-// room owns one run (`idFromName(runId)`), and it now leaves nothing behind.
-// If a push transport is ever built (`docs/chat-latency/02-push-transport.md`
-// still specifies it), the fan-out comes back with the client that reads it —
-// re-adding a broadcast to these methods is a smaller job than keeping an
-// unread one warm.
+// Everything else the room once persisted — status, output, error, a bounded
+// log buffer, WebSocket fan-out — is gone (see the history of this file):
+// nothing ever read it, and D1 (`wf_run`, `wf_run_log`) was and remains the
+// source of truth consumers actually poll. A finished run leaves nothing
+// behind here.
 
 /**
  * The room's generic half. Carries no host config and no engine, so it stays
@@ -102,12 +103,11 @@ export class RunRoomBase<E = unknown> extends DurableObject<E> {
 
 /**
  * The extra RPC the inline-capable room adds on top of the generic base.
- * Returns `void`, not a promise: the call hands the run off and returns — the
- * DO stub wraps it, so callers still `await` it. Awaiting the WALK instead would
- * hold the caller's request open for the whole run.
+ * Resolves once the run is RECORDED and handed off, not when it finishes —
+ * awaiting the walk would hold the caller's request open for the whole run.
  */
 type InlineHostRpc = {
-  startInline(params: GraphWorkflowParams): void
+  startInline(params: GraphWorkflowParams): Promise<void>
 }
 
 /**
@@ -147,25 +147,67 @@ export function makeRunRoom<TDeps, E extends GraphWorkflowEnv>(
 ): RunRoomClass<E> {
   return class RunRoom extends RunRoomBase<E> {
     /**
+     * The walk in progress, if this instance started one. Its absence while the
+     * keeper still holds a record is the whole eviction detector: a fresh
+     * instance over old storage has the record and no promise.
+     */
+    private walk: Promise<void> | undefined
+
+    private readonly keeper: InflightKeeper = createInflightKeeper({
+      storage: this.ctx.storage,
+      launch: (params, resume) => this.launch(params, resume),
+      abandon: (params, message) =>
+        recordInlineRunFailure(config, { env: this.env, params }, message),
+    })
+
+    /**
      * Start an inline run in this room. Returns as soon as the walk is kicked
      * off — the caller (`startGraphRun`) is mirroring the durable path, where
      * `WORKFLOW.create()` likewise returns before the first node fires.
      *
-     * The walk itself is handed to `waitUntil` so the DO stays alive for the
-     * whole run rather than only for this RPC. `runInlineGraph` never throws
-     * (it records its own failure), so nothing can escape into the DO's
-     * unhandled-rejection path and take the room down mid-run.
+     * The in-flight record and the heartbeat are written FIRST: a run that is
+     * not on record cannot be resumed, so the walk must not start before the
+     * write lands (see `inflight.ts`).
      */
-    startInline(params: GraphWorkflowParams): void {
+    async startInline(params: GraphWorkflowParams): Promise<void> {
+      await this.keeper.start(params)
+    }
+
+    /** The heartbeat — see `InflightKeeper.alarm`. */
+    override async alarm(): Promise<void> {
+      await this.keeper.alarm({ walkAlive: this.walk !== undefined })
+    }
+
+    /**
+     * Run the walk detached. It is handed to `waitUntil` so the DO stays alive
+     * for the whole run rather than only for the RPC that started it.
+     * `runInlineGraph` never throws (it records its own failure), so nothing
+     * can escape into the DO's unhandled-rejection path and take the room down
+     * mid-run — and however it ends, the in-flight record goes with it.
+     */
+    private launch(
+      params: GraphWorkflowParams,
+      resume?: { attempt: number; reason: string },
+    ): void {
       const walk = runInlineGraph(config, {
         env: this.env,
         room: this,
         params,
-      }).catch((err: unknown) => {
-        // Belt and braces — runInlineGraph swallows its own failures, so
-        // reaching here means the failure recorder itself threw.
-        console.error('[wf] inline run escaped its handler:', errorMessage(err))
+        resume,
       })
+        .catch((err: unknown) => {
+          // Belt and braces — runInlineGraph swallows its own failures, so
+          // reaching here means the failure recorder itself threw.
+          console.error(
+            '[wf] inline run escaped its handler:',
+            errorMessage(err),
+          )
+        })
+        .finally(async () => {
+          this.walk = undefined
+          await this.keeper.finished()
+        })
+      this.walk = walk
       this.ctx.waitUntil(walk)
     }
   }

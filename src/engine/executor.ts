@@ -70,6 +70,29 @@ export type ExecuteWorkflowDeps<TDeps> = {
    * run (tests, the playground), which run the callee inline as a subgraph.
    */
   runChildWorkflow?: ChildWorkflowRunner
+  /**
+   * Steps this run already completed before being interrupted — seeded into the
+   * scheduler as done, so the walk skips them and picks up at the first node
+   * that never settled. Read back from the run's own `wf_run_step` rows (see
+   * `loadResumeSteps`), so the rows are NOT re-recorded here: they already
+   * belong to this run. This is how the inline engine resumes a run in place
+   * after its Durable Object was restarted mid-walk; the durable backend does
+   * the same replay itself, into a fresh run, at `graph-workflow.ts`.
+   */
+  resumeSteps?: ResumeStep[]
+}
+
+/** One completed step of an interrupted run, as {@link ExecuteWorkflowDeps.resumeSteps} takes it. */
+export type ResumeStep = {
+  nodeId: string
+  nodeKind: string
+  sequence: number
+  input: unknown
+  output: unknown
+  /** The recorded `{ result, reasoning }` of a decision node; anything else
+   *  (or null) for the rest. Typed loosely because it is read straight off the
+   *  step row, exactly as the durable replay reads it. */
+  branchResult?: unknown
 }
 
 /**
@@ -211,6 +234,20 @@ export async function executeWorkflow<TDeps>(
     output: validatedTriggerInput,
   })
   scheduler.seedTrigger(validatedTriggerInput)
+
+  // Resume: report the interrupted run's completed steps as done. A decision
+  // node (branch/switch) RECORDS its {result, reasoning} but passes its INPUT
+  // through, so downstream `ref`s resolve exactly as they did the first time.
+  // Sequence numbering continues past what was already recorded, so a re-run
+  // node lands after the steps it followed rather than overwriting their order.
+  for (const s of deps.resumeSteps ?? []) {
+    const decision = s.branchResult as { result?: string } | null | undefined
+    scheduler.report(s.nodeId, {
+      output: isDecisionKind(s.nodeKind) ? s.input : s.output,
+      branchResult: decision?.result,
+    })
+    sequence = Math.max(sequence, s.sequence + 1)
+  }
 
   // Execute one node inline, record its outcome, and return what the scheduler
   // needs. A failed node records its failed step and rethrows. Mirrors the
@@ -504,7 +541,7 @@ export async function executeWorkflow<TDeps>(
     if (delivered) {
       await drainInflight()
       return {
-        ...(delivered),
+        ...delivered,
         drainError: drainError ?? errorMessage(err),
       }
     }
