@@ -18,7 +18,12 @@ const engineProbeSchema = z.object({
   nodes: z.array(
     z.object({
       kind: z.string(),
-      config: z.object({ engine: wfEngineSchema.optional() }).passthrough(),
+      config: z
+        .object({
+          engine: wfEngineSchema.optional(),
+          triggerKind: z.string().optional(),
+        })
+        .passthrough(),
     }),
   ),
 })
@@ -35,6 +40,18 @@ export function resolveGraphEngine(graph: unknown): WfEngine {
   if (!parsed.success) return DEFAULT_WF_ENGINE
   const trigger = parsed.data.nodes.find((n) => n.kind === 'trigger')
   return trigger?.config.engine ?? DEFAULT_WF_ENGINE
+}
+
+/**
+ * The trigger kind a stored graph declares, read the same lenient way as the
+ * engine. Null when the graph has no trigger, no kind, or does not parse — the
+ * caller falls back to whatever kind it already had.
+ */
+export function resolveGraphTriggerKind(graph: unknown): string | null {
+  const parsed = engineProbeSchema.safeParse(graph)
+  if (!parsed.success) return null
+  const trigger = parsed.data.nodes.find((n) => n.kind === 'trigger')
+  return trigger?.config.triggerKind ?? null
 }
 
 const answerProbeSchema = z.object({

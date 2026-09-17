@@ -5,6 +5,7 @@ import { Database } from 'bun:sqlite'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
+import { z } from 'zod'
 
 import type { WfWorkflowManifestEntry, WorkflowGraph } from '../engine/graph'
 import type { WfDb } from '../storage/client'
@@ -43,8 +44,11 @@ function freshDb(): WfDb {
   return drizzle(sqlite, { schema: wfSchema }) as unknown as WfDb
 }
 
-/** A callee graph whose trigger declares `engine`. */
-function calleeGraph(engine?: 'inline' | 'durable'): WorkflowGraph {
+/** A callee graph whose trigger declares `engine` (and its own kind). */
+function calleeGraph(
+  engine?: 'inline' | 'durable',
+  triggerKind = 'manual',
+): WorkflowGraph {
   return {
     version: 1,
     nodes: [
@@ -53,21 +57,24 @@ function calleeGraph(engine?: 'inline' | 'durable'): WorkflowGraph {
         kind: 'trigger',
         label: 'Start',
         position: { x: 0, y: 0 },
-        config: { triggerKind: 'manual', ...(engine ? { engine } : {}) },
+        config: { triggerKind, ...(engine ? { engine } : {}) },
       },
     ],
     edges: [],
   } as unknown as WorkflowGraph
 }
 
-function entryOf(engine?: 'inline' | 'durable'): WfWorkflowManifestEntry {
+function entryOf(
+  engine?: 'inline' | 'durable',
+  triggerKind?: string,
+): WfWorkflowManifestEntry {
   return {
     kind: 'workflow',
     id: 'wf-callee',
     versionId: 'v-callee',
     versionNumber: 3,
     name: 'Enrich prices',
-    graph: calleeGraph(engine),
+    graph: calleeGraph(engine, triggerKind),
   }
 }
 
@@ -128,6 +135,7 @@ beforeEach(async () => {
 })
 
 const baseArgs = {
+  triggers: {},
   triggerInput: { docId: 'd1' },
   parentRunId: 'run-parent',
   nodeId: 'node-call',
@@ -232,6 +240,73 @@ describe('a callee is always a child run', () => {
       parent: { kind: 'room', roomId: 'room-parent' },
       eventType: baseArgs.eventType,
     })
+  })
+})
+
+describe('a callee is a run of its own trigger', () => {
+  test('the child row records the callee trigger kind, not the caller\'s', async () => {
+    const spy = spyBindings()
+    const spawned = await spawnCalleeRun(spy.env, db, {
+      ...baseArgs,
+      entry: entryOf('durable', 'chat_message'),
+      parent: { kind: 'instance', instanceId: 'parent-instance' },
+    })
+    const [row] = await db
+      .select()
+      .from(wfRun)
+      .where(eq(wfRun.id, spawned.childRunId))
+    expect(row.triggerKind).toBe('chat_message')
+    expect(spy.created[0].runContext.triggerKind).toBe('chat_message')
+  })
+
+  test('identity comes from the callee trigger\'s resolveIdentity, field by field', async () => {
+    // The caller is about an email; the callee is about the chat the caller
+    // just posted into. Every tool in the child reads `subjectId`, so
+    // inheriting the caller's would point the chat tools at the email.
+    const spy = spyBindings()
+    const spawned = await spawnCalleeRun(spy.env, db, {
+      ...baseArgs,
+      triggers: {
+        chat_message: {
+          description: 'chat',
+          inputSchema: z.object({ chatId: z.string() }),
+          resolveIdentity: (input) => ({
+            subjectId: (input as { chatId: string }).chatId,
+          }),
+        },
+      },
+      triggerInput: { chatId: 'chat-9' },
+      entry: entryOf('durable', 'chat_message'),
+      parent: { kind: 'instance', instanceId: 'parent-instance' },
+    })
+    const [row] = await db
+      .select()
+      .from(wfRun)
+      .where(eq(wfRun.id, spawned.childRunId))
+    expect(row.subjectId).toBe('chat-9')
+    // What the trigger did not name is still inherited.
+    expect(row.correlationId).toBe('corr-1')
+    expect(row.actorId).toBe('user-7')
+    expect(spy.created[0].runContext).toMatchObject({
+      subjectId: 'chat-9',
+      correlationId: 'corr-1',
+      actorId: 'user-7',
+    })
+  })
+
+  test('a trigger with no resolveIdentity inherits the caller\'s identity wholesale', async () => {
+    const spy = spyBindings()
+    const spawned = await spawnCalleeRun(spy.env, db, {
+      ...baseArgs,
+      entry: entryOf('durable', 'chat_message'),
+      parent: { kind: 'instance', instanceId: 'parent-instance' },
+    })
+    const [row] = await db
+      .select()
+      .from(wfRun)
+      .where(eq(wfRun.id, spawned.childRunId))
+    expect(row.subjectId).toBe('doc-1')
+    expect(row.correlationId).toBe('corr-1')
   })
 })
 

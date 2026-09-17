@@ -3,7 +3,11 @@ import type {
   WfRunManifestEntry,
   WfWorkflowManifestEntry,
 } from '../engine/graph'
-import { resolveGraphEngine } from '../engine/graph-engine'
+import {
+  resolveGraphEngine,
+  resolveGraphTriggerKind,
+} from '../engine/graph-engine'
+import type { TriggerRegistry } from '../engine/trigger-registry'
 import type { WfDb } from '../storage/client'
 import { createRun } from '../storage/data'
 
@@ -35,6 +39,15 @@ import type { GraphRunBindings } from './start-run'
 //     run viewer nests it, `descendantRunIds` rolls its cost up, and a failure
 //     three workflows deep is reachable from the run someone actually started.
 //
+//  3. WHAT IT IS ABOUT. The callee is a run of ITS OWN trigger: its row records
+//     that trigger's kind, and if the host declared `resolveIdentity` for it,
+//     the callee's `subjectId` / `correlationId` / `actorId` come from the
+//     trigger input the caller bound, not from the caller's own context. The
+//     caller's identity is the fallback for whatever the input does not name.
+//     Without this, every tool inside the callee reads the CALLER's subject —
+//     an inbound-email run calling the chat workflow handed the chat tools the
+//     email's id, and the first one to write against it hit a foreign key.
+//
 // Everything else — how the parent WAITS, and how the child reports back — is
 // the caller's business (`CalleeParent` names the two answers).
 
@@ -64,14 +77,17 @@ export type SpawnedChildRun = {
 export type SpawnCalleeRunArgs = {
   /** The callee, resolved and frozen into the caller's run manifest. */
   entry: WfWorkflowManifestEntry
+  /** The host's event catalog — where the callee trigger's `resolveIdentity`
+   *  lives, if it declared one. */
+  triggers: TriggerRegistry
   /** What the callee's trigger is seeded with. */
   triggerInput: unknown
   /** The calling run and the workflow-call node inside it — the nesting link. */
   parentRunId: string
   nodeId: string
-  /** The caller's context, inherited wholesale so the callee's tools behave
-   *  exactly as they would have inside the caller. Serializable — the live
-   *  `env` is re-attached by whichever host picks the child up. */
+  /** The caller's context — the callee inherits everything except what its
+   *  own trigger names (see `calleeRunContext`). Serializable — the live `env`
+   *  is re-attached by whichever host picks the child up. */
   runContext: GraphRunContextInput
   /**
    * The caller's frozen manifest, passed down instead of re-resolved: the
@@ -102,7 +118,8 @@ export async function spawnCalleeRun(
   db: WfDb,
   args: SpawnCalleeRunArgs,
 ): Promise<SpawnedChildRun> {
-  const { entry, runContext } = args
+  const { entry } = args
+  const runContext = calleeRunContext(args)
   const childRunId = await createRun(db, {
     workflowVersionId: entry.versionId,
     triggerKind: runContext.triggerKind,
@@ -147,6 +164,33 @@ export async function spawnCalleeRun(
   }
   const instance = await env.GRAPH_WORKFLOW.create({ params })
   return { childRunId, engine, instanceId: instance.id }
+}
+
+/**
+ * The context a callee runs under: the caller's, re-pointed at the callee's own
+ * trigger. `triggerKind` becomes the callee trigger's kind (a "Legal chat" run
+ * should not be listed as `email_matched` because an email started its
+ * caller), and the identity fields are overridden by whatever that trigger's
+ * `resolveIdentity` reads off the bound input — field by field, so a trigger
+ * that only knows its subject still inherits the caller's correlation and actor.
+ */
+export function calleeRunContext(
+  args: Pick<
+    SpawnCalleeRunArgs,
+    'entry' | 'triggers' | 'triggerInput' | 'runContext'
+  >,
+): GraphRunContextInput {
+  const triggerKind =
+    resolveGraphTriggerKind(args.entry.graph) ?? args.runContext.triggerKind
+  const identity =
+    args.triggers[triggerKind]?.resolveIdentity?.(args.triggerInput) ?? {}
+  return {
+    ...args.runContext,
+    triggerKind,
+    subjectId: identity.subjectId ?? args.runContext.subjectId,
+    correlationId: identity.correlationId ?? args.runContext.correlationId,
+    actorId: identity.actorId ?? args.runContext.actorId,
+  }
 }
 
 /**

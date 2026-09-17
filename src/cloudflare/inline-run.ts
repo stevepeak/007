@@ -9,6 +9,7 @@ import { resolveNodeTimeoutMs } from '../engine/node-timeout'
 import type { ChildWorkflowRunner } from '../engine/nodes/workflow'
 import { errorMessage } from '../engine/run-node'
 import type { RunLogEntry, StreamSink } from '../engine/stream-sink'
+import type { TriggerRegistry } from '../engine/trigger-registry'
 import { createWfDb, type WfDb } from '../storage/client'
 import {
   appendRunLog,
@@ -196,8 +197,9 @@ export function buildChildWorkflowRunner<E extends GraphWorkflowEnv>(args: {
   room: InlineRunRoom
   p: GraphWorkflowParams
   manifest: WfRunManifestEntry[]
+  triggers: TriggerRegistry
 }): ChildWorkflowRunner {
-  const { env, db, room, p, manifest } = args
+  const { env, db, room, p, manifest, triggers } = args
   return async ({ node, entry, triggerInput }) => {
     const eventType = calleeEventType(node.id)
     // The calling node's own declared timeout, exactly as it bounds a durable
@@ -211,6 +213,7 @@ export function buildChildWorkflowRunner<E extends GraphWorkflowEnv>(args: {
     try {
       spawned = await spawnCalleeRun(env, db, {
         entry,
+        triggers,
         triggerInput,
         parentRunId: p.workflowRunId,
         nodeId: node.id,
@@ -409,6 +412,7 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
         room,
         p,
         manifest,
+        triggers: config.triggers,
       }),
       // Telemetered, and counted: with no orchestrator and no step journal, the
       // recorder is the only place this backend can learn its own shape.

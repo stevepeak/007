@@ -167,6 +167,7 @@ describe('an inline run calling another workflow', () => {
       room,
       p: PARAMS,
       manifest: [ENTRY],
+      triggers: {},
       db,
     })
 
@@ -195,6 +196,7 @@ describe('an inline run calling another workflow', () => {
       room,
       p: PARAMS,
       manifest: [ENTRY],
+      triggers: {},
       db,
     })
     const pending = run({ node: NODE, entry: ENTRY, triggerInput: {} })
@@ -214,6 +216,7 @@ describe('an inline run calling another workflow', () => {
       room,
       p: PARAMS,
       manifest: [ENTRY],
+      triggers: {},
       db,
     })
     // The spawn error is what surfaces — not a timeout minutes later from a

@@ -451,6 +451,7 @@ async function dispatchCallee<TDeps, E extends GraphWorkflowEnv>(
     async () =>
       await spawnCalleeRun(env, createWfDb(env.WF_DB), {
         entry,
+        triggers: ctx.config.triggers,
         triggerInput,
         parentRunId: p.workflowRunId,
         nodeId: node.id,

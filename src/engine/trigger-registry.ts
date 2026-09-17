@@ -48,6 +48,26 @@ export type TriggerEntry = {
   description: string
   inputSchema: z.ZodType
   outputContractSchema?: z.ZodType
+  /**
+   * How a run of this trigger names the host entity it is about, read off the
+   * trigger input. Consulted when the workflow is entered as a CALLEE: a
+   * workflow-call node inherits its caller's `subjectId` / `correlationId` /
+   * `actorId` wholesale, which is right until the callee is about a different
+   * entity — an inbound-email run (subject = the email) calling the chat
+   * workflow (subject = the chat it just posted into). Every tool the callee
+   * runs reads the subject from the run context, so without this the chat
+   * tools inside the callee act on the email's id. Return only the fields the
+   * input determines; anything left undefined stays inherited. A top-level run
+   * is unaffected — its caller names the identity directly.
+   */
+  resolveIdentity?: (input: unknown) => RunIdentity
+}
+
+/** The opaque host references a run carries — see `RunContext`. */
+export type RunIdentity = {
+  subjectId?: string
+  correlationId?: string
+  actorId?: string
 }
 
 export type TriggerRegistry = Record<string, TriggerEntry>
