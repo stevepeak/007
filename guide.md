@@ -1121,8 +1121,8 @@ live tools, behind a per-tool toggle a person flips having read the warning, and
 a tool call has no equivalent of that moment. `run_tool_preview`, whose whole
 purpose is executing the real thing, is absent for the same reason.
 
-**Why HTTP and not D1 directly.** `wf-spec` and `wf-dump-run` reach D1 straight,
-and copying that here is the tempting mistake. Direct-DB bypasses the
+**Why HTTP and not D1 directly.** `wf-spec` reaches D1 straight, and copying
+that here is the tempting mistake. Direct-DB bypasses the
 dispatcher, losing per-method input validation, the `wf_change` log and every
 host-wired hook — and eval runs become structurally impossible, since
 `startEvalRun` is a **host** hook that needs live Workers bindings and rejects

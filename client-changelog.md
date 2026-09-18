@@ -15,6 +15,21 @@ without you and is still probably wrong to skip.
 
 ---
 
+## 2026-09-18 — `wf-dump-run` removed
+
+The `wf-dump-run` bin is gone. It opened the local miniflare SQLite file (or
+D1's REST API with `--prod`) directly, so it saw only whichever database it was
+pointed at and bypassed the dispatcher, the `wf_change` log and every host hook.
+Everything it printed is available through `wf-mcp` — `get_run` for the row,
+steps, cost and log feed, `get_run_step` for any field it clipped — and that
+path works identically against a local or a production host.
+
+**Action.** Drop any script or doc that invokes `bunx wf-dump-run`; point it at
+the MCP server (`bunx wf-mcp`) instead. `wf-spec --remote` still reads D1 over
+REST, so the `CLOUDFLARE_*` script env stays if you use that.
+
+---
+
 ## 2026-09-18 — Connector auth always sends `Bearer`; connector ids are generated
 
 Two connector changes, one of which fixes every Linear connector.
@@ -73,7 +88,7 @@ when the row was written, as the opaque strings the host pinned at deploy time
 (a git sha, typically). Two columns because the SDK is a submodule on its own
 clock — "did this run predate the fix" has to be answerable for either. The
 run viewer's header shows them as `host@abc1234 · sdk@def5678`; `get_run` over
-MCP and `wf-dump-run` print them. Captured at creation and never updated, so a
+MCP prints them. Captured at creation and never updated, so a
 durable run that resumes across a deploy still reads as the release it started
 on; iteration items and callees record the deploy they were *spawned* on.
 

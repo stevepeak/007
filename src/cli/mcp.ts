@@ -28,11 +28,11 @@
  *
  * ── Why HTTP, and not D1 directly ────────────────────────────────────────────
  *
- * `wf-spec` and `wf-dump-run` reach D1 directly, and copying that here would be
- * a mistake. Direct-DB bypasses the dispatcher, and with it the per-method input
- * validation, the `wf_change` audit log, and every host-wired hook. Eval runs in
- * particular are structurally impossible on that path: `startEvalRun` is a HOST
- * hook that needs live Workers bindings and rejects with "not configured"
+ * `wf-spec` reaches D1 directly, and copying that here would be a mistake.
+ * Direct-DB bypasses the dispatcher, and with it the per-method input
+ * validation, the `wf_change` audit log, and every host-wired hook. Eval runs
+ * in particular are structurally impossible on that path: `startEvalRun` is a
+ * HOST hook that needs live Workers bindings and rejects with "not configured"
  * without them. Going through the mounted route keeps all ~70 `WfDataClient`
  * methods working identically, local or remote.
  */
