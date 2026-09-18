@@ -99,7 +99,7 @@ const wfInputSchemas: Record<keyof WfDataClient, z.ZodType> = {
   listConnectors: NO_INPUT,
   getConnector: z.object({ connectorId: z.string() }),
   saveConnector: z.object({
-    id: z.string(),
+    id: z.string().optional(),
     label: z.string(),
     url: z.string(),
     transport: z.enum(['http', 'sse']).optional(),

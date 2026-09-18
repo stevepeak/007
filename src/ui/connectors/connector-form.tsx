@@ -4,14 +4,12 @@ import type { ConnectorSummary } from '../../server/protocol'
 import { useWfComponents } from '../context'
 import { useSaveConnector } from '../hooks-connectors'
 
-// Adding or editing a connector — one form for both, because the fields are
-// the same and only the id's mutability differs.
+// Adding or editing a connector — one form for both; the fields are the same.
 //
-// The id is asked for separately from the label and described as permanent,
-// because it is: it becomes part of every one of this server's tool ids, which
-// get frozen into published agent configs. Renaming later is a delete and a
-// re-create, so it is worth one sentence here — and in edit mode the field is
-// shown but locked, so the constraint is visible rather than merely enforced.
+// There is no id field. The id is internal and permanent (it is embedded in
+// every one of this server's tool ids, which get frozen into published agent
+// configs), and nothing a human could type beats the label's slug — so the
+// server derives it on create and an edit carries the existing one through.
 
 type AuthKind = ConnectorSummary['authKind']
 
@@ -25,7 +23,6 @@ export function ConnectorForm({ connector, onDone }: ConnectorFormProps) {
   const { Button, Input, Label, Select } = useWfComponents()
   const save = useSaveConnector()
   const editing = !!connector
-  const [id, setId] = useState(connector?.id ?? '')
   const [label, setLabel] = useState(connector?.label ?? '')
   const [url, setUrl] = useState(connector?.url ?? '')
   const [authKind, setAuthKind] = useState<AuthKind>(
@@ -45,7 +42,7 @@ export function ConnectorForm({ connector, onDone }: ConnectorFormProps) {
     e.preventDefault()
     save.mutate(
       {
-        id: id.trim(),
+        id: connector?.id,
         label: label.trim(),
         url: url.trim(),
         authKind,
@@ -67,39 +64,21 @@ export function ConnectorForm({ connector, onDone }: ConnectorFormProps) {
           <Input
             id="wf-connector-label"
             value={label}
-            onChange={(e) => {
-              setLabel(e.target.value)
-              // Offer a slug, but let it be overridden — it is permanent.
-              if (!editing && (!id || id === slugify(label))) {
-                setId(slugify(e.target.value))
-              }
-            }}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="Linear"
             required
           />
         </div>
         <div className="space-y-1">
-          <Label htmlFor="wf-connector-id">Id</Label>
+          <Label htmlFor="wf-connector-url">Server URL</Label>
           <Input
-            id="wf-connector-id"
-            value={id}
-            onChange={(e) => setId(e.target.value)}
-            readOnly={editing}
-            disabled={editing}
+            id="wf-connector-url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://mcp.linear.app/mcp"
             required
           />
-          <p className="text-xs text-neutral-500">
-            Permanent — it becomes part of every tool id from this server.
-          </p>
         </div>
-      </div>
-      <div className="space-y-1">
-        <Label htmlFor="wf-connector-url">Server URL</Label>
-        <Input
-          id="wf-connector-url"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          required
-        />
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1">
@@ -155,12 +134,4 @@ export function ConnectorForm({ connector, onDone }: ConnectorFormProps) {
       </div>
     </form>
   )
-}
-
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replaceAll(/[^a-z0-9]+/g, '-')
-    .replaceAll(/^-+|-+$/g, '')
-    .slice(0, 63)
 }

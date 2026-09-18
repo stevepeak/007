@@ -9,6 +9,7 @@ import { EmptyState } from '../evals/shared'
 import { Tabs } from '../filters'
 import {
   useConnector,
+  useConnectorCapability,
   useDisconnectConnector,
   useRefreshConnector,
   useSaveConnectorToken,
@@ -69,9 +70,16 @@ export function ConnectorDetail({
             <ConnectorHeader detail={detail} />
             <section className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-sm font-semibold text-neutral-900">
-                  Tools
-                </h2>
+                <div>
+                  <h2 className="text-sm font-semibold text-neutral-900">
+                    Tools
+                  </h2>
+                  <p className="mt-0.5 text-xs text-neutral-500">
+                    Everything the server advertises arrives off. Tick{' '}
+                    <span className="font-medium text-neutral-700">Enabled</span>{' '}
+                    on a tool to let agents and Tool nodes call it.
+                  </p>
+                </div>
                 <div className="flex items-center gap-2">
                   <input
                     value={query}
@@ -129,9 +137,15 @@ function ConnectorHeader({
   const startAuth = useStartConnectorAuth()
   const disconnect = useDisconnectConnector()
   const setEnabled = useSetConnectorEnabled()
+  const capability = useConnectorCapability()
   const [editing, setEditing] = useState(false)
 
   const connected = connector.connection?.status === 'connected'
+  const needsAttention =
+    !!connector.connection && connector.connection.status !== 'connected'
+  // Said at the button rather than after an OAuth round trip: with no key
+  // there is nowhere to put the token.
+  const canConnect = capability.data?.credentialsConfigured !== false
 
   return (
     <header className="space-y-3">
@@ -202,15 +216,21 @@ function ConnectorHeader({
                 },
                 {
                   onSuccess: ({ authorizationUrl }) => {
+                    // A full-page navigation, not a popup: this is a round
+                    // trip through somebody else's login screen and it ends
+                    // at our callback route.
                     window.location.href = authorizationUrl
                   },
                 },
               ) }
             }
-            disabled={startAuth.isPending}
+            disabled={!canConnect || startAuth.isPending}
+            title={
+              canConnect ? undefined : 'No connector encryption key is configured'
+            }
           >
             <Plug className="h-3.5 w-3.5" />
-            Connect
+            {needsAttention ? 'Reconnect' : 'Connect'}
           </Button>
         ) : null}
         <Button
@@ -256,6 +276,9 @@ function ConnectorHeader({
         <p className="text-xs text-red-600">
           {(refresh.error).message}
         </p>
+      ) : null}
+      {startAuth.error ? (
+        <p className="text-xs text-red-600">{startAuth.error.message}</p>
       ) : null}
     </header>
   )

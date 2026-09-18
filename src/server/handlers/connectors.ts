@@ -4,7 +4,10 @@ import {
   resolveAccessToken,
   saveBearerToken,
 } from '../../connectors/oauth'
-import { CONNECTOR_ID_PATTERN } from '../../connectors/tool-id'
+import {
+  CONNECTOR_ID_PATTERN,
+  slugifyConnectorId,
+} from '../../connectors/tool-id'
 import { assertConnectorUrl } from '../../connectors/url'
 import type { JsonSchema } from '../../engine/agent-output'
 import {
@@ -175,6 +178,20 @@ export function buildConnectorHandlers<TDeps>(
     return connector
   }
 
+  /** `base`, or the first `base-N` that no connector already holds. */
+  const uniqueConnectorId = async (
+    c: HandlerCtx,
+    base: string,
+  ): Promise<string> => {
+    const taken = new Set((await listConnectors(c.db)).map((r) => r.id))
+    if (!taken.has(base)) return base
+    for (let n = 2; ; n++) {
+      // Keep the suffix inside the 63-char cap the pattern enforces.
+      const candidate = `${base.slice(0, 63 - `-${n}`.length)}-${n}`
+      if (!taken.has(candidate)) return candidate
+    }
+  }
+
   /**
    * The absolute URL the authorization server redirects back to.
    *
@@ -223,14 +240,23 @@ export function buildConnectorHandlers<TDeps>(
     },
 
     saveConnector: async (c) => {
-      const id = requireStr(c.params, 'id')
+      const p = c.params as Record<string, unknown>
+      const label = requireStr(c.params, 'label')
+      // No id = create, and the id is ours to pick. It is derived from the
+      // label and de-duplicated (`linear`, `linear-2`, …) rather than asked
+      // for: it is internal, permanent, and nothing a human would type beats
+      // the label's slug. An id IS accepted, for wf-spec imports that must
+      // land on a known slug — and it still has to be well-formed.
+      const id =
+        typeof p.id === 'string' && p.id
+          ? p.id
+          : await uniqueConnectorId(c, slugifyConnectorId(label))
       if (!CONNECTOR_ID_PATTERN.test(id)) {
         throw new BadRequestError(
           `'${id}' is not a valid connector id. Use lowercase letters, digits ` +
             'and dashes — the id is embedded in every one of its tool ids.',
         )
       }
-      const p = c.params as Record<string, unknown>
       // Validated here, at write time, and not merely relied upon at fetch
       // time: `global_fetch_strictly_public` is not enforced under wrangler
       // dev, so a private URL would pass every local test and fail only in
@@ -239,7 +265,6 @@ export function buildConnectorHandlers<TDeps>(
         allowInsecure: opts.connectorAllowInsecureUrls,
       })
       const existing = await getConnector(c.db, id)
-      const label = requireStr(c.params, 'label')
       const authKind =
         (p.authKind as 'oauth2' | 'bearer' | 'none' | undefined) ??
         existing?.authKind ??
@@ -277,7 +302,7 @@ export function buildConnectorHandlers<TDeps>(
           ? `${label} — server changed, disconnected`
           : label,
       })
-      return { ok: true as const, disconnected: credentialInvalidated }
+      return { ok: true as const, id, disconnected: credentialInvalidated }
     },
 
     deleteConnector: async (c) => {
@@ -323,11 +348,7 @@ export function buildConnectorHandlers<TDeps>(
           url: connector.url,
           transport: connector.transport,
           auth: credential
-            ? {
-                kind: 'bearer',
-                token: credential.token,
-                tokenType: credential.tokenType,
-              }
+            ? { kind: 'bearer', token: credential.token }
             : { kind: 'none' },
         })
       } catch (err) {
@@ -348,6 +369,21 @@ export function buildConnectorHandlers<TDeps>(
         throw err
       }
       const { tools, iconUrl } = catalog
+
+      // The reverse transition. A 401 above marks the connection `expired`,
+      // and a token the server honours again — a server-side hiccup, or a
+      // client bug fixed since — must clear it, or the page keeps offering
+      // Reconnect beside a catalog that just refreshed fine.
+      if (credential) {
+        const connection = await getConnection(c.db, connectorId)
+        if (connection && connection.status === 'expired') {
+          await setConnectionStatus(c.db, {
+            connectionId: connection.id,
+            status: 'connected',
+            error: null,
+          })
+        }
+      }
 
       const result = await upsertConnectorTools(c.db, connectorId, tools)
       const refreshedAt = new Date()

@@ -167,11 +167,7 @@ function toRegistryEntry<TDeps>(
     const target: McpTarget = {
       url: entry.connectorUrl,
       transport: entry.transport,
-      auth: {
-        kind: 'bearer',
-        token: credential.token,
-        tokenType: credential.tokenType,
-      },
+      auth: { kind: 'bearer', token: credential.token },
       timeoutMs: runtime.timeoutMs,
     }
 

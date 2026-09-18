@@ -1,22 +1,15 @@
-import { AlertTriangle, Pencil, Plug, Plus, RefreshCw } from 'lucide-react'
+import { ChevronRight, Plus } from 'lucide-react'
 import { useState } from 'react'
 
 import type { ConnectorSummary } from '../../server/protocol'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { EmptyState } from '../evals/shared'
-import {
-  useConnectorCapability,
-  useConnectors,
-  useDisconnectConnector,
-  useRefreshConnector,
-  useStartConnectorAuth,
-} from '../hooks-connectors'
+import { useConnectorCapability, useConnectors } from '../hooks-connectors'
 import { useOpenAsset } from '../nav'
 import { QueryState } from '../query-state'
 
 import { ConnectorForm } from './connector-form'
-import { DeleteConnectorButton } from './delete-connector-button'
 import { ConnectionBadge, ConnectorIcon } from './status'
 
 // The Connectors page (hub → Connectors).
@@ -105,11 +98,7 @@ export function ConnectorsList({
         {(rows) => (
           <div className="space-y-3">
             {rows.map((connector) => (
-              <ConnectorCard
-                key={connector.id}
-                connector={connector}
-                canConnect={configured}
-              />
+              <ConnectorCard key={connector.id} connector={connector} />
             ))}
           </div>
         )}
@@ -137,148 +126,80 @@ function Notice({
   )
 }
 
-function ConnectorCard({
-  connector,
-  canConnect,
-}: {
-  connector: ConnectorSummary
-  canConnect: boolean
-}) {
-  const { Button } = useWfComponents()
+/**
+ * One row per connector, and the whole row is the way in.
+ *
+ * Nothing is operated from here on purpose: connect, refresh, edit, delete and
+ * the tool toggles all live on the detail page, so there is exactly one place
+ * to learn. The card only answers "what state is it in" and "how many of its
+ * tools can agents use" — and clicking anywhere on it opens the answer.
+ */
+function ConnectorCard({ connector }: { connector: ConnectorSummary }) {
   const openAsset = useOpenAsset()
-  const startAuth = useStartConnectorAuth()
-  const disconnect = useDisconnectConnector()
-  const refresh = useRefreshConnector()
-  const [editing, setEditing] = useState(false)
 
-  const connected = connector.connection?.status === 'connected'
   const needsAttention =
     !!connector.connection && connector.connection.status !== 'connected'
-
-  const connect = () => {
-    startAuth.mutate(
-      { connectorId: connector.id, returnTo: `/wf/connectors` },
-      {
-        onSuccess: ({ authorizationUrl }) => {
-          // A full-page navigation, not a popup: this is a round trip through
-          // somebody else's login screen and it ends at our callback route.
-          window.location.href = authorizationUrl
-        },
-      },
-    )
-  }
+  const noneEnabled =
+    connector.toolCount > 0 && connector.enabledToolCount === 0
 
   return (
-    <div
+    <button
+      type="button"
+      onClick={() => openAsset(`connectors/${connector.id}`)}
       className={cn(
-        'rounded-lg border bg-white p-4',
+        'group flex w-full items-start gap-3 rounded-lg border bg-white p-4 text-left transition-colors hover:bg-neutral-50',
         needsAttention ? 'border-amber-300' : 'border-neutral-200',
         !connector.enabled && 'opacity-60',
       )}
     >
-      <div className="flex items-start gap-3">
-        <ConnectorIcon
-          icon={connector.icon}
-          iconUrl={connector.iconUrl}
-          label={connector.label}
-        />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className="text-sm font-semibold text-neutral-900 hover:underline"
-              onClick={() => openAsset(`connectors/${connector.id}`)}
-            >
-              {connector.label}
-            </button>
-            <ConnectionBadge connection={connector.connection} />
-            {!connector.enabled ? (
-              <span className="rounded-full border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-xs text-neutral-500">
-                Disabled
-              </span>
-            ) : null}
-          </div>
-          <p className="mt-0.5 truncate font-mono text-xs text-neutral-500">
-            {connector.url}
-          </p>
-          <p className="mt-1.5 text-xs text-neutral-500">
-            {connector.toolCount === 0
-              ? 'No tools discovered yet — refresh to pull its catalog.'
-              : `${connector.enabledToolCount} of ${connector.toolCount} tools enabled`}
-          </p>
-          {connector.connection?.error ? (
-            <p className="mt-1 text-xs text-amber-700">
-              {connector.connection.error}
-            </p>
+      <ConnectorIcon
+        icon={connector.icon}
+        iconUrl={connector.iconUrl}
+        label={connector.label}
+      />
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-semibold text-neutral-900">
+            {connector.label}
+          </span>
+          <ConnectionBadge connection={connector.connection} />
+          {!connector.enabled ? (
+            <span className="rounded-full border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-xs text-neutral-500">
+              Disabled
+            </span>
           ) : null}
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1.5">
-          {connected ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => disconnect.mutate({ connectorId: connector.id })}
-              disabled={disconnect.isPending}
-            >
-              Disconnect
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              onClick={connect}
-              disabled={!canConnect || startAuth.isPending}
-              title={
-                canConnect
-                  ? undefined
-                  : 'No connector encryption key is configured'
-              }
-            >
-              <Plug className="h-3.5 w-3.5" />
-              {needsAttention ? 'Reconnect' : 'Connect'}
-            </Button>
-          )}
-          <div className="flex items-center gap-0.5">
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => refresh.mutate({ connectorId: connector.id })}
-              disabled={refresh.isPending}
-            >
-              <RefreshCw
-                className={cn(
-                  'h-3.5 w-3.5',
-                  refresh.isPending && 'animate-spin',
-                )}
-              />
-              Refresh
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setEditing((v) => !v)}
-              aria-pressed={editing}
-            >
-              <Pencil className="h-3.5 w-3.5" />
-              Edit
-            </Button>
-            <DeleteConnectorButton connector={connector} />
-          </div>
-        </div>
-      </div>
-      {startAuth.error ? (
-        <p className="mt-2 flex items-start gap-1.5 text-xs text-red-600">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          {(startAuth.error).message}
+        <p className="mt-0.5 truncate font-mono text-xs text-neutral-500">
+          {connector.url}
         </p>
-      ) : null}
-      {editing ? (
-        <div className="mt-3">
-          <ConnectorForm
-            connector={connector}
-            onDone={() => setEditing(false)}
-          />
-        </div>
-      ) : null}
-    </div>
+        {/*
+          The tool count doubles as the call to action. "0 of 66" is the state
+          every freshly-refreshed connector sits in, and it is the one that
+          most needs a human to go do something — so it is coloured as a
+          prompt, not reported as a fact.
+        */}
+        <p
+          className={cn(
+            'mt-1.5 text-xs',
+            noneEnabled ? 'text-amber-700' : 'text-neutral-500',
+          )}
+        >
+          {connector.toolCount === 0
+            ? 'No tools discovered yet — open to refresh its catalog.'
+            : noneEnabled
+              ? `${connector.toolCount} tools discovered, none enabled yet — open to choose which agents may call.`
+              : `${connector.enabledToolCount} of ${connector.toolCount} tools enabled`}
+        </p>
+        {connector.connection?.error ? (
+          <p className="mt-1 text-xs text-amber-700">
+            {connector.connection.error}
+          </p>
+        ) : null}
+      </div>
+      <span className="inline-flex shrink-0 items-center gap-1 self-center text-xs text-neutral-500 group-hover:text-neutral-800">
+        Manage
+        <ChevronRight className="h-4 w-4" />
+      </span>
+    </button>
   )
 }

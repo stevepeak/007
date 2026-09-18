@@ -88,7 +88,7 @@ describe('saveConnector (edit)', () => {
     const result = await handlers.saveConnector(
       ctx(db, { ...BASE, label: 'Linear (prod)', scopes: 'read write' }),
     )
-    expect(result).toEqual({ ok: true, disconnected: false })
+    expect(result).toEqual({ ok: true, id: 'linear', disconnected: false })
 
     const row = await getConnector(db, 'linear')
     expect(row?.label).toBe('Linear (prod)')
@@ -103,7 +103,7 @@ describe('saveConnector (edit)', () => {
     const result = await handlers.saveConnector(
       ctx(db, { ...BASE, url: 'https://mcp.example.com/mcp' }),
     )
-    expect(result).toEqual({ ok: true, disconnected: true })
+    expect(result).toEqual({ ok: true, id: 'linear', disconnected: true })
     expect((await getConnector(db, 'linear'))?.url).toBe(
       'https://mcp.example.com/mcp',
     )
@@ -114,7 +114,7 @@ describe('saveConnector (edit)', () => {
     const result = await handlers.saveConnector(
       ctx(db, { ...BASE, authKind: 'bearer' }),
     )
-    expect(result).toEqual({ ok: true, disconnected: true })
+    expect(result).toEqual({ ok: true, id: 'linear', disconnected: true })
     expect(await getConnection(db, 'linear')).toBeNull()
   })
 
@@ -122,6 +122,35 @@ describe('saveConnector (edit)', () => {
     const result = await handlers.saveConnector(
       ctx(db, { ...BASE, id: 'github', url: 'https://api.githubcopilot.com/mcp/' }),
     )
-    expect(result).toEqual({ ok: true, disconnected: false })
+    expect(result).toEqual({ ok: true, id: 'github', disconnected: false })
+  })
+})
+
+describe('saveConnector (create without an id)', () => {
+  const create = (label: string) =>
+    handlers.saveConnector(
+      ctx(db, { label, url: 'https://mcp.example.com/mcp', authKind: 'none' }),
+    )
+
+  test('derives the id from the label', async () => {
+    const result = await create('GitHub (prod)')
+    expect(result.id).toBe('github-prod')
+    expect((await getConnector(db, 'github-prod'))?.label).toBe('GitHub (prod)')
+  })
+
+  test('a label whose slug is taken gets a numbered suffix, not an overwrite', async () => {
+    // `linear` already exists from beforeEach, with a credential attached.
+    const result = await create('Linear')
+    expect(result.id).toBe('linear-2')
+    // The original is untouched — in particular still connected.
+    expect((await getConnector(db, 'linear'))?.url).toBe(BASE.url)
+    expect(await getConnection(db, 'linear')).not.toBeNull()
+
+    expect((await create('Linear')).id).toBe('linear-3')
+  })
+
+  test('a label with nothing usable in it still yields a valid id', async () => {
+    expect((await create('🚀')).id).toBe('connector')
+    expect((await create('🚀')).id).toBe('connector-2')
   })
 })

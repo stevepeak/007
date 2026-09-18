@@ -3,7 +3,12 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, test } from 'bun:test'
 
-import { deriveSideEffect, normalizeToolResult, pickServerIcon } from './client'
+import {
+  authHeaders,
+  deriveSideEffect,
+  normalizeToolResult,
+  pickServerIcon,
+} from './client'
 
 const SRC_DIR = fileURLToPath(new URL('..', import.meta.url))
 
@@ -188,5 +193,17 @@ describe('server icon selection', () => {
   test('drops an oversized data URI', () => {
     const huge = `data:image/png;base64,${'A'.repeat(70 * 1024)}`
     expect(pickServerIcon({ icons: [{ src: huge }] })).toBeNull()
+  })
+})
+
+describe('authHeaders', () => {
+  test('always sends the Bearer scheme, whatever the token endpoint called it', () => {
+    // Linear returns `token_type: "bearer"` and then rejects
+    // `Authorization: bearer …` at its MCP server with 401 invalid_token.
+    expect(authHeaders({ kind: 'bearer', token: 'tok' })).toEqual({
+      Authorization: 'Bearer tok',
+    })
+    expect(authHeaders({ kind: 'none' })).toEqual({})
+    expect(authHeaders(undefined)).toEqual({})
   })
 })

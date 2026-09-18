@@ -15,6 +15,34 @@ without you and is still probably wrong to skip.
 
 ---
 
+## 2026-09-18 — Connector auth always sends `Bearer`; connector ids are generated
+
+Two connector changes, one of which fixes every Linear connector.
+
+**`Authorization: Bearer`, always.** The MCP client used to echo the token
+endpoint's `token_type` back as the header scheme. Linear returns
+`token_type: "bearer"` and then rejects `Authorization: bearer …` at its MCP
+server with 401 `invalid_token` — so a freshly-connected Linear never pulled a
+catalog and sat at "expired". The scheme is now the literal `Bearer` (which is
+all the official MCP SDK ever sends); `McpAuth` lost its `tokenType` field. A
+Refresh that succeeds with a stored credential also flips an `expired`
+connection back to `connected`, so no reconnect is needed once a server starts
+honouring a token again.
+
+**No more id field.** `saveConnector` takes `id` as optional: omit it to
+create, and the server derives one from the label (`slugifyConnectorId`,
+de-duplicated as `linear-2`, `linear-3`, …) and returns it. Pass an id to
+update, or to create on a known slug (wf-spec imports). The result is now
+`{ ok, id, disconnected }` — `disconnected` is true when an edit changed the
+URL or auth kind and the stored credential was dropped with it.
+
+### Action
+
+None for the UI; the bundled Connectors pages already use both. A host that
+calls `saveConnector` directly and reads its result must expect the `id` field.
+
+---
+
 ## 2026-09-18 — Connectors show the icon the MCP server advertises
 
 A Refresh now reads `serverInfo.icons` off the `initialize` handshake (MCP

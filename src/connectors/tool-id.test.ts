@@ -3,8 +3,10 @@ import { describe, expect, test } from 'bun:test'
 import {
   connectorToolId,
   isConnectorToolId,
+  CONNECTOR_ID_PATTERN,
   parseConnectorToolId,
   schemaHash,
+  slugifyConnectorId,
 } from './tool-id'
 
 describe('connector tool ids', () => {
@@ -85,5 +87,19 @@ describe('schema hashing', () => {
     const a = await schemaHash({ inputSchema: { required: ['a', 'b'] } })
     const b = await schemaHash({ inputSchema: { required: ['b', 'a'] } })
     expect(a).not.toBe(b)
+  })
+})
+
+describe('slugifyConnectorId', () => {
+  test('slugs a label the way the old form did', () => {
+    expect(slugifyConnectorId('Linear')).toBe('linear')
+    expect(slugifyConnectorId('  GitHub (prod) ')).toBe('github-prod')
+    expect(slugifyConnectorId('Acme_CRM v2')).toBe('acme-crm-v2')
+  })
+
+  test('always satisfies CONNECTOR_ID_PATTERN', () => {
+    for (const label of ['🚀', '---', '', 'x'.repeat(200), 'A'.repeat(62) + '-']) {
+      expect(slugifyConnectorId(label)).toMatch(CONNECTOR_ID_PATTERN)
+    }
   })
 })

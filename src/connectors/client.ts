@@ -35,7 +35,7 @@ const CLIENT_INFO = { name: '007', version: '0.1.0' }
 
 /** How we authenticate to a server for one session. */
 export type McpAuth =
-  | { kind: 'bearer'; token: string; tokenType?: string }
+  | { kind: 'bearer'; token: string }
   | { kind: 'none' }
 
 export type McpTarget = {
@@ -78,9 +78,17 @@ export class McpToolCallError extends Error {
   }
 }
 
-function authHeaders(auth: McpAuth | undefined): Record<string, string> {
+/**
+ * The scheme is always the literal `Bearer`, never the server's own
+ * `token_type` echoed back. RFC 6750 makes the scheme case-insensitive, but
+ * Linear answers `token_type: "bearer"` from its token endpoint and then 401s
+ * `Authorization: bearer …` at its MCP server — and the official MCP SDK
+ * hard-codes `Bearer`, so that is the only spelling servers are ever tested
+ * against. A non-bearer `token_type` is a server we don't support anyway.
+ */
+export function authHeaders(auth: McpAuth | undefined): Record<string, string> {
   if (!auth || auth.kind === 'none') return {}
-  return { Authorization: `${auth.tokenType ?? 'Bearer'} ${auth.token}` }
+  return { Authorization: `Bearer ${auth.token}` }
 }
 
 /**

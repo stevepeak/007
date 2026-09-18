@@ -26,6 +26,24 @@ export const CONNECTOR_TOOL_PREFIX = 'mcp'
  */
 export const CONNECTOR_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/
 
+/**
+ * Derive a connector id from its label — "Linear (prod)" → `linear-prod`.
+ *
+ * Nobody types an id: it is internal, permanent (embedded in every tool id),
+ * and there is nothing a human could choose that beats the label's slug. A
+ * label with no usable characters falls back to `connector`, so the result
+ * always satisfies {@link CONNECTOR_ID_PATTERN}.
+ */
+export function slugifyConnectorId(label: string): string {
+  const slug = label
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9]+/g, '-')
+    .replaceAll(/^-+|-+$/g, '')
+    .slice(0, 63)
+    .replace(/-+$/, '')
+  return slug.length > 0 ? slug : 'connector'
+}
+
 /** Build the namespaced id an agent or Tool node references. */
 export function connectorToolId(connectorId: string, toolName: string): string {
   return `${CONNECTOR_TOOL_PREFIX}:${connectorId}:${toolName}`

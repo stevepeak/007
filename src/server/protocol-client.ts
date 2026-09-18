@@ -111,10 +111,11 @@ export interface WfDataClient {
   /**
    * Create or update a connector. `id` is the permanent slug — it is embedded
    * in every tool id and therefore in published agent configs, so an update
-   * never rewrites it.
+   * never rewrites it. Omit it to create: the server derives one from the
+   * label and returns it.
    */
   saveConnector(input: {
-    id: string
+    id?: string
     label: string
     url: string
     transport?: WfConnectorTransport
@@ -126,6 +127,8 @@ export interface WfDataClient {
     note?: string | null
   }): Promise<{
     ok: true
+    /** The connector's id — generated from the label on create. */
+    id: string
     /**
      * True when the edit changed the server URL or auth kind and the stored
      * credential was dropped with it — the connector needs a fresh sign-in.
