@@ -52,22 +52,17 @@ export type EvalSampleProps = {
 }
 
 // The header badge for the derived testing layer. `io` gets no badge — a plain
-// input → output test is the baseline, not a mode worth naming.
-const LAYERS: Record<
-  Exclude<EvalSampleLayer, 'io'>,
-  { label: string; className: string; title: string }
+// input → output test is the baseline, not a mode worth naming — and neither
+// does `trajectory`: mocked tools are already visible in the Tools step, and
+// the name added nothing a reader could act on.
+const LAYERS: Partial<
+  Record<EvalSampleLayer, { label: string; className: string; title: string }>
 > = {
   synthesis: {
     label: 'Synthesis',
     className: 'bg-amber-100 text-amber-700',
     title:
       'A staged conversation with no tools — grades the final response in isolation.',
-  },
-  trajectory: {
-    label: 'Trajectory',
-    className: 'bg-violet-100 text-violet-700',
-    title:
-      'Mocked tools — grades which tools the agent reached for, and with what.',
   },
   integration: {
     label: 'Integration',
@@ -94,7 +89,7 @@ export function EvalSample({
   const state = useEvalSampleDraft({ setId, sampleId, initialCheckIndex })
   const { set, row, draft } = state
   const targetAgentCrumb = useTargetAgentCrumb(set?.targetId, set?.targetVersion)
-  const badge = state.layer === 'io' ? null : LAYERS[state.layer]
+  const badge = LAYERS[state.layer] ?? null
 
   return (
     <WfShell
