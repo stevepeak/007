@@ -208,7 +208,13 @@ export async function beginAuthorization(input: {
       metadata: discovery.metadata,
       clientInformation: client,
       redirectUrl: redirectUri,
-      scope: connector.scopes ?? undefined,
+      // No configured scopes → ask for everything the resource advertises. A
+      // scopeless request is not "default access": servers such as Linear
+      // grant it, issue a token with no scopes, and then 401 every call.
+      scope:
+        connector.scopes ??
+        discovery.scopesSupported?.join(' ') ??
+        undefined,
       state,
       resource: discovery.resource,
     },
