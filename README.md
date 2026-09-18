@@ -47,7 +47,7 @@ inspects.
 ```
 src/
 ├── index.ts     barrel: engine + storage + eval
-├── engine/      pure execution — NO DB, NO Cloudflare, NO provider (only ai + zod)
+├── engine/      pure execution — NO DB, NO Cloudflare, NO provider (ai + zod + jsonata)
 │                config · graph schema · scheduler · run-node · nodes/
 ├── storage/     Drizzle over Cloudflare D1 — the wf_* tables + data access
 ├── cloudflare/  Workers runtime — GraphWorkflow, RunRoom, startGraphRun, tools
@@ -64,7 +64,8 @@ cloudflare  → storage → engine
 host app → (injects WfSdkConfig) → engine
 ```
 
-`engine` depends on nothing in the SDK, only `ai` + `zod`. That's what makes it
+`engine` depends on nothing in the SDK, only `ai` + `zod` (+ `jsonata` for the
+Transform node and the graph linter). That's what makes it
 publishable and reusable.
 
 Import only the layer you need via subpaths: `@stevepeak/007/engine`,

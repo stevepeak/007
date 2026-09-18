@@ -27,7 +27,7 @@ const config = await defineESLintConfig(
 // (UI) both cover them, and `bun run typecheck` runs all three projects. They
 // were previously excluded from tsc AND from ESLint, which meant `bun test` —
 // which strips types rather than checking them — was the only thing that ever
-// read 16k lines of test code. Generated drizzle migrations stay ignored.
+// read the test code. Generated drizzle migrations stay ignored.
 // `src/ui` (React/tsx) is typechecked via tsconfig.ui.json and is outside the
 // base bun tsconfig's project service, so the typed lint rules can't resolve
 // it — ignore it here (mirrors the repo's separate-worker-tsconfig pattern).
@@ -64,8 +64,9 @@ export default [
   },
   // Same wiring for the React UI: it lives in its own DOM-typed project, which
   // the shared config's `projectService` never discovers because tsconfig.json
-  // excludes it. Without this every file under src/ui fails to parse, which is
-  // why 37k lines sat unlinted.
+  // excludes it. Without this every file under src/ui fails to parse — and
+  // parse failures are reported per file, not as a lint error, so the whole
+  // UI can sit unlinted without CI noticing.
   {
     files: ['src/ui/**/*.ts', 'src/ui/**/*.tsx'],
     languageOptions: {
@@ -87,8 +88,8 @@ export default [
       // the components object and the icon map is a module constant, so the
       // identities are stable and nothing remounts.
       //
-      // Every one of the 192 sites this flagged was one of those two patterns;
-      // none created a component. Silencing the rule is the accurate call here,
+      // Every site this flagged was one of those two patterns; none created a
+      // component. Silencing the rule is the accurate call here,
       // not a concession — obeying it would mean abandoning host injection,
       // which is the whole point of the package.
       //
@@ -109,17 +110,17 @@ export default [
 
       // NOTE: the React Compiler diagnostics — `purity`, `immutability`,
       // `preserve-manual-memoization`, `set-state-in-effect` — are all ON.
-      // They used to be suppressed as a class here. The eleven remaining
-      // `set-state-in-effect` sites carry an `eslint-disable-next-line` with
-      // the reason inline, so each is a decision on the record and a NEW
-      // violation still fails the build.
+      // Each surviving `set-state-in-effect` site carries an
+      // `eslint-disable-next-line` with the reason inline, so each is a
+      // decision on the record and a NEW violation still fails the build.
 
     },
   },
   // The one-way dependency rule, enforced instead of merely documented.
   // README.md states it (`ui → server → storage → engine`, `cloudflare →
   // storage → engine`) and the package's whole claim to being publishable rests
-  // on `engine` depending only on `ai` + `zod`. Prose can't fail CI; this can.
+  // on `engine` depending only on `ai`, `zod` and `jsonata`. Prose can't fail
+  // CI; this can.
   // Two engine TESTS had already drifted across the boundary before this rule
   // existed — see cloudflare/engine-contract.test.ts, where they now live.
   {
@@ -132,7 +133,7 @@ export default [
             {
               group: ['**/storage/**', '**/cloudflare/**', '**/server/**', '**/ui/**'],
               message:
-                'engine must not import other layers — it depends only on `ai` + `zod`, which is what makes it publishable. Move the shared value into engine, or put the test in the higher layer.',
+                'engine must not import other layers — it depends only on `ai`, `zod` and `jsonata`, which is what makes it publishable. Move the shared value into engine, or put the test in the higher layer.',
             },
           ],
         },

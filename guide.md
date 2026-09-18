@@ -52,7 +52,7 @@ cycles (`ui → server → storage → engine`, `cloudflare → storage → engi
 | Import                                       | Runtime                 | Use it in                                                                                    |
 | -------------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------- |
 | `@stevepeak/007`                             | any                     | barrel: engine + storage + eval                                                              |
-| `@stevepeak/007/engine`                      | any (only `ai` + `zod`) | custom backends, graph types                                                                 |
+| `@stevepeak/007/engine`                      | any (`ai`, `zod`, `jsonata`) | custom backends, graph types                                                                 |
 | `@stevepeak/007/analytics`                   | any server route        | `AnalyticsQuery` + dashboard aggregates over the telemetry dataset                           |
 | `@stevepeak/007/storage`                     | Workers (D1)            | `createWfDb`, data access, schema                                                            |
 | `@stevepeak/007/storage/schema`              | build-time              | drizzle-kit / migrations                                                                     |

@@ -5,7 +5,8 @@ This file is for **changing the SDK itself** — where things live, what the
 compiler will and won't catch you on, and the two or three facts about this
 codebase that are non-obvious enough to cost you an hour.
 
-Roughly 470 files / 86k lines. You will not read them. You shouldn't have to.
+It is large — `find src -name '*.ts*' | xargs wc -l` for today's number. You
+will not read it all. You shouldn't have to.
 
 ---
 
@@ -18,8 +19,8 @@ cloudflare  → storage → engine
 
 One direction. No cycles. In particular:
 
-> **`engine` imports only `ai` and `zod`.** That is what makes this package
-> publishable, and it is not a style preference.
+> **`engine` imports only `ai`, `zod` and `jsonata`.** That is what makes this
+> package publishable, and it is not a style preference.
 
 This is **enforced by ESLint**, not just documented — `no-restricted-imports`
 rules in `eslint.config.js` fail the build on a cross-layer import. If you find
@@ -88,7 +89,7 @@ One POST route carries every call. The contract is `WfDataClient`.
 | 3 | `src/server/handlers.ts` | an entry in `wfInputSchemas` |
 | 4 | `src/server/handlers/<area>.ts` | the handler |
 | 5 | `src/storage/data*.ts` | the query |
-| 6 | `src/server/http-client.ts` | a `bind('yourMethod')` line |
+| 6 | `src/server/data-client.ts` | a `bind('yourMethod')` line |
 | 7 | `src/ui/hooks-<area>.ts` | the react-query hook |
 
 Step 3 is not optional and not skippable: `wfInputSchemas` is
@@ -149,12 +150,13 @@ Use the helpers. There are two, and they exist because the alternative is a
 hand-rolled node literal that silently drifts from the schema.
 
 - **`src/engine/executor-test-helpers.ts`** — a mock `toolRegistry`, `makeConfig`,
-  and `chainGraph`. Eleven test files use it; this is the pattern to copy.
+  and `chainGraph`. `grep -rl executor-test-helpers src` lists the tests that
+  use it; open one and copy the pattern.
 - **`src/engine/graph-builders.ts`** — `buildStarterGraph`, `buildIterationSubgraph`.
   Production code, reusable from tests, and always schema-valid.
 
-**41 test files still hand-roll node literals.** That is not an invitation to add
-a forty-second. If a helper doesn't cover your case, extend the helper.
+**Many test files still hand-roll node literals.** That is not an invitation to
+add another. If a helper doesn't cover your case, extend the helper.
 
 ---
 
@@ -178,10 +180,11 @@ handler) and `useTickingNow` (a live clock that stops when you pass `null`).
 
 **React Compiler diagnostics are ON.** `purity`, `immutability`,
 `preserve-manual-memoization`, and `set-state-in-effect` all fail the build.
-Eleven `set-state-in-effect` sites carry a per-line `eslint-disable-next-line`
-with the reason inline; those are React-sanctioned patterns (reset on identity
-change, re-sync to a refetched value, layout measurement, reconciling browser
-history). If you need a twelfth, write the reason.
+The existing `set-state-in-effect` sites (`grep -rn 'disable-next-line
+react-hooks/set-state-in-effect' src/ui`) each carry the reason inline; those
+are React-sanctioned patterns (reset on identity change, re-sync to a refetched
+value, layout measurement, reconciling browser history). If you need another,
+write the reason.
 
 **Host-injected primitives.** Design-system components come out of context
 (`const { Button } = useWfComponents()`) and icons out of module-level
