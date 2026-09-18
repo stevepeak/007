@@ -21,6 +21,7 @@ import type {
   GraphRunContextInput,
   GraphWorkflowParams,
 } from './graph-workflow'
+import { releaseFromEnv } from './release'
 import type { GraphRunBindings } from './start-run'
 
 // Starting a called workflow as a RUN OF ITS OWN — the one place either backend
@@ -60,7 +61,7 @@ import type { GraphRunBindings } from './start-run'
  */
 export type ChildRunBindings = Pick<
   GraphRunBindings,
-  'GRAPH_WORKFLOW' | 'RUN_ROOM'
+  'GRAPH_WORKFLOW' | 'RUN_ROOM' | 'WF_HOST_RELEASE' | 'WF_SDK_RELEASE'
 >
 
 /** What a spawned callee is, once it exists. */
@@ -134,6 +135,9 @@ export async function spawnCalleeRun(
     // parent is excluded, and the two can never be reconciled.
     isEval: runContext.isEval,
     sentryTraceId: args.traceId,
+    // This deploy's release, not the caller's: the callee runs on whatever is
+    // deployed at spawn time, which after a resume-across-deploy can differ.
+    ...releaseFromEnv(env),
     // The nesting link the run viewer reads to show this callee UNDER its
     // caller. A workflow-call node spawns exactly one callee, so it takes the
     // top-level item sentinel; durable iteration items pass a real 0-based

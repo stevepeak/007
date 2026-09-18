@@ -371,3 +371,38 @@ describe('reporting back', () => {
     ).rejects.toBeInstanceOf(InvalidEventTypeError)
   })
 })
+
+describe('the callee records the release it was spawned on', () => {
+  test('the deploy pins land on the child row', async () => {
+    const spy = spyBindings()
+    const env = {
+      ...spy.env,
+      WF_HOST_RELEASE: 'host-sha',
+      WF_SDK_RELEASE: 'sdk-sha',
+    }
+    const spawned = await spawnCalleeRun(env, db, {
+      ...baseArgs,
+      entry: entryOf('durable'),
+      parent: { kind: 'instance', instanceId: 'parent-instance' },
+    })
+    const [row] = await db
+      .select({ host: wfRun.hostRelease, sdk: wfRun.sdkRelease })
+      .from(wfRun)
+      .where(eq(wfRun.id, spawned.childRunId))
+    expect(row).toEqual({ host: 'host-sha', sdk: 'sdk-sha' })
+  })
+
+  test('an unpinned env leaves both null', async () => {
+    const spy = spyBindings()
+    const spawned = await spawnCalleeRun(spy.env, db, {
+      ...baseArgs,
+      entry: entryOf('durable'),
+      parent: { kind: 'instance', instanceId: 'parent-instance' },
+    })
+    const [row] = await db
+      .select({ host: wfRun.hostRelease, sdk: wfRun.sdkRelease })
+      .from(wfRun)
+      .where(eq(wfRun.id, spawned.childRunId))
+    expect(row).toEqual({ host: null, sdk: null })
+  })
+})

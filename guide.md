@@ -660,7 +660,20 @@ interface GraphRunBindings {
   WF_DB: D1Database
   RUN_ROOM: DurableObjectNamespace<RunRoom>
   GRAPH_WORKFLOW: Workflow<GraphWorkflowParams>
+  // Optional deploy-time pins, recorded on every run it creates (top-level,
+  // iteration item, callee) as wf_run.host_release / sdk_release — so a failed
+  // run can say whether it predates a fix. Leave unset in local dev.
+  WF_HOST_RELEASE?: string // e.g. the host repo's git sha
+  WF_SDK_RELEASE?: string // e.g. `git rev-parse HEAD:packages/007`
 }
+```
+
+Pin them at deploy rather than in `wrangler.jsonc`:
+
+```sh
+wrangler deploy \
+  --var "WF_HOST_RELEASE:$(git rev-parse HEAD)" \
+  --var "WF_SDK_RELEASE:$(git rev-parse HEAD:packages/007)"
 ```
 
 Its input:
@@ -922,8 +935,12 @@ runToolPreview: async ({ toolId, args, context }) => {
 
 **Optional:** `sentryTraceUrl(traceId)` builds the run viewer's "View trace in
 Sentry" deep-link (return `null` to omit it) — the host owns the URL shape since
-only it knows its Sentry org/region. `evalJudgeModelId` pins which model grades
-`llm_judge` eval checks (defaults to `listModels()[0]`).
+only it knows its Sentry org/region. `releaseUrl(kind, release)` does the same
+for the release chip (`host@abc1234 · sdk@def5678`): it turns the sha the host
+pinned into `WF_HOST_RELEASE` / `WF_SDK_RELEASE` into a commit link, one call
+per side, since only the host knows which repository each belongs to.
+`evalJudgeModelId` pins which model grades `llm_judge` eval checks (defaults to
+`listModels()[0]`).
 
 ### 5b. Headless access: the MCP server (`wf-mcp`)
 

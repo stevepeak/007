@@ -32,6 +32,7 @@ function detail(over: Partial<WfRunDetail> = {}): WfRunDetail {
       costUsd: null,
       sentryTraceId: null,
       sentryTraceUrl: null,
+      release: { host: null, sdk: null },
       parent: null,
       tree: null,
       output: null,

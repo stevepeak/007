@@ -1,5 +1,13 @@
 import type { WorkflowGraph } from '../engine/graph'
 
+/** One side of what was deployed when a run was created — see `WfRunSummary.release`. */
+export type WfRunReleaseRef = {
+  /** The opaque identifier the host pinned at deploy time (a git sha, typically). */
+  id: string
+  /** Deep-link to it (a commit page), built by the host via `releaseUrl`; null when it wires none. */
+  url: string | null
+}
+
 export type WfRunSummary = {
   id: string
   status: string
@@ -27,6 +35,14 @@ export type WfRunSummary = {
   /** Deep-link into the Sentry trace, built by the host from `sentryTraceId`.
    * Null when the host wires no Sentry org (see CreateWfSdkHandlersOptions). */
   sentryTraceUrl: string | null
+  /**
+   * What was deployed when this run was created: the host's release and the
+   * SDK's, each null when the host pinned nothing (older runs, local dev).
+   * Recorded at creation and never updated, so a run that resumed after a
+   * deploy still names the release it STARTED on. The point of it: seeing at a
+   * glance whether a failed run predates a fix. See `wf_run.host_release`.
+   */
+  release: { host: WfRunReleaseRef | null; sdk: WfRunReleaseRef | null }
   /**
    * The run that spawned this one, or null for a top-level run.
    *

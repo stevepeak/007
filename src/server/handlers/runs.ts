@@ -69,7 +69,7 @@ export function buildRunHandlers<TDeps>(
       })
       return {
         runs: result.rows.map((r) => ({
-          ...runSummary(r, opts.sentryTraceUrl),
+          ...runSummary(r, opts.sentryTraceUrl, opts.releaseUrl),
           children: r.children,
         })),
         total: result.total,
@@ -86,7 +86,7 @@ export function buildRunHandlers<TDeps>(
     listChildRuns: async (c) => {
       const parentRunId = requireStr(c.params, 'parentRunId')
       const rows = await listChildRuns(c.db, parentRunId)
-      return rows.map((r) => runSummary(r, opts.sentryTraceUrl))
+      return rows.map((r) => runSummary(r, opts.sentryTraceUrl, opts.releaseUrl))
     },
 
     listRunTriggerKinds: async (c) => await listRunTriggerKinds(c.db),
@@ -162,6 +162,7 @@ export function buildRunHandlers<TDeps>(
               parentWorkflowName: result.parentWorkflowName,
             },
             opts.sentryTraceUrl,
+            opts.releaseUrl,
           ),
           output: result.run.output,
         },

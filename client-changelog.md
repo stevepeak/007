@@ -15,6 +15,43 @@ without you and is still probably wrong to skip.
 
 ---
 
+## 2026-09-18 — Runs record the release they were created on
+
+Every `wf_run` now carries `host_release` and `sdk_release`: what was deployed
+when the row was written, as the opaque strings the host pinned at deploy time
+(a git sha, typically). Two columns because the SDK is a submodule on its own
+clock — "did this run predate the fix" has to be answerable for either. The
+run viewer's header shows them as `host@abc1234 · sdk@def5678`; `get_run` over
+MCP and `wf-dump-run` print them. Captured at creation and never updated, so a
+durable run that resumes across a deploy still reads as the release it started
+on; iteration items and callees record the deploy they were *spawned* on.
+
+Migration `0032_wf_run_release` — two nullable columns, no backfill. Older
+runs and local dev read as "no release" and the chip is simply absent.
+
+### Action
+
+**Pin two vars at deploy.** `GraphRunBindings` / `GraphWorkflowEnv` gained
+optional `WF_HOST_RELEASE` and `WF_SDK_RELEASE`. Nothing breaks without them —
+every run just records null. To get the feature, add to the Worker that hosts
+`startGraphRun`:
+
+```sh
+wrangler deploy \
+  --var "WF_HOST_RELEASE:$(git rev-parse HEAD)" \
+  --var "WF_SDK_RELEASE:$(git rev-parse HEAD:packages/007)"
+```
+
+**`CreateWfSdkHandlersOptions.releaseUrl?(kind, release)`** — optional, beside
+`sentryTraceUrl`. Return the commit page for a pinned identifier and the chip
+links to it; omit it and the chip shows the bare short sha.
+
+**`WfRunSummary.release`** is a new required field (`{ host, sdk }`, each
+`{ id, url } | null`). A host that builds summaries by hand — test fixtures,
+mostly — adds `release: { host: null, sdk: null }`.
+
+---
+
 ## 2026-09-16 — Workflow write tools on `wf-mcp`, and a Tool-arg lint
 
 The MCP catalog (and the System Copilot, which shares it) can now change and

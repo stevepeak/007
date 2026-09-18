@@ -12,6 +12,7 @@ import { agentExists, workflowExists } from '../../storage/data'
 import type {
   JsonSchema,
   WfDataClient,
+  WfRunReleaseRef,
   WfRunSummary,
   WfRunTreeTotals,
 } from '../protocol'
@@ -72,6 +73,8 @@ export function runSummary(
     totalTokens?: number | null
     costUsd?: number | null
     sentryTraceId?: string | null
+    hostRelease?: string | null
+    sdkRelease?: string | null
     parentRunId?: string | null
     parentNodeId?: string | null
     /** The stored item index — `-1` is the "not an iteration item" sentinel. */
@@ -84,8 +87,14 @@ export function runSummary(
     tree?: WfRunTreeTotals | null
   },
   traceUrl?: (traceId: string) => string | null,
+  releaseUrl?: (kind: 'host' | 'sdk', release: string) => string | null,
 ): WfRunSummary {
   const sentryTraceId = r.sentryTraceId ?? null
+  const releaseRef = (
+    kind: 'host' | 'sdk',
+    id: string | null | undefined,
+  ): WfRunReleaseRef | null =>
+    id ? { id, url: releaseUrl ? (releaseUrl(kind, id) ?? null) : null } : null
   return {
     id: r.id,
     status: r.status,
@@ -105,6 +114,10 @@ export function runSummary(
     sentryTraceId,
     sentryTraceUrl:
       sentryTraceId && traceUrl ? (traceUrl(sentryTraceId) ?? null) : null,
+    release: {
+      host: releaseRef('host', r.hostRelease),
+      sdk: releaseRef('sdk', r.sdkRelease),
+    },
     // Both columns are written together at spawn time, so a row with a parent
     // run always has a parent node; requiring both here means a half-written
     // link reads as "top-level" rather than as a child pointing nowhere.

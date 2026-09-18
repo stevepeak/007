@@ -659,6 +659,7 @@ describe('buildActivityTree — durable items and callees (NEW-177)', () => {
       costUsd: null,
       sentryTraceId: null,
       sentryTraceUrl: null,
+      release: { host: null, sdk: null },
       parent: {
         runId: 'parent',
         nodeId,

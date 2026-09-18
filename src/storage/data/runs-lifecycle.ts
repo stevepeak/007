@@ -31,6 +31,9 @@ export async function createRun(
     isEval?: boolean
     /** Stable 32-hex trace id for the run's Sentry spans + deep-link. */
     sentryTraceId?: string
+    /** What was deployed when this run was created; see `wf_run`'s columns. */
+    hostRelease?: string
+    sdkRelease?: string
     /**
      * Nesting: the run that spawned this one, the node in ITS graph that did
      * the spawning, and — for a durable iteration item — which item this is.
@@ -56,6 +59,8 @@ export async function createRun(
     actorId: input.actorId ?? null,
     isEval: input.isEval ?? false,
     sentryTraceId: input.sentryTraceId ?? null,
+    hostRelease: input.hostRelease ?? null,
+    sdkRelease: input.sdkRelease ?? null,
     parentRunId: input.parent?.runId ?? null,
     parentNodeId: input.parent?.nodeId ?? null,
     itemIndex: input.parent?.itemIndex ?? TOP_LEVEL_ITEM_INDEX,

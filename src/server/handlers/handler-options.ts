@@ -97,6 +97,14 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
    */
   sentryTraceUrl?: (traceId: string) => string | null
   /**
+   * Optional: build a deep-link for a run's recorded release — the commit page
+   * for the sha the host pinned into `WF_HOST_RELEASE` / `WF_SDK_RELEASE` at
+   * deploy time. Called once per side; only the host knows which repository
+   * each identifier belongs to. Returns null to show the bare identifier.
+   * Surfaced on `WfRunSummary.release.{host,sdk}.url`.
+   */
+  releaseUrl?: (kind: 'host' | 'sdk', release: string) => string | null
+  /**
    * Optional: report a handler's 500 to the host's error tracker.
    *
    * The dispatcher CATCHES every handler failure and answers a 500 JSON body,

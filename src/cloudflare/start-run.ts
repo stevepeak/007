@@ -7,6 +7,7 @@ import { createWfDb } from '../storage/client'
 import { createRun, getVersionGraph } from '../storage/data'
 
 import type { GraphWorkflowParams } from './graph-workflow'
+import { releaseFromEnv, type ReleaseBindings } from './release'
 import type { RunRoom } from './run-room'
 
 // Turnkey run starter for the host worker. Mints the RunRoom address, creates
@@ -14,7 +15,7 @@ import type { RunRoom } from './run-room'
 // needs to poll it (`workflowRunId`) and, on the inline engine, to read its
 // streaming answer out of the room (`runId`).
 
-export interface GraphRunBindings {
+export interface GraphRunBindings extends ReleaseBindings {
   /** The SDK's own D1 (`wf_*` tables) — see `GraphWorkflowEnv.WF_DB`. */
   WF_DB: D1Database
   RUN_ROOM: DurableObjectNamespace<RunRoom>
@@ -65,6 +66,7 @@ export async function startGraphRun(
     actorId: input.actorId,
     isEval: input.isEval,
     sentryTraceId: traceId,
+    ...releaseFromEnv(env),
   })
 
   const runId = crypto.randomUUID()

@@ -38,6 +38,16 @@ export const wfRun = sqliteTable(
     // viewer builds a "View trace in Sentry" deep-link from it. Null for runs
     // started before tracing was wired.
     sentryTraceId: text('sentry_trace_id'),
+    // What was DEPLOYED when this row was written: the host's release and the
+    // SDK's, as the opaque strings the host pinned into `WF_HOST_RELEASE` /
+    // `WF_SDK_RELEASE` at deploy time (a git sha, typically). Two columns, not
+    // one, because the SDK is consumed as a submodule and moves on its own
+    // clock — "did this run predate the fix" has to be answerable for either.
+    // Captured at creation, never updated: a durable run that resumes after a
+    // deploy still reads as the release it STARTED on. Null for runs from
+    // before this existed and for local dev, where nothing is pinned.
+    hostRelease: text('host_release'),
+    sdkRelease: text('sdk_release'),
     status: text('status', { enum: WF_RUN_STATUSES })
       .notNull()
       .default('queued'),

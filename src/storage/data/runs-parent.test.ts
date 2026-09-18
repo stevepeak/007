@@ -115,3 +115,17 @@ describe('parent linkage on wf_run', () => {
     expect(topLevel.map((r) => r.id)).toEqual([parentId])
   })
 })
+
+describe('release pins on wf_run', () => {
+  test('recorded when given, null otherwise', async () => {
+    const pinned = await read(
+      await createRun(db, { ...base, hostRelease: 'h1', sdkRelease: 's1' }),
+    )
+    expect(pinned?.hostRelease).toBe('h1')
+    expect(pinned?.sdkRelease).toBe('s1')
+
+    const bare = await read(await createRun(db, base))
+    expect(bare?.hostRelease).toBeNull()
+    expect(bare?.sdkRelease).toBeNull()
+  })
+})

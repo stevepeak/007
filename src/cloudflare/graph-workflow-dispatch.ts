@@ -74,6 +74,7 @@ import {
   createTelemeteredRecorder,
   emitRunPoint,
 } from './graph-workflow-telemetry'
+import { releaseFromEnv } from './release'
 import { runContextFor } from './run-context'
 import { withNodeSpan } from './tracing'
 
@@ -317,6 +318,10 @@ async function runItemAsChildInstance<TDeps, E extends GraphWorkflowEnv>(
         // parent is excluded.
         isEval: p.runContext.isEval,
         sentryTraceId: traceId,
+        // Read from THIS deploy's env rather than copied off the parent row:
+        // the item runs on whatever is deployed when it is spawned, which after
+        // a resume-across-deploy is not what the parent started on.
+        ...releaseFromEnv(env),
         // What nests this item under its parent in the run viewer, and the only
         // link that survives the parent finishing. See NEW-172.
         parent: {

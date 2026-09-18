@@ -35,7 +35,7 @@ export function buildDashboardHandlers<TDeps>(
       const result: WfDashboardResult = {
         ...stats,
         recentFailures: stats.recentFailures.map((r) => {
-          return runSummary(r, opts.sentryTraceUrl)
+          return runSummary(r, opts.sentryTraceUrl, opts.releaseUrl)
         }),
       }
       return result

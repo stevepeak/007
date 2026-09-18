@@ -1,10 +1,17 @@
-import { ChevronDown, ExternalLink, Layers, RotateCcw } from 'lucide-react'
+import {
+  ChevronDown,
+  ExternalLink,
+  GitCommitHorizontal,
+  Layers,
+  RotateCcw,
+} from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { iterationItemListLabel } from '../engine/item-title'
 import type {
   RetryRunMode,
   WfRunDetail,
+  WfRunReleaseRef,
   WfRunSummary,
 } from '../server/protocol'
 import type { WfFeedbackRating } from '../server/protocol-feedback'
@@ -98,6 +105,7 @@ export function RunHeaderActions({
         {formatDuration(start, end)}
       </span>
       <RunCostStat run={run} />
+      <ReleaseStat release={run.release} />
       <MessageFeedback
         alwaysVisible
         subjectId={feedbackSubjectId}
@@ -313,6 +321,68 @@ function RetryMenu({
         </>
       ) : null}
     </div>
+  )
+}
+
+/**
+ * What was deployed when the run was created — the host's release beside the
+ * SDK's, each as a short sha linking to its commit when the host wired
+ * `releaseUrl`. Two identifiers rather than one because the SDK is a submodule
+ * on its own clock: "was this before the fix" is asked of either.
+ *
+ * Absent entirely for runs that recorded nothing (older rows, local dev),
+ * rather than rendering a dash — an empty chip would draw the eye to a fact
+ * that isn't there.
+ */
+function ReleaseStat({ release }: { release: WfRunSummary['release'] }) {
+  if (!release.host && !release.sdk) return null
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-xs text-neutral-500 tabular-nums"
+      title="What was deployed when this run started — host release · SDK release"
+    >
+      <GitCommitHorizontal className="size-3.5" />
+      <ReleaseRef label="host" value={release.host} />
+      {release.host && release.sdk ? (
+        <span className="text-neutral-300">·</span>
+      ) : null}
+      <ReleaseRef label="sdk" value={release.sdk} />
+    </span>
+  )
+}
+
+function ReleaseRef({
+  label,
+  value: ref,
+}: {
+  label: string
+  value: WfRunReleaseRef | null
+}) {
+  if (!ref) return null
+  // A full sha is 40 chars of noise on a header strip; seven is what `git log
+  // --oneline` shows and is what people paste. Non-sha identifiers (a tag, a
+  // version string) are short already and pass through untouched.
+  const short = /^[0-9a-f]{40}$/i.test(ref.id) ? ref.id.slice(0, 7) : ref.id
+  const body = (
+    <>
+      <span className="text-neutral-400">{label}@</span>
+      {short}
+    </>
+  )
+  return ref.url ? (
+    <a
+      href={ref.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="font-mono hover:text-neutral-800 hover:underline"
+      title={ref.id}
+    >
+      {body}
+    </a>
+  ) : (
+    <span className="font-mono" title={ref.id}>
+      {body}
+    </span>
   )
 }
 

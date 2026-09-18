@@ -154,6 +154,8 @@ export async function listRuns(db: WfDb, input: ListRunsFilter) {
       finishedAt: wfRun.finishedAt,
       error: wfRun.error,
       note: wfRun.note,
+      hostRelease: wfRun.hostRelease,
+      sdkRelease: wfRun.sdkRelease,
       workflowId: wfWorkflowVersion.workflowId,
       workflowName: wfWorkflow.name,
       versionNumber: wfWorkflowVersion.versionNumber,

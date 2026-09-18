@@ -52,13 +52,14 @@ import {
   resolveTelemetrySink,
   runDims,
 } from './graph-workflow-telemetry'
+import type { ReleaseBindings } from './release'
 import { runContextFor } from './run-context'
 import type { RunRoom } from './run-room'
 import { createCountingStep, createRunCounters } from './step-counter'
 
 // The minimal binding contract a host Env must satisfy for the durable backend.
 // The host's full Env is a superset; this is what `GraphWorkflow` touches.
-export interface GraphWorkflowEnv {
+export interface GraphWorkflowEnv extends ReleaseBindings {
   /**
    * D1 holding the SDK's `wf_*` tables. This is the SDK's OWN database — give it
    * one, do not point it at a database that also holds host tables.

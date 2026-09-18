@@ -70,6 +70,8 @@ export type ChildRunRow = {
   error: string | null
   note: string | null
   sentryTraceId: string | null
+  hostRelease: string | null
+  sdkRelease: string | null
   parentRunId: string | null
   parentNodeId: string | null
   /** 0-based iteration item, or null for a single workflow-call callee. */
@@ -157,6 +159,8 @@ export async function listChildRuns(
       error: wfRun.error,
       note: wfRun.note,
       sentryTraceId: wfRun.sentryTraceId,
+      hostRelease: wfRun.hostRelease,
+      sdkRelease: wfRun.sdkRelease,
       parentRunId: wfRun.parentRunId,
       parentNodeId: wfRun.parentNodeId,
       itemIndex: wfRun.itemIndex,

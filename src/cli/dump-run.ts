@@ -166,6 +166,9 @@ async function main(): Promise<void> {
   const costStr = costUsd == null ? '—' : `$${Number(costUsd).toFixed(4)}`
   L.push(`tokens:     ${totalTokens ?? '—'}   cost: ${costStr}`)
   L.push(`cf run id:  ${run.cloudflareRunId ?? '—'}`)
+  L.push(
+    `release:    host ${run.hostRelease ?? '—'}   sdk ${run.sdkRelease ?? '—'}`,
+  )
   L.push(`sentry:     ${run.sentryTraceId ?? '—'}`)
   if (traceUrl) L.push(`  → ${traceUrl}`)
   else if (run.sentryTraceId) L.push(`  (set SENTRY_ORG for a trace deep-link)`)
