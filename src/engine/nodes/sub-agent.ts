@@ -183,8 +183,10 @@ async function runAgentTarget<TDeps>(
     budget: ctx.modelBudget,
   })
 
-  // Fallback stop channel for object/boolean sub-agents (no tool loop): a
-  // reserved `__stop` field in the structured output.
+  // Fallback stop channel for object/boolean sub-agents, which don't get the
+  // stop TOOL above (a one-turn structured sub-agent never calls tools, and a
+  // strict schema can't carry a tool's side effect): a reserved `__stop` field
+  // in the structured output.
   if (
     !stopSignalled &&
     (config.output.kind === 'object' || config.output.kind === 'boolean')

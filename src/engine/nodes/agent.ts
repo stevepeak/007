@@ -247,14 +247,12 @@ export async function executeAgentNode<TDeps>(
   })
 
   // Delegation: when this agent whitelists sub-agents/workflows, merge the
-  // synthesized spawn/await tools into its tool set (text agents only — the
-  // structured-output paths run no tool loop). A synthesized name that collides
-  // with a registered tool is an author error surfaced loudly here.
+  // synthesized spawn/await tools into its tool set. A synthesized name that
+  // collides with a registered tool is an author error surfaced loudly here.
   let effectiveTools = tools
   if (
     !freezeTools &&
     subAgentCtx &&
-    config.output.kind === 'text' &&
     (config.subAgents?.targets.length ?? 0) > 0
   ) {
     // Sub-agents inherit THIS node's display intent — they have no `informUser`

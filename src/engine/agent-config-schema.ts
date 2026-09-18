@@ -85,6 +85,13 @@ export const subAgentsConfigSchema = z
 export type SubAgentsConfig = z.infer<typeof subAgentsConfigSchema>
 
 /**
+ * Turns an agent gets when the author hasn't said. Exported because the editor
+ * re-opens a retired loop at this number when the first tool is attached to a
+ * one-turn agent — one turn never offers tools (see `runToolLoop`).
+ */
+export const DEFAULT_MAX_TURNS = 5
+
+/**
  * Provider-side web search for an agent's completions.
  *
  * - `off`  — the model answers from its prompt, tools and context only.
@@ -142,7 +149,7 @@ const agentConfigObjectSchema = z.object({
   // normal model. The editor warns past 20 rather than the schema rejecting it,
   // because "too slow for the node budget" depends on the node's timeout and the
   // model's latency, neither of which this schema can see.
-  maxTurns: z.number().int().min(1).max(100).default(5),
+  maxTurns: z.number().int().min(1).max(100).default(DEFAULT_MAX_TURNS),
   // Tokens (prompt + completion, summed across every turn) the agent may spend
   // RESEARCHING before it has to write its answer. `null` — the default — means
   // no ceiling, leaving only `maxTurns` and the node's wall-clock budget.
@@ -184,10 +191,11 @@ const agentConfigObjectSchema = z.object({
   // without ever searching. A system prompt saying "always search first" is only
   // probabilistic; this makes it structural.
   //
-  // Deliberately inert rather than an error in the three cases where it can't
-  // hold (see `runToolLoop`): no tools registered, `maxTurns: 1` (turn 1 is also
-  // the final answering turn, which denies tools and must win), and the
-  // structured-output kinds, which run `generateObject` with no tool loop at all.
+  // Deliberately inert rather than an error in the two cases where it can't
+  // hold (see `runToolLoop`): no tools registered, and `maxTurns: 1` (turn 1 is
+  // also the final answering turn, which denies tools and must win). The output
+  // kind is not one of them — a structured agent runs the same loop and ends it
+  // with the schema's object instead of prose.
   requireToolFirstTurn: z.boolean().default(false),
   /**
    * Let the model think before it answers — an extra generation pass, billed and

@@ -117,6 +117,27 @@ export type IterationItemExecution = z.infer<
 //     it exists to stop a runaway, not to retroactively fail a workflow that has
 //     been looping over 300 rows every night for months.
 //
+// WHERE THE INLINE CEILING COMES FROM (ART-196). Inline items all run inside
+// the PARENT instance, so the bound is that one instance's budget. Against
+// Cloudflare's published Workflows limits (Workers Paid):
+//
+//   • Subrequests per instance (10,000 default) — THIS is the binding one.
+//     An inline item is one `iter:<node>:<i>` step, and inside it every fetch
+//     counts: the agent's model call(s), the tool's own calls (an embedding
+//     request + a vector upsert on the ingest subgraph), and the D1 writes for
+//     step rows and the log feed. Call it 10–20 per item. 500 items is then
+//     ~5,000–10,000 subrequests — the top of the range is the limit itself,
+//     which is why this is 500 and not 1000.
+//   • Steps per instance (10,000 default) — one step per item, so 500 items
+//     is 500 steps on top of the run envelope. Not close.
+//   • CPU time per step (30s default) — per item, not per loop, and nothing an
+//     item does is CPU-bound. Not a factor.
+//
+// The original value was 100, sized against the OLD Workers limit of 1,000
+// subrequests per invocation (~10 per item × 100). Cloudflare has since raised
+// it 10×, and 100 turned out to be below a routine fund LPA (154 leaf clauses
+// — ART-196), so it failed real documents for no platform reason.
+//
 // WHERE THE DURABLE CEILING COMES FROM (NEW-178). It was first written for a
 // path that did not exist, so it is worth stating what it is actually bounded
 // by now that the path does. Against Cloudflare's published Workflows limits:
@@ -138,13 +159,14 @@ export type IterationItemExecution = z.infer<
 // So 1000 stands, and what actually stops an author long before it is cost and
 // wall clock: at ~$0.05 and ~100s per item on the ingest subgraph, a full-width
 // durable loop is tens of dollars and hours of elapsed time. That is a judgement
-// for the workflow's own `maxItems` — the shipped ingest workflows sit at 60,
-// twice the largest document anyone has actually uploaded (29 recipes).
+// for the workflow's own `maxItems` — the shipped ingest workflow sits at 500
+// (inline), a few times the largest document anyone has actually uploaded
+// (154 leaf clauses, a fund LPA).
 export const ITERATION_MAX_ITEMS_CEILING: Record<
   IterationItemExecution,
   number
 > = {
-  inline: 100,
+  inline: 500,
   durable: 1000,
 }
 export const ITERATION_MAX_ITEMS_DEFAULT: Record<

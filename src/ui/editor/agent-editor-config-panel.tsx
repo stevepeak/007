@@ -13,6 +13,7 @@ import {
   type AgentConfig,
   type AgentOutput,
   agentModelRequirements,
+  DEFAULT_MAX_TURNS,
   type WebSearchMode,
 } from '../../engine'
 import { cn } from '../cn'
@@ -80,6 +81,7 @@ export function AgentConfigPanel({
     modelLacksReasoning,
     modelLacksWebSearch,
     hasToolsOrSubAgents,
+    toolsUnreachableReason,
     requireToolReason,
   } = useAgentConfigFacts(config)
 
@@ -111,19 +113,30 @@ export function AgentConfigPanel({
     })
   }
 
+  // Dropping the last tool retires the loop, so the turn count and budget that
+  // described it are retired with it — patched at the point of change rather
+  // than in an effect, which would mark an untouched agent dirty on open. The
+  // reverse holds too: attaching the FIRST tool to a one-turn agent re-opens
+  // the loop at the schema default, because a loop of one turn never offers
+  // its tools (see `toolsUnreachableReason`) and an author who just attached a
+  // tool did not mean to attach one the agent can't call.
   function patchToolsAndRetireLoop(next: Partial<AgentConfig>) {
     const merged = { ...config, ...next }
     const stillHasTools =
       merged.toolIds.length > 0 || merged.subAgents.targets.length > 0
+    if (!stillHasTools) {
+      patch({
+        ...next,
+        maxTurns: 1,
+        requireToolFirstTurn: false,
+        toolTokenBudget: null,
+      })
+      return
+    }
     patch(
-      stillHasTools
+      hasToolsOrSubAgents || config.maxTurns > 1
         ? next
-        : {
-            ...next,
-            maxTurns: 1,
-            requireToolFirstTurn: false,
-            toolTokenBudget: null,
-          },
+        : { ...next, maxTurns: DEFAULT_MAX_TURNS },
     )
   }
 
@@ -197,6 +210,9 @@ export function AgentConfigPanel({
           disabled={modelLacksTools}
           disabledReason={`${selectedModel?.label ?? 'The selected model'} can’t call tools — pick a tool-calling model to attach tools.`}
         />
+        {toolsUnreachableReason && config.toolIds.length > 0 ? (
+          <p className="text-xs text-amber-600">⚠ {toolsUnreachableReason}</p>
+        ) : null}
       </EditorSection>
 
       {/* Sub-agents (delegation) — delegation is the exception, not the
@@ -224,6 +240,9 @@ export function AgentConfigPanel({
           }}
           currentAgentId={agentId}
         />
+        {toolsUnreachableReason && config.subAgents.targets.length > 0 ? (
+          <p className="text-xs text-amber-600">⚠ {toolsUnreachableReason}</p>
+        ) : null}
       </EditorSection>
 
       {/* Expected output */}
@@ -374,10 +393,10 @@ export function AgentConfigPanel({
           </p>
           {config.webSearch !== 'off' ? (
             <p className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-800">
-              The provider writes the search query from the full conversation
-              — including anything a client said — and sends it out before the
-              model answers. Nothing here screens or logs that query. Leave
-              this off for any agent whose context can hold privileged or
+              The provider writes the search query from the full conversation —
+              including anything a client said — and sends it out before the
+              model answers. Nothing here screens or logs that query. Leave this
+              off for any agent whose context can hold privileged or
               confidential detail; give it a search tool instead.
             </p>
           ) : null}

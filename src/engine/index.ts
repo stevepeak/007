@@ -1,5 +1,6 @@
 export {
   agentConfigSchema,
+  DEFAULT_MAX_TURNS,
   agentInputVariables,
   agentModelRequirements,
   agentFromManifest,

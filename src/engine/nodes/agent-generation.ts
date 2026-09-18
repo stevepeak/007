@@ -4,15 +4,18 @@ import {
   generateText,
   jsonSchema,
   type LanguageModel,
+  type ModelMessage,
   NoObjectGeneratedError,
   stepCountIs,
   type StepResult,
   streamText,
   type ToolSet,
   type UIMessage,
+  wrapLanguageModel,
 } from 'ai'
 
 import { BOOLEAN_OUTPUT_SCHEMA } from '../agent-output'
+import type { JsonSchema } from '../agent-output-scan'
 import { errorFeedLine } from '../error-detail'
 import type { AgentOutput } from '../graph'
 import { MODEL_MAX_RETRIES, type ModelBudget } from '../model-budget'
@@ -120,12 +123,12 @@ export type RunAgentGenerationArgs = {
   modelId: string
   /** The agent's expected-output contract — selects the generation path. */
   output: AgentOutput
-  /** Max rounds of tool-calling before a final answer (text agents only). */
+  /** Max rounds of tool-calling before a final answer. */
   maxTurns: number
   /**
    * Force turn 1 to call a tool rather than letting the model answer straight
-   * away. Inert where it can't hold — no tools, `maxTurns: 1`, or a structured
-   * output kind (no tool loop). See `requireToolFirstTurn` on `AgentConfig`.
+   * away. Inert where it can't hold — no tools, or `maxTurns: 1`. See
+   * `requireToolFirstTurn` on `AgentConfig`.
    */
   requireToolFirstTurn?: boolean
   /**
@@ -345,61 +348,33 @@ function recordedMessages(
   }))
 }
 
-// generateObject path — for the structured-object and YES/NO output kinds we
-// return the parsed object as the node output. No tool loop, no progress.
+// generateObject path — the structured-object and YES/NO output kinds, when
+// there is nothing to call: no tools, or one turn (which never calls tools —
+// see `prepareStep`). One round-trip, the parsed object as the node output.
+// A structured agent WITH tools and room to call them runs the tool loop below
+// instead, and takes its object from the loop's final turn.
 async function runStructuredGeneration(
   args: RunAgentGenerationArgs,
 ): Promise<AgentNodeResult> {
   const { model, modelId, output, systemPrompt, messages, sink, budget } = args
-  // Only reached for the object / boolean kinds; `object` carries the schema.
-  // Run through `strictifyJsonSchema` even though the Zod-source compiler
-  // already emits the strict shape: an `object` schema can also arrive from a
-  // stored agent config written before the compiler enforced it, and a schema
-  // the provider silently drops looks like a flaky model, not a bad schema.
-  const schema = strictifyJsonSchema(
-    output.kind === 'object' ? output.schema : BOOLEAN_OUTPUT_SCHEMA,
-  )
+  // Only reached for the object / boolean kinds, so the schema is always there.
+  const schema = structuredSchema(output)!
   const startedAt = logModelCallStart(sink, modelId, { mode: output.kind })
   // `generateObject` accepts no `timeout` config — only `abortSignal` — and
   // every attempt shares the one guard, so the total budget bounds the node
   // however many times the call is re-issued.
   const guard = armTotalBudget(budget)
   const messagesForModel = await convertToModelMessages(messages)
-  const issue = () => {
-    return generateObject({
+  const result = await runGuarded(sink, modelId, startedAt, guard, () => {
+    return issueStructured({
       model,
-      system: systemPrompt,
+      modelId,
+      systemPrompt,
       messages: messagesForModel,
-      schema: jsonSchema(schema),
-      abortSignal: guard.signal,
-      maxRetries: MODEL_MAX_RETRIES,
+      schema,
+      guard,
+      sink,
     })
-  }
-  const result = await runGuarded(sink, modelId, startedAt, guard, async () => {
-    for (let attempt = 1; ; attempt++) {
-      try {
-        return await issue()
-      } catch (err) {
-        // Only an unusable OBJECT is re-issued. A provider rejection has
-        // already exhausted `maxRetries` inside the call above, and an overrun
-        // means there is no budget left to spend on another round-trip.
-        if (
-          attempt >= STRUCTURED_MAX_ATTEMPTS ||
-          !NoObjectGeneratedError.isInstance(err) ||
-          guard.overran()
-        ) {
-          throw err
-        }
-        // The retry is otherwise invisible: `runGuarded` logs the outcome of
-        // the LAST attempt only, so without this line a run that flaked and
-        // recovered looks identical to one that worked first time.
-        void sink?.log?.({
-          level: 'warn',
-          message: `⟳ ${modelId} returned no usable object (finish: ${err.finishReason ?? 'unknown'}) — re-issuing`,
-          meta: { attempt, finishReason: err.finishReason },
-        })
-      }
-    }
   })
   logModelCallEnd(sink, modelId, startedAt, {
     finishReason: result.finishReason,
@@ -427,10 +402,70 @@ async function runStructuredGeneration(
       outputTokens: result.usage?.outputTokens ?? 0,
     },
   }
-  const obj = result.object as Record<string, unknown>
-  // A YES/NO agent doubles as a decision: its `answer` routes the node's
-  // yes/no edges (the `object` kind produces data only, never routes). The
-  // full decision object still flows downstream as the node's output.
+  return structuredResult(output, result.object, meta)
+}
+
+/**
+ * One structured call, re-issued once if the object comes back unusable.
+ *
+ * Only an unusable OBJECT is re-issued. A provider rejection has already
+ * exhausted `maxRetries` inside the call, and an overrun means there is no
+ * budget left to spend on another round-trip. Callers run it under
+ * `runGuarded`, which owns the guard's lifetime and the failure log line.
+ */
+async function issueStructured(args: {
+  model: LanguageModel
+  modelId: string
+  systemPrompt: string
+  messages: ModelMessage[]
+  schema: JsonSchema
+  guard: { signal?: AbortSignal; overran: () => boolean }
+  sink?: StreamSink
+}) {
+  const { model, modelId, systemPrompt, messages, schema, guard, sink } = args
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await generateObject({
+        model,
+        system: systemPrompt,
+        messages,
+        schema: jsonSchema(schema),
+        abortSignal: guard.signal,
+        maxRetries: MODEL_MAX_RETRIES,
+      })
+    } catch (err) {
+      if (
+        attempt >= STRUCTURED_MAX_ATTEMPTS ||
+        !NoObjectGeneratedError.isInstance(err) ||
+        guard.overran()
+      ) {
+        throw err
+      }
+      // The retry is otherwise invisible: `runGuarded` logs the outcome of
+      // the LAST attempt only, so without this line a run that flaked and
+      // recovered looks identical to one that worked first time.
+      void sink?.log?.({
+        level: 'warn',
+        message: `⟳ ${modelId} returned no usable object (finish: ${err.finishReason ?? 'unknown'}) — re-issuing`,
+        meta: { attempt, finishReason: err.finishReason },
+      })
+    }
+  }
+}
+
+/**
+ * Shape a parsed structured object into the node result. A YES/NO agent doubles
+ * as a decision: its `answer` routes the node's yes/no edges (the `object` kind
+ * produces data only, never routes). The full decision object still flows
+ * downstream as the node's output. Shared by both structured paths — the
+ * single-call one and the tool loop's final turn — so the two can't drift.
+ */
+function structuredResult(
+  output: AgentOutput,
+  object: unknown,
+  meta: AgentNodeMeta,
+): AgentNodeResult {
+  const obj = object as Record<string, unknown>
   if (output.kind === 'boolean') {
     return {
       output: obj,
@@ -442,6 +477,21 @@ async function runStructuredGeneration(
   return { output: obj, meta }
 }
 
+/**
+ * The strict JSON Schema a structured kind asks the model for; null for text.
+ *
+ * Run through `strictifyJsonSchema` even though the Zod-source compiler already
+ * emits the strict shape: an `object` schema can also arrive from a stored agent
+ * config written before the compiler enforced it, and a schema the provider
+ * silently drops looks like a flaky model, not a bad schema.
+ */
+function structuredSchema(output: AgentOutput): Record<string, unknown> | null {
+  if (output.kind === 'text') return null
+  return strictifyJsonSchema(
+    output.kind === 'object' ? output.schema : BOOLEAN_OUTPUT_SCHEMA,
+  )
+}
+
 // Tool-calling agent loop. Background execution is non-streaming
 // (`generateText`); per-step text is forwarded to the sink for live progress.
 async function runToolLoop(
@@ -450,6 +500,7 @@ async function runToolLoop(
   const {
     model,
     modelId,
+    output,
     maxTurns,
     requireToolFirstTurn,
     toolTokenBudget,
@@ -464,6 +515,38 @@ async function runToolLoop(
     sink,
     budget,
   } = args
+  // A structured agent runs the SAME loop as a text one — same turn ceiling,
+  // context guard, spend budget — and differs only in what its final turn has
+  // to write: the schema's object rather than prose.
+  //
+  // The schema reaches the provider on the ANSWERING turn only. A provider
+  // that enforces a response format with constrained decoding never emits a
+  // tool call under it — measured on Venice/DeepSeek: the same prompt calls
+  // the tool every time without `response_format` and answers straight away,
+  // in JSON, every time with it. So research turns go out bare, and
+  // `prepareStep` swaps in `answeringModel` — the model with the schema
+  // injected — for exactly the turn where tools are denied. What comes back is
+  // read below: the answering turn's text parsed as the object, or, when the
+  // loop ended on a research turn (the model answered early, in prose), one
+  // more schema-only call over the transcript to format what it found.
+  //
+  // A model given by id can't be wrapped; its answering turn is then plain
+  // text and the transcript call below does the formatting instead.
+  const schema = structuredSchema(output)
+  const answeringModel =
+    schema && typeof model !== 'string'
+      ? wrapLanguageModel({
+          model,
+          middleware: {
+            transformParams: ({ params }) => {
+              return Promise.resolve({
+                ...params,
+                responseFormat: { type: 'json' as const, schema },
+              })
+            },
+          },
+        })
+      : model
   // Turn 1 can only be forced to call a tool when there IS a tool to call and a
   // later turn survives to answer with the result. `maxTurns: 1` makes turn 1 the
   // final answering turn, which denies tools below — forcing here would produce a
@@ -502,6 +585,7 @@ async function runToolLoop(
   // round-trip away — this is the only evidence the node is alive, so it names
   // what it's about to do rather than just that it started.
   const startedAt = logModelCallStart(sink, modelId, {
+    mode: output.kind,
     tools: Object.keys(tools),
     maxTurns,
     budgetSeconds: budget && Math.round(budget.totalMs / 1000),
@@ -527,7 +611,10 @@ async function runToolLoop(
   //
   // The conservative direction is the safe one: a step we can't prove is the
   // answer simply isn't streamed, which is the pre-streaming behaviour.
-  const streamAnswer = typeof sink?.delta === 'function'
+  //
+  // A structured answer is never streamed: its text is JSON for the schema,
+  // not prose for a reader, and the delta channel feeds a chat bubble.
+  const streamAnswer = typeof sink?.delta === 'function' && !schema
   const hasTools = Object.keys(tools).length > 0
   let stepMustAnswer = false
 
@@ -561,7 +648,7 @@ async function runToolLoop(
           level: 'info',
           message: `→ ${modelId} (turn ${stepNumber + 1}/${maxTurns}, answering — no more tools)`,
         })
-        return { toolChoice: 'none' as const }
+        return { toolChoice: 'none' as const, model: answeringModel }
       }
       // Would one more tool turn leave room to write the answer? Checked BEFORE
       // the spend budget because overflowing the window is a hard error and
@@ -589,7 +676,7 @@ async function runToolLoop(
               contextLength,
             },
           })
-          return { toolChoice: 'none' as const }
+          return { toolChoice: 'none' as const, model: answeringModel }
         }
       }
       // Spend ceiling reached. Deliberately NOT an error: the whole point of
@@ -605,7 +692,7 @@ async function runToolLoop(
           message: `→ ${modelId} (turn ${stepNumber + 1}/${maxTurns}, token budget reached at ${spent.toLocaleString()} — answering with what it has)`,
           meta: { spent, toolTokenBudget },
         })
-        return { toolChoice: 'none' as const }
+        return { toolChoice: 'none' as const, model: answeringModel }
       }
       // Opt-in: deny the model the option of answering turn 1 from what it
       // already "knows". Only turn 1 — every later turn is free to answer, so
@@ -737,10 +824,76 @@ async function runToolLoop(
   const result = await runGuarded(sink, modelId, startedAt, guard, async () => {
     if (!streamAnswer) {
       const generated = await generateText(callOptions)
+      if (!schema) {
+        return {
+          text: generated.text,
+          finishReason: generated.finishReason,
+          streamError: undefined as unknown,
+          object: undefined as unknown,
+        }
+      }
+      // Structured: the object is the answering turn's text when the loop got
+      // that far and it parses. Otherwise — the model answered early in prose
+      // on a research turn, or the JSON came back mangled — one schema-only
+      // call over the transcript formats what the loop found. That call sees
+      // every tool result and the model's own wrap-up, so it is a formatting
+      // step, not a second investigation; it is also the cheap re-issue this
+      // path has, since replaying the loop would re-run its tools. The
+      // trailing nudge matters: a transcript that ends on an assistant turn
+      // otherwise reads as a continuation and some providers return nothing.
+      const early = parseObject(generated.text, stepMustAnswer)
+      if (early !== undefined || generated.finishReason === 'error') {
+        return {
+          text: generated.text,
+          finishReason: generated.finishReason,
+          streamError: undefined as unknown,
+          object: early,
+        }
+      }
+      void sink?.log?.({
+        level: 'info',
+        message: stepMustAnswer
+          ? `→ ${modelId} (answering turn was not the expected object — formatting the transcript to the schema)`
+          : `→ ${modelId} (answered on turn ${stepTraces.length}/${maxTurns} — formatting the transcript to the schema)`,
+      })
+      const formatted = await issueStructured({
+        model,
+        modelId,
+        systemPrompt,
+        messages: [
+          ...messagesForModel,
+          // Every step's messages — `response.messages` is the FINAL step's
+          // only, which would drop the tool calls and results this is for.
+          ...generated.responseMessages,
+          {
+            role: 'user',
+            content:
+              'Return the result now, in the expected structured form, from what you found above.',
+          },
+        ],
+        schema,
+        guard,
+        sink,
+      })
+      stepTraces.push({
+        stepNumber: stepTraces.length,
+        finishReason: formatted.finishReason,
+        text: JSON.stringify(formatted.object),
+        toolCalls: [],
+        usage: formatted.usage
+          ? {
+              inputTokens: formatted.usage.inputTokens,
+              outputTokens: formatted.usage.outputTokens,
+            }
+          : undefined,
+      })
+      totalUsage.inputTokens += formatted.usage?.inputTokens ?? 0
+      totalUsage.outputTokens += formatted.usage?.outputTokens ?? 0
       return {
-        text: generated.text,
-        finishReason: generated.finishReason,
+        text: JSON.stringify(formatted.object),
+        finishReason: formatted.finishReason,
         streamError: undefined as unknown,
+        object: formatted.object,
       }
     }
     const stream = streamText(callOptions)
@@ -798,6 +951,7 @@ async function runToolLoop(
         text: await stream.text,
         finishReason: await stream.finishReason,
         streamError,
+        object: undefined as unknown,
       }
     } catch (err) {
       if (streamError instanceof Error) throw streamError
@@ -871,17 +1025,47 @@ async function runToolLoop(
     )
   }
 
-  return {
-    output: { text: result.text },
-    meta: {
-      model: modelId,
-      systemPrompt,
-      messages: recordedMessages(messages),
-      steps: stepTraces,
-      totalUsage,
-      ...(stoppedOnTokenBudget ? { stoppedOnTokenBudget: true } : {}),
-      ...(stoppedOnContextLimit ? { stoppedOnContextLimit: true } : {}),
-    },
+  const meta: AgentNodeMeta = {
+    model: modelId,
+    systemPrompt,
+    messages: recordedMessages(messages),
+    steps: stepTraces,
+    totalUsage,
+    ...(stoppedOnTokenBudget ? { stoppedOnTokenBudget: true } : {}),
+    ...(stoppedOnContextLimit ? { stoppedOnContextLimit: true } : {}),
+  }
+  if (schema) {
+    // Either the answering turn's parsed text or the transcript call's object.
+    // The one way to get here without one is a failed final round-trip that
+    // still carried text — which a text agent returns as its answer, but a
+    // structured one has nothing to shape.
+    if (result.object === undefined) {
+      throw new Error(
+        `Agent's model call failed after ${stepTraces.length} of ${maxTurns} turns ` +
+          `(finish reason: ${result.finishReason}) before it produced the structured result.`,
+      )
+    }
+    return structuredResult(output, result.object, meta)
+  }
+  return { output: { text: result.text }, meta }
+}
+
+/**
+ * The answering turn's text as the object, or undefined when there isn't one.
+ *
+ * Only a turn that was SENT the schema counts (`answered`): a research turn
+ * that happens to contain JSON was written without the provider holding it to
+ * the schema, and the transcript call is the one that does. Any parse failure
+ * is likewise left to that call rather than thrown — it has the whole
+ * transcript to format from, which is a better retry than the error.
+ */
+function parseObject(text: string, answered: boolean): unknown {
+  if (!answered || text.trim() === '') return undefined
+  try {
+    const value: unknown = JSON.parse(text)
+    return typeof value === 'object' && value !== null ? value : undefined
+  } catch {
+    return undefined
   }
 }
 
@@ -897,7 +1081,17 @@ export async function runAgentGeneration(
     ...args,
     tools: strictifyToolSet(args.tools),
   }
-  if (prepared.output.kind === 'object' || prepared.output.kind === 'boolean') {
+  // A structured agent takes the single-call path only when the loop would
+  // have nothing to do: no tools, or one turn — which `prepareStep` makes the
+  // answering turn, denying tools. Anything else is a real loop that happens
+  // to end in an object. Gating on `maxTurns` as well as on tools keeps every
+  // stored config that could never call its tools on exactly the call it made
+  // before; only agents that were actually being denied their tools change.
+  const structured =
+    prepared.output.kind === 'object' || prepared.output.kind === 'boolean'
+  const nothingToCall =
+    Object.keys(prepared.tools).length === 0 || prepared.maxTurns < 2
+  if (structured && nothingToCall) {
     return await runStructuredGeneration(prepared)
   }
   return await runToolLoop(prepared)

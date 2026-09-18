@@ -38,9 +38,7 @@ export function AgentBudgetSection({
   const { Label, Input } = useWfComponents()
   const budgetIrrelevantReason = !hasToolsOrSubAgents
     ? 'This agent has no tools or sub-agents, so it answers in a single turn — there is no loop to bound or spend against. Attach a tool or sub-agent to set turns and a budget.'
-    : config.output.kind !== 'text'
-      ? 'Only Text agents run a tool loop — a structured result is generated in one pass, so there is nothing to budget.'
-      : null
+    : null
 
   // Such an agent's effective turn count IS 1, regardless of what an older
   // config stored. Show the truth rather than a stale 5 that does nothing.
@@ -130,6 +128,15 @@ export function AgentBudgetSection({
         </p>
         {turnsWarning && !budgetIrrelevantReason ? (
           <p className="text-xs text-amber-600">⚠ {turnsWarning}</p>
+        ) : null}
+        {/* The other end of the range. The engine denies tools on the final
+            answering turn, so one turn is a loop that never calls anything —
+            said here, at the field that fixes it, as well as under Tools. */}
+        {!budgetIrrelevantReason && config.maxTurns < 2 ? (
+          <p className="text-xs text-amber-600">
+            ⚠ With 1 turn the agent never calls its tools or sub-agents — the
+            only turn is the answering turn. Set at least 2.
+          </p>
         ) : null}
       </div>
 

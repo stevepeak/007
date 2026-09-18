@@ -93,7 +93,7 @@ A workflow is a directed graph. Two engine-managed bookends — **trigger** and
 | kind              | what it does                                                        |
 | ----------------- | ------------------------------------------------------------------- |
 | `trigger`         | entry bookend, seeded with the validated trigger input              |
-| `agent`           | tool-calling LLM loop, or structured output when given a schema     |
+| `agent`           | tool-calling LLM loop; a schema makes its final turn a structured object |
 | `tool`            | a single function-tool call; args bound from prior outputs          |
 | `branch`          | deterministic yes/no predicate (no LLM); routes the live edge       |
 | `switch`          | deterministic multi-way routing to a matched case                   |
