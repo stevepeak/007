@@ -1407,6 +1407,11 @@ deployment is "dev enough".
   and agents already are. A refresh mid-run cannot change what that run is doing.
 - **Remote tool descriptions are untrusted text that reaches your model.** They
   are rendered as text and never as markup, and each tool is enabled by hand.
+- **A server's own icon is used, but kept at arm's length.** Servers on MCP
+  2025-11-25+ may advertise `icons` on `initialize`; a Refresh stores the best
+  `https:` / `data:image/*` candidate as `iconUrl` and the UI shows it as an
+  `<img>` — never inlined — behind the admin-set `icon` (SVG) and `iconName`.
+  Set either of those to override whatever the server sends.
 - **A withdrawn tool is marked, not deleted.** An agent may still reference it,
   and "the server withdrew this" is a better answer than an unresolvable id.
 

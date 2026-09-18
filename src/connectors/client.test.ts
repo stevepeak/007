@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, test } from 'bun:test'
 
-import { deriveSideEffect, normalizeToolResult } from './client'
+import { deriveSideEffect, normalizeToolResult, pickServerIcon } from './client'
 
 const SRC_DIR = fileURLToPath(new URL('..', import.meta.url))
 
@@ -126,5 +126,67 @@ describe('tool result normalization', () => {
   test('an empty result is null', () => {
     expect(normalizeToolResult({ content: [] })).toBeNull()
     expect(normalizeToolResult({})).toBeNull()
+  })
+})
+
+// `serverInfo.icons` is third-party input that ends up in an `<img src>`, so the
+// picker is an allow-list, not a passthrough.
+describe('server icon selection', () => {
+  test('no icons, no info → null', () => {
+    expect(pickServerIcon(undefined)).toBeNull()
+    expect(pickServerIcon({})).toBeNull()
+    expect(pickServerIcon({ icons: [] })).toBeNull()
+  })
+
+  test('only https and data:image survive', () => {
+    expect(
+      pickServerIcon({
+        icons: [
+          { src: 'javascript:alert(1)' },
+          { src: 'http://insecure.example/icon.png' },
+          { src: 'data:text/html;base64,PHNjcmlwdD4=' },
+          { src: '  ' },
+        ],
+      }),
+    ).toBeNull()
+    expect(pickServerIcon({ icons: [{ src: 'https://x.example/i.png' }] })).toBe(
+      'https://x.example/i.png',
+    )
+    expect(
+      pickServerIcon({ icons: [{ src: 'data:image/png;base64,iVBORw0KGgo=' }] }),
+    ).toBe('data:image/png;base64,iVBORw0KGgo=')
+  })
+
+  test('prefers SVG, then a non-dark theme, then the first listed', () => {
+    expect(
+      pickServerIcon({
+        icons: [
+          { src: 'https://x.example/dark.png', theme: 'dark' },
+          { src: 'https://x.example/light.png', theme: 'light' },
+          { src: 'https://x.example/mark.svg', mimeType: 'image/svg+xml' },
+        ],
+      }),
+    ).toBe('https://x.example/mark.svg')
+    expect(
+      pickServerIcon({
+        icons: [
+          { src: 'https://x.example/dark.png', theme: 'dark' },
+          { src: 'https://x.example/light.png', theme: 'light' },
+        ],
+      }),
+    ).toBe('https://x.example/light.png')
+    expect(
+      pickServerIcon({
+        icons: [
+          { src: 'https://x.example/first.png' },
+          { src: 'https://x.example/second.png' },
+        ],
+      }),
+    ).toBe('https://x.example/first.png')
+  })
+
+  test('drops an oversized data URI', () => {
+    const huge = `data:image/png;base64,${'A'.repeat(70 * 1024)}`
+    expect(pickServerIcon({ icons: [{ src: huge }] })).toBeNull()
   })
 })

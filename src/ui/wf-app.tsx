@@ -414,6 +414,7 @@ function ToolDetailPage({ toolId }: { toolId: string }) {
           <ToolIcon
             icon={tool?.icon}
             iconName={tool?.iconName}
+            iconUrl={tool?.iconUrl}
             className="size-5"
           />
         </span>

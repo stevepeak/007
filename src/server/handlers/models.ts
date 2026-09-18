@@ -65,6 +65,7 @@ export function buildModelHandlers<TDeps>(
     description: entry.description,
     icon: entry.icon,
     iconName: entry.iconName,
+    iconUrl: entry.iconUrl,
     color: entry.color,
     kind: entry.kind,
     // Unmarked means the host's: only the SDK's own factories set `origin`, so
@@ -281,6 +282,7 @@ export function buildModelHandlers<TDeps>(
             `${entry.toolName} via ${entry.connectorLabel}`,
           icon: entry.icon ?? undefined,
           iconName: entry.iconName ?? undefined,
+          iconUrl: entry.iconUrl ?? undefined,
           color: entry.color ?? undefined,
           kind: 'ai-tool' as const,
           // Neither the host's nor strictly the SDK's — but a deployment can't

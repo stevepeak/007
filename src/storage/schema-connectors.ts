@@ -100,6 +100,15 @@ export const wfConnector = sqliteTable('wf_connector', {
   /** Lucide icon name + palette color, for connectors with no brand SVG. */
   iconName: text('icon_name'),
   color: text('color'),
+  /**
+   * The icon the server advertised about itself on `initialize`
+   * (`serverInfo.icons[].src`, MCP 2025-11-25+): an https URL or a
+   * `data:image/*` URI. Rewritten on every Refresh so it tracks the server —
+   * and cleared when the server stops sending one. UNTRUSTED third-party
+   * content: rendered only ever as an `<img src>`, never inlined like `icon`.
+   * The fallback behind the admin-set `icon` / `iconName`.
+   */
+  iconUrl: text('icon_url'),
   note: text('note'),
   lastRefreshedAt: integer('last_refreshed_at', { mode: 'timestamp' }),
   createdAt: createdAt(),

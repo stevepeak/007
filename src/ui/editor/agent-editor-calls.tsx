@@ -437,6 +437,7 @@ function ToolCallChip({
           <ToolIcon
             icon={tool?.icon}
             iconName={tool?.iconName}
+            iconUrl={tool?.iconUrl}
             className="size-3.5"
           />
         )}

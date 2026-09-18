@@ -1,10 +1,4 @@
-import {
-  ChevronDown,
-  ChevronRight,
-  Plug,
-  RefreshCw,
-  Trash2,
-} from 'lucide-react'
+import { ChevronDown, ChevronRight, Pencil, Plug, RefreshCw } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import type { ConnectorToolInfo } from '../../server/protocol'
@@ -15,7 +9,6 @@ import { EmptyState } from '../evals/shared'
 import { Tabs } from '../filters'
 import {
   useConnector,
-  useDeleteConnector,
   useDisconnectConnector,
   useRefreshConnector,
   useSaveConnectorToken,
@@ -27,6 +20,8 @@ import {
 import { useWfNav } from '../nav'
 import { QueryState } from '../query-state'
 
+import { ConnectorForm } from './connector-form'
+import { DeleteConnectorButton } from './delete-connector-button'
 import { ConnectionBadge, ConnectorIcon } from './status'
 
 // One connector: its connection, and the catalog of tools it advertises.
@@ -134,14 +129,18 @@ function ConnectorHeader({
   const startAuth = useStartConnectorAuth()
   const disconnect = useDisconnectConnector()
   const setEnabled = useSetConnectorEnabled()
-  const remove = useDeleteConnector()
+  const [editing, setEditing] = useState(false)
 
   const connected = connector.connection?.status === 'connected'
 
   return (
     <header className="space-y-3">
       <div className="flex items-start gap-3">
-        <ConnectorIcon icon={connector.icon} label={connector.label} />
+        <ConnectorIcon
+          icon={connector.icon}
+          iconUrl={connector.iconUrl}
+          label={connector.label}
+        />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-lg font-semibold text-neutral-900">
@@ -158,8 +157,30 @@ function ConnectorHeader({
               <code className="font-mono">{connector.connection.scopes}</code>
             </p>
           ) : null}
+          {connector.note ? (
+            <p className="mt-1 text-xs text-neutral-500">{connector.note}</p>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setEditing((v) => !v)}
+            aria-pressed={editing}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Edit
+          </Button>
+          <DeleteConnectorButton
+            connector={connector}
+            onDeleted={() => navigate('connectors')}
+          />
         </div>
       </div>
+
+      {editing ? (
+        <ConnectorForm connector={connector} onDone={() => setEditing(false)} />
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
         {connected ? (
@@ -214,21 +235,6 @@ function ConnectorHeader({
           disabled={setEnabled.isPending}
         >
           {connector.enabled ? 'Disable connector' : 'Enable connector'}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="text-red-600"
-          onClick={() => {
-            remove.mutate(
-              { connectorId: connector.id },
-              { onSuccess: () => navigate('connectors') },
-            )
-          }}
-          disabled={remove.isPending}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-          Delete
         </Button>
       </div>
 

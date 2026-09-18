@@ -109,6 +109,7 @@ export function buildPlaygroundRegistry<TDeps>(opts: {
       description: entry.description,
       icon: entry.icon,
       iconName: entry.iconName,
+      iconUrl: entry.iconUrl,
       color: entry.color,
       sideEffect: entry.sideEffect,
       statusLabel: entry.statusLabel,

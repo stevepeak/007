@@ -56,6 +56,8 @@ export type ConnectorCatalogEntry = {
   schemaHash: string
   icon: string | null
   iconName: string | null
+  /** The server's own icon, vetted at Refresh. Untrusted; `<img>` only. */
+  iconUrl: string | null
   color: string | null
 }
 
@@ -84,6 +86,7 @@ export async function loadConnectorCatalog(
     schemaHash: t.schemaHash,
     icon: c.icon,
     iconName: c.iconName,
+    iconUrl: c.iconUrl,
     color: c.color,
   }))
 }
@@ -202,6 +205,7 @@ function toRegistryEntry<TDeps>(
     description: entry.description ?? `${entry.toolName} via ${entry.connectorLabel}`,
     icon: entry.icon ?? undefined,
     iconName: entry.iconName ?? undefined,
+    iconUrl: entry.iconUrl ?? undefined,
     color: entry.color ?? undefined,
     sideEffect: entry.sideEffect,
     // Authored by neither side: the SDK ships the plumbing, the host wires the

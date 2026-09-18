@@ -32,6 +32,13 @@ export type ToolMeta = {
    */
   iconName?: string
   /**
+   * Optional image URL (https or `data:image/*`) for the tool's icon — the mark
+   * an MCP server advertised about itself on `initialize`. UNTRUSTED third-party
+   * content, so the UI renders it only as an `<img src>`, never inline, and it
+   * ranks last: `icon` (SVG) and `iconName` both win when set.
+   */
+  iconUrl?: string
+  /**
    * Optional appearance-palette color key (e.g. `emerald`, `rose`) that tints the
    * tool's icon chip. Shares the agent palette so tools and agents read as one
    * design language. Falls back to a neutral chip when unset.

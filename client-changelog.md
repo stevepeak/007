@@ -15,6 +15,29 @@ without you and is still probably wrong to skip.
 
 ---
 
+## 2026-09-18 — Connectors show the icon the MCP server advertises
+
+A Refresh now reads `serverInfo.icons` off the `initialize` handshake (MCP
+2025-11-25+, already typed in SDK 1.30) and stores the best `https:` or
+`data:image/*` candidate on `wf_connector.icon_url`, rewriting it — null
+included — every Refresh so it tracks the server. It is the fallback: an
+admin-set `icon` (inline SVG) or `iconName` still wins, and the Connectors
+pages, tool picker, run log and every other `ToolIcon` show it as an `<img>`
+with `referrerPolicy="no-referrer"`, never inlined. `ToolMeta` / `ToolOption`
+gained an optional `iconUrl` with the same meaning, so a host tool may set one
+too.
+
+Migration `0033_wf_connector_icon_url` — one nullable column, no backfill.
+Existing connectors pick theirs up on the next Refresh.
+
+### Action
+
+None required. If your host serves a CSP with `img-src`, allow the hosts your
+connectors' icons come from (or `https:`), else the fallback silently draws
+nothing and the lettered chip does not return.
+
+---
+
 ## 2026-09-18 — Runs record the release they were created on
 
 Every `wf_run` now carries `host_release` and `sdk_release`: what was deployed

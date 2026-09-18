@@ -110,7 +110,7 @@ function ToolGroup({
                   toolChip(t.color),
                 )}
               >
-                <ToolIcon icon={t.icon} iconName={t.iconName} className="size-6" />
+                <ToolIcon icon={t.icon} iconName={t.iconName} iconUrl={t.iconUrl} className="size-6" />
               </span>
               <span className="min-w-0 flex-1 truncate text-base font-medium text-neutral-900">
                 {t.name}

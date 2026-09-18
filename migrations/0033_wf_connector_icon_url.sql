@@ -1,0 +1,1 @@
+ALTER TABLE `wf_connector` ADD `icon_url` text;

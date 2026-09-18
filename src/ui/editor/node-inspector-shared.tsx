@@ -152,7 +152,7 @@ export function ToolSelect({
               toolChip(t.color),
             )}
           >
-            <ToolIcon icon={t.icon} iconName={t.iconName} className="size-3.5" />
+            <ToolIcon icon={t.icon} iconName={t.iconName} iconUrl={t.iconUrl} className="size-3.5" />
           </span>
           <span className="min-w-0 flex-1 truncate">{t.name}</span>
         </>
@@ -165,7 +165,7 @@ export function ToolSelect({
               toolChip(t.color),
             )}
           >
-            <ToolIcon icon={t.icon} iconName={t.iconName} className="size-4" />
+            <ToolIcon icon={t.icon} iconName={t.iconName} iconUrl={t.iconUrl} className="size-4" />
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium text-foreground">

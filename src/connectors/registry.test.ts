@@ -35,6 +35,7 @@ function catalogEntry(
     schemaHash: 'hash-1',
     icon: null,
     iconName: null,
+    iconUrl: null,
     color: null,
     ...over,
   }

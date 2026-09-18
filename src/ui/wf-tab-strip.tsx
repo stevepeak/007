@@ -325,6 +325,7 @@ function ToolTab({ asset, ...rest }: KindProps<'tool'>) {
           <ToolIcon
             icon={tool?.icon}
             iconName={tool?.iconName}
+            iconUrl={tool?.iconUrl}
             className="size-4"
           />
         </span>

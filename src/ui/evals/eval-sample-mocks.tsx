@@ -171,6 +171,7 @@ function AgentToolMocks({
                   <ToolIcon
                     icon={tool?.icon}
                     iconName={tool?.iconName}
+                    iconUrl={tool?.iconUrl}
                     className="size-3.5"
                   />
                 </span>
@@ -229,6 +230,7 @@ function AgentToolMocks({
               <ToolIcon
                 icon={editingTool.icon}
                 iconName={editingTool.iconName}
+                iconUrl={editingTool.iconUrl}
                 className="size-3.5"
               />
             </span>
@@ -425,6 +427,7 @@ function MockToolPicker({
               <ToolIcon
                 icon={t.icon}
                 iconName={t.iconName}
+                iconUrl={t.iconUrl}
                 className="size-3.5"
               />
             </span>

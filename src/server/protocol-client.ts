@@ -124,7 +124,14 @@ export interface WfDataClient {
     iconName?: string | null
     color?: string | null
     note?: string | null
-  }): Promise<{ ok: true }>
+  }): Promise<{
+    ok: true
+    /**
+     * True when the edit changed the server URL or auth kind and the stored
+     * credential was dropped with it — the connector needs a fresh sign-in.
+     */
+    disconnected: boolean
+  }>
   /** Remove a connector, its catalog, and its credential. */
   deleteConnector(input: { connectorId: string }): Promise<{ ok: true }>
   /** Platform-level off switch — withdraws every one of its tools at once. */

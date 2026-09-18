@@ -232,6 +232,13 @@
       "when": 1789739174972,
       "tag": "0032_wf_run_release",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1789741705681,
+      "tag": "0033_wf_connector_icon_url",
+      "breakpoints": true
     }
   ]
 }

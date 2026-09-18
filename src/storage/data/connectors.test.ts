@@ -14,6 +14,7 @@ import {
   createOauthState,
   deleteConnector,
   getConnection,
+  getConnector,
   getConnectorTool,
   listConnectorTools,
   listEnabledConnectorTools,
@@ -22,6 +23,7 @@ import {
   setConnectorEnabled,
   setConnectorToolEnabled,
   setConnectorToolSideEffect,
+  touchConnectorRefreshed,
   updateConnectionTokens,
   upsertConnector,
   upsertConnectorTools,
@@ -179,6 +181,25 @@ describe('tool catalog refresh', () => {
       'mcp:linear:a',
     ])
     expect((await upsertConnectorTools(db, 'linear', [])).missing).toEqual([])
+  })
+})
+
+describe('server icon', () => {
+  test('a refresh records the icon the server advertised', async () => {
+    await touchConnectorRefreshed(db, 'linear', new Date(), {
+      iconUrl: 'https://linear.app/icon.png',
+    })
+    expect((await getConnector(db, 'linear'))?.iconUrl).toBe(
+      'https://linear.app/icon.png',
+    )
+  })
+
+  test('a server that stops advertising one clears it', async () => {
+    await touchConnectorRefreshed(db, 'linear', new Date(), {
+      iconUrl: 'https://linear.app/icon.png',
+    })
+    await touchConnectorRefreshed(db, 'linear', new Date(), { iconUrl: null })
+    expect((await getConnector(db, 'linear'))?.iconUrl).toBeNull()
   })
 })
 

@@ -82,6 +82,7 @@ export function EvalToolPicker({
               <ToolIcon
                 icon={selected?.icon}
                 iconName={selected?.iconName}
+                iconUrl={selected?.iconUrl}
                 className="size-3.5"
               />
             </span>
@@ -152,6 +153,7 @@ export function EvalToolPicker({
                       <ToolIcon
                         icon={t.icon}
                         iconName={t.iconName}
+                        iconUrl={t.iconUrl}
                         className="size-3.5"
                       />
                     </span>

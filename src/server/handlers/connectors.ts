@@ -1,4 +1,4 @@
-import { discoverTools, McpUnauthorizedError } from '../../connectors/client'
+import { discoverCatalog, McpUnauthorizedError } from '../../connectors/client'
 import {
   beginAuthorization,
   resolveAccessToken,
@@ -108,6 +108,7 @@ function summarize(
     enabled: connector.enabled,
     icon: connector.icon,
     iconName: connector.iconName,
+    iconUrl: connector.iconUrl,
     color: connector.color,
     note: connector.note,
     lastRefreshedAt: toEpoch(connector.lastRefreshedAt),
@@ -238,27 +239,45 @@ export function buildConnectorHandlers<TDeps>(
         allowInsecure: opts.connectorAllowInsecureUrls,
       })
       const existing = await getConnector(c.db, id)
+      const label = requireStr(c.params, 'label')
+      const authKind =
+        (p.authKind as 'oauth2' | 'bearer' | 'none' | undefined) ??
+        existing?.authKind ??
+        'oauth2'
 
       await upsertConnector(c.db, {
         id,
-        label: requireStr(c.params, 'label'),
+        label,
         url,
-        transport: p.transport as 'http' | 'sse' | undefined,
-        authKind: p.authKind as 'oauth2' | 'bearer' | 'none' | undefined,
+        transport:
+          (p.transport as 'http' | 'sse' | undefined) ?? existing?.transport,
+        authKind,
         scopes: (p.scopes as string | null | undefined) ?? null,
         enabled: existing?.enabled ?? true,
-        icon: (p.icon as string | null | undefined) ?? null,
-        iconName: (p.iconName as string | null | undefined) ?? null,
-        color: (p.color as string | null | undefined) ?? null,
+        icon: (p.icon as string | null | undefined) ?? existing?.icon ?? null,
+        iconName:
+          (p.iconName as string | null | undefined) ?? existing?.iconName ?? null,
+        color: (p.color as string | null | undefined) ?? existing?.color ?? null,
         note: (p.note as string | null | undefined) ?? null,
       })
+
+      // A credential is issued by ONE server for ONE auth scheme. Re-pointing
+      // the connector at a different URL, or switching how it authenticates,
+      // would otherwise send the old token to the new host on the next call —
+      // so the edit disconnects, and the page asks for a fresh sign-in.
+      const credentialInvalidated =
+        !!existing && (existing.url !== url || existing.authKind !== authKind)
+      if (credentialInvalidated) await deleteConnection(c.db, id)
+
       await c.change({
         entityKind: 'connector',
         entityId: id,
         action: existing ? 'update' : 'create',
-        note: requireStr(c.params, 'label'),
+        note: credentialInvalidated
+          ? `${label} — server changed, disconnected`
+          : label,
       })
-      return { ok: true as const }
+      return { ok: true as const, disconnected: credentialInvalidated }
     },
 
     deleteConnector: async (c) => {
@@ -298,9 +317,9 @@ export function buildConnectorHandlers<TDeps>(
       // A server may expose its catalog unauthenticated, so a missing
       // credential is not fatal here — try, and let the server object.
       const credential = await resolveAccessToken({ db: c.db, connector, secret })
-      let tools: Awaited<ReturnType<typeof discoverTools>>
+      let catalog: Awaited<ReturnType<typeof discoverCatalog>>
       try {
-        tools = await discoverTools({
+        catalog = await discoverCatalog({
           url: connector.url,
           transport: connector.transport,
           auth: credential
@@ -328,10 +347,11 @@ export function buildConnectorHandlers<TDeps>(
         }
         throw err
       }
+      const { tools, iconUrl } = catalog
 
       const result = await upsertConnectorTools(c.db, connectorId, tools)
       const refreshedAt = new Date()
-      await touchConnectorRefreshed(c.db, connectorId, refreshedAt)
+      await touchConnectorRefreshed(c.db, connectorId, refreshedAt, { iconUrl })
 
       // One change row for the refresh, not one per tool: a catalog pull is a
       // single human action, and thirty rows would bury every other edit in the

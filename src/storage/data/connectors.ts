@@ -120,14 +120,24 @@ export async function setConnectorEnabled(
     .where(eq(wfConnector.id, input.connectorId))
 }
 
+/**
+ * Record a completed Refresh: when it ran, and what the server said its icon
+ * is. `iconUrl` is always written, null included — a server that stops
+ * advertising one must not leave a stale mark behind.
+ */
 export async function touchConnectorRefreshed(
   db: WfDb,
   connectorId: string,
   refreshedAt: Date,
+  discovered: { iconUrl: string | null },
 ): Promise<void> {
   await db
     .update(wfConnector)
-    .set({ lastRefreshedAt: refreshedAt, updatedAt: refreshedAt })
+    .set({
+      lastRefreshedAt: refreshedAt,
+      updatedAt: refreshedAt,
+      iconUrl: discovered.iconUrl,
+    })
     .where(eq(wfConnector.id, connectorId))
 }
 

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 
 import type { ConnectorConnectionInfo } from '../../server/protocol'
 import { cn } from '../cn'
+import { RemoteIcon } from '../tool-icon'
 
 // How a connection's state reads at a glance.
 //
@@ -81,13 +82,18 @@ export function ConnectionBadge({
   )
 }
 
-/** The connector's mark: its brand SVG when it has one, else a lettered chip. */
+/**
+ * The connector's mark: its admin-set brand SVG when it has one, else the icon
+ * the server advertised about itself, else a lettered chip.
+ */
 export function ConnectorIcon({
   icon,
+  iconUrl,
   label,
   className,
 }: {
   icon: string | null
+  iconUrl?: string | null
   label: string
   className?: string
 }) {
@@ -102,6 +108,15 @@ export function ConnectorIcon({
         // eslint-disable-next-line @eslint-react/dom-no-dangerously-set-innerhtml
         dangerouslySetInnerHTML={{ __html: icon }}
       />
+    )
+  }
+  if (iconUrl) {
+    return (
+      <span
+        className={cn('inline-flex h-8 w-8 items-center justify-center', className)}
+      >
+        <RemoteIcon src={iconUrl} className="h-full w-full" />
+      </span>
     )
   }
   return (

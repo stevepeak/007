@@ -127,6 +127,7 @@ export function ToolPicker({
                   <ToolIcon
                     icon={t.icon}
                     iconName={t.iconName}
+                    iconUrl={t.iconUrl}
                     className="size-4"
                   />
                 </span>
@@ -168,6 +169,7 @@ export function ToolPicker({
                 <ToolIcon
                   icon={t.icon}
                   iconName={t.iconName}
+                  iconUrl={t.iconUrl}
                   className="size-4"
                 />
               </span>
@@ -256,6 +258,7 @@ export function ToolPicker({
                   <ToolIcon
                     icon={t.icon}
                     iconName={t.iconName}
+                    iconUrl={t.iconUrl}
                     className="size-4"
                   />
                 </span>

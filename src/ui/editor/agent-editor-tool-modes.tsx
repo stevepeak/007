@@ -79,6 +79,7 @@ export function ToolModeList({
                 <ToolIcon
                   icon={t.icon}
                   iconName={t.iconName}
+                  iconUrl={t.iconUrl}
                   className="size-3.5"
                 />
               </span>

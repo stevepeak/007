@@ -1,4 +1,4 @@
-import { AlertTriangle, Plug, Plus, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Pencil, Plug, Plus, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 
 import type { ConnectorSummary } from '../../server/protocol'
@@ -10,12 +10,13 @@ import {
   useConnectors,
   useDisconnectConnector,
   useRefreshConnector,
-  useSaveConnector,
   useStartConnectorAuth,
 } from '../hooks-connectors'
 import { useOpenAsset } from '../nav'
 import { QueryState } from '../query-state'
 
+import { ConnectorForm } from './connector-form'
+import { DeleteConnectorButton } from './delete-connector-button'
 import { ConnectionBadge, ConnectorIcon } from './status'
 
 // The Connectors page (hub → Connectors).
@@ -92,9 +93,7 @@ export function ConnectorsList({
         </Notice>
       ) : null}
 
-      {adding ? (
-        <AddConnectorForm onDone={() => setAdding(false)} />
-      ) : null}
+      {adding ? <ConnectorForm onDone={() => setAdding(false)} /> : null}
 
       <QueryState
         query={{ isLoading, error, data }}
@@ -150,6 +149,7 @@ function ConnectorCard({
   const startAuth = useStartConnectorAuth()
   const disconnect = useDisconnectConnector()
   const refresh = useRefreshConnector()
+  const [editing, setEditing] = useState(false)
 
   const connected = connector.connection?.status === 'connected'
   const needsAttention =
@@ -177,7 +177,11 @@ function ConnectorCard({
       )}
     >
       <div className="flex items-start gap-3">
-        <ConnectorIcon icon={connector.icon} label={connector.label} />
+        <ConnectorIcon
+          icon={connector.icon}
+          iconUrl={connector.iconUrl}
+          label={connector.label}
+        />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -233,17 +237,32 @@ function ConnectorCard({
               {needsAttention ? 'Reconnect' : 'Connect'}
             </Button>
           )}
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => refresh.mutate({ connectorId: connector.id })}
-            disabled={refresh.isPending}
-          >
-            <RefreshCw
-              className={cn('h-3.5 w-3.5', refresh.isPending && 'animate-spin')}
-            />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-0.5">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => refresh.mutate({ connectorId: connector.id })}
+              disabled={refresh.isPending}
+            >
+              <RefreshCw
+                className={cn(
+                  'h-3.5 w-3.5',
+                  refresh.isPending && 'animate-spin',
+                )}
+              />
+              Refresh
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setEditing((v) => !v)}
+              aria-pressed={editing}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit
+            </Button>
+            <DeleteConnectorButton connector={connector} />
+          </div>
         </div>
       </div>
       {startAuth.error ? (
@@ -252,130 +271,14 @@ function ConnectorCard({
           {(startAuth.error).message}
         </p>
       ) : null}
+      {editing ? (
+        <div className="mt-3">
+          <ConnectorForm
+            connector={connector}
+            onDone={() => setEditing(false)}
+          />
+        </div>
+      ) : null}
     </div>
   )
-}
-
-/**
- * Adding a connector.
- *
- * The id is asked for separately from the label and described as permanent,
- * because it is: it becomes part of every one of this server's tool ids, which
- * get frozen into published agent configs. Renaming later is a delete and a
- * re-create, so it is worth one sentence here.
- */
-function AddConnectorForm({ onDone }: { onDone: () => void }) {
-  const { Button, Input, Label, Select } = useWfComponents()
-  const save = useSaveConnector()
-  const [id, setId] = useState('')
-  const [label, setLabel] = useState('')
-  const [url, setUrl] = useState('')
-  const [authKind, setAuthKind] = useState<'oauth2' | 'bearer' | 'none'>(
-    'oauth2',
-  )
-  const [scopes, setScopes] = useState('')
-
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault()
-    save.mutate(
-      {
-        id: id.trim(),
-        label: label.trim(),
-        url: url.trim(),
-        authKind,
-        scopes: scopes.trim() || null,
-      },
-      { onSuccess: onDone },
-    )
-  }
-
-  return (
-    <form
-      onSubmit={submit}
-      className="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4"
-    >
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1">
-          <Label htmlFor="wf-connector-label">Name</Label>
-          <Input
-            id="wf-connector-label"
-            value={label}
-            onChange={(e) => {
-              setLabel(e.target.value)
-              // Offer a slug, but let it be overridden — it is permanent.
-              if (!id || id === slugify(label)) setId(slugify(e.target.value))
-            }}
-            required
-          />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="wf-connector-id">Id</Label>
-          <Input
-            id="wf-connector-id"
-            value={id}
-            onChange={(e) => setId(e.target.value)}
-            required
-          />
-          <p className="text-xs text-neutral-500">
-            Permanent — it becomes part of every tool id from this server.
-          </p>
-        </div>
-      </div>
-      <div className="space-y-1">
-        <Label htmlFor="wf-connector-url">Server URL</Label>
-        <Input
-          id="wf-connector-url"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          required
-        />
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1">
-          <Label htmlFor="wf-connector-auth">Authentication</Label>
-          <Select
-            id="wf-connector-auth"
-            value={authKind}
-            onChange={(e) => { return setAuthKind(e.target.value as 'oauth2' | 'bearer' | 'none') }
-            }
-          >
-            <option value="oauth2">Sign in with OAuth</option>
-            <option value="bearer">API token</option>
-            <option value="none">No authentication</option>
-          </Select>
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="wf-connector-scopes">Scopes (optional)</Label>
-          <Input
-            id="wf-connector-scopes"
-            value={scopes}
-            onChange={(e) => setScopes(e.target.value)}
-          />
-          <p className="text-xs text-neutral-500">
-            Narrowing scopes is the strongest control there is — a token issued
-            for <code className="font-mono">read</code> can’t reach a write API.
-          </p>
-        </div>
-      </div>
-      {save.error ? (
-        <p className="text-xs text-red-600">{(save.error).message}</p>
-      ) : null}
-      <div className="flex justify-end gap-2">
-        <Button type="button" variant="ghost" onClick={onDone}>
-          Cancel
-        </Button>
-        <Button type="submit" disabled={save.isPending}>
-          Add connector
-        </Button>
-      </div>
-    </form>
-  )
-}
-
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replaceAll(/[^a-z0-9]+/g, '-')
-    .replaceAll(/^-+|-+$/g, '')
-    .slice(0, 63)
 }

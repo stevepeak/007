@@ -43,6 +43,11 @@ export type ConnectorSummary = {
   enabled: boolean
   icon: string | null
   iconName: string | null
+  /**
+   * The server's own icon (https URL or `data:image/*` URI), captured on
+   * Refresh. Untrusted — render as `<img src>` only. Fallback behind `icon`.
+   */
+  iconUrl: string | null
   color: string | null
   note: string | null
   lastRefreshedAt: number | null

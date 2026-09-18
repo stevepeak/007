@@ -4,6 +4,7 @@ import {
   StreamableHTTPClientTransport,
   StreamableHTTPError,
 } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import type { Implementation } from '@modelcontextprotocol/sdk/types.js'
 import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/cfworker-provider.js'
 
 import type { DiscoveredTool } from '../storage/data/connectors'
@@ -118,6 +119,12 @@ function createMcpClient(): Client {
 export type McpSession = {
   listTools: () => Promise<DiscoveredTool[]>
   callTool: (name: string, args: Record<string, unknown>) => Promise<unknown>
+  /**
+   * What the server said about itself on `initialize` — name, version and,
+   * on servers speaking MCP 2025-11-25 or later, `icons` / `websiteUrl`. Free:
+   * the handshake already happened in `connect`, this only reads it back.
+   */
+  serverInfo: () => Implementation | undefined
 }
 
 /**
@@ -149,6 +156,7 @@ export async function withMcpSession<T>(
     const session: McpSession = {
       listTools: () => listTools(client),
       callTool: (name, args) => callTool(client, name, args),
+      serverInfo: () => client.getServerVersion(),
     }
     return await fn(session)
   } catch (err) {
@@ -252,17 +260,62 @@ async function callTool(
   return normalizeToolResult(result)
 }
 
+// The largest icon we will persist. A 64px PNG data URI is a few KB; anything
+// past this is a server padding our connector row, not a brand mark.
+const MAX_ICON_SRC_LENGTH = 64 * 1024
+
+/**
+ * Choose the one icon `src` worth storing from a server's `initialize` info.
+ *
+ * Third-party input, so the scheme is allow-listed rather than trusted: only
+ * `https:` and `data:image/*` survive, which rules out `javascript:`, plain
+ * `http:` (mixed content on a https host) and non-image data URIs. Among the
+ * survivors an SVG wins (crisp at every chip size), then a light-theme or
+ * theme-less one — the UI is light — then whatever the server listed first.
+ */
+export function pickServerIcon(
+  info: Pick<Implementation, 'icons'> | undefined,
+): string | null {
+  const candidates = (info?.icons ?? []).filter((i) => {
+    const src = i.src.trim()
+    if (src.length === 0 || src.length > MAX_ICON_SRC_LENGTH) return false
+    const lower = src.toLowerCase()
+    return lower.startsWith('https://') || lower.startsWith('data:image/')
+  })
+  if (candidates.length === 0) return null
+  const score = (i: (typeof candidates)[number]): number => {
+    const svg =
+      i.mimeType === 'image/svg+xml' ||
+      i.src.toLowerCase().startsWith('data:image/svg') ||
+      /\.svg(?:\?|$)/i.test(i.src)
+    return (svg ? 2 : 0) + (i.theme === 'dark' ? 0 : 1)
+  }
+  return candidates.reduce((best, i) => (score(i) > score(best) ? i : best)).src
+    .trim()
+}
+
+/** Everything a Refresh learns about a server in one session. */
+export type DiscoveredCatalog = {
+  tools: DiscoveredTool[]
+  /** The server-advertised icon, already vetted by {@link pickServerIcon}. */
+  iconUrl: string | null
+}
+
 /**
  * Discover a server's catalog — the one call a Refresh makes.
  *
- * Returns rows in exactly the shape `upsertConnectorTools` persists, hashes and
- * side-effect classification included, so nothing between the wire and the
- * database gets to reinterpret them.
+ * Returns tool rows in exactly the shape `upsertConnectorTools` persists,
+ * hashes and side-effect classification included, so nothing between the wire
+ * and the database gets to reinterpret them — plus the server's own icon,
+ * which the same `initialize` handshake already delivered.
  */
-export async function discoverTools(
+export async function discoverCatalog(
   target: McpTarget,
-): Promise<DiscoveredTool[]> {
-  return await withMcpSession(target, (s) => s.listTools())
+): Promise<DiscoveredCatalog> {
+  return await withMcpSession(target, async (s) => ({
+    tools: await s.listTools(),
+    iconUrl: pickServerIcon(s.serverInfo()),
+  }))
 }
 
 /** Execute one tool against a server. */

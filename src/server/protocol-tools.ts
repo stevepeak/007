@@ -14,6 +14,8 @@ export type ToolOption = {
   icon?: string
   /** Optional lucide icon name (PascalCase) for a first-party tool; tinted by `color`. */
   iconName?: string
+  /** Optional untrusted image URL (an MCP server's own icon); `<img>` only, lowest precedence. */
+  iconUrl?: string
   /** Optional appearance-palette color key that tints the tool's icon chip. */
   color?: string
   kind: 'ai-tool' | 'function'
