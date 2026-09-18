@@ -9,7 +9,7 @@ import { agentColor, agentIcon } from '../agent-appearance'
 import { cn } from '../cn'
 import { formatTimestamp } from '../cost'
 import { useAgents } from '../hooks'
-import { RunStatusBadge } from '../run-status'
+import { RunStatusBadge } from '../runs/run-status'
 import type { WfCrumb } from '../shell'
 import { Tooltip } from '../tooltip'
 

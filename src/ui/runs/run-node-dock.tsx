@@ -6,22 +6,22 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 
-import type { WorkflowGraph, WorkflowNode } from '../engine'
+import type { WorkflowGraph, WorkflowNode } from '../../engine'
 import type {
   WfRunLogDTO,
   WfRunStepDTO,
   WfRunSummary,
-} from '../server/protocol'
+} from '../../server/protocol'
 
-import { cn } from './cn'
-import { useWfComponents } from './context'
-import { CreateSampleFromRun } from './evals/create-sample-from-run'
-import { WfLink } from './nav'
+import { cn } from '../cn'
+import { useWfComponents } from '../context'
+import { CreateSampleFromRun } from '../evals/create-sample-from-run'
+import { WfLink } from '../nav'
 import { RunActivityLog } from './run-activity-log'
 import { stepAgentVersion } from './run-agent-versions'
 import { RunLog } from './run-log'
 import { runStatusClass } from './run-status'
-import { useResizableDock } from './use-resizable-dock'
+import { useResizableDock } from '../use-resizable-dock'
 
 // The run viewer's bottom dock (DevTools-style, like the editor's Data/Issues
 // dock). Two tabs:

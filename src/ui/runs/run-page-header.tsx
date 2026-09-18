@@ -7,28 +7,28 @@ import {
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
-import { iterationItemListLabel } from '../engine/item-title'
+import { iterationItemListLabel } from '../../engine/item-title'
 import type {
   RetryRunMode,
   WfRunDetail,
   WfRunReleaseRef,
   WfRunSummary,
-} from '../server/protocol'
-import type { WfFeedbackRating } from '../server/protocol-feedback'
+} from '../../server/protocol'
+import type { WfFeedbackRating } from '../../server/protocol-feedback'
 
-import { cn } from './cn'
-import { useWfComponents } from './context'
+import { cn } from '../cn'
+import { useWfComponents } from '../context'
 import {
   formatDuration,
   formatDurationMs,
   formatTimestamp,
   formatTokens,
   formatUsd,
-} from './cost'
-import { MessageFeedback } from './message-feedback'
-import { WfLink } from './nav'
+} from '../cost'
+import { MessageFeedback } from '../message-feedback'
+import { WfLink } from '../nav'
 import { runStatusClass, runStatusDotClass } from './run-status'
-import { SentryIcon } from './sentry-icon'
+import { SentryIcon } from '../sentry-icon'
 
 // The run viewer's header strip: where it came from, what it cost, how it
 // ended, and what you can do about it.

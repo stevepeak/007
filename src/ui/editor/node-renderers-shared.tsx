@@ -32,7 +32,7 @@ import {
   type WorkflowNode,
 } from '../../engine'
 import { cn } from '../cn'
-import { runStatusDotClass } from '../run-status'
+import { runStatusDotClass } from '../runs/run-status'
 
 // All editor node data is the engine node minus id+position (xyflow owns
 // those). The distributive conditional preserves the discriminated union — a

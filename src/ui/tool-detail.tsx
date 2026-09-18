@@ -16,7 +16,7 @@ import {
 } from './hooks'
 import { useWfNav } from './nav'
 import { QueryState } from './query-state'
-import { runStatusClass } from './run-status'
+import { runStatusClass } from './runs/run-status'
 import { toolChip } from './tool-appearance'
 import { ContextField } from './tool-context-field'
 import { ToolIcon } from './tool-icon'

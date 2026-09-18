@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
-import type { WorkflowGraph } from '../engine'
-import type { WfRunStepDTO } from '../server/protocol'
+import type { WorkflowGraph } from '../../engine'
+import type { WfRunStepDTO } from '../../server/protocol'
 
 import { canSpawnChildRuns, resolveRunSelection } from './run-selection'
 

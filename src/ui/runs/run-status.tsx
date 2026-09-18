@@ -1,7 +1,7 @@
 import { CircleDashed } from 'lucide-react'
 
-import { cn } from './cn'
-import { useWfComponents } from './context'
+import { cn } from '../cn'
+import { useWfComponents } from '../context'
 
 // Shared run/step status styling. The same status → colour mapping was copied
 // across the runs explorer, run page, node dock, tool detail and run viewer;

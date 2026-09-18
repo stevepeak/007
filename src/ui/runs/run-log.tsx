@@ -13,19 +13,19 @@ import {
 } from 'lucide-react'
 import type { ReactNode } from 'react'
 
-import type { AgentNodeMeta, WfRunStepDTO } from '../server/protocol'
+import type { AgentNodeMeta, WfRunStepDTO } from '../../server/protocol'
 
-import { cn } from './cn'
-import { formatDurationMs, formatTokens, formatUsd } from './cost'
-import { DataView } from './data-view'
-import { NoteMarkdown } from './editor/note-markdown'
-import { BrandMark, inferModelBrand } from './evals/shared'
-import { useTools } from './hooks'
+import { cn } from '../cn'
+import { formatDurationMs, formatTokens, formatUsd } from '../cost'
+import { DataView } from '../data-view'
+import { NoteMarkdown } from '../editor/note-markdown'
+import { BrandMark, inferModelBrand } from '../evals/shared'
+import { useTools } from '../hooks'
 import { type IterationMeta, readIterationMeta } from './run-activity-tree'
-import { firstLine, previewLine } from './text-preview'
-import { toolChip } from './tool-appearance'
-import { ToolIcon } from './tool-icon'
-import { Tooltip } from './tooltip'
+import { firstLine, previewLine } from '../text-preview'
+import { toolChip } from '../tool-appearance'
+import { ToolIcon } from '../tool-icon'
+import { Tooltip } from '../tooltip'
 
 // The Logs view renders a step's execution as an AI-style vertical timeline:
 //   Input → thinking → tool call → … → Output.

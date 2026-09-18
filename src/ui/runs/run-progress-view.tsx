@@ -9,8 +9,8 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 
-import { cn } from './cn'
-import { useWfComponents } from './context'
+import { cn } from '../cn'
+import { useWfComponents } from '../context'
 
 // The reusable, presentational "what's happening" surface for a workflow run —
 // a first-class 007 export any SDK client can drop in. It is TRANSPORT-AGNOSTIC:

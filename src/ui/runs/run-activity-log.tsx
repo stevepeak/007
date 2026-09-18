@@ -16,17 +16,17 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { WorkflowGraph } from '../engine'
+import type { WorkflowGraph } from '../../engine'
 import type {
   WfRunLogDTO,
   WfRunStepDTO,
   WfRunSummary,
-} from '../server/protocol'
+} from '../../server/protocol'
 
-import { cn } from './cn'
-import { formatClock, formatDurationMs, formatUsd } from './cost'
-import { KIND_STYLE } from './editor/node-renderers-shared'
-import { WfLink } from './nav'
+import { cn } from '../cn'
+import { formatClock, formatDurationMs, formatUsd } from '../cost'
+import { KIND_STYLE } from '../editor/node-renderers-shared'
+import { WfLink } from '../nav'
 import {
   buildActivityTree,
   flattenTree,

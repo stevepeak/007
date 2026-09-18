@@ -10,10 +10,10 @@ import type {
   WfRunDetail,
   WfRunListInput,
   WfRunStepDTO,
-} from '../server/protocol'
+} from '../../server/protocol'
 
-import { useWfClient } from './context'
-import { keys, useWfMutation } from './hooks-shared'
+import { useWfClient } from '../context'
+import { keys, useWfMutation } from '../hooks-shared'
 
 export function useRuns(input: WfRunListInput = {}) {
   const client = useWfClient()

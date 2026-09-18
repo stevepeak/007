@@ -1,10 +1,10 @@
-import type { WorkflowGraph } from '../engine'
-import { NON_STEP_KINDS } from '../engine/run-progress'
+import type { WorkflowGraph } from '../../engine'
+import { NON_STEP_KINDS } from '../../engine/run-progress'
 import type {
   WfRunLogDTO,
   WfRunStepDTO,
   WfRunSummary,
-} from '../server/protocol'
+} from '../../server/protocol'
 
 import { indexRunActivity } from './run-activity-index'
 import type {

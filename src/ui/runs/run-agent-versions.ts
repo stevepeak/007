@@ -1,5 +1,5 @@
-import { stepAgentVersion as readAgentVersion } from '../engine'
-import type { WfRunStepDTO } from '../server/protocol'
+import { stepAgentVersion as readAgentVersion } from '../../engine'
+import type { WfRunStepDTO } from '../../server/protocol'
 
 // Which agent version a run actually executed. An agent node is a pointer that
 // usually FLOATS to the agent's latest published version, so the live catalog

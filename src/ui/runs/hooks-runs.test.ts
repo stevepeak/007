@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import type { WfRunDetail, WfRunStepDTO } from '../server/protocol'
+import type { WfRunDetail, WfRunStepDTO } from '../../server/protocol'
 
 import {
   mergeStepBlock,

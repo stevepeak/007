@@ -1,10 +1,10 @@
-import type { WorkflowNode } from '../engine'
+import type { WorkflowNode } from '../../engine'
 import {
   iterationItemListLabel,
   iterationItemTitle,
-} from '../engine/item-title'
-import { NON_STEP_KINDS } from '../engine/run-progress'
-import type { WfRunStepDTO, WfRunSummary } from '../server/protocol'
+} from '../../engine/item-title'
+import { NON_STEP_KINDS } from '../../engine/run-progress'
+import type { WfRunStepDTO, WfRunSummary } from '../../server/protocol'
 
 import type { RunActivityIndex } from './run-activity-index'
 import {

@@ -1,8 +1,8 @@
-import type { WorkflowGraph, WorkflowNode } from '../engine'
-import { iterationItemTitle } from '../engine/item-title'
-import type { WfRunStepDTO } from '../server/protocol'
+import type { WorkflowGraph, WorkflowNode } from '../../engine'
+import { iterationItemTitle } from '../../engine/item-title'
+import type { WfRunStepDTO } from '../../server/protocol'
 
-import { NOT_RUN_STATUS } from './editor/node-renderers-shared'
+import { NOT_RUN_STATUS } from '../editor/node-renderers-shared'
 import { readIterationTotal } from './run-activity-tree'
 
 // WHAT THE RUN VIEWER IS LOOKING AT: given a selected node id and a focused

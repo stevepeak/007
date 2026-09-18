@@ -6,7 +6,7 @@ import {
   type WorkflowGraph,
   type WorkflowNode,
 } from '../../engine'
-import type { RunSurfaceItem, RunSurfaceStatus } from '../run-progress-view'
+import type { RunSurfaceItem, RunSurfaceStatus } from '../runs/run-progress-view'
 
 // Client-side SIMULATION of a run's user-facing progress, so an author can
 // preview the exact `WorkflowRunProgress` UX end users will see — no backend, no

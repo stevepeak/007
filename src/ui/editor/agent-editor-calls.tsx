@@ -12,7 +12,7 @@ import {
 import { useAgentCalls, useTools } from '../hooks'
 import { WfLink } from '../nav'
 import { QueryState } from '../query-state'
-import { runStatusDotClass } from '../run-status'
+import { runStatusDotClass } from '../runs/run-status'
 import { toolChip } from '../tool-appearance'
 import { ToolIcon } from '../tool-icon'
 import { Tooltip } from '../tooltip'

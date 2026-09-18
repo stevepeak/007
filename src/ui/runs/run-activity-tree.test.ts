@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 
-import type { WorkflowGraph } from '../engine'
-import { RUN_STATE_LEVEL } from '../engine/stream-sink'
+import type { WorkflowGraph } from '../../engine'
+import { RUN_STATE_LEVEL } from '../../engine/stream-sink'
 import type {
   WfRunLogDTO,
   WfRunStepDTO,
   WfRunSummary,
-} from '../server/protocol'
+} from '../../server/protocol'
 
 import {
   buildActivityTree,

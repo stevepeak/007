@@ -1,5 +1,5 @@
-import { RUN_STATE_LEVEL } from '../engine/stream-sink'
-import type { WfRunLogDTO } from '../server/protocol'
+import { RUN_STATE_LEVEL } from '../../engine/stream-sink'
+import type { WfRunLogDTO } from '../../server/protocol'
 
 import type {
   ActivityNodeRow,

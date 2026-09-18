@@ -1,11 +1,11 @@
 import { Loader2, NotebookPen } from 'lucide-react'
 import { useState } from 'react'
 
-import { cn } from './cn'
-import { useWfComponents } from './context'
-import { MarkdownField } from './editor/markdown-hint'
-import { NoteMarkdown } from './editor/note-markdown'
-import { useSetRunNote } from './hooks'
+import { cn } from '../cn'
+import { useWfComponents } from '../context'
+import { MarkdownField } from '../editor/markdown-hint'
+import { NoteMarkdown } from '../editor/note-markdown'
+import { useSetRunNote } from '../hooks'
 
 // The run's shared note — a Markdown scratchpad on one execution, usually the
 // answer to "why did this fail?". Public and unattributed by design: anyone

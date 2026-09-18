@@ -1,15 +1,15 @@
 import { Activity } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { iterationItemLabel } from '../engine/item-title'
-import type { RetryRunMode } from '../server/protocol'
+import { iterationItemLabel } from '../../engine/item-title'
+import type { RetryRunMode } from '../../server/protocol'
 
-import { cn } from './cn'
-import { WorkflowCanvas } from './editor/workflow-canvas'
-import { useChildRuns, useRetryRun, useRun } from './hooks'
-import { useFeedbackForSubjects } from './hooks-feedback'
-import { useWfNav } from './nav'
-import { QueryState } from './query-state'
+import { cn } from '../cn'
+import { WorkflowCanvas } from '../editor/workflow-canvas'
+import { useChildRuns, useRetryRun, useRun } from '../hooks'
+import { useFeedbackForSubjects } from '../hooks-feedback'
+import { useWfNav } from '../nav'
+import { QueryState } from '../query-state'
 import { runAgentVersions } from './run-agent-versions'
 import { RunNodeDock } from './run-node-dock'
 import { RunNote } from './run-note'
@@ -20,8 +20,8 @@ import {
   resolveRunSelection,
   topLevelStatuses,
 } from './run-selection'
-import { WfShell } from './shell'
-import { useTickingNow } from './use-now'
+import { WfShell } from '../shell'
+import { useTickingNow } from '../use-now'
 
 // Full-page run viewer. Clicking a row in the runs explorer lands here. The
 // centerpiece is the workflow rendered read-only at the exact version that ran,

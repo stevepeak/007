@@ -7,8 +7,8 @@ import { useWfComponents } from '../context'
 import { useRun } from '../hooks'
 import { WfLink } from '../nav'
 import { QueryState } from '../query-state'
-import { RunLog } from '../run-log'
-import { runStatusClass } from '../run-status'
+import { RunLog } from '../runs/run-log'
+import { runStatusClass } from '../runs/run-status'
 
 import { BottomTray, type TrayTab } from './bottom-dock'
 

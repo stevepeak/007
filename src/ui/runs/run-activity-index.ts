@@ -2,7 +2,7 @@ import type {
   WfRunLogDTO,
   WfRunStepDTO,
   WfRunSummary,
-} from '../server/protocol'
+} from '../../server/protocol'
 
 // Indexing a run's raw steps and logs into the lookups the tree builder walks.
 // Split out because it is the one part of `buildActivityTree` that answers

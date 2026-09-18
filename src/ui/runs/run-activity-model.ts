@@ -1,5 +1,5 @@
-import { TERMINAL_STEP_STATUSES } from '../engine/run-progress'
-import type { WfRunStepDTO } from '../server/protocol'
+import { TERMINAL_STEP_STATUSES } from '../../engine/run-progress'
+import type { WfRunStepDTO } from '../../server/protocol'
 
 // The SHAPE of the run activity feed: the row union it renders, the status
 // vocabulary, and the small derivations every phase of the build needs.

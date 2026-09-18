@@ -78,9 +78,9 @@ export {
   type RunEvalInput,
 } from './hooks'
 export { DataView, type DataViewProps } from './data-view'
-export { RunViewer, StepRow, type RunViewerProps } from './run-viewer'
-export { RunPage, type RunPageProps } from './run-page'
-export { RunsExplorer, type RunsExplorerProps } from './runs-explorer'
+export { RunViewer, StepRow, type RunViewerProps } from './runs/run-viewer'
+export { RunPage, type RunPageProps } from './runs/run-page'
+export { RunsExplorer, type RunsExplorerProps } from './runs/runs-explorer'
 export { WfDashboard } from './dashboard'
 export { WfApp, type WfAppProps } from './wf-app'
 export {
@@ -165,7 +165,7 @@ export {
   type RunSurfaceItem,
   type RunSurfaceStatus,
   type RunSurfaceFeedback,
-} from './run-progress-view'
+} from './runs/run-progress-view'
 export {
   WorkflowProgressProvider,
   useRunProgress,
@@ -173,7 +173,7 @@ export {
   type RunProgressSnapshot,
   type RunProgressFetcher,
   type RunProgressToaster,
-} from './run-progress-source'
+} from './runs/run-progress-source'
 export {
   WfHub,
   DEFAULT_WF_SECTIONS,

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import type { WfRunListInput } from '../server/protocol'
+import type { WfRunListInput } from '../../server/protocol'
 
-import { useRuns, useWorkflows } from './hooks'
-import { useDebounced } from './use-debounced'
-import { useModifierHold } from './use-modifier-hold'
-import { usePickedAt } from './use-now'
+import { useRuns, useWorkflows } from '../hooks'
+import { useDebounced } from '../use-debounced'
+import { useModifierHold } from '../use-modifier-hold'
+import { usePickedAt } from '../use-now'
 
 // The runs explorer's filters, paging, and the query they add up to.
 //

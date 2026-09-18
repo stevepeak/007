@@ -2,7 +2,7 @@ import { Archive, Play, Redo2, Undo2, X } from 'lucide-react'
 
 import { ArchiveButton } from '../archive-button'
 import { useWfComponents } from '../context'
-import { WorkflowRunProgress } from '../run-progress-view'
+import { WorkflowRunProgress } from '../runs/run-progress-view'
 import { SaveStateBadge } from '../save-state-badge'
 import { Tooltip } from '../tooltip'
 
