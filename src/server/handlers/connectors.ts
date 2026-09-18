@@ -1,4 +1,4 @@
-import { discoverTools } from '../../connectors/client'
+import { discoverTools, McpUnauthorizedError } from '../../connectors/client'
 import {
   beginAuthorization,
   resolveAccessToken,
@@ -15,6 +15,7 @@ import {
   listConnectors,
   listConnections,
   listConnectorTools,
+  setConnectionStatus,
   setConnectorEnabled,
   setConnectorToolEnabled,
   setConnectorToolSideEffect,
@@ -297,17 +298,36 @@ export function buildConnectorHandlers<TDeps>(
       // A server may expose its catalog unauthenticated, so a missing
       // credential is not fatal here — try, and let the server object.
       const credential = await resolveAccessToken({ db: c.db, connector, secret })
-      const tools = await discoverTools({
-        url: connector.url,
-        transport: connector.transport,
-        auth: credential
-          ? {
-              kind: 'bearer',
-              token: credential.token,
-              tokenType: credential.tokenType,
-            }
-          : { kind: 'none' },
-      })
+      let tools: Awaited<ReturnType<typeof discoverTools>>
+      try {
+        tools = await discoverTools({
+          url: connector.url,
+          transport: connector.transport,
+          auth: credential
+            ? {
+                kind: 'bearer',
+                token: credential.token,
+                tokenType: credential.tokenType,
+              }
+            : { kind: 'none' },
+        })
+      } catch (err) {
+        // A stored token the server no longer honours — most often one minted
+        // with the wrong (or no) scopes, which `resolveAccessToken` cannot
+        // detect because it never expires. Flip the connection so the page
+        // offers Reconnect; otherwise it reads "connected" beside a 401 forever.
+        if (err instanceof McpUnauthorizedError && credential) {
+          const connection = await getConnection(c.db, connectorId)
+          if (connection) {
+            await setConnectionStatus(c.db, {
+              connectionId: connection.id,
+              status: 'expired',
+              error: err.message,
+            })
+          }
+        }
+        throw err
+      }
 
       const result = await upsertConnectorTools(c.db, connectorId, tools)
       const refreshedAt = new Date()
