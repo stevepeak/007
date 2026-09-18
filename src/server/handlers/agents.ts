@@ -1,5 +1,9 @@
 import { changedEntityMetaFields, changedFields } from '../../engine'
-import { agentConfigSchema, agentInputVariables } from '../../engine/graph'
+import {
+  agentConfigSchema,
+  agentInputVariables,
+  agentModelRequirements,
+} from '../../engine/graph'
 import {
   archiveAgent,
   countWorkflowsReferencingAgent,
@@ -85,6 +89,7 @@ function agentSummary(
     output: cfg?.output ?? null,
     modelId: cfg?.modelId ?? null,
     toolIds: cfg?.toolIds ?? [],
+    modelRequirements: cfg ? agentModelRequirements(cfg) : null,
     inputKind: cfg?.inputKind ?? 'task',
     latestVersionNumber,
     workflows,

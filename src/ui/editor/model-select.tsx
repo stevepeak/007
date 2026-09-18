@@ -5,7 +5,11 @@ import type { ModelCapabilities, ModelOption } from '../../engine/config'
 import { cn } from '../cn'
 import { BrandMark, CapabilityBadges, inferModelBrand } from '../evals/shared'
 import { useModels, useProviders } from '../hooks'
-import { REQUIREMENT_REASON, unmetRequirements } from '../model-capabilities'
+import {
+  REQUIREMENT_REASON,
+  unmetRequirements,
+  unmetRequirementsReason,
+} from '../model-capabilities'
 import { Popover } from '../popover'
 
 import { groupModelsByProvider } from './model-grouping'
@@ -126,25 +130,18 @@ export function ModelSelect({
                 <ChevronRight className="size-3" />
                 {provider.label}
               </div>
-              {groupModels.map((m) => {
-                const unmet = unmetRequirements(m, requirements)
-                return (
-                  <ModelOptionRow
-                    key={m.id}
-                    model={m}
-                    selected={m.id === value}
-                    disabledReason={
-                      unmet.length > 0
-                        ? unmet.map((k) => REQUIREMENT_REASON[k]).join(', ')
-                        : undefined
-                    }
-                    onSelect={() => {
-                      onChange(m.id)
-                      close()
-                    }}
-                  />
-                )
-              })}
+              {groupModels.map((m) => (
+                <ModelOptionRow
+                  key={m.id}
+                  model={m}
+                  selected={m.id === value}
+                  disabledReason={unmetRequirementsReason(m, requirements)}
+                  onSelect={() => {
+                    onChange(m.id)
+                    close()
+                  }}
+                />
+              ))}
             </div>
           ))
         )

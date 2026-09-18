@@ -1,15 +1,19 @@
 import { ChevronDown, ChevronRight } from 'lucide-react'
 
+import type { ModelCapabilities } from '../../engine/config'
 import type { ModelGroup } from '../editor/model-grouping'
+import { unmetRequirementsReason } from '../model-capabilities'
 
 import { ModelMatrixRow } from './run-config-dialog-model-row'
 
 // The MODELS axis of the test matrix: every available model, bucketed by
 // provider, each with a run count. A count of 0 means unselected; anything
-// higher is best-of-N per sample.
+// higher is best-of-N per sample. A model known to lack something the target
+// needs stays in the list but can't be picked — hover says what it is missing.
 export function ModelAxis({
   loading,
   groups,
+  requirements,
   counts,
   collapsed,
   onCount,
@@ -19,6 +23,8 @@ export function ModelAxis({
 }: {
   loading: boolean
   groups: ModelGroup[]
+  /** Capabilities every model in the matrix must have (see `ModelSelect`). */
+  requirements?: ModelCapabilities
   /** modelId → run count. Absent or 0 = unselected. */
   counts: Record<string, number>
   /** providerId → whether its bucket is folded shut. */
@@ -58,6 +64,7 @@ export function ModelAxis({
               providerId={provider.id}
               label={provider.label}
               models={models}
+              requirements={requirements}
               counts={counts}
               collapsed={collapsed[provider.id] ?? false}
               onCount={onCount}
@@ -74,6 +81,7 @@ function ProviderBucket({
   providerId,
   label,
   models,
+  requirements,
   counts,
   collapsed,
   onCount,
@@ -82,6 +90,7 @@ function ProviderBucket({
   providerId: string
   label: string
   models: ModelGroup['models']
+  requirements?: ModelCapabilities
   counts: Record<string, number>
   collapsed: boolean
   onCount: (modelId: string, next: number) => void
@@ -114,6 +123,7 @@ function ProviderBucket({
               key={m.id}
               model={m}
               count={counts[m.id] ?? 0}
+              disabledReason={unmetRequirementsReason(m, requirements)}
               onChange={(n) => onCount(m.id, n)}
             />
           ))}

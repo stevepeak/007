@@ -1,6 +1,7 @@
 export {
   agentConfigSchema,
   agentInputVariables,
+  agentModelRequirements,
   agentFromManifest,
   workflowFromManifest,
   agentOutputSchema,

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import type { ModelCapabilities } from './model-catalog'
 import { inferPromptVariables } from './prompt-variables'
 
 // The versioned behavior of a reusable **agent** (a `wf_agent`): its model,
@@ -362,6 +363,28 @@ export function agentInputVariables(
       ...inferPromptVariables(config.userPrompt),
     ]),
   ]
+}
+
+/**
+ * An agent's model contract: what its model must be able to do. A tool-calling
+ * model when tools are attached, structured output for a Yes/No or structured
+ * result (both go through `generateObject`), reasoning when the agent thinks
+ * before answering, and provider-side web search when it is switched on.
+ *
+ * Every model picker that stands in for the agent's model — the editor's Model
+ * field, the eval matrix — gates on this, so a model the agent is KNOWN to fail
+ * on is never offered.
+ */
+export function agentModelRequirements(
+  config: Pick<AgentConfig, 'toolIds' | 'output' | 'reasoning' | 'webSearch'>,
+): ModelCapabilities {
+  return {
+    tools: config.toolIds.length > 0,
+    structuredOutput:
+      config.output.kind === 'object' || config.output.kind === 'boolean',
+    reasoning: config.reasoning,
+    webSearch: config.webSearch !== 'off',
+  }
 }
 
 /**

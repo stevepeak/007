@@ -1,4 +1,5 @@
 import type { AgentConfig, AgentOutput } from '../engine/graph'
+import type { ModelCapabilities } from '../engine/model-catalog'
 import type { AgentNodeMeta } from '../engine/nodes/agent'
 
 export type { AgentNodeMeta } from '../engine/nodes/agent'
@@ -35,6 +36,13 @@ export type WfAgentSummary = {
    * {@link WfDataClient.listTools}.
    */
   toolIds: string[]
+  /**
+   * What the agent's model must support (`agentModelRequirements` over the
+   * same config). Lets a picker standing in for the agent's model — the eval
+   * matrix — gate its rows without fetching the full config. Null when
+   * unpublished or the config is malformed, which gates nothing.
+   */
+  modelRequirements: ModelCapabilities | null
   /**
    * Where the agent's messages come from (`AgentConfig.inputKind`).
    * `'conversation'` → a node pointing at it MUST bind the `conversation` input.

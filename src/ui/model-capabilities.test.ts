@@ -1,8 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 
+import { agentModelRequirements, type AgentConfig } from '../engine'
 import type { ModelOption } from '../engine/config'
+import { agentConfigSchema } from '../engine/graph'
 
-import { REQUIREMENT_REASON, unmetRequirements } from './model-capabilities'
+import {
+  mergeModelRequirements,
+  REQUIREMENT_REASON,
+  unmetRequirements,
+  unmetRequirementsReason,
+} from './model-capabilities'
 
 // The agent editor's guarantee: a setting that needs a model capability can only
 // be ON when the chosen model has it. The picker is the primary guard — it
@@ -68,5 +75,65 @@ describe('unmetRequirements', () => {
     for (const key of ['tools', 'reasoning', 'structuredOutput', 'vision'] as const) {
       expect(REQUIREMENT_REASON[key]).toBeTruthy()
     }
+  })
+})
+
+// A parsed default config, so these track the schema's own defaults rather
+// than a hand-written literal that could drift from what an agent actually is.
+function config(overrides: Partial<AgentConfig> = {}): AgentConfig {
+  return {
+    ...agentConfigSchema.parse({ modelId: 'm', prompt: 'hi', userPrompt: 'q' }),
+    ...overrides,
+  }
+}
+
+describe('agentModelRequirements', () => {
+  test('a bare text agent needs nothing', () => {
+    expect(agentModelRequirements(config())).toEqual({
+      tools: false,
+      structuredOutput: false,
+      reasoning: false,
+      webSearch: false,
+    })
+  })
+
+  test('tools, a structured or Yes/No output, reasoning and web search each add a need', () => {
+    expect(agentModelRequirements(config({ toolIds: ['t'] })).tools).toBe(true)
+    expect(
+      agentModelRequirements(config({ output: { kind: 'boolean' } }))
+        .structuredOutput,
+    ).toBe(true)
+    expect(
+      agentModelRequirements(
+        config({ output: { kind: 'object', schema: { type: 'object' } } }),
+      ).structuredOutput,
+    ).toBe(true)
+    expect(agentModelRequirements(config({ reasoning: true })).reasoning).toBe(
+      true,
+    )
+    expect(agentModelRequirements(config({ webSearch: 'auto' })).webSearch).toBe(
+      true,
+    )
+  })
+})
+
+describe('mergeModelRequirements', () => {
+  test('an eval spanning several agents needs what any of them needs', () => {
+    expect(
+      mergeModelRequirements([
+        { tools: true, reasoning: false },
+        { structuredOutput: true },
+      ]),
+    ).toEqual({ tools: true, structuredOutput: true })
+  })
+})
+
+describe('unmetRequirementsReason', () => {
+  test('joins the reasons a model is gated, or is undefined when it is not', () => {
+    const plain = model('plain', { tools: false, structuredOutput: false })
+    expect(
+      unmetRequirementsReason(plain, { tools: true, structuredOutput: true }),
+    ).toBe('no tool calling, no structured output')
+    expect(unmetRequirementsReason(CAN_REASON, { tools: true })).toBeUndefined()
   })
 })

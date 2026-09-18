@@ -9,7 +9,12 @@ import {
   Wrench,
 } from 'lucide-react'
 
-import type { AgentConfig, AgentOutput, WebSearchMode } from '../../engine'
+import {
+  type AgentConfig,
+  type AgentOutput,
+  agentModelRequirements,
+  type WebSearchMode,
+} from '../../engine'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 
@@ -133,22 +138,13 @@ export function AgentConfigPanel({
         <ModelSelect
           value={config.modelId}
           onChange={patchModel}
-          // Gate the picker on what THIS agent needs: a tool-calling model
-          // when tools are attached, structured output for a Yes/No or
-          // structured result (both go through `generateObject`), and a
-          // reasoning model when the agent is set to think before answering.
-          // The picker is the PRIMARY guard — a model that can't meet a
-          // requirement is never offered — and the per-section disabled states
-          // below are the backstop for a config that arrived some other way
-          // (a spec import, or a catalog refresh that changed a model).
-          requirements={{
-            tools: config.toolIds.length > 0,
-            structuredOutput:
-              config.output.kind === 'object' ||
-              config.output.kind === 'boolean',
-            reasoning: config.reasoning,
-            webSearch: config.webSearch !== 'off',
-          }}
+          // Gate the picker on what THIS agent needs (see
+          // `agentModelRequirements`). The picker is the PRIMARY guard — a
+          // model that can't meet a requirement is never offered — and the
+          // per-section disabled states below are the backstop for a config
+          // that arrived some other way (a spec import, or a catalog refresh
+          // that changed a model).
+          requirements={agentModelRequirements(config)}
         />
       </EditorSection>
 

@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { agentInputVariables, type AgentConfig } from '../../engine'
+import {
+  agentInputVariables,
+  agentModelRequirements,
+  type AgentConfig,
+  type ModelCapabilities,
+} from '../../engine'
 import { groupModelsByProvider } from '../editor/model-grouping'
 import {
   DEFAULT_EVAL_CONCURRENCY,
@@ -10,6 +15,10 @@ import {
   useProviders,
   useRunEval,
 } from '../hooks'
+import {
+  mergeModelRequirements,
+  unmetRequirements,
+} from '../model-capabilities'
 
 // The MATRIX behind `RunConfigDialog` — everything the dialog knows that isn't
 // markup. Extracted so the dialog file is layout and this file is the rules,
@@ -94,6 +103,28 @@ export function useRunConfigMatrix({
     return [...vars]
   }, [draftConfig, evalSetsQuery.data, agentsQuery.data, setIds])
 
+  // What the models under test must be able to do — the same gate the agent
+  // editor's Model field applies, so the matrix never offers a model the target
+  // is known to fail on (no structured output for a Yes/No agent, no tool
+  // calling for one with tools attached). Several targets union their needs:
+  // one model runs every cell. A draft run reads the draft, for the same reason
+  // as the variables above.
+  // TODO(ART-201): workflow targets are ungated — their agents live in the
+  // graph, which the list endpoints don't carry.
+  const requirements = useMemo<ModelCapabilities | undefined>(() => {
+    if (draftConfig) return agentModelRequirements(draftConfig)
+    const sets = evalSetsQuery.data ?? []
+    const agentById = new Map((agentsQuery.data ?? []).map((a) => [a.id, a]))
+    const perAgent: ModelCapabilities[] = []
+    for (const id of setIds) {
+      const set = sets.find((s) => s.id === id)
+      if (!set || set.targetKind !== 'agent') continue
+      const needs = agentById.get(set.targetId)?.modelRequirements
+      if (needs) perAgent.push(needs)
+    }
+    return perAgent.length > 0 ? mergeModelRequirements(perAgent) : undefined
+  }, [draftConfig, evalSetsQuery.data, agentsQuery.data, setIds])
+
   const draftModelId = draftConfig?.modelId
 
   // modelId → run count (0 = unselected). One shared map across all groups.
@@ -152,7 +183,16 @@ export function useRunConfigMatrix({
     setPrompts((prev) => prev.map((p) => (p.id === id ? { ...p, body } : p)))
   }, [])
 
-  const selectedIds = Object.keys(counts).filter((id) => (counts[id] ?? 0) > 0)
+  // A gated model never runs, even with a count against it: a draft run
+  // pre-selects the draft's own model, and the editor only WARNS when that
+  // model can't meet the draft's needs — so the pre-selection can land on a row
+  // this dialog disables. Dropping it here keeps the count map dumb and the
+  // launch honest.
+  const selectedIds = Object.keys(counts).filter((id) => {
+    if ((counts[id] ?? 0) === 0) return false
+    const model = models.find((m) => m.id === id)
+    return !model || unmetRequirements(model, requirements).length === 0
+  })
   const selectedModels = models.filter((m) => selectedIds.includes(m.id))
   const totalRuns = selectedIds.reduce((sum, id) => sum + (counts[id] ?? 0), 0)
   // The saved prompt is always one variation; each extra prompt adds another.
@@ -216,6 +256,7 @@ export function useRunConfigMatrix({
     // model axis
     loadingModels,
     groups,
+    requirements,
     counts,
     collapsed,
     setCount,

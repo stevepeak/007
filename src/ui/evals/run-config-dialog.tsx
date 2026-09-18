@@ -149,6 +149,7 @@ export function RunConfigDialog({
           <ModelAxis
             loading={matrix.loadingModels}
             groups={matrix.groups}
+            requirements={matrix.requirements}
             counts={matrix.counts}
             collapsed={matrix.collapsed}
             onCount={matrix.setCount}
