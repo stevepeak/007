@@ -23,8 +23,8 @@ import type { ToolOption, WfDataClient, WfRunDetail } from '../server/protocol'
  * One MCP tool, in a shape the transport doesn't own.
  *
  * Declared this way rather than by calling `server.registerTool` inline so the
- * same definitions can be registered on a stdio server, on a remote one, or
- * mapped into an `ai` ToolSet for the in-app copilot without being rewritten.
+ * same definitions can be registered on a stdio server or a remote one, and
+ * read as documentation (`describe.ts`), without being rewritten.
  */
 export type WfMcpTool = {
   name: string

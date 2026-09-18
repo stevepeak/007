@@ -2,9 +2,9 @@ import { type ReactNode, useRef, useState } from 'react'
 
 import { useDismiss } from './use-dismiss'
 
-// The headless popover shell. Every custom picker (model, tool, target filter,
-// the copilot's model menu) hand-rolled the same open-state + ref +
-// outside-dismiss + conditionally-rendered panel skeleton — and one that forgot
+// The headless popover shell. Every custom picker (model, tool, target filter)
+// hand-rolled the same open-state + ref + outside-dismiss + conditionally-
+// rendered panel skeleton — and one that forgot
 // it (an editor menu) silently lost outside-click dismissal. This owns that
 // skeleton once; callers supply their exact trigger, panel classes, and rows, so
 // nothing about their look or layout changes. `RichSelect` (the flat single-

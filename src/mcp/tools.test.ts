@@ -27,7 +27,7 @@ describe('the tool catalog', () => {
   // Pinned as a LIST, not a count: `readOnly` is the only thing standing between
   // a read-only session and a mutation, and it is one boolean per definition. A
   // tool added with the flag left at its neighbor's value would otherwise reach
-  // both the copilot and an un-flagged `wf-mcp` in silence.
+  // an un-flagged `wf-mcp` in silence.
   //
   // Two of these are writes for a reason other than editing a definition:
   // `run_eval` and `run_agent_preview` spend real model calls, which is the line

@@ -9,12 +9,10 @@ import type { WfMcpTool } from './tools'
 // Assembling the MCP server from the tool definitions.
 //
 // The definitions themselves are in `tools*.ts` and the catalog in
-// `catalog.ts`, shared with the System Copilot — a tool description is prompt,
-// and two lists of it would diverge in behavior, not just in wording. This file
-// owns only the stdio registration.
+// `catalog.ts`; this file owns only the stdio registration.
 
-// Re-exported: this was their home before the copilot needed them without the
-// MCP SDK attached, and every caller still asks the server for its catalog.
+// Re-exported: this was their home before `describe.ts` needed the catalog
+// without the MCP SDK attached, and every caller still asks the server for it.
 export { allTools, selectTools } from './catalog'
 
 export type CreateWfMcpServerOptions = {

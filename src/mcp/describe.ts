@@ -7,9 +7,8 @@ import { allTools } from './catalog'
 //
 // It exists because the alternative is a hand-written table, and a hand-written
 // table of 24 tools drifts the first time someone adds the 25th. Every field
-// here is read off the same definitions `wf-mcp` registers and the System
-// Copilot binds, so a tool that ships is a tool that is listed, with the
-// description the model actually sees.
+// here is read off the same definitions `wf-mcp` registers, so a tool that
+// ships is a tool that is listed, with the description the model actually sees.
 //
 // Deliberately JSON-serializable and zod-free at the boundary: the caller is
 // typically a server component that hands the result straight to a client

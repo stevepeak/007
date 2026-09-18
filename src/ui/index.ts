@@ -7,22 +7,7 @@ export {
 } from './undo/undo-context'
 export { useUndoScope, type UseUndoScopeOptions } from './undo/use-undo-scope'
 export type { UndoScope } from './undo/pick-scope'
-export {
-  useWfClient,
-  useWfComponents,
-  useWfAssistant,
-  type WfAssistantComponent,
-  type WfAssistantContext,
-} from './context'
-// A host that replaces the built-in assistant can opt back into the "ask the
-// Copilot this" affordances (the Transform inspector's expression helper today)
-// by registering a seed handler; without one those links stay hidden rather than
-// opening a chat that ignores the question.
-export {
-  askCopilot,
-  registerCopilotSeed,
-  useCopilotSeedAvailable,
-} from './copilot/ask'
+export { useWfClient, useWfComponents } from './context'
 export {
   defaultComponents,
   type WfBadgeProps,

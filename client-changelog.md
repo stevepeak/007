@@ -15,6 +15,33 @@ without you and is still probably wrong to skip.
 
 ---
 
+## 2026-09-18 — the System Copilot is removed
+
+The in-app Copilot — the right-rail chat over the platform's agents, workflows,
+runs and feedback — is gone, along with its server half. `wf-mcp` is the way to
+put a model on that data: it exposes the same catalog, from any MCP client, with
+the write gate a developer chooses rather than one any staffer could open.
+
+**Breaking.**
+
+- `handleCopilotRequest` and `HandleCopilotOptions` are no longer exported from
+  `@stevepeak/007/server`. Delete the route that mounted it (the guide's
+  `app/api/copilot/route.ts`).
+- `WfSdkProvider` no longer takes `assistant` or `copilotEndpoint`, and
+  `useWfAssistant`, `WfAssistantComponent`, `WfAssistantContext`, `askCopilot`,
+  `registerCopilotSeed` and `useCopilotSeedAvailable` are gone from
+  `@stevepeak/007/ui`. A host that injected its own assistant has nowhere to
+  render it; mount it outside `WfApp`.
+- `AgentConfigPanel` and `AgentOutputEditor` no longer take the Copilot
+  grounding props (`agentName` / `agentDescription`, `copilotContext`).
+- `@ai-sdk/react` is no longer a dependency of the package.
+
+**Action.** The data route is now the only surface that mounts the dispatcher.
+If your `onError` hook tagged reports by which route hit them, that
+discriminator has one value left — drop it.
+
+---
+
 ## 2026-09-18 — `wf-dump-run` removed
 
 The `wf-dump-run` bin is gone. It opened the local miniflare SQLite file (or

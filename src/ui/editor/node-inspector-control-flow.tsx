@@ -1,4 +1,4 @@
-import { Sparkles, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 
 import {
@@ -14,15 +14,13 @@ import {
 } from '../../engine'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
-import { askCopilot, useCopilotSeedAvailable } from '../copilot/ask'
 import { toText } from '../to-text'
 
 import { BranchOperatorSelect } from './branch-operator-select'
 import { DataRefField, IterationListField } from './node-data-panel'
 import { useAccessibleData } from './node-data-panel-shared'
 import { field, type NodeInspectorProps } from './node-inspector-shared'
-import { refEnumOptions, transformSourceShape } from './node-io'
-import { buildTransformCopilotPrompt } from './transform-copilot-prompt'
+import { refEnumOptions } from './node-io'
 
 // What the choice means for the author, in their terms. The trade is per-item
 // startup cost against how much work is lost when one item fails partway — and
@@ -685,34 +683,10 @@ export function TransformInspector({
   itemSchema,
 }: NodeInspectorProps) {
   const { Label, Select, Textarea } = useWfComponents()
-  // Resolving the upstream shape needs the tool/agent catalogs, so these hooks
-  // run before the kind guard below — hooks cannot sit after an early return.
-  const { maps } = useAccessibleData(node, graph, itemSchema)
-  const copilotAvailable = useCopilotSeedAvailable()
-  const sourceShape = useMemo(
-    () => transformSourceShape(node, graph, maps),
-    [node, graph, maps],
-  )
   if (node.kind !== 'transform') return null
 
   const { source, inputs, expression, outputShape } = node.config
   const entries = Object.entries(inputs)
-
-  // Hand the Copilot the question already written, carrying the real shape of
-  // the data this step will receive. Writing JSONata against a remembered field
-  // list is the slow, error-prone part; the editor already knows that list.
-  const askForExpression = () => {
-    return askCopilot(
-      buildTransformCopilotPrompt({
-        nodeLabel: node.label || 'Transform',
-        sourceLabel: sourceShape?.label ?? null,
-        sourceFields: sourceShape?.fields ?? [],
-        sourceType: sourceShape?.type ?? 'unknown',
-        outputShape,
-        currentExpression: expression,
-      }),
-    )
-  }
 
   const patch = (config: Partial<typeof node.config>) => {
     return onChange({ ...node, config: { ...node.config, ...config } })
@@ -766,18 +740,6 @@ export function TransformInspector({
           <code>[ ]</code> — without it JSONata returns the bare element instead
           of a list.
         </p>
-        {copilotAvailable ? (
-          <button
-            type="button"
-            onClick={askForExpression}
-            className="inline-flex w-fit items-center gap-1.5 text-xs text-violet-600 underline underline-offset-2 hover:text-violet-700"
-          >
-            <Sparkles className="size-3" />
-            {expression.trim()
-              ? 'Ask the Copilot to fix this expression'
-              : 'Ask the Copilot to write this expression'}
-          </button>
-        ) : null}
       </div>
 
       <div className={field}>

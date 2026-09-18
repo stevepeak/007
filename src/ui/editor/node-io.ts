@@ -747,68 +747,6 @@ function nodeOutput(
   }
 }
 
-/**
- * The shape of the value a Transform's expression will actually receive.
- *
- * Mirrors what `executeTransformNode` does at run time — an explicit `source`
- * binding wins, and with none the node reads its incoming edge — so the outline
- * the author is shown matches the data they will get. Narrows to the bound path
- * (`messages` rather than the whole tool result) because that, not the producer's
- * full output, is what `$` refers to inside the expression.
- *
- * Returns `null` when there is nothing to describe: no binding and no single
- * predecessor to fall back on.
- */
-export function transformSourceShape(
-  node: WorkflowNode,
-  graph: WorkflowGraph,
-  maps: IoMaps,
-): { label: string; fields: DataField[]; type: string } | null {
-  if (node.kind !== 'transform') return null
-  const byId = new Map(graph.nodes.map((n) => [n.id, n]))
-  const binding = node.config.source
-
-  // A literal source is its own answer — the author typed the value, so there is
-  // no upstream shape to look up.
-  if (binding?.kind === 'literal') {
-    return {
-      label: 'a literal value you typed',
-      fields: [],
-      type: jsonTypeOf(binding.value),
-    }
-  }
-
-  const producerId = binding?.nodeId ?? singlePredecessorId(graph, node.id)
-  if (!producerId) return null
-  const producer = byId.get(producerId)
-  if (!producer) return null
-
-  const out = nodeOutput(producer, maps, graph, byId, new Set())
-  const path = binding?.path ?? ''
-  const label = `${producer.label} · ${path || 'whole output'}`
-  if (!path) return { label, fields: out.fields, type: out.type }
-
-  const field = findField(out.fields, path)
-  if (!field) return { label, fields: [], type: 'unknown' }
-  // For an array it is the ELEMENT shape the expression maps over, which
-  // `items` holds; `children` is empty on arrays.
-  return {
-    label,
-    fields:
-      field.type === 'array' ? (field.items ?? []) : (field.children ?? []),
-    type: field.type,
-  }
-}
-
-/** The lone incoming node, or null when there are zero or several. */
-function singlePredecessorId(
-  graph: WorkflowGraph,
-  nodeId: string,
-): string | null {
-  const preds = predecessorIds(graph, nodeId)
-  return preds.length === 1 ? preds[0] : null
-}
-
 // Return a maps copy whose iteration `Item` trigger resolves to `itemSchema`, so
 // nodes inside a loop see the element's fields. No-op without a schema.
 export function withIterationItemSchema(

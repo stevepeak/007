@@ -1,9 +1,9 @@
 import type { ModelCapabilities, ModelOption } from '../engine/config'
 
 // Shared capability-gating helpers for the model pickers (the agent/node Model
-// field via `ModelSelect`, and the copilot dock's picker). One source of truth
-// for "which required capabilities a model is missing" and the short reason we
-// show when it's gated out.
+// field via `ModelSelect`). One source of truth for "which required
+// capabilities a model is missing" and the short reason we show when it's
+// gated out.
 
 // Short "why this model is unavailable" reason per required capability.
 export const REQUIREMENT_REASON: Record<keyof ModelCapabilities, string> = {

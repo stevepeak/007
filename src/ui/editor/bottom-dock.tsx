@@ -16,8 +16,7 @@ import { AccessibleDataView } from './node-data-panel'
 // strip is always visible; clicking the active tab (or the chevron) collapses
 // the body. The chrome (resize handle + collapse + tab strip) lives in the
 // generic `BottomTray`; the workflow editor's `BottomDock` (Data/Issues) is a
-// thin composition of it. (The Chat assistant now lives in the persistent
-// right-rail `CopilotPanel`, not here.)
+// thin composition of it.
 
 // A lucide icon component, e.g. `Sparkles`.
 type TrayIcon = typeof Sparkles
@@ -216,8 +215,7 @@ export type BottomDockProps = {
   onSelectNode?: (nodeId: string) => void
 }
 
-// The workflow editor's dock: Data (selected node) and Issues (graph-wide). The
-// Chat assistant now lives in the persistent right-rail `CopilotPanel`.
+// The workflow editor's dock: Data (selected node) and Issues (graph-wide).
 export function BottomDock({
   node,
   graph,

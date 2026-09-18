@@ -1,5 +1,3 @@
-import { useMemo } from 'react'
-
 import type { AgentConfig } from '../../engine'
 import { useModels, useTools } from '../hooks'
 
@@ -22,11 +20,7 @@ import { useModels, useTools } from '../hooks'
 //     Everything that asks "is there a loop here?" gates on
 //     `hasToolsOrSubAgents`, never on `toolIds` alone.
 
-export function useAgentConfigFacts(
-  config: AgentConfig,
-  agentName: string,
-  agentDescription: string,
-) {
+export function useAgentConfigFacts(config: AgentConfig) {
 const tools = useTools()
 const aiTools = (tools.data ?? []).filter((t) => t.kind === 'ai-tool')
 
@@ -51,21 +45,6 @@ const modelLacksReasoning = modelCaps != null && !modelCaps.reasoning
 // Provider-side web search is a per-model feature of the provider's own
 // pipeline, so a model the catalog says can't search makes the setting inert.
 const modelLacksWebSearch = modelCaps != null && !modelCaps.webSearch
-
-// What the Copilot needs to talk about this agent's output shape: what it is
-// told to do, and what it can call. Tool IDS are resolved to names because the
-// name is what an author (and the Copilot) reasons about.
-const schemaCopilotContext = useMemo(
-  () => ({
-    agentName,
-    agentDescription,
-    instructions: config.prompt,
-    toolNames: config.toolIds.map(
-      (id) => aiTools.find((t) => t.id === id)?.name ?? id,
-    ),
-  }),
-  [agentName, agentDescription, config.prompt, config.toolIds, aiTools],
-)
 
 // A turn is a round of calling SOMETHING, and delegation synthesizes
 // `spawn_*` / `await_subagents` into the tool set — so an agent with only
@@ -106,7 +85,6 @@ const requireToolReason = !hasToolsOrSubAgents
     modelLacksStructuredOutput,
     modelLacksReasoning,
     modelLacksWebSearch,
-    schemaCopilotContext,
     hasToolsOrSubAgents,
     requireToolReason,
   }

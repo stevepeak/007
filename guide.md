@@ -30,7 +30,6 @@ The SDK is deliberately generic. It ships **behavior**; the host supplies
 | RPC dispatch (`createWfSdkHandlers`)                             | ✅                | route auth + `{ userId? }`, the `WfDb`          |
 | Editor / run-viewer / hub UI (`WfApp`)                           | ✅                | router adapter, design-system primitives        |
 | MCP tool catalog + `wf-mcp` bin (`mcp/catalog.ts`)               | ✅                | a headless credential (a bearer secret)         |
-| System Copilot (`handleCopilotRequest`)                          | ✅                | the model + its own auth gate                   |
 | Model provider (`getModel` + `listModels` + `listProviders`)     |                   | ✅                                              |
 | Provider spend budgets (`fetchProviderBudget`, optional)         | the cards + meter | ✅ the balance call (omit → no cards)           |
 | Tools (`toolRegistry`; `/documents` + `/cloudflare` ship a few)  |                   | ✅                                              |
@@ -62,7 +61,7 @@ cycles (`ui → server → storage → engine`, `cloudflare → storage → engi
 | `@stevepeak/007/cloudflare/blob-spill`       | any server route        | `createR2BlobSpiller`, `spillTextIfLarge` (the write half of blob refs)                      |
 | `@stevepeak/007/cloudflare/extract-text`     | any server route¹       | `createExtractTextTool` (R2/Vision OCR tool)                                                 |
 | `@stevepeak/007/cloudflare/analytics-engine` | Workers (AE binding)    | `createAnalyticsEngineTelemetry` — the write half of run telemetry (§7b)                     |
-| `@stevepeak/007/server`                      | any server route        | `createWfSdkHandlers`, `createHttpWfDataClient`, `handleCopilotRequest`, `describeToolCatalog` |
+| `@stevepeak/007/server`                      | any server route        | `createWfSdkHandlers`, `createHttpWfDataClient`, `describeToolCatalog`                        |
 | `@stevepeak/007/documents`                   | any (needs `docx`³)     | `documentModelSchema` + `renderDocx` — model → `.docx` bytes                                 |
 | `@stevepeak/007/ui`                          | browser (React 19)      | `WfApp`, `WfSdkProvider`, `RunViewer`, hooks                                                 |
 | `@stevepeak/007/ui/run-progress`             | browser (React 19)      | `WorkflowRunProgress` + the progress source, without pulling the editor                      |
@@ -722,7 +721,7 @@ type StartGraphRunInput = {
 
 Secrets are per-Worker, so anything BOTH runtimes read has to be set twice with
 the same value — `WF_CONNECTOR_KEY` most of all, since the web Worker encrypts a
-connector credential and this one decrypts it mid-run (§5d).
+connector credential and this one decrypts it mid-run (§5c).
 
 If your web Worker starts runs, add a **service binding** from web → workflows
 (this repo calls it `WORKFLOWS`) and call `startGraphRun` over RPC, falling back
@@ -1022,8 +1021,7 @@ Flags of the same name (`--base-url=`, `--api-path=`, `--token=`, `--timeout=`)
 win over the env, and `--write` registers the mutating tools.
 
 **What it exposes.** Thirty-one tools — twenty-one reads, and ten writes that
-exist only with `--write`. The same catalog backs the System Copilot (§5c), so
-this table is both surfaces.
+exist only with `--write`.
 
 | Tool                              | Gate      | What it does                                                        |
 | --------------------------------- | --------- | ------------------------------------------------------------------- |
@@ -1246,64 +1244,7 @@ itself. On success it answers with the testing **layer** the Sample landed in
 store fine but grade nothing — a `tool_called` check under `frozen` tools grades
 the absence of a call the agent was never able to make.
 
-### 5c. In-app access: the System Copilot
-
-`handleCopilotRequest` mounts an ephemeral agentic chat over the same data — a
-dock the user opens on whatever surface they are looking at. It runs no workflow
-and persists nothing: no message rows, no `wf_run`. The client holds the only
-copy of the conversation.
-
-It takes **the data route's own options type**, plus a fallback model:
-
-```ts
-// app/api/copilot/route.ts
-export function POST(req: Request): Promise<Response> {
-  return handleCopilotRequest(req, {
-    config: wfConfig,
-    resolveDb: () => getWfDb(),
-    resolveEnv: () => getCloudflareContext().env,
-    // Stricter than /api/wf on purpose — see below.
-    resolveContext: firmSessionOnly,
-    // Not optional here: a fault inside a tool call is caught by the
-    // dispatcher and handed to the model as a tool result, so without this
-    // hook it is a console line the model quietly works around.
-    onError: reportWfHandlerError,
-    defaultModelId: 'venice:qwen3-vl-235b-a22b',
-  })
-}
-```
-
-That is not a convenience. The copilot's tools **are** the `wf-mcp` tools — one
-catalog, in `mcp/catalog.ts`, registered two ways: `registerTool` for stdio, and
-an `ai` `ToolSet` for the copilot's `streamText` loop. So it holds a
-`WfDataClient` like any other caller, and the one it holds dispatches
-**in-process through your mounted handler** with the incoming request's own
-headers. Three things follow, and they are the reason it is built this way:
-
-- **A tool description is prompt.** Two hand-maintained lists would not merely
-  drift in wording, they would drift in what the model DID, and each list would
-  read fine on its own. Change a description once and both surfaces change.
-- **Your auth gate runs on every tool call**, against the real caller's
-  credentials — so the copilot cannot read anything that user's own browser
-  could not ask for, and a session that expires mid-conversation stops
-  answering. Same for input validation, the `wf_change` actor, and `onError`.
-  Give this route its OWN `resolveContext` rather than sharing the data route's:
-  the service-token door you opened for `wf-mcp` is a headless credential for
-  reading data, and the copilot spends model calls and answers in prose.
-- **It is read-only, and that is a decision, not an omission.** It gets
-  `selectTools(allTools(), false)` — the same gate as `wf-mcp` without
-  `--write`, so there is no write tool registered for it to be talked into
-  calling. An in-app chat any staffer can open is a different blast radius from
-  a flag a developer types; if that judgement changes it changes by passing
-  `true`, not by re-listing anything. That gate got heavier when the agent write
-  path landed: on the other side of it are now `update_agent_draft` and
-  `run_agent_preview`, so a chat window that anyone can open is one boolean away
-  from editing agents.
-
-The host supplies nothing tool-shaped. What it does supply is the model
-(`config.getModel`, resolved from the picker in the dock) and the gate.
-
-### 5d. Inbound: MCP connectors
+### 5c. Inbound: MCP connectors
 
 The mirror image of 5b. `wf-mcp` points an outside client at YOUR deployment;
 a **connector** points your deployment at an outside MCP server, and its tools

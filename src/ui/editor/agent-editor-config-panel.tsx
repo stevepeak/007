@@ -45,8 +45,6 @@ import { useAgentConfigFacts } from './use-agent-config-facts'
 // `AgentBudgetSection`, …); what is left here is the arrangement of them.
 export function AgentConfigPanel({
   agentId,
-  agentName,
-  agentDescription,
   config,
   initialConfig,
   patch,
@@ -56,9 +54,6 @@ export function AgentConfigPanel({
   registerSetUserPrompt,
 }: {
   agentId: string
-  /** Entity metadata, passed down purely as Copilot grounding for the output schema. */
-  agentName: string
-  agentDescription: string
   config: AgentConfig
   /** Seeds the TipTap prompt editors once; later edits arrive through `patch`. */
   initialConfig: AgentConfig
@@ -79,10 +74,9 @@ export function AgentConfigPanel({
     modelLacksStructuredOutput,
     modelLacksReasoning,
     modelLacksWebSearch,
-    schemaCopilotContext,
     hasToolsOrSubAgents,
     requireToolReason,
-  } = useAgentConfigFacts(config, agentName, agentDescription)
+  } = useAgentConfigFacts(config)
 
   // Switching models must not leave a setting behind that the new model cannot
   // honour. `reasoning: true` against a non-reasoning model is inert at run time
@@ -247,7 +241,6 @@ export function AgentConfigPanel({
           onChange={(output) => patch({ output })}
           structuredDisabled={modelLacksStructuredOutput}
           structuredDisabledReason={`${selectedModel?.label ?? 'The selected model'} doesn’t support structured output — only a Text result is available.`}
-          copilotContext={schemaCopilotContext}
           source={zodSource}
           onSourceEdit={editZodSource}
         />

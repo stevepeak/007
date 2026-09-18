@@ -3,13 +3,12 @@
 // 007's payloads are unbounded by design — a run step's `meta` carries the full
 // LLM prompt, the reasoning trace and every tool call's arguments and output, a
 // workflow `graph` serializes every node — and a single unclipped read will blow
-// a model's context window. Both model-facing surfaces (the System Copilot's
-// tools and the MCP server) therefore return CLIPPED payloads and let the model
-// drill in with a narrower follow-up call.
+// a model's context window. The MCP tools therefore return CLIPPED payloads and
+// let the model drill in with a narrower follow-up call.
 //
-// Shared rather than duplicated because the two surfaces must agree: a limit
-// that only one of them enforces is a limit that quietly stops applying the day
-// someone moves a tool between them.
+// Shared across the tool files rather than duplicated so every tool agrees on
+// the limit: one that only some of them enforce is a limit that quietly stops
+// applying the day a tool moves between files.
 
 /** Past this many JSON characters, a single value is replaced by an excerpt. */
 const DEFAULT_MAX_CHARS = 4000

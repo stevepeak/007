@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 import { ActivityList } from './activity/activity-list'
 import { AgentsList } from './agents-list'
@@ -6,8 +6,6 @@ import { cn } from './cn'
 import { ComingSoon } from './coming-soon'
 import { ConnectorDetail } from './connectors/connector-detail'
 import { ConnectorsList } from './connectors/connectors-list'
-import { CopilotPanel } from './copilot/copilot-panel'
-import { deriveCopilotContext } from './copilot/view-context'
 import { WfDashboard } from './dashboard'
 import { AgentEditor } from './editor/agent-editor'
 import { WorkflowEditor } from './editor/workflow-editor'
@@ -103,40 +101,24 @@ function WfTabbedShell({
 }) {
   const { tabs, activeId, homePath } = useWfTabs()
 
-  // The path of whatever tab is active — the Home tab's browse path, or the
-  // focused asset tab's path. This is what grounds the persistent Copilot: only
-  // the ACTIVE surface defines context (hidden keep-alive tabs never leak in).
-  const activePath =
-    activeId === HOME_TAB_ID
-      ? homePath
-      : (tabs.find((t) => t.id === activeId)?.path ?? homePath)
-  const copilotContext = useMemo(
-    () => deriveCopilotContext(activePath),
-    [activePath],
-  )
-
   return (
-    <div className="flex h-full">
-      <div className="flex h-full min-w-0 flex-1 flex-col">
-        <WfTabStrip />
-        <div className="relative min-h-0 flex-1">
-          <TabPane active={activeId === HOME_TAB_ID}>
-            <HomeRoutes
-              path={homePath}
-              sections={sections}
-              dashboard={dashboard}
-              mcpCommand={mcpCommand}
-            />
+    <div className="flex h-full min-w-0 flex-col">
+      <WfTabStrip />
+      <div className="relative min-h-0 flex-1">
+        <TabPane active={activeId === HOME_TAB_ID}>
+          <HomeRoutes
+            path={homePath}
+            sections={sections}
+            dashboard={dashboard}
+            mcpCommand={mcpCommand}
+          />
+        </TabPane>
+        {tabs.map((tab) => (
+          <TabPane key={tab.id} active={activeId === tab.id} tabId={tab.id}>
+            <AssetRoutes path={tab.path} />
           </TabPane>
-          {tabs.map((tab) => (
-            <TabPane key={tab.id} active={activeId === tab.id} tabId={tab.id}>
-              <AssetRoutes path={tab.path} />
-            </TabPane>
-          ))}
-        </div>
+        ))}
       </div>
-      {/* Persistent right rail — mounted once, survives all navigation above. */}
-      <CopilotPanel context={copilotContext} />
     </div>
   )
 }
@@ -320,9 +302,6 @@ function AssetRoute({ path }: { path: string }) {
   if (!asset) return null
   const query = new URLSearchParams(path.split('?', 2)[1] ?? '')
 
-  // The copilot for each surface now lives in the persistent right rail (see
-  // `CopilotPanel` in `WfTabbedShell`), grounded on the active tab — so these
-  // surfaces render plainly, with no per-asset chat dock.
   switch (asset.type) {
     case 'run': {
       // Optional `?node=<nodeId>[&item=<i>]` opens the run with that node

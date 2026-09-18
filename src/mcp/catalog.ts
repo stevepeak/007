@@ -9,10 +9,10 @@ import { workflowReadTools, workflowWriteTools } from './tools-workflows'
 // The catalog — every tool this build knows about, and the gate that decides
 // which of them a surface gets.
 //
-// Kept apart from `server.ts` because the two registration surfaces don't share
-// a dependency: the stdio server pulls in `@modelcontextprotocol/sdk`, and the
-// System Copilot runs in a Cloudflare Worker where that has no business being
-// bundled. Both need the list; only one needs the transport.
+// Kept apart from `server.ts` so the list can be read without the transport:
+// the stdio server pulls in `@modelcontextprotocol/sdk`, and `describe.ts` (a
+// host's "connect the MCP" page) runs in a Cloudflare Worker where that has no
+// business being bundled.
 
 /** Every tool this build knows about, read and write alike. */
 export function allTools(): WfMcpTool[] {

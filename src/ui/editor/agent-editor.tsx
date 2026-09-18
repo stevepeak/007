@@ -229,8 +229,6 @@ function AgentEditorInner({
                 {/* Left: configuration */}
                 <AgentConfigPanel
                   agentId={agentId}
-                  agentName={meta.name}
-                  agentDescription={meta.description}
                   config={draft.config}
                   initialConfig={initialConfig}
                   zodSource={draft.zodSource}

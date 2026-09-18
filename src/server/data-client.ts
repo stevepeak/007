@@ -2,15 +2,11 @@ import type { WfDataClient } from './protocol'
 
 // The `WfDataClient` method map, with the transport pulled out.
 //
-// There are two ways to reach the data surface and only one contract, so the
-// wire mapping — which method takes a positional id, which one needs a longer
-// budget — lives here once and each caller supplies only the send. Over HTTP
-// that's a `fetch` (`createHttpWfDataClient`); inside the Worker that already
-// mounted the handlers it's a direct dispatch (`createLocalWfDataClient`).
-//
-// Keeping the map in one place is what lets a tool written against
-// `WfDataClient` run unchanged in a browser, in `wf-mcp`, and in the System
-// Copilot.
+// The wire mapping — which method takes a positional id, which one needs a
+// longer budget — lives here once and the caller supplies only the send
+// (`createHttpWfDataClient` supplies a `fetch`). Keeping the map apart from the
+// transport is what lets a tool written against `WfDataClient` run unchanged in
+// a browser and in `wf-mcp`.
 
 /**
  * One RPC call: a method name, its wire params, and an optional per-method

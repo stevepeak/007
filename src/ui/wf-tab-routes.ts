@@ -54,8 +54,8 @@ export function classifyAssetPath(path: string): WfAsset | null {
     return { type: 'connector', connectorId: parts[1] }
   }
 
-  // `feedback/<subjectId>` — one rated item's detail (note + producing run +
-  // copilot). `feedback` alone (len 1) is the triage list, a home route.
+  // `feedback/<subjectId>` — one rated item's detail (note + producing run).
+  // `feedback` alone (len 1) is the triage list, a home route.
   if (parts.length === 2 && parts[0] === 'feedback') {
     return { type: 'feedbackItem', subjectId: parts[1] }
   }

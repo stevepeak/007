@@ -23,8 +23,7 @@ import { sectionCrumb } from './wf-crumbs'
 
 // One rated item, opened as its own tab from the Feedback triage list. Shows the
 // customer's rating/note, an excerpt of the answer they reacted to, and a link
-// to the producing run. The AI copilot — grounded on this item via the active
-// tab — lives in the persistent right-rail `CopilotPanel`, not here.
+// to the producing run.
 export function FeedbackDetail({ subjectId }: { subjectId: string }) {
   const query = useFeedbackForSubjects([subjectId])
   const row = query.data?.[0]
