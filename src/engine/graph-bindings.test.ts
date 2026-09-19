@@ -98,7 +98,10 @@ describe('stripNodeRefsTo', () => {
       informUser: { mode: 'off' },
       config: {
         source: ref('b', 'items'),
+        concurrency: 1,
+        stopOnError: false,
         itemExecution: 'inline',
+        itemTitle: '',
         maxItems: 10,
         subgraph: {
           version: 1,

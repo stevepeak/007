@@ -156,8 +156,15 @@ describe('collectGraphIssues', () => {
   })
 
   test('an unconnected node gets the not-connected error, not a second ref flag', () => {
+    // Spelled out rather than spread from `tool()`: spreading a WorkflowNode
+    // widens `kind` back to the union, and the `config` override then fails to
+    // type against the tool variant.
     const t: WorkflowNode = {
-      ...tool('orphan'),
+      id: 'orphan',
+      kind: 'tool',
+      position: pos,
+      label: 'orphan',
+      informUser: { mode: 'off' },
       config: {
         toolId: 't1',
         args: { q: { kind: 'ref', nodeId: 't', path: 'userText' } },
