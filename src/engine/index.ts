@@ -112,6 +112,12 @@ export {
 export { answerCriticalIds } from './graph-answer-cone'
 export { ancestorIds, predecessorIds } from './graph-traverse'
 export {
+  nodeRefs,
+  stripGraphRefsTo,
+  stripNodeRefsTo,
+  type NodeRef,
+} from './graph-bindings'
+export {
   AI_NODE_TIMEOUT_MS,
   DEFAULT_NODE_TIMEOUT_MS,
   defaultNodeTimeoutMs,
@@ -150,10 +156,7 @@ export {
   type GraphIssue,
   type GraphIssueSeverity,
 } from './graph-issues'
-export {
-  collectToolArgIssues,
-  type ToolInputSchemas,
-} from './graph-tool-args'
+export { collectToolArgIssues, type ToolInputSchemas } from './graph-tool-args'
 export {
   DEFAULT_NODE_BUDGET,
   Scheduler,
@@ -234,7 +237,6 @@ export {
   defineWfConfig,
   type AgentUsageRef,
   type BlobRefResolver,
-
   type ModelCapabilities,
   type ModelCatalog,
   type ModelCatalogEntry,
@@ -245,7 +247,6 @@ export {
   type ModelProviderKind,
   type ModelProviderStatus,
   type ProviderBudget,
-
   type RunCompletion,
   type RunContext,
   type RunFailure,

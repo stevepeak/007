@@ -7,8 +7,10 @@ import {
   type WorkflowGraph,
   type WorkflowNode,
 } from './graph'
+import { nodeRefs } from './graph-bindings'
 import { graphShapeFacts, joinViolation, switchCoverage } from './graph-rules'
 import { analyzeJoinTopology } from './graph-topology'
+import { ancestorIds } from './graph-traverse'
 
 // Author-time graph diagnostics. Where `workflowGraphSchema`'s superRefine is
 // the strict *runtime* gate (a failing graph can't run), this collects the same
@@ -279,6 +281,10 @@ function iterationMaxItemsIssue(node: WorkflowNode): GraphIssue | null {
   return null
 }
 
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
 // Collect every author-time issue for a graph. Pure and metadata-free — the UI
 // appends binding-completeness issues (missing required inputs) on top.
 export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
@@ -349,6 +355,30 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
         severity: 'warning',
         message: 'Nothing downstream — this node’s result is never used.',
       })
+    }
+
+    // Data links vs. connections. A ref names WHICH node's output to read; the
+    // edges decide WHEN this node fires. Both have to agree: a ref into a node
+    // with no path to this one reads a value that may not exist yet — the run
+    // fails with "produced no output" the moment the node fires first. A ref
+    // into a node that is gone altogether can never resolve. (An unconnected
+    // node is already an error above, so its refs get no second flag.)
+    const ancestors = new Set(ancestorIds(graph, node.id))
+    for (const { slot, ref } of nodeRefs(node)) {
+      const target = byId.get(ref.nodeId)
+      if (!target) {
+        issues.push({
+          ...base,
+          severity: 'error',
+          message: `${capitalize(slot)} reads a node that no longer exists — link it to another node's output.`,
+        })
+      } else if (inc.length > 0 && !ancestors.has(ref.nodeId)) {
+        issues.push({
+          ...base,
+          severity: 'warning',
+          message: `${capitalize(slot)} reads "${target.label}", but nothing connects that node to this one — it may not have run when this node fires. Connect it upstream, or link a node that is.`,
+        })
+      }
     }
 
     // A Race joins many upstreams and fires on the first to finish. With only

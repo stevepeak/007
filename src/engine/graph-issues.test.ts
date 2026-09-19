@@ -121,6 +121,59 @@ describe('collectGraphIssues', () => {
     ).toBe(true)
   })
 
+  test('warns when a ref reads a node with no connection into the reader', () => {
+    // The prod shape: Researcher → Output by edge, but the Output's `source`
+    // names a Race nothing routes to. The Output fires when Researcher finishes
+    // and reads a value that was never produced.
+    const g = graph(
+      [trigger, agent('x'), race('r'), output('o', 'r')],
+      [edge('t', 'x'), edge('x', 'o')],
+    )
+    const issue = collectGraphIssues(g).find(
+      (i) => i.nodeId === 'o' && /reads "r"/.test(i.message),
+    )
+    expect(issue?.severity).toBe('warning')
+  })
+
+  test('a ref into any structural ancestor is not flagged', () => {
+    // `o` reads `x` two hops up through `y` — no direct edge, still upstream.
+    const g = graph(
+      [trigger, agent('x'), agent('y'), output('o', 'x')],
+      [edge('t', 'x'), edge('x', 'y'), edge('y', 'o')],
+    )
+    expect(collectGraphIssues(g)).toEqual([])
+  })
+
+  test('errors when a ref reads a node that no longer exists', () => {
+    const g = graph(
+      [trigger, agent('x'), output('o', 'gone')],
+      [edge('t', 'x'), edge('x', 'o')],
+    )
+    const issue = collectGraphIssues(g).find(
+      (i) => i.nodeId === 'o' && /no longer exists/.test(i.message),
+    )
+    expect(issue?.severity).toBe('error')
+  })
+
+  test('an unconnected node gets the not-connected error, not a second ref flag', () => {
+    const t: WorkflowNode = {
+      ...tool('orphan'),
+      config: {
+        toolId: 't1',
+        args: { q: { kind: 'ref', nodeId: 't', path: 'userText' } },
+      },
+    }
+    const g = graph(
+      [trigger, agent('x'), t, output()],
+      [edge('t', 'x'), edge('x', 'o')],
+    )
+    const orphanIssues = collectGraphIssues(g).filter(
+      (i) => i.nodeId === 'orphan',
+    )
+    expect(orphanIssues.some((i) => /Not connected/.test(i.message))).toBe(true)
+    expect(orphanIssues.some((i) => /reads/.test(i.message))).toBe(false)
+  })
+
   test('allows a same-arm fan-in join but flags a both-arms join', () => {
     // Same-arm: branch no→x, x fans to p&q, both join at `j`. No join error.
     const sameArm = graph(

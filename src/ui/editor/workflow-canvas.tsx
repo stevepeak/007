@@ -17,7 +17,11 @@ import {
 import { LayoutGrid } from 'lucide-react'
 import { useCallback, useMemo, useRef } from 'react'
 
-import type { WorkflowGraph, WorkflowNode } from '../../engine'
+import {
+  stripNodeRefsTo,
+  type WorkflowGraph,
+  type WorkflowNode,
+} from '../../engine'
 import { useWfComponents } from '../context'
 import { Tooltip } from '../tooltip'
 
@@ -32,6 +36,7 @@ import { CONDITION_EDGE_TYPE, ConditionEdge } from './workflow-canvas-edge'
 import {
   BOOKEND_KINDS,
   engineToFlow,
+  extractEditorData,
   type EditorEdge,
   type EditorNode,
 } from './workflow-canvas-graph'
@@ -207,8 +212,29 @@ function CanvasInner({
               .filter((n) => n.parentId && removedContainers.has(n.parentId))
               .map((n) => ({ type: 'remove' as const, id: n.id }))
       onNodesChange([...filtered, ...childRemovals])
+
+      // A deleted node takes its readers' data links with it. Left in place, a
+      // ref to the gone id survives invisibly (no edge draws it) and fails the
+      // run the first time the reader fires. Scrubbing it leaves the slot
+      // unbound, which the Issues panel reports for the author to re-link.
+      const removed = new Set(
+        [...filtered, ...childRemovals]
+          .filter((c) => c.type === 'remove')
+          .map((c) => c.id),
+      )
+      if (removed.size > 0) {
+        setNodes((ns) => {
+          return ns.map((n) => {
+            const next = stripNodeRefsTo(
+              { id: n.id, position: n.position, ...n.data },
+              removed,
+            )
+            return { ...n, data: extractEditorData(next) }
+          })
+        })
+      }
     },
-    [readOnly, onNodesChange, nodes],
+    [readOnly, onNodesChange, setNodes, nodes],
   )
 
   return (
