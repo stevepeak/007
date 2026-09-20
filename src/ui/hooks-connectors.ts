@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
+import type { ConnectorDetail, ConnectorToolInfo } from '../server/protocol-connectors'
 import { useWfClient } from './context'
 import { keys } from './hooks-shared'
 
@@ -45,13 +46,37 @@ export function useConnectorCapability() {
 
 function useConnectorMutation<TInput, TResult>(
   run: (client: ReturnType<typeof useWfClient>, input: TInput) => Promise<TResult>,
-  opts: { invalidatesTools?: boolean } = {},
+  opts: {
+    invalidatesTools?: boolean
+    /**
+     * Applied to every cached connector detail the moment the mutation fires,
+     * so a per-tool toggle flips on click instead of after the write AND the
+     * refetch that follows it. The refetch still runs and is the truth; on
+     * error the cache is restored to what it held before.
+     */
+    optimistic?: (input: TInput, detail: ConnectorDetail) => ConnectorDetail
+  } = {},
 ) {
   const client = useWfClient()
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (input: TInput) => run(client, input),
-    onSuccess: () => {
+    onMutate: async (input: TInput) => {
+      if (!opts.optimistic) return undefined
+      await qc.cancelQueries({ queryKey: keys.connectorAll })
+      const previous = qc.getQueriesData<ConnectorDetail>({
+        queryKey: keys.connectorAll,
+      })
+      qc.setQueriesData<ConnectorDetail>(
+        { queryKey: keys.connectorAll },
+        (detail) => (detail ? opts.optimistic!(input, detail) : detail),
+      )
+      return previous
+    },
+    onError: (_err, _input, previous) => {
+      for (const [key, data] of previous ?? []) qc.setQueryData(key, data)
+    },
+    onSettled: () => {
       void qc.invalidateQueries({ queryKey: keys.connectors })
       void qc.invalidateQueries({ queryKey: keys.connectorAll })
       if (opts.invalidatesTools) {
@@ -89,17 +114,44 @@ export function useRefreshConnector() {
   )
 }
 
+/** Rewrite one tool inside a cached detail; a detail without it is untouched. */
+function patchTool(
+  detail: ConnectorDetail,
+  toolId: string,
+  patch: Partial<ConnectorToolInfo>,
+): ConnectorDetail {
+  if (!detail.tools.some((t) => t.id === toolId)) return detail
+  const tools = detail.tools.map((t) => (t.id === toolId ? { ...t, ...patch } : t))
+  return {
+    ...detail,
+    tools,
+    connector: {
+      ...detail.connector,
+      enabledToolCount: tools.filter((t) => t.enabled).length,
+    },
+  }
+}
+
 export function useSetConnectorToolEnabled() {
   return useConnectorMutation(
     (client, input: { toolId: string; enabled: boolean }) => { return client.setConnectorToolEnabled(input) },
-    { invalidatesTools: true },
+    {
+      invalidatesTools: true,
+      optimistic: (input, detail) => { return patchTool(detail, input.toolId, { enabled: input.enabled }) },
+    },
   )
 }
 
 export function useSetConnectorToolSideEffect() {
   return useConnectorMutation(
     (client, input: { toolId: string; sideEffect: 'read' | 'write' }) => { return client.setConnectorToolSideEffect(input) },
-    { invalidatesTools: true },
+    {
+      invalidatesTools: true,
+      optimistic: (input, detail) => { return patchTool(detail, input.toolId, {
+          sideEffect: input.sideEffect,
+          sideEffectOverridden: true,
+        }) },
+    },
   )
 }
 
