@@ -89,6 +89,13 @@ export type AgentNodeMeta = {
   }>
   totalUsage: { inputTokens: number; outputTokens: number }
   /**
+   * The model's context window as the run manifest froze it, so a viewer can
+   * read each turn's `usage.inputTokens` as a share of the window — the
+   * occupancy the context guard above steers by. Absent when the provider
+   * reported no window, and on steps recorded before it was stamped.
+   */
+  contextLength?: number
+  /**
    * Set when the agent's `toolTokenBudget` — not `maxTurns` — is what ended its
    * research. The answer is still a real answer, but it was written against
    * whatever the agent had gathered by then, so a reader comparing two runs of
@@ -356,7 +363,16 @@ function recordedMessages(
 async function runStructuredGeneration(
   args: RunAgentGenerationArgs,
 ): Promise<AgentNodeResult> {
-  const { model, modelId, output, systemPrompt, messages, sink, budget } = args
+  const {
+    model,
+    modelId,
+    output,
+    contextLength,
+    systemPrompt,
+    messages,
+    sink,
+    budget,
+  } = args
   // Only reached for the object / boolean kinds, so the schema is always there.
   const schema = structuredSchema(output)!
   const startedAt = logModelCallStart(sink, modelId, { mode: output.kind })
@@ -401,6 +417,7 @@ async function runStructuredGeneration(
       inputTokens: result.usage?.inputTokens ?? 0,
       outputTokens: result.usage?.outputTokens ?? 0,
     },
+    ...(contextLength != null ? { contextLength } : {}),
   }
   return structuredResult(output, result.object, meta)
 }
@@ -1031,6 +1048,7 @@ async function runToolLoop(
     messages: recordedMessages(messages),
     steps: stepTraces,
     totalUsage,
+    ...(contextLength != null ? { contextLength } : {}),
     ...(stoppedOnTokenBudget ? { stoppedOnTokenBudget: true } : {}),
     ...(stoppedOnContextLimit ? { stoppedOnContextLimit: true } : {}),
   }

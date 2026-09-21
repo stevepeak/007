@@ -5,6 +5,7 @@ import {
   CircleDot,
   Cog,
   FileText,
+  Gauge,
   GitBranch,
   Repeat,
   User,
@@ -21,6 +22,8 @@ import { DataView } from '../data-view'
 import { NoteMarkdown } from '../editor/note-markdown'
 import { BrandMark, inferModelBrand } from '../evals/shared'
 import { useTools } from '../hooks'
+import { useModels } from '../hooks-models'
+import { formatContext } from '../models-list-shared'
 import { type IterationMeta, readIterationMeta } from './run-activity-tree'
 import { firstLine, previewLine } from '../text-preview'
 import { toolChip } from '../tool-appearance'
@@ -49,6 +52,7 @@ type Tone =
   | 'response'
   | 'branch'
   | 'iteration'
+  | 'turn'
 
 const toneRing: Record<Tone, string> = {
   input: 'border-neutral-300 bg-white text-neutral-500',
@@ -60,6 +64,7 @@ const toneRing: Record<Tone, string> = {
   response: 'border-green-200 bg-green-50 text-green-600',
   branch: 'border-amber-200 bg-amber-50 text-amber-600',
   iteration: 'border-neutral-300 bg-neutral-50 text-neutral-600',
+  turn: 'border-neutral-200 bg-white text-neutral-400',
 }
 
 // A node in the timeline. `body` is the expandable detail — a DataView, markdown,
@@ -70,6 +75,8 @@ type LogStep = {
   icon: ReactNode
   title: ReactNode
   subtitle?: ReactNode
+  /** Right-aligned trailing content on the header line (a stat chip). */
+  aside?: ReactNode
   body?: ReactNode
 }
 
@@ -83,6 +90,9 @@ function TimelineRow({ step, last }: { step: LogStep; last: boolean }) {
         <span className="shrink-0 text-[11px] text-neutral-400">
           {step.subtitle}
         </span>
+      ) : null}
+      {step.aside ? (
+        <span className="ml-auto shrink-0 pl-2">{step.aside}</span>
       ) : null}
     </>
   )
@@ -230,6 +240,81 @@ function thinkingStep(text: string): LogStep {
   }
 }
 
+// One model round-trip in the agent loop. Marks where each turn starts in the
+// timeline and carries the context reading for it — how much the model was sent
+// on THIS turn (`usage.inputTokens`: prompt, messages and every tool result so
+// far) against the window. That is the number the engine's context guard steers
+// by, so a reader can see the window filling turn by turn, and why a loop
+// stopped gathering when it did.
+function turnStep(args: {
+  index: number
+  count: number
+  inputTokens: number | undefined
+  contextLength: number | undefined
+}): LogStep {
+  return {
+    tone: 'turn',
+    icon: <span className="text-[10px] font-semibold">{args.index + 1}</span>,
+    title: <span className="text-neutral-400">Turn {args.index + 1}</span>,
+    subtitle: `of ${args.count}`,
+    aside: (
+      <ContextChip
+        inputTokens={args.inputTokens}
+        contextLength={args.contextLength}
+      />
+    ),
+  }
+}
+
+// `15k · 21%` — the context window reading. Tints as the window fills so a
+// turn that nearly overflowed stands out without reading the numbers.
+function ContextChip({
+  inputTokens,
+  contextLength,
+}: {
+  inputTokens: number | undefined
+  contextLength: number | undefined
+}) {
+  if (inputTokens == null) return null
+  const pct = contextLength
+    ? Math.round((inputTokens / contextLength) * 100)
+    : null
+  const tone =
+    pct == null
+      ? 'bg-neutral-100 text-neutral-500'
+      : pct >= 90
+        ? 'bg-red-50 text-red-600'
+        : pct >= 70
+          ? 'bg-amber-50 text-amber-600'
+          : 'bg-neutral-100 text-neutral-500'
+  const content =
+    pct == null
+      ? `Context window · ${inputTokens.toLocaleString()} tokens were in the model's context for this turn (system prompt, messages and every tool result so far). This model reports no window size, so there is no percentage.`
+      : `Context window · ${inputTokens.toLocaleString()} tokens were in the model's context for this turn (system prompt, messages and every tool result so far) — ${pct}% of the model's ${formatContext(contextLength!)} window.`
+  return (
+    <Tooltip content={content}>
+      <span
+        className={cn(
+          'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium tabular-nums',
+          tone,
+        )}
+      >
+        <Gauge className="size-3 shrink-0" />
+        {formatTokens(inputTokens)}
+        {pct != null ? (
+          <>
+            <span className="opacity-50">·</span>
+            {pct}%
+          </>
+        ) : null}
+        <span className="font-normal opacity-60">
+          {pct != null ? `of ${formatContext(contextLength!)}` : 'tokens'}
+        </span>
+      </span>
+    </Tooltip>
+  )
+}
+
 // ── Agent stat cards ──────────────────────────────────────────────────────────
 // The header on an agent step: model, tokens, speed, cost, and the tools it
 // called as compact cards. Cost comes from the server (token usage × catalog
@@ -275,7 +360,9 @@ function StatCard({
 // Tally this step's tool calls by tool. The recorded `toolName` IS the tool's
 // registry id, so it resolves straight against the tool catalog for the icon
 // and the human-readable name (same mapping the agent editor's call list uses).
-function countToolCalls(meta: AgentNodeMeta): { toolId: string; count: number }[] {
+function countToolCalls(
+  meta: AgentNodeMeta,
+): { toolId: string; count: number }[] {
   const counts = new Map<string, number>()
   for (const s of meta.steps ?? []) {
     for (const tc of s.toolCalls ?? []) {
@@ -349,9 +436,11 @@ function ToolCallsCard({ meta }: { meta: AgentNodeMeta }) {
 function AgentMetaBar({
   meta,
   step,
+  contextLength,
 }: {
   meta: AgentNodeMeta
   step: WfRunStepDTO
+  contextLength: number | undefined
 }) {
   const inTok = meta.totalUsage.inputTokens
   const outTok = meta.totalUsage.outputTokens
@@ -373,6 +462,20 @@ function AgentMetaBar({
     (n, s) => n + (s.toolCalls?.length ?? 0),
     0,
   )
+  // The fullest the window got: the largest single turn's input, not the
+  // cumulative spend — a 5-turn loop re-sends its whole conversation every
+  // turn, so the sum says nothing about how close it came to overflowing.
+  const peakInput = (meta.steps ?? []).reduce<number | null>(
+    (peak, s) =>
+      s.usage?.inputTokens != null
+        ? Math.max(peak ?? 0, s.usage.inputTokens)
+        : peak,
+    null,
+  )
+  const peakPct =
+    peakInput != null && contextLength
+      ? Math.round((peakInput / contextLength) * 100)
+      : null
   return (
     <div className="mb-3 flex flex-wrap items-stretch gap-2">
       <StatCard
@@ -406,6 +509,39 @@ function AgentMetaBar({
         }
       />
       <StatCard label="Cost" value={formatUsd(step.costUsd)} />
+      <Tooltip
+        content={
+          peakInput == null
+            ? 'Context window · this step recorded no per-turn usage.'
+            : contextLength
+              ? `Context window · the fullest turn sent ${peakInput.toLocaleString()} tokens (system prompt, messages and tool results so far), ${peakPct}% of the model's ${formatContext(contextLength)} window. Each turn in the timeline below shows its own reading.`
+              : `Context window · the fullest turn sent ${peakInput.toLocaleString()} tokens. This model reports no window size, so there is no percentage.`
+        }
+      >
+        <StatCard
+          label="Context"
+          icon={<Gauge className="size-3.5 text-neutral-400" />}
+          value={
+            peakInput == null
+              ? '—'
+              : peakPct == null
+                ? formatTokens(peakInput)
+                : `${formatTokens(peakInput)} · ${peakPct}%`
+          }
+          sub={
+            contextLength
+              ? `of ${formatContext(contextLength)} window`
+              : 'window unknown'
+          }
+          className={cn(
+            peakPct != null && peakPct >= 90
+              ? 'border-red-200 bg-red-50'
+              : peakPct != null && peakPct >= 70
+                ? 'border-amber-200 bg-amber-50'
+                : null,
+          )}
+        />
+      </Tooltip>
       <ToolCallsCard meta={meta} />
     </div>
   )
@@ -414,6 +550,13 @@ function AgentMetaBar({
 export function RunLog({ step }: { step: WfRunStepDTO }) {
   const agentMeta = asAgentMeta(step.meta)
   const iterMeta = readIterationMeta(step.meta)
+  // The window the run froze wins; a step recorded before it was stamped falls
+  // back to the catalog's CURRENT figure for the model, which is right unless
+  // the provider has since changed it.
+  const { data: models } = useModels()
+  const contextLength =
+    agentMeta?.contextLength ??
+    models?.find((m) => m.id === agentMeta?.model)?.contextLength
   const branch = step.branchResult as {
     result?: string
     reasoning?: string
@@ -442,7 +585,16 @@ export function RunLog({ step }: { step: WfRunStepDTO }) {
       step.output && typeof step.output === 'object'
         ? (step.output as { text?: unknown }).text
         : step.output
-    for (const s of agentMeta.steps) {
+    const turnCount = agentMeta.steps.length
+    for (const [i, s] of agentMeta.steps.entries()) {
+      steps.push(
+        turnStep({
+          index: i,
+          count: turnCount,
+          inputTokens: s.usage?.inputTokens,
+          contextLength,
+        }),
+      )
       if (s.reasoning) steps.push(thinkingStep(s.reasoning))
       if (s.text && s.text !== responseText) steps.push(thinkingStep(s.text))
       for (const tc of s.toolCalls) steps.push(toolStep(tc))
@@ -485,7 +637,13 @@ export function RunLog({ step }: { step: WfRunStepDTO }) {
 
   return (
     <div>
-      {agentMeta ? <AgentMetaBar meta={agentMeta} step={step} /> : null}
+      {agentMeta ? (
+        <AgentMetaBar
+          meta={agentMeta}
+          step={step}
+          contextLength={contextLength}
+        />
+      ) : null}
       {iterMeta ? (
         <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[11px] text-neutral-500">
           <span className="inline-flex items-center gap-1 rounded bg-neutral-100 px-1.5 py-0.5 font-medium text-neutral-600">
@@ -554,4 +712,3 @@ function asAgentMeta(meta: unknown): AgentNodeMeta | null {
   }
   return null
 }
-
