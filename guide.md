@@ -1109,7 +1109,7 @@ scopes, and the client stores and silently refreshes the token from then on.
 `offline_access` is what makes that a one-time cost rather than a prompt at
 every expiry.
 
-**What it exposes.** Thirty-two tools — twenty-one reads, and eleven writes
+**What it exposes.** Thirty-three tools — twenty-one reads, and twelve writes
 registered only for a session whose token carries the write scope.
 
 | Tool                              | Gate      | What it does                                                        |
@@ -1141,6 +1141,7 @@ registered only for a session whose token carries the write scope.
 | `update_workflow_draft`           | **write** | replace a workflow's draft graph outright                           |
 | `publish_workflow`                | **write** | the draft → a new version. Refused on a lint error or a stale `baseVersionNumber` |
 | `discard_workflow_draft`          | **write** | drop the draft; says what was lost                                  |
+| `update_description`              | **write** | rewrite what a workflow, agent, Goal or Sample is *for*. Unversioned; changes nothing a run does |
 
 `run_eval` and `run_agent_preview` are writes not because they edit a definition
 but because they **spend money** — which is the line the flag is actually

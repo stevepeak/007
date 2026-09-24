@@ -3,6 +3,7 @@ import { agentWriteTools } from './tools-agents'
 import { draftTools } from './tools-drafts'
 import { evalRunReadTools, evalRunWriteTools } from './tools-eval-runs'
 import { evalReadTools, evalWriteTools } from './tools-evals'
+import { metaWriteTools } from './tools-meta'
 import { platformReadTools } from './tools-platform'
 import { workflowReadTools, workflowWriteTools } from './tools-workflows'
 
@@ -25,6 +26,7 @@ export function allTools(): WfMcpTool[] {
     ...draftTools(),
     ...evalWriteTools(),
     ...evalRunWriteTools(),
+    ...metaWriteTools(),
     ...agentWriteTools(),
     ...workflowWriteTools(),
   ]

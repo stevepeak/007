@@ -47,6 +47,7 @@ describe('the tool catalog', () => {
       'run_agent_preview',
       'run_eval',
       'update_agent_draft',
+      'update_description',
       'update_workflow_draft',
       'upsert_eval_sample',
     ])
