@@ -268,6 +268,7 @@ const wfInputSchemas: Record<keyof WfDataClient, z.ZodType> = {
   deleteEvalSet: z.object({ setId: z.string() }),
   deleteEvalRow: z.object({ rowId: z.string() }),
   getEvalRun: z.object({ evalRunId: z.string() }),
+  getEvalRunDrive: z.object({ evalRunId: z.string() }),
   finalizeEvalRun: z.object({ evalRunId: z.string() }),
   listEvalSets: z.object({ includeArchived: z.boolean().optional() }),
   listChanges: z.object({
@@ -311,6 +312,15 @@ const wfInputSchemas: Record<keyof WfDataClient, z.ZodType> = {
   createEvalRun: z.object({
     setIds: z.array(z.string()),
     total: z.number().optional(),
+    // The sweep manifest rides through as-is; `parseEvalPlan` is what validates
+    // it, on the way back out, where a malformed blob must mean "this run is
+    // not resumable" rather than an exception.
+    plan: PASSED_THROUGH.optional(),
+  }),
+  saveEvalRunDrive: z.object({
+    evalRunId: z.string(),
+    driveState: PASSED_THROUGH,
+    release: z.boolean().optional(),
   }),
   startEvalRun: z.object({
     evalRunId: z.string(),

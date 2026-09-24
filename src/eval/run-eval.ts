@@ -1,33 +1,35 @@
 import type { AgentConfig, WfDataClient } from '../server/protocol'
 
+import {
+  EMPTY_DRIVE_STATE,
+  type EvalMatrixModel,
+  type EvalMatrixPrompt,
+  type EvalPlan,
+  expandEvalCells,
+} from './plan'
+import { type EvalRunDrive, tickEvalRun } from './tick'
+
 // Running a Goal — the orchestrator, with no framework in it.
 //
-// This is client-driven on purpose: the caller creates the umbrella run, then
-// for each sample starts a real run, waits for it to reach a terminal status,
-// and grades it — concurrency-capped. A later durable orchestrator can replace
-// it without touching the protocol.
+// The caller creates the umbrella run with a frozen PLAN of every cell, then
+// drives it one non-blocking tick at a time until the plan is exhausted. The
+// tick itself lives in `./tick`; everything here is about launching a sweep and
+// about the one driver that stays attached to it.
 //
-// It lives here rather than beside the React hook that used to own it because
-// it has two callers that share nothing else: the eval report's launch dialog,
-// and the `wf-mcp` server, which runs in a bun process with no DOM and cannot
-// import a module that pulls in react-query. Everything it needs is a
-// `WfDataClient` and a way to sleep, so nothing about it was ever browser code.
+// What changed, and why it matters to a new caller: the orchestration used to
+// live entirely in the caller's process, as a loop holding the only copy of the
+// work list. If that process went away mid-sweep — a browser tab closing, an
+// MCP request ending — the remaining cells were never launched and the run was
+// stranded with nothing able to finish it. Now the plan is persisted on the run
+// row, so an attached driver is an OPTIMIZATION (it makes progress every few
+// seconds instead of every minute) rather than the only thing keeping the sweep
+// alive. A host that wires the resume backstop picks up whatever is left.
 //
-// The orchestration lives in the CALLER's process, which is the property that
-// matters most to a new caller: if that process exits mid-sweep, the remaining
-// cells are never launched and the umbrella run is never finalized — it sits at
-// `running` forever. A browser tab closing and an MCP session ending are the
-// same failure.
-
-// Errors on one sample don't abort the batch; the run is finalized over whatever
+// Errors on one cell don't abort the batch; the run is finalized over whatever
 // results landed — and EVERY cell lands something, pass, fail, or error, so the
 // run's totals always match what was requested.
-//
-// A run has TWO success states: `done` (the Output was reached — the answer is
-// final and persisted — while branches that don't feed it are still draining)
-// and `completed` (nothing left to run). A waiter after an ANSWER must accept
-// both; only a waiter for the graph to fall quiet holds out for `completed`.
-const RUN_TERMINAL = new Set(['done', 'completed', 'failed', 'cancelled'])
+
+export type { EvalMatrixModel, EvalMatrixPrompt }
 
 /**
  * How long to wait for one cell's run to reach a terminal status.
@@ -66,15 +68,6 @@ export const EVAL_CONCURRENCY_CHOICES = [1, 2, 4, 8] as const
 // so the two can't drift apart.
 const MAX_EVAL_CONCURRENCY = Math.max(...EVAL_CONCURRENCY_CHOICES)
 
-/**
- * Consecutive failed model calls before the run stops launching new tests. Once
- * the provider has refused three in a row, the rest are near-certain to fail
- * too — continuing only burns time and hammers a service that is already down.
- * Client-side timeouts do NOT count toward this: they say nothing about the
- * provider's health.
- */
-const MAX_CONSECUTIVE_CELL_ERRORS = 3
-
 function clampConcurrency(n?: number) {
   return Math.max(
     1,
@@ -82,75 +75,15 @@ function clampConcurrency(n?: number) {
   )
 }
 
-/**
- * What became of one cell's run. Returning the outcome rather than throwing on
- * the unhappy paths is what lets every one of them be recorded — a thrown
- * timeout used to be indistinguishable from a network blip and got swallowed.
- */
-type WaitOutcome =
-  | { kind: 'terminal'; status: string; error: string | null }
-  | { kind: 'timeout' }
-
-async function waitForRun(
-  client: WfDataClient,
-  wfRunId: string,
-  opts: { pollIntervalMs: number; timeoutMs: number },
-): Promise<WaitOutcome> {
-  const deadline = Date.now() + opts.timeoutMs
-  for (;;) {
-    // `getRunStatus`, not `getRun`: this loop reads exactly two fields, and at
-    // the top concurrency it runs once per matrix cell every few seconds for up
-    // to fifteen minutes. On `getRun` that was thousands of full run-inspector
-    // loads — every step's tool IO, the whole log feed, and (with no version
-    // hint passed) the serialized graph on every single tick.
-    const status = await client.getRunStatus(wfRunId)
-    if (status && RUN_TERMINAL.has(status.status)) {
-      return {
-        kind: 'terminal',
-        status: status.status,
-        error: status.error,
-      }
-    }
-    if (Date.now() > deadline) return { kind: 'timeout' }
-    await new Promise((r) => setTimeout(r, opts.pollIntervalMs))
-  }
-}
-
-async function pool<T>(
-  items: T[],
-  concurrency: number,
-  worker: (item: T) => Promise<void>,
-): Promise<void> {
-  let cursor = 0
-  const runners = Array.from(
-    { length: Math.max(1, Math.min(concurrency, items.length || 1)) },
-    async () => {
-      for (;;) {
-        const i = cursor++
-        if (i >= items.length) return
-        await worker(items[i])
-      }
-    },
-  )
-  await Promise.all(runners)
-}
-
-// One prompt variation in the matrix. `body` undefined = the agent's saved
-// prompt (the always-present baseline); a string overrides it. `label` names the
-// column in the report ("Agent's saved prompt", "Test prompt 1", …).
-export type EvalMatrixPrompt = { label: string; body?: string }
-// One model column. `attempts` is best-of-N — each attempt is a separate run of
-// every sample × prompt, so a cell aggregates all its attempts.
-export type EvalMatrixModel = { modelId: string; attempts: number }
-
 export type RunEvalInput = {
   setIds: string[]
   /**
    * Run every cell against this agent config instead of the target's published
    * version — the agent editor testing its goals against UNSAVED edits. Nothing
-   * is persisted; the config rides along on each cell's `startEvalRun`. The
-   * matrix's `modelId` / `promptBody` still layer on top of it, so a draft can
-   * be swept across models and alternate prompts exactly like a published agent.
+   * is persisted on the AGENT; the config is frozen into the run's plan so a
+   * resuming driver grades the same thing the launcher meant to. The matrix's
+   * `modelId` / `promptBody` still layer on top of it, so a draft can be swept
+   * across models and alternate prompts exactly like a published agent.
    * Omitted → the published version (every other caller).
    */
   configOverride?: AgentConfig
@@ -172,22 +105,18 @@ export type RunEvalInput = {
   onStart?: (evalRunId: string) => void
 }
 
-// The per-run unit of work: a sample crossed with one matrix cell. `modelId` /
-// `promptBody` are the overrides handed to `startEvalRun` (both undefined on the
-// plain path); `promptLabel` / `attempt` are stamped on the graded result so the
-// report can group by cell.
-type EvalJob = {
-  rowId: string
-  modelId?: string
-  promptLabel?: string
-  promptBody?: string
-  attempt?: number
-}
-
-export async function runEval(
+/**
+ * Create the umbrella run with its frozen plan, launching nothing.
+ *
+ * Split out from `runEval` because the two callers want different things after
+ * it: an attached driver ticks the sweep to completion itself, while a caller
+ * that cannot outlive the request — the MCP endpoint — starts the first batch
+ * and leaves the rest to the host's resume backstop.
+ */
+export async function createEvalSweep(
   client: WfDataClient,
   input: RunEvalInput,
-): Promise<{ evalRunId: string }> {
+): Promise<{ evalRunId: string; plan: EvalPlan }> {
   const sets = await Promise.all(
     input.setIds.map((id) => client.getEvalSet(id)),
   )
@@ -195,129 +124,109 @@ export async function runEval(
     .filter((s): s is NonNullable<typeof s> => !!s)
     .flatMap((s) => s.rows.map((row) => row.id))
 
-  // Expand the matrix into per-run cells. Absent matrix → one plain cell (no
-  // overrides), so `jobs` stays one-per-sample exactly as before.
-  const cells: Omit<EvalJob, 'rowId'>[] = input.matrix
-    ? input.matrix.models.flatMap((m) => {
-        return input.matrix!.prompts.flatMap((p) => {
-          return Array.from(
-            { length: Math.max(1, m.attempts) },
-            (_, attempt) => ({
-              modelId: m.modelId,
-              promptLabel: p.label,
-              promptBody: p.body,
-              attempt,
-            }),
-          )
-        })
-      })
-    : [{}]
-  const jobs: EvalJob[] = rowIds.flatMap((rowId) => {
-    return cells.map((cell) => ({ rowId, ...cell }))
-  })
+  const plan: EvalPlan = {
+    version: 1,
+    cells: expandEvalCells(rowIds, input.matrix),
+    configOverride: input.configOverride,
+    concurrency: clampConcurrency(input.concurrency),
+    timeoutMs: input.timeoutMs ?? EVAL_WAIT_TIMEOUT_MS,
+  }
 
   const { evalRunId } = await client.createEvalRun({
     setIds: input.setIds,
-    total: jobs.length,
+    total: plan.cells.length,
+    plan,
   })
-  // Run row exists — let the caller navigate to the live report now. The fan-out
-  // below keeps running in this (still-pending) mutation; the report polls it.
-  input.onStart?.(evalRunId)
+  return { evalRunId, plan }
+}
 
-  const wait = {
-    pollIntervalMs: input.pollIntervalMs ?? EVAL_POLL_INTERVAL_MS,
-    timeoutMs: input.timeoutMs ?? EVAL_WAIT_TIMEOUT_MS,
+/**
+ * Drive a sweep by ticking it until it finishes.
+ *
+ * `budgetMs` bounds how long this driver stays attached — a caller that cannot
+ * run indefinitely (anything inside a request) passes one and lets the backstop
+ * take the rest. Omitted, it drives to completion, which is what a browser tab
+ * does.
+ *
+ * Safe to run against a sweep another driver was previously attached to: state
+ * is re-read from storage on every tick, so cells already in flight are polled
+ * rather than started again.
+ */
+export async function driveEvalRun(
+  client: WfDataClient,
+  evalRunId: string,
+  opts: {
+    pollIntervalMs?: number
+    budgetMs?: number
+    onProgress?: (p: { done: number; total: number }) => void
+    now?: () => number
+  } = {},
+): Promise<{ done: boolean }> {
+  const pollIntervalMs = opts.pollIntervalMs ?? EVAL_POLL_INTERVAL_MS
+  const now = opts.now ?? (() => Date.now())
+  const deadline = opts.budgetMs == null ? null : now() + opts.budgetMs
+
+  for (;;) {
+    const drive = await client.getEvalRunDrive(evalRunId)
+    if (!drive) return { done: false }
+    // Another driver finished it between our read and this one, or a human
+    // cancelled it. Either way there is nothing left to do.
+    if (drive.status === 'completed' || drive.status === 'cancelled') {
+      return { done: true }
+    }
+    if (!drive.plan) {
+      // Created before plans were persisted. Nothing can resume it, and saying
+      // so beats ticking forever against a run with no work list.
+      throw new Error(
+        `Eval run ${evalRunId} has no plan, so it cannot be driven. It predates resumable sweeps.`,
+      )
+    }
+
+    const result = await tickEvalRun(client, { drive, now: now() })
+    // Out of budget with cells left: this is the last save, so hand the run
+    // back in the same write rather than leaving a heartbeat that would make it
+    // look attended by a driver that has already gone.
+    const handOff = !result.done && deadline != null && now() >= deadline
+    await client.saveEvalRunDrive({
+      evalRunId,
+      driveState: result.state,
+      release: handOff,
+    })
+    opts.onProgress?.({
+      done: result.settledKeys.length,
+      total: drive.plan.cells.length,
+    })
+
+    if (result.done) {
+      await client.finalizeEvalRun({ evalRunId })
+      return { done: true }
+    }
+    if (handOff) return { done: false }
+    await new Promise((r) => setTimeout(r, pollIntervalMs))
   }
-  let done = 0
-  // Circuit breaker state, shared across the pool's workers.
-  let consecutiveErrors = 0
-  let providerDown = false
+}
 
-  await pool(jobs, clampConcurrency(input.concurrency), async (job) => {
-    const cell = {
-      modelId: job.modelId,
-      promptLabel: job.promptLabel,
-      promptBody: job.promptBody,
-      attempt: job.attempt,
-    }
-    // Every exit from this worker goes through here. A cell with no row does
-    // not merely lose its own verdict — `finalizeEvalRun` rolls up the rows
-    // that exist, so a missing row silently shrinks the run's `total` and the
-    // report reads as if the cell was never requested.
-    const record = (error: string, wfRunId?: string) => {
-      return client
-        .recordEvalFailure({
-          evalRunId,
-          rowId: job.rowId,
-          wfRunId,
-          error,
-          ...cell,
-        })
-        .catch((e: unknown) => {
-          console.error(`[wf] eval failure not recorded for ${job.rowId}:`, e)
-        })
-    }
-
-    let wfRunId: string | undefined
-    try {
-      if (providerDown) {
-        await record(
-          `Skipped — the model provider failed ${MAX_CONSECUTIVE_CELL_ERRORS} calls in a row, so the rest of this run was not launched.`,
-        )
-        return
-      }
-
-      ;({ wfRunId } = await client.startEvalRun({
-        evalRunId,
-        rowId: job.rowId,
-        modelId: job.modelId,
-        promptBody: job.promptBody,
-        config: input.configOverride,
-      }))
-      const outcome = await waitForRun(client, wfRunId, wait)
-
-      if (outcome.kind === 'timeout') {
-        // Not a provider verdict — the run may still be going — so this does
-        // NOT trip the breaker.
-        await record(
-          `The run was still executing after ${Math.round(wait.timeoutMs / 60_000)} minutes; the report stopped waiting for it.`,
-          wfRunId,
-        )
-        return
-      }
-
-      if (outcome.status !== 'done' && outcome.status !== 'completed') {
-        // A failed or cancelled run has no gradeable output. Grading it anyway
-        // would produce a `fail` verdict that blames the Sample for what was an
-        // infrastructure failure — the other half of "pass rate 0, no idea why".
-        consecutiveErrors += 1
-        if (consecutiveErrors >= MAX_CONSECUTIVE_CELL_ERRORS)
-          providerDown = true
-        await record(
-          outcome.error ?? `The run ended as "${outcome.status}".`,
-          wfRunId,
-        )
-        return
-      }
-
-      await client.gradeEvalResult({
-        evalRunId,
-        rowId: job.rowId,
-        wfRunId,
-        ...cell,
-      })
-      consecutiveErrors = 0
-    } catch (err) {
-      // startEvalRun threw, the network dropped, grading blew up. Never
-      // swallow: the run is finalized over the rows that exist, so silence here
-      // is indistinguishable from success that produced nothing.
-      await record(err instanceof Error ? err.message : String(err), wfRunId)
-    } finally {
-      done += 1
-      input.onProgress?.({ done, total: jobs.length })
-    }
+/**
+ * Launch a sweep and stay attached to it until it finishes.
+ *
+ * The browser's path: the launch dialog calls this, `onStart` lets it navigate
+ * to the live report, and the mutation keeps ticking for as long as the tab is
+ * open. If the tab closes, the backstop finishes the sweep — which is new, and
+ * the reason this no longer has to be the only driver.
+ */
+export async function runEval(
+  client: WfDataClient,
+  input: RunEvalInput,
+): Promise<{ evalRunId: string }> {
+  const { evalRunId } = await createEvalSweep(client, input)
+  input.onStart?.(evalRunId)
+  await driveEvalRun(client, evalRunId, {
+    pollIntervalMs: input.pollIntervalMs,
+    onProgress: input.onProgress,
   })
-
-  await client.finalizeEvalRun({ evalRunId })
   return { evalRunId }
 }
+
+/** The empty drive state, re-exported for hosts wiring a resume backstop. */
+export { EMPTY_DRIVE_STATE }
+export type { EvalRunDrive }

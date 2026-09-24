@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
+import { EMPTY_DRIVE_STATE, parseEvalPlan } from '../eval/plan'
 import type {
   WfDataClient,
   WfEvalResultDTO,
@@ -27,6 +28,34 @@ function toolNamed(name: string): WfMcpTool {
 
 function stubClient(partial: Partial<WfDataClient>): WfDataClient {
   return partial as WfDataClient
+}
+
+/**
+ * The drive half of a stub client.
+ *
+ * `run_eval` no longer fires a sweep off into the background — it creates the
+ * run WITH its plan and drives one tick before answering, so the plan has to be
+ * readable back for anything to launch at all. This stubs that round trip in
+ * memory: whatever `createEvalRun` was handed comes back out of
+ * `getEvalRunDrive`, with nothing settled and nothing in flight.
+ */
+function driveStubs(over: Partial<WfDataClient> = {}): Partial<WfDataClient> {
+  let plan: unknown = null
+  return {
+    createEvalRun: async (input: { plan?: unknown }) => {
+      plan = input.plan
+      return { evalRunId: 'er_1' }
+    },
+    getEvalRunDrive: async (evalRunId: string) => ({
+      evalRunId,
+      status: 'queued',
+      plan: parseEvalPlan(plan),
+      driveState: EMPTY_DRIVE_STATE,
+      settledKeys: [],
+    }),
+    saveEvalRunDrive: async () => ({ ok: true as const }),
+    ...over,
+  }
 }
 
 function result(over: Partial<WfEvalResultDTO>): WfEvalResultDTO {
@@ -469,11 +498,13 @@ describe('run_eval — bounding the sweep', () => {
 
   test('counts prompt variations as columns, baseline included', async () => {
     const client = stubClient({
+      ...driveStubs(),
       getEvalSet: async () => setWith(30) as never,
-      createEvalRun: async () => ({ evalRunId: 'er_1' }),
-      // Hold every cell open so the assertion is about the arithmetic, not
-      // about a sweep of sixty stubbed runs finishing.
-      startEvalRun: async () => await new Promise<never>(() => {}),
+      // Started cells never reach a terminal status, so the assertion is about
+      // the arithmetic rather than about a sweep of sixty stubbed runs
+      // finishing. Only the first tick's worth actually start.
+      startEvalRun: async () => ({ wfRunId: 'run_1' }),
+      getRunStatus: async () => ({ status: 'running', error: null }) as never,
       finalizeEvalRun: async () => ({}) as never,
     })
     const out = (await toolNamed('run_eval').run(client, {
@@ -497,9 +528,9 @@ describe('run_eval — bounding the sweep', () => {
           ],
         } as never
       },
-      createEvalRun: async () => ({ evalRunId: 'er_1' }),
+      ...driveStubs(),
       startEvalRun: async () => ({ wfRunId: 'run_1' }),
-      getRunStatus: async () => ({ status: 'done', error: null }) as never,
+      getRunStatus: async () => ({ status: 'running', error: null }) as never,
       gradeEvalResult: async () => ({}) as never,
       finalizeEvalRun: async () => ({}) as never,
     })
@@ -547,26 +578,27 @@ describe('run_eval — bounding the sweep', () => {
 })
 
 describe('run_eval — returning before the sweep finishes', () => {
-  test('resolves on the run row, not on completion', async () => {
+  test('answers once the first cells are launched, not on completion', async () => {
     let finalized = false
-    let releaseCell: (() => void) | undefined
+    let starts = 0
     const client = stubClient({
+      ...driveStubs(),
       getEvalSet: async () => {
         return {
           set: { id: 'set_1' },
-          rows: [{ id: 'row_0', archived: false }],
+          rows: Array.from({ length: 6 }, (_, i) => ({
+            id: `row_${i}`,
+            archived: false,
+          })),
         } as never
       },
-      createEvalRun: async () => ({ evalRunId: 'er_1' }),
       startEvalRun: async () => {
-        // Hold the only cell open — a tool that awaited the sweep would hang
-        // here, which for a fifteen-minute cell is a dead session.
-        await new Promise<void>((r) => {
-          releaseCell = r
-        })
-        return { wfRunId: 'run_1' }
+        starts += 1
+        return { wfRunId: `run_${starts}` }
       },
-      getRunStatus: async () => ({ status: 'done', error: null }) as never,
+      // Nothing the first tick started has finished yet — which is the normal
+      // case for a sweep whose cells take minutes.
+      getRunStatus: async () => ({ status: 'running', error: null }) as never,
       gradeEvalResult: async () => ({}) as never,
       finalizeEvalRun: async () => {
         finalized = true
@@ -575,11 +607,38 @@ describe('run_eval — returning before the sweep finishes', () => {
     })
     const out = (await toolNamed('run_eval').run(client, {
       setIds: ['set_1'],
-    })) as { evalRunId: string; next: string }
+      concurrency: 2,
+    })) as { evalRunId: string; next: string; launched: { totalRuns: number } }
     expect(out.evalRunId).toBe('er_1')
+    // One tick's worth of cells, not all six: the rest are the backstop's.
+    expect(starts).toBe(2)
+    expect(out.launched.totalRuns).toBe(6)
     expect(finalized).toBe(false)
     expect(out.next).toContain('get_eval_run')
-    releaseCell?.()
+  })
+
+  // The old contract was that the tool fired the sweep into the background and
+  // returned. That silently stopped working when this endpoint became a Worker
+  // request: the background work was cancelled with the request context, and
+  // every MCP-launched run sat at `queued` with no error anywhere. What the
+  // caller is promised now is that the run is DRIVABLE without it.
+  test('leaves the rest of the sweep to the server, not to this session', async () => {
+    const client = stubClient({
+      ...driveStubs(),
+      getEvalSet: async () => {
+        return {
+          set: { id: 'set_1' },
+          rows: [{ id: 'row_0', archived: false }],
+        } as never
+      },
+      startEvalRun: async () => ({ wfRunId: 'run_1' }),
+      getRunStatus: async () => ({ status: 'running', error: null }) as never,
+      finalizeEvalRun: async () => ({}) as never,
+    })
+    const out = (await toolNamed('run_eval').run(client, {
+      setIds: ['set_1'],
+    })) as { next: string }
+    expect(out.next).toContain('runs on the server')
   })
 
   test('a failure BEFORE the run row exists still reaches the caller', async () => {
@@ -676,11 +735,14 @@ describe('run_eval — grading an unsaved draft', () => {
             currentVersion: { id: 'v1', versionNumber: 1, config: {} },
           } as never
         },
-        createEvalRun: async () => ({ evalRunId: 'er_1' }),
+        ...driveStubs(),
         startEvalRun: async (input) => {
           started.push(input)
-          return await new Promise<never>(() => {})
+          return { wfRunId: 'run_1' }
         },
+        // The launched cell never settles, so the tool answers after its first
+        // tick and the assertions are about what it started, not what it graded.
+        getRunStatus: async () => ({ status: 'running', error: null }) as never,
         finalizeEvalRun: async () => ({}) as never,
         ...over,
       }),

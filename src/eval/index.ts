@@ -46,13 +46,31 @@ export {
 } from './grade'
 export { EVAL_NODE_EXECUTION } from './execution-policy'
 export {
+  createEvalSweep,
   DEFAULT_EVAL_CONCURRENCY,
+  driveEvalRun,
   EVAL_CONCURRENCY_CHOICES,
   runEval,
   type EvalMatrixModel,
   type EvalMatrixPrompt,
   type RunEvalInput,
 } from './run-eval'
+export {
+  EMPTY_DRIVE_STATE,
+  evalCellKey,
+  expandEvalCells,
+  parseEvalDriveState,
+  parseEvalPlan,
+  type EvalCell,
+  type EvalDriveState,
+  type EvalPlan,
+} from './plan'
+export {
+  MAX_CONSECUTIVE_CELL_ERRORS,
+  tickEvalRun,
+  type EvalRunDrive,
+  type EvalTickResult,
+} from './tick'
 export {
   buildAgentWrapperGraph,
   ensureAgentEvalWrapper,

@@ -7,6 +7,8 @@ import type {
 import type { AgentConfig, WorkflowGraph } from '../engine/graph'
 import type { TriggerEventOption } from '../engine/trigger-registry'
 import type { CheckTree, EvalSampleInput, EvalTools } from '../eval/checks'
+import type { EvalDriveState, EvalPlan } from '../eval/plan'
+import type { EvalRunDrive } from '../eval/tick'
 
 import type {
   AgentPreviewInput,
@@ -462,7 +464,37 @@ export interface WfDataClient {
   createEvalRun(input: {
     setIds: string[]
     total?: number
+    /**
+     * The frozen sweep manifest (`EvalPlan`) — every cell this run was launched
+     * to produce. Persisting it is what makes the run resumable by a driver
+     * other than its launcher; omitted, the run behaves as it did before and
+     * only its launcher can finish it.
+     */
+    plan?: EvalPlan
   }): Promise<{ evalRunId: string }>
+  /**
+   * The state a driver needs to advance a sweep: the frozen plan, the mutable
+   * drive state, and the cell identity of every result already written.
+   *
+   * Separate from `getEvalRun` because this is polled for the length of a run
+   * and that one is a report load — live cost/latency stats per result, snapshot
+   * drift, previous-hash lookups. Returns null when the run is missing.
+   */
+  getEvalRunDrive(evalRunId: string): Promise<EvalRunDrive | null>
+  /**
+   * Persist a driver's state and stamp its heartbeat (see `EvalDriveState`).
+   *
+   * `release: true` clears the heartbeat instead of stamping it, handing the run
+   * back so a host's resume backstop adopts it on its next pass. A driver that
+   * is stopping with cells left — out of budget, or a request that has to answer
+   * now — must release, or its own last heartbeat would make the run look
+   * attended for a full stale window.
+   */
+  saveEvalRunDrive(input: {
+    evalRunId: string
+    driveState: EvalDriveState
+    release?: boolean
+  }): Promise<{ ok: true }>
   /**
    * Start ONE row's run for real — a `simulate: true, isEval: true` graph run
    * against the set's target, applying the row's tool setting. This

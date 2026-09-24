@@ -143,9 +143,11 @@ export function createWfDataClient(call: WfDataTransport): WfDataClient {
     // a slow failure-recorder would just compound the failure it's recording.
     recordEvalFailure: bind('recordEvalFailure'),
     finalizeEvalRun: bind('finalizeEvalRun'),
+    saveEvalRunDrive: bind('saveEvalRunDrive'),
     listChanges: bind('listChanges'),
     listEvalRuns: bind('listEvalRuns'),
     getEvalRun: (evalRunId) => send('getEvalRun', { evalRunId }),
+    getEvalRunDrive: (evalRunId) => send('getEvalRunDrive', { evalRunId }),
 
     // Feedback.
     submitFeedback: bind('submitFeedback'),

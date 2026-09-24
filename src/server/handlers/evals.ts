@@ -12,6 +12,11 @@ import {
 } from '../../eval'
 import type { EvalRowSnapshot } from '../../eval/checks'
 import {
+  evalCellKey,
+  parseEvalDriveState,
+  parseEvalPlan,
+} from '../../eval/plan'
+import {
   buildEvalSnapshot,
   changesBetween,
   createEvalRun,
@@ -20,6 +25,7 @@ import {
   deleteEvalSet,
   getEvalRow,
   getEvalRun,
+  getEvalRunDrive,
   getEvalSet,
   getRunForGrading,
   hashEvalSnapshot,
@@ -29,6 +35,7 @@ import {
   loadPreviousEvalRun,
   loadPreviousSnapshotHashes,
   loadRunStats,
+  saveEvalRunDrive,
   updateEvalRun,
   updateEvalSet,
   upsertEvalRow,
@@ -43,6 +50,7 @@ import type {
 
 import { evalResultDTO, evalRunSummary, evalSetSummary } from './eval-dto'
 import {
+  BadRequestError,
   NotFoundError,
   requireHook,
   requireStr,
@@ -163,6 +171,8 @@ export function buildEvalHandlers<TDeps>(
   | 'finalizeEvalRun'
   | 'listEvalRuns'
   | 'getEvalRun'
+  | 'getEvalRunDrive'
+  | 'saveEvalRunDrive'
 > {
   return {
     listEvalSets: async (c) => {
@@ -332,19 +342,57 @@ export function buildEvalHandlers<TDeps>(
     },
 
     createEvalRun: async (c) => {
-      const p = c.params as { setIds?: unknown; total?: number }
+      const p = c.params as { setIds?: unknown; total?: number; plan?: unknown }
       const setIds = Array.isArray(p.setIds)
         ? p.setIds.filter((s): s is string => typeof s === 'string')
         : []
       if (setIds.length === 0) {
         throw new Error('createEvalRun requires at least one set id.')
       }
+      // Validated on the way IN so a run is never created with a plan that
+      // can't be read back — a run whose plan fails to parse is exactly the
+      // stranded run this column exists to prevent.
+      const plan = p.plan == null ? null : parseEvalPlan(p.plan)
+      if (p.plan != null && !plan) {
+        throw new BadRequestError('The eval plan is malformed.')
+      }
       const evalRunId = await createEvalRun(c.db, {
         setIds,
         total: p.total,
         createdBy: c.ctx.userId,
+        plan,
       })
       return { evalRunId }
+    },
+
+    getEvalRunDrive: async (c) => {
+      const evalRunId = requireStr(c.params, 'evalRunId')
+      const found = await getEvalRunDrive(c.db, evalRunId)
+      if (!found) return null
+      return {
+        evalRunId,
+        status: found.run.status,
+        plan: parseEvalPlan(found.run.plan),
+        driveState: parseEvalDriveState(found.run.driveState),
+        // The cell identity of every result already written. This — not the
+        // driver's memory — is what makes a tick safe to repeat: a cell with a
+        // row is never started again, whoever started it the first time.
+        settledKeys: found.cells.map(evalCellKey),
+      }
+    },
+
+    saveEvalRunDrive: async (c) => {
+      const evalRunId = requireStr(c.params, 'evalRunId')
+      const p = c.params as { driveState?: unknown; release?: boolean }
+      await saveEvalRunDrive(c.db, {
+        evalRunId,
+        driveState: parseEvalDriveState(p.driveState),
+        // Releasing clears the heartbeat, which is what makes the run adoptable
+        // again immediately rather than after a stale window this driver has no
+        // reason to hold.
+        heartbeatAt: p.release === true ? null : undefined,
+      })
+      return { ok: true }
     },
 
     startEvalRun: async (c) => {

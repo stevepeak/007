@@ -1,4 +1,16 @@
-import { and, asc, desc, eq, inArray, lt, ne, sql } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  ne,
+  or,
+  sql,
+} from 'drizzle-orm'
 
 import {
   checkTreeSchema,
@@ -297,7 +309,17 @@ export async function deleteEvalRow(db: WfDb, rowId: string) {
 
 export async function createEvalRun(
   db: WfDb,
-  input: { setIds: string[]; total?: number; createdBy?: string },
+  input: {
+    setIds: string[]
+    total?: number
+    createdBy?: string
+    /**
+     * The frozen sweep manifest. Persisted so the run can be resumed by a
+     * driver other than the one that created it — without it the cell list
+     * exists only in the launching process and dies with it.
+     */
+    plan?: unknown
+  },
 ): Promise<string> {
   const id = crypto.randomUUID()
   await db.insert(wfEvalRun).values({
@@ -306,8 +328,138 @@ export async function createEvalRun(
     total: input.total ?? 0,
     status: 'queued',
     createdBy: input.createdBy ?? null,
+    plan: input.plan ?? null,
+    // A run starts with a fresh heartbeat so the backstop leaves it alone for
+    // one stale window — long enough for the launcher to get its first cells
+    // going without a cron racing it from the very first second.
+    heartbeatAt: new Date(),
   })
   return id
+}
+
+/**
+ * Everything a driver needs to advance a run: its plan, its mutable drive
+ * state, and the identity of every cell that already has a result.
+ *
+ * Deliberately narrower than `getEvalRun`, which enriches every result with
+ * live cost/latency stats, snapshot drift and previous-hash lookups. This is
+ * polled every few seconds for the length of a sweep; it reads one run row and
+ * four columns of its results.
+ */
+export async function getEvalRunDrive(db: WfDb, evalRunId: string) {
+  const [run] = await db
+    .select()
+    .from(wfEvalRun)
+    .where(eq(wfEvalRun.id, evalRunId))
+    .limit(1)
+  if (!run) return null
+  const cells = await db
+    .select({
+      rowId: wfEvalResult.rowId,
+      modelId: wfEvalResult.modelId,
+      promptLabel: wfEvalResult.promptLabel,
+      attempt: wfEvalResult.attempt,
+    })
+    .from(wfEvalResult)
+    .where(eq(wfEvalResult.evalRunId, evalRunId))
+  return { run, cells }
+}
+
+/**
+ * Persist a driver's state and stamp its heartbeat.
+ *
+ * The heartbeat is what the backstop reads to decide whether a run still has
+ * someone working on it. Writing it here — on every tick, from whoever is
+ * driving — is what keeps a cron from stealing cells out from under a browser
+ * tab that is mid-sweep.
+ */
+export async function saveEvalRunDrive(
+  db: WfDb,
+  input: {
+    evalRunId: string
+    driveState: unknown
+    /**
+     * NULL hands the run BACK — it reads as unattended immediately, so the next
+     * backstop pass adopts it. A driver that is stopping with work left (out of
+     * budget, or a request that must answer now) writes null; one that is still
+     * on the run writes the current time.
+     *
+     * Null rather than "now minus the stale window" because the SDK has no
+     * business knowing how long a host's window is, and `listStaleEvalRuns`
+     * already counts a null heartbeat as stale.
+     */
+    heartbeatAt?: Date | null
+  },
+) {
+  await db
+    .update(wfEvalRun)
+    .set({
+      driveState: input.driveState,
+      heartbeatAt: input.heartbeatAt === undefined ? new Date() : input.heartbeatAt,
+    })
+    .where(eq(wfEvalRun.id, input.evalRunId))
+}
+
+/**
+ * Unfinished runs whose driver has gone quiet — the backstop's work list.
+ *
+ * `plan IS NOT NULL` excludes runs created before plans were persisted: there
+ * is no work list to resume from, so adopting one could only mean re-running
+ * cells that may already have results.
+ */
+export async function listStaleEvalRuns(
+  db: WfDb,
+  input: { staleBefore: Date; limit?: number },
+) {
+  return await db
+    .select({ id: wfEvalRun.id })
+    .from(wfEvalRun)
+    .where(
+      and(
+        inArray(wfEvalRun.status, ['queued', 'running']),
+        isNotNull(wfEvalRun.plan),
+        or(
+          isNull(wfEvalRun.heartbeatAt),
+          lt(wfEvalRun.heartbeatAt, input.staleBefore),
+        ),
+      ),
+    )
+    .orderBy(asc(wfEvalRun.heartbeatAt))
+    .limit(clampLimit(input.limit, { fallback: 5, max: 25 }))
+}
+
+/**
+ * Take ownership of a stale run by stamping the heartbeat, returning false if
+ * someone else got there first.
+ *
+ * The `heartbeat_at < staleBefore` predicate is the whole lease: it is checked
+ * and the row is claimed in ONE statement, so two overlapping backstop
+ * invocations cannot both decide a run is theirs and double-start its cells.
+ */
+export async function claimStaleEvalRun(
+  db: WfDb,
+  input: { evalRunId: string; staleBefore: Date },
+): Promise<boolean> {
+  const now = new Date()
+  const res = await db
+    .update(wfEvalRun)
+    .set({ heartbeatAt: now })
+    .where(
+      and(
+        eq(wfEvalRun.id, input.evalRunId),
+        inArray(wfEvalRun.status, ['queued', 'running']),
+        or(
+          isNull(wfEvalRun.heartbeatAt),
+          lt(wfEvalRun.heartbeatAt, input.staleBefore),
+        ),
+      ),
+    )
+  // D1 and better-sqlite3 both report affected rows here; a driver that can't
+  // tell would have to assume it won, so treat an absent count as a win and
+  // let the per-cell in-flight check be the backstop's backstop.
+  const changed = (res as { meta?: { changes?: number }; changes?: number })
+  const count = changed.meta?.changes ?? changed.changes
+  return count == null || count > 0
 }
 
 /** Patch an eval run's lifecycle + rolled-up counts/score. */

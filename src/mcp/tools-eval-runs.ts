@@ -2,8 +2,9 @@ import { z } from 'zod'
 
 import type { CheckResult, EvalCheck } from '../eval/checks'
 import {
+  createEvalSweep,
   DEFAULT_EVAL_CONCURRENCY,
-  runEval,
+  driveEvalRun,
   type RunEvalInput,
 } from '../eval/run-eval'
 import { clip } from '../server/clip'
@@ -22,12 +23,17 @@ import { draftOrPublished } from './tools-agents'
 //
 // ── Why launching does not block ─────────────────────────────────────────────
 //
-// `runEval` fans every (sample × model × prompt × attempt) cell out into a real
-// run and waits up to fifteen minutes per cell. A tool call that awaited all of
-// that would time out long before the report existed. So `run_eval` resolves on
-// `onStart` — the moment the umbrella run row exists — and the model polls
-// `get_eval_run`. That is also how the launch dialog behaves; the report page it
-// navigates to is a poller.
+// A sweep is every (sample × model × prompt × attempt) cell run for real, which
+// takes minutes to tens of minutes. A tool call that awaited all of that would
+// time out long before the report existed. So `run_eval` creates the run with
+// its frozen plan, drives one tick to get the first cells moving, and returns;
+// the model polls `get_eval_run`. That is also how the launch dialog behaves —
+// the report page it navigates to is a poller.
+//
+// What it must NOT do is keep orchestrating after it answers. This endpoint is
+// a single Worker request and its context dies with the response, so work left
+// running there is simply cancelled. The rest of the sweep belongs to the
+// host's resume backstop, which reads the plan off the run row.
 //
 // The orchestration runs in THIS process. If the MCP session ends mid-sweep, the
 // remaining cells are never launched and the run is never finalized — it sits at
@@ -403,7 +409,7 @@ export function evalRunWriteTools(): WfMcpTool[] {
             : 1
 
         // A sweep is models × prompts; with no model to run them on there is no
-        // cell for a prompt variation to be, and `runEval` would expand the
+        // cell for a prompt variation to be, and the plan would expand the
         // matrix to zero jobs and finalize an empty report.
         if (models.length === 0 && (prompts.length > 0 || attempts > 1)) {
           throw new Error(
@@ -510,40 +516,30 @@ export function evalRunWriteTools(): WfMcpTool[] {
               : undefined,
         }
 
-        // Resolve on `onStart`, not on completion: the sweep takes minutes to
-        // tens of minutes and a tool call cannot wait that long. Failures BEFORE
-        // the run row exists still reach the caller, because they reject this
-        // promise before it settles.
-        let started = false
-        const evalRunId = await new Promise<string>((resolve, reject) => {
-          runEval(client, {
-            ...input,
-            onStart: (id) => {
-              started = true
-              resolve(id)
-            },
-          }).then(
-            () => {},
-            (err: unknown) => {
-              if (started) {
-                // The tool call has already returned, so this rejection lands
-                // nowhere and the log is the only place left to say it. Never
-                // silent: a sweep that dies half way leaves the run stuck at
-                // `running` with nothing anywhere explaining why.
-                console.error('[wf-mcp] eval sweep failed:', err)
-                return
-              }
-              reject(err instanceof Error ? err : new Error(String(err)))
-            },
-          )
-        })
+        // Create the run with its frozen plan, then drive exactly ONE tick:
+        // enough to launch the first cells so the report shows movement and the
+        // run leaves `queued`, and short enough that the tool still answers in
+        // seconds. The host's resume backstop drives the rest.
+        //
+        // This endpoint is why sweeps had to become resumable at all. It runs
+        // as a single Worker request, whose context is destroyed the instant it
+        // responds — so the old fire-and-forget orchestration was cancelled
+        // before its first cell started and every MCP-launched run sat at
+        // `queued` forever, with the rejection landing in a log nobody read.
+        // Now nothing here needs to outlive the response.
+        const { evalRunId, plan } = await createEvalSweep(client, input)
+        await driveEvalRun(client, evalRunId, { budgetMs: 0 })
 
         return {
           evalRunId,
           launched: {
             samples,
             cellsPerSample: columns,
-            totalRuns: cells,
+            // The plan's own count, not the estimate the cap was checked
+            // against: a set whose rows were archived between the count and the
+            // expansion produces fewer cells, and the report will show that
+            // number rather than this one.
+            totalRuns: plan.cells.length,
             // Stated on the way out because the report itself doesn't say it:
             // a draft run and a published run look identical afterwards.
             target: configOverride
@@ -559,7 +555,7 @@ export function evalRunWriteTools(): WfMcpTool[] {
                 }
               : {}),
           },
-          next: `The sweep is running in this session. Poll get_eval_run("${evalRunId}") every 20-30s until status is "completed". Read \`errored\` separately from \`failed\` — an errored cell never produced an answer to grade.`,
+          next: `The sweep runs on the server, not in this session — it finishes whether or not you stay connected. Poll get_eval_run("${evalRunId}") every 20-30s until status is "completed". Read \`errored\` separately from \`failed\` — an errored cell never produced an answer to grade.`,
         }
       },
     },
