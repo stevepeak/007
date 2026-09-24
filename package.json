@@ -61,12 +61,12 @@
     "@tiptap/pm": "^3.31.3",
     "@tiptap/react": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",
-    "@xyflow/react": "^12.11.6",
-    "ai": "^7.0.112",
+    "@xyflow/react": "^12.12.0",
+    "ai": "^7.0.113",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.3",
     "jsonata": "^2.2.2",
-    "lucide-react": "^1.47.0",
+    "lucide-react": "^1.48.0",
     "react-hook-form": "^7.88.0",
     "react-is": "^19.3.0",
     "recharts": "^3.10.1",
@@ -83,7 +83,7 @@
     }
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260923.1",
+    "@cloudflare/workers-types": "^5.20260924.1",
     "@dexaai/config": "^0.0.10",
     "@ocavue/eslint-config": "^4.18.0",
     "@types/bun": "^1.4.2",
@@ -96,6 +96,6 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "typescript": "^5.9.3",
-    "wrangler": "^4.137.0"
+    "wrangler": "^4.138.0"
   }
 }
