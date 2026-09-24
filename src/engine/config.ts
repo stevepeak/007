@@ -154,6 +154,16 @@ export type RunContext = {
    * existed.
    */
   actorId?: string
+  /**
+   * Opaque host scope, handed to `buildRunDeps` verbatim. See
+   * `StartGraphRunInput.hostContext` for why it is a map and why it needs no
+   * `wf_run` column. The SDK never reads a key: the three fields above are
+   * IDENTITY (who/what this run is for), this is everything else a host's tools
+   * need in scope — a tenant id, a region — that identity shouldn't be bent to
+   * carry. Undefined for runs started before it existed, and for any host that
+   * has no such scope.
+   */
+  hostContext?: Record<string, string>
   triggerKind: string
   /**
    * Whether this generation should use the model's reasoning / thinking. The

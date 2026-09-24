@@ -28,6 +28,24 @@ export type StartGraphRunInput = {
    * without a host DB join. Omit for unattended runs (cron, ingest, evals).
    */
   actorId?: string
+  /**
+   * Opaque host scope for this run, carried verbatim to `buildRunDeps`.
+   *
+   * The SDK never reads a key and never assigns meaning to one: this is the
+   * escape hatch for host scope that isn't identity, and so has no business
+   * being squeezed into `subjectId`/`correlationId`/`actorId`. A host with a
+   * tenant (a firm, a workspace) puts it here; 007 itself stays
+   * single-workspace.
+   *
+   * A map rather than one more named field, so the NEXT host scope is a key
+   * instead of another release of this package.
+   *
+   * Carried in `GraphWorkflowParams`, which both engines persist themselves, so
+   * it survives a resume without a `wf_run` column. Add a column only if a
+   * scope ever needs to be QUERIED (filtering the runs explorer by firm) — the
+   * three identity columns exist for listing and authorization, not for resume.
+   */
+  hostContext?: Record<string, string>
   promptVariables?: Record<string, string | undefined>
   /**
    * Eval signal — execute the real graph and write a real trace, but neutralize

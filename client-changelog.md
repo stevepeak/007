@@ -228,8 +228,7 @@ an API key and a `fetch`, so there is nothing to migrate to.
 **Check your agents and graphs for `tavily_search` before upgrading.** A
 registry that no longer has the id fails the run with `Tool 'tavily_search' is
 not registered.` at the node that calls it, not at startup. Point those nodes
-somewhere else first. (1121law had none — no spec, no agent version, no workflow
-graph referenced it.)
+somewhere else first.
 
 Web search, if you want it back, is now a connector: any MCP server that offers
 it plugs in through `/wf/connectors` without shipping a tool in this package.

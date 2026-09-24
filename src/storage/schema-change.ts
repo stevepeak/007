@@ -14,9 +14,10 @@ import { createdAt } from './schema-common'
 // no actor and no history whatsoever. So when an eval score moved there was no
 // way to tell whether the agent changed or the test did.
 //
-// Shaped after the host's own `audit_event` table on purpose, but it lives HERE,
-// in law-wf, next to the rows it describes. The host's table is in law-db, and a
-// cross-database write cannot be atomic with the mutation it records.
+// Shaped after a host's own `audit_event` table on purpose, but it lives HERE,
+// in the wf database, next to the rows it describes. A host's table is in its
+// own database, and a cross-database write cannot be atomic with the mutation
+// it records.
 
 export const WF_CHANGE_ENTITY_KINDS = [
   'workflow',

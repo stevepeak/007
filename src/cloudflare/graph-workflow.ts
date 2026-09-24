@@ -107,6 +107,12 @@ export type GraphRunContextInput = {
   correlationId?: string
   /** The host principal this run acts for; opaque, see `RunContext.actorId`. */
   actorId?: string
+  /**
+   * Opaque host scope; see `RunContext.hostContext`. Carried in the params
+   * rather than re-read from `wf_run`, which is what makes it survive a resume
+   * on either engine and be inherited by a child run for free.
+   */
+  hostContext?: Record<string, string>
   triggerKind: string
   promptVariables?: Record<string, string | undefined>
   /** Eval signal — under simulate, side-effecting tools are neutralized. */

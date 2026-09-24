@@ -29,6 +29,13 @@ export const wfRun = sqliteTable(
     // two above — persisted so a failed run can name its user (and attribute
     // its Sentry trace) without the host re-deriving identity from subject_id.
     actorId: text('actor_id'),
+    // Opaque host SCOPE (not identity) — see `RunContext.hostContext`. The run
+    // itself carries this in its engine params, so it survives a resume without
+    // this column; the column exists because a RETRY rebuilds its input from
+    // this row, and a retry that silently dropped the firm would re-run a
+    // firm-scoped tool with no credential to authenticate with.
+    hostContext: text('host_context', { mode: 'json' })
+      .$type<Record<string, string>>(),
     triggerKind: text('trigger_kind').notNull(),
     // Cloudflare Workflows run id — used by RunRoom and to scope writes from
     // concurrent attempts to the right row.

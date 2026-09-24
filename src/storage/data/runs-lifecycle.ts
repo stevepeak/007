@@ -27,6 +27,8 @@ export async function createRun(
     correlationId?: string
     /** The host principal this run acts for; opaque, see `RunContext.actorId`. */
     actorId?: string
+    /** Opaque host scope; see `RunContext.hostContext` and `wf_run.host_context`. */
+    hostContext?: Record<string, string>
     /** Marks this as an eval-produced run so the Runs explorer excludes it. */
     isEval?: boolean
     /** Stable 32-hex trace id for the run's Sentry spans + deep-link. */
@@ -57,6 +59,7 @@ export async function createRun(
     subjectId: input.subjectId ?? null,
     correlationId: input.correlationId ?? null,
     actorId: input.actorId ?? null,
+    hostContext: input.hostContext ?? null,
     isEval: input.isEval ?? false,
     sentryTraceId: input.sentryTraceId ?? null,
     hostRelease: input.hostRelease ?? null,

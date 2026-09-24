@@ -331,6 +331,9 @@ export async function getRunRetrySource(db: WfDb, runId: string) {
         triggerKind: wfRun.triggerKind,
         subjectId: wfRun.subjectId,
         correlationId: wfRun.correlationId,
+        // Carried through a retry so the new run keeps the original's scope —
+        // a firm-scoped tool has no credential without it.
+        hostContext: wfRun.hostContext,
       })
       .from(wfRun)
       .where(eq(wfRun.id, runId))

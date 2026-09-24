@@ -224,6 +224,7 @@ export function buildRunHandlers<TDeps>(
           triggerInput: source.triggerInput,
           subjectId: source.subjectId,
           correlationId: source.correlationId,
+          hostContext: source.hostContext,
         },
         ctx: c.ctx,
         req: c.req,

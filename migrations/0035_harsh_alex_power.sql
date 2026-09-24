@@ -1,0 +1,1 @@
+ALTER TABLE `wf_run` ADD `host_context` text;

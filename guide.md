@@ -530,9 +530,9 @@ then commit the new SQL here and let the host apply it.
 > `wf_*` migrations always need a **separate** config + `apply` step (exactly
 > step 2 above). Point that step at the SDK's own database — then each set owns
 > its own `d1_migrations` ledger and the collision described at the top of this
-> section cannot happen. Worked example: 1121law runs two `apply` steps in its
-> `deploy-migrations` job, one for `packages/db` → `law-db`, one for the wf
-> config → `law-wf`, and wraps both in a single `bun run db:migrate`.
+> section cannot happen. Worked example: a host runs two `apply` steps in its
+> `deploy-migrations` job, one for its app config → `newco-db`, one for the wf
+> config → `newco-wf`, and wraps both in a single `bun run db:migrate`.
 >
 > **Migrating from a shared database?** The order that matters is: create the new
 > D1 and apply the migrations to it _first_ (inert — nothing reads it yet), then
@@ -575,8 +575,8 @@ script — fill the `wrangler.jsonc` placeholders with real IDs first, or pass
 > export WF_D1_CONFIG=../../apps/workflows/wrangler.jsonc
 > export WF_D1_STATE=../../.wrangler/state
 >
-> # 1121law/.wf-migrate.env (packages/db/wrangler.wf.jsonc binds WF_DB → law-wf, migrations_dir → ../007/migrations)
-> export WF_D1_NAME=law-wf
+> # otherco/.wf-migrate.env (packages/db/wrangler.wf.jsonc binds WF_DB → otherco-wf, migrations_dir → ../007/migrations)
+> export WF_D1_NAME=otherco-wf
 > export WF_D1_CONFIG=../../packages/db/wrangler.wf.jsonc
 > export WF_D1_STATE=../../.wrangler/state
 > ```
@@ -599,9 +599,9 @@ script — fill the `wrangler.jsonc` placeholders with real IDs first, or pass
 >   drop `.githooks/post-merge` and activate it once per clone with
 >   `git config core.hooksPath .githooks` (run inside the submodule). The hook
 >   runs `bun run db:migrate:local` when `migrations/` changed.
-> - **The host repo (1121law):** it uses Husky, so add `.husky/post-merge` — no
->   per-clone config needed (Husky wires `core.hooksPath` on `bun install`). Gate
->   it on `packages/db/migrations/` and run that package's `db:migrate:local`.
+> - **The host repo:** if it uses Husky, add `.husky/post-merge` — no per-clone
+>   config needed (Husky wires `core.hooksPath` on `bun install`). Gate it on the
+>   host's own migrations dir and run that package's `db:migrate:local`.
 >
 > Both guard on `git diff-tree ORIG_HEAD HEAD` so ordinary pulls stay fast, and
 > `wrangler d1 migrations apply --local` is idempotent (only the missing

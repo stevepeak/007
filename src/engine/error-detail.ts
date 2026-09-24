@@ -184,7 +184,7 @@ function stringifyThrown(value: unknown): string {
  * reached Cloudflare's log as BARE STACK FRAMES — no error name, no message,
  * and no `cause` — which is precisely where the diagnosis lives: drizzle's own
  * message is only the SQL it ran, and the D1 rejection hangs off `cause`. A
- * `law-wf` outage on 2026-08-20 was therefore unattributable after the fact.
+ * wf D1 outage on 2026-08-20 was therefore unattributable after the fact.
  * (workerd's `err.stack` DOES carry the `Name: message` header, and so does its
  * console — the loss happens somewhere in the deployed pipeline: minified
  * bundle → OpenNext → log ingestion.) Composing the line ourselves means the

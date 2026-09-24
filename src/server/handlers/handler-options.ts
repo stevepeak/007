@@ -125,7 +125,7 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
    * so a wrapper that only sees unhandled throws — `Sentry.withSentry` around
    * the Worker's fetch, say — never learns the request failed at all. Without
    * this hook a broken data-plane call is visible only as a console line, which
-   * is exactly how a `law-wf` D1 outage on 2026-08-20 produced zero Sentry
+   * is exactly how a wf D1 outage on 2026-08-20 produced zero Sentry
    * issues. Only genuine faults arrive here: `BadRequestError` / `ZodError`
    * (400), `NotFoundError` (404), and `UnauthorizedError` (403) all return
    * before it.
@@ -261,6 +261,8 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
       triggerInput: unknown
       subjectId: string | null
       correlationId: string | null
+      /** The original run's opaque host scope; see `RunContext.hostContext`. */
+      hostContext: Record<string, string> | null
     }
     ctx: WfServerContext
     req: Request

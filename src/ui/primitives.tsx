@@ -11,7 +11,7 @@ import type {
 import { cn } from './cn'
 
 // UI primitives are INJECTED. The SDK's components render these from context, so
-// a host (1121law) passes its own shadcn/design-system components via
+// a host app passes its own shadcn/design-system components via
 // `WfSdkProvider components={{...}}` and everything themes consistently. A
 // neutral Tailwind default set ships for standalone use. New primitives are
 // added here as components need them (additive).
