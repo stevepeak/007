@@ -25,6 +25,7 @@ import {
   type WfServerContext,
 } from './handlers/shared'
 import { buildWorkflowHandlers } from './handlers/workflows'
+import { createWfDataClient } from './data-client'
 import type { WfDataClient } from './protocol'
 
 export type {
@@ -410,6 +411,115 @@ function buildHandlers<TDeps>(
   return handlers
 }
 
+/**
+ * Look a method up and validate its params against the registered schema.
+ *
+ * Throws `BadRequestError` rather than answering a `Response`, so the two
+ * callers below can render a rejection in their own vocabulary — an HTTP 400
+ * for the mounted route, a thrown error for the in-process client.
+ */
+function resolveCall(
+  handlers: WfHandlers,
+  method: string | undefined,
+  rawParams: unknown,
+): { handler: HandlerFn; params: unknown } {
+  if (!method) throw new BadRequestError('Missing method')
+  const handler = (handlers as Record<string, HandlerFn>)[method]
+  if (!handler) throw new BadRequestError(`Unknown method '${method}'`)
+  const params = rawParams ?? {}
+  const schema = wfInputSchemas[method as keyof WfDataClient]
+  if (!schema) return { handler, params }
+  const parsed = schema.safeParse(params)
+  if (!parsed.success) {
+    throw new BadRequestError(
+      `Invalid params for '${method}': ${parsed.error.message}`,
+    )
+  }
+  return { handler, params: parsed.data }
+}
+
+/**
+ * Run one resolved call and return its VALUE.
+ *
+ * Everything a handler is given — the db handle, the lazy env/analytics
+ * resolvers, the change recorder bound to the acting user — is assembled here,
+ * so the in-process client gets byte-for-byte the same treatment as an HTTP
+ * caller. That equivalence is the whole reason this is shared rather than
+ * reimplemented: a change recorded over MCP has to land in `wf_change` exactly
+ * as a click in the editor does, attributed to the same actor.
+ */
+async function invokeHandler<TDeps>(
+  opts: CreateWfSdkHandlersOptions<TDeps>,
+  handler: HandlerFn,
+  params: unknown,
+  ctx: WfServerContext,
+  req: Request,
+): Promise<unknown> {
+  const db = await opts.resolveDb(req)
+  // Resolve host bindings at most once per request, lazily — several
+  // handlers never touch `env`, and the ones that do reference it once.
+  let envResolved = false
+  let envValue: unknown
+  const env = async () => {
+    if (!envResolved) {
+      envValue = opts.resolveEnv ? await opts.resolveEnv(req) : undefined
+      envResolved = true
+    }
+    return envValue
+  }
+  let analyticsResolved = false
+  let analyticsValue: DashboardAnalytics | null = null
+  const analytics = async () => {
+    if (!analyticsResolved) {
+      analyticsValue = opts.resolveAnalytics
+        ? await opts.resolveAnalytics(req)
+        : null
+      analyticsResolved = true
+    }
+    return analyticsValue
+  }
+  // Bound once per call so a handler can never record a change without the
+  // actor who made it — and without the surface they came in through, which
+  // is what lets the activity feed say "over MCP" instead of guessing.
+  const actor = {
+    userId: ctx.userId ?? null,
+    source: ctx.source ?? ('ui' as const),
+  }
+  const change: HandlerCtx['change'] = (input) => {
+    return recordChange(db, { ...input, actor })
+  }
+  return await handler({ params, ctx, db, req, env, analytics, change })
+}
+
+/**
+ * A `WfDataClient` that dispatches IN-PROCESS, with a context the caller has
+ * already established.
+ *
+ * The MCP server is the reason this exists. It runs inside the same Worker as
+ * the mounted route, having just verified an OAuth access token, so it already
+ * knows who the caller is — sending itself an HTTP request to re-derive that
+ * would cost a subrequest and a second trip through auth to learn nothing new.
+ *
+ * `ctx` is supplied rather than resolved because the identity came from a
+ * bearer token, not from the cookie `opts.resolveContext` reads. `req` is the
+ * real inbound request, so anything a handler reads off it is still honest.
+ *
+ * Errors THROW here (`BadRequestError`, `NotFoundError`, `UnauthorizedError`,
+ * or whatever a handler raised) instead of becoming status codes. The MCP
+ * server already renders a thrown error as tool content, which is the form a
+ * model can actually act on.
+ */
+export function createLocalWfDataClient<TDeps>(
+  opts: CreateWfSdkHandlersOptions<TDeps>,
+  local: { ctx: WfServerContext; req: Request },
+): WfDataClient {
+  const handlers = buildHandlers(opts)
+  return createWfDataClient(async (method, params) => {
+    const call = resolveCall(handlers, method, params)
+    return await invokeHandler(opts, call.handler, call.params, local.ctx, local.req)
+  })
+}
+
 export function createWfSdkHandlers<TDeps>(
   opts: CreateWfSdkHandlersOptions<TDeps>,
 ): (req: Request) => Promise<Response> {
@@ -424,28 +534,17 @@ export function createWfSdkHandlers<TDeps>(
     } catch {
       return json({ error: 'Invalid JSON body' }, 400)
     }
-    const method = envelope.method
-    let params: unknown = envelope.params ?? {}
-    if (!method) {
-      return json({ error: 'Missing method' }, 400)
-    }
-    const handler = (handlers as Record<string, HandlerFn>)[method]
-    if (!handler) {
-      return json({ error: `Unknown method '${method}'` }, 400)
-    }
+    // Narrowed by `resolveCall` below, which rejects a missing or unknown
+    // name — but the catch needs it for `onError`, so it is read out here.
+    const method = envelope.method ?? '(missing)'
 
-    // Validate the body against the method's registered input schema (if any)
-    // before dispatch, so malformed params answer 400 instead of 500.
-    const schema = wfInputSchemas[method as keyof WfDataClient]
-    if (schema) {
-      const parsed = schema.safeParse(params)
-      if (!parsed.success) {
-        return json(
-          { error: `Invalid params for '${method}': ${parsed.error.message}` },
-          400,
-        )
-      }
-      params = parsed.data
+    let call: { handler: HandlerFn; params: unknown }
+    try {
+      call = resolveCall(handlers, envelope.method, envelope.params)
+    } catch (err) {
+      // Validation and lookup failures are the caller's, not ours — answered
+      // as a 400 here rather than falling into the 500 path below.
+      return json({ error: errorMessage(err) }, 400)
     }
 
     // Hoisted out of the `try` so the catch can attribute a failure to the
@@ -453,45 +552,7 @@ export function createWfSdkHandlers<TDeps>(
     let ctx: WfServerContext | undefined
     try {
       ctx = await opts.resolveContext(req)
-      const db = await opts.resolveDb(req)
-      // Resolve host bindings at most once per request, lazily — several
-      // handlers never touch `env`, and the ones that do reference it once.
-      let envResolved = false
-      let envValue: unknown
-      const env = async () => {
-        if (!envResolved) {
-          envValue = opts.resolveEnv ? await opts.resolveEnv(req) : undefined
-          envResolved = true
-        }
-        return envValue
-      }
-      let analyticsResolved = false
-      let analyticsValue: DashboardAnalytics | null = null
-      const analytics = async () => {
-        if (!analyticsResolved) {
-          analyticsValue = opts.resolveAnalytics
-            ? await opts.resolveAnalytics(req)
-            : null
-          analyticsResolved = true
-        }
-        return analyticsValue
-      }
-      // Bound once per request so a handler can never record a change without
-      // the actor who made it.
-      const actor = { userId: ctx?.userId ?? null, source: 'ui' as const }
-      const change: HandlerCtx['change'] = (input) => {
-        return recordChange(db, { ...input, actor })
-      }
-      const result = await handler({
-        params,
-        ctx,
-        db,
-        req,
-        env,
-        analytics,
-        change,
-      })
-      return json(result)
+      return json(await invokeHandler(opts, call.handler, call.params, ctx, req))
     } catch (err) {
       // Bad client input (a `requireStr()` guard or a handler-level zod parse) is a
       // 400, not a server fault — don't log it as a 500.

@@ -44,23 +44,3 @@ export function resolveTarget(
     ? { url: origin, known: true }
     : { url: PLACEHOLDER[target], known: false }
 }
-
-/**
- * Rewrite a command so nothing in it depends on a shell.
- *
- * Claude Desktop launches the process itself: it inherits no `PATH`, so a bare
- * runtime name does not resolve, and it expands no `~`, which it passes through
- * as a literal directory that does not exist. Both failures look identical from
- * the outside — the server simply never starts — so the snippet shows absolute
- * placeholders rather than a value that would work only on one machine.
- */
-export function toAbsolute(command: string): string {
-  return command
-    .split(' ')
-    .map((part, i) => {
-      if (i === 0 && !part.includes('/')) return `/absolute/path/to/${part}`
-      if (part.startsWith('~/')) return `/absolute/path/to/${part.slice(2)}`
-      return part
-    })
-    .join(' ')
-}

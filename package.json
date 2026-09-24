@@ -30,7 +30,6 @@
     "./ui/styles.css": "./src/ui/styles.css"
   },
   "bin": {
-    "wf-mcp": "./src/cli/mcp.ts",
     "wf-spec": "./src/cli/spec.ts"
   },
   "scripts": {

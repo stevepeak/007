@@ -6,6 +6,7 @@ import type {
 } from '../../engine/graph'
 import type { WfDb } from '../../storage/client'
 import type { DashboardAnalytics } from '../../storage/data'
+import type { WfChangeSource } from '../../storage/schema'
 import type {
   AgentPreviewMessage,
   AgentPreviewResult,
@@ -23,7 +24,20 @@ import type {
 // Workflows and agents are a single global set; the host gatekeeps who may
 // reach this route (e.g. admins only), so the SDK itself stays auth-free.
 
-export type WfServerContext = { userId?: string }
+export type WfServerContext = {
+  userId?: string
+  /**
+   * Which surface the call came in through, recorded on every `wf_change` row
+   * this request writes. Defaults to `'ui'` — the console is the overwhelming
+   * majority of callers and the one that existed first.
+   *
+   * It is worth distinguishing because the actor id alone stopped being enough
+   * once staff authorize the MCP with their own accounts: the same person's id
+   * now appears on edits they made by clicking and on edits an AI client made
+   * on their behalf, and only this field tells those apart.
+   */
+  source?: WfChangeSource
+}
 
 export type CreateWfSdkHandlersOptions<TDeps> = {
   config: Pick<

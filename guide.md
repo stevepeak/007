@@ -941,87 +941,176 @@ per side, since only the host knows which repository each belongs to.
 `evalJudgeModelId` pins which model grades `llm_judge` eval checks (defaults to
 `listModels()[0]`).
 
-### 5b. Headless access: the MCP server (`wf-mcp`)
+### 5b. Headless access: the MCP server
 
-The same route backs an MCP server the SDK ships as a bin, so an AI client
-(Claude Code, Claude Desktop) can read and — behind a flag — author agents,
-workflows, runs and evals. It is a thin shell over `WfDataClient`: every call
-goes through the mounted route, so it gets the same input validation, the same
-`wf_change` audit log, and every host hook you wired above. Nothing new to
-implement on the server side.
+The same handler options back an MCP server, so an AI client (Claude Code,
+Claude Desktop) can read and — behind a scope — author agents, workflows, runs
+and evals. It is a thin shell over `WfDataClient`: every call goes through the
+same dispatcher as the mounted route, so it gets the same input validation, the
+same `wf_change` audit log, and every host hook you wired above.
+
+It is served over **Streamable HTTP**, as a route in your own app. It used to
+ship as a stdio bin (`wf-mcp`) admitted by one shared secret, and the change
+was not about transport: a stdio server runs on the reader's machine and can
+only carry a credential someone put there by hand, so every caller collapsed
+into one service identity and the change feed could never name a person. An
+HTTP endpoint can sit behind your app's own authorization and learn who is
+calling from the token.
 
 > ⚠️ **If your host app also ships an MCP server of its own, name the two apart
-> now.** They are unrelated servers with unrelated tool catalogs and unrelated
-> credentials: yours is likely per-user and minted in your UI, while `wf-mcp`'s
-> is ONE shared secret for the deployment and is minted nowhere. "Get me an MCP
-> token" is then an ambiguous sentence, and the wrong answer looks plausible
+> now.** They are unrelated servers with unrelated tool catalogs. "Connect the
+> MCP" is otherwise an ambiguous sentence, and the wrong answer looks plausible
 > right up until every call 403s. The reference host calls them "kitchen MCP"
 > and "007 MCP" and keeps a table of which is which.
 
-**One thing to add: a headless credential.** The route above is gated by a
-browser session, which an MCP client cannot produce. Check a bearer token
-_before_ your session path and resolve it to a **service identity of its own**,
-never to the human who minted it — `wf_change.actor_id` is the only
-who-touched-this record in 007, and the change feed renders it verbatim:
+**Mount it behind your own auth.** `createWfMcpHandler` is a plain fetch
+handler; `createLocalWfDataClient` dispatches against the handler options you
+already built, with a context you supply rather than one resolved from a
+cookie. Verify the caller however your app does, then hand the identity over:
 
 ```ts
-resolveContext: async (req) => {
-  const header = req.headers.get('authorization')
-  if (header?.toLowerCase().startsWith('bearer ')) {
-    // Constant-time compare against your WF_MCP_TOKEN secret. A presented token
-    // is a commitment to this door: a wrong one is a 403, NOT a fall-through to
-    // the session path (which would report itself as a missing session).
-    if (!(await tokenMatches(header.slice(7).trim()))) {
-      throw new UnauthorizedError('Invalid service token')
-    }
-    return { userId: 'svc:mcp' }
-  }
-  const session = await getSession(req.headers)
-  if (!session) throw new UnauthorizedError('Unauthorized')
-  return { userId: session.user.id }
+// app/api/mcp/route.ts
+export const POST = async (req: Request) => {
+  return await requireAuth(req, async (request, claims) => {
+    const userId = await resolveStaffUser(claims) // your check; throw to refuse
+    const client = createLocalWfDataClient(wfSdkOptions, {
+      // `source: 'mcp'` is what lets the activity feed tell an edit this person
+      // made by clicking from one their AI client made on their behalf. The
+      // actor is a real user either way.
+      ctx: { userId, source: 'mcp' },
+      req: request,
+    })
+    return await createWfMcpHandler({ client, write: claims.canWrite })(request)
+  })(req)
 }
 ```
 
-Then register the server. `--write` is off by default, and off means the
-mutating tools are **not registered at all** — a read-only session has no write
-tool to be talked into calling:
+Two things are worth copying from the reference host. **Dispatch in-process**
+rather than POSTing to your own `/api/wf` — a self-fetch costs a subrequest per
+tool call and re-derives an identity you just verified. And **let the token
+decide `write`**, not the client: `write: false` means the mutating tools are
+not registered at all, so a read-only session has none to be talked into
+calling. Mounting a second route that demands a higher scope is the cleanest
+way to make stepping up deliberate.
+
+Clients then register a URL, with no credential to distribute:
 
 ```bash
-claude mcp add wf \
-  --env WF_BASE_URL=http://localhost:3000 \
-  --env WF_MCP_TOKEN=$WF_MCP_TOKEN \
-  -- bunx wf-mcp
+claude mcp add --transport http 007 https://your-app.example.com/api/mcp
 ```
 
-...or as an `.mcp.json` block:
+...or as an `.mcp.json` block, which now holds nothing secret:
 
 ```jsonc
 {
   "mcpServers": {
-    "wf": {
-      "command": "bunx",
-      "args": ["wf-mcp"],
-      "env": {
-        "WF_BASE_URL": "http://localhost:3000",
-        "WF_MCP_TOKEN": "…",
-      },
+    "007": {
+      "type": "http",
+      "url": "https://your-app.example.com/api/mcp",
     },
   },
 }
 ```
 
-| env                 | meaning                                               |
-| ------------------- | ----------------------------------------------------- |
-| `WF_BASE_URL`       | origin of the host app, or the full data-API URL      |
-| `WF_API_PATH`       | route the handlers are mounted at (default `/api/wf`) |
-| `WF_MCP_TOKEN`      | bearer credential; matches the host Worker's secret   |
-| `WF_MCP_TIMEOUT_MS` | per-call budget (default `120000`)                    |
+#### Setting up the authorization
 
-Flags of the same name (`--base-url=`, `--api-path=`, `--token=`, `--timeout=`)
-win over the env, and `--write` registers the mutating tools.
+007 does not ship an authorization server — `createWfMcpHandler` takes a client
+and a `write` boolean and has no opinion about where they came from. What
+follows is the reference host's setup, because MCP authorization has a handful
+of traps that each cost an afternoon, and none of them are 007's to fix.
 
-**What it exposes.** Thirty-two tools — twenty-one reads, and eleven writes that
-exist only with `--write`.
+It uses [Better Auth](https://www.better-auth.com)'s `mcp()` plugin, which turns
+an existing auth instance into an OAuth 2.1 authorization server. Any OAuth
+server works; the shape below is what the protocol requires either way.
+
+```ts
+// lib/auth.ts
+import { mcp } from '@better-auth/mcp'
+import { jwt } from 'better-auth/plugins'
+
+export const MCP_RESOURCE = `${APP_URL}/api/mcp`
+export const MCP_SCOPES = { read: 'wf:read', write: 'wf:write' } as const
+
+betterAuth({
+  plugins: [
+    // Signs the access tokens and publishes the JWKS the MCP route verifies
+    // them against. Both halves then agree with no shared secret to configure.
+    jwt(),
+    mcp({
+      resource: MCP_RESOURCE,
+      scopes: ['openid', 'profile', 'email', 'offline_access',
+               MCP_SCOPES.read, MCP_SCOPES.write],
+      loginPage: '/login',
+      consentPage: '/oauth/consent',
+      // MCP clients discover the server and register themselves — nobody hands
+      // out a client id by hand. This grants nothing on its own: a client still
+      // has to send a real person through login and consent, and your own staff
+      // check still runs before a single tool is registered.
+      allowDynamicClientRegistration: true,
+      allowUnauthenticatedClientRegistration: true,
+    }),
+  ],
+})
+```
+
+Then two routes, one per scope. Splitting them is what makes stepping up to
+write deliberate: an unauthenticated call to either answers `401` with a
+`WWW-Authenticate` naming *that endpoint's* scope, so a client asking for the
+write endpoint gets its own consent prompt in one round trip.
+
+```ts
+// app/api/mcp/route.ts        → requireMcpAuth(..., { requiredScopes: ['wf:read'] })
+// app/api/mcp/write/route.ts  → requireMcpAuth(..., { requiredScopes: ['wf:write'] })
+```
+
+Point both at the **same** `resource` identifier. Deriving it from the request
+URL instead makes the write endpoint its own audience, and a token minted for
+the read URL is then refused for no good reason.
+
+**Four traps, in the order they bite:**
+
+1. **Discovery must be served at the origin ROOT.** RFC 9728 puts a protected
+   resource's metadata at `/.well-known/oauth-protected-resource/api/mcp`, and
+   RFC 8414 §3.1 puts an authorization server whose issuer has a path at
+   `/.well-known/oauth-authorization-server/<that path>` — the path is
+   *inserted*, not appended. Auth libraries typically mount their handler under
+   a base path like `/api/auth` and serve discovery beneath it, so the URL your
+   own `401` advertises 404s and no client can start the flow. Rewrite the root
+   paths to the handler. On Next.js this must be a `next.config` rewrite, not a
+   route file: the router skips dot-directories, so `app/.well-known/…` is never
+   served.
+
+2. **The consent endpoint returns `{ redirect, url }`.** Better Auth's OpenAPI
+   metadata for `/oauth2/consent` advertises `redirect_uri`, which the
+   implementation does not return. Read `url`. Getting this wrong fails *after*
+   the consent row is written, so the symptom is a dead end on a flow that
+   looks like it worked — and because consent is then remembered, a retry skips
+   the screen and hides the bug.
+
+3. **Native clients must say so.** A client registering with an
+   `http://127.0.0.1` redirect URI is rejected as a web client unless it sends
+   `application_type: "native"`. MCP clients do; a hand-rolled `curl` test
+   won't, and the error blames the loopback URI rather than the missing field.
+
+4. **An OAuth token proves an account, not an entitlement.** Verify the
+   subject is staff before registering tools. The reference host reuses the
+   exact check its browser route makes, which works unmodified because with no
+   session cookie it falls back to the user's own staff edge — and a token
+   caller never has a cookie.
+
+The provider also needs its own tables (clients, consents, access and refresh
+tokens, resources, and the JWKS). They belong in your app's database, not in
+the 007 one: they describe *people and clients*, which is host territory, and
+`wf_*` deliberately knows nothing about either.
+
+**What a person does, once:** register the URL, run `/mcp`, choose
+Authenticate. The browser opens, they are already signed in, they approve the
+scopes, and the client stores and silently refreshes the token from then on.
+`offline_access` is what makes that a one-time cost rather than a prompt at
+every expiry.
+
+**What it exposes.** Thirty-two tools — twenty-one reads, and eleven writes
+registered only for a session whose token carries the write scope.
 
 | Tool                              | Gate      | What it does                                                        |
 | --------------------------------- | --------- | ------------------------------------------------------------------- |
@@ -1086,14 +1175,12 @@ deployment you want and it fills its own URL in.
 
 Being inside the console rather than at a host route is deliberate: this is the
 _workflow_ MCP, and a host that later exposes an MCP for its own product needs
-that not to be the same page. The one thing the SDK cannot know is how your
-checkout starts the process, so pass `mcpCommand` to `WfApp` when `bunx wf-mcp`
-is wrong for it — a monorepo root does not usually depend on the package, and
-bun links bins per workspace:
+that not to be the same page. The one thing the SDK cannot know is where you
+mounted the endpoints, so pass `mcpPath` to `WfApp` if it is not `/api/mcp`
+(the write endpoint is assumed to be that path plus `/write`):
 
 ```tsx
-<WfApp basePath="/wf" path={path} navigate={navigate}
-       mcpCommand="bun /path/to/checkout/packages/007/src/cli/mcp.ts" />
+<WfApp basePath="/wf" path={path} navigate={navigate} mcpPath="/api/mcp" />
 ```
 
 Keep the checkout path a placeholder like that one. It is per-machine — nobody
@@ -1176,7 +1263,7 @@ wrong that nothing else would report — the write succeeds, and the loss surfac
 later as an eval regression. Listing every field that now differs from published
 turns that into something visible one line after causing it.
 
-**Authoring evals is what `--write` is for.** `create_eval_set` /
+**Authoring evals is what the write scope is for.** `create_eval_set` /
 `upsert_eval_sample` / `delete_eval_sample` let a model turn what it just read in
 a trace into a Goal that runs tomorrow. Two details make generated Samples land
 clean rather than half-right:
@@ -1195,7 +1282,7 @@ clean rather than half-right:
 **Mining samples from real runs.** `draft_sample_from_run` converts one run into
 a draft Sample and returns it without writing — the model reviews it, rewrites
 the rubric, then saves it with `upsert_eval_sample`. It is a **read** tool;
-only saving needs `--write`. Paired with `list_feedback`, whose thumbs-down rows
+only saving needs the write scope. Paired with `list_feedback`, whose thumbs-down rows
 name the run whose answer a human called bad, it turns a complaint into a test.
 Two layers produce different samples from the same trace: `trajectory` replays
 the run's real tool results as `mocked` fixtures (keyed on the same tool id the

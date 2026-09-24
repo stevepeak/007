@@ -59,11 +59,11 @@ export type WfAppProps = {
    */
   dashboard?: boolean
   /**
-   * How this host's checkout starts the `wf-mcp` server, shown on the MCP
-   * section. Defaults to the SDK's own bin (`bunx wf-mcp`); pass the bin's
-   * source path from a monorepo whose root does not depend on the package.
+   * Route the host mounted the read-only MCP endpoint at, shown on the MCP
+   * section. Defaults to `/api/mcp`; the write endpoint is that path plus
+   * `/write`.
    */
-  mcpCommand?: string
+  mcpPath?: string
 }
 
 export function WfApp({
@@ -72,7 +72,7 @@ export function WfApp({
   navigate,
   sections = DEFAULT_WF_SECTIONS,
   dashboard = true,
-  mcpCommand,
+  mcpPath,
 }: WfAppProps) {
   return (
     <WfNavProvider basePath={basePath} path={path} navigate={navigate}>
@@ -80,7 +80,7 @@ export function WfApp({
         <WfTabbedShell
           sections={sections}
           dashboard={dashboard}
-          mcpCommand={mcpCommand}
+          mcpPath={mcpPath}
         />
       </WfTabsProvider>
     </WfNavProvider>
@@ -93,11 +93,11 @@ export function WfApp({
 function WfTabbedShell({
   sections,
   dashboard,
-  mcpCommand,
+  mcpPath,
 }: {
   sections: WfHubSection[]
   dashboard: boolean
-  mcpCommand?: string
+  mcpPath?: string
 }) {
   const { tabs, activeId, homePath } = useWfTabs()
 
@@ -110,7 +110,7 @@ function WfTabbedShell({
             path={homePath}
             sections={sections}
             dashboard={dashboard}
-            mcpCommand={mcpCommand}
+            mcpPath={mcpPath}
           />
         </TabPane>
         {tabs.map((tab) => (
@@ -153,12 +153,12 @@ function HomeRoutes({
   path,
   sections,
   dashboard,
-  mcpCommand,
+  mcpPath,
 }: {
   path: string
   sections: WfHubSection[]
   dashboard: boolean
-  mcpCommand?: string
+  mcpPath?: string
 }) {
   const { navigate } = useWfNav()
   // Split path from any query string, then into segments.
@@ -261,7 +261,7 @@ function HomeRoutes({
     if (key === 'mcp') {
       return (
         <WfShell crumbs={[sectionCrumb('mcp', { current: true })]} scroll>
-          <McpConnect command={mcpCommand} />
+          <McpConnect mcpPath={mcpPath} />
         </WfShell>
       )
     }

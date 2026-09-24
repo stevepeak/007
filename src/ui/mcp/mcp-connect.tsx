@@ -13,7 +13,6 @@ import {
   isLocalOrigin,
   PLACEHOLDER,
   resolveTarget,
-  toAbsolute,
   type Target,
 } from './target'
 
@@ -22,47 +21,34 @@ import {
 //
 // It lives in the SDK rather than in a host page for the same reason the tool
 // list is generated rather than typed: the answer is a property of the build.
-// The origin comes from the browser, the tool list from the catalog `wf-mcp`
-// registers, and the only thing a host supplies is how its checkout starts the
-// process (`command`) — because that is the only part the SDK genuinely cannot
-// know.
+// The origin comes from the browser and the tool list from the catalog the
+// server registers, so a host supplies only where it mounted the endpoints.
 //
-// Deliberately says nothing about the credential beyond its NAME. A page inside
-// the workflow console is not a place to put a shared secret, and the person
-// reading it either has the token already or has to be given it out of band.
+// The page used to be mostly about a secret. It no longer mentions one, because
+// there isn't one: the server is an HTTP endpoint behind the host's own OAuth,
+// and a client authorizes by sending the reader through a browser sign-in they
+// have already done. Nothing to copy, nothing to rotate, nothing to leak — and
+// the change feed names the person instead of a service account.
 //
-// The one thing readers get wrong: `wf-mcp` is a stdio server, so the process
-// always runs on the READER'S machine, whichever deployment it is pointed at.
-// Nothing is deployed and there is no production instance of it. Only
-// `WF_BASE_URL` moves. The page used to imply otherwise by showing one origin
-// next to a local path, hence the Development / Production picker — it changes
-// the target, never the command.
+// The thing readers now get wrong is the opposite of what they used to: they
+// expect to install something. There is nothing to install and no process to
+// run. A URL is the entire registration.
 
-/** Default route the SDK's handlers are mounted at (`createWfSdkHandlers`). */
-const DEFAULT_API_PATH = '/api/wf'
-
-/**
- * The documented way to start the server: the bin `@stevepeak/007` ships.
- * Resolves from any workspace that has the package as a dependency.
- */
-const DEFAULT_COMMAND = 'bunx wf-mcp'
+/** Where the read endpoint is mounted by default. */
+const DEFAULT_MCP_PATH = '/api/mcp'
 
 export type McpConnectProps = {
   /**
-   * How this host's checkout starts `wf-mcp`. Defaults to `bunx wf-mcp`, which
-   * needs a cwd that depends on `@stevepeak/007` — a monorepo whose ROOT does
-   * not (bins are linked per workspace) should pass the bin's source path
-   * instead, e.g. `bun ~/app/packages/007/src/cli/mcp.ts`.
+   * Route the read-only MCP endpoint is mounted at. Defaults to `/api/mcp`.
+   * The write endpoint is assumed to be this path plus `/write`, which is how
+   * `createWfMcpHandler` is mounted in the reference host.
    */
-  command?: string
-  /** Route the data handlers are mounted at. Defaults to `/api/wf`. */
-  apiPath?: string
+  mcpPath?: string
   className?: string
 }
 
 export function McpConnect({
-  command = DEFAULT_COMMAND,
-  apiPath = DEFAULT_API_PATH,
+  mcpPath = DEFAULT_MCP_PATH,
   className,
 }: McpConnectProps) {
   // Computed once — the catalog is static for the bundle's lifetime.
@@ -94,41 +80,67 @@ export function McpConnect({
           </h1>
           <p className="max-w-2xl text-sm text-neutral-500">
             Agents, workflows, run traces, feedback and evals — the same things
-            this console shows a person, exposed to an AI client over stdio.
-            Every call goes through the one mounted route, so it gets the same
-            validation and lands in the same change log as a click in here.
+            this console shows a person, exposed to an AI client over HTTP. You
+            sign in with your own account, so every call goes through the same
+            validation as a click in here and lands in the same change log{' '}
+            <em>under your name</em>.
           </p>
         </div>
         <div className="grid grid-cols-3 gap-3 sm:max-w-md">
           <Stat value={tools.length} label="tools" />
-          <Stat value={reads} label="read, always on" />
-          <Stat value={writes} label="write, behind a flag" />
+          <Stat value={reads} label="read" />
+          <Stat value={writes} label="write, separate consent" />
         </div>
       </header>
 
       <Section
         title="Register the server"
-        lead="Pick which deployment to talk to, then copy the snippet for your client. Supply the token out of band — it is a deployment secret, and this page deliberately does not know it."
+        lead="Pick which deployment to talk to, then copy the snippet for your client. There is no token to supply — the first call opens a browser and you approve it as yourself."
       >
         <TargetPicker target={target} onChange={setTarget} origin={origin} />
         <TargetNote target={target} known={known} />
-        <ConnectSnippets
-          baseUrl={baseUrl}
-          command={command}
-          apiPath={apiPath}
-        />
+        <ConnectSnippets baseUrl={baseUrl} mcpPath={mcpPath} />
       </Section>
 
       <Section
-        title="Configuration"
-        lead="Read from the environment; a flag of the same name wins over it. Nothing is baked into the SDK — no origin, no route, no credential."
+        title="Signing in"
+        lead="What happens the first time a client calls, and what it remembers afterwards."
       >
-        <EnvTable baseUrl={baseUrl} apiPath={apiPath} />
+        <ol className="list-inside list-decimal space-y-2 rounded-lg border border-neutral-200 bg-white p-4 text-sm text-neutral-600">
+          <li>
+            The client asks the endpoint for a tool list and gets a{' '}
+            <code className="font-mono text-xs">401</code> naming the scope it
+            needs.
+          </li>
+          <li>
+            It registers itself and opens your browser at this app. If you are
+            already signed in — you are, you are reading this — there is nothing
+            to type.
+          </li>
+          <li>
+            You approve the scopes once. The client stores the resulting token
+            itself and refreshes it silently from then on.
+          </li>
+        </ol>
         <p className="text-xs text-neutral-500">
-          Add <code className="font-mono">--write</code> to the command to
-          register the {writes} mutating tools. Off is the default, and off means
-          they are not registered at all — a read-only session has no write tool
-          to be talked into calling.
+          Staff only: the endpoint checks that your account is firm staff before
+          it registers a single tool, so a client account that somehow completes
+          the sign-in still gets an empty server rather than a read of the
+          workflow estate.
+        </p>
+      </Section>
+
+      <Section
+        title="Read and write are different URLs"
+        lead="The write tools are not a flag on the client any more. They are a second endpoint that needs its own scope, and therefore its own consent."
+      >
+        <ScopeTable baseUrl={baseUrl} mcpPath={mcpPath} reads={reads} writes={writes} />
+        <p className="text-xs text-neutral-500">
+          This used to be a{' '}
+          <code className="font-mono">--write</code> flag typed on the command
+          that started the server, which is to say: a setting the client chose
+          for itself. Now the token decides, and a read-only session has no
+          write tool registered to be talked into calling.
         </p>
       </Section>
 
@@ -141,10 +153,10 @@ export function McpConnect({
 
       <Section
         title="What it will not do"
-        lead="Two capabilities are withheld on purpose, and one identity is asserted."
+        lead="Two capabilities are withheld on purpose, and one identity is now asserted rather than hidden."
       >
         <ul className="divide-y divide-neutral-200 overflow-hidden rounded-lg border border-neutral-200 bg-white text-sm">
-          <Limit title="Publish a version.">
+          <Limit title="Publish an agent version.">
             There is no <code className="font-mono">publish_agent</code>. A
             published version floats into every workflow referencing that agent,
             so it stays a decision a person makes in the editor. A client can
@@ -156,11 +168,11 @@ export function McpConnect({
             being touched. It tests prompts and tool choice; it is not evidence
             an answer is correct.
           </Limit>
-          <Limit title="Borrow your name.">
-            A bearer caller acts as its own service identity, never as the
-            person who minted the token. The change feed is the only
-            who-touched-this record here, so machine edits read as machine
-            edits.
+          <Limit title="Act anonymously.">
+            It uses <em>your</em> name, deliberately. Every change an AI client
+            makes here is recorded against the account that authorized it and
+            marked as having come through the MCP, so the activity feed can tell
+            your clicks from your agent’s edits.
           </Limit>
         </ul>
       </Section>
@@ -227,7 +239,7 @@ const TARGETS: { value: Target; title: string; blurb: string }[] = [
   {
     value: 'production',
     title: 'Production',
-    blurb: 'Your deployed app. Same client, different URL and token.',
+    blurb: 'Your deployed app. Same client, different URL.',
   },
 ]
 
@@ -235,9 +247,9 @@ const TARGETS: { value: Target; title: string; blurb: string }[] = [
  * Which deployment the snippets below point at.
  *
  * Two large buttons rather than a third row of tabs: this choice decides which
- * database a client is about to read and which secret it needs, and it deserves
- * more weight than the client picker underneath it. Each shows the URL it will
- * produce, so the difference is visible before anything is copied.
+ * database a client is about to read, and it deserves more weight than the
+ * client picker underneath it. Each shows the URL it will produce, so the
+ * difference is visible before anything is copied.
  */
 function TargetPicker({
   target,
@@ -294,19 +306,17 @@ function TargetPicker({
 /**
  * The sentence the picker exists to make sayable.
  *
- * `wf-mcp` speaks stdio: the client spawns it as a subprocess on the reader's
- * own machine and there is no deployed copy of it anywhere. So "connecting to
- * production" is one environment variable, not a different install — and the
- * command below is identical under both buttons. Readers reliably assume the
- * opposite.
+ * Each deployment is its own authorization server, so a token minted against
+ * one is refused by the other — audience-bound, not merely wrong. That is a
+ * feature (a local experiment cannot reach production) and it is also the thing
+ * someone will otherwise spend an afternoon on, so it is said out loud.
  */
 function TargetNote({ target, known }: { target: Target; known: boolean }) {
   return (
     <p className="text-xs text-neutral-500">
-      The server runs on <strong className="font-medium">your machine</strong>{' '}
-      either way — it is a stdio subprocess your client spawns, not something
-      deployed. Only <code className="font-mono">WF_BASE_URL</code> and the
-      token change.{' '}
+      Each deployment signs its own tokens, so authorizing against one grants
+      nothing on the other — the two are separate databases with separate
+      version numbers, and the audience check keeps them that way.{' '}
       {known ? (
         <>
           This is the deployment serving this page, so the URL below is exact.
@@ -314,47 +324,12 @@ function TargetNote({ target, known }: { target: Target; known: boolean }) {
       ) : (
         <>
           This page is not being served from {target}, so it cannot know that
-          URL — replace the placeholder with your own origin, and use{' '}
-          <strong className="font-medium">that deployment’s</strong> token, not
-          this one’s. Opening this page there fills it in for you.
+          URL — replace the placeholder with your own origin. Opening this page
+          there fills it in for you.
         </>
       )}
     </p>
   )
-}
-
-/** Render a command string as an MCP config's `command` + `args` pair. */
-function serverBlock(
-  command: string,
-  baseUrl: string,
-  token: string,
-  apiPath: string,
-): string {
-  const [bin, ...args] = command.split(' ')
-  const env: [string, string][] = [
-    ['WF_BASE_URL', baseUrl],
-    ['WF_MCP_TOKEN', token],
-  ]
-  // Only worth stating when it is not the default the CLI already assumes.
-  if (apiPath !== DEFAULT_API_PATH) env.push(['WF_API_PATH', apiPath])
-  // Assembled line by line rather than with `JSON.stringify(…, null, n)`: this
-  // is a fragment nested eight columns into a literal, and no indent argument
-  // produces that. Each value still goes through `JSON.stringify`, so a path
-  // containing a quote or a backslash stays valid JSON.
-  const envLines = env
-    .map(([k, v]) => `        ${JSON.stringify(k)}: ${JSON.stringify(v)}`)
-    .join(',\n')
-  return `{
-  "mcpServers": {
-    "wf": {
-      "command": ${JSON.stringify(bin)},
-      "args": ${JSON.stringify(args)},
-      "env": {
-${envLines}
-      }
-    }
-  }
-}`
 }
 
 const CLIENTS = [
@@ -366,31 +341,38 @@ const CLIENTS = [
 /**
  * The same registration, three shapes.
  *
- * Shown side by side rather than as one canonical snippet because the
- * differences are the part people get wrong: Claude Code takes repeated `--env`
- * flags before a `--` separator, `.mcp.json` expands `${VAR}` so the secret
- * never has to be checked in, and Claude Desktop inherits no shell, so nothing
- * in its config may lean on `PATH`, `~`, or an exported variable.
+ * Shown side by side because the differences are the part people get wrong:
+ * Claude Code needs `--transport http` (without it, it tries to run the URL as
+ * a command), `.mcp.json` is checked in and now holds nothing secret, and
+ * Desktop has no config file for this at all — remote servers are added in the
+ * UI.
  */
 function ConnectSnippets({
   baseUrl,
-  command,
-  apiPath,
+  mcpPath,
 }: {
   baseUrl: string
-  command: string
-  apiPath: string
+  mcpPath: string
 }) {
   const [client, setClient] = useState('cli')
+  const readUrl = `${baseUrl}${mcpPath}`
+  const writeUrl = `${readUrl}/write`
 
   const cli = [
-    'claude mcp add wf \\',
-    `  --env WF_BASE_URL=${baseUrl} \\`,
-    '  --env WF_MCP_TOKEN=$WF_MCP_TOKEN \\',
-    `  -- ${command}`,
+    `claude mcp add --transport http 007 ${readUrl}`,
+    '',
+    '# and, only if you need the authoring tools:',
+    `claude mcp add --transport http 007-write ${writeUrl}`,
   ].join('\n')
 
-  const desktopCommand = toAbsolute(command)
+  const projectJson = `{
+  "mcpServers": {
+    "007": {
+      "type": "http",
+      "url": ${JSON.stringify(readUrl)}
+    }
+  }
+}`
 
   return (
     <div className="space-y-3">
@@ -401,39 +383,36 @@ function ConnectSnippets({
           <CodeBlock code={cli} caption="terminal" />
           <p className="text-xs text-neutral-500">
             Registers the server for the current project — add{' '}
-            <code className="font-mono">--scope user</code> to get it everywhere.
+            <code className="font-mono">--scope user</code> to get it
+            everywhere. Then run <code className="font-mono">/mcp</code> and
+            pick <strong className="font-medium">Authenticate</strong>; your
+            browser opens and comes back signed in.
           </p>
         </>
       )}
 
       {client === 'project' && (
         <>
-          <CodeBlock
-            code={serverBlock(command, baseUrl, '${WF_MCP_TOKEN}', apiPath)}
-            caption=".mcp.json"
-          />
+          <CodeBlock code={projectJson} caption=".mcp.json" />
           <p className="text-xs text-neutral-500">
-            Checked in at the repo root, so everyone on the project gets the same
-            server. <code className="font-mono">{'${WF_MCP_TOKEN}'}</code> is
-            expanded from the environment when the client starts, which is what
-            keeps the secret out of the file.
+            Checked in at the repo root, so everyone on the project gets the
+            same server — and each of them authorizes as themselves the first
+            time they use it. This file now holds nothing that needs protecting,
+            which is the point: there is no{' '}
+            <code className="font-mono">env</code> block and no variable to
+            expand.
           </p>
         </>
       )}
 
       {client === 'desktop' && (
         <>
-          <CodeBlock
-            code={serverBlock(desktopCommand, baseUrl, '…', apiPath)}
-            caption="~/Library/Application Support/Claude/claude_desktop_config.json"
-          />
+          <CodeBlock code={readUrl} caption="Settings → Connectors → Add" />
           <p className="text-xs text-neutral-500">
-            The same block with nothing left to a shell: Claude Desktop inherits
-            no environment, so every{' '}
-            <code className="font-mono">/absolute/path/to/…</code> above has to
-            become a real one (<code className="font-mono">which bun</code>{' '}
-            finds the runtime), and the token has to be a literal value rather
-            than a variable reference.
+            Desktop has no config file for remote servers: add it as a custom
+            connector and paste the URL. It runs the same browser sign-in, and
+            because nothing is spawned as a subprocess there is no absolute path
+            to get right.
           </p>
         </>
       )}
@@ -441,27 +420,27 @@ function ConnectSnippets({
   )
 }
 
-function EnvTable({ baseUrl, apiPath }: { baseUrl: string; apiPath: string }) {
+function ScopeTable({
+  baseUrl,
+  mcpPath,
+  reads,
+  writes,
+}: {
+  baseUrl: string
+  mcpPath: string
+  reads: number
+  writes: number
+}) {
   const rows = [
     {
-      name: 'WF_BASE_URL',
-      value: baseUrl,
-      note: 'Origin of this deployment, or the full data-API URL. Required.',
+      url: `${baseUrl}${mcpPath}`,
+      scope: 'wf:read',
+      note: `The ${reads} read tools. Everything this console can show you, and nothing that changes a record.`,
     },
     {
-      name: 'WF_MCP_TOKEN',
-      value: '…',
-      note: 'Shared secret matching the host’s. Required — an unset secret on the server means the door is closed.',
-    },
-    {
-      name: 'WF_API_PATH',
-      value: apiPath,
-      note: 'Where the data handlers are mounted. Only set it if that moves.',
-    },
-    {
-      name: 'WF_MCP_TIMEOUT_MS',
-      value: '120000',
-      note: 'Per-call budget. Generous by default — a model waits happily, and a dashboard read is slower than a spinner would tolerate.',
+      url: `${baseUrl}${mcpPath}/write`,
+      scope: 'wf:write',
+      note: `The read tools plus the ${writes} that author — drafts, eval Samples, and publishing a workflow version, which changes what customers get.`,
     },
   ]
   return (
@@ -470,16 +449,16 @@ function EnvTable({ baseUrl, apiPath }: { baseUrl: string; apiPath: string }) {
         <tbody>
           {rows.map((r) => (
             <tr
-              key={r.name}
+              key={r.scope}
               className="border-b border-neutral-200 last:border-b-0"
             >
               <th
                 scope="row"
-                className="w-56 px-4 py-3 align-top font-mono text-xs font-medium text-neutral-900"
+                className="w-72 px-4 py-3 align-top font-mono text-xs font-medium text-neutral-900"
               >
-                {r.name}
+                {r.scope}
                 <div className="mt-1 font-mono text-[11px] break-all text-neutral-400">
-                  {r.value}
+                  {r.url}
                 </div>
               </th>
               <td className="px-4 py-3 align-top text-xs text-neutral-500">
@@ -508,7 +487,7 @@ function haystack(tool: WfMcpToolDescription): string {
 }
 
 /**
- * Split by the `--write` gate rather than by subject area, because that split is
+ * Split by the write gate rather than by subject area, because that split is
  * the one the server actually enforces. A subject grouping would have to be
  * hand-maintained here and would go stale the first time a tool is added.
  */
@@ -546,12 +525,12 @@ function ToolCatalog({ tools }: { tools: WfMcpToolDescription[] }) {
         <>
           <ToolGroup
             title="Read"
-            note="Always available."
+            note="Granted by wf:read."
             tools={matches.filter((t) => t.readOnly)}
           />
           <ToolGroup
             title="Write"
-            note="Registered only when the server is started with --write."
+            note="Registered only for a session that holds wf:write."
             tools={matches.filter((t) => !t.readOnly)}
           />
         </>

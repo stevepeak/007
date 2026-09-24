@@ -1,4 +1,5 @@
 export {
+  createLocalWfDataClient,
   createWfSdkHandlers,
   UnauthorizedError,
   type CreateWfSdkHandlersOptions,
@@ -22,6 +23,13 @@ export {
   type WfMcpToolArg,
   type WfMcpToolDescription,
 } from '../mcp/describe'
+// The MCP server itself, as a fetch handler the host mounts behind its own
+// authorization. Lives here rather than on a subpath because a host that
+// mounts the data route is the only thing that can serve this one.
+export {
+  createWfMcpHandler,
+  type CreateWfMcpHandlerOptions,
+} from '../mcp/http'
 export type {
   AgentNodeMeta,
   AgentPreviewInput,

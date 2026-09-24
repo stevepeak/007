@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { isLocalOrigin, resolveTarget, toAbsolute } from './target'
+import { isLocalOrigin, resolveTarget } from './target'
 
 // The page can only ever know ONE of its two targets: the deployment serving
 // it. Getting that backwards is not a cosmetic bug — it presents a placeholder
@@ -65,25 +65,5 @@ describe('resolveTarget', () => {
       )
       expect(known).toHaveLength(1)
     }
-  })
-})
-
-describe('toAbsolute', () => {
-  // Claude Desktop inherits no PATH and expands no `~`; both failures present
-  // identically, as a server that simply never starts.
-  test('a bare runtime name becomes an absolute placeholder', () => {
-    expect(toAbsolute('bunx wf-mcp')).toBe('/absolute/path/to/bunx wf-mcp')
-  })
-
-  test('a ~-relative argument becomes one too', () => {
-    expect(toAbsolute('bun ~/app/src/cli/mcp.ts')).toBe(
-      '/absolute/path/to/bun /absolute/path/to/app/src/cli/mcp.ts',
-    )
-  })
-
-  test('an already-absolute path is left alone', () => {
-    expect(toAbsolute('/usr/bin/bun /srv/app/cli/mcp.ts')).toBe(
-      '/usr/bin/bun /srv/app/cli/mcp.ts',
-    )
   })
 })

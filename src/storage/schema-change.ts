@@ -48,8 +48,15 @@ export const WF_CHANGE_ACTIONS = [
 
 export type WfChangeAction = (typeof WF_CHANGE_ACTIONS)[number]
 
-/** Where a change came from. The UI is one of several writers. */
-export const WF_CHANGE_SOURCES = ['ui', 'spec-import', 'system'] as const
+/**
+ * Where a change came from. The UI is one of several writers.
+ *
+ * `mcp` is an AI client acting THROUGH a person: the actor id is a real staff
+ * user, because that is who authorized the session, but nobody clicked anything.
+ * Without this the two are indistinguishable in the feed, and "did I do that or
+ * did the model?" is exactly the question the feed exists to answer.
+ */
+export const WF_CHANGE_SOURCES = ['ui', 'mcp', 'spec-import', 'system'] as const
 
 export type WfChangeSource = (typeof WF_CHANGE_SOURCES)[number]
 

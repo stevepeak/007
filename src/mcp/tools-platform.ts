@@ -215,7 +215,7 @@ export function platformReadTools(): WfMcpTool[] {
           .string()
           .nullish()
           .describe(
-            'Only this actor. A service caller writes its own id (e.g. svc:mcp), never the person who minted its token.',
+            'Only this actor. Edits made over the MCP carry the user id of whoever authorized the session, same as a click in the console — `source` is what tells the two apart.',
           ),
         limit: z
           .number()
