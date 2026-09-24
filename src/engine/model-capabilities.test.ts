@@ -1,8 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 
-import { agentModelRequirements, type AgentConfig } from '../engine'
-import type { ModelOption } from '../engine/config'
-import { agentConfigSchema } from '../engine/graph'
+import {
+  agentConfigSchema,
+  agentModelRequirements,
+  type AgentConfig,
+} from './agent-config-schema'
+import type { ModelOption } from './config'
 
 import {
   mergeModelRequirements,

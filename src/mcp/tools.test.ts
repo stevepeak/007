@@ -38,6 +38,7 @@ describe('the tool catalog', () => {
       .map((t) => t.name)
       .sort()
     expect(writes).toEqual([
+      'create_agent',
       'create_eval_set',
       'delete_eval_sample',
       'discard_workflow_draft',
@@ -54,8 +55,9 @@ describe('the tool catalog', () => {
   // The line drawn in `tools-agents.ts`: a draft is reversible and invisible to
   // customers, an AGENT publish floats into every workflow that references the
   // agent. (`publish_workflow` is the deliberate exception — one trigger, two
-  // refusal gates; see `tools-workflows.ts`.) Neither of these belongs to a
-  // surface that can be prompted into using it.
+  // refusal gates; see `tools-workflows.ts`. `create_agent` is not one: its v1 is
+  // published into a graph that does not exist yet.) Neither of these belongs to
+  // a surface that can be prompted into using it.
   test('exposes no publish and no live tool execution at all', () => {
     const names = new Set(allTools().map((t) => t.name))
     for (const forbidden of [

@@ -9,7 +9,7 @@ import {
   REQUIREMENT_REASON,
   unmetRequirements,
   unmetRequirementsReason,
-} from '../model-capabilities'
+} from '../../engine/model-capabilities'
 import { Popover } from '../popover'
 
 import { groupModelsByProvider } from './model-grouping'

@@ -1,10 +1,22 @@
 import { z } from 'zod'
 
+import {
+  agentConfigSchema,
+  agentInputVariables,
+  agentModelRequirements,
+} from '../engine/graph'
+import {
+  REQUIREMENT_REASON,
+  unmetRequirements,
+} from '../engine/model-capabilities'
 import { clip } from '../server/clip'
 import type {
   AgentConfig,
   AgentNodeMeta,
   AgentPreviewResult,
+  ModelOption,
+  ToolOption,
+  WfDataClient,
 } from '../server/protocol'
 
 import { optString, reqString, type WfMcpTool } from './tools'
@@ -20,12 +32,23 @@ import { optString, reqString, type WfMcpTool } from './tools'
 // Two lines are drawn deliberately, and both of them are about who is left
 // holding the consequence:
 //
-//   • **Drafts, never publishes.** `publish_agent` is NOT here. A published
+//   • **Drafts, never re-publishes.** `publish_agent` is NOT here. A published
 //     version floats into every workflow that references the agent (see the
-//     float-to-latest rule), so publishing is the single action in this file's
-//     neighborhood that changes what customers get. A draft changes what the
-//     next eval run measures and nothing else, and the editor's "discard draft"
-//     undoes it wholesale. The model proposes; a person ships.
+//     float-to-latest rule), so publishing OVER an agent workflows already run
+//     is the single action in this file's neighborhood that changes what
+//     customers get. A draft changes what the next eval run measures and nothing
+//     else, and the editor's "discard draft" undoes it wholesale. The model
+//     proposes; a person ships.
+//
+//     `create_agent` is not the exception it looks like. Creating an agent seeds
+//     a published v1 — `createAgent` always has, and the UI's "New agent" button
+//     does exactly this — but a brand-new id is referenced by no graph, so that
+//     version floats into nothing. Wiring it into a workflow is a separate act
+//     with its own gates (an agent node in the editor, or `patch_workflow_draft`
+//     + `publish_workflow`, which refuse on a lint error or a stale base).
+//     Deleting one is not here either: `archiveAgent` has no tool, so the
+//     failure mode of a model that over-creates is clutter a person clears, not
+//     a customer-visible change.
 //   • **Simulated tools, never live ones.** `run_agent_preview` does not accept
 //     `liveToolIds`, so every tool in a previewed run is stood in for by the
 //     model and nothing outside this process is touched. The playground in the
@@ -115,6 +138,107 @@ export function draftOrPublished(
   return null
 }
 
+/**
+ * Ids a refusal will name before it stops counting. The enabled catalog is small
+ * but not fixed, and a hundred ids buries the sentence that says what to do.
+ */
+const MAX_NAMED_MODELS = 20
+
+/** Ids in an error, capped and countable — a list to pick the right one from. */
+function nameIds(ids: string[]): string {
+  const shown = ids.slice(0, MAX_NAMED_MODELS)
+  const rest = ids.length - shown.length
+  return rest > 0
+    ? `${shown.join(', ')} (+${rest} more — call list_models)`
+    : shown.join(', ')
+}
+
+/**
+ * The config an agent will be CREATED with, or the reason it cannot be.
+ *
+ * Three things are checked here that the schema cannot, and all three are the
+ * same failure: an id the model wrote from memory. `modelId` is passed opaquely
+ * to the host's `getModel`, `toolIds` are registry keys resolved at run time, and
+ * neither has a foreign key — so a plausible-looking wrong one produces an agent
+ * that saves, lists, and fails the first time it is actually run, at which point
+ * nothing points at the tool call that authored it. The same argument
+ * `create_eval_set` makes for resolving its target before storing it.
+ *
+ * The capability gate is the third: an agent given tools needs a model that can
+ * call them, and the editor never offers one that can't (the row is disabled with
+ * the reason). A tool call has no disabled row, so the check has to be here or
+ * nowhere. It only fires on a model the catalog KNOWS lacks something — see
+ * `unmetRequirements`.
+ *
+ * Deliberately NOT checked: `subAgents.targets`, whose ids are also unresolved
+ * pointers. Delegation is not something an agent gets on the call that creates
+ * it — it names other agents by id, so it is a second pass by construction — and
+ * `update_agent_draft` has no such check either. A wrong target there fails on a
+ * draft, which is the shape of mistake this file is relaxed about.
+ */
+async function preflightAgentConfig(
+  client: WfDataClient,
+  raw: unknown,
+): Promise<{ config: AgentConfig } | { error: string }> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return {
+      error:
+        'Missing required argument `config` — an object with at least `modelId`, `prompt` and `userPrompt`.',
+    }
+  }
+  const parsed = agentConfigSchema.safeParse(raw)
+  if (!parsed.success) {
+    // Field-by-field: the schema's messages are written for an author (the
+    // `userPrompt` refinement explains how data reaches an agent at all), and a
+    // stringified ZodError buries them.
+    const issues = parsed.error.issues
+      .map((i) => `${i.path.join('.') || 'config'}: ${i.message}`)
+      .join('\n')
+    return { error: `The config is not valid:\n${issues}` }
+  }
+  const config = parsed.data
+
+  const models: ModelOption[] = await client.listModels()
+  const model = models.find((m) => m.id === config.modelId)
+  if (!model) {
+    return {
+      error: `No enabled model has the id "${config.modelId}". Ids are composite \`provider:model\` and must be passed verbatim from list_models — the provider-native half alone will 404. Enabled: ${nameIds(
+        models.map((m) => m.id),
+      )}`,
+    }
+  }
+
+  if (config.toolIds.length > 0) {
+    const catalog: ToolOption[] = await client.listTools()
+    const known = new Set(catalog.map((t) => t.id))
+    const unknown = config.toolIds.filter((id) => !known.has(id))
+    if (unknown.length > 0) {
+      return {
+        error: `These tool ids are not in the catalog: ${unknown.join(
+          ', ',
+        )}. An agent can only be given a registered tool — call get_tool_catalog for the ids.`,
+      }
+    }
+  }
+
+  const requirements = agentModelRequirements(config)
+  const unmet = unmetRequirements(model, requirements)
+  if (unmet.length > 0) {
+    const capable = models
+      .filter((m) => unmetRequirements(m, requirements).length === 0)
+      .map((m) => m.id)
+    return {
+      error: `Model "${model.id}" cannot run this agent: ${unmet
+        .map((k) => REQUIREMENT_REASON[k])
+        .join(', ')}. The config needs ${Object.keys(requirements)
+        .filter((k) => requirements[k as keyof typeof requirements] === true)
+        .join(', ')}. Models that can: ${nameIds(capable)}`,
+    }
+  }
+
+  return { config }
+}
+
 /** Values for `${…}` prompt variables — strings only, as the handler parses them. */
 function stringRecord(raw: unknown): Record<string, string> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
@@ -155,6 +279,74 @@ function summarizePreview(result: AgentPreviewResult): unknown {
 
 export function agentWriteTools(): WfMcpTool[] {
   return [
+    {
+      name: 'create_agent',
+      title: 'Create agent',
+      description:
+        'Create a new reusable agent — the same thing the console’s "New agent" button makes, configured in one call instead of by hand. It starts at version 1 with a matching draft, and NO workflow references it yet, so nothing runs it until someone adds an agent node pointing at it; that wiring is a separate, gated step. `config` needs three fields: `modelId` (from list_models, verbatim — ids are composite `provider:model`), `prompt` (the system prompt: INSTRUCTIONS only, since it is the provider’s cache prefix) and `userPrompt` (the single user turn, and the only way per-call data reaches a task agent — write `${variable}` tokens and each workflow node maps them). Everything else defaults: `toolIds` [] (ids from get_tool_catalog), `maxTurns` 5, `output` {"kind":"text"} (or `boolean`, or `object` with a `schema`), `inputKind` "task" (use "conversation" for a chat agent, whose nodes must bind `conversation`), `reasoning` false, `webSearch` "off". The model, the tool ids and the model’s capabilities are checked before anything is written, so a wrong id fails here rather than on the first real run. Preview it with run_agent_preview, then give it a Goal with create_eval_set.',
+      inputSchema: {
+        name: z
+          .string()
+          .describe(
+            'Display name, e.g. "Conflict checker". Shown on the agent card and in a workflow’s node picker.',
+          ),
+        config: z
+          .record(z.string(), z.unknown())
+          .describe(
+            'The AgentConfig — same shape get_agent returns under `currentVersion.config`. Only modelId, prompt and userPrompt are required; see the tool description for the defaults.',
+          ),
+        description: z
+          .string()
+          .nullish()
+          .describe(
+            'One line on what the agent is for. Shown on the card, and used in the synthesized `spawn_*` tool description when another agent delegates to this one — so write it for a reader who has to choose.',
+          ),
+      },
+      readOnly: false,
+      run: async (client, args) => {
+        const name = reqString(args.name, 'name')
+        const preflight = await preflightAgentConfig(client, args.config)
+        if ('error' in preflight) return preflight
+        const { config } = preflight
+
+        const { agentId } = await client.createAgent({
+          name,
+          description: optString(args.description),
+          config,
+        })
+        const variables = agentInputVariables(config)
+        return {
+          ok: true,
+          agentId,
+          name,
+          versionNumber: 1,
+          // The binding contract, stated on creation for the same reason
+          // `create_eval_set` states its target's: the next thing anyone does
+          // with this agent — a node, a Sample, a preview — has to supply
+          // exactly these, and going to look them up is a round trip that the
+          // config just went past.
+          inputContract: {
+            inputKind: config.inputKind,
+            variables,
+            note:
+              config.inputKind === 'conversation'
+                ? 'Every workflow node pointing at this agent MUST bind `conversation` to a message source, or the run throws.'
+                : variables.length > 0
+                  ? 'Every workflow node pointing at this agent must map each of these variables.'
+                  : 'The user turn has no `${variables}`, so it renders the same on every call — usually a mistake for a task agent, since nothing per-run reaches it.',
+          },
+          output: config.output.kind,
+          toolIds: config.toolIds,
+          note: 'Version 1 is published, but no workflow references this agent yet, so nothing runs it. Publishing a LATER version is not available here — a person does that in the console once it is wired up.',
+          next: `Smoke-test it with run_agent_preview({ agentId: "${agentId}", ${
+            variables.length > 0
+              ? `promptVariables: { ${variables.map((v) => `${v}: "…"`).join(', ')} }`
+              : 'input: "…"'
+          } }), then create_eval_set({ targetId: "${agentId}", targetKind: "agent", … }) to grade it. Further edits go to the draft via update_agent_draft.`,
+        }
+      },
+    },
+
     {
       name: 'update_agent_draft',
       title: 'Update agent draft',

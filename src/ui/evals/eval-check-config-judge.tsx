@@ -8,7 +8,7 @@ import { useWfComponents } from '../context'
 import { ModelSelect } from '../editor/model-select'
 import { useModels } from '../hooks'
 import { Modal } from '../modal'
-import { unmetRequirements } from '../model-capabilities'
+import { unmetRequirements } from '../../engine/model-capabilities'
 import { useCommittedField } from '../use-committed-field'
 
 import { outputPathOptions } from './fields'

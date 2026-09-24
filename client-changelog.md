@@ -15,6 +15,34 @@ without you and is still probably wrong to skip.
 
 ---
 
+## 2026-09-24 — `create_agent` on the MCP write surface
+
+`wf-mcp --write` (and the remote surface with writes on) gains an eleventh write
+tool: **`create_agent`**. It makes the same thing the console's "New agent"
+button makes — a `wf_agent` with version 1 published and a matching draft — from
+a `name` plus an `AgentConfig` whose only required fields are `modelId`, `prompt`
+and `userPrompt`.
+
+It preflights what the schema cannot: the `modelId` against `listModels`, every
+`toolIds` entry against `listTools`, and the model's capabilities against what the
+config needs (`agentModelRequirements`). All three are ids with no foreign key, so
+a wrong one otherwise produces an agent that saves and lists and then fails the
+first time anything runs it.
+
+`publish_agent` is still deliberately absent — an agent version floats into every
+workflow referencing it, and that remains a person's call. Creation does not cross
+that line: a brand-new id is referenced by no graph, so its v1 floats into nothing
+until someone wires an agent node to it.
+
+**Action.** None, unless you document the tool list yourself — the counts moved
+to thirty-two tools, eleven of them writes. The capability helpers
+`unmetRequirements`, `unmetRequirementsReason`, `mergeModelRequirements` and
+`REQUIREMENT_REASON` moved from `src/ui/model-capabilities` to
+`@stevepeak/007/engine` (nothing on the MCP path may import `src/ui`); they were
+never exported from `@stevepeak/007/ui`, so no host import changes.
+
+---
+
 ## 2026-09-18 — the System Copilot is removed
 
 The in-app Copilot — the right-rail chat over the platform's agents, workflows,

@@ -109,6 +109,15 @@ export {
   type BlobRehydrate,
   type WfBlobRef,
 } from './blob-ref'
+// Which capabilities a model is KNOWN to lack of the ones an agent needs
+// (`agentModelRequirements`, above) — the gate behind every model picker, and
+// behind `create_agent`'s refusal to store an agent its model cannot run.
+export {
+  mergeModelRequirements,
+  REQUIREMENT_REASON,
+  unmetRequirements,
+  unmetRequirementsReason,
+} from './model-capabilities'
 export { answerCriticalIds } from './graph-answer-cone'
 export { ancestorIds, predecessorIds } from './graph-traverse'
 export {

@@ -2,8 +2,11 @@ import { describe, expect, test } from 'bun:test'
 
 import { makeAgentConfig } from '../engine/agent-test-helpers'
 import type {
+  AgentConfig,
   AgentPreviewInput,
   AgentPreviewResult,
+  ModelOption,
+  ToolOption,
   WfAgentDetail,
   WfDataClient,
 } from '../server/protocol'
@@ -12,9 +15,9 @@ import type { WfMcpTool } from './tools'
 import { agentWriteTools } from './tools-agents'
 
 /**
- * These two tools are the only ones in the catalog that change an agent or spend
- * a model call on one, so what is worth pinning is the boundary: what they
- * refuse to do, and whether a caller can tell what they just did.
+ * These three tools are the only ones in the catalog that create or change an
+ * agent, or spend a model call on one, so what is worth pinning is the boundary:
+ * what they refuse to do, and whether a caller can tell what they just did.
  */
 
 function toolNamed(name: string): WfMcpTool {
@@ -37,6 +40,191 @@ function detail(over: Partial<WfAgentDetail> = {}): WfAgentDetail {
     ...over,
   }
 }
+
+/** The enabled catalog a create preflight reads. */
+function models(): ModelOption[] {
+  return [
+    { id: 'venice:qwen', label: 'Qwen', capabilities: { tools: true } },
+    { id: 'venice:tiny', label: 'Tiny', capabilities: { tools: false } },
+  ]
+}
+
+function tools(): ToolOption[] {
+  return [
+    {
+      id: 'search_matters',
+      name: 'Search matters',
+      description: 'finds matters',
+      kind: 'function',
+      origin: 'host',
+    },
+  ]
+}
+
+/** A client that would accept any create, so a refusal is the tool's own. */
+function createClient(over: Partial<WfDataClient> = {}): WfDataClient {
+  return stubClient({
+    listModels: async () => models(),
+    listTools: async () => tools(),
+    createAgent: async () => ({ agentId: 'new1', versionId: 'v1' }),
+    ...over,
+  })
+}
+
+/**
+ * The minimum a config needs. Written in the INPUT shape a caller would send
+ * rather than via `makeAgentConfig`, because what these cases exercise is the
+ * defaulting and the refusals a hand-written config runs into.
+ */
+const minimal = {
+  modelId: 'venice:qwen',
+  prompt: 'You check for conflicts.',
+  userPrompt: 'Check this matter:\n\n${matter}',
+}
+
+describe('create_agent', () => {
+  const tool = toolNamed('create_agent')
+
+  test('creates the agent with a fully defaulted config', async () => {
+    const calls: { name: string; config: AgentConfig }[] = []
+    const client = createClient({
+      createAgent: async (input) => {
+        calls.push(input)
+        return { agentId: 'new1', versionId: 'v1' }
+      },
+    })
+    const result = (await tool.run(client, {
+      name: 'Conflict checker',
+      config: minimal,
+      description: 'Screens a new matter against existing clients.',
+    })) as { ok: boolean; agentId: string; inputContract: { variables: string[] } }
+
+    expect(result.ok).toBe(true)
+    expect(result.agentId).toBe('new1')
+    // The caller sent three fields; what is STORED is the parsed config, so a
+    // defaulted field can never be missing from a version the engine will read.
+    expect(calls[0]?.config).toEqual(
+      makeAgentConfig({ ...minimal, modelId: 'venice:qwen' }),
+    )
+    // The bindings a node pointing at this agent will have to map — the thing
+    // the caller needs next and would otherwise re-derive.
+    expect(result.inputContract.variables).toEqual(['matter'])
+  })
+
+  // A new agent seeds a published v1 (as the console's own button does), and
+  // that is only safe while nothing can point at it yet — so the receipt has to
+  // say so rather than leave the caller to assume a draft.
+  test('says the version is live and that nothing references it', async () => {
+    const result = (await tool.run(createClient(), {
+      name: 'Conflict checker',
+      config: minimal,
+    })) as { versionNumber: number; note: string }
+    expect(result.versionNumber).toBe(1)
+    expect(result.note).toContain('no workflow references this agent yet')
+  })
+
+  test('publishing a later version is not reachable from here', async () => {
+    const client = createClient({
+      publishAgent: async () => {
+        throw new Error('publish must not be reachable from a tool')
+      },
+    })
+    const result = (await tool.run(client, {
+      name: 'Conflict checker',
+      config: minimal,
+    })) as { ok: boolean }
+    expect(result.ok).toBe(true)
+  })
+
+  // Everything below is the preflight, and every case is the same failure: an id
+  // or a field a model wrote from memory. Nothing may be written on any of them.
+  function refusingClient(): WfDataClient {
+    return createClient({
+      createAgent: async () => {
+        throw new Error('nothing may be created on a refusal')
+      },
+    })
+  }
+
+  test('reports every invalid field rather than the first', async () => {
+    const result = (await tool.run(refusingClient(), {
+      name: 'Broken',
+      config: { modelId: 'venice:qwen', prompt: '', userPrompt: '' },
+    })) as { error: string }
+    expect(result.error).toContain('prompt')
+    // The refinement that explains how data reaches a task agent at all.
+    expect(result.error).toContain('userPrompt')
+  })
+
+  test('refuses a config that is not an object', async () => {
+    const result = (await tool.run(refusingClient(), {
+      name: 'Broken',
+      config: 'be brief',
+    })) as { error: string }
+    expect(result.error).toContain('modelId')
+  })
+
+  test('refuses a model id that is not enabled, and names the ones that are', async () => {
+    const result = (await tool.run(refusingClient(), {
+      name: 'Conflict checker',
+      config: { ...minimal, modelId: 'qwen' },
+    })) as { error: string }
+    // The composite-vs-native trap: the provider-native half alone 404s.
+    expect(result.error).toContain('venice:qwen')
+  })
+
+  test('refuses a tool id that is not in the catalog', async () => {
+    const result = (await tool.run(refusingClient(), {
+      name: 'Conflict checker',
+      config: { ...minimal, toolIds: ['search_matters', 'search_everything'] },
+    })) as { error: string }
+    expect(result.error).toContain('search_everything')
+    // Only the unknown one is named — the real id is not the caller's problem.
+    expect(result.error).not.toContain('search_matters')
+  })
+
+  // The editor never offers a model that cannot run what the agent is
+  // configured to need; a tool call has no disabled dropdown row, so the same
+  // gate has to be here or nowhere.
+  test('refuses a model that cannot call the tools the agent is given', async () => {
+    const result = (await tool.run(refusingClient(), {
+      name: 'Conflict checker',
+      config: {
+        ...minimal,
+        modelId: 'venice:tiny',
+        toolIds: ['search_matters'],
+      },
+    })) as { error: string }
+    expect(result.error).toContain('no tool calling')
+    // And where to go instead.
+    expect(result.error).toContain('venice:qwen')
+  })
+
+  test('a model with unknown capabilities is not gated', async () => {
+    const client = createClient({
+      listModels: async () => [{ id: 'venice:qwen', label: 'Qwen' }],
+    })
+    const result = (await tool.run(client, {
+      name: 'Conflict checker',
+      config: { ...minimal, toolIds: ['search_matters'] },
+    })) as { ok?: boolean; error?: string }
+    expect(result.error).toBeUndefined()
+    expect(result.ok).toBe(true)
+  })
+
+  test('a conversation agent is told its nodes must bind the thread', async () => {
+    const result = (await tool.run(createClient(), {
+      name: 'Legal chat',
+      config: {
+        modelId: 'venice:qwen',
+        prompt: 'You answer legal questions.',
+        inputKind: 'conversation',
+      },
+    })) as { inputContract: { inputKind: string; note: string } }
+    expect(result.inputContract.inputKind).toBe('conversation')
+    expect(result.inputContract.note).toContain('MUST bind `conversation`')
+  })
+})
 
 describe('update_agent_draft', () => {
   const tool = toolNamed('update_agent_draft')

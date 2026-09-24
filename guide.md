@@ -1020,7 +1020,7 @@ claude mcp add wf \
 Flags of the same name (`--base-url=`, `--api-path=`, `--token=`, `--timeout=`)
 win over the env, and `--write` registers the mutating tools.
 
-**What it exposes.** Thirty-one tools — twenty-one reads, and ten writes that
+**What it exposes.** Thirty-two tools — twenty-one reads, and eleven writes that
 exist only with `--write`.
 
 | Tool                              | Gate      | What it does                                                        |
@@ -1045,6 +1045,7 @@ exist only with `--write`.
 | `upsert_eval_sample`              | **write** | write or replace one Sample                                         |
 | `delete_eval_sample`              | **write** | remove one Sample                                                   |
 | `run_eval`                        | **write** | launch a sweep. Spends real model calls; returns before it finishes |
+| `create_agent`                    | **write** | a new agent, model/tools/capabilities preflighted. Starts at v1, referenced by nothing |
 | `update_agent_draft`              | **write** | replace an agent's unsaved draft. Never publishes                   |
 | `run_agent_preview`               | **write** | one throwaway run of an agent. **Every tool simulated**             |
 | `patch_workflow_draft`            | **write** | named ops on a workflow's draft — set a tool arg, an edge, a label. Lints the result |
@@ -1107,7 +1108,10 @@ somewhere else. It renders no credential — only the variable's name.
 consequence. `publish_agent` is not in the catalog: a published version floats
 into every workflow referencing that agent, so it is the one action here that
 changes what customers get, and `update_agent_draft` deliberately stops one step
-short of it. (`publish_workflow` IS here, because a workflow version changes
+short of it. `create_agent` is not a way around that — creating an agent seeds a
+published v1 exactly as the console's "New agent" button does, but a brand-new id
+is referenced by no graph, so the version floats into nothing until someone wires
+an agent node to it. (`publish_workflow` IS here, because a workflow version changes
 only its own trigger — and the two ways a workflow publish went wrong in
 practice were gaps a person fell through as well: a Tool node whose args had
 drifted from the tool's schema, and a second author publishing from a stale

@@ -1,10 +1,15 @@
-import type { ModelCapabilities, ModelOption } from '../engine/config'
+import type { ModelCapabilities, ModelOption } from './config'
 
-// Shared capability-gating helpers for the model pickers (the agent/node Model
-// field via `ModelSelect`, and the eval "Run tests" model matrix). One source
-// of truth for "which required capabilities a model is missing" and the short
-// reason we show when a model is gated out. What an agent NEEDS is
-// `agentModelRequirements` in the engine, next to the config it reads.
+// Capability gating: which of the capabilities an agent NEEDS
+// (`agentModelRequirements`, next door) a given model is known to lack. One
+// source of truth for that decision and for the short reason shown when a model
+// is gated out.
+//
+// It lives in the engine rather than beside the pickers that first needed it
+// because the pickers are no longer the only gate. `create_agent` (mcp/) refuses
+// a config whose model cannot run it — an agent authored through a tool call has
+// no disabled dropdown row to warn it — and nothing on that path may import
+// `src/ui` (see the entry-point closure test in `package-exports.test.ts`).
 
 // Short "why this model is unavailable" reason per required capability.
 export const REQUIREMENT_REASON: Record<keyof ModelCapabilities, string> = {

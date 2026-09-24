@@ -18,7 +18,7 @@ import {
 import {
   mergeModelRequirements,
   unmetRequirements,
-} from '../model-capabilities'
+} from '../../engine/model-capabilities'
 
 // The MATRIX behind `RunConfigDialog` — everything the dialog knows that isn't
 // markup. Extracted so the dialog file is layout and this file is the rules,

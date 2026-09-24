@@ -2,7 +2,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 
 import type { ModelCapabilities } from '../../engine/config'
 import type { ModelGroup } from '../editor/model-grouping'
-import { unmetRequirementsReason } from '../model-capabilities'
+import { unmetRequirementsReason } from '../../engine/model-capabilities'
 
 import { ModelMatrixRow } from './run-config-dialog-model-row'
 
