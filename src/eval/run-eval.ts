@@ -1,3 +1,4 @@
+import type { WfLogger } from '../engine/logger'
 import type { AgentConfig, WfDataClient } from '../server/protocol'
 
 import {
@@ -160,6 +161,8 @@ export async function driveEvalRun(
     budgetMs?: number
     onProgress?: (p: { done: number; total: number }) => void
     now?: () => number
+    /** Where a cell that could not even record its own failure is reported. */
+    logger?: WfLogger
   } = {},
 ): Promise<{ done: boolean }> {
   const pollIntervalMs = opts.pollIntervalMs ?? EVAL_POLL_INTERVAL_MS
@@ -182,7 +185,11 @@ export async function driveEvalRun(
       )
     }
 
-    const result = await tickEvalRun(client, { drive, now: now() })
+    const result = await tickEvalRun(client, {
+      drive,
+      now: now(),
+      logger: opts.logger,
+    })
     // Out of budget with cells left: this is the last save, so hand the run
     // back in the same write rather than leaving a heartbeat that would make it
     // look attended by a driver that has already gone.

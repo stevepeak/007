@@ -137,7 +137,7 @@ async function loadDrift(
       targetChanges: target.map(driftChange),
     }
   } catch (err) {
-    console.warn('[wf] eval drift lookup failed:', err)
+    c.logger.warn('[wf] eval drift lookup failed', err)
     return null
   }
 }

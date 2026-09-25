@@ -6,6 +6,7 @@ import {
   type AgentConfig,
   type WorkflowGraph,
 } from '../../engine/graph'
+import type { WfLogger } from '../../engine/logger'
 import type { WfDb } from '../../storage/client'
 import type { DashboardAnalytics, RecordChangeInput } from '../../storage/data'
 import { agentExists, workflowExists } from '../../storage/data'
@@ -242,6 +243,17 @@ export type HandlerCtx = {
    * fail the mutation it describes.
    */
   change: (input: Omit<RecordChangeInput, 'actor'>) => Promise<void>
+  /**
+   * Where a handler reports a fault it has decided not to throw — a host
+   * provider lookup that failed, a background summary that never landed.
+   * `config.logger` already resolved (and guarded), so a handler never reaches
+   * for `console`; the console is what it resolves to when no host wired one.
+   *
+   * Bound for the same reason `change` is: the alternative is threading it
+   * through every handler builder, and nothing in the type system would catch
+   * the one that forgot.
+   */
+  logger: WfLogger
 }
 
 // A handler may be sync or async — the dispatcher always awaits its result

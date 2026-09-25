@@ -1,5 +1,6 @@
 import { and, asc, count, desc, eq, ne } from 'drizzle-orm'
 
+import { consoleWfLogger, type WfLogger } from '../../engine/logger'
 import { RUN_STATE_LEVEL } from '../../engine/stream-sink'
 import type { WfDb } from '../client'
 import { wfRun, wfRunLog, type WfRunStatus } from '../schema'
@@ -249,6 +250,7 @@ export async function recordRunStateChange(
      */
     pendingNodes?: number
   },
+  logger: WfLogger = consoleWfLogger,
 ): Promise<void> {
   const ts = input.ts ?? Date.now()
   const message = input.detail
@@ -277,7 +279,7 @@ export async function recordRunStateChange(
         set: { message: row.message, meta: row.meta, ts: row.ts },
       })
   } catch (err) {
-    console.warn('[wf] run state marker not recorded:', err)
+    logger.warn('[wf] run state marker not recorded', err)
   }
 }
 

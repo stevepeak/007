@@ -17,6 +17,7 @@ import {
   type WfNodeKind,
   type WfRunManifestEntry,
 } from '../engine/graph'
+import { resolveWfLogger } from '../engine/logger'
 import { settleOf, type NodeSettlement } from '../engine/node-settlement'
 import { iterationSubgraphOf } from '../engine/nodes/iteration'
 import { errorMessage } from '../engine/run-node'
@@ -283,6 +284,11 @@ export function makeGraphWorkflow<
       // per-invocation point cap.
       const telemetry = resolveTelemetrySink(config, env)
 
+      // Where this run's swallowed faults go. Resolved once here and threaded
+      // (onto `ctx` below) rather than re-derived per site, so the guard that
+      // keeps a throwing host logger from taking a run down is allocated once.
+      const logger = resolveWfLogger(config.logger)
+
       // `getVersionGraph` already reads the workflow id — it was simply being
       // discarded. Telemetry indexes on it (a version id fragments a workflow's
       // history across every publish), so it now comes back with the graph.
@@ -335,6 +341,7 @@ export function makeGraphWorkflow<
           telemetry,
           dims,
           prices,
+          logger,
         }).record(args)
       }
 
@@ -424,6 +431,7 @@ export function makeGraphWorkflow<
         step,
         env,
         config: runConfig,
+        logger,
         p,
         manifest,
         sink,
@@ -660,12 +668,17 @@ export function makeGraphWorkflow<
         // node's timeout, turning a legible failure into a long stall.
         await reportToParent(ctx, { ok: false, error: message })
         if (config.onRunFailed) {
-          await notifyHost(step, 'on-failed', () => {
-            return config.onRunFailed!(runContextFor(p, env), {
-              error: message,
-              workflowRunId: p.workflowRunId,
-            })
-          })
+          await notifyHost(
+            step,
+            'on-failed',
+            () => {
+              return config.onRunFailed!(runContextFor(p, env), {
+                error: message,
+                workflowRunId: p.workflowRunId,
+              })
+            },
+            logger,
+          )
         }
         throw err
       }

@@ -259,7 +259,7 @@ export function buildAgentHandlers<TDeps>(
                 long: summary.long,
               })
             } catch (err) {
-              console.error('[wf] background agent summary failed:', err)
+              c.logger.error('[wf] background agent summary failed', err)
             }
           })(),
         )

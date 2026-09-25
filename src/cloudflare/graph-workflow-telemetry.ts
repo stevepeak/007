@@ -6,6 +6,7 @@ import {
   type TelemetrySink,
 } from '../analytics/sink'
 import type { WfSdkConfig } from '../engine/config'
+import { resolveWfLogger, type WfLogger } from '../engine/logger'
 import type { RunRecorder } from '../engine/run-recorder'
 import type { WfDb } from '../storage/client'
 import type { ModelPriceMap } from '../storage/cost'
@@ -36,7 +37,10 @@ export function resolveTelemetrySink<TDeps>(
   try {
     return config.resolveTelemetry({ env }) ?? NOOP_TELEMETRY
   } catch (err) {
-    console.error('[wf] resolveTelemetry failed; telemetry disabled', err)
+    resolveWfLogger(config.logger).error(
+      '[wf] resolveTelemetry failed; telemetry disabled',
+      err,
+    )
     return NOOP_TELEMETRY
   }
 }
@@ -77,12 +81,14 @@ export function createTelemeteredRecorder(deps: {
   telemetry: TelemetrySink
   dims: RunDims
   prices?: ModelPriceMap
+  logger?: WfLogger
 }): RunRecorder {
   return withStepTelemetry(
     createDurableRunRecorder({ db: deps.db, runId: deps.runId }),
     deps.telemetry,
     deps.dims,
     deps.prices,
+    deps.logger,
   )
 }
 
@@ -163,5 +169,6 @@ export function emitRunPoint<TDeps, E extends GraphWorkflowEnv>(
       failedNodeCount: ctx.counters.failedNodes,
       droppedPoints: ctx.telemetry.dropped(),
     }),
+    ctx.logger,
   )
 }

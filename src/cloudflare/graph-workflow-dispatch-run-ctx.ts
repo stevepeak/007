@@ -3,6 +3,7 @@ import type { WorkflowStep } from 'cloudflare:workers'
 import type { RunDims } from '../analytics/points'
 import type { TelemetrySink } from '../analytics/sink'
 import type { WfSdkConfig } from '../engine/config'
+import type { WfLogger } from '../engine/logger'
 import type { WfRunManifestEntry } from '../engine/graph'
 import type { RecordStepArgs } from '../engine/run-recorder'
 import type { Scheduler } from '../engine/scheduler'
@@ -24,6 +25,12 @@ export type RunCtx<TDeps, E extends GraphWorkflowEnv> = {
   step: WorkflowStep
   env: E
   config: WfSdkConfig<TDeps>
+  /**
+   * Where this run's swallowed faults go — `config.logger` already resolved
+   * (and guarded), so the dispatch helpers report without each re-deriving it.
+   * The console when the host wired none.
+   */
+  logger: WfLogger
   p: GraphWorkflowParams
   manifest: WfRunManifestEntry[]
   sink: StreamSink

@@ -2,6 +2,7 @@ import type { RunContext, WfSdkConfig } from './config'
 import { errorFeedLine, errorStored } from './error-detail'
 import { isDecisionKind } from './graph'
 import { resolveAnswerNodeIds } from './graph-engine'
+import { resolveWfLogger } from './logger'
 import type { ModelBudget } from './model-budget'
 import { emitNodeStartProgress } from './node-progress'
 import { settleOf, type NodeSettlement } from './node-settlement'
@@ -180,6 +181,7 @@ export async function executeWorkflow<TDeps>(
   deps: ExecuteWorkflowDeps<TDeps>,
 ): Promise<ExecuteWorkflowResult> {
   const { config, runContext, recorder, sink } = deps
+  const logger = resolveWfLogger(config.logger)
   const scheduler = new Scheduler(deps.graph, config.limits?.nodeBudget)
   const trigger = scheduler.trigger
 
@@ -391,7 +393,7 @@ export async function executeWorkflow<TDeps>(
     try {
       await fn()
     } catch (err) {
-      console.error('[wf] lifecycle callback failed:', errorMessage(err))
+      logger.error('[wf] lifecycle callback failed', err)
     }
   }
 

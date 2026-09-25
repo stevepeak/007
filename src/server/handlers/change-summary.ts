@@ -1,5 +1,5 @@
 import type { AgentConfig, WorkflowGraph } from '../../engine/graph'
-import { errorMessage } from '../../engine/run-node'
+import { resolveWfLogger } from '../../engine/logger'
 import type { WfChangeSummary } from '../protocol'
 import {
   summarizeAgentChanges,
@@ -113,10 +113,13 @@ async function summaryModelId<TDeps>(
 // blocks publishing, which is absurd for a feature whose whole job is to write a
 // nicer sentence than the heuristic does. Fall through to the structural
 // summary and log the reason.
-function warnFallback(err: unknown): void {
-  console.warn(
-    '[wf] AI change summary failed; falling back to the structural summary:',
-    errorMessage(err),
+function warnFallback<TDeps>(
+  opts: CreateWfSdkHandlersOptions<TDeps>,
+  err: unknown,
+): void {
+  resolveWfLogger(opts.config.logger).warn(
+    '[wf] AI change summary failed; falling back to the structural summary',
+    err,
   )
 }
 
@@ -156,7 +159,7 @@ export async function computeChangeSummary<TDeps>(
         nextGraph: input.nextGraph,
       })
     } catch (err) {
-      warnFallback(err)
+      warnFallback(opts, err)
     }
   }
   return heuristicChangeSummary(input.previousGraph, input.nextGraph)
@@ -196,7 +199,7 @@ export async function computeAgentChangeSummary<TDeps>(
         nextConfig: input.nextConfig,
       })
     } catch (err) {
-      warnFallback(err)
+      warnFallback(opts, err)
     }
   }
   return heuristicAgentChangeSummary(input.previousConfig, input.nextConfig)

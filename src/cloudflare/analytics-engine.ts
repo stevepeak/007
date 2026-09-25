@@ -1,6 +1,7 @@
 import type { AnalyticsEngineDataset } from '@cloudflare/workers-types'
 
 import type { TelemetrySink } from '../analytics/sink'
+import { consoleWfLogger, type WfLogger } from '../engine/logger'
 
 // The Analytics Engine implementation of `TelemetrySink`. `AnalyticsEngineDataset`
 // is a TYPE-ONLY import, so this module is erased at build and stays reachable
@@ -24,12 +25,20 @@ export type CreateAnalyticsEngineTelemetryOptions = {
    */
   dataset: () => AnalyticsEngineDataset | undefined
   maxPoints?: number
+  /**
+   * Where a refused `writeDataPoint` is reported. Pass the same logger you put
+   * on `WfSdkConfig.logger` — this sink is constructed by the HOST (it names a
+   * binding the SDK deliberately doesn't), so it is the one telemetry site the
+   * SDK cannot resolve a logger for on its own. Defaults to the console.
+   */
+  logger?: WfLogger
 }
 
 export function createAnalyticsEngineTelemetry(
   opts: CreateAnalyticsEngineTelemetryOptions,
 ): TelemetrySink {
   const max = opts.maxPoints ?? MAX_POINTS_PER_INVOCATION
+  const logger = opts.logger ?? consoleWfLogger
   let written = 0
   let dropped = 0
   return {
@@ -48,7 +57,7 @@ export function createAnalyticsEngineTelemetry(
         written++
       } catch (err) {
         dropped++
-        console.error('[wf] analytics writeDataPoint failed', err)
+        logger.error('[wf] analytics writeDataPoint failed', err)
       }
     },
     dropped() {

@@ -219,7 +219,7 @@ export function buildWorkflowHandlers<TDeps>(
                 long: summary.long,
               })
             } catch (err) {
-              console.error('[wf] background summary failed:', err)
+              c.logger.error('[wf] background summary failed', err)
             }
           })(),
         )

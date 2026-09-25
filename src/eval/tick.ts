@@ -1,3 +1,4 @@
+import { consoleWfLogger, type WfLogger } from '../engine/logger'
 import type { WfDataClient } from '../server/protocol'
 
 import {
@@ -78,10 +79,11 @@ export type EvalTickResult = {
  */
 export async function tickEvalRun(
   client: WfDataClient,
-  input: { drive: EvalRunDrive; now?: number },
+  input: { drive: EvalRunDrive; now?: number; logger?: WfLogger },
 ): Promise<EvalTickResult> {
   const { drive } = input
   const now = input.now ?? Date.now()
+  const logger = input.logger ?? consoleWfLogger
   const plan = drive.plan
   if (!plan) {
     throw new Error(
@@ -110,7 +112,7 @@ export async function tickEvalRun(
         attempt: cell.attempt,
       })
     } catch (e: unknown) {
-      console.error(`[wf] eval failure not recorded for ${cell.rowId}:`, e)
+      logger.error(`[wf] eval failure not recorded for ${cell.rowId}`, e)
       // Deliberately NOT marked settled: leaving it unsettled means the next
       // tick tries again, which is better than a cell that vanishes from the
       // totals because one write blipped.

@@ -50,6 +50,7 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
     | 'toolRegistry'
     | 'triggers'
     | 'resolveConnectorSecret'
+    | 'logger'
   >
   /**
    * Absolute path the connector OAuth callback route is mounted at. Must match

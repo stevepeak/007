@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers'
 
 import type { WfSdkConfig } from '../engine/config'
-import { errorMessage } from '../engine/run-node'
+import { resolveWfLogger } from '../engine/logger'
 import type { RunAnswerChunk } from '../engine/stream-sink'
 
 import type { CalleeDoneWire } from './callee-protocol'
@@ -145,6 +145,9 @@ export type RunRoomClass<E extends GraphWorkflowEnv> = new (
 export function makeRunRoom<TDeps, E extends GraphWorkflowEnv>(
   config: WfSdkConfig<TDeps>,
 ): RunRoomClass<E> {
+  // One per room class, not per instance: the guard around a throwing host
+  // logger only needs allocating once, and `config` is fixed for the class.
+  const logger = resolveWfLogger(config.logger)
   return class RunRoom extends RunRoomBase<E> {
     /**
      * The walk in progress, if this instance started one. Its absence while the
@@ -163,6 +166,7 @@ export function makeRunRoom<TDeps, E extends GraphWorkflowEnv>(
           message,
         )
       },
+      logger,
     })
 
     /**
@@ -203,9 +207,9 @@ export function makeRunRoom<TDeps, E extends GraphWorkflowEnv>(
         .catch((err: unknown) => {
           // Belt and braces — runInlineGraph swallows its own failures, so
           // reaching here means the failure recorder itself threw.
-          console.error(
-            '[wf] inline run escaped its handler:',
-            errorMessage(err),
+          logger.error(
+            '[wf] inline run escaped its handler',
+            err,
           )
         })
         .finally(async () => {

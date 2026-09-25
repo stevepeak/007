@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { errorLogText } from '../engine/error-detail'
+import { resolveWfLogger } from '../engine/logger'
 import { errorMessage } from '../engine/run-node'
 import { recordChange, type DashboardAnalytics } from '../storage/data'
 import { WF_CHANGE_ENTITY_KINDS, WF_EVAL_TARGET_KINDS } from '../storage/schema'
@@ -495,10 +496,20 @@ async function invokeHandler<TDeps>(
     userId: ctx.userId ?? null,
     source: ctx.source ?? ('ui' as const),
   }
+  const logger = resolveWfLogger(opts.config.logger)
   const change: HandlerCtx['change'] = (input) => {
-    return recordChange(db, { ...input, actor })
+    return recordChange(db, { ...input, actor }, logger)
   }
-  return await handler({ params, ctx, db, req, env, analytics, change })
+  return await handler({
+    params,
+    ctx,
+    db,
+    req,
+    env,
+    analytics,
+    change,
+    logger,
+  })
 }
 
 /**
@@ -534,6 +545,9 @@ export function createWfSdkHandlers<TDeps>(
   opts: CreateWfSdkHandlersOptions<TDeps>,
 ): (req: Request) => Promise<Response> {
   const handlers = buildHandlers(opts)
+  // Resolved once per mount: `opts.config` is fixed for the life of the route,
+  // so the guard around a throwing host logger is allocated once too.
+  const logger = resolveWfLogger(opts.config.logger)
   return async (req) => {
     if (req.method !== 'POST') {
       return json({ error: 'Method not allowed' }, 405)
@@ -583,7 +597,7 @@ export function createWfSdkHandlers<TDeps>(
       // handler is invisible (the client only sees a generic error string).
       // `errorLogText`, not the raw error: the production log pipeline renders
       // a caught Error as bare stack frames and drops the message AND `cause`.
-      console.error(`[wf] ${method} failed:`, errorLogText(err))
+      logger.error(`[wf] ${method} failed: ${errorLogText(err)}`)
       // Hand the fault to the host's error tracker as well. The log line above
       // is not enough on its own — nothing in it is grouped, alerted, or
       // attributable to a user.
@@ -591,7 +605,7 @@ export function createWfSdkHandlers<TDeps>(
         opts.onError?.({ err, method, ctx, req })
       } catch (reportErr) {
         // A reporting failure must never escalate into a dropped response.
-        console.error(`[wf] onError hook threw:`, errorLogText(reportErr))
+        logger.error(`[wf] onError hook threw: ${errorLogText(reportErr)}`)
       }
       return json({ error: errorMessage(err) }, 500)
     }

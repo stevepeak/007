@@ -103,7 +103,7 @@ export function buildModelHandlers<TDeps>(
       } catch (err) {
         // A persistent host-provider misconfig would otherwise be invisible
         // here — log before falling back to the raw host list.
-        console.error('[wf] listModels: host provider lookup failed', err)
+        c.logger.error('[wf] listModels: host provider lookup failed', err)
         return await opts.config.listModels({ env: await c.env() })
       }
     },
@@ -122,7 +122,7 @@ export function buildModelHandlers<TDeps>(
       } catch (err) {
         // Same as listModels: a failing host `listProviders` shouldn't blank
         // the catalog silently — log, then serve the cached DB rows.
-        console.error('[wf] listProviders: host provider lookup failed', err)
+        c.logger.error('[wf] listProviders: host provider lookup failed', err)
         return await listModelProviders(c.db)
       }
     },
@@ -195,7 +195,7 @@ export function buildModelHandlers<TDeps>(
           try {
             return (await fetchBudget({ env }, p.id)) ?? unsupported
           } catch (err) {
-            console.error(`[wf] getProviderBudgets: ${p.id} failed`, err)
+            c.logger.error(`[wf] getProviderBudgets: ${p.id} failed`, err)
             return {
               ...unsupported,
               status: 'error',

@@ -1,3 +1,5 @@
+import { consoleWfLogger, type WfLogger } from '../engine/logger'
+
 import type { TelemetryPoint } from './points'
 
 // The telemetry seam, deliberately shaped like `RunRecorder`: the engine hands
@@ -34,11 +36,15 @@ export const NOOP_TELEMETRY: TelemetrySink = {
  * is the one place that enforces it, so a misbehaving implementation costs a
  * data point instead of the step that was merely describing itself.
  */
-export function safeWrite(sink: TelemetrySink, point: TelemetryPoint): void {
+export function safeWrite(
+  sink: TelemetrySink,
+  point: TelemetryPoint,
+  logger: WfLogger = consoleWfLogger,
+): void {
   try {
     sink.write(point)
   } catch (err) {
-    console.error('[wf] telemetry sink threw; point dropped', err)
+    logger.error('[wf] telemetry sink threw; point dropped', err)
   }
 }
 

@@ -1,3 +1,4 @@
+import type { WfLogger } from '../engine/logger'
 import type { RunRecorder } from '../engine/run-recorder'
 import type { ModelPriceMap } from '../storage/cost'
 
@@ -24,6 +25,7 @@ export function withStepTelemetry(
   sink: TelemetrySink,
   dims: RunDims,
   prices?: ModelPriceMap,
+  logger?: WfLogger,
 ): RunRecorder {
   return {
     async record(args) {
@@ -47,6 +49,7 @@ export function withStepTelemetry(
           },
           prices,
         ),
+        logger,
       )
     },
   }

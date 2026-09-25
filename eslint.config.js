@@ -174,5 +174,32 @@ export default [
       ],
     },
   },
+  // Runtime code reports a swallowed fault through `WfSdkConfig.logger`, never
+  // through `console` — a console line in a Worker is a Sentry breadcrumb at
+  // best, so before this rule a production failure that the SDK deliberately
+  // did not throw had no destination at all (ART-187). `engine/logger.ts` holds
+  // the one console the package keeps: the default the seam falls back to.
+  //
+  // `src/cli` is exempt on purpose — a CLI's console IS its output — and so are
+  // tests, which assert on it.
+  {
+    files: [
+      'src/analytics/**',
+      'src/cloudflare/**',
+      'src/connectors/**',
+      'src/documents/**',
+      'src/engine/**',
+      'src/eval/**',
+      'src/mcp/**',
+      'src/server/**',
+      'src/storage/**',
+    ],
+    ignores: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'src/engine/logger.ts'],
+    rules: {
+      // No allow-list: `console.log`/`info`/`debug` are not a fault channel
+      // either, and the runtime dirs have none of them.
+      'no-console': 'error',
+    },
+  },
   { ignores: ['migrations/**'] },
 ]

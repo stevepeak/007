@@ -10,6 +10,7 @@ import {
 } from '../../analytics/dashboard'
 import type { AnalyticsQuery } from '../../analytics/query'
 import type { AnalyticsWindow } from '../../analytics/sql'
+import { consoleWfLogger, type WfLogger } from '../../engine/logger'
 import type { WfDb } from '../client'
 import { tokenCostUsd, type ModelPriceMap } from '../cost'
 import {
@@ -507,11 +508,12 @@ async function orFallBack<T>(
   panel: string,
   attempt: () => Promise<T>,
   fallback: () => T | Promise<T>,
+  logger: WfLogger = consoleWfLogger,
 ): Promise<T> {
   try {
     return await attempt()
   } catch (err) {
-    console.warn(`[wf] dashboard ${panel} fell back to D1:`, err)
+    logger.warn(`[wf] dashboard ${panel} fell back to D1`, err)
     return await fallback()
   }
 }
@@ -530,6 +532,7 @@ export async function loadDashboard(
   input: DashboardInput = {},
   now = Date.now(),
   analytics?: DashboardAnalytics | null,
+  logger: WfLogger = consoleWfLogger,
 ): Promise<DashboardStats<RecentFailure>> {
   const window = resolveWindow(input, now)
   const since = new Date(window.since)
@@ -674,6 +677,7 @@ export async function loadDashboard(
             )
           },
           async () => foldRunVolume(await d1RunVolume(), window),
+          logger,
         )
       : foldRunVolume(await d1RunVolume(), window),
 
@@ -693,6 +697,7 @@ export async function loadDashboard(
               window,
             )
           },
+          logger,
         )
       : foldCostRows(await d1Spend(), await loadModelPriceMap(db), window),
 
@@ -714,6 +719,7 @@ export async function loadDashboard(
             return foldSteps(rows, names, window)
           },
           () => null,
+          logger,
         )
       : null,
   ])

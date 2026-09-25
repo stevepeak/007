@@ -233,6 +233,7 @@ async function runItemInline<TDeps, E extends GraphWorkflowEnv>(
             telemetry: ctx.telemetry,
             dims: ctx.dims,
             prices: ctx.prices,
+            logger: ctx.logger,
           }),
           parentNodeId: node.id,
           itemIndex: index,
@@ -698,7 +699,7 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
             ts: e.ts ?? Date.now(),
           },
         }).catch((err: unknown) => {
-          console.error('[wf] live log append failed:', err)
+          ctx.logger.error('[wf] live log append failed', err)
         })
         return sink.log?.(e)
       },
@@ -782,7 +783,7 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
                   ts: e.ts ?? Date.now(),
                 },
               }).catch((err: unknown) => {
-                console.error('[wf] live log append failed:', err)
+                ctx.logger.error('[wf] live log append failed', err)
               })
               return sink.log?.(e)
             },
@@ -870,6 +871,7 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
                               telemetry: ctx.telemetry,
                               dims: ctx.dims,
                               prices: ctx.prices,
+                              logger: ctx.logger,
                             })
                           : undefined,
                     },
@@ -1034,12 +1036,17 @@ export async function deliverOutput<TDeps, E extends GraphWorkflowEnv>(
   // event cap. `rawOutput` is already contract-free for a sub-run.
   await reportToParent(ctx, { ok: true, output: rawOutput })
   if (config.onRunComplete) {
-    await notifyHost(step, 'on-complete', async () => {
-      return await config.onRunComplete!(runContextFor(p, env), {
-        output: await answerFor(),
-        outputNodeId,
-      })
-    })
+    await notifyHost(
+      step,
+      'on-complete',
+      async () => {
+        return await config.onRunComplete!(runContextFor(p, env), {
+          output: await answerFor(),
+          outputNodeId,
+        })
+      },
+      ctx.logger,
+    )
   }
   return { output: rawOutput, outputNodeId }
 }
@@ -1078,8 +1085,8 @@ export async function settleRun<TDeps, E extends GraphWorkflowEnv>(
     })
   })
   if (drainError) {
-    console.warn(
-      `[wf] run ${p.workflowRunId} delivered its output, but a background branch failed:`,
+    ctx.logger.warn(
+      `[wf] run ${p.workflowRunId} delivered its output, but a background branch failed`,
       drainError,
     )
   }

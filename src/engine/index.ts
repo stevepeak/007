@@ -243,7 +243,9 @@ export {
   type WfRunProgress,
 } from './run-progress'
 export {
+  consoleWfLogger,
   defineWfConfig,
+  resolveWfLogger,
   type AgentUsageRef,
   type BlobRefResolver,
   type ModelCapabilities,
@@ -259,6 +261,7 @@ export {
   type RunCompletion,
   type RunContext,
   type RunFailure,
+  type WfLogger,
   type WfRunLimits,
   type WfSdkConfig,
 } from './config'

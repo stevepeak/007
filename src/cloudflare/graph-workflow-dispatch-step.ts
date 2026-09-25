@@ -3,7 +3,7 @@ import type {
   WorkflowStepConfig,
 } from 'cloudflare:workers'
 
-import { errorMessage } from '../engine/run-node'
+import { consoleWfLogger, type WfLogger } from '../engine/logger'
 
 // Best-effort host lifecycle notification. Runs in its own durable step (so it
 // retries), but a callback that ultimately throws is swallowed (logged) rather
@@ -14,6 +14,7 @@ export async function notifyHost(
   step: WorkflowStep,
   name: string,
   fn: () => void | Promise<void>,
+  logger: WfLogger = consoleWfLogger,
 ): Promise<void> {
   try {
     await stepDo(step, name, async () => {
@@ -21,7 +22,7 @@ export async function notifyHost(
       return null
     })
   } catch (err) {
-    console.error(`[wf] lifecycle callback '${name}' failed:`, errorMessage(err))
+    logger.error(`[wf] lifecycle callback '${name}' failed`, err)
   }
 }
 

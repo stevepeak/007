@@ -15,6 +15,7 @@ import type {
   ModelProvider,
   ProviderBudget,
 } from './model-catalog'
+import type { WfLogger } from './logger'
 import type { ToolRegistry } from './tool-registry'
 import type { TriggerRegistry } from './trigger-registry'
 
@@ -27,6 +28,7 @@ import type { TriggerRegistry } from './trigger-registry'
 // are their own domain — see `model-catalog.ts` — and are re-exported here so
 // `./config` remains the one import surface for the whole host contract.
 export * from './model-catalog'
+export * from './logger'
 
 /**
  * Context handed to {@link WfSdkConfig.listModels} / {@link WfSdkConfig.listProviders}
@@ -395,6 +397,23 @@ export interface WfSdkConfig<TDeps = unknown> {
    * budget). Omit to use the defaults. See {@link WfRunLimits}.
    */
   limits?: WfRunLimits
+  /**
+   * Optional: where the SDK reports the faults it deliberately does not throw.
+   *
+   * Distinct from {@link onRunFailed}, which is a *domain* callback — it says
+   * "this run is over, reconcile your entity" and fires exactly once per failed
+   * run. This is the diagnostic channel: the live log that didn't append, the
+   * analytics point that was dropped, the provider lookup that fell back. None
+   * of them fail a run, and before this existed none of them reached the host's
+   * error tracker either.
+   *
+   * Wire it to your reporter (`Sentry.captureException`) to give those sites a
+   * destination. Omit it and every one of them goes to the console, which is
+   * what they all did before. A logger that throws is caught, never propagated.
+   *
+   * See {@link WfLogger}.
+   */
+  logger?: WfLogger
   /**
    * Optional: the key MCP connector credentials are encrypted with at rest.
    *

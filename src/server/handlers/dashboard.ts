@@ -28,6 +28,7 @@ export function buildDashboardHandlers<TDeps>(
         // Null when the host wired no reader (or it's local dev) — the storage
         // layer then answers from D1 exactly as it always has.
         await c.analytics(),
+        c.logger,
       )
       // Annotated, not inferred: `DashboardStats` and `WfDashboardResult` are
       // declared independently (storage must not depend on the wire protocol),

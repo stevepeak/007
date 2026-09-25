@@ -5,6 +5,7 @@ import { Database } from 'bun:sqlite'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 
+import { consoleWfLogger } from '../../engine/logger'
 import type { WfDb } from '../../storage/client'
 import {
   createEvalRun,
@@ -66,6 +67,7 @@ function ctx(db: WfDb, params: unknown): HandlerCtx {
     req: new Request('http://localhost/api/wf', { method: 'POST' }),
     env: async () => ({}),
     analytics: async () => null,
+    logger: consoleWfLogger,
     // Real recorder against the same in-memory db — these tests exercise the
     // handlers end to end, and a stub would hide a broken change write.
     change: (input) => recordChange(db, { ...input, actor: { userId: 'tester' } }),

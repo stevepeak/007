@@ -5,6 +5,7 @@ import { Database } from 'bun:sqlite'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 
+import { consoleWfLogger } from '../../engine/logger'
 import type { WfDb } from '../../storage/client'
 import { recordChange } from '../../storage/data'
 import {
@@ -60,6 +61,7 @@ function ctx(db: WfDb, params: unknown): HandlerCtx {
     req: new Request('http://localhost/api/wf', { method: 'POST' }),
     env: async () => ({}),
     analytics: async () => null,
+    logger: consoleWfLogger,
     change: (input) => {
       return recordChange(db, { ...input, actor: { userId: 'tester' } })
     },

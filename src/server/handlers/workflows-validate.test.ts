@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 import { z } from 'zod'
 
+import { consoleWfLogger } from '../../engine/logger'
 import type { WorkflowGraph, WorkflowNode } from '../../engine/graph'
 import type { ToolRegistry } from '../../engine/tool-registry'
 import type { WfDb } from '../../storage/client'
@@ -79,6 +80,7 @@ function ctx(db: WfDb, params: unknown): HandlerCtx {
     req: new Request('http://localhost/api/wf', { method: 'POST' }),
     env: async () => ({}),
     analytics: async () => null,
+    logger: consoleWfLogger,
     change: (input) => {
       return recordChange(db, { ...input, actor: { userId: 'tester' } })
     },

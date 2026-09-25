@@ -1,3 +1,5 @@
+import { consoleWfLogger, type WfLogger } from '../engine/logger'
+
 import type { GraphWorkflowParams } from './graph-workflow'
 
 // The part of a RunRoom that survives the RunRoom: a record of the run it is
@@ -63,6 +65,13 @@ export type InflightKeeperDeps = {
   now?: () => number
   heartbeatMs?: number
   maxResumes?: number
+  /**
+   * Where the keeper reports the faults it swallows. Every one of them is a
+   * lost safety net — a run that will not survive a restart, or one abandoned
+   * outright — so they are exactly the lines that must reach the host's error
+   * tracker rather than a console the deployment never reads.
+   */
+  logger?: WfLogger
 }
 
 export type InflightKeeper = {
@@ -84,6 +93,7 @@ export type InflightKeeper = {
 
 export function createInflightKeeper(deps: InflightKeeperDeps): InflightKeeper {
   const { storage, launch, abandon } = deps
+  const logger = deps.logger ?? consoleWfLogger
   const now = deps.now ?? (() => Date.now())
   const heartbeatMs = deps.heartbeatMs ?? INLINE_HEARTBEAT_MS
   const maxResumes = deps.maxResumes ?? INLINE_MAX_RESUMES
@@ -93,8 +103,8 @@ export function createInflightKeeper(deps: InflightKeeperDeps): InflightKeeper {
       await storage.put(INFLIGHT_KEY, inflight)
       await storage.setAlarm(now() + heartbeatMs)
     } catch (err) {
-      console.error(
-        `[wf] inline run ${inflight.params.workflowRunId} could not be recorded as in flight — it will not survive a restart:`,
+      logger.error(
+        `[wf] inline run ${inflight.params.workflowRunId} could not be recorded as in flight — it will not survive a restart`,
         err,
       )
     }
@@ -116,13 +126,13 @@ export function createInflightKeeper(deps: InflightKeeperDeps): InflightKeeper {
       const runId = inflight.params.workflowRunId
       if (inflight.resumes >= maxResumes) {
         const message = `${INLINE_INTERRUPTED_REASON}; gave up after ${inflight.resumes} resumes`
-        console.error(`[wf] inline run ${runId} abandoned: ${message}`)
+        logger.error(`[wf] inline run ${runId} abandoned: ${message}`)
         await this.finished()
         await abandon(inflight.params, message)
         return
       }
       const resumes = inflight.resumes + 1
-      console.warn(
+      logger.warn(
         `[wf] inline run ${runId} ${INLINE_INTERRUPTED_REASON}; resuming (attempt ${resumes})`,
       )
       await remember({ ...inflight, resumes })
@@ -137,7 +147,7 @@ export function createInflightKeeper(deps: InflightKeeperDeps): InflightKeeper {
         await storage.delete(INFLIGHT_KEY)
         await storage.deleteAlarm()
       } catch (err) {
-        console.error('[wf] inline run record not cleared:', err)
+        logger.error('[wf] inline run record not cleared', err)
       }
     },
   }

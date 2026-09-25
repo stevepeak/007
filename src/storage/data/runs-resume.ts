@@ -1,6 +1,7 @@
 import { and, asc, eq } from 'drizzle-orm'
 
 import type { WfRunManifestEntry } from '../../engine/graph'
+import { consoleWfLogger, type WfLogger } from '../../engine/logger'
 import { RUN_STATE_LEVEL } from '../../engine/stream-sink'
 import type { WfDb } from '../client'
 import { wfRun, wfRunLog, wfRunStep } from '../schema'
@@ -93,6 +94,7 @@ export async function getRunManifest(
 export async function markRunResumed(
   db: WfDb,
   input: { runId: string; attempt: number; reason: string },
+  logger: WfLogger = consoleWfLogger,
 ): Promise<void> {
   const { runId, attempt, reason } = input
   const now = new Date()
@@ -124,6 +126,6 @@ export async function markRunResumed(
         set: { message: row.message, meta: row.meta, ts: row.ts },
       })
   } catch (err) {
-    console.warn('[wf] run resume marker not recorded:', err)
+    logger.warn('[wf] run resume marker not recorded', err)
   }
 }

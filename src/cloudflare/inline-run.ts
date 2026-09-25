@@ -4,6 +4,7 @@ import type { RunContext, WfSdkConfig } from '../engine/config'
 import { errorFeedLine } from '../engine/error-detail'
 import { executeWorkflow, type ResumeStep } from '../engine/executor'
 import type { WfRunManifestEntry } from '../engine/graph'
+import { resolveWfLogger, type WfLogger } from '../engine/logger'
 import { modelBudgetFor } from '../engine/model-budget'
 import { resolveNodeTimeoutMs } from '../engine/node-timeout'
 import type { ChildWorkflowRunner } from '../engine/nodes/workflow'
@@ -121,6 +122,7 @@ function createInlineSink(
   db: WfDb,
   room: InlineRunRoom,
   runId: string,
+  logger: WfLogger,
 ): StreamSink {
   const ordinals = new Map<string, number>()
   return {
@@ -148,7 +150,7 @@ function createInlineSink(
             },
           })
         } catch (err) {
-          console.warn('[wf] inline sink persist failed:', errorMessage(err))
+          logger.warn('[wf] inline sink persist failed', err)
         }
       }
     },
@@ -164,7 +166,7 @@ function createInlineSink(
       try {
         room.appendAnswer(text)
       } catch (err) {
-        console.warn('[wf] inline sink delta failed:', errorMessage(err))
+        logger.warn('[wf] inline sink delta failed', err)
       }
     },
   }
@@ -176,14 +178,12 @@ function createInlineSink(
 async function notifyHost(
   name: string,
   fn: () => void | Promise<void>,
+  logger: WfLogger,
 ): Promise<void> {
   try {
     await fn()
   } catch (err) {
-    console.error(
-      `[wf] lifecycle callback '${name}' failed:`,
-      errorMessage(err),
-    )
+    logger.error(`[wf] lifecycle callback '${name}' failed`, err)
   }
 }
 
@@ -282,6 +282,7 @@ export async function recordInlineRunFailure<TDeps, E extends GraphWorkflowEnv>(
 ): Promise<void> {
   const { env, params: p } = deps
   const db = createWfDb(env.WF_DB)
+  const logger = resolveWfLogger(config.logger)
   const runContext = runContextFor(p, env)
   try {
     await failRun(db, { runId: p.workflowRunId, error: message })
@@ -292,29 +293,33 @@ export async function recordInlineRunFailure<TDeps, E extends GraphWorkflowEnv>(
       try {
         await reportCalleeResult(env, p.subRun, { ok: false, error: message })
       } catch (err) {
-        console.error(
-          `[wf] inline run ${p.workflowRunId} could not report to its caller:`,
-          errorMessage(err),
+        logger.error(
+          `[wf] inline run ${p.workflowRunId} could not report to its caller`,
+          err,
         )
       }
     }
     if (config.onRunFailed) {
-      await notifyHost('on-failed', () => {
-        return config.onRunFailed!(runContext, {
-          error: message,
-          workflowRunId: p.workflowRunId,
-        })
-      })
+      await notifyHost(
+        'on-failed',
+        () => {
+          return config.onRunFailed!(runContext, {
+            error: message,
+            workflowRunId: p.workflowRunId,
+          })
+        },
+        logger,
+      )
     }
   } catch (recordErr) {
     // Nothing left to report to — log and let the run sit in whatever state
     // it reached. The host's poller treats a stalled run as failed.
-    console.error(
-      '[wf] inline run failed AND could not record the failure:',
-      errorMessage(recordErr),
+    logger.error(
+      '[wf] inline run failed AND could not record the failure',
+      recordErr,
     )
   }
-  console.error(`[wf] inline run ${p.workflowRunId} failed:`, message)
+  logger.error(`[wf] inline run ${p.workflowRunId} failed: ${message}`)
 }
 
 /**
@@ -332,7 +337,10 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
 ): Promise<void> {
   const { env, room, params: p, resume } = deps
   const db = createWfDb(env.WF_DB)
-  const sink = createInlineSink(db, room, p.workflowRunId)
+  // Resolved once for the whole run and threaded into every best-effort helper
+  // below, so the guard around a throwing host logger is allocated once.
+  const logger = resolveWfLogger(config.logger)
+  const sink = createInlineSink(db, room, p.workflowRunId, logger)
   let runContext: RunContext = runContextFor(p, env)
 
   // Telemetry, on equal footing with the durable backend — this is a real
@@ -368,6 +376,7 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
         failedNodeCount: counters.failedNodes,
         droppedPoints: telemetry.dropped(),
       }),
+      logger,
     )
   }
 
@@ -400,9 +409,9 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
     try {
       await reportCalleeResult(env, sub, payload)
     } catch (err) {
-      console.error(
-        `[wf] inline run ${p.workflowRunId} could not report to its caller:`,
-        errorMessage(err),
+      logger.error(
+        `[wf] inline run ${p.workflowRunId} could not report to its caller`,
+        err,
       )
     }
   }
@@ -474,11 +483,15 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
     // are loaded so the walk can skip them.
     let resumeSteps: ResumeStep[] | undefined
     if (resume) {
-      await markRunResumed(db, {
-        runId: p.workflowRunId,
-        attempt: resume.attempt,
-        reason: resume.reason,
-      })
+      await markRunResumed(
+        db,
+        {
+          runId: p.workflowRunId,
+          attempt: resume.attempt,
+          reason: resume.reason,
+        },
+        logger,
+      )
       resumeSteps = await loadResumeSteps(db, p.workflowRunId)
     } else {
       await markRunRunning(db, { runId: p.workflowRunId })
@@ -517,6 +530,7 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
           telemetry,
           dims,
           prices,
+          logger,
         }),
         counters,
       ),
@@ -559,9 +573,13 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
         // answer should wait behind work they never depended on.
         await report({ ok: true, output })
         if (config.onRunComplete) {
-          await notifyHost('on-complete', () => {
-            return config.onRunComplete!(runContext, { output, outputNodeId })
-          })
+          await notifyHost(
+            'on-complete',
+            () => {
+              return config.onRunComplete!(runContext, { output, outputNodeId })
+            },
+            logger,
+          )
         }
       },
     })
@@ -577,8 +595,8 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
     })
     emit('completed', { error: result.drainError })
     if (result.drainError) {
-      console.warn(
-        `[wf] inline run ${p.workflowRunId} delivered its output, but a background branch failed:`,
+      logger.warn(
+        `[wf] inline run ${p.workflowRunId} delivered its output, but a background branch failed`,
         result.drainError,
       )
     }
