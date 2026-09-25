@@ -25,10 +25,16 @@ import { cn } from './cn'
 // the dashboard takes the whole remaining width. Without it there is nothing to
 // be secondary to, so the cards spread back out into the full-width grid.
 
-/** Per-card hover accent. Full literal Tailwind class strings (v4 scans them). */
+/** Per-card color accent. Full literal Tailwind class strings (v4 scans them). */
 type WfHubAccent = {
   /** Applied to the card on hover: colored border + soft colored shadow. */
   card: string
+  /**
+   * The icon chip at rest: tint + glyph, so the nav reads as a colored index
+   * rather than a row of gray chips waiting for a cursor. One step below the
+   * hover tint (`-50` vs `-100`), so hover still visibly lights the chip up.
+   */
+  iconRest: string
   /** Applied to the icon chip on hover: illuminated tint + glow. */
   icon: string
 }
@@ -38,7 +44,7 @@ export type WfHubSection = {
   title: string
   description: string
   icon: LucideIcon
-  /** Distinct hover color for this card. */
+  /** Distinct signature color for this card (resting icon + hover). */
   accent?: WfHubAccent
   /** Renders the card muted + non-clickable (e.g. a not-yet-built section). */
   disabled?: boolean
@@ -54,6 +60,7 @@ export const DEFAULT_WF_SECTIONS: WfHubSection[] = [
     icon: WorkflowIcon,
     accent: {
       card: 'hover:border-indigo-300 hover:shadow-lg hover:shadow-indigo-100',
+      iconRest: 'bg-indigo-50 text-indigo-600',
       icon: 'group-hover:bg-indigo-100 group-hover:text-indigo-600 group-hover:shadow-md group-hover:shadow-indigo-200',
     },
   },
@@ -65,6 +72,7 @@ export const DEFAULT_WF_SECTIONS: WfHubSection[] = [
     icon: Bot,
     accent: {
       card: 'hover:border-violet-300 hover:shadow-lg hover:shadow-violet-100',
+      iconRest: 'bg-violet-50 text-violet-600',
       icon: 'group-hover:bg-violet-100 group-hover:text-violet-600 group-hover:shadow-md group-hover:shadow-violet-200',
     },
   },
@@ -75,6 +83,7 @@ export const DEFAULT_WF_SECTIONS: WfHubSection[] = [
     icon: Wrench,
     accent: {
       card: 'hover:border-emerald-300 hover:shadow-lg hover:shadow-emerald-100',
+      iconRest: 'bg-emerald-50 text-emerald-600',
       icon: 'group-hover:bg-emerald-100 group-hover:text-emerald-600 group-hover:shadow-md group-hover:shadow-emerald-200',
     },
   },
@@ -85,6 +94,7 @@ export const DEFAULT_WF_SECTIONS: WfHubSection[] = [
     icon: Activity,
     accent: {
       card: 'hover:border-sky-300 hover:shadow-lg hover:shadow-sky-100',
+      iconRest: 'bg-sky-50 text-sky-600',
       icon: 'group-hover:bg-sky-100 group-hover:text-sky-600 group-hover:shadow-md group-hover:shadow-sky-200',
     },
   },
@@ -96,6 +106,7 @@ export const DEFAULT_WF_SECTIONS: WfHubSection[] = [
     icon: Target,
     accent: {
       card: 'hover:border-rose-300 hover:shadow-lg hover:shadow-rose-100',
+      iconRest: 'bg-rose-50 text-rose-600',
       icon: 'group-hover:bg-rose-100 group-hover:text-rose-600 group-hover:shadow-md group-hover:shadow-rose-200',
     },
   },
@@ -107,6 +118,7 @@ export const DEFAULT_WF_SECTIONS: WfHubSection[] = [
     icon: Boxes,
     accent: {
       card: 'hover:border-amber-300 hover:shadow-lg hover:shadow-amber-100',
+      iconRest: 'bg-amber-50 text-amber-600',
       icon: 'group-hover:bg-amber-100 group-hover:text-amber-600 group-hover:shadow-md group-hover:shadow-amber-200',
     },
   },
@@ -118,6 +130,7 @@ export const DEFAULT_WF_SECTIONS: WfHubSection[] = [
     icon: History,
     accent: {
       card: 'hover:border-slate-300 hover:shadow-lg hover:shadow-slate-100',
+      iconRest: 'bg-slate-50 text-slate-600',
       icon: 'group-hover:bg-slate-100 group-hover:text-slate-600 group-hover:shadow-md group-hover:shadow-slate-200',
     },
   },
@@ -129,6 +142,7 @@ export const DEFAULT_WF_SECTIONS: WfHubSection[] = [
     icon: ThumbsUp,
     accent: {
       card: 'hover:border-teal-300 hover:shadow-lg hover:shadow-teal-100',
+      iconRest: 'bg-teal-50 text-teal-600',
       icon: 'group-hover:bg-teal-100 group-hover:text-teal-600 group-hover:shadow-md group-hover:shadow-teal-200',
     },
   },
@@ -139,6 +153,7 @@ export const DEFAULT_WF_SECTIONS: WfHubSection[] = [
     icon: Cable,
     accent: {
       card: 'hover:border-amber-300 hover:shadow-lg hover:shadow-amber-100',
+      iconRest: 'bg-amber-50 text-amber-600',
       icon: 'group-hover:bg-amber-100 group-hover:text-amber-600 group-hover:shadow-md group-hover:shadow-amber-200',
     },
   },
@@ -150,6 +165,7 @@ export const DEFAULT_WF_SECTIONS: WfHubSection[] = [
     icon: Plug,
     accent: {
       card: 'hover:border-fuchsia-300 hover:shadow-lg hover:shadow-fuchsia-100',
+      iconRest: 'bg-fuchsia-50 text-fuchsia-600',
       icon: 'group-hover:bg-fuchsia-100 group-hover:text-fuchsia-600 group-hover:shadow-md group-hover:shadow-fuchsia-200',
     },
   },
@@ -221,8 +237,12 @@ export function WfHub({
                 >
                   <span
                     className={cn(
-                      'flex items-center justify-center rounded-lg bg-neutral-100 text-neutral-600 transition duration-200',
+                      'flex items-center justify-center rounded-lg transition duration-200',
                       asRail ? 'size-8' : 'size-10',
+                      section.disabled
+                        ? 'bg-neutral-100 text-neutral-600'
+                        : (section.accent?.iconRest ??
+                          'bg-neutral-100 text-neutral-600'),
                       !section.disabled && section.accent?.icon,
                     )}
                   >
