@@ -193,8 +193,6 @@ function AgentEditorInner({
         <div className="flex h-full min-h-0 flex-col">
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="w-full space-y-6 p-6">
-              <AgentCallMetrics agentId={agentId} />
-
               <Tabs
                 active={tab}
                 onChange={(k) => setTab(k as EditorTab)}
@@ -212,12 +210,21 @@ function AgentEditorInner({
                 />
               ) : null}
 
+              {/* The metrics strip used to sit above the tabs, which meant every
+                  agent editor open — whatever you came to do — fired the recent-
+                  calls read. That read walks run history, and at ~44k steps it
+                  was the slowest query in the wf D1 (200-950ms), paid by people
+                  who never looked at a call. It lives inside this tab now, above
+                  the rows it summarises, so the cost follows the intent. */}
               {tab === 'calls' ? (
-                <AgentCallsList
-                  agentId={agentId}
-                  selectedKey={inspectedCall ? callKey(inspectedCall) : null}
-                  onSelect={setInspectedCall}
-                />
+                <div className="space-y-6">
+                  <AgentCallMetrics agentId={agentId} />
+                  <AgentCallsList
+                    agentId={agentId}
+                    selectedKey={inspectedCall ? callKey(inspectedCall) : null}
+                    onSelect={setInspectedCall}
+                  />
+                </div>
               ) : null}
 
               <div

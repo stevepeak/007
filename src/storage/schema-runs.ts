@@ -161,6 +161,22 @@ export const wfRunStep = sqliteTable(
   (t) => [
     index('wf_run_step_run_sequence_idx').on(t.runId, t.sequence),
     uniqueIndex('wf_run_step_run_node_idx').on(t.runId, t.nodeId, t.itemIndex),
+    // One arm of the "who used this agent" attribution in `listAgentCalls`:
+    // steps that ran on a node referencing the agent, which is how a call
+    // recorded before `meta.agentId` was stamped is still found.
+    index('wf_run_step_node_idx').on(t.nodeId, t.startedAt),
+    // The OTHER arm — `meta.agentId`, and `meta.toolId` for
+    // `listToolInvocations` — is indexed too, but by EXPRESSION
+    // (`json_extract(meta, '$.agentId')`), which drizzle-kit 0.31 cannot emit:
+    // it splits the expression on its comma and back-quotes the halves. Those
+    // two indexes are therefore hand-written in migration 0036 and deliberately
+    // absent here. Nothing breaks from the omission — `generate` diffs the
+    // schema against its own snapshot, never against the database, so it will
+    // not drop an index it never knew about — but do not add a `drizzle-kit
+    // push` to this package, which WOULD drop them. Why they exist at all: the
+    // id lives in untyped JSON, so without an index SQLite must read every row
+    // of this table to evaluate the extract (measured: ~44k rows and 200-950ms
+    // per call, on a table of 43k steps, to return a page of 20).
   ],
 )
 

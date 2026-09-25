@@ -24,6 +24,20 @@ const AGENT_CALL_PAGE_MAX = 100
  */
 const AGENT_CALL_STEP_MAX = 1000
 
+/**
+ * How many candidate (run, node) groups phase 1 pulls before phase 2 resolves
+ * their runs, drops the eval ones and re-sorts by run creation time.
+ *
+ * It has to exceed `limit` because that re-sort can reorder the window, and by
+ * enough that a stretch of eval runs at the top can't starve the page. It is a
+ * window and not the whole history because an agent that has run for months has
+ * thousands of call sites and a page shows twenty: 500 group rows (four small
+ * columns, no `meta`) is a cheap read, and ordering by `started_at` is near
+ * enough to ordering by the run's creation time — a run's steps start moments
+ * after it — that the two agree on everything but the boundary.
+ */
+const GROUP_WINDOW_MAX = 500
+
 /** Each (run, node) pair binds two parameters, so half the id budget. */
 const PAIR_CHUNK_SIZE = Math.floor(ID_CHUNK_SIZE / 2)
 
@@ -289,10 +303,20 @@ function foldCalls(
  * stamp landed, including spawned sub-agents, which have no graph node) or by
  * having run on a node that references the agent in some published version.
  *
- * Read in two phases, because `limit` has to bound ROWS-AS-SHOWN and the fold
- * is over data that only exists inside the untyped `meta` JSON: first SQL picks
- * the newest `limit` groups and counts each one exactly, then their steps are
- * fetched and aggregated in JS.
+ * Read in three phases, because `limit` has to bound ROWS-AS-SHOWN and the fold
+ * is over data that only exists inside the untyped `meta` JSON: SQL picks the
+ * newest candidate groups and counts each one exactly, the runs behind them are
+ * resolved by primary key, then their steps are fetched and aggregated in JS.
+ *
+ * Phase 1 touches `wf_run_step` ALONE, which is the whole reason this isn't one
+ * query with a join. Joined to `wf_run`, the planner drove the loop from
+ * `wf_run` (via `wf_run_eval_created_idx`, since `is_eval = false` matches
+ * nearly every run) and read every step of every run to evaluate the
+ * `json_extract` — ~44k rows and 200-950ms to return a page of 20. Alone, the
+ * step predicate is a `MULTI-INDEX OR` across `wf_run_step_agent_idx` and
+ * `wf_run_step_node_idx`, which holds without `sqlite_stat1` — D1 carries no
+ * ANALYZE stats, so a plan that only wins once the planner knows the table
+ * shapes is a plan that never wins. Keep the joins out of phase 1.
  */
 export async function listAgentCalls(
   db: WfDb,
@@ -311,10 +335,10 @@ export async function listAgentCalls(
   // One page per parameter-budget chunk of node ids. This one can't just
   // concatenate chunks the way the plain id lookups do: the node-id list is an
   // OR arm of a query with a global `ORDER BY … LIMIT`, so each chunk returns
-  // its own top-N. Take `limit` from every chunk, then merge — the top `limit`
-  // overall is guaranteed to be inside the union of the per-chunk top-`limit`s.
-  // The stamped-agentId arm rides along in every chunk and so matches the same
-  // steps repeatedly, hence the de-dupe by group key.
+  // its own top-N. Take the full candidate window from every chunk, then merge —
+  // the true top overall is guaranteed to be inside the union of the per-chunk
+  // windows. The stamped-agentId arm rides along in every chunk and so matches
+  // the same steps repeatedly, hence the de-dupe by group key.
   const nodeIdChunks = chunk(nodeIds)
   const attributions: SQL[] =
     nodeIdChunks.length > 0
@@ -324,11 +348,13 @@ export async function listAgentCalls(
         })
       : [byStampedAgentId]
 
-  // Phase 1 — the newest `limit` (run, node) groups, each with its exact
-  // execution count. `wfRun.createdAt` and the workflow identity are bare
-  // columns under the GROUP BY, which is sound because they're all functionally
-  // determined by `runId`.
-  const groupPage = (matchesAgent: SQL) => {
+  // Phase 1 — candidate (run, node) groups, each with its exact execution count,
+  // read from `wf_run_step` alone so the indexes can be used (see the note on
+  // this function). No join means no `wf_run` here, so eval runs are still in
+  // and the ordering column the page really wants (`wfRun.createdAt`) isn't
+  // available yet: both are settled in phase 2, over a window wide enough that
+  // the re-sort can't change which rows make the page.
+  const groupWindow = (matchesAgent: SQL) => {
     return (
       db
         .select({
@@ -336,42 +362,24 @@ export async function listAgentCalls(
           nodeId: wfRunStep.nodeId,
           callCount: sql<number>`count(*)`,
           lastStartedAt: sql<number | null>`max(${wfRunStep.startedAt})`,
-          runCreatedAt: wfRun.createdAt,
-          workflowId: wfWorkflowVersion.workflowId,
-          workflowName: wfWorkflow.name,
-          versionNumber: wfWorkflowVersion.versionNumber,
         })
         .from(wfRunStep)
-        .innerJoin(wfRun, eq(wfRunStep.runId, wfRun.id))
-        .innerJoin(
-          wfWorkflowVersion,
-          eq(wfRun.workflowVersionId, wfWorkflowVersion.id),
-        )
-        .innerJoin(wfWorkflow, eq(wfWorkflowVersion.workflowId, wfWorkflow.id))
-        // Real runs only. An eval's runs are simulated and can outnumber
-        // production traffic many times over, so mixing them in would make the
-        // metrics say nothing about what this agent actually costs — the eval
-        // report is where a simulated run belongs.
-        .where(
-          and(
-            eq(wfRunStep.nodeKind, 'agent'),
-            matchesAgent,
-            eq(wfRun.isEval, false),
-          ),
-        )
+        .where(and(eq(wfRunStep.nodeKind, 'agent'), matchesAgent))
         .groupBy(wfRunStep.runId, wfRunStep.nodeId)
-        // A queued/running step has no `startedAt` yet, so order by the run's own
-        // creation time — a live call still sorts to the top where it belongs.
-        .orderBy(desc(wfRun.createdAt), desc(sql`max(${wfRunStep.startedAt})`))
-        .limit(limit)
+        // A step the recorder entered without a measured start has a NULL
+        // `started_at` and is the NEWEST thing there is, so it sorts first rather
+        // than into SQLite's default NULL-lowest slot — otherwise an in-flight
+        // call could fall off the end of the window.
+        .orderBy(sql`max(${wfRunStep.startedAt}) desc nulls first`)
+        .limit(GROUP_WINDOW_MAX)
     )
   }
 
-  const pages = await Promise.all(attributions.map(groupPage))
-  type GroupRow = (typeof pages)[number][number]
-  const byGroup = new Map<string, GroupRow>()
-  for (const page of pages) {
-    for (const row of page) {
+  const windows = await Promise.all(attributions.map(groupWindow))
+  type WindowRow = (typeof windows)[number][number]
+  const byGroup = new Map<string, WindowRow>()
+  for (const window of windows) {
+    for (const row of window) {
       const key = groupKey(row.runId, row.nodeId)
       const seen = byGroup.get(key)
       // A chunk whose node-id arm misses this group still matches its STAMPED
@@ -379,20 +387,57 @@ export async function listAgentCalls(
       if (!seen || row.callCount > seen.callCount) byGroup.set(key, row)
     }
   }
-  // Re-apply the SQL ordering across the merged pages, NULL `startedAt` last to
-  // match SQLite's `DESC` (NULL sorts lowest), then re-take the top N.
-  const groups = [...byGroup.values()]
+  const candidates = [...byGroup.values()]
+  if (candidates.length === 0) return []
+
+  // Phase 2 — the runs behind those candidates, by primary key, for the real
+  // ordering key and the workflow identity. This is also where eval runs are
+  // dropped: their runs are simulated and can outnumber production traffic many
+  // times over, so mixing them in would make the metrics say nothing about what
+  // this agent actually costs — the eval report is where a simulated run belongs.
+  // A run id with no row here (purged run) drops out with them.
+  const runIds = [...new Set(candidates.map((c) => c.runId))]
+  const runPages = await Promise.all(
+    chunk(runIds).map((ids) => {
+      return db
+        .select({
+          runId: wfRun.id,
+          runCreatedAt: wfRun.createdAt,
+          workflowId: wfWorkflowVersion.workflowId,
+          workflowName: wfWorkflow.name,
+          versionNumber: wfWorkflowVersion.versionNumber,
+        })
+        .from(wfRun)
+        .innerJoin(
+          wfWorkflowVersion,
+          eq(wfRun.workflowVersionId, wfWorkflowVersion.id),
+        )
+        .innerJoin(wfWorkflow, eq(wfWorkflowVersion.workflowId, wfWorkflow.id))
+        .where(and(inArray(wfRun.id, ids), eq(wfRun.isEval, false)))
+    }),
+  )
+  const runById = new Map(runPages.flat().map((r) => [r.runId, r]))
+
+  // Re-apply the ordering the page is specified in — newest run first, and
+  // within a run the latest-started call — then take the top N. NULL
+  // `lastStartedAt` sorts FIRST here for the same reason it does in SQL: an
+  // untimed step is one still in flight.
+  const groups = candidates
+    .flatMap((c) => {
+      const run = runById.get(c.runId)
+      return run ? [{ ...c, ...run }] : []
+    })
     .sort((a, b) => {
       const byRun = b.runCreatedAt.getTime() - a.runCreatedAt.getTime()
       if (byRun !== 0) return byRun
-      if (a.lastStartedAt == null) return b.lastStartedAt == null ? 0 : 1
-      if (b.lastStartedAt == null) return -1
+      if (a.lastStartedAt == null) return b.lastStartedAt == null ? 0 : -1
+      if (b.lastStartedAt == null) return 1
       return b.lastStartedAt - a.lastStartedAt
     })
     .slice(0, limit)
   if (groups.length === 0) return []
 
-  // Phase 2 — every step behind those groups. Matched as explicit (run, node)
+  // Phase 3 — every step behind those groups. Matched as explicit (run, node)
   // pairs rather than two `inArray`s, so a run holding a big fan-out for some
   // OTHER agent node isn't dragged over the wire to be filtered away here.
   const pairs = groups.map((g) => {

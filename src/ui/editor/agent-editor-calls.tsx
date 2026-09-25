@@ -24,18 +24,20 @@ import { runLinkFor } from './agent-editor-call-inspect'
 // — the question answered here is "how hard is this agent working, and what does
 // it cost"; selecting a row opens the data itself in the editor's bottom dock.
 //
-// Split in two because the editor shows them in different places: the averages
-// (`AgentCallMetrics`) are a page-level strip above the tabs — the numbers you
-// tune budgets against, visible whichever tab you're on — while the rows
-// (`AgentCallsList`) own the full page width inside the "Recent calls" tab. Both
-// read the same query, so mounting both costs one fetch.
+// Split in two because the editor stacks them: the averages (`AgentCallMetrics`)
+// are a strip of tiles, the rows (`AgentCallsList`) the list beneath it. Both
+// read the same query, so mounting both costs one fetch — and both live inside
+// the "Recent calls" tab, deliberately. The strip used to sit above the tabs,
+// which put its query on the critical path of every editor open; it is the
+// heaviest read in the wf D1 (it walks run history), so it stays where someone
+// has asked to see calls.
 //
 // A row is a CALL SITE — one agent node in one run — with every execution that
 // happened there folded in, so an agent that fans out over 40 items is one row
-// saying "Ran 40 times" and not 40 rows of the same run. The tile strip above
-// still speaks in per-call averages, since that's the unit a turn cap or a token
-// budget is set in. Eval runs are excluded server-side: they're simulated, and
-// at eval volume they'd drown out real traffic.
+// saying "Ran 40 times" and not 40 rows of the same run. The tile strip speaks
+// in per-call averages, since that's the unit a turn cap or a token budget is
+// set in. Eval runs are excluded server-side: they're simulated, and at eval
+// volume they'd drown out real traffic.
 
 const CALL_LIMIT = 20
 

@@ -234,6 +234,70 @@ describe('listAgentCalls', () => {
     expect(calls.map((c) => c.runId)).toEqual(['run-2', 'run-1'])
   })
 
+  // A step recorded without a measured start (an in-flight one the recorder
+  // entered but hasn't timed) has a NULL `started_at`, and phase 1 orders the
+  // candidate window by `max(started_at) desc nulls first` precisely so it can't
+  // be the row that falls off the end of that window. Here the live run is also
+  // the newest, so it has to lead the page.
+  test('a live call with no startedAt sorts to the top', async () => {
+    await addRun(db, 'run-old', { createdAt: new Date(1000) })
+    await db.insert(wfRunStep).values({
+      runId: 'run-old',
+      nodeId: AGENT_NODE,
+      nodeKind: 'agent',
+      sequence: 0,
+      status: 'completed',
+      meta: agentMeta({ agentId: AGENT }),
+      startedAt: new Date(1000),
+    })
+    await addRun(db, 'run-live', { createdAt: new Date(9000) })
+    await db.insert(wfRunStep).values({
+      runId: 'run-live',
+      nodeId: AGENT_NODE,
+      nodeKind: 'agent',
+      sequence: 0,
+      status: 'running',
+      meta: { agentId: AGENT },
+    })
+
+    const calls = await listAgentCalls(db, { agentId: AGENT })
+    expect(calls.map((c) => c.runId)).toEqual(['run-live', 'run-old'])
+    // No step ever started, so the row falls back to the run's creation time.
+    expect(calls[0]?.status).toBe('running')
+    expect(calls[0]?.startedAt).toBe(9000)
+    expect(calls[0]?.finishedAt).toBeNull()
+  })
+
+  // Phase 2 resolves each candidate's run by primary key, so a group whose run
+  // is gone (purged history, step rows outliving it) must drop out rather than
+  // surface a row with no workflow.
+  test('drops a call whose run no longer exists', async () => {
+    await addRun(db, 'run-1', { createdAt: new Date(1000) })
+    await db.insert(wfRunStep).values([
+      {
+        runId: 'run-1',
+        nodeId: AGENT_NODE,
+        nodeKind: 'agent',
+        sequence: 0,
+        status: 'completed',
+        meta: agentMeta({ agentId: AGENT }),
+        startedAt: new Date(1000),
+      },
+      {
+        runId: 'run-vanished',
+        nodeId: AGENT_NODE,
+        nodeKind: 'agent',
+        sequence: 0,
+        status: 'completed',
+        meta: agentMeta({ agentId: AGENT }),
+        startedAt: new Date(5000),
+      },
+    ])
+
+    const calls = await listAgentCalls(db, { agentId: AGENT })
+    expect(calls.map((c) => c.runId)).toEqual(['run-1'])
+  })
+
   test('folds an iteration fan-out into one row with summed metrics', async () => {
     await addRun(db, 'run-1', { createdAt: new Date(1000) })
     // The same agent node, run once per item of an enclosing iteration — five
