@@ -12,11 +12,13 @@ import { ToolIcon } from './tool-icon'
 // Reached from the hub's Tools card. Each card links to that tool's detail page
 // (`tools/<id>`): recent calls + a real-execution playground.
 //
-// Grouped by who wrote them. The two kinds look identical in the picker and are
-// not interchangeable in practice: a built-in is defined inside the SDK and is
-// fixed until the package is bumped, while a custom tool is a file in this
-// deployment's own repo. That is the first thing anyone asks on being handed an
-// unfamiliar console, and it used to be unanswerable from the UI.
+// Grouped by who wrote them. The three kinds look identical in the picker and
+// are not interchangeable in practice: a built-in is defined inside the SDK and
+// is fixed until the package is bumped, a custom tool is a file in this
+// deployment's own repo, and an MCP tool is a third party's — discovered from a
+// connector at runtime, so it can appear, change, or start failing without
+// either repo being touched. That is the first thing anyone asks on being handed
+// an unfamiliar console, and it used to be unanswerable from the UI.
 
 export type ToolsListProps = {
   className?: string
@@ -32,6 +34,11 @@ const GROUPS = [
     origin: 'sdk' as const,
     title: 'Built-in',
     note: 'Shipped with the workflow platform. This deployment supplies their credentials and storage, not their behaviour.',
+  },
+  {
+    origin: 'connector' as const,
+    title: 'Provided by MCP',
+    note: 'Proxied from a connected MCP server. A third party owns their behaviour and their descriptions — they can change without a deploy.',
   },
 ]
 

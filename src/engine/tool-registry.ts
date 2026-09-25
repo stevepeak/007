@@ -89,11 +89,11 @@ export type ToolMeta = {
    * Who authored this tool, for a UI that has to tell them apart.
    *
    * `sdk` is set by the SDK's own factories (`createExtractTextTool`,
-   * `createDocumentTool`) and by every MCP connector tool — the host wires
-   * their deps
-   * but does not own their behavior, their schemas, or their descriptions, and
-   * cannot fix a bug in one without a version bump. `host` is everything the
-   * deployment wrote itself.
+   * `createDocumentTool`) — the host wires their deps but does not own their
+   * behavior or their schemas, and cannot fix a bug in one without a version
+   * bump. `connector` is a tool reached through an MCP connector: authored by a
+   * third party, discovered at runtime, and changeable without either repo being
+   * touched. `host` is everything the deployment wrote itself.
    *
    * The default is `host`, and the direction of that default is the point: the
    * SDK knows exactly which tools it ships and marks them at the source, so a
@@ -114,8 +114,11 @@ export type ToolMeta = {
 /** How a tool behaves under the eval `simulate` signal. See {@link ToolMeta}. */
 export type ToolSideEffect = 'read' | 'write'
 
-/** Who authored a tool — the SDK, or the host that registered it. */
-export type ToolOrigin = 'sdk' | 'host'
+/**
+ * Who authored a tool — the SDK, the host that registered it, or the third-party
+ * MCP server it is proxied from.
+ */
+export type ToolOrigin = 'sdk' | 'host' | 'connector'
 
 /** The `simulate` slice of the run context threaded to the tool dispatch. */
 export type SimulateContext = {

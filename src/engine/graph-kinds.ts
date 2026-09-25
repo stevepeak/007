@@ -31,6 +31,7 @@ export type NodeKindIconName =
   | 'Lightbulb'
   | 'Play'
   | 'Repeat'
+  | 'Scale'
   | 'Shuffle'
   | 'Sparkles'
   | 'Split'
@@ -138,6 +139,25 @@ const NODE_KINDS = {
     palette: {
       category: 'Logic',
       description: 'Multi-way routing — match a value to one of many cases.',
+    },
+  },
+  decision: {
+    label: 'Decision',
+    icon: 'Scale',
+    // A provider call, so it gets the LLM-ish budget rather than the
+    // deterministic one — same reasoning as `agent`.
+    timeout: 'ai',
+    bookend: false,
+    // False despite the kind's name: the flag means "routes via a conditional
+    // outgoing edge", and a Decision does not route. It answers, and a Branch or
+    // Switch downstream routes on the answer it reads. So it is an ordinary step
+    // to the scheduler — its output flows to its successors, `continueOnError`
+    // is allowed on it, and join analysis does not count it as a split.
+    decision: false,
+    palette: {
+      category: 'Logic',
+      description:
+        'Judge a value against typed questions — probabilities, not prose. Route on the answers with a Branch or Switch.',
     },
   },
   workflow: {

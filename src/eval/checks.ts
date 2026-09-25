@@ -73,6 +73,34 @@ export const evalCheckSchema = z.discriminatedUnion('type', [
     value: z.unknown(),
   }),
   // ── subjective / scored ───────────────────────────────────────────────────
+  /**
+   * A calibrated judge: one boolean question put to a DECISION model (see the
+   * SDK's `decision.ts`), which answers with a probability rather than prose.
+   *
+   * The same job as `llm_judge`, done by something built for it. An LLM judge is
+   * asked to write a verdict and then rate its own confidence in it, which is a
+   * guess about a guess; a decider returns a probability and the check applies
+   * the threshold. That makes a borderline row legible as 0.52 instead of as a
+   * coin-flip `pass` with a cheerful 8/10 next to it.
+   *
+   * It is a lens beside `llm_judge`, not a replacement: a rubric that needs a
+   * written critique still wants the LLM. Use this for the ones that reduce to a
+   * yes/no you would otherwise be thresholding by eye.
+   */
+  z.object({
+    type: z.literal('decision_judge'),
+    /** The question, phrased so "yes" means the row passed. */
+    rubric: z.string(),
+    /** Optional JSON path into the run `output`; omit = whole output. */
+    path: z.string().optional(),
+    /** A DECISION model id; falls back to the suite/run default when omitted. */
+    modelId: z.string().optional(),
+    /**
+     * Probability at or above which the row passes. Defaults to 0.5. This is the
+     * author's line to draw, which is exactly why the provider never sees it.
+     */
+    threshold: z.number().min(0).max(1).optional(),
+  }),
   z.object({
     type: z.literal('llm_judge'),
     rubric: z.string(),
@@ -100,12 +128,17 @@ export const EVAL_CHECK_TYPES: EvalCheckType[] = evalCheckSchema.options.map(
   (o) => o.shape.type.value,
 )
 
+/** The subjective check types — the ones that need a provider to reach a verdict. */
+export const JUDGE_CHECK_TYPES = ['llm_judge', 'decision_judge'] as const
+export type JudgeCheckType = (typeof JUDGE_CHECK_TYPES)[number]
+
 /**
  * The deterministic (non-judge) check type ids — graded straight off the run
- * trace. Everything except `llm_judge`.
+ * trace. Everything except the judges.
  */
 export const BINARY_CHECK_TYPES = EVAL_CHECK_TYPES.filter(
-  (t): t is Exclude<EvalCheckType, 'llm_judge'> => t !== 'llm_judge',
+  (t): t is Exclude<EvalCheckType, JudgeCheckType> =>
+    !(JUDGE_CHECK_TYPES as readonly string[]).includes(t),
 )
 
 /** The AND/OR reducer over a row's checks. */
@@ -356,12 +389,21 @@ export const checkResultSchema = z.object({
   confidence: z.number().min(0).max(JUDGE_CONFIDENCE_MAX).optional(),
   /** The judge's stated reason for the verdict. Judge checks only. */
   reason: z.string().optional(),
+  /**
+   * The raw probability a `decision_judge` returned, 0–1, before the threshold.
+   * Kept beside `pass` rather than folded into it because it is the thing that
+   * makes a calibrated judge worth having: 0.52 and 0.99 are both a pass, and
+   * only one of them is worth looking at.
+   */
+  probability: z.number().min(0).max(1).optional(),
 })
 export type CheckResult = z.infer<typeof checkResultSchema>
 
 /** Only judge checks are subjective — binary ones read straight off the trace. */
-export function isJudgeCheck(check: EvalCheck): boolean {
-  return check.type === 'llm_judge'
+export function isJudgeCheck(
+  check: EvalCheck,
+): check is Extract<EvalCheck, { type: JudgeCheckType }> {
+  return (JUDGE_CHECK_TYPES as readonly string[]).includes(check.type)
 }
 
 /**

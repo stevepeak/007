@@ -45,10 +45,41 @@ export {
   type NewWorkflowTrigger,
   type BranchNode,
   type BranchOperator,
+  BRANCH_ARMS,
   BRANCH_OPERATORS,
   VALUELESS_BRANCH_OPERATORS,
   branchOperatorTakesValue,
   DECISION_NODE_KINDS,
+  // The decision-provider domain (`decision.ts`) — the second kind of provider,
+  // and the Decision node that judges with it.
+  DECISION_QUESTION_TYPES,
+  DEFAULT_DECISION_THRESHOLD,
+  chunkQuestions,
+  distributionConfidence,
+  questionChoices,
+  resolveVerdict,
+  resolveVerdicts,
+  supportsQuestionType,
+  unsupportedQuestionTypes,
+  verdictReasoning,
+  type BooleanQuestion,
+  type CategoryQuestion,
+  type Decider,
+  type DecisionAnswer,
+  type DecisionDistributionEntry,
+  type DecisionModelOption,
+  type DecisionNode,
+  type DecisionNodeQuestion,
+  type DecisionOption,
+  type DecisionProvider,
+  type DecisionProviderKind,
+  type DecisionQuestion,
+  type DecisionQuestionType,
+  type DecisionRequest,
+  type DecisionResponse,
+  type DecisionUsage,
+  type DecisionVerdict,
+  type ScaleQuestion,
   BOOKEND_NODE_KINDS,
   type InformUser,
   isBookendKind,
@@ -122,6 +153,7 @@ export { answerCriticalIds } from './graph-answer-cone'
 export { ancestorIds, predecessorIds } from './graph-traverse'
 export {
   nodeRefs,
+  renameGraphRefPaths,
   stripGraphRefsTo,
   stripNodeRefsTo,
   type NodeRef,
@@ -329,3 +361,18 @@ export {
   changedEvalRowFields,
   changedEvalSetFields,
 } from './change-fields'
+
+// A `Decider` over any chat model, via structured output. The `decisionsViaChatModels`
+// flag wires this for you; it is exported for a host assembling a hybrid catalog
+// (a native decider for some models, emulation for the rest).
+export { createChatDecider, type ChatDeciderOptions } from './decision-chat'
+
+// The SDK's built-in agent-facing decision tool. Its own module rather than a
+// re-export through `./graph`: it is a tool, not part of the graph model.
+export {
+  assess,
+  createAssessTool,
+  type AssessArgs,
+  type AssessResult,
+  type CreateAssessToolOptions,
+} from './decision-tool'

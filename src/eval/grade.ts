@@ -4,9 +4,15 @@ import { z } from 'zod'
 import { errorFeedLine } from '../engine/error-detail'
 import type { AgentNodeMeta } from '../engine/nodes/agent'
 import type { ToolNodeMeta } from '../engine/nodes/tool'
+import {
+  DEFAULT_DECISION_THRESHOLD,
+  resolveVerdicts,
+  type Decider,
+} from '../engine/decision'
 import { strictSchema } from '../engine/strict-schema'
 
 import {
+  isJudgeCheck,
   JUDGE_CONFIDENCE_MAX,
   type CheckResult,
   type CheckTree,
@@ -40,6 +46,14 @@ export type GradeStep = {
 /** Resolves a judge `modelId` to a model. Bound by the caller (server/test). */
 export type GradeModelFactory = (modelId: string) => LanguageModel
 
+/**
+ * Resolves a `decision_judge`'s `modelId` to a {@link Decider}. The decision
+ * counterpart of {@link GradeModelFactory}, and optional for the same reason the
+ * SDK's `getDecider` is: a host with no decision provider simply has no
+ * `decision_judge` checks to grade.
+ */
+export type GradeDeciderFactory = (modelId: string) => Decider
+
 export type GradeRowInput = {
   checks: CheckTree
   steps: GradeStep[]
@@ -48,6 +62,10 @@ export type GradeRowInput = {
   getModel?: GradeModelFactory
   /** Judge model used when a judge check omits its own `modelId`. */
   defaultJudgeModelId?: string
+  /** Required only when the tree contains a `decision_judge` check. */
+  getDecider?: GradeDeciderFactory
+  /** Decision model used when a `decision_judge` omits its own `modelId`. */
+  defaultDecisionModelId?: string
   /**
    * Synthesis-mode context — tool calls STAGED in the row's seeded conversation
    * (see `collectSeededToolCalls`). Under `freezeTools` the agent calls nothing,
@@ -307,6 +325,71 @@ const CONFIDENCE_ANCHORS = [
  */
 const JUDGE_MAX_ATTEMPTS = 2
 
+/**
+ * Grade one `decision_judge`: put the rubric to a decision model as a single
+ * boolean question and threshold the probability it comes back with.
+ *
+ * Deliberately much smaller than {@link gradeJudge}. There is no prompt to
+ * engineer (the rubric IS the question), no retry for malformed JSON (there is no
+ * JSON for the model to malform), and no confidence to elicit — the engine
+ * derives one, on the same scale every other decider's answers use.
+ *
+ * The tool calls the run made are folded into the state, exactly as the LLM judge
+ * folds them into its prompt: under synthesis mode the seeded calls are the only
+ * context the model was given, so a rubric about groundedness has to see them.
+ */
+async function gradeDecisionJudge(
+  check: Extract<EvalCheck, { type: 'decision_judge' }>,
+  input: GradeRowInput,
+): Promise<CheckResult & { confidence: number }> {
+  const modelId = check.modelId ?? input.defaultDecisionModelId
+  if (!input.getDecider || !modelId) {
+    throw new Error(
+      'decision_judge check requires a getDecider factory and a decision modelId (per-check or defaultDecisionModelId). A host with no decision provider cannot grade this check — see WfSdkConfig.getDecider.',
+    )
+  }
+  const toolCalls = [
+    ...(input.seededToolCalls ?? []),
+    ...collectToolCalls(input.steps),
+  ].map((c) => ({ tool: c.toolId, args: c.args, output: c.output }))
+  const graded = valueAtPath(input.output, check.path)
+
+  const question = {
+    id: 'passes',
+    type: 'boolean' as const,
+    prompt: check.rubric,
+  }
+  const response = await input.getDecider(modelId)({
+    // A structured state rather than a rendered prompt: a decider takes the
+    // context as data, and labelling the parts is all the framing it needs.
+    state: {
+      output: graded,
+      outputPath: check.path ?? null,
+      toolCallsAndResults: toolCalls,
+    },
+    questions: [question],
+  })
+  const verdict = resolveVerdicts([question], response.answers, {
+    threshold: check.threshold ?? DEFAULT_DECISION_THRESHOLD,
+  }).passes
+  if (verdict.type !== 'boolean') {
+    throw new Error(
+      `decision_judge expected a boolean verdict, got '${verdict.type}'.`,
+    )
+  }
+  return {
+    pass: verdict.value,
+    probability: verdict.probability,
+    // Rescaled to the 0..10 the stored `CheckResult.confidence` is read as
+    // everywhere downstream, so a calibrated judge and an LLM one land on one
+    // axis in the report instead of two that look alike and aren't.
+    confidence: Math.round(verdict.confidence * JUDGE_CONFIDENCE_MAX),
+    reason: `p=${verdict.probability.toFixed(2)} ${
+      verdict.value ? '≥' : '<'
+    } ${verdict.threshold.toFixed(2)} (${modelId})`,
+  }
+}
+
 async function gradeJudge(
   check: Extract<EvalCheck, { type: 'llm_judge' }>,
   input: GradeRowInput,
@@ -438,12 +521,18 @@ export async function gradeRow(input: GradeRowInput): Promise<GradeRowResult> {
 
   const graded = await Promise.all(
     checks.map(async (check): Promise<GradedCheck> => {
-      if (check.type !== 'llm_judge') {
+      if (!isJudgeCheck(check)) {
         const result = gradeBinary(check, input)
         return { result, verdict: result.pass }
       }
       try {
-        const r = await gradeJudge(check, input)
+        // Both judge families share the accumulator, the error handling and the
+        // three-valued reduction below — they differ only in how a verdict is
+        // reached, which is the point of having two.
+        const r =
+          check.type === 'decision_judge'
+            ? await gradeDecisionJudge(check, input)
+            : await gradeJudge(check, input)
         judgesAnswered += 1
         if (r.pass) judgesPassed += 1
         return { result: r, verdict: r.pass }

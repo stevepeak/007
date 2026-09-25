@@ -16,6 +16,16 @@ export type NodeInspectorProps = {
   node: WorkflowNode
   graph: WorkflowGraph
   onChange: (next: WorkflowNode) => void
+  /**
+   * Replace the WHOLE graph, as one undoable entry — for an edit that cannot be
+   * expressed as a change to this node alone. Renaming a Decision question id is
+   * the case: the id is the address downstream nodes bind to, so the rename has
+   * to carry its readers with it or it breaks them.
+   *
+   * Optional, because most inspectors never need it and a host embedding one
+   * standalone has no graph to apply.
+   */
+  onGraphChange?: (next: WorkflowGraph, label: string) => void
   /** When the node is inside an iteration, the element schema of the loop's
    * list — so its inputs can bind to the current `Item`'s fields. */
   itemSchema?: JsonSchema

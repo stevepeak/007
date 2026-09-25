@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import type { RunCompletion } from './config'
 import { executeWorkflow } from './executor'
 import { makeConfig } from './executor-test-helpers'
+import { workflowGraphSchema } from './graph'
 import { createMemoryRunRecorder } from './run-recorder'
 import { WorkflowStalledError } from './scheduler'
 
@@ -144,5 +145,31 @@ describe('executor — branch with an unconnected arm', () => {
         recorder: createMemoryRunRecorder(),
       }),
     ).rejects.toBeInstanceOf(WorkflowStalledError)
+  })
+})
+
+// The Branch counterpart to Switch's dead-case rule. An unconditioned edge out
+// of a branch is not a default arm: `isEdgeLive` treats a null condition as
+// always live, so it would fire on BOTH results and the branch would decide
+// nothing. Rejecting it here is what makes that shape impossible to publish.
+describe('branch outgoing-edge arms', () => {
+  test('accepts a branch with only one arm wired', () => {
+    expect(() => workflowGraphSchema.parse(oneArmedBranchGraph())).not.toThrow()
+  })
+
+  test('rejects an unconditioned outgoing edge', () => {
+    const g = oneArmedBranchGraph()
+    g.edges = g.edges.map((e) => {
+      return e.id === 'e-yes' ? { ...e, condition: null } : e
+    })
+    expect(() => workflowGraphSchema.parse(g)).toThrow(/matches no arm/)
+  })
+
+  test('rejects an outgoing edge naming something other than yes/no', () => {
+    const g = oneArmedBranchGraph()
+    g.edges = g.edges.map((e) => {
+      return e.id === 'e-yes' ? { ...e, condition: 'maybe' } : e
+    })
+    expect(() => workflowGraphSchema.parse(g)).toThrow(/matches no arm/)
   })
 })

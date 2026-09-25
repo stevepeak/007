@@ -9,6 +9,7 @@ import {
   LogIn,
   LogOut,
   Repeat,
+  Scale,
   Sparkles,
   Shuffle,
   Split,
@@ -229,6 +230,10 @@ export const KIND_STYLE: Record<
   tool: { icon: Wrench, accent: 'border-l-sky-400', label: 'Tool' },
   branch: { icon: GitBranch, accent: 'border-l-orange-400', label: 'Branch' },
   switch: { icon: Split, accent: 'border-l-orange-500', label: 'Switch' },
+  // Amber rather than the routing family's orange: it routes like Branch and
+  // Switch, but it calls a provider to do it, so it reads as its own thing on
+  // the canvas.
+  decision: { icon: Scale, accent: 'border-l-amber-400', label: 'Decision' },
   iteration: {
     icon: Repeat,
     accent: 'border-l-fuchsia-400',

@@ -31,8 +31,9 @@ The SDK is deliberately generic. It ships **behavior**; the host supplies
 | Editor / run-viewer / hub UI (`WfApp`)                           | ✅                | router adapter, design-system primitives        |
 | MCP tool catalog + `wf-mcp` bin (`mcp/catalog.ts`)               | ✅                | a headless credential (a bearer secret)         |
 | Model provider (`getModel` + `listModels` + `listProviders`)     |                   | ✅                                              |
+| Decision provider (`getDecider` + the two decision catalogs)     | verdicts + the node, tool & eval check | ✅ the provider — or flip `decisionsViaChatModels` (§2) |
 | Provider spend budgets (`fetchProviderBudget`, optional)         | the cards + meter | ✅ the balance call (omit → no cards)           |
-| Tools (`toolRegistry`; `/documents` + `/cloudflare` ship a few)  |                   | ✅                                              |
+| Tools (`toolRegistry`; `/engine`, `/documents`, `/cloudflare` ship a few) |         | ✅                                              |
 | Event catalog + input schemas (`triggers`)                       |                   | ✅ (manual/periodic built in)                   |
 | Per-run deps (`buildRunDeps`)                                    |                   | ✅                                              |
 | Blob-ref resolver (`resolveBlobRef`, optional)                   | marker shape only | ✅ if a tool spills large values                |
@@ -51,7 +52,7 @@ cycles (`ui → server → storage → engine`, `cloudflare → storage → engi
 | Import                                       | Runtime                 | Use it in                                                                                    |
 | -------------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------- |
 | `@stevepeak/007`                             | any                     | barrel: engine + storage + eval                                                              |
-| `@stevepeak/007/engine`                      | any (`ai`, `zod`, `jsonata`) | custom backends, graph types                                                                 |
+| `@stevepeak/007/engine`                      | any (`ai`, `zod`, `jsonata`) | custom backends, graph types, `createAssessTool`, `createChatDecider`                        |
 | `@stevepeak/007/analytics`                   | any server route        | `AnalyticsQuery` + dashboard aggregates over the telemetry dataset                           |
 | `@stevepeak/007/storage`                     | Workers (D1)            | `createWfDb`, data access, schema                                                            |
 | `@stevepeak/007/storage/schema`              | build-time              | drizzle-kit / migrations                                                                     |
@@ -225,14 +226,15 @@ Key rules:
 - **`toolRegistry` is a `Map<string, ToolRegistryEntry<TDeps>>`.** Each entry's
   `build(deps)` is called per-run with your `TDeps`.
 - **Leave `origin` alone.** `ToolMeta.origin` says who wrote a tool — `sdk` for
-  one 007 ships, `host` for one you wrote — and the console groups the Tools
-  page by it, badges it on a tool's detail page, and returns it from
-  `get_tool_catalog`, so a reader can tell where a change to a tool would have
-  to be made. It defaults to `host` and the SDK's own factories
-  (`createExtractTextTool`, `createDocumentTool`) set `sdk` at the source, as
-  does every MCP connector tool. Wiring a built-in's deps — or renaming it via `opts.name` — is
-  not authorship and does not change the answer, so there is nothing for a host
-  to set.
+  one 007 ships, `host` for one you wrote, `connector` for one proxied from a
+  connected MCP server — and the console groups the Tools page by it (Custom /
+  Built-in / Provided by MCP), badges it on a tool's detail page, and returns it
+  from `get_tool_catalog`, so a reader can tell where a change to a tool would
+  have to be made. It defaults to `host`; the SDK's own factories
+  (`createExtractTextTool`, `createDocumentTool`) set `sdk` at the source and the
+  connector registry sets `connector`. Wiring a built-in's deps — or renaming it
+  via `opts.name` — is not authorship and does not change the answer, so there is
+  nothing for a host to set.
 - **`resolveBlobRef` is optional.** Supply it only if a tool returns a `WfBlobRef`
   pointer instead of a large value (the built-in `extract_text` tool does when its
   output exceeds ~128 KB); it reads the pointer back to text inside the consuming
@@ -244,6 +246,11 @@ Key rules:
   dropdowns) and `triggers` (the create-workflow event picker + its data-field
   preview); the runtime needs `getModel` + `toolRegistry` + `buildRunDeps` +
   `triggers` (and `resolveBlobRef` if you use blob spilling).
+- **`getDecider` is a SEPARATE provider from `getModel`.** A decision model
+  judges a state against typed questions and answers with probabilities; it is
+  not a chat model and must never appear in `listModels`. Wire it (or flip
+  `decisionsViaChatModels`) to get the Decision node, the built-in `assess` tool
+  and calibrated eval grading — see below. Omit it and all three stay off.
 - **Optional hooks:** `fetchModelCatalog` (live provider `/models` refresh on the
   Models admin page), `fetchProviderBudget` (spend/credit remaining — see below),
   `resolveImageRef` (vision inputs), `onRunComplete` / `onRunFailed` (reflect
@@ -345,6 +352,215 @@ The create-workflow dialog (`WorkflowsList` → **New workflow**) offers all thr
 and, for events, lists the fields reflected from each `inputSchema`. Only events
 live in your config; `manual`/`periodic` are SDK constants
 (`MANUAL_TRIGGER_KIND`, `PERIODIC_TRIGGER_KIND`).
+
+### Decision providers — `assess`, the Decision node, calibrated evals (optional)
+
+A **decider** is the SDK's second kind of provider. Where `getModel` resolves a
+chat model — messages in, text out — `getDecider` resolves something that judges
+one shared **state** against several typed **questions** and answers with
+probability distributions. It is not a chat model in a hat: there are no
+messages, no tool calls and no stream, and a purpose-built decision endpoint will
+not answer a `/chat/completions` request. Keep decision models out of
+`listModels` — an author who picks one there gets a 404 mid-run.
+
+Wire one and three things light up at once:
+
+| Surface                          | What it is                                                           |
+| -------------------------------- | -------------------------------------------------------------------- |
+| The **Decision** node            | Judges a bound value against its questions in ONE call. Doesn't route — a Branch or Switch below reads `answers.<questionId>.value` |
+| The built-in **`assess`** tool   | The agent-facing half: the model calls it mid-reasoning when it wants a number instead of a hunch |
+| The **`decision_judge`** eval check | Grades a Goal on a probability and your threshold, instead of an LLM writing a verdict and then rating its own confidence in it |
+
+Leave it unwired and all three are simply absent: the palette hides the Decision
+kind, the eval check's panel says what to wire, and nothing fails at run time
+because nothing offered itself.
+
+#### The rule that makes a decider portable
+
+**Providers report distributions. The engine decides.**
+
+A `Decider` returns probabilities and nothing else. It never says "yes", never
+picks a winner, never decides whether an answer was confident enough to act on.
+Thresholding, the winning option, a scale's weighted index and `confidence` are
+all computed by `resolveVerdicts` in `src/engine/decision.ts`. Three things fall
+out of that split, and they are the reason to respect it in your adapter:
+
+- a provider that only reports a distribution is a **complete** provider;
+- two providers' `confidence` values are comparable, so a threshold an author set
+  against one still means the same thing against the other;
+- swapping providers cannot silently move a threshold, because no provider ever
+  saw one.
+
+`confidence` is the **margin between the top two probabilities**, on one scale
+for every question type and every provider. For a binary that works out as
+`|p − 0.5| × 2`, so a confidence floor written against a yes/no question keeps
+its meaning when the question later becomes a `category`.
+
+#### Option A — toggle it on over your existing chat models
+
+If you have no decision endpoint, you do not have to go without. One flag and
+`defineWfConfig` synthesizes all three hooks over your own `getModel` /
+`listModels` / `listProviders`, using `createChatDecider` (structured output, one
+generation per batch):
+
+```ts
+export const wfConfig = defineWfConfig<HostDeps>({
+  // …the rest of your config
+  decisionsViaChatModels: true,
+})
+```
+
+Models **known** to lack structured output are filtered out; the rest are offered
+marked `calibrated: false`, and the editor says so on the node. It is opt-in
+rather than a default on purpose: an emulated decider's probabilities are a chat
+model's self-report, every threshold an author sets is a threshold on those
+numbers, and a deployment that hasn't thought about that shouldn't quietly
+acquire them. Setting the flag **and** `getDecider` is a construction error, not
+a silent preference.
+
+The flag fills in the config's hooks, which is everything the **Decision node**
+and the **eval check** need. The `assess` **tool** needs one more line, because a
+tool's `build` is handed only your deps — so put a decider in the bundle,
+choosing the model you want agents judging with:
+
+```ts
+import { createChatDecider } from '@stevepeak/007/engine'
+
+buildRunDeps: (ctx) => ({
+  /* …your deps */
+  decide: createChatDecider({
+    model: getModel((ctx.env as HostEnv).MODEL_API_KEY, 'model-a'),
+    modelId: 'model-a',
+  }),
+}),
+```
+
+#### Option B — provide a real decision provider
+
+Three hooks, all-or-nothing (`defineWfConfig` refuses a partial set: a factory
+with no catalog is a node the author can't configure, a catalog with no factory
+is a dropdown that resolves to nothing at run time):
+
+```ts
+export const wfConfig = defineWfConfig<HostDeps>({
+  // …the rest of your config
+  getDecider: (modelId, ctx) =>
+    createMyDecider({ apiKey: (ctx.env as HostEnv).DECISION_API_KEY, modelId }),
+  listDecisionModels: () => [
+    {
+      id: 'my-provider:judge-1',
+      label: 'Judge 1',
+      providerId: 'my-provider',
+      questionTypes: ['boolean', 'category', 'scale'],
+      // True only if the numbers are genuinely calibrated rather than a model's
+      // self-report — it is what the editor badges, and what tells an author
+      // what kind of 0.8 they just typed.
+      calibrated: true,
+    },
+  ],
+  listDecisionProviders: () => [
+    { id: 'my-provider', label: 'My Provider', kind: 'native' },
+  ],
+})
+```
+
+And the adapter itself — the only place your vendor's vocabulary exists:
+
+```ts
+// your-host/src/decider.ts
+import type { Decider, DecisionAnswer, DecisionQuestion } from '@stevepeak/007'
+
+export function createMyDecider(opts: { apiKey: string; modelId: string }): Decider {
+  return async (request) => {
+    const res = await fetch('https://api.example.com/v1/decisions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${opts.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: opts.modelId,
+        state: request.state, // a string, or any JSON value
+        questions: request.questions.map(toVendorQuestion),
+      }),
+    })
+    if (!res.ok) throw new Error(`decisions failed: ${res.status}`)
+    const body = (await res.json()) as VendorResponse
+    return {
+      // What ACTUALLY answered — a floating id like `latest` drifts, and the run
+      // record wants whatever answered, not what you asked with.
+      modelId: body.model,
+      answers: request.questions.map((q) => toAnswer(q, body.answers[q.id])),
+      usage: { inputTokens: body.usage?.in, outputTokens: body.usage?.out },
+    }
+  }
+}
+```
+
+Four things to get right in `toAnswer`, each of which fails quietly if you don't:
+
+1. **Answer with the question's own keys.** Providers often index a scale's
+   distribution by ordinal (`{"0": 0.1, "1": 0.9}`) or return a separate legend.
+   Map those back through the question's `levels` array — through the ORDER, not
+   through the legend's labels, which collide the moment two levels share a
+   description. A distribution whose keys the question never declared is dropped,
+   and every answer then resolves to the first choice while looking healthy.
+2. **Preserve the question's order** for a `scale`. The order *is* the scale:
+   `resolveVerdict` computes the weighted index positionally, so an answer
+   returned in a different order produces a plausible number that is simply
+   wrong. (The engine re-aligns to the question, so getting this right is about
+   not fighting it.)
+3. **Report `confidence` only if you genuinely have one.** Leave it undefined and
+   the engine derives the margin. Inventing one — or passing through a chat
+   model's self-rating — is your adapter quietly disagreeing with every other
+   provider about what the number means.
+4. **Answer every question you were asked, with the type it was asked as.**
+   `resolveVerdicts` throws on a missing or mistyped answer rather than skipping
+   it, because a skipped question reaches a downstream comparison as `undefined`
+   — and `undefined >= 0.5` is `false`, so a Branch routes with total confidence
+   having been told nothing.
+
+Optionally set `maxQuestionsPerCall` on the returned function (`Object.assign`)
+and the engine chunks a larger request rather than failing. Leave it off when
+your provider caps by tokens rather than by question count — a made-up number
+there splits requests that would have fit while still failing the ones that
+don't.
+
+#### Wiring the `assess` tool
+
+`assess` is an SDK built-in (`origin: 'sdk'`), so it registers like the other
+two — with an accessor into your per-run deps:
+
+```ts
+import { createAssessTool } from '@stevepeak/007/engine'
+
+// Build ONE decider per run and point both the tool and the node at it, so an
+// agent's judgment and a graph's judgment come from the same provider.
+buildRunDeps: (ctx) => ({
+  /* …your deps */
+  decide: createMyDecider({ apiKey: (ctx.env as HostEnv).DECISION_API_KEY, modelId: 'my-provider:judge-1' }),
+}),
+
+const toolRegistry = new Map(
+  [...hostTools, createAssessTool<HostDeps>({ getDecider: (d) => d.decide })]
+    .map((t) => [t.id, t]),
+)
+```
+
+It comes from `TDeps` rather than from `WfSdkConfig.getDecider` for a structural
+reason: a tool's `build` is handed only your deps bundle, and the `RunContext`
+that `getDecider` needs never reaches it.
+
+#### Calibrated eval grading
+
+With a decider wired, a scored Goal check can be graded by it: in the eval
+editor, switch **Graded by** to *A calibrated decider*. The check stores the raw
+probability beside `pass`, which is the reason to prefer it — `0.52` and `0.99`
+are both a pass, and only one of them is worth a second look. The threshold is
+yours (default `0.5`), the rubric is put to the model **as the question itself**,
+so phrase it so that "yes" means the row passed.
+
+---
 
 ### Managing agents/workflows: the spec CLI (recommended over seed files)
 

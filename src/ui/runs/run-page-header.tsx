@@ -15,7 +15,6 @@ import type {
   WfRunSummary,
 } from '../../server/protocol'
 import type { WfFeedbackRating } from '../../server/protocol-feedback'
-
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import {
@@ -27,8 +26,9 @@ import {
 } from '../cost'
 import { MessageFeedback } from '../message-feedback'
 import { WfLink } from '../nav'
-import { runStatusClass, runStatusDotClass } from './run-status'
 import { SentryIcon } from '../sentry-icon'
+
+import { runStatusClass, runStatusDotClass } from './run-status'
 
 // The run viewer's header strip: where it came from, what it cost, how it
 // ended, and what you can do about it.

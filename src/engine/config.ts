@@ -9,6 +9,13 @@ import type {
   WebSearchMode,
   WfRunManifestEntry,
 } from './graph'
+import {
+  DECISION_QUESTION_TYPES,
+  type Decider,
+  type DecisionModelOption,
+  type DecisionProvider,
+} from './decision'
+import { createChatDecider } from './decision-chat'
 import type {
   ModelCatalogEntry,
   ModelOption,
@@ -26,8 +33,11 @@ import type { TriggerRegistry } from './trigger-registry'
 //
 // The model *catalog* data shapes (ModelOption, ModelProvider, ModelCatalog, …)
 // are their own domain — see `model-catalog.ts` — and are re-exported here so
-// `./config` remains the one import surface for the whole host contract.
+// `./config` remains the one import surface for the whole host contract. The
+// DECISION domain (Decider, DecisionQuestion, verdicts) is the same arrangement,
+// one file over in `decision.ts`.
 export * from './model-catalog'
+export * from './decision'
 export * from './logger'
 
 /**
@@ -269,6 +279,13 @@ export type RunContext = {
 }
 
 /**
+ * Node-facing decider factory — resolves a decision `modelId` to a
+ * {@link Decider}, with the run context already bound in. The exact shape of
+ * {@link ModelFactory}, for the other kind of provider.
+ */
+export type DeciderFactory = (modelId: string) => Decider
+
+/**
  * Optional host-tunable runtime execution limits. Only the per-run **node
  * budget** is exposed — the runaway-loop backstop that aborts a run once it has
  * fired this many nodes (default {@link DEFAULT_NODE_BUDGET} = 256). A host that
@@ -323,6 +340,57 @@ export interface WfSdkConfig<TDeps = unknown> {
     ctx: ModelListContext,
     providerId: string,
   ) => Promise<Omit<ModelCatalogEntry, 'enabled'>[]>
+  /**
+   * Optional: resolve a decision `modelId` to a {@link Decider} (see
+   * `decision.ts`). The decision counterpart of {@link WfSdkConfig.getModel},
+   * and the gate on the whole feature: **omit it and Decision nodes are simply
+   * off** — the editor's palette hides the kind and the node inspector says what
+   * to wire. A graph that ALREADY contains one still parses (graph validation is
+   * pure and cannot see the host config); it fails when the node runs, naming
+   * this hook. Same shape as {@link WfSdkConfig.resolveConnectorSecret}.
+   *
+   * A host with no purpose-built decision endpoint does not have to go without:
+   * `createChatDecider` (`./decision-chat`) implements the contract on any chat
+   * model via structured output.
+   */
+  getDecider?: (modelId: string, ctx: RunContext) => Decider
+  /**
+   * Turn Decision support on using the host's OWN chat models, with no decision
+   * provider to wire.
+   *
+   * The other half of the story from {@link WfSdkConfig.getDecider}: provide a
+   * provider, or flip this. When it is true and no `getDecider` is set,
+   * `defineWfConfig` synthesizes all three decision hooks over `getModel` /
+   * `listModels` / `listProviders` via `createChatDecider`, offering every
+   * structured-output-capable chat model as an (uncalibrated) decider.
+   *
+   * Opt-in rather than a default, and deliberately so: an emulated decider's
+   * probabilities are a chat model's self-report, every threshold an author sets
+   * is a threshold on THOSE numbers, and a deployment that has not thought about
+   * that should not quietly acquire them. The catalog marks them
+   * `calibrated: false` and the editor says so on the node.
+   *
+   * Ignored when `getDecider` is set — a real provider always wins.
+   */
+  decisionsViaChatModels?: boolean
+  /**
+   * Optional: deciders offered in the Decision node's model dropdown. Required
+   * (non-empty) whenever {@link WfSdkConfig.getDecider} is set — a factory with
+   * no catalog gives the author a node they cannot configure.
+   */
+  listDecisionModels?: (
+    ctx: ModelListContext,
+  ) => DecisionModelOption[] | Promise<DecisionModelOption[]>
+  /**
+   * Optional: the decision providers the host has wired. Groups the dropdown
+   * exactly as {@link WfSdkConfig.listProviders} groups the model pickers, and
+   * carries the `kind` badge that tells an author whether they picked a native
+   * decider or a chat-emulated one — which is precisely what a confidence
+   * threshold's meaning depends on.
+   */
+  listDecisionProviders?: (
+    ctx: ModelListContext,
+  ) => DecisionProvider[] | Promise<DecisionProvider[]>
   /**
    * Optional: read one provider's live spend budget (remaining credit, cap,
    * reset cadence) for the Models page and the dashboard's Providers panel.
@@ -508,6 +576,28 @@ export function defineWfConfig<TDeps = unknown>(
     problems.push('`spillThresholdBytes`, if set, must be a positive number')
   }
 
+  // The decision trio is all-or-nothing, for the same reason `spillBlobRef`
+  // requires `resolveBlobRef`: a factory with no catalog is a node the author
+  // cannot configure, and a catalog with no factory is a dropdown that resolves
+  // to nothing at run time. Both are worse than the feature being off.
+  const decisionHooks = (
+    ['getDecider', 'listDecisionModels', 'listDecisionProviders'] as const
+  ).filter((k) => config[k] != null)
+  for (const hook of decisionHooks) {
+    if (typeof config[hook] !== 'function') {
+      problems.push(`\`${hook}\`, if set, must be a function`)
+    }
+  }
+  if (decisionHooks.length > 0 && decisionHooks.length < 3) {
+    const missing = (
+      ['getDecider', 'listDecisionModels', 'listDecisionProviders'] as const
+    ).filter((k) => config[k] == null)
+    problems.push(
+      `decision support needs all of \`getDecider\`, \`listDecisionModels\` and \`listDecisionProviders\` — missing ${missing
+        .map((m) => `\`${m}\``)
+        .join(', ')}. Omit all three to turn Decision nodes off.`,
+    )
+  }
   if (
     config.onRunComplete != null &&
     typeof config.onRunComplete !== 'function'
@@ -517,10 +607,75 @@ export function defineWfConfig<TDeps = unknown>(
   if (config.onRunFailed != null && typeof config.onRunFailed !== 'function') {
     problems.push('`onRunFailed`, if set, must be a function')
   }
+  if (config.decisionsViaChatModels && config.getDecider) {
+    problems.push(
+      '`decisionsViaChatModels` is on but `getDecider` is also set — a real decision provider always wins, so the flag does nothing. Remove one.',
+    )
+  }
   if (problems.length > 0) {
     throw new Error(
       `defineWfConfig: invalid WfSdkConfig —\n  - ${problems.join('\n  - ')}`,
     )
   }
-  return config
+  return config.decisionsViaChatModels
+    ? { ...config, ...chatModelDecisionHooks(config) }
+    : config
+}
+
+/**
+ * The three decision hooks, synthesized over a host's chat models.
+ *
+ * Kept here, at the one place a config is constructed, rather than asking each
+ * host to assemble the same three closures — the whole point of the flag is that
+ * turning decisions on costs one line.
+ *
+ * Only models KNOWN to do structured output are offered: `createChatDecider`
+ * constrains its answer with a JSON schema, and a model that can't honour one
+ * returns prose the adapter would have to guess at. A model whose capabilities
+ * the provider never reported is treated as capable, matching
+ * `unmetRequirements` — we gate on a known lack, never on an unknown.
+ */
+function chatModelDecisionHooks<TDeps>(
+  config: WfSdkConfig<TDeps>,
+): Pick<
+  WfSdkConfig<TDeps>,
+  'getDecider' | 'listDecisionModels' | 'listDecisionProviders'
+> {
+  return {
+    getDecider: (modelId, ctx) => {
+      return createChatDecider({
+        model: config.getModel(modelId, ctx),
+        modelId,
+      })
+    },
+    listDecisionModels: async (ctx) => {
+      const models = await config.listModels(ctx)
+      return models
+        .filter((m) => m.capabilities?.structuredOutput !== false)
+        .map((m) => ({
+          id: m.id,
+          label: m.label,
+          providerId: m.providerId,
+          // Every type — the adapter asks for weights over named keys, which is
+          // the same shape whatever the question was.
+          questionTypes: [...DECISION_QUESTION_TYPES],
+          // The honest part. See the flag's own note.
+          calibrated: false,
+          costPerMTok: m.costPerMTok,
+          contextLength: m.contextLength,
+        }))
+    },
+    listDecisionProviders: async (ctx) => {
+      const providers = await config.listProviders(ctx)
+      return providers.map((p) => ({
+        id: p.id,
+        label: p.label,
+        // Not `p.kind`: that describes how the provider serves CHAT. Through
+        // this path it is serving decisions by emulation, and the badge an
+        // author reads should say which.
+        kind: 'chat-emulated' as const,
+        note: 'Judgments emulated on a chat model',
+      }))
+    },
+  }
 }

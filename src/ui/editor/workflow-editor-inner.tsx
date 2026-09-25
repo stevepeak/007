@@ -102,6 +102,12 @@ export function EditorInner({
                   insideIteration={selection.insideIteration}
                   currentWorkflowId={workflowId}
                   onChange={state.patchNode}
+                  // A graph-wide inspector edit (renaming a Decision question,
+                  // which repoints every reader) lands as one undoable entry and
+                  // re-applies to the canvas, the same way a version load does.
+                  onGraphChange={(graph, label) => {
+                    return state.history.loadSnapshot({ graph, label })
+                  }}
                 />
               ) : null}
             </div>

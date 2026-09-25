@@ -311,6 +311,13 @@ export async function executeWorkflow<TDeps>(
               webCitations: opts?.webCitations,
             })
           },
+          // Decision nodes only. Bound the same way as `getModel` — the host
+          // sees the run context so it can read a live binding — and left
+          // undefined when the host wired no decision provider, which is what
+          // makes the node kind cleanly absent rather than half-present.
+          getDecider: config.getDecider
+            ? (modelId) => config.getDecider!(modelId, runContext)
+            : undefined,
           toolRegistry: config.toolRegistry,
           toolDeps,
           nodeOutputs: scheduler.getOutputs(),

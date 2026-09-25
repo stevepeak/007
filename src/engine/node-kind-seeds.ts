@@ -69,6 +69,22 @@ export const NODE_KIND_SEEDS: { [K in WfNodeKind]: NodeKindSeed<K> } = {
     config: { cases: [] },
   }),
 
+  // Seeded with ONE boolean question, already the routing one, so a freshly
+  // dropped Decision has live `yes`/`no` handles and reads as a gate from the
+  // moment it lands. `modelId` and `prompt` are left empty — both are flagged
+  // as issues until the author fills them, which is the right shape: the node
+  // is structurally complete and semantically unfinished.
+  decision: () => ({
+    kind: 'decision',
+    label: 'New decision',
+    config: {
+      modelId: '',
+      questions: [
+        { id: 'answer', type: 'boolean', prompt: '', choices: [] },
+      ],
+    },
+  }),
+
   // Seeded with a minimal Item → Result subgraph; the author drops work nodes
   // into the block. `source` is intentionally left unset so the block reads as
   // "no list selected" (an error) until the author picks a list to iterate.

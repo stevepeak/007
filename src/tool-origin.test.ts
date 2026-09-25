@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, test } from 'bun:test'
 
+import { createAssessTool } from './engine/decision-tool'
 import { createDocumentTool } from './documents/create-document-tool'
 
 // `ToolMeta.origin` defaults to `host`, and that default is load-bearing: it is
@@ -18,6 +19,11 @@ import { createDocumentTool } from './documents/create-document-tool'
 // Add a factory to the SDK → add it here.
 
 const SDK_TOOL_FACTORIES = {
+  assess: () => {
+    return createAssessTool<unknown>({
+      getDecider: () => () => Promise.resolve({ answers: [] }),
+    })
+  },
   create_document: () => {
     return createDocumentTool<unknown>({
       store: () => Promise.resolve({}) as never,

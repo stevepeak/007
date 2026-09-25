@@ -1,5 +1,8 @@
 import { z } from 'zod'
 
+// `decision.ts` is a leaf (it imports nothing from the graph layer), so naming
+// its question types here closes no cycle.
+import { DECISION_QUESTION_TYPES } from './decision'
 import { TRANSFORM_OUTPUT_SHAPES } from './graph-kinds'
 import { PERIODIC_TRIGGER_KIND } from './trigger-registry'
 
@@ -339,6 +342,9 @@ export function branchOperatorTakesValue(operator: BranchOperator): boolean {
   return !VALUELESS_BRANCH_OPERATORS.includes(operator)
 }
 
+/** The two arms a Branch routes to — what its outgoing `edge.condition` holds. */
+export const BRANCH_ARMS = ['yes', 'no'] as const
+
 const branchNodeSchema = baseNode.extend({
   kind: z.literal('branch'),
   // Deterministic yes/no routing: a predicate over an upstream value, run in
@@ -439,6 +445,71 @@ const switchNodeSchema = baseNode.extend({
         }),
       )
       .default([]),
+  }),
+})
+
+// One question on a Decision node. FLAT rather than a discriminated union per
+// type: this schema is also what the editor's forms and the MCP `create_*`
+// tools write through, and a union here would fan out into every one of those
+// surfaces for no gain — the type-specific fields are checked in
+// `graph-validation.ts`, which can say "a category question needs options"
+// far better than a union mismatch can.
+const decisionQuestionSchema = z.object({
+  // Stable identity: the key a verdict lands under, and what downstream refs
+  // address (`decide.answers.is_urgent.value`). Renaming it repoints every
+  // binding, which is why the editor mints it and does not let it be retyped.
+  id: z.string().min(1),
+  type: z.enum(DECISION_QUESTION_TYPES).default('boolean'),
+  prompt: z.string().default(''),
+  // `category`: the options to choose between. `scale`: the ordered levels,
+  // LOWEST FIRST — the order is the scale, so reordering these changes every
+  // answer's weighted index, not just its label.
+  choices: z
+    .array(
+      z.object({
+        key: z.string().min(1),
+        label: z.string().optional(),
+        description: z.string().optional(),
+      }),
+    )
+    .default([]),
+  // `category`/`scale`: take the choices from an upstream node's ARRAY output
+  // instead of the authored list — "which of these documents", where the
+  // documents are whatever the run found. Set, it wins over `choices`, and the
+  // list is unknowable until the run, so the author-time "needs at least two"
+  // check steps aside and `decision.ts` enforces it against what actually
+  // arrives. Accepted element shapes are strings or `{ key | label, description
+  // }` objects (see `resolveChoiceSource`).
+  choicesSource: refBindingSchema.optional(),
+  // `boolean` only: the cut at which the answer counts as yes. Policy, and
+  // deliberately the AUTHOR's rather than the provider's — see `decision.ts`.
+  threshold: z.number().min(0).max(1).optional(),
+})
+
+const decisionNodeSchema = baseNode.extend({
+  kind: z.literal('decision'),
+  // Judge one value against typed questions, in ONE provider call however many
+  // questions it asks. It does NOT route: routing is Branch's and Switch's job,
+  // and keeping it that way is what makes a second question free — ask five,
+  // hang five Branches off the one node, pay for one call. A node that both
+  // answered and routed could only ever route on one of its answers, so the
+  // fifth question would need a fifth Decision.
+  //
+  // Like Branch and Switch it does NOT forward its input — its output IS its
+  // answers (`{ answers, reasoning }`), addressed as
+  // `answers.<questionId>.value`. Nodes wanting the judged value ref its
+  // producer directly.
+  config: z.object({
+    // Which decider answers. Composite `providerId:modelId`, like a chat model
+    // ref — resolved through `WfSdkConfig.getDecider`.
+    modelId: z.string().default(''),
+    // What to judge. A `ref` into an upstream node's output (the same data
+    // picker Branch/Switch/Output use); undefined judges the whole incoming
+    // input. `graph-issues.ts` warns on the unbound case, because "judge
+    // whatever arrived" is rarely what an author means once a node has more
+    // than one upstream.
+    source: refBindingSchema.optional(),
+    questions: z.array(decisionQuestionSchema).default([]),
   }),
 })
 
@@ -756,6 +827,7 @@ export const workflowNodeSchema = z.discriminatedUnion('kind', [
   toolNodeSchema,
   branchNodeSchema,
   switchNodeSchema,
+  decisionNodeSchema,
   workflowCallNodeSchema,
   featureRequestNodeSchema,
   passthroughNodeSchema,
@@ -780,6 +852,8 @@ export type AgentNode = z.infer<typeof agentNodeSchema>
 export type ToolNode = z.infer<typeof toolNodeSchema>
 export type BranchNode = z.infer<typeof branchNodeSchema>
 export type SwitchNode = z.infer<typeof switchNodeSchema>
+export type DecisionNode = z.infer<typeof decisionNodeSchema>
+export type DecisionNodeQuestion = z.infer<typeof decisionQuestionSchema>
 export type WorkflowCallNode = z.infer<typeof workflowCallNodeSchema>
 export type FeatureRequestNode = z.infer<typeof featureRequestNodeSchema>
 export type PassthroughNode = z.infer<typeof passthroughNodeSchema>
@@ -816,6 +890,7 @@ export type WorkflowNode =
   | ToolNode
   | BranchNode
   | SwitchNode
+  | DecisionNode
   | WorkflowCallNode
   | FeatureRequestNode
   | PassthroughNode

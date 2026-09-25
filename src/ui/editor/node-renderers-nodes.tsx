@@ -311,6 +311,22 @@ export function SwitchNodeRenderer(props: NodeProps) {
   )
 }
 
+// Probabilistic judgment. An ordinary card with ONE unconditional source handle,
+// because a Decision does not route: it answers, and a Branch or Switch
+// downstream reads `answers.<questionId>.value`. Per-arm handles would be a lie
+// — the node emits no arm for an edge condition to match.
+export const DecisionNodeRenderer = defineNode({
+  kind: 'decision',
+  // Same subject wording as Branch/Switch: the picked field path when the author
+  // drilled in, 'upstream' for a whole-output ref, 'input' when unbound.
+  subtitle: (data) => {
+    const { source, questions } = data.config
+    const subject = source?.path || (source ? 'upstream' : 'input')
+    const n = questions.length
+    return `${subject} → ${n} question${n === 1 ? '' : 's'}`
+  },
+})
+
 // The iteration node is a resizable CONTAINER: its subgraph nodes render as React
 // Flow children inside this box. The box itself carries the outer handles — the
 // list flows into the left, the collected results leave the right — while the

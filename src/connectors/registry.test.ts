@@ -72,9 +72,10 @@ describe('catalog entries become registry entries', () => {
     expect(entry.name).toBe('Linear: Create issue')
     expect(entry.description).toBe('Creates an issue in Linear.')
     expect(entry.sideEffect).toBe('write')
-    // Neither side authored it, but a deployment cannot fix it by editing the
-    // host repo — which is what `origin` is actually telling the reader.
-    expect(entry.origin).toBe('sdk')
+    // Neither side authored it: a third party did, and it can change without
+    // either repo moving — so it is its own origin, not `sdk`. The Tools page
+    // files these under "Provided by MCP" off exactly this field.
+    expect(entry.origin).toBe('connector')
   })
 
   // `ai-tool` works in BOTH an agent's tool set and a Tool node; `function`

@@ -1,4 +1,6 @@
 import type {
+  DecisionModelOption,
+  DecisionProvider,
   ModelCatalog,
   ModelOption,
   ModelProvider,
@@ -75,6 +77,16 @@ export interface WfDataClient {
    * editor shows only these and groups models under them by `providerId`.
    */
   listProviders(): Promise<ModelProvider[]>
+  /**
+   * The deciders offered in a Decision node's model picker, and the providers
+   * they group under. EMPTY when the host wired no decision provider — which is
+   * how the editor knows to hide the Decision node kind rather than offering one
+   * that cannot run. Unlike the chat catalog these are served straight from the
+   * host config: there is no `wf_decision_model` table, because there is nothing
+   * to curate (a host declares exactly the deciders it can resolve).
+   */
+  listDecisionModels(): Promise<DecisionModelOption[]>
+  listDecisionProviders(): Promise<DecisionProvider[]>
   /**
    * The full model catalog + provider status for the Models admin page (every
    * model, enabled and disabled, with pricing/metadata).

@@ -37,6 +37,7 @@ export {
 export {
   gradeRow,
   rollup,
+  type GradeDeciderFactory,
   type GradeModelFactory,
   type GradeRowInput,
   type GradeRowResult,

@@ -16,6 +16,25 @@ export function useProviders() {
   })
 }
 
+// The decision catalog — a Decision node's model picker. Both are empty on a
+// host that wired no decision provider, which is the signal the palette reads to
+// hide the node kind entirely.
+export function useDecisionModels() {
+  const client = useWfClient()
+  return useQuery({
+    queryKey: keys.decisionModels,
+    queryFn: () => client.listDecisionModels(),
+  })
+}
+
+export function useDecisionProviders() {
+  const client = useWfClient()
+  return useQuery({
+    queryKey: keys.decisionProviders,
+    queryFn: () => client.listDecisionProviders(),
+  })
+}
+
 // The full catalog (every model + provider status) for the Models admin page.
 export function useModelCatalog() {
   const client = useWfClient()

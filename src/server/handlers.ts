@@ -76,6 +76,8 @@ const wfInputSchemas: Record<keyof WfDataClient, z.ZodType> = {
   // ---- models -------------------------------------------------------------
   listModels: NO_INPUT,
   listProviders: NO_INPUT,
+  listDecisionModels: NO_INPUT,
+  listDecisionProviders: NO_INPUT,
   getModelCatalog: NO_INPUT,
   getProviderBudgets: NO_INPUT,
   refreshModels: z.object({ providerId: z.string() }),

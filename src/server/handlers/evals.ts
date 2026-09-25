@@ -4,6 +4,7 @@ import {
   collectSeededToolCalls,
   EVAL_NODE_EXECUTION,
   gradeRow,
+  type GradeDeciderFactory,
   resolveEvalTarget,
   evalInvocation,
   rollup,
@@ -506,12 +507,26 @@ export function buildEvalHandlers<TDeps>(
       }
       const defaultJudgeModelId =
         opts.evalJudgeModelId ?? (await opts.config.listModels({ env }))[0]?.id
+      // The decision counterpart, for `decision_judge` checks. Both stay
+      // undefined on a host with no decision provider, and `gradeDecisionJudge`
+      // then reports that in the check's own error rather than failing the row
+      // with something opaque.
+      const getDecider: GradeDeciderFactory | undefined =
+        opts.config.getDecider
+          ? (modelId) =>
+              opts.config.getDecider!(modelId, { triggerKind: 'eval', env })
+          : undefined
+      const defaultDecisionModelId = opts.config.listDecisionModels
+        ? (await opts.config.listDecisionModels({ env }))[0]?.id
+        : undefined
       const graded = await gradeRow({
         checks: found.row.checks,
         steps,
         output: runResult.output,
         getModel,
         defaultJudgeModelId,
+        getDecider,
+        defaultDecisionModelId,
         // Synthesis mode: the tools were frozen, so the model's context came from
         // the Sample's seeded conversation, not the run trace. Hand those staged
         // tool results to the judge so it can grade the answer's groundedness.

@@ -329,7 +329,9 @@ function BinaryFields({
         />
       )
     }
+    // Judges have no binary fields; their own panel owns the rubric.
     case 'llm_judge':
+    case 'decision_judge':
       return null
   }
 }

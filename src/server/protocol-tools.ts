@@ -22,12 +22,14 @@ export type ToolOption = {
   /**
    * Who authored the tool: `sdk` for one 007 ships (the host wires its deps but
    * owns neither its behavior nor its schemas), `host` for one this deployment
-   * wrote. Resolved server-side from `ToolMeta.origin`, so it is always a
-   * concrete value here even though the registry field is optional.
+   * wrote, `connector` for one proxied from a third party's MCP server.
+   * Resolved server-side from `ToolMeta.origin`, so it is always a concrete
+   * value here even though the registry field is optional.
    *
-   * It is worth showing. The two are indistinguishable in the picker and are
+   * It is worth showing. The three are indistinguishable in the picker and are
    * not interchangeable in practice: a built-in is fixed until the SDK is
-   * bumped, and a host tool is a file in this repo.
+   * bumped, a host tool is a file in this repo, and a connector tool is
+   * somebody else's — it can change, or vanish, without either repo moving.
    */
   origin: ToolOrigin
   /**

@@ -31,6 +31,8 @@ export type {
 // pulls in only zod, so this stays safe for the browser bundle.
 export {
   BINARY_CHECK_TYPES,
+  isJudgeCheck,
+  JUDGE_CHECK_TYPES,
   EVAL_CHECK_TYPES,
   evalMatchSchema,
   evalSampleLayer,

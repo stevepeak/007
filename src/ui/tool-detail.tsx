@@ -1,7 +1,11 @@
 import { AlertTriangle, Layers, Play, SlidersHorizontal } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
-import type { ToolOption, WfToolInvocation } from '../server/protocol'
+import type {
+  ToolOption,
+  ToolOrigin,
+  WfToolInvocation,
+} from '../server/protocol'
 
 import { WfAutoForm } from './autoform/wf-auto-form'
 import { cn } from './cn'
@@ -70,6 +74,22 @@ export function ToolDetail({ toolId, className }: ToolDetailProps) {
   )
 }
 
+// One row per `ToolOrigin`, so adding an origin to the union is a type error
+// here rather than a tool quietly badged as something it isn't.
+const ORIGIN_LABELS: Record<ToolOrigin, { badge: string; title: string }> = {
+  sdk: {
+    badge: 'built-in',
+    title:
+      'Defined in the workflow SDK. This deployment supplies its credentials and storage, not its behaviour.',
+  },
+  host: { badge: 'custom', title: 'Written for this deployment.' },
+  connector: {
+    badge: 'MCP',
+    title:
+      'Proxied from a connected MCP server. A third party owns its behaviour and its description — both can change without a deploy.',
+  },
+}
+
 function ToolHeader({ tool }: { tool: ToolOption }) {
   const { Badge } = useWfComponents()
   return (
@@ -96,16 +116,11 @@ function ToolHeader({ tool }: { tool: ToolOption }) {
             {tool.kind === 'function' ? 'function' : 'AI tool'}
           </Badge>
           {/* Where a change to this tool would have to be made — inside the
-              SDK, or in this deployment's own repo. */}
-          <span
-            title={
-              tool.origin === 'sdk'
-                ? 'Defined in the workflow SDK. This deployment supplies its credentials and storage, not its behaviour.'
-                : 'Written for this deployment.'
-            }
-          >
+              SDK, in this deployment's own repo, or nowhere reachable from
+              either, because a third party's MCP server owns it. */}
+          <span title={ORIGIN_LABELS[tool.origin].title}>
             <Badge className="border border-neutral-200 bg-neutral-50 text-neutral-500">
-              {tool.origin === 'sdk' ? 'built-in' : 'custom'}
+              {ORIGIN_LABELS[tool.origin].badge}
             </Badge>
           </span>
         </div>

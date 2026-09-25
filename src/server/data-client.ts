@@ -51,6 +51,8 @@ export function createWfDataClient(call: WfDataTransport): WfDataClient {
   return {
     listModels: bind('listModels'),
     listProviders: bind('listProviders'),
+    listDecisionModels: bind('listDecisionModels'),
+    listDecisionProviders: bind('listDecisionProviders'),
     getModelCatalog: bind('getModelCatalog'),
     getProviderBudgets: bind('getProviderBudgets'),
     // Fetching a provider's full catalog hits an external `/models` endpoint and

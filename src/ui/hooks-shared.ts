@@ -20,6 +20,8 @@ import { useWfClient } from './context'
 export const keys = {
   models: ['wf', 'models'] as const,
   providers: ['wf', 'providers'] as const,
+  decisionModels: ['wf', 'decision-models'] as const,
+  decisionProviders: ['wf', 'decision-providers'] as const,
   modelCatalog: ['wf', 'model-catalog'] as const,
   providerBudgets: ['wf', 'provider-budgets'] as const,
   tools: ['wf', 'tools'] as const,

@@ -168,7 +168,9 @@ export function JudgeConfig({
 
 // Small "(?)" affordance next to a field label that opens a Modal explaining
 // what the field does. Owns its own open state so it can be dropped inline.
-function FieldHelp({
+// Exported for the calibrated-judge panel next door, which asks the same kind of
+// per-field question and should not grow a second one that drifts.
+export function FieldHelp({
   title,
   children,
 }: {

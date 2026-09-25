@@ -62,6 +62,59 @@ function configIssue(node: WorkflowNode): GraphIssue | null {
       }
       return null
     }
+    case 'decision': {
+      // Ordered by what blocks the author first: a node with no decider can't
+      // run at all, one with no question has nothing to ask, and a question with
+      // no prompt is the half-finished state a fresh node lands in.
+      if (!node.config.modelId) {
+        return {
+          ...base,
+          severity: 'error',
+          message: 'No decision model selected.',
+        }
+      }
+      if (node.config.questions.length === 0) {
+        return {
+          ...base,
+          severity: 'error',
+          message: 'No questions — add at least one for this node to judge.',
+        }
+      }
+      const unprompted = node.config.questions.filter((q) => !q.prompt.trim())
+      if (unprompted.length > 0) {
+        return {
+          ...base,
+          severity: 'error',
+          message: `Question${unprompted.length > 1 ? 's' : ''} ${unprompted
+            .map((q) => `"${q.id}"`)
+            .join(', ')} ${unprompted.length > 1 ? 'have' : 'has'} no prompt.`,
+        }
+      }
+      const thin = node.config.questions.filter(
+        (q) => q.type !== 'boolean' && !q.choicesSource && q.choices.length < 2,
+      )
+      if (thin.length > 0) {
+        return {
+          ...base,
+          severity: 'error',
+          message: `Question${thin.length > 1 ? 's' : ''} ${thin
+            .map((q) => `"${q.id}"`)
+            .join(', ')} need${thin.length > 1 ? '' : 's'} at least two choices.`,
+        }
+      }
+      if (node.config.source === undefined) {
+        // Not an error: with a single upstream, judging the incoming value is
+        // exactly right. It becomes a real hazard once a node has several
+        // upstreams, which only the edge-aware pass below can see.
+        return {
+          ...base,
+          severity: 'warning',
+          message:
+            'No value bound — this judges whatever arrives. Pick the upstream value to judge.',
+        }
+      }
+      return null
+    }
     case 'workflow':
       if (!node.config.workflowId) {
         return { ...base, severity: 'error', message: 'No workflow selected.' }
@@ -403,10 +456,48 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
       })
     }
 
-    // A binary decision node (branch) may connect just one arm — the other
-    // is allowed to "fizzle out" (that path simply ends). So a missing yes/no
-    // edge is not flagged; the generic "nothing downstream" warning above still
-    // covers a decision node with no outgoing edges at all.
+    // A branch may connect just one arm — the other is allowed to "fizzle out"
+    // (that path simply ends). So a missing yes/no edge is not flagged; the
+    // generic "nothing downstream" warning above still covers a routing node
+    // with no outgoing edges at all.
+
+    // A Decision does not route: it answers, and a Branch or Switch downstream
+    // routes on the answer. A conditioned edge out of one names an arm the node
+    // will never emit, so the scheduler leaves it dead and everything below it
+    // silently never runs. An ERROR, because `workflowGraphSchema` rejects it
+    // and the run dies before the first node.
+    if (node.kind === 'decision') {
+      const stray = out.filter((e) => e.condition != null)
+      if (stray.length > 0) {
+        issues.push({
+          ...base,
+          severity: 'error',
+          message: `Outgoing edge${stray.length > 1 ? 's' : ''} ${stray
+            .map((e) => `"${e.condition}"`)
+            .join(', ')} name${stray.length > 1 ? '' : 's'} an arm, but a Decision never routes. Remove the condition, and route with a Branch or Switch reading "answers.<questionId>.value".`,
+        })
+      }
+    }
+
+    // A Branch's outgoing edges carry its yes/no, and an unconditioned one is
+    // the mirror-image mistake: `scheduler.ts` treats
+    // a null condition as always-live, so before the matching rule landed in
+    // `graph-validation.ts` the edge fired on BOTH results with no error at all
+    // — the branch just quietly stopped branching.
+    if (node.kind === 'branch') {
+      const stray = out.filter(
+        (e) => e.condition !== 'yes' && e.condition !== 'no',
+      )
+      if (stray.length > 0) {
+        issues.push({
+          ...base,
+          severity: 'error',
+          message: `Outgoing edge${stray.length > 1 ? 's' : ''} ${stray
+            .map((e) => (e.condition == null ? 'with no arm' : `"${e.condition}"`))
+            .join(', ')} match${stray.length > 1 ? '' : 'es'} no branch arm (yes, no). An unconditioned edge is always live, so it fires whichever way the branch decides.`,
+        })
+      }
+    }
 
     // A switch needs an outgoing edge per case. The 'else' fallback is
     // optional — without it an unmatched input just fizzles out, the same as

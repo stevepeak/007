@@ -12,16 +12,16 @@ import type {
   WfRunStepDTO,
   WfRunSummary,
 } from '../../server/protocol'
-
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { CreateSampleFromRun } from '../evals/create-sample-from-run'
 import { WfLink } from '../nav'
+import { useResizableDock } from '../use-resizable-dock'
+
 import { RunActivityLog } from './run-activity-log'
 import { stepAgentVersion } from './run-agent-versions'
 import { RunLog } from './run-log'
 import { runStatusClass } from './run-status'
-import { useResizableDock } from '../use-resizable-dock'
 
 // The run viewer's bottom dock (DevTools-style, like the editor's Data/Issues
 // dock). Two tabs:

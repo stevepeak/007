@@ -7,7 +7,11 @@ import {
   Wrench,
 } from 'lucide-react'
 
-import { BINARY_CHECK_TYPES, type EvalCheck } from '../../server/protocol'
+import {
+  BINARY_CHECK_TYPES,
+  isJudgeCheck,
+  type EvalCheck,
+} from '../../server/protocol'
 
 import { CHECK_TYPE_LABELS } from './check-naming'
 
@@ -54,7 +58,7 @@ export const BINARY_TYPE_META: Record<
 }
 
 export function familyOf(check: EvalCheck): CheckFamily {
-  return check.type === 'llm_judge' ? 'scored' : 'binary'
+  return isJudgeCheck(check) ? 'scored' : 'binary'
 }
 
 export function defaultCheck(type: EvalCheck['type']): EvalCheck {
@@ -71,6 +75,9 @@ export function defaultCheck(type: EvalCheck['type']): EvalCheck {
       return { type, match: 'contains', value: '' }
     case 'llm_judge':
       // modelId is filled in by JudgeConfig once the model list loads.
+      return { type, rubric: '' }
+    case 'decision_judge':
+      // Same: the decision model list fills `modelId` in on first render.
       return { type, rubric: '' }
   }
 }

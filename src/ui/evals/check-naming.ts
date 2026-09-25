@@ -25,6 +25,7 @@ export const CHECK_TYPE_LABELS: Record<EvalCheck['type'], string> = {
   node_input_match: 'Node input',
   output_match: 'Output matches',
   llm_judge: 'Judge',
+  decision_judge: 'Calibrated judge',
 }
 
 // Third-person verb for each comparison, so a derived name reads as a sentence
@@ -72,7 +73,10 @@ export function heuristicCheckName(check: EvalCheck): string | null {
       return `Reaches ${check.nodeId} where ${check.path || 'input'} ${MATCH_VERB[check.match]} ${formatValue(check.value)}`
     case 'output_match':
       return `Output${check.path ? `.${check.path}` : ''} ${MATCH_VERB[check.match]} ${formatValue(check.value)}`
+    // Both judges assert in prose, so `describeCheck` quotes the rubric rather
+    // than deriving a sentence from config that isn't there.
     case 'llm_judge':
+    case 'decision_judge':
       return null
   }
 }

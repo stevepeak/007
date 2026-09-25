@@ -205,9 +205,9 @@ function toRegistryEntry<TDeps>(
     color: entry.color ?? undefined,
     sideEffect: entry.sideEffect,
     // Authored by neither side: the SDK ships the plumbing, the host wires the
-    // key, but the tool itself belongs to a third party. `sdk` is the closer of
-    // the two — a deployment cannot fix its behaviour by editing this repo.
-    origin: 'sdk',
+    // key, but the tool itself belongs to a third party — and it can change
+    // without either repo being touched, which is why it is not `sdk`.
+    origin: 'connector',
     statusLabel: `Using ${entry.connectorLabel}`,
     kind: 'ai-tool',
     build: () => { return tool({

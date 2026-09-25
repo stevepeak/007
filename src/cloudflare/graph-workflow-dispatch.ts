@@ -206,6 +206,9 @@ async function runItemInline<TDeps, E extends GraphWorkflowEnv>(
               reasoning: opts?.reasoning,
             })
           },
+          getDecider: config.getDecider
+            ? (modelId) => config.getDecider!(modelId, rc)
+            : undefined,
           toolRegistry: config.toolRegistry,
           toolDeps,
           modelBudget: modelBudgetFor(resolveStepTimeoutMs(node)),
@@ -845,6 +848,9 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
                           reasoning: opts?.reasoning,
                         })
                       },
+                      getDecider: config.getDecider
+                        ? (modelId) => config.getDecider!(modelId, rc)
+                        : undefined,
                       toolRegistry: config.toolRegistry,
                       toolDeps,
                       modelBudget,

@@ -45,6 +45,8 @@ export function buildModelHandlers<TDeps>(
   WfHandlers,
   | 'listModels'
   | 'listProviders'
+  | 'listDecisionModels'
+  | 'listDecisionProviders'
   | 'getModelCatalog'
   | 'getProviderBudgets'
   | 'refreshModels'
@@ -106,6 +108,20 @@ export function buildModelHandlers<TDeps>(
         c.logger.error('[wf] listModels: host provider lookup failed', err)
         return await opts.config.listModels({ env: await c.env() })
       }
+    },
+
+    // Straight from the host config, with no DB layer and no curation: a host
+    // declares exactly the deciders its `getDecider` can resolve, so there is
+    // nothing for an admin page to enable or disable. An unwired host returns
+    // `[]`, and the editor reads that as "Decision nodes are off here".
+    listDecisionModels: async (c) => {
+      if (!opts.config.listDecisionModels) return []
+      return await opts.config.listDecisionModels({ env: await c.env() })
+    },
+
+    listDecisionProviders: async (c) => {
+      if (!opts.config.listDecisionProviders) return []
+      return await opts.config.listDecisionProviders({ env: await c.env() })
     },
 
     listProviders: async (c) => {
@@ -285,10 +301,10 @@ export function buildModelHandlers<TDeps>(
           iconUrl: entry.iconUrl ?? undefined,
           color: entry.color ?? undefined,
           kind: 'ai-tool' as const,
-          // Neither the host's nor strictly the SDK's — but a deployment can't
-          // fix a third party's tool by editing this repo, which is the
-          // distinction `origin` is actually drawing.
-          origin: 'sdk' as const,
+          // Neither the host's nor the SDK's: a third party wrote it, and it
+          // can change without either repo being touched — the distinction
+          // `origin` is actually drawing.
+          origin: 'connector' as const,
           sideEffect: entry.sideEffect,
           inputSchema: (entry.inputSchema as JsonSchema | null) ?? undefined,
           outputSchema: (entry.outputSchema as JsonSchema | null) ?? undefined,

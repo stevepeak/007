@@ -54,6 +54,25 @@ function branch(id: string): WorkflowNode {
     config: { operator: 'is_not_empty' },
   }
 }
+// A fully configured boolean Decision. Everything the per-node config checks
+// want is filled in, so the only issues these fixtures can raise are the edge
+// ones under test.
+function decision(id: string): WorkflowNode {
+  return {
+    id,
+    kind: 'decision',
+    position: pos,
+    label: id,
+    informUser: { mode: 'off' },
+    config: {
+      modelId: 'venice:jev-latest',
+      source: { kind: 'ref', nodeId: 't', path: 'userText' },
+      questions: [
+        { id: 'answer', type: 'boolean', prompt: 'Legal request?', choices: [] },
+      ],
+    },
+  }
+}
 function tool(id: string): WorkflowNode {
   return {
     id,
@@ -77,7 +96,9 @@ function race(id: string): WorkflowNode {
 function edge(
   source: string,
   target: string,
-  condition: 'yes' | 'no' | null = null,
+  // Widened past 'yes' | 'no' so a fixture can draw the edge naming an arm that
+  // does not exist — the shape the dead-arm checks are about.
+  condition: string | null = null,
 ) {
   return { id: `${source}->${target}`, source, target, condition }
 }
@@ -600,5 +621,55 @@ describe('collectGraphIssues', () => {
 
   test('leaves a bounded iteration alone', () => {
     expect(boundIssue(boundedLoop('inline', 25))).toBeUndefined()
+  })
+})
+
+// A Decision answers and a Branch/Switch routes, so a plain edge out of a
+// Decision is the RIGHT shape and a conditioned one is the mistake. (It was the
+// other way round once, and the Legal chat graph — Decision → Branch on a plain
+// edge — was rejected before its first node for being correct.)
+describe('control-flow edge arms', () => {
+  test('a decision feeding a branch on a plain edge raises nothing', () => {
+    // The whole intended shape: the Decision answers, the Branch reads
+    // `answers.answer.value` and carries the yes/no.
+    const g = graph(
+      [trigger, decision('d'), branch('b'), agent('x'), output('o', 'x')],
+      [edge('t', 'd'), edge('d', 'b'), edge('b', 'x', 'yes'), edge('x', 'o')],
+    )
+    expect(collectGraphIssues(g).filter((i) => i.nodeId === 'd')).toEqual([])
+  })
+
+  test('errors on a conditioned edge out of a decision', () => {
+    // The node emits no arm, so the scheduler never wakes this edge and
+    // everything below it silently never runs.
+    const g = graph(
+      [trigger, decision('d'), agent('x'), output('o', 'x')],
+      [edge('t', 'd'), edge('d', 'x', 'yes'), edge('x', 'o')],
+    )
+    const issue = collectGraphIssues(g).find((i) => i.nodeId === 'd')
+    expect(issue?.severity).toBe('error')
+    expect(issue?.message).toMatch(/never routes/)
+  })
+
+  test('errors on an unconditioned edge out of a branch', () => {
+    // Always-live: this edge fires whichever way the branch decides, so the
+    // branch is decorative. Nothing else in the stack ever said so.
+    const g = graph(
+      [trigger, branch('b'), agent('x'), output('o', 'x')],
+      [edge('t', 'b'), edge('b', 'x'), edge('x', 'o')],
+    )
+    const issue = collectGraphIssues(g).find((i) => i.nodeId === 'b')
+    expect(issue?.severity).toBe('error')
+    expect(issue?.message).toMatch(/no branch arm \(yes, no\)/)
+  })
+
+  test('a branch with one connected arm raises nothing', () => {
+    // The unconnected arm is allowed to fizzle out — only the edge that exists
+    // has to name which way it goes.
+    const g = graph(
+      [trigger, branch('b'), agent('x'), output('o', 'x')],
+      [edge('t', 'b'), edge('b', 'x', 'yes'), edge('x', 'o')],
+    )
+    expect(collectGraphIssues(g).filter((i) => i.nodeId === 'b')).toEqual([])
   })
 })

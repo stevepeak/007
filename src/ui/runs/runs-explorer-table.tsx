@@ -2,7 +2,6 @@ import { ChevronDown, ChevronRight, CornerDownRight } from 'lucide-react'
 import { Fragment, useState } from 'react'
 
 import type { WfRunListRow, WfRunSummary } from '../../server/protocol'
-
 import {
   formatDuration,
   formatDurationMs,
@@ -11,8 +10,9 @@ import {
 } from '../cost'
 import { useChildRuns } from '../hooks'
 import { useWfNav } from '../nav'
-import { RunStatusBadge } from './run-status'
 import { firstLine } from '../text-preview'
+
+import { RunStatusBadge } from './run-status'
 
 // The runs table itself. Each row opens that run's full-page viewer.
 //
