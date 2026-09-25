@@ -1,4 +1,4 @@
-import type { EvalCheck, EvalMatch } from '../../server/protocol'
+import { isJudgeCheck, type EvalCheck, type EvalMatch } from '../../server/protocol'
 import { toText } from '../to-text'
 
 // How a Check gets its name.
@@ -95,7 +95,11 @@ export function describeCheck(check: EvalCheck | undefined): string {
   if (!check) return 'check'
   const derived = heuristicCheckName(check)
   if (derived) return derived
-  if (check.type === 'llm_judge' && check.rubric.trim()) {
+  // BOTH judges, via `isJudgeCheck` rather than a `type` test — this read
+  // `check.type === 'llm_judge'` and so a configured `decision_judge` fell
+  // through to the bare label "Calibrated judge", showing none of the question
+  // it asks while its twin one row up showed the whole rubric.
+  if (isJudgeCheck(check) && check.rubric.trim()) {
     return `“${truncate(check.rubric, 60)}”`
   }
   return CHECK_TYPE_LABELS[check.type]

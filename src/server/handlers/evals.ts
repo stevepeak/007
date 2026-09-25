@@ -19,6 +19,7 @@ import {
 } from '../../eval/plan'
 import {
   buildEvalSnapshot,
+  cancelEvalRun,
   changesBetween,
   createEvalRun,
   createEvalSet,
@@ -36,6 +37,7 @@ import {
   loadPreviousEvalRun,
   loadPreviousSnapshotHashes,
   loadRunStats,
+  restoreEvalRow,
   saveEvalRunDrive,
   updateEvalRun,
   updateEvalSet,
@@ -165,11 +167,13 @@ export function buildEvalHandlers<TDeps>(
   | 'deleteEvalSet'
   | 'upsertEvalRow'
   | 'deleteEvalRow'
+  | 'restoreEvalRow'
   | 'createEvalRun'
   | 'startEvalRun'
   | 'gradeEvalResult'
   | 'recordEvalFailure'
   | 'finalizeEvalRun'
+  | 'cancelEvalRun'
   | 'listEvalRuns'
   | 'getEvalRun'
   | 'getEvalRunDrive'
@@ -185,13 +189,20 @@ export function buildEvalHandlers<TDeps>(
 
     getEvalSet: async (c) => {
       const setId = requireStr(c.params, 'setId')
-      const result = await getEvalSet(c.db, setId)
+      const includeArchived =
+        (c.params as { includeArchived?: boolean }).includeArchived === true
+      const result = await getEvalSet(c.db, setId, { includeArchived })
       if (!result) {
         return null
       }
       const rows: WfEvalRowDTO[] = result.rows
       return {
-        set: evalSetSummary(result.set, rows.length),
+        // Counted over live rows even when archived ones are included, so a
+        // Goal's advertised size doesn't change depending on who asked.
+        set: evalSetSummary(
+          result.set,
+          rows.filter((r) => !r.archived).length,
+        ),
         rows,
       }
     },
@@ -342,6 +353,28 @@ export function buildEvalHandlers<TDeps>(
       return { ok: true }
     },
 
+    restoreEvalRow: async (c) => {
+      const rowId = requireStr(c.params, 'rowId')
+      // `includeArchived`: the row being restored is archived by definition, so
+      // the default read would report it as missing and lose the before-image.
+      const existing = await getEvalRow(c.db, rowId, { includeArchived: true })
+      if (!existing) {
+        throw new NotFoundError('Eval sample not found.')
+      }
+      await restoreEvalRow(c.db, rowId)
+      await c.change({
+        entityKind: 'eval_row',
+        entityId: rowId,
+        parentId: existing.row.setId,
+        action: 'restore',
+        fields: ['archived'],
+        before: existing.row,
+        after: { ...existing.row, archived: false },
+        note: existing.row.name,
+      })
+      return { ok: true }
+    },
+
     createEvalRun: async (c) => {
       const p = c.params as { setIds?: unknown; total?: number; plan?: unknown }
       const setIds = Array.isArray(p.setIds)
@@ -487,6 +520,7 @@ export function buildEvalHandlers<TDeps>(
         promptLabel?: string
         promptBody?: string
         attempt?: number
+        judgeModelId?: string
       }
       const found = await getEvalRow(c.db, rowId)
       if (!found) {
@@ -505,16 +539,22 @@ export function buildEvalHandlers<TDeps>(
       const getModel: GradeModelFactory = (modelId) => {
         return opts.config.getModel(modelId, { triggerKind: 'eval', env })
       }
+      // The caller's pin wins over the host's, which wins over "whatever sorts
+      // first in the enabled catalog". That last fallback is why a pin matters:
+      // the judge is the measuring instrument, so enabling a new model can
+      // silently re-grade an entire suite, and the drift report — which watches
+      // the sample and the target — would attribute the move to the agent.
       const defaultJudgeModelId =
-        opts.evalJudgeModelId ?? (await opts.config.listModels({ env }))[0]?.id
+        cell.judgeModelId ??
+        opts.evalJudgeModelId ??
+        (await opts.config.listModels({ env }))[0]?.id
       // The decision counterpart, for `decision_judge` checks. Both stay
       // undefined on a host with no decision provider, and `gradeDecisionJudge`
       // then reports that in the check's own error rather than failing the row
       // with something opaque.
       const getDecider: GradeDeciderFactory | undefined =
         opts.config.getDecider
-          ? (modelId) =>
-              opts.config.getDecider!(modelId, { triggerKind: 'eval', env })
+          ? (modelId) => { return opts.config.getDecider!(modelId, { triggerKind: 'eval', env }) }
           : undefined
       const defaultDecisionModelId = opts.config.listDecisionModels
         ? (await opts.config.listDecisionModels({ env }))[0]?.id
@@ -640,6 +680,28 @@ export function buildEvalHandlers<TDeps>(
       })
       const updated = await getEvalRun(c.db, evalRunId)
       return evalRunSummary(updated?.run ?? found.run)
+    },
+
+    cancelEvalRun: async (c) => {
+      const evalRunId = requireStr(c.params, 'evalRunId')
+      const found = await getEvalRun(c.db, evalRunId)
+      if (!found) {
+        throw new NotFoundError('Eval run not found.')
+      }
+      const cancelled = await cancelEvalRun(c.db, evalRunId)
+      // Re-read rather than trust the write: the status predicate inside
+      // `cancelEvalRun` means a run that finished between the two reads is NOT
+      // cancelled, and the caller needs to be told what it actually is.
+      const after = await getEvalRun(c.db, evalRunId)
+      return {
+        cancelled,
+        status: after?.run.status ?? found.run.status,
+        // The cells that already have a verdict. A cancelled sweep keeps them —
+        // `total` minus this is what was called off, and the report shows the
+        // difference as `pending`.
+        settled: (after ?? found).results.length,
+        total: (after ?? found).run.total,
+      }
     },
 
     listEvalRuns: async (c) => {

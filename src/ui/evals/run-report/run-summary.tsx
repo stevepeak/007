@@ -1,9 +1,9 @@
 import { ChevronRight, Goal as GoalIcon, Workflow } from 'lucide-react'
 import { useMemo } from 'react'
 
+import { agentCallTotals, mean } from '../../../eval/report'
 import type {
   WfEvalResultDTO,
-  WfEvalResultRunStats,
   WfEvalRunSummary,
 } from '../../../server/protocol'
 import { agentColor, agentIcon } from '../../agent-appearance'
@@ -16,7 +16,6 @@ import { formatTimestamp, PassRate, Score } from '../shared'
 
 import { VerdictBadge } from './atoms'
 import { changedSampleCount } from './drift-model'
-import { mean } from './model'
 
 // The run summary card: the Agent › Goal › Run identity line + status, over the
 // run's rolled-up figures (pass rate, mean score, counts, agent-call averages).
@@ -28,7 +27,7 @@ export function RunHeader({
   results: WfEvalResultDTO[]
 }) {
   const running = run.status === 'queued' || run.status === 'running'
-  const agent = agentAverages(results)
+  const agent = agentCallTotals(results)
   // While the matrix is still fanning out, `run.passed`/`run.score` are 0 (they
   // only roll up in `finalizeEvalRun`), so derive live figures from the results
   // landing one-by-one. Once completed, fall back to the authoritative run row.
@@ -163,26 +162,6 @@ function RunProgress({
       </span>
     </span>
   )
-}
-
-// Roll the per-sample agent-call stats up into run-level averages. Each figure
-// averages only over the samples that reported it. Everything here is
-// agent-call-scoped upstream in `loadRunStats`, so judge/test grading never
-// enters these numbers.
-function agentAverages(results: WfEvalResultDTO[]) {
-  const stats = results
-    .map((r) => r.runStats)
-    .filter((s): s is WfEvalResultRunStats => s != null)
-  const nums = (pick: (s: WfEvalResultRunStats) => number | null) => {
-    return stats.map(pick).filter((v): v is number => v != null)
-  }
-  const costs = nums((s) => s.costUsd)
-  return {
-    count: stats.length,
-    avgDurationMs: mean(nums((s) => s.durationMs)),
-    avgCostUsd: mean(costs),
-    totalCostUsd: costs.length > 0 ? costs.reduce((a, b) => a + b, 0) : null,
-  }
 }
 
 function Metric({

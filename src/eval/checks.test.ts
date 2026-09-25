@@ -3,7 +3,9 @@ import { describe, expect, test } from 'bun:test'
 import {
   checkResultSchema,
   checkTreeSchema,
+  describeCheckVocabulary,
   evalCheckSchema,
+  EVAL_CHECK_TYPES,
   evalSampleInputSchema,
   evalSampleLayer,
   evalToolsSchema,
@@ -209,5 +211,39 @@ describe('derived sample layer', () => {
     expect(() => {
       return checkResultSchema.parse({ pass: true, confidence: 11 })
     }).toThrow()
+  })
+})
+
+describe('describeCheckVocabulary', () => {
+  // The MCP's `upsert_eval_sample` description is the only thing telling a model
+  // what a check may contain, and it hardcoded the list until it drifted: six
+  // types, no `decision_judge`, neither judge's `modelId`. Generating it is the
+  // fix; this is what keeps it generated.
+  test('names every check type in the union', () => {
+    const lines = describeCheckVocabulary()
+    expect(lines).toHaveLength(EVAL_CHECK_TYPES.length)
+    for (const type of EVAL_CHECK_TYPES) {
+      expect(lines.some((l) => l.startsWith(`${type} {`))).toBe(true)
+    }
+  })
+
+  test('carries the fields a picker would render, optionality included', () => {
+    const lines = describeCheckVocabulary()
+    const decision = lines.find((l) => l.startsWith('decision_judge'))
+    // The three fields whose absence from the prose made a calibrated judge
+    // unauthorable over MCP.
+    expect(decision).toContain('rubric')
+    expect(decision).toContain('modelId?')
+    expect(decision).toContain('threshold?')
+  })
+
+  test('marks `value` as required — it is z.unknown(), not .optional()', () => {
+    // A match check with no `value` compares against undefined. Deriving
+    // optionality from "accepts undefined" would advertise it as omittable.
+    const line = describeCheckVocabulary().find((l) => { return l.startsWith('output_match') },
+    )
+    expect(line).toContain('value')
+    expect(line).not.toContain('value?')
+    expect(line).toContain('path?')
   })
 })

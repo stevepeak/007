@@ -54,6 +54,17 @@ export type EvalPlan = {
   concurrency: number
   /** How long one cell's run may take before the driver stops waiting for it. */
   timeoutMs: number
+  /**
+   * Model every JUDGE check in this sweep is graded by, overriding the host's
+   * `evalJudgeModelId` and the enabled-catalog default.
+   *
+   * Frozen into the plan for the same reason `configOverride` is: a resuming
+   * driver has no other way to learn it, and half a matrix graded by one judge
+   * and half by another is a report that cannot be compared with itself. Note
+   * this is the JUDGE, not the matrix's per-cell `modelId` — that one is the
+   * model the target runs on.
+   */
+  judgeModelId?: string
 }
 
 /** A cell that has been started and whose run has not yet reached a verdict. */
@@ -173,6 +184,12 @@ export function parseEvalPlan(raw: unknown): EvalPlan | null {
     configOverride: p.configOverride,
     concurrency: typeof p.concurrency === 'number' ? p.concurrency : 1,
     timeoutMs: typeof p.timeoutMs === 'number' ? p.timeoutMs : 15 * 60_000,
+    // Absent on every plan written before judges could be pinned, which is the
+    // same as "use the host default" — so no migration is needed.
+    judgeModelId:
+      typeof p.judgeModelId === 'string' && p.judgeModelId.length > 0
+        ? p.judgeModelId
+        : undefined,
   }
 }
 

@@ -7,13 +7,20 @@ import { optString, reqString, type WfMcpTool } from './tools'
 // `update_description` — the one editable piece of prose that every authored
 // entity carries and that none of the other write tools can reach.
 //
-// It is one tool across four entity kinds rather than four near-identical ones.
+// It is one tool across five entity kinds rather than five near-identical ones.
 // A description is not part of any entity's *definition*: it is unversioned
-// display metadata, it never changes what a run does, and the four storage
-// methods behind it (`updateWorkflow`, `updateAgentMeta`, `updateEvalSet`,
-// `upsertEvalRow`) differ only in which id they take. Four catalog entries for
-// that would cost every session's context four tool descriptions to say the
-// same sentence.
+// display metadata, it never changes what a run does, and the storage methods
+// behind it (`updateWorkflow`, `updateAgentMeta`, `updateEvalSet`,
+// `upsertEvalRow`, `setRunNote`) differ only in which id they take. Five catalog
+// entries for that would cost every session's context five tool descriptions to
+// say the same sentence.
+//
+// `run` is the odd one and belongs here anyway. A run's NOTE is not a
+// description — it is the shared "why did this fail / what was tried" scratchpad,
+// written after the fact — but it is the same operation on the same kind of
+// field: one unversioned string, no effect on anything that executes. Without it
+// an MCP triage session left no trace on the run it investigated: the finding
+// lived only in a chat transcript, while `list_runs.search` reads the note.
 //
 // The thing this is careful about is the NO-OP. `updateEvalSet` does not check
 // that the set exists — a wrong id updates zero rows and returns `{ ok: true }`,
@@ -21,8 +28,8 @@ import { optString, reqString, type WfMcpTool } from './tools'
 // `before` / `after`, making "I set the description" a claim the caller can see
 // evidence for rather than infer from the absence of an error.
 
-/** The entity kinds that carry an editable `description` column. */
-const KINDS = ['workflow', 'agent', 'eval_set', 'eval_sample'] as const
+/** The entity kinds that carry an editable prose field. */
+const KINDS = ['workflow', 'agent', 'eval_set', 'eval_sample', 'run'] as const
 type MetaKind = (typeof KINDS)[number]
 
 /**
@@ -149,19 +156,53 @@ async function applyDescription(
   }
 }
 
+/**
+ * A run's triage note.
+ *
+ * Split out from `applyDescription` rather than folded into its chain because
+ * nothing about it is a "description": the field is `note`, the writer is
+ * `setRunNote`, and the before-image comes off the run summary. Sharing the tool
+ * is the point; sharing the function body would only obscure that.
+ *
+ * Not attributed and not private — anyone looking at the run can read and
+ * overwrite it, and the last write wins. So a note that replaces someone else's
+ * returns what it replaced.
+ */
+async function applyRunNote(
+  client: WfDataClient,
+  runId: string,
+  note: string,
+): Promise<Applied | { error: string }> {
+  const detail = await client.getRun(runId)
+  if (!detail) {
+    return {
+      error: `No run found for id ${runId}. Ids come from list_runs, get_run or list_feedback.`,
+    }
+  }
+  await client.setRunNote({ runId, note })
+  return {
+    kind: 'run',
+    id: runId,
+    name: detail.run.workflowName ?? runId,
+    before: detail.run.note ?? null,
+    after: note,
+  }
+}
+
 export function metaWriteTools(): WfMcpTool[] {
   return [
     {
       name: 'update_description',
-      title: 'Update a description',
+      title: 'Update a description or run note',
       description: [
-        "Rewrite the description of a workflow, agent, eval Goal or eval Sample — the prose that says what the thing is FOR, which is what a person (or the next model) reads before opening it. Nothing else about the entity is touched: a description is unversioned display metadata, so this never changes what a run does and never publishes anything.",
+        "Rewrite the unversioned prose on a workflow, agent, eval Goal, eval Sample or run. For the first four that is the DESCRIPTION — what the thing is FOR, which is what a person (or the next model) reads before opening it. For a run it is the triage NOTE. Nothing else is touched in either case: this never changes what a run does and never publishes anything.",
         '',
         'Pick `kind` and pass that entity’s id:',
         '  • workflow    — id from list_workflows',
         '  • agent       — id from list_agents',
         '  • eval_set    — Goal id from list_eval_sets',
         '  • eval_sample — Sample id from get_eval_set, AND its `setId` (a Sample is only addressable through its Goal)',
+        '  • run         — run id from list_runs. Writes the run’s NOTE, not a description: the shared "why did this fail / what was tried / what to check next" scratchpad. Use it to leave the finding of a triage on the run itself — it is searchable from list_runs, and otherwise an investigation exists only in this conversation. Markdown. Not attributed and not private: the last write wins, so the reply shows what it replaced.',
         '',
         'Pass an empty string to clear it. The reply carries `before` and `after`, so a wrong id is a refusal here rather than a silent no-op that reads as success. The edit lands in the `wf_change` feed attributed to whoever authorized this session.',
       ].join('\n'),
@@ -169,7 +210,7 @@ export function metaWriteTools(): WfMcpTool[] {
         kind: z
           .string()
           .describe(
-            'What to edit: "workflow", "agent", "eval_set" or "eval_sample".',
+            'What to edit: "workflow", "agent", "eval_set", "eval_sample" or "run".',
           ),
         id: z.string().describe('The entity’s id — see the tool description.'),
         description: z
@@ -201,13 +242,16 @@ export function metaWriteTools(): WfMcpTool[] {
             'Missing required argument `description`. Pass an empty string to clear it.',
           )
         }
-        return await applyDescription(
-          client,
-          kind as MetaKind,
-          id,
-          description.trim() === '' ? CLEARED : description,
-          optString(args.setId),
-        )
+        const text = description.trim() === '' ? CLEARED : description
+        return kind === 'run'
+          ? await applyRunNote(client, id, text)
+          : await applyDescription(
+              client,
+              kind as MetaKind,
+              id,
+              text,
+              optString(args.setId),
+            )
       },
     },
   ]

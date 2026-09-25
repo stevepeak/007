@@ -95,10 +95,14 @@ function JudgeKindToggle({
     // different namespaces, and a chat model id in a decision check would
     // resolve to nothing. Each panel seeds its own default on first render.
     const shared = { rubric: check.rubric, path: check.path }
+    // The two branches build the same fields on purpose — what differs is the
+    // literal `type`, which a discriminated union needs spelled out at the
+    // construction site. Written with the narrowed variable it read as
+    // duplicated code; written with the literals it reads as what it is.
     persist(
       type === 'decision_judge'
-        ? { type, ...shared }
-        : { type, ...shared },
+        ? { type: 'decision_judge', ...shared }
+        : { type: 'llm_judge', ...shared },
     )
   }
 

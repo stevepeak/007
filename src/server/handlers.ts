@@ -267,12 +267,17 @@ const wfInputSchemas: Record<keyof WfDataClient, z.ZodType> = {
   runAgentPreview: NO_INPUT,
 
   // ---- evals --------------------------------------------------------------
-  getEvalSet: z.object({ setId: z.string() }),
+  getEvalSet: z.object({
+    setId: z.string(),
+    includeArchived: z.boolean().optional(),
+  }),
   deleteEvalSet: z.object({ setId: z.string() }),
   deleteEvalRow: z.object({ rowId: z.string() }),
+  restoreEvalRow: z.object({ rowId: z.string() }),
   getEvalRun: z.object({ evalRunId: z.string() }),
   getEvalRunDrive: z.object({ evalRunId: z.string() }),
   finalizeEvalRun: z.object({ evalRunId: z.string() }),
+  cancelEvalRun: z.object({ evalRunId: z.string() }),
   listEvalSets: z.object({ includeArchived: z.boolean().optional() }),
   listChanges: z.object({
     entityKind: z.enum(WF_CHANGE_ENTITY_KINDS).optional(),
@@ -341,6 +346,9 @@ const wfInputSchemas: Record<keyof WfDataClient, z.ZodType> = {
     promptLabel: z.string().optional(),
     promptBody: z.string().optional(),
     attempt: z.number().optional(),
+    // The judge the CHECKS run on, distinct from `modelId` (the model the
+    // TARGET ran on, which is a matrix column).
+    judgeModelId: z.string().optional(),
   }),
   recordEvalFailure: z.object({
     evalRunId: z.string(),

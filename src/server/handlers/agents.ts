@@ -137,11 +137,18 @@ export function buildAgentHandlers<TDeps>(
       if (!result) {
         return null
       }
+      // The referencing workflows, for real. This used to be a hard-coded `[]`,
+      // which is worse than omitting the field: `listAgents` populates it, so
+      // asking about ONE agent — the natural place to ask "what breaks if I
+      // change this?" — answered "nothing references it" with the same shape a
+      // true answer has. Blast radius is the first question before editing a
+      // draft and the precondition for any publish or archive.
+      const workflows = await listWorkflowsReferencingAgent(c.db, { agentId })
       const detail: WfAgentDetail = {
         agent: agentSummary(
           result.agent,
           result.currentVersion?.config,
-          [],
+          workflows,
           result.currentVersion?.versionNumber ?? null,
         ),
         draft: result.draft

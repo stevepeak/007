@@ -112,8 +112,20 @@ export async function listEvalSets(
   return rows
 }
 
-/** A set with its rows (ordered), or null if missing. */
-export async function getEvalSet(db: WfDb, setId: string) {
+/**
+ * A set with its rows (ordered), or null if missing.
+ *
+ * `includeArchived` is what makes archiving reversible. `deleteEvalRow` only sets
+ * a flag — nothing is erased — but with the flag unreadable an archived Sample
+ * was gone as far as every caller was concerned, and "archive" was a delete
+ * wearing a kinder word. The row count stays over non-archived rows either way,
+ * so a Goal's size doesn't change depending on who is asking.
+ */
+export async function getEvalSet(
+  db: WfDb,
+  setId: string,
+  opts?: { includeArchived?: boolean },
+) {
   const [set] = await db
     .select()
     .from(wfEvalSet)
@@ -123,7 +135,11 @@ export async function getEvalSet(db: WfDb, setId: string) {
   const rows = await db
     .select()
     .from(wfEvalRow)
-    .where(and(eq(wfEvalRow.setId, setId), eq(wfEvalRow.archived, false)))
+    .where(
+      opts?.includeArchived
+        ? eq(wfEvalRow.setId, setId)
+        : and(eq(wfEvalRow.setId, setId), eq(wfEvalRow.archived, false)),
+    )
     .orderBy(asc(wfEvalRow.sortOrder))
   return { set, rows: rows.map(toEvalRow) }
 }
@@ -132,12 +148,24 @@ export async function getEvalSet(db: WfDb, setId: string) {
  * One row plus its parent set's target/trigger identity — everything
  * `startEvalRun`/`gradeEvalResult` need to launch and grade the row without a
  * separate set fetch. Null if the row is missing or archived.
+ *
+ * `includeArchived` exists for the two callers that are ABOUT the archive flag —
+ * restoring a row, and reading its before-image — and defaults off so the
+ * launch/grade path can't be handed a Sample that was archived mid-sweep.
  */
-export async function getEvalRow(db: WfDb, rowId: string) {
+export async function getEvalRow(
+  db: WfDb,
+  rowId: string,
+  opts?: { includeArchived?: boolean },
+) {
   const [row] = await db
     .select()
     .from(wfEvalRow)
-    .where(and(eq(wfEvalRow.id, rowId), eq(wfEvalRow.archived, false)))
+    .where(
+      opts?.includeArchived
+        ? eq(wfEvalRow.id, rowId)
+        : and(eq(wfEvalRow.id, rowId), eq(wfEvalRow.archived, false)),
+    )
     .limit(1)
   if (!row) return null
   const [set] = await db
@@ -246,7 +274,59 @@ export async function deleteEvalSet(
     .where(eq(wfEvalSet.id, setId))
 }
 
-/** Create (no id) or update (id given) a row. Validates the JSON payloads. */
+/**
+ * The three JSON columns as they stand on a row, already upgraded from the
+ * pre-split shape. The merge base for an update that omits one of them.
+ *
+ * Reads the row rather than the set so a caller holding only a row id — every
+ * MCP caller — doesn't have to know which Goal it belongs to.
+ */
+async function currentRowPayloads(
+  db: WfDb,
+  rowId: string,
+): Promise<{
+  input: EvalSampleInput
+  tools: EvalTools
+  checks: CheckTree
+} | null> {
+  const [existing] = await db
+    .select({
+      input: wfEvalRow.input,
+      tools: wfEvalRow.tools,
+      checks: wfEvalRow.checks,
+    })
+    .from(wfEvalRow)
+    .where(eq(wfEvalRow.id, rowId))
+    .limit(1)
+  if (!existing) return null
+  return {
+    input: parseEvalSampleInput(existing.input),
+    tools: parseEvalTools(existing.tools, legacyFreezeTools(existing.input)),
+    checks: existing.checks as CheckTree,
+  }
+}
+
+/**
+ * Create (no id) or update (id given) a row. Validates the JSON payloads.
+ *
+ * ── An omitted field means "leave it alone" ──────────────────────────────────
+ *
+ * On the UPDATE path the three fat JSON columns are merged over what the row
+ * already holds, not defaulted. This used to default them, and the data loss was
+ * silent and total: `upsertEvalRow({ id, setId, name })` — the obvious way to
+ * rename a Sample — reset its input to an empty `task`, its tools to empty
+ * `mocked`, and DELETED every check on it. A 0-check Sample then grades as
+ * `error` rather than failing loudly, so the next eval report showed an
+ * infrastructure-shaped problem for a rename.
+ *
+ * The console never hit it (the sample editor always sends the whole row) and
+ * `update_description` worked around it by reading the row back and re-sending
+ * it whole. Fixing it at the single write boundary is what makes that workaround
+ * unnecessary everywhere instead of once.
+ *
+ * Clearing a field is still expressible — pass the empty value (`{ op: 'and',
+ * checks: [] }`) rather than omitting the key.
+ */
 export async function upsertEvalRow(
   db: WfDb,
   row: {
@@ -260,16 +340,26 @@ export async function upsertEvalRow(
     sortOrder?: number
   },
 ): Promise<string> {
+  // The merge base, read only when this is an update that omits something. A
+  // full-row save (the console's every write) still costs one statement.
+  const base =
+    row.id &&
+    (row.input === undefined ||
+      row.tools === undefined ||
+      row.checks === undefined)
+      ? await currentRowPayloads(db, row.id)
+      : null
   // Writes are always the new shape — the legacy upgrade is read-side only, so
-  // a row normalizes permanently the first time it is saved.
+  // a row normalizes permanently the first time it is saved. Carrying the base
+  // through the same parse is what keeps that true for a partial update too.
   const sampleInput = evalSampleInputSchema.parse(
-    row.input ?? { kind: 'task', variables: {} },
+    row.input ?? base?.input ?? { kind: 'task', variables: {} },
   )
   const tools = evalToolsSchema.parse(
-    row.tools ?? { mode: 'mocked', fixtures: {} },
+    row.tools ?? base?.tools ?? { mode: 'mocked', fixtures: {} },
   )
   const checks = checkTreeSchema.parse(
-    row.checks ?? { op: 'and', checks: [] },
+    row.checks ?? base?.checks ?? { op: 'and', checks: [] },
   )
   if (row.id) {
     await db
@@ -304,6 +394,20 @@ export async function deleteEvalRow(db: WfDb, rowId: string) {
   await db
     .update(wfEvalRow)
     .set({ archived: true, updatedAt: new Date() })
+    .where(eq(wfEvalRow.id, rowId))
+}
+
+/**
+ * Un-archive a row, putting it back in its Goal.
+ *
+ * The other half of `deleteEvalRow`. Archiving was always reversible in the data
+ * — it is one flag — but nothing could turn it back, so the only undo was to
+ * re-author the Sample from scratch and lose the id every past report refers to.
+ */
+export async function restoreEvalRow(db: WfDb, rowId: string) {
+  await db
+    .update(wfEvalRow)
+    .set({ archived: false, updatedAt: new Date() })
     .where(eq(wfEvalRow.id, rowId))
 }
 
@@ -490,6 +594,41 @@ export async function updateEvalRun(
       ]),
     )
     .where(eq(wfEvalRun.id, input.evalRunId))
+}
+
+/**
+ * Stop a sweep that is still going, returning false when there was nothing to
+ * stop.
+ *
+ * The status predicate is the whole point: `cancelled` is a terminal state and
+ * writing it over a `completed` run would rewrite a finished report's history.
+ * Guarding here rather than in the handler keeps that true for every caller.
+ *
+ * Nothing is killed directly. `driveEvalRun` re-reads status every tick and
+ * returns as soon as it sees `cancelled`, and the resume backstop only ever
+ * adopts `queued` / `running` runs (see `listStaleEvalRuns`) — so the cells
+ * already in flight finish and no further cell is launched. The unlaunched cells
+ * never write a result, which is why a cancelled run's `total` stays above its
+ * result count: that gap IS the record of what was called off.
+ */
+export async function cancelEvalRun(
+  db: WfDb,
+  evalRunId: string,
+): Promise<boolean> {
+  const res = await db
+    .update(wfEvalRun)
+    .set({ status: 'cancelled', finishedAt: new Date(), heartbeatAt: null })
+    .where(
+      and(
+        eq(wfEvalRun.id, evalRunId),
+        inArray(wfEvalRun.status, ['queued', 'running']),
+      ),
+    )
+  // Same affected-row read as `claimStaleEvalRun`; a driver that can't tell has
+  // to assume it won, and here the re-read in the handler settles it anyway.
+  const changed = res as { meta?: { changes?: number }; changes?: number }
+  const count = changed.meta?.changes ?? changed.changes
+  return count == null || count > 0
 }
 
 export async function listEvalRuns(db: WfDb, opts?: { limit?: number }) {

@@ -1,10 +1,14 @@
 import { readTools, type WfMcpTool } from './tools'
-import { agentWriteTools } from './tools-agents'
+import { agentReadTools, agentWriteTools } from './tools-agents'
+import {
+  connectorReadTools,
+  connectorWriteTools,
+} from './tools-connectors'
 import { draftTools } from './tools-drafts'
 import { evalRunReadTools, evalRunWriteTools } from './tools-eval-runs'
 import { evalReadTools, evalWriteTools } from './tools-evals'
 import { metaWriteTools } from './tools-meta'
-import { platformReadTools } from './tools-platform'
+import { platformReadTools, platformWriteTools } from './tools-platform'
 import { workflowReadTools, workflowWriteTools } from './tools-workflows'
 
 // The catalog — every tool this build knows about, and the gate that decides
@@ -20,6 +24,8 @@ export function allTools(): WfMcpTool[] {
   return [
     ...readTools(),
     ...platformReadTools(),
+    ...connectorReadTools(),
+    ...agentReadTools(),
     ...evalReadTools(),
     ...evalRunReadTools(),
     ...workflowReadTools(),
@@ -27,6 +33,8 @@ export function allTools(): WfMcpTool[] {
     ...evalWriteTools(),
     ...evalRunWriteTools(),
     ...metaWriteTools(),
+    ...platformWriteTools(),
+    ...connectorWriteTools(),
     ...agentWriteTools(),
     ...workflowWriteTools(),
   ]

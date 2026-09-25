@@ -33,7 +33,7 @@
         "zod": "^4.6.5",
       },
       "devDependencies": {
-        "@cloudflare/workers-types": "^5.20260925.1",
+        "@cloudflare/workers-types": "^5.20260925.2",
         "@dexaai/config": "^0.0.10",
         "@ocavue/eslint-config": "^4.18.0",
         "@types/bun": "^1.4.2",

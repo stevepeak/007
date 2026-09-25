@@ -129,12 +129,13 @@ export function createWfDataClient(call: WfDataTransport): WfDataClient {
 
     // Evals.
     listEvalSets: bind('listEvalSets'),
-    getEvalSet: (setId) => send('getEvalSet', { setId }),
+    getEvalSet: (setId, opts) => send('getEvalSet', { setId, ...opts }),
     createEvalSet: bind('createEvalSet'),
     updateEvalSet: bind('updateEvalSet'),
     deleteEvalSet: (setId) => send('deleteEvalSet', { setId }),
     upsertEvalRow: bind('upsertEvalRow'),
     deleteEvalRow: (rowId) => send('deleteEvalRow', { rowId }),
+    restoreEvalRow: (rowId) => send('restoreEvalRow', { rowId }),
     createEvalRun: bind('createEvalRun'),
     // Launching a real (simulated) run can outrun the default 20s backstop.
     startEvalRun: bind('startEvalRun', 120000),
@@ -145,6 +146,7 @@ export function createWfDataClient(call: WfDataTransport): WfDataClient {
     // a slow failure-recorder would just compound the failure it's recording.
     recordEvalFailure: bind('recordEvalFailure'),
     finalizeEvalRun: bind('finalizeEvalRun'),
+    cancelEvalRun: (evalRunId) => send('cancelEvalRun', { evalRunId }),
     saveEvalRunDrive: bind('saveEvalRunDrive'),
     listChanges: bind('listChanges'),
     listEvalRuns: bind('listEvalRuns'),

@@ -43,19 +43,10 @@ export type GroupEntry = { key: string; label: string; rows: ResultRow[] }
 // Failures first by default so problems surface at the top.
 export const STATUS_RANK: Record<string, number> = { fail: 0, error: 1, pass: 2 }
 
-export function mean(vals: number[]): number | null {
-  return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null
-}
-
-// Stable identity for a matrix cell — one {model × prompt} combination. Shared
-// by the matrix summary (which cell won a column) and the results table (which
-// rows belong to a cell), so hovering a summary card can light up its rows.
-export function cellKey(
-  modelId: string | null,
-  promptLabel: string | null,
-): string {
-  return `${modelId ?? ''} ${promptLabel ?? ''}`
-}
+// `mean` and `cellKey` live in `eval/report.ts` with the rest of the report's
+// arithmetic, so the console and `get_eval_run` compute the same numbers. Kept
+// re-exported here because this module is where the UI already imports them from.
+export { cellKey, mean } from '../../../eval/report'
 
 // Build the flat rows the table renders, from results + a model-label resolver
 // (composite modelId → display label). Falls back to the run's own recorded

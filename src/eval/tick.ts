@@ -145,6 +145,9 @@ export async function tickEvalRun(
             promptLabel: entry.cell.promptLabel,
             promptBody: entry.cell.promptBody,
             attempt: entry.cell.attempt,
+            // Frozen on the plan, so every cell of a sweep — including the ones
+            // a later driver picks up — is graded by the same judge.
+            judgeModelId: plan.judgeModelId,
           })
           settled.add(evalCellKey(entry.cell))
           settledNow += 1

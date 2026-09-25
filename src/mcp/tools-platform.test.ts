@@ -3,10 +3,12 @@ import { describe, expect, test } from 'bun:test'
 import type { WfDataClient } from '../server/protocol'
 
 import type { WfMcpTool } from './tools'
-import { platformReadTools } from './tools-platform'
+import { platformReadTools, platformWriteTools } from './tools-platform'
 
 function toolNamed(name: string): WfMcpTool {
-  const found = platformReadTools().find((t) => t.name === name)
+  const found = [...platformReadTools(), ...platformWriteTools()].find(
+    (t) => t.name === name,
+  )
   if (!found) throw new Error(`no such tool: ${name}`)
   return found
 }
@@ -15,38 +17,210 @@ function stubClient(partial: Partial<WfDataClient>): WfDataClient {
   return partial as WfDataClient
 }
 
-describe('list_models', () => {
-  const models = [
-    {
-      id: 'venice:deepseek-v4-flash-0731',
-      label: 'DeepSeek V4 Flash',
-      providerId: 'venice',
-      costPerMTok: 0.4,
-      contextLength: 131_072,
+/** A catalog with two enabled models, one disabled, and a usage edge. */
+function catalog(over: Partial<Record<string, unknown>> = {}): never {
+  return {
+    providers: [
+      {
+        id: 'venice',
+        label: 'Venice',
+        kind: 'openai-compatible',
+        enabled: true,
+        lastRefreshedAt: 1_700_000_000_000,
+        modelCount: 3,
+        enabledCount: 2,
+      },
+    ],
+    models: [
+      {
+        id: 'venice:deepseek-v4-flash-0731',
+        modelId: 'deepseek-v4-flash-0731',
+        label: 'DeepSeek V4 Flash',
+        providerId: 'venice',
+        vendor: 'deepseek',
+        enabled: true,
+        costPerMTok: 0.4,
+        promptPricePerMTok: 0.2,
+        completionPricePerMTok: 0.6,
+        contextLength: 131_072,
+        capabilities: { tools: true, structuredOutput: true },
+      },
+      {
+        id: 'venice:big-thinker',
+        modelId: 'big-thinker',
+        label: 'Big Thinker',
+        providerId: 'venice',
+        vendor: 'anthropic',
+        enabled: true,
+        costPerMTok: 12,
+        contextLength: 200_000,
+        capabilities: { tools: true, reasoning: true },
+      },
+      {
+        id: 'venice:off-on-purpose',
+        modelId: 'off-on-purpose',
+        label: 'Cheap But Off',
+        providerId: 'venice',
+        vendor: 'meta',
+        enabled: false,
+        costPerMTok: 0.05,
+        contextLength: 8_000,
+        // No `capabilities` AT ALL — the pre-refresh fallback shape. Distinct
+        // from `{}`, which is a model KNOWN to support nothing; `unmetRequirements`
+        // draws that same line, and the filter here has to draw it identically or
+        // a model would be offered by one gate and refused by the other.
+      },
+    ],
+    usage: {
+      'venice:deepseek-v4-flash-0731': [
+        { id: 'ag_1', name: 'Conflict check', icon: null, color: null },
+      ],
     },
-  ]
+    ...over,
+  } as never
+}
+
+describe('list_models', () => {
+  const run = (args: Record<string, unknown> = {}, over = {}) => { return toolNamed('list_models').run(
+      stubClient({ getModelCatalog: async () => catalog(over) }),
+      args,
+    ) }
 
   // The reason this tool exists: `run_eval` takes model ids and nothing told
   // the model which ones are real. A composite id that loses its prefix 404s at
   // the provider, after the sweep has already been launched.
   test('hands back the composite id the rest of the API expects', async () => {
-    const client = stubClient({
-      listModels: async () => models,
-      listProviders: async () => [{ id: 'venice', label: 'Venice' }] as never,
-    })
-    const result = (await toolNamed('list_models').run(client, {})) as {
+    const result = (await run()) as {
       models: { id: string }[]
       providers: unknown[]
     }
-    expect(result.models[0]?.id).toBe('venice:deepseek-v4-flash-0731')
+    expect(result.models.some((m) => m.id === 'venice:deepseek-v4-flash-0731')).toBe(
+      true,
+    )
     expect(result.providers).toHaveLength(1)
+  })
+
+  // Enabled-only is the default because a disabled id is accepted nowhere.
+  test('hides disabled models unless asked, and marks them when shown', async () => {
+    const hidden = (await run()) as { models: { id: string }[] }
+    expect(hidden.models.map((m) => m.id)).not.toContain('venice:off-on-purpose')
+
+    const shown = (await run({ includeDisabled: true })) as {
+      models: { id: string; enabled: boolean }[]
+      counts: { enabledInCatalog: number; inCatalog: number }
+    }
+    // Labelled as disabled rather than hidden — which is what answers "is there
+    // a cheaper model we already have but have not turned on?".
+    const off = shown.models.find((m) => m.id === 'venice:off-on-purpose')
+    expect(off?.enabled).toBe(false)
+    expect(shown.counts).toMatchObject({ enabledInCatalog: 2, inCatalog: 3 })
+  })
+
+  test('sorts cheapest first so the alternative is the first row', async () => {
+    const result = (await run({ includeDisabled: true })) as {
+      models: { costPerMTok: number }[]
+    }
+    expect(result.models.map((m) => m.costPerMTok)).toEqual([0.05, 0.4, 12])
+  })
+
+  // Picking a model FOR a requirement, instead of guessing and being refused by
+  // the agent-model gate.
+  test('filters by capability, keeping models whose support is unreported', async () => {
+    const reasoning = (await run({
+      capability: 'reasoning',
+      includeDisabled: true,
+    })) as { models: { id: string }[] }
+    // `off-on-purpose` reports no capabilities at all — unknown, never filtered
+    // OUT. A model declaring `{}` would be, which is the gate's own rule.
+    expect(reasoning.models.map((m) => m.id).sort()).toEqual([
+      'venice:big-thinker',
+      'venice:off-on-purpose',
+    ])
+  })
+
+  test('filters by query, vendor, price ceiling and context floor', async () => {
+    const byQuery = (await run({ query: 'THINK' })) as {
+      models: { id: string }[]
+    }
+    expect(byQuery.models.map((m) => m.id)).toEqual(['venice:big-thinker'])
+
+    const byVendor = (await run({ vendor: 'deepseek' })) as {
+      models: { id: string }[]
+    }
+    expect(byVendor.models.map((m) => m.id)).toEqual([
+      'venice:deepseek-v4-flash-0731',
+    ])
+
+    const cheap = (await run({ maxCostPerMTok: 1 })) as {
+      models: { id: string }[]
+    }
+    expect(cheap.models.map((m) => m.id)).toEqual([
+      'venice:deepseek-v4-flash-0731',
+    ])
+
+    const roomy = (await run({ minContextLength: 150_000 })) as {
+      models: { id: string }[]
+    }
+    expect(roomy.models.map((m) => m.id)).toEqual(['venice:big-thinker'])
+  })
+
+  // The two facts that explain a surprising result — "only 2 of 3 are enabled"
+  // and "last refreshed a while ago".
+  test('carries each provider’s enabled count and refresh age', async () => {
+    const result = (await run()) as {
+      providers: {
+        enabledCount: number
+        modelCount: number
+        lastRefreshedAt: string | null
+      }[]
+    }
+    expect(result.providers[0]).toMatchObject({
+      enabledCount: 2,
+      modelCount: 3,
+    })
+    expect(result.providers[0]?.lastRefreshedAt).toContain('2023')
+  })
+
+  test('names the agents using a model — the blast radius before disabling it', async () => {
+    const result = (await run()) as {
+      models: { id: string; usedByAgents: string[] }[]
+    }
+    const used = result.models.find(
+      (m) => m.id === 'venice:deepseek-v4-flash-0731',
+    )
+    expect(used?.usedByAgents).toEqual(['Conflict check'])
+  })
+
+  test('splits prompt and completion pricing, which the blend hides', async () => {
+    const result = (await run({ query: 'deepseek' })) as {
+      models: { promptPricePerMTok: number; completionPricePerMTok: number }[]
+    }
+    expect(result.models[0]?.promptPricePerMTok).toBe(0.2)
+    expect(result.models[0]?.completionPricePerMTok).toBe(0.6)
+  })
+
+  // A filtered enabled list is still worth more than an error, so the catalog
+  // read degrades to the plain one and SAYS it did.
+  test('falls back to the plain enabled list when the catalog cannot be read', async () => {
+    const client = stubClient({
+      getModelCatalog: () => Promise.reject(new Error('catalog down')),
+      listModels: async () => { return [{ id: 'venice:x', label: 'X', providerId: 'venice' }] as never },
+      listProviders: async () => [{ id: 'venice', label: 'Venice' }] as never,
+    })
+    const result = (await toolNamed('list_models').run(client, {})) as {
+      models: unknown[]
+      degraded: string
+    }
+    expect(result.models).toHaveLength(1)
+    expect(result.degraded).toContain('plain enabled list')
   })
 
   // "No models" and "no provider wired up" are different problems, but a
   // provider lookup failing should not cost the model the list it asked for.
-  test('still answers when the provider lookup fails', async () => {
+  test('still answers when both the catalog and the provider lookup fail', async () => {
     const client = stubClient({
-      listModels: async () => models,
+      getModelCatalog: () => Promise.reject(new Error('catalog down')),
+      listModels: async () => [{ id: 'venice:x', label: 'X' }] as never,
       listProviders: () => Promise.reject(new Error('no provider configured')),
     })
     const result = (await toolNamed('list_models').run(client, {})) as {
@@ -55,6 +229,153 @@ describe('list_models', () => {
     }
     expect(result.models).toHaveLength(1)
     expect(result.providers).toEqual([])
+  })
+})
+
+describe('set_model_enabled', () => {
+  test('withdraws a model workspace-wide and says so', async () => {
+    let seen: unknown
+    const client = stubClient({
+      getModelCatalog: async () => catalog(),
+      setModelEnabled: async (input) => {
+        seen = input
+        return { ok: true as const }
+      },
+    })
+    const out = (await toolNamed('set_model_enabled').run(client, {
+      modelId: 'venice:big-thinker',
+      enabled: false,
+    })) as { changed: boolean; note: string }
+    expect(seen).toEqual({ modelId: 'venice:big-thinker', enabled: false })
+    expect(out.changed).toBe(true)
+    expect(out.note).toContain('workspace-wide')
+  })
+
+  // A wrong id would otherwise UPDATE zero rows and return ok — the silent
+  // no-op that reads as success.
+  test('refuses an id that is not in the catalog rather than no-opping', async () => {
+    let wrote = false
+    const client = stubClient({
+      getModelCatalog: async () => catalog(),
+      setModelEnabled: async () => {
+        wrote = true
+        return { ok: true as const }
+      },
+    })
+    const out = (await toolNamed('set_model_enabled').run(client, {
+      modelId: 'big-thinker',
+      enabled: true,
+    })) as { error: string }
+    // The provider-native half of a composite id.
+    expect(out.error).toContain('composite')
+    expect(wrote).toBe(false)
+  })
+
+  test('writes nothing when the model is already in that state', async () => {
+    let wrote = false
+    const client = stubClient({
+      getModelCatalog: async () => catalog(),
+      setModelEnabled: async () => {
+        wrote = true
+        return { ok: true as const }
+      },
+    })
+    const out = (await toolNamed('set_model_enabled').run(client, {
+      modelId: 'venice:big-thinker',
+      enabled: true,
+    })) as { changed: boolean; note: string }
+    expect(out.changed).toBe(false)
+    // Nothing written means nothing in the change feed, which matters because
+    // the feed is the only who-touched-this record.
+    expect(out.note).toContain('nothing lands in the change feed')
+    expect(wrote).toBe(false)
+  })
+
+  // The refusal names the agents, and those names are the actionable part.
+  test('lets the in-use refusal through verbatim', async () => {
+    const client = stubClient({
+      getModelCatalog: async () => catalog(),
+      setModelEnabled: async () => {
+        throw new Error(
+          "Can't disable this model — it's in use by 1 agent(s): Conflict check.",
+        )
+      },
+    })
+    await expect(
+      toolNamed('set_model_enabled').run(client, {
+        modelId: 'venice:deepseek-v4-flash-0731',
+        enabled: false,
+      }),
+    ).rejects.toThrow('Conflict check')
+  })
+
+  test('refuses to guess when `enabled` is missing', async () => {
+    await expect(
+      toolNamed('set_model_enabled').run(stubClient({}), {
+        modelId: 'venice:x',
+      }),
+    ).rejects.toThrow(/enabled/)
+  })
+})
+
+describe('refresh_model_catalog', () => {
+  test('reports the delta and that nothing was auto-enabled', async () => {
+    let refreshed: unknown
+    let call = 0
+    const client = stubClient({
+      getModelCatalog: async () => {
+        call += 1
+        // One new model appears on the second read — the refresh's effect.
+        if (call === 1) return catalog()
+        const next = catalog() as unknown as {
+          models: Record<string, unknown>[]
+        }
+        next.models.push({
+          id: 'venice:brand-new',
+          providerId: 'venice',
+          enabled: false,
+          label: 'Brand New',
+        })
+        return next as never
+      },
+      refreshModels: async (input) => {
+        refreshed = input
+        return { count: 4, refreshedAt: 1_700_000_000_000 }
+      },
+    })
+    const out = (await toolNamed('refresh_model_catalog').run(client, {
+      providerId: 'venice',
+    })) as {
+      cached: number
+      newlyDiscovered: number
+      enabled: number
+      note: string
+    }
+    expect(refreshed).toEqual({ providerId: 'venice' })
+    expect(out.cached).toBe(4)
+    expect(out.newlyDiscovered).toBe(1)
+    // The new row is cached disabled, so nothing an agent runs on changed.
+    expect(out.enabled).toBe(2)
+    expect(out.note).toContain('cached DISABLED')
+  })
+
+  // Providers come from the host config and cannot be added from here, so a
+  // wrong id is a refusal that names the real ones.
+  test('refuses a provider this host does not declare', async () => {
+    let refreshed = false
+    const client = stubClient({
+      getModelCatalog: async () => catalog(),
+      refreshModels: async () => {
+        refreshed = true
+        return { count: 0, refreshedAt: 0 }
+      },
+    })
+    const out = (await toolNamed('refresh_model_catalog').run(client, {
+      providerId: 'openrouter',
+    })) as { error: string; providerIds: string[] }
+    expect(out.error).toContain('cannot be added from here')
+    expect(out.providerIds).toEqual(['venice'])
+    expect(refreshed).toBe(false)
   })
 })
 
@@ -159,7 +480,10 @@ describe('get_dashboard', () => {
     over: Record<string, unknown> = {},
     args: Record<string, unknown> = {},
   ) {
-    const client = stubClient({ getDashboard: async () => dashboard(over) })
+    const client = stubClient({
+      getDashboard: async () => dashboard(over),
+      getProviderBudgets: async () => [],
+    })
     return toolNamed('get_dashboard').run(client, args) as Promise<
       Record<string, never>
     >
@@ -210,6 +534,7 @@ describe('get_dashboard', () => {
         seen.push(input)
         return dashboard()
       },
+      getProviderBudgets: async () => [],
     })
     const tool = toolNamed('get_dashboard')
     await tool.run(client, { hours: 12 })
@@ -253,5 +578,64 @@ describe('get_dashboard', () => {
     }
     expect(result.recentFailures[0]?.runId).toBe('run_1')
     expect(result.recentFailures[0]?.error.length).toBeLessThan(600)
+  })
+})
+
+describe('list_decision_models', () => {
+  // Deciders are a SEPARATE catalog from chat models, and two write tools take
+  // an id out of it — a `decision_judge` check's `modelId` and a Decision node's.
+  // With nothing listing them a model either invented an id (failing at the
+  // provider after the sweep had launched — the exact failure `list_models`
+  // exists to prevent, one namespace over) or omitted it and silently got
+  // whatever sorted first.
+  test('hands back the decider ids a decision_judge check can name', async () => {
+    const client = stubClient({
+      listDecisionModels: async () => { return [
+          { id: 'venice:decider-1', label: 'Venice decider', calibrated: true },
+        ] as never },
+      listDecisionProviders: async () => { return [{ id: 'venice', label: 'Venice', kind: 'native' }] as never },
+    })
+    const result = (await toolNamed('list_decision_models').run(
+      client,
+      {},
+    )) as {
+      models: { id: string; calibrated: boolean }[]
+      providers: unknown[]
+      note: string
+    }
+    expect(result.models[0]?.id).toBe('venice:decider-1')
+    // A threshold means much less against an uncalibrated decider.
+    expect(result.models[0]?.calibrated).toBe(true)
+    expect(result.providers).toHaveLength(1)
+    expect(result.note).toContain('no enable/disable curation')
+  })
+
+  // An empty list has one specific, actionable cause and reads like a bug
+  // otherwise — so it is stated rather than left to be inferred from `[]`.
+  test('says why the list is empty on a host with no decision provider', async () => {
+    const client = stubClient({
+      listDecisionModels: async () => [],
+      listDecisionProviders: async () => [],
+    })
+    const result = (await toolNamed('list_decision_models').run(
+      client,
+      {},
+    )) as { models: unknown[]; note: string }
+    expect(result.models).toEqual([])
+    expect(result.note).toContain('No decision provider is wired')
+    expect(result.note).toContain('decision_judge')
+  })
+
+  test('still answers when the provider lookup fails', async () => {
+    const client = stubClient({
+      listDecisionModels: async () => [{ id: 'd:1', label: 'D' }] as never,
+      listDecisionProviders: () => Promise.reject(new Error('unwired')),
+    })
+    const result = (await toolNamed('list_decision_models').run(
+      client,
+      {},
+    )) as { models: unknown[]; providers: unknown[] }
+    expect(result.models).toHaveLength(1)
+    expect(result.providers).toEqual([])
   })
 })

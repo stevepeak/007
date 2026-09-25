@@ -436,7 +436,15 @@ export interface WfDataClient {
   listEvalSets(input?: {
     includeArchived?: boolean
   }): Promise<WfEvalSetSummary[]>
-  getEvalSet(setId: string): Promise<WfEvalSetDetail | null>
+  /**
+   * A Goal with its Samples. `includeArchived` is what makes `deleteEvalRow`
+   * reversible — without it an archived Sample is unreadable, so "archive" was a
+   * delete in all but name. `rowCount` stays over non-archived rows either way.
+   */
+  getEvalSet(
+    setId: string,
+    opts?: { includeArchived?: boolean },
+  ): Promise<WfEvalSetDetail | null>
   createEvalSet(input: {
     name: string
     description?: string
@@ -458,7 +466,13 @@ export interface WfDataClient {
   }): Promise<{ ok: true }>
   /** Hard-delete a set and its rows (runs/results are kept as history). */
   deleteEvalSet(setId: string): Promise<{ ok: true }>
-  /** Create (no `id`) or update (with `id`) a row; validates the JSON payloads. */
+  /**
+   * Create (no `id`) or update (with `id`) a row; validates the JSON payloads.
+   *
+   * On the update path an OMITTED `input` / `tools` / `checks` means "leave it
+   * alone": the field is merged over what the row already holds rather than
+   * reset to its empty default. Pass the empty value to clear one.
+   */
   upsertEvalRow(input: {
     id?: string
     setId: string
@@ -471,6 +485,8 @@ export interface WfDataClient {
   }): Promise<{ rowId: string }>
   /** Soft-delete a row (drops out of the set + its row count). */
   deleteEvalRow(rowId: string): Promise<{ ok: true }>
+  /** Un-archive a row, putting it back in its Goal. Undo for `deleteEvalRow`. */
+  restoreEvalRow(rowId: string): Promise<{ ok: true }>
 
   /** Create the umbrella eval run over one or more sets (status `queued`). */
   createEvalRun(input: {
@@ -544,6 +560,17 @@ export interface WfDataClient {
     promptLabel?: string
     promptBody?: string
     attempt?: number
+    /**
+     * Model the JUDGE checks run on, overriding the host's `evalJudgeModelId`
+     * (and, failing that, whatever sorts first in the enabled catalog).
+     *
+     * Worth being able to pin: the judge is the measuring instrument, so a
+     * newly-enabled model silently becoming the default re-grades an entire
+     * suite, and the drift report — which only knows about the sample and the
+     * target — will confidently attribute the move to the agent. A sweep carries
+     * this on its plan so every cell of it is graded by the same judge.
+     */
+    judgeModelId?: string
   }): Promise<WfEvalResultDTO>
   /**
    * Record a cell that never produced a gradeable run — the run failed, was
@@ -571,6 +598,27 @@ export interface WfDataClient {
   }): Promise<WfEvalResultDTO>
   /** Roll up an eval run's results into its final counts/score + status. */
   finalizeEvalRun(input: { evalRunId: string }): Promise<WfEvalRunSummary>
+  /**
+   * Call off a sweep that is still queued or running.
+   *
+   * Nothing is killed: the status is the signal. `driveEvalRun` re-reads it every
+   * tick and stops, and the resume backstop only adopts `queued` / `running`
+   * runs — so cells already in flight finish and no further cell is launched.
+   * A sweep is billed per cell, so being unable to stop one was money that could
+   * only be watched.
+   *
+   * `cancelled: false` means the run had already reached a terminal status;
+   * writing `cancelled` over a finished report would rewrite its history, so
+   * that is refused rather than applied.
+   */
+  cancelEvalRun(evalRunId: string): Promise<{
+    cancelled: boolean
+    /** The run's status after the attempt — the authority on what happened. */
+    status: string
+    /** Cells that had already recorded a result when it was stopped. */
+    settled: number
+    total: number
+  }>
   /**
    * The change log, newest first — who changed what, and when.
    *

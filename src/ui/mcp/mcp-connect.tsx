@@ -1,4 +1,4 @@
-import { ChevronRight, Search } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import {
@@ -7,14 +7,14 @@ import {
 } from '../../mcp/describe'
 import { cn } from '../cn'
 import { Tabs } from '../filters'
+import { DEFAULT_WF_SECTIONS } from '../wf-hub'
 
-import { CodeBlock } from './code-block'
 import {
-  isLocalOrigin,
-  PLACEHOLDER,
-  resolveTarget,
-  type Target,
-} from './target'
+  groupByCategory,
+  type ToolCategory,
+} from './categories'
+import { CodeBlock } from './code-block'
+import { PLACEHOLDER } from './target'
 
 // "Connect a client" — how an MCP client points itself at THIS deployment, and
 // what it gets when it does.
@@ -53,100 +53,45 @@ export function McpConnect({
 }: McpConnectProps) {
   // Computed once — the catalog is static for the bundle's lifetime.
   const tools = useMemo(() => describeToolCatalog(), [])
-  const reads = tools.filter((t) => t.readOnly).length
-  const writes = tools.length - reads
 
-  // Rendered client-side only, so the origin is simply where the reader is.
-  // Guarded anyway: the SDK is imported by hosts that server-render.
-  const origin =
+  // The deployment serving this page, which is the only one whose URL can be
+  // known. There is no development/production picker: 007 is whitelabeled and
+  // cannot know anyone's other hostname, so offering the choice meant offering
+  // one real URL beside one invented one — and the invented one is exactly the
+  // thing that gets pasted into a config and then fails to resolve. Open this
+  // page on the deployment you want to connect to and the snippet is right.
+  //
+  // Guarded for SSR: the SDK is imported by hosts that server-render.
+  const baseUrl =
     typeof window === 'undefined'
       ? PLACEHOLDER.development
       : window.location.origin
 
-  // Open on whichever target this page is being served from — the one whose URL
-  // is real. Someone reading the console on production is almost always there
-  // to connect to production.
-  const [target, setTarget] = useState<Target>(() => {
-    return isLocalOrigin(origin) ? 'development' : 'production'
-  })
-  const { url: baseUrl, known } = resolveTarget(target, origin)
-
   return (
     <div className={cn('mx-auto max-w-4xl space-y-10 p-6', className)}>
-      <header className="space-y-3">
-        <div>
-          <h1 className="text-lg font-semibold text-neutral-900">
-            Connect over MCP
-          </h1>
-          <p className="max-w-2xl text-sm text-neutral-500">
-            Agents, workflows, run traces, feedback and evals — the same things
-            this console shows a person, exposed to an AI client over HTTP. You
-            sign in with your own account, so every call goes through the same
-            validation as a click in here and lands in the same change log{' '}
-            <em>under your name</em>.
-          </p>
-        </div>
-        <div className="grid grid-cols-3 gap-3 sm:max-w-md">
-          <Stat value={tools.length} label="tools" />
-          <Stat value={reads} label="read" />
-          <Stat value={writes} label="write, separate consent" />
-        </div>
+      <header>
+        <h1 className="text-lg font-semibold text-neutral-900">
+          Connect over MCP
+        </h1>
+        <p className="max-w-2xl text-sm text-neutral-500">
+          Agents, workflows, run traces, feedback and evals — the same things
+          this console shows a person, exposed to an AI client over HTTP. You
+          sign in with your own account, so every call goes through the same
+          validation as a click in here and lands in the same change log{' '}
+          <em>under your name</em>.
+        </p>
       </header>
 
       <Section
         title="Register the server"
-        lead="Pick which deployment to talk to, then copy the snippet for your client. There is no token to supply — the first call opens a browser and you approve it as yourself."
+        lead="Copy the snippet for your client. There is no token to supply — the first call opens a browser and you approve it as yourself, and each deployment signs its own tokens, so authorizing here grants nothing anywhere else."
       >
-        <TargetPicker target={target} onChange={setTarget} origin={origin} />
-        <TargetNote target={target} known={known} />
         <ConnectSnippets baseUrl={baseUrl} mcpPath={mcpPath} />
       </Section>
 
       <Section
-        title="Signing in"
-        lead="What happens the first time a client calls, and what it remembers afterwards."
-      >
-        <ol className="list-inside list-decimal space-y-2 rounded-lg border border-neutral-200 bg-white p-4 text-sm text-neutral-600">
-          <li>
-            The client asks the endpoint for a tool list and gets a{' '}
-            <code className="font-mono text-xs">401</code> naming the scope it
-            needs.
-          </li>
-          <li>
-            It registers itself and opens your browser at this app. If you are
-            already signed in — you are, you are reading this — there is nothing
-            to type.
-          </li>
-          <li>
-            You approve the scopes once. The client stores the resulting token
-            itself and refreshes it silently from then on.
-          </li>
-        </ol>
-        <p className="text-xs text-neutral-500">
-          Staff only: the endpoint checks that your account is firm staff before
-          it registers a single tool, so a client account that somehow completes
-          the sign-in still gets an empty server rather than a read of the
-          workflow estate.
-        </p>
-      </Section>
-
-      <Section
-        title="Read and write are different URLs"
-        lead="The write tools are not a flag on the client any more. They are a second endpoint that needs its own scope, and therefore its own consent."
-      >
-        <ScopeTable baseUrl={baseUrl} mcpPath={mcpPath} reads={reads} writes={writes} />
-        <p className="text-xs text-neutral-500">
-          This used to be a{' '}
-          <code className="font-mono">--write</code> flag typed on the command
-          that started the server, which is to say: a setting the client chose
-          for itself. Now the token decides, and a read-only session has no
-          write tool registered to be talked into calling.
-        </p>
-      </Section>
-
-      <Section
         title="Tools"
-        lead="Rendered from the server’s own catalog, descriptions included — this is the text the model is given, not a summary of it."
+        lead="What it can do."
       >
         <ToolCatalog tools={tools} />
       </Section>
@@ -202,17 +147,6 @@ function Section({
   )
 }
 
-function Stat({ value, label }: { value: number; label: string }) {
-  return (
-    <div className="rounded-lg border border-neutral-200 bg-white px-3 py-2">
-      <div className="text-xl font-semibold tabular-nums text-neutral-900">
-        {value}
-      </div>
-      <div className="text-[11px] text-neutral-500">{label}</div>
-    </div>
-  )
-}
-
 function Limit({
   title,
   children,
@@ -230,105 +164,42 @@ function Limit({
 
 // ── Connect ───────────────────────────────────────────────────────────────────
 
-const TARGETS: { value: Target; title: string; blurb: string }[] = [
-  {
-    value: 'development',
-    title: 'Development',
-    blurb: 'The app running on your own machine.',
-  },
-  {
-    value: 'production',
-    title: 'Production',
-    blurb: 'Your deployed app. Same client, different URL.',
-  },
-]
-
 /**
- * Which deployment the snippets below point at.
- *
- * Two large buttons rather than a third row of tabs: this choice decides which
- * database a client is about to read, and it deserves more weight than the
- * client picker underneath it. Each shows the URL it will produce, so the
- * difference is visible before anything is copied.
+ * A labelled on/off switch, styled to match the console's own (see the model
+ * toggle on the Models page) so the control means the same thing in both places.
  */
-function TargetPicker({
-  target,
+function Switch({
+  checked,
   onChange,
-  origin,
+  label,
 }: {
-  target: Target
-  onChange: (t: Target) => void
-  origin: string
+  checked: boolean
+  onChange: (checked: boolean) => void
+  label: string
 }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {TARGETS.map((t) => {
-        const on = t.value === target
-        const { url, known } = resolveTarget(t.value, origin)
-        return (
-          <button
-            key={t.value}
-            type="button"
-            aria-pressed={on}
-            onClick={() => onChange(t.value)}
-            className={cn(
-              'rounded-xl border p-4 text-left transition',
-              on
-                ? 'border-neutral-900 bg-white shadow-sm ring-1 ring-neutral-900'
-                : 'border-neutral-200 bg-white hover:border-neutral-300 hover:shadow-sm',
-            )}
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-base font-medium text-neutral-900">
-                {t.title}
-              </span>
-              {known ? (
-                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
-                  you are here
-                </span>
-              ) : (
-                <span className="rounded-full border border-neutral-200 bg-neutral-50 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500">
-                  placeholder
-                </span>
-              )}
-            </div>
-            <p className="mt-0.5 text-xs text-neutral-500">{t.blurb}</p>
-            <code className="mt-2 block truncate font-mono text-[11px] text-neutral-600">
-              {url}
-            </code>
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-/**
- * The sentence the picker exists to make sayable.
- *
- * Each deployment is its own authorization server, so a token minted against
- * one is refused by the other — audience-bound, not merely wrong. That is a
- * feature (a local experiment cannot reach production) and it is also the thing
- * someone will otherwise spend an afternoon on, so it is said out loud.
- */
-function TargetNote({ target, known }: { target: Target; known: boolean }) {
-  return (
-    <p className="text-xs text-neutral-500">
-      Each deployment signs its own tokens, so authorizing against one grants
-      nothing on the other — the two are separate databases with separate
-      version numbers, and the audience check keeps them that way.{' '}
-      {known ? (
-        <>
-          This is the deployment serving this page, so the URL below is exact.
-        </>
-      ) : (
-        <>
-          This page is not being served from {target}, so it cannot know that
-          URL — replace the placeholder with your own origin. Opening this page
-          there fills it in for you.
-        </>
-      )}
-    </p>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className="flex items-center gap-2 py-2 text-sm text-neutral-600 transition-colors hover:text-neutral-900"
+    >
+      <span
+        className={cn(
+          'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
+          checked ? 'bg-emerald-500' : 'bg-neutral-200',
+        )}
+      >
+        <span
+          className={cn(
+            'inline-flex size-4 transform rounded-full bg-white shadow transition-transform',
+            checked ? 'translate-x-4' : 'translate-x-0.5',
+          )}
+        />
+      </span>
+      {label}
+    </button>
   )
 }
 
@@ -339,13 +210,23 @@ const CLIENTS = [
 ]
 
 /**
- * The same registration, three shapes.
+ * The same registration, three shapes, two scopes.
+ *
  *
  * Shown side by side because the differences are the part people get wrong:
  * Claude Code needs `--transport http` (without it, it tries to run the URL as
  * a command), `.mcp.json` is checked in and now holds nothing secret, and
  * Desktop has no config file for this at all — remote servers are added in the
  * UI.
+ *
+ * ── Why the scope is a toggle here rather than a section below ────────────────
+ *
+ * Read and write are two URLs, and that used to be explained in a table further
+ * down the page. But the fact only matters at the moment someone copies a
+ * snippet — which URL goes in the command IS the decision — so it belongs on the
+ * snippet rather than a scroll away from it. Flipping the toggle rewrites the
+ * command, so the difference is something you see rather than something you read
+ * and then have to apply.
  */
 function ConnectSnippets({
   baseUrl,
@@ -355,38 +236,79 @@ function ConnectSnippets({
   mcpPath: string
 }) {
   const [client, setClient] = useState('cli')
+  // Defaults ON. The authoring tools are what most people come here to register,
+  // and a reader who only wants reads is far likelier to notice a switch they
+  // have to turn OFF than to find one they never turned on.
+  const [write, setWrite] = useState(true)
   const readUrl = `${baseUrl}${mcpPath}`
-  const writeUrl = `${readUrl}/write`
+  // The write endpoint is the read path plus `/write` — see `mcpPath`.
+  const url = write ? `${readUrl}/write` : readUrl
+  // Named so the two can be registered side by side: a session that only ever
+  // wanted to read should not be holding a token that can author.
+  const serverName = write ? '007-write' : '007'
 
-  const cli = [
-    `claude mcp add --transport http 007 ${readUrl}`,
-    '',
-    '# and, only if you need the authoring tools:',
-    `claude mcp add --transport http 007-write ${writeUrl}`,
-  ].join('\n')
+  const cli = `claude mcp add --transport http ${serverName} ${url}`
 
   const projectJson = `{
   "mcpServers": {
-    "007": {
+    ${JSON.stringify(serverName)}: {
       "type": "http",
-      "url": ${JSON.stringify(readUrl)}
+      "url": ${JSON.stringify(url)}
     }
   }
 }`
 
   return (
     <div className="space-y-3">
-      <Tabs tabs={CLIENTS} active={client} onChange={setClient} />
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+        <Tabs tabs={CLIENTS} active={client} onChange={setClient} />
+        {/* A switch, not a second tab strip: this is one thing being turned on
+            or off, and rendering it like the client picker made it read as
+            another set of mutually-exclusive destinations. */}
+        <Switch
+          checked={write}
+          onChange={setWrite}
+          label="Include write tools"
+        />
+      </div>
+
+      <p className="text-xs text-neutral-500">
+        {write ? (
+          <>
+            <code className="font-mono">wf:write</code> — the read tools plus the
+            ones that author: drafts, eval Samples, retrying a run, and
+            publishing a workflow version, which changes what customers get. A
+            second endpoint rather than a flag, so it prompts for its own
+            consent.
+          </>
+        ) : (
+          <>
+            <code className="font-mono">wf:read</code> — everything this console
+            can show you, and nothing that changes a record. A read-only session
+            has no write tool registered to be talked into calling.
+          </>
+        )}
+      </p>
 
       {client === 'cli' && (
         <>
           <CodeBlock code={cli} caption="terminal" />
           <p className="text-xs text-neutral-500">
-            Registers the server for the current project — add{' '}
-            <code className="font-mono">--scope user</code> to get it
-            everywhere. Then run <code className="font-mono">/mcp</code> and
-            pick <strong className="font-medium">Authenticate</strong>; your
-            browser opens and comes back signed in.
+            Registers it for you in <em>this</em> directory. Add{' '}
+            <code className="font-mono">--scope user</code> to register it for
+            yourself in every project on this machine instead, so you never do
+            this again — or{' '}
+            <code className="font-mono">--scope project</code>, which writes the{' '}
+            <code className="font-mono">.mcp.json</code> on the next tab and
+            shares it with everyone on the repo.
+          </p>
+          <p className="text-xs text-neutral-500">
+            Then run <code className="font-mono">/mcp</code> and pick{' '}
+            <strong className="font-medium">Authenticate</strong>; your browser
+            opens and comes back signed in. Whichever scope you picked, the
+            sign-in is yours alone — a shared{' '}
+            <code className="font-mono">.mcp.json</code> shares the{' '}
+            <em>server</em>, never a credential.
           </p>
         </>
       )}
@@ -407,7 +329,7 @@ function ConnectSnippets({
 
       {client === 'desktop' && (
         <>
-          <CodeBlock code={readUrl} caption="Settings → Connectors → Add" />
+          <CodeBlock code={url} caption="Settings → Connectors → Add" />
           <p className="text-xs text-neutral-500">
             Desktop has no config file for remote servers: add it as a custom
             connector and paste the URL. It runs the same browser sign-in, and
@@ -420,188 +342,193 @@ function ConnectSnippets({
   )
 }
 
-function ScopeTable({
-  baseUrl,
-  mcpPath,
-  reads,
-  writes,
-}: {
-  baseUrl: string
-  mcpPath: string
-  reads: number
-  writes: number
-}) {
-  const rows = [
-    {
-      url: `${baseUrl}${mcpPath}`,
-      scope: 'wf:read',
-      note: `The ${reads} read tools. Everything this console can show you, and nothing that changes a record.`,
-    },
-    {
-      url: `${baseUrl}${mcpPath}/write`,
-      scope: 'wf:write',
-      note: `The read tools plus the ${writes} that author — drafts, eval Samples, and publishing a workflow version, which changes what customers get.`,
-    },
-  ]
+// ── Tool catalog ──────────────────────────────────────────────────────────────
+
+/**
+ * The console's own icon for each subject, by nav key.
+ *
+ * Borrowed rather than re-chosen: the hub is where a reader already learned that
+ * a `Target` means evals here, and picking a second icon for the same subject
+ * would give it two identities one scroll apart. Following `DEFAULT_WF_SECTIONS`
+ * also means a nav that changes its mind drags this along with it.
+ */
+const NAV_ICONS = new Map(DEFAULT_WF_SECTIONS.map((s) => [s.key, s.icon]))
+
+/**
+ * The matching tint, as literal class strings.
+ *
+ * NOT derived from the hub's `accent`, whose resting half colors only the glyph
+ * (`text-indigo-600`) and whose tint is hover-only (`group-hover:bg-indigo-100`)
+ * because a card lights up under the cursor. These headings are static and want
+ * the tint at rest — and Tailwind v4 scans for literals, so a computed
+ * `bg-${hue}-50` would produce no CSS at all.
+ * Same palette, same source of truth for WHICH hue; only the state differs.
+ */
+const NAV_TINTS: Record<string, string> = {
+  workflows: 'bg-indigo-50 text-indigo-600',
+  agents: 'bg-violet-50 text-violet-600',
+  evals: 'bg-rose-50 text-rose-600',
+  runs: 'bg-sky-50 text-sky-600',
+  connectors: 'bg-amber-50 text-amber-600',
+  tools: 'bg-emerald-50 text-emerald-600',
+  models: 'bg-amber-50 text-amber-600',
+  feedback: 'bg-teal-50 text-teal-600',
+  activity: 'bg-slate-100 text-slate-600',
+}
+
+/**
+ * The catalog, grouped by SUBJECT and collapsed by default.
+ *
+ * Two changes from what this was. It grouped by the write gate, which is the
+ * split the server enforces but not the one a reader is asking about — they want
+ * to know what this thing can do about workflows, and the endpoint toggle above
+ * already answers the scope question. And it rendered every tool's full
+ * description at once: fifty-odd verbatim prompts, which is a wall of text in
+ * place of an index.
+ *
+ * So subjects are accordions and each tool is its own disclosure. A collapsed
+ * page is a list of nine headings; everything else is one click away.
+ *
+ * There is no filter box. With the catalog collapsed to its subjects the whole
+ * surface fits on one screen, and a search that has to open groups to show a
+ * match fights the collapse it is searching inside — the browser's own find
+ * does the remaining job on a page this size.
+ */
+function ToolCatalog({ tools }: { tools: WfMcpToolDescription[] }) {
+  const [open, setOpen] = useState<Record<string, boolean>>({})
+  const groups = useMemo(() => groupByCategory(tools), [tools])
+
   return (
-    <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
-      <table className="w-full text-left text-sm">
-        <tbody>
-          {rows.map((r) => (
-            <tr
-              key={r.scope}
-              className="border-b border-neutral-200 last:border-b-0"
-            >
-              <th
-                scope="row"
-                className="w-72 px-4 py-3 align-top font-mono text-xs font-medium text-neutral-900"
-              >
-                {r.scope}
-                <div className="mt-1 font-mono text-[11px] break-all text-neutral-400">
-                  {r.url}
-                </div>
-              </th>
-              <td className="px-4 py-3 align-top text-xs text-neutral-500">
-                {r.note}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="divide-y divide-neutral-200 overflow-hidden rounded-lg border border-neutral-200 bg-white">
+      {groups.map(({ category, tools: inGroup }) => (
+        <CategorySection
+          key={category.key}
+          category={category}
+          tools={inGroup}
+          open={open[category.key] ?? false}
+          onToggle={() => { return setOpen((prev) => ({
+              ...prev,
+              [category.key]: !(prev[category.key] ?? false),
+            })) }
+          }
+        />
+      ))}
     </div>
   )
 }
 
-// ── Tool catalog ──────────────────────────────────────────────────────────────
-
-/** Everything a query can match, lowercased once per tool. */
-function haystack(tool: WfMcpToolDescription): string {
-  return [
-    tool.name,
-    tool.title,
-    tool.description,
-    ...tool.args.map((a) => `${a.name} ${a.description ?? ''}`),
-  ]
-    .join(' ')
-    .toLowerCase()
-}
-
-/**
- * Split by the write gate rather than by subject area, because that split is
- * the one the server actually enforces. A subject grouping would have to be
- * hand-maintained here and would go stale the first time a tool is added.
- */
-function ToolCatalog({ tools }: { tools: WfMcpToolDescription[] }) {
-  const [query, setQuery] = useState('')
-  const indexed = useMemo(
-    () => tools.map((tool) => ({ tool, text: haystack(tool) })),
-    [tools],
-  )
-  const matches = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return tools
-    return indexed.filter((e) => e.text.includes(q)).map((e) => e.tool)
-  }, [indexed, query, tools])
-
+function CategorySection({
+  category,
+  tools,
+  open,
+  onToggle,
+}: {
+  category: ToolCategory
+  tools: WfMcpToolDescription[]
+  open: boolean
+  onToggle: () => void
+}) {
   return (
-    <div className="space-y-4">
-      <div className="relative w-64">
-        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-neutral-400" />
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Filter tools…"
-          aria-label="Filter tools"
-          className="h-8 w-full rounded-md border border-neutral-300 bg-transparent pr-3 pl-8 text-sm outline-none focus:border-neutral-500"
+    <div>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-neutral-50"
+      >
+        <ChevronRight
+          className={cn(
+            'size-3.5 shrink-0 text-neutral-400 transition-transform',
+            open && 'rotate-90',
+          )}
         />
-      </div>
-
-      {matches.length === 0 ? (
-        <p className="text-sm text-neutral-500">
-          No tool matches “{query.trim()}”.
-        </p>
-      ) : (
-        <>
-          <ToolGroup
-            title="Read"
-            note="Granted by wf:read."
-            tools={matches.filter((t) => t.readOnly)}
-          />
-          <ToolGroup
-            title="Write"
-            note="Registered only for a session that holds wf:write."
-            tools={matches.filter((t) => !t.readOnly)}
-          />
-        </>
+        <CategoryIcon navKey={category.navKey} />
+        <span className="text-sm font-medium text-neutral-900">
+          {category.title}
+        </span>
+        <span className="text-xs tabular-nums text-neutral-400">
+          {tools.length}
+        </span>
+        <span className="hidden truncate text-xs text-neutral-500 sm:block">
+          {category.blurb}
+        </span>
+      </button>
+      {open && (
+        <ul className="border-t border-neutral-100">
+          {tools.map((tool) => (
+            <ToolRow key={tool.name} tool={tool} />
+          ))}
+        </ul>
       )}
     </div>
   )
 }
 
-function ToolGroup({
-  title,
-  note,
-  tools,
-}: {
-  title: string
-  note: string
-  tools: WfMcpToolDescription[]
-}) {
-  if (tools.length === 0) return null
+/**
+ * The subject's chip — the console's icon in the console's colour.
+ *
+ * Renders nothing rather than a placeholder if the nav key resolves to no
+ * section: a missing icon is a gap someone notices, and a generic stand-in is
+ * one they don't. `categories.test.ts` makes sure it cannot happen anyway.
+ */
+function CategoryIcon({ navKey }: { navKey: string }) {
+  const Icon = NAV_ICONS.get(navKey)
+  if (!Icon) return null
   return (
-    <div>
-      <div className="flex flex-wrap items-baseline gap-x-2 pb-1.5">
-        <h3 className="text-xs font-semibold text-neutral-900">
-          {title}{' '}
-          <span className="font-normal text-neutral-400">({tools.length})</span>
-        </h3>
-        <p className="text-[11px] text-neutral-500">{note}</p>
-      </div>
-      <ul className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
-        {tools.map((tool) => (
-          <ToolRow key={tool.name} tool={tool} />
-        ))}
-      </ul>
-    </div>
+    <span
+      className={cn(
+        'flex size-6 shrink-0 items-center justify-center rounded-md',
+        NAV_TINTS[navKey] ?? 'bg-neutral-100 text-neutral-500',
+      )}
+    >
+      <Icon className="size-3.5" />
+    </span>
   )
 }
 
+/**
+ * One tool, collapsed to its name.
+ *
+ * The description is shown VERBATIM when expanded — it is the prompt the model
+ * is given, so paraphrasing it here would document a server that doesn't exist.
+ * That is also why it is worth hiding: these are written to be read by a model
+ * mid-task, and several run to a dozen lines.
+ */
 function ToolRow({ tool }: { tool: WfMcpToolDescription }) {
   const [open, setOpen] = useState(false)
   return (
-    <li className="border-b border-neutral-200 px-4 py-3 last:border-b-0">
-      <div className="flex flex-wrap items-center gap-2">
+    <li className="border-b border-neutral-100 last:border-b-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full flex-wrap items-center gap-2 py-2 pr-4 pl-10 text-left transition-colors hover:bg-neutral-50"
+      >
+        <ChevronRight
+          className={cn(
+            'size-3 shrink-0 text-neutral-300 transition-transform',
+            open && 'rotate-90',
+          )}
+        />
         <code className="font-mono text-sm font-medium text-neutral-900">
           {tool.name}
         </code>
         <span className="text-xs text-neutral-400">{tool.title}</span>
+        {/* The gate, as a badge rather than a grouping: it is one property of a
+            tool, not the thing a reader came here to browse by. */}
         {!tool.readOnly && (
           <span className="rounded-full border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-medium text-rose-600">
             write
           </span>
         )}
-      </div>
-      {/* Verbatim — it is the prompt the model is given, so paraphrasing it
-          here would document a server that doesn't exist. */}
-      <p className="mt-1 max-w-3xl text-sm whitespace-pre-line text-neutral-500">
-        {tool.description}
-      </p>
-      {tool.args.length > 0 && (
-        <>
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            aria-expanded={open}
-            className="mt-1.5 inline-flex items-center gap-1 text-xs text-neutral-500 transition-colors hover:text-neutral-900"
-          >
-            <ChevronRight
-              className={cn('size-3 transition-transform', open && 'rotate-90')}
-            />
-            {tool.args.length} argument{tool.args.length === 1 ? '' : 's'}
-          </button>
-          {open && (
-            <dl className="mt-1.5 grid max-w-3xl gap-x-4 gap-y-1 sm:grid-cols-[minmax(0,10rem)_1fr]">
+      </button>
+      {open && (
+        <div className="space-y-2 pb-3 pr-4 pl-10">
+          <p className="max-w-3xl text-sm whitespace-pre-line text-neutral-500">
+            {tool.description}
+          </p>
+          {tool.args.length > 0 && (
+            <dl className="grid max-w-3xl gap-x-4 gap-y-1 sm:grid-cols-[minmax(0,10rem)_1fr]">
               {tool.args.map((arg) => (
                 <div key={arg.name} className="contents">
                   <dt className="flex items-baseline gap-1.5 pt-0.5">
@@ -612,7 +539,10 @@ function ToolRow({ tool }: { tool: WfMcpToolDescription }) {
                       {arg.type}
                     </span>
                     {arg.required && (
-                      <span className="text-[10px] text-rose-500" title="Required">
+                      <span
+                        className="text-[10px] text-rose-500"
+                        title="Required"
+                      >
                         *
                       </span>
                     )}
@@ -624,7 +554,7 @@ function ToolRow({ tool }: { tool: WfMcpToolDescription }) {
               ))}
             </dl>
           )}
-        </>
+        </div>
       )}
     </li>
   )

@@ -1325,39 +1325,57 @@ scopes, and the client stores and silently refreshes the token from then on.
 `offline_access` is what makes that a one-time cost rather than a prompt at
 every expiry.
 
-**What it exposes.** Thirty-three tools — twenty-one reads, and twelve writes
+**What it exposes.** Fifty-one tools — twenty-seven reads, and twenty-four writes
 registered only for a session whose token carries the write scope.
 
 | Tool                              | Gate      | What it does                                                        |
 | --------------------------------- | --------- | ------------------------------------------------------------------- |
-| `list_agents` / `get_agent`       | read      | the reusable LLM workers, published version + unsaved draft         |
+| `list_agents` / `get_agent`       | read      | the reusable LLM workers, published version + unsaved draft, and the workflows referencing them |
+| `list_agent_versions`             | read      | an agent's publish history; pass `versionNumber` for that config    |
+| `list_agent_calls`                | read      | its recent REAL executions — turns, tokens, cost, per-tool counts, early stops |
 | `list_workflows` / `get_workflow` | read      | the graphs, published + draft                                       |
 | `list_workflow_versions` / `get_workflow_version` | read | the version history and any one published graph — what a publish changed |
 | `validate_workflow_graph`         | read      | the editor's lint plus Tool-node args against the live tool catalog |
+| `list_trigger_events`             | read      | how a workflow can START — the host's event kinds, their payloads and output contracts |
 | `list_runs`                       | read      | run history; filter by `status` to hunt failures                    |
 | `get_run`                         | read      | one run's trace — steps, errors, reasoning, tool I/O, cost. Clipped |
 | `get_run_step`                    | read      | one step unclipped, by the `cursor` `get_run` showed                |
 | `list_feedback`                   | read      | customer thumbs; the down rows name the run that earned them        |
 | `get_feedback_context`            | read      | one complaint **plus** the run that caused it, in one call          |
-| `get_tool_catalog`                | read      | every tool an agent could be given: what it does, whether it writes, and whether it is the SDK's or the host's |
-| `list_models`                     | read      | the enabled models; pass `id` verbatim wherever one is named        |
+| `get_tool_catalog`                | read      | every tool an agent could be given: what it does, whether it writes, and whether it is the SDK's, the host's or a connector's. Pass `toolIds` for argument schemas |
+| `list_connectors`                 | read      | the third-party MCP servers we consume tools from, with connection HEALTH. Pass `connectorId` for its tools + schemas |
+| `list_tool_invocations`           | read      | what one tool was really called with, across runs — args, output, failures |
+| `list_models`                     | read      | the catalog, enabled-only unless asked; filter by capability/vendor/price. Pass `id` verbatim wherever one is named |
+| `list_decision_models`            | read      | the DECISION models — a separate catalog from `list_models`; where a `decision_judge` or Decision node's `modelId` comes from |
+| `set_model_enabled`               | **write** | offer or withdraw one model workspace-wide. Refused while an agent still uses it |
+| `refresh_model_catalog`           | **write** | re-read a provider's `/models`. New models arrive DISABLED            |
+| `refresh_connector`               | **write** | re-read a connector's `tools/list`; reports `drifted` schemas. Grants no new trust |
 | `list_changes`                    | read      | the `wf_change` feed — the only who-touched-this record             |
 | `get_dashboard`                   | read      | the health rollup — failures, spend, in-flight, feedback queue      |
 | `list_eval_sets` / `get_eval_set` | read      | Goals and their Samples                                             |
 | `list_eval_runs` / `get_eval_run` | read      | eval results, per-check, with the `drift` block                     |
 | `draft_sample_from_run`           | read      | a run → a proposed Sample, returned rather than written             |
 | `create_eval_set`                 | **write** | a new Goal, target preflighted                                      |
-| `upsert_eval_sample`              | **write** | write or replace one Sample                                         |
-| `delete_eval_sample`              | **write** | remove one Sample                                                   |
+| `update_eval_set`                 | **write** | rename, repoint, pin/unpin the target version, archive or restore a Goal |
+| `upsert_eval_sample`              | **write** | write one Sample. Editing is a patch — an omitted field keeps its value |
+| `delete_eval_sample`              | **write** | archive one Sample, or `restore` an archived one                    |
 | `run_eval`                        | **write** | launch a sweep. Spends real model calls; returns before it finishes |
+| `resume_eval_run`                 | **write** | push a sweep nothing is driving — one tick of its persisted plan     |
+| `cancel_eval_run`                 | **write** | stop a sweep that is still launching cells. Keeps the verdicts it has |
 | `create_agent`                    | **write** | a new agent, model/tools/capabilities preflighted. Starts at v1, referenced by nothing |
-| `update_agent_draft`              | **write** | replace an agent's unsaved draft. Never publishes                   |
+| `update_agent_draft`              | **write** | replace an agent's unsaved draft, preflighted; or restore one with `fromVersion`. Never publishes |
+| `discard_agent_draft`             | **write** | drop the draft; says what was lost                                  |
+| `update_agent`                    | **write** | rename or restyle an agent. Cosmetic; no version created            |
+| `triage_feedback`                 | **write** | acknowledge a complaint and write the staff-only resolution note    |
 | `run_agent_preview`               | **write** | one throwaway run of an agent. **Every tool simulated**             |
-| `patch_workflow_draft`            | **write** | named ops on a workflow's draft — set a tool arg, an edge, a label. Lints the result |
-| `update_workflow_draft`           | **write** | replace a workflow's draft graph outright                           |
+| `retry_run`                       | **write** | re-execute a finished run — `restart` on latest, or `resume` the original version. **Real side effects** |
+| `create_workflow`                 | **write** | a new workflow: the chosen trigger wired to an Output, published as v1 |
+| `update_workflow`                 | **write** | rename, or archive/restore — archiving is how a workflow is retired    |
+| `patch_workflow_draft`            | **write** | named ops on a workflow's draft — add a node, set a tool arg, an edge, a progress note, a retry policy. Reaches into iteration subgraphs. Lints the result |
+| `update_workflow_draft`           | **write** | replace a workflow's draft graph outright, or roll it back with `fromVersion` |
 | `publish_workflow`                | **write** | the draft → a new version. Refused on a lint error or a stale `baseVersionNumber` |
 | `discard_workflow_draft`          | **write** | drop the draft; says what was lost                                  |
-| `update_description`              | **write** | rewrite what a workflow, agent, Goal or Sample is *for*. Unversioned; changes nothing a run does |
+| `update_description`              | **write** | rewrite what a workflow, agent, Goal or Sample is *for*, or a run's triage note. Unversioned; changes nothing a run does |
 
 `run_eval` and `run_agent_preview` are writes not because they edit a definition
 but because they **spend money** — which is the line the flag is actually
@@ -1482,7 +1500,7 @@ turns that into something visible one line after causing it.
 
 **Authoring evals is what the write scope is for.** `create_eval_set` /
 `upsert_eval_sample` / `delete_eval_sample` let a model turn what it just read in
-a trace into a Goal that runs tomorrow. Two details make generated Samples land
+a trace into a Goal that runs tomorrow. Four details make generated Samples land
 clean rather than half-right:
 
 - A Sample's `input` is a discriminated union with exactly one legal variant per
@@ -1495,6 +1513,22 @@ clean rather than half-right:
 - That preflight also refuses a target that doesn't exist. `wf_eval_set.targetId`
   is an opaque string with no foreign key, so without it a hallucinated id stores
   a Goal that fails only when someone runs it.
+- **Two fields are keyed against the target, so the contract carries those too.**
+  `tools.fixtures` is keyed by tool id and a judge's `path` addresses a field of
+  the declared output — and a fixture on a tool the agent doesn't have is simply
+  dead, while a `path` that doesn't resolve grades `undefined` and reads as a
+  wrong answer. Both validate, store and are never reported, which is the
+  ART-146 failure class. So `target` also returns `toolIds` and `outputSchema`,
+  and the write lints what was authored against them.
+- **Editing a Sample is a PATCH.** An omitted `input` / `tools` / `checks` keeps
+  what the row already holds. It used to reset them: `upsert_eval_sample({ id,
+  setId, name })` — the obvious way to rename a Sample — blanked its input, its
+  tools and **every check on it**, and a 0-check Sample grades as `error`, so the
+  loss surfaced in the next report as an infrastructure problem rather than as a
+  deleted test. Fixed at the single write boundary (`upsertEvalRow`), so the
+  read-back-and-merge `update_description` was doing by hand is now the default
+  everywhere. Clear a field by passing its empty value. The reply's `replaced`
+  names what the call actually overwrote.
 
 **Mining samples from real runs.** `draft_sample_from_run` converts one run into
 a draft Sample and returns it without writing — the model reviews it, rewrites
@@ -1521,15 +1555,31 @@ those two tools:
   `run_eval` returns the `evalRunId` the moment the umbrella run row exists
   (`onStart`) and the model polls `get_eval_run`. Same behavior as the launch
   dialog, whose report page is a poller.
-- **The orchestration runs in the caller's process.** End the MCP session
-  mid-sweep and the remaining cells are never launched and the run is never
-  finalized — it sits at `running` forever, exactly as when a browser tab is
-  closed. The tool's `next` says so.
+- **The sweep outlives the caller.** The plan is persisted on the run row, so
+  ending the MCP session mid-sweep doesn't strand it: the host's resume backstop
+  drives whatever is left, exactly as it does for a closed browser tab. (This
+  paragraph used to claim the opposite, which was true only before plans were
+  persisted.) On a host with no backstop wired, `resume_eval_run` is the manual
+  equivalent — one tick per call — and `cancel_eval_run` stops one that should
+  never have been launched, keeping the verdicts it already has.
 - **`error` is not `fail`.** A `fail` is the target answering wrongly; an `error`
   is the run never producing an answer to grade — provider refused, wrapper timed
   out, the circuit breaker skipped the rest. So `passRate` is computed over
   **graded** cells only and the errored ones are listed separately with their
   messages. Rolled together, an outage reads as a total regression.
+- **The roll-up is complete even when the list isn't.** `get_eval_run` bounds its
+  `results` at 60 rows worst-first (page with `offset`, narrow with `status` /
+  `modelId` / `promptLabel`), but `summary`, `cost` and the `matrix` block are
+  computed over every cell — so "which model won?" and "what did this cost?" stay
+  answerable on a sweep larger than the page. `matrix` carries one row per
+  model × prompt cell plus the `bestAccuracy` / `cheapest` / `fastest` winners,
+  from the same arithmetic the console's grid uses (`eval/report.ts`).
+- **The judge is pinnable, and worth pinning.** Unpinned it is the host's
+  `evalJudgeModelId` or else whatever sorts first in the enabled catalog — so
+  enabling a model can silently re-grade a whole suite, and the drift report will
+  attribute the move to the agent. `run_eval`'s `judgeModelId` freezes it onto
+  the plan, so every cell (including the ones a later driver picks up) is graded
+  the same way.
 - **Drift has two axes and they are reported apart.** `previousSnapshotHash`
   compares the Sample's own definition, so it catches an edited check and is
   structurally blind to the target agent being republished under a floating

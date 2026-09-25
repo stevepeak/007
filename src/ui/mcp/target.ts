@@ -1,46 +1,17 @@
-// Which deployment the connect snippets point at, and which parts of them this
-// page is in a position to know.
+// The stand-in origin for a page that has no window to read.
 //
-// Split out of the component because the answer has a real failure mode and
-// deserves tests: render a placeholder as though it were real and someone
-// pastes a hostname that does not exist into a client config, then reads a
-// connection error with nothing to connect it to.
+// 007 is whitelabeled: it has no idea what anyone's deployed hostname is, and
+// guessing would be worse than a placeholder, because a wrong URL that looks
+// plausible gets pasted into a client config and then fails to resolve with
+// nothing to connect the error to. `example.com` is reserved by RFC 2606
+// precisely so it cannot be somebody's real host.
+//
+// This used to back a development/production picker, which offered one real URL
+// beside one invented one. The page now shows only the deployment serving it —
+// the one it can actually know — so the placeholder is reached in exactly one
+// case: a host that server-renders this page, where there is no origin yet.
 
-/** Which deployment the snippets point at. */
-export type Target = 'development' | 'production'
-
-/**
- * Stand-ins for the origin this page cannot know.
- *
- * 007 is whitelabeled: it has no idea what anyone's deployed hostname is, and
- * guessing would be worse than a placeholder, because a wrong URL that looks
- * plausible gets pasted. `example.com` is reserved by RFC 2606 precisely so it
- * cannot resolve to somebody's real host.
- */
-export const PLACEHOLDER: Record<Target, string> = {
+export const PLACEHOLDER = {
   development: 'http://localhost:3000',
   production: 'https://your-deployment.example.com',
-}
-
-/** Is the origin this page is being read on a local dev server? */
-export function isLocalOrigin(origin: string): boolean {
-  return /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::|$)/.test(origin)
-}
-
-/**
- * The base URL for a target, and whether it is real.
- *
- * Exactly one target is ever knowable: the deployment serving this page. The
- * other is a placeholder by necessity, and saying which is which is the whole
- * point of the picker.
- */
-export function resolveTarget(
-  target: Target,
-  origin: string,
-): { url: string; known: boolean } {
-  const local = isLocalOrigin(origin)
-  const isCurrent = target === (local ? 'development' : 'production')
-  return isCurrent
-    ? { url: origin, known: true }
-    : { url: PLACEHOLDER[target], known: false }
-}
+} as const

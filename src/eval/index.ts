@@ -67,6 +67,16 @@ export {
   type EvalPlan,
 } from './plan'
 export {
+  agentCallTotals,
+  buildMatrixSummary,
+  cellKey,
+  isMatrixRun,
+  mean,
+  type AgentCallTotals,
+  type MatrixCell,
+  type MatrixSummary,
+} from './report'
+export {
   MAX_CONSECUTIVE_CELL_ERRORS,
   tickEvalRun,
   type EvalRunDrive,

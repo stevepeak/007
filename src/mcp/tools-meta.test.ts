@@ -196,3 +196,51 @@ describe('update_description on a Sample', () => {
     expect(wrote).toBe(false)
   })
 })
+
+describe('update_description — a run’s triage note', () => {
+  // An MCP triage session used to leave no trace on the run it investigated: the
+  // finding lived only in a chat transcript, while `list_runs.search` reads the
+  // note.
+  test('writes the note and reports what it replaced', async () => {
+    let seen: unknown
+    const client = stubClient({
+      getRun: async () => { return ({
+          run: {
+            id: 'run_1',
+            workflowName: 'Legal chat',
+            note: 'looks like a 429',
+          },
+          steps: [],
+          logs: [],
+        }) as never },
+      setRunNote: async (input) => {
+        seen = input
+        return { ok: true as const }
+      },
+    })
+    const result = (await tool().run(client, {
+      kind: 'run',
+      id: 'run_1',
+      description: 'Venice rate limit; retried on v29 and it passed.',
+    })) as { kind: string; before: string; after: string; name: string }
+    expect(seen).toEqual({
+      runId: 'run_1',
+      note: 'Venice rate limit; retried on v29 and it passed.',
+    })
+    expect(result.kind).toBe('run')
+    // Not attributed and not private — the last write wins, so what it replaced
+    // is worth showing.
+    expect(result.before).toBe('looks like a 429')
+    expect(result.name).toBe('Legal chat')
+  })
+
+  test('a missing run is a refusal, not a silent no-op', async () => {
+    const client = stubClient({ getRun: async () => null })
+    const result = (await tool().run(client, {
+      kind: 'run',
+      id: 'nope',
+      description: 'x',
+    })) as { error: string }
+    expect(result.error).toContain('No run found')
+  })
+})

@@ -12,7 +12,7 @@ import type {
 } from '../server/protocol'
 
 import type { WfMcpTool } from './tools'
-import { agentWriteTools } from './tools-agents'
+import { agentReadTools, agentWriteTools } from './tools-agents'
 
 /**
  * These three tools are the only ones in the catalog that create or change an
@@ -21,7 +21,9 @@ import { agentWriteTools } from './tools-agents'
  */
 
 function toolNamed(name: string): WfMcpTool {
-  const found = agentWriteTools().find((t) => t.name === name)
+  const found = [...agentReadTools(), ...agentWriteTools()].find(
+    (t) => t.name === name,
+  )
   if (!found) throw new Error(`no such tool: ${name}`)
   return found
 }
@@ -229,10 +231,30 @@ describe('create_agent', () => {
 describe('update_agent_draft', () => {
   const tool = toolNamed('update_agent_draft')
 
+  /**
+   * Every stub here carries the model + tool catalogs now: the draft write runs
+   * the same preflight `create_agent` does. It used to pass `config` straight
+   * through with a cast, so a bogus modelId or an unregistered toolId saved
+   * cleanly and failed on the first real run — and this is the tool used for
+   * every edit AFTER the first, which made it the likeliest way for an
+   * MCP-authored agent to break.
+   */
+  const draftClient = (over: Partial<WfDataClient> = {}) => { return stubClient({
+      // The fixture's own model has to be in the catalog now, which is the
+      // preflight working: an id the catalog does not know is refused.
+      listModels: async () => [
+        ...models(),
+        { id: published.modelId, label: 'Fixture', capabilities: { tools: true } },
+      ],
+      listTools: async () => tools(),
+      getAgent: async () => detail(),
+      updateAgentDraft: async () => {},
+      ...over,
+    }) }
+
   test('writes the draft and never the published version', async () => {
     const calls: unknown[] = []
-    const client = stubClient({
-      getAgent: async () => detail(),
+    const client = draftClient({
       updateAgentDraft: async (input) => {
         calls.push(input)
       },
@@ -247,7 +269,13 @@ describe('update_agent_draft', () => {
       ok: boolean
     }
     expect(result.ok).toBe(true)
-    expect(calls).toEqual([{ agentId: 'a1', config }])
+    expect(calls).toHaveLength(1)
+    // The PARSED config is what is written — the preflight fills every default,
+    // so this is no longer byte-identical to what was sent.
+    expect((calls[0] as { agentId: string }).agentId).toBe('a1')
+    expect(
+      (calls[0] as { config: { prompt: string } }).config.prompt,
+    ).toBe('Be very brief.')
   })
 
   // The failure this exists to catch: `updateAgentDraft` REPLACES the draft, so
@@ -255,10 +283,7 @@ describe('update_agent_draft', () => {
   // something wrong in a way nothing else reports. The write still succeeds —
   // the receipt is what makes the loss visible one line after causing it.
   test('names every field that now differs from the published version', async () => {
-    const client = stubClient({
-      getAgent: async () => detail(),
-      updateAgentDraft: async () => {},
-    })
+    const client = draftClient()
     const { maxTurns: _dropped, ...withoutMaxTurns } = published
     const result = (await tool.run(client, {
       agentId: 'a1',
@@ -269,9 +294,8 @@ describe('update_agent_draft', () => {
   })
 
   test('an agent that was never published has nothing to diff against', async () => {
-    const client = stubClient({
+    const client = draftClient({
       getAgent: async () => detail({ currentVersion: null }),
-      updateAgentDraft: async () => {},
     })
     const result = (await tool.run(client, {
       agentId: 'a1',
@@ -461,5 +485,490 @@ describe('run_agent_preview', () => {
     // dropped downstream would render as an empty variable.
     expect(sent[0]?.promptVariables).toEqual({ matter: 'M-1' })
     expect(sent[0]?.input).toBeUndefined()
+  })
+})
+
+describe('update_agent_draft — the preflight it used to skip', () => {
+  const client = (over: Partial<WfDataClient> = {}) => { return stubClient({
+      listModels: async () => models(),
+      listTools: async () => tools(),
+      getAgent: async () => detail(),
+      updateAgentDraft: async () => {
+        throw new Error('must not reach the write')
+      },
+      ...over,
+    }) }
+
+  // This is the tool used for every edit AFTER the first, so it was the likeliest
+  // way for an MCP-authored agent to break: the config saved cleanly and failed
+  // on the first real run.
+  test('refuses a modelId the catalog does not know, and writes nothing', async () => {
+    const result = (await toolNamed('update_agent_draft').run(client(), {
+      agentId: 'a1',
+      config: { ...published, modelId: 'qwen' },
+    })) as { error: string }
+    expect(result.error).toContain('composite')
+  })
+
+  test('refuses an unregistered toolId', async () => {
+    const result = (await toolNamed('update_agent_draft').run(client(), {
+      agentId: 'a1',
+      config: {
+        ...published,
+        modelId: 'venice:qwen',
+        toolIds: ['search_the_moon'],
+      },
+    })) as { error: string }
+    expect(result.error).toContain('search_the_moon')
+  })
+
+  test('refuses a model that cannot do what the config needs', async () => {
+    const result = (await toolNamed('update_agent_draft').run(client(), {
+      agentId: 'a1',
+      config: {
+        ...published,
+        modelId: 'venice:tiny',
+        toolIds: ['search_matters'],
+      },
+    })) as { error: string }
+    expect(result.error).toContain('no tool calling')
+  })
+})
+
+describe('update_agent_draft — the fields nothing prompts for', () => {
+  const withSubAgents = {
+    ...published,
+    subAgents: {
+      targets: [{ kind: 'agent', id: 'a2', version: null }],
+      maxConcurrent: 2,
+      maxSpawns: 4,
+      allowStopSignal: true,
+    },
+  }
+
+  const client = (over: Partial<WfDataClient> = {}) => { return stubClient({
+      listModels: async () => [
+        ...models(),
+        { id: published.modelId, label: 'Fixture', capabilities: { tools: true } },
+      ],
+      listTools: async () => tools(),
+      getAgent: async () => { return detail({ draft: { config: withSubAgents as never } }) },
+      updateAgentDraft: async () => {},
+      ...over,
+    }) }
+
+  // The headline data loss: a model that never learned `subAgents` exists reads
+  // the config, edits the prompt, re-sends — and zod backfills an EMPTY
+  // whitelist, so the omission is invisible one line later.
+  test('warns when the payload silently drops the sub-agent whitelist', async () => {
+    const { subAgents: _gone, ...withoutSubAgents } = withSubAgents
+    const result = (await toolNamed('update_agent_draft').run(client(), {
+      agentId: 'a1',
+      config: { ...withoutSubAgents, prompt: 'Be terser.' },
+    })) as { removed: string[]; warning: string }
+    expect(result.removed).toContain('subAgents')
+    expect(result.warning).toContain('DROPPED')
+  })
+
+  test('says nothing when the payload carries every field it had', async () => {
+    const result = (await toolNamed('update_agent_draft').run(client(), {
+      agentId: 'a1',
+      config: { ...withSubAgents, prompt: 'Be terser.' },
+    })) as { removed: string[]; warning?: string }
+    expect(result.removed).toEqual([])
+    expect(result.warning).toBeUndefined()
+  })
+})
+
+describe('update_agent_draft — fromVersion', () => {
+  test('restores a published version into the draft', async () => {
+    const writes: { config: { prompt: string } }[] = []
+    const old = { ...published, prompt: 'The old wording.' }
+    const client = stubClient({
+      getAgent: async () => detail(),
+      listAgentVersions: async () => { return [
+          { id: 'v1', versionNumber: 1 },
+          { id: 'v2', versionNumber: 2 },
+        ] as never },
+      getAgentVersion: async () => ({ config: old, versionNumber: 1 }),
+      updateAgentDraft: async (input) => {
+        writes.push(input)
+      },
+    })
+    const result = (await toolNamed('update_agent_draft').run(client, {
+      agentId: 'a1',
+      fromVersion: 1,
+    })) as { restoredFrom: number }
+    expect(result.restoredFrom).toBe(1)
+    expect(writes[0]?.config.prompt).toBe('The old wording.')
+  })
+
+  test('names the versions that exist when the number is wrong', async () => {
+    const client = stubClient({
+      getAgent: async () => detail(),
+      listAgentVersions: async () => [{ id: 'v2', versionNumber: 2 }] as never,
+    })
+    const result = (await toolNamed('update_agent_draft').run(client, {
+      agentId: 'a1',
+      fromVersion: 9,
+    })) as { error: string }
+    expect(result.error).toContain('no published version 9')
+    expect(result.error).toContain('2')
+  })
+
+  test('refuses config and fromVersion together', async () => {
+    const result = (await toolNamed('update_agent_draft').run(stubClient({}), {
+      agentId: 'a1',
+      config: published,
+      fromVersion: 1,
+    })) as { error: string }
+    expect(result.error).toContain('not both')
+  })
+})
+
+describe('list_agent_versions', () => {
+  const client = (over: Partial<WfDataClient> = {}) => { return stubClient({
+      getAgent: async () => detail(),
+      listAgentVersions: async () => { return [
+          {
+            id: 'v1',
+            versionNumber: 1,
+            changeNote: 'first',
+            aiSummaryShort: 'Initial',
+            aiSummaryLong: null,
+            createdAt: 1,
+            publishedAt: 1,
+          },
+          {
+            id: 'v2',
+            versionNumber: 2,
+            changeNote: 'tightened the refusal',
+            aiSummaryShort: 'Refuses harder',
+            aiSummaryLong: null,
+            createdAt: 2,
+            publishedAt: 2,
+          },
+        ] as never },
+      ...over,
+    }) }
+
+  // "When did this regress" / "what did the last publish change" — unanswerable
+  // before, while the workflow twin had answered it all along.
+  test('lists the history newest first, marking what is live', async () => {
+    const out = (await toolNamed('list_agent_versions').run(client(), {
+      agentId: 'a1',
+    })) as {
+      live: number
+      versions: { versionNumber: number; summary: string | null }[]
+    }
+    expect(out.versions.map((v) => v.versionNumber)).toEqual([2, 1])
+    expect(out.versions[0]?.summary).toBe('Refuses harder')
+  })
+
+  test('drills into one version’s immutable config', async () => {
+    const out = (await toolNamed('list_agent_versions').run(
+      client({
+        getAgentVersion: async () => ({
+          config: { ...published, prompt: 'v1 wording' },
+          versionNumber: 1,
+        }),
+      }),
+      { agentId: 'a1', versionNumber: 1 },
+    )) as { config: { prompt: string }; isLive: boolean }
+    expect(out.config.prompt).toBe('v1 wording')
+    expect(out.isLive).toBe(false)
+  })
+
+  test('says so when an agent has never been published', async () => {
+    const out = (await toolNamed('list_agent_versions').run(
+      client({ listAgentVersions: async () => [] }),
+      { agentId: 'a1' },
+    )) as { note: string }
+    expect(out.note).toContain('never been published')
+  })
+})
+
+describe('list_agent_calls', () => {
+  function call(over: Record<string, unknown> = {}) {
+    return {
+      runId: 'run_1',
+      nodeId: 'n1',
+      callCount: 1,
+      itemIndexes: [],
+      status: 'completed',
+      error: null,
+      failedCount: 0,
+      startedAt: 1,
+      finishedAt: 2,
+      durationMs: 1,
+      workflowId: 'w1',
+      workflowName: 'Intake',
+      versionNumber: 3,
+      model: 'qwen',
+      agentVersion: 2,
+      turns: 4,
+      inputTokens: 100,
+      outputTokens: 50,
+      costUsd: 0.01,
+      toolCalls: [{ toolId: 'search_matters', count: 3 }],
+      stoppedOnTokenBudget: false,
+      stoppedOnContextLimit: false,
+      subAgentName: null,
+      ...over,
+    }
+  }
+
+  // The finding this exists to surface: the agent did not decide to stop, it ran
+  // out of room — which otherwise reads as a prompt problem.
+  test('counts the calls that ran out of room, and names the lever', async () => {
+    const client = stubClient({
+      listAgentCalls: async () => { return [call({ stoppedOnTokenBudget: true }), call()] as never },
+    })
+    const out = (await toolNamed('list_agent_calls').run(client, {
+      agentId: 'a1',
+    })) as {
+      stoppedEarly: { onTokenBudget: number }
+      note: string
+      calls: { toolCalls: unknown[] }[]
+    }
+    expect(out.stoppedEarly.onTokenBudget).toBe(1)
+    expect(out.note).toContain('toolTokenBudget')
+    expect(out.note).toContain('not the prompt')
+    expect(out.calls[0]?.toolCalls).toEqual([
+      { toolId: 'search_matters', count: 3 },
+    ])
+  })
+
+  // "Never run" and "run and broken" are different answers.
+  test('distinguishes an agent nothing has used', async () => {
+    const client = stubClient({ listAgentCalls: async () => [] })
+    const out = (await toolNamed('list_agent_calls').run(client, {
+      agentId: 'a1',
+    })) as { note: string }
+    expect(out.note).toContain('never run in a real workflow')
+  })
+})
+
+describe('discard_agent_draft', () => {
+  test('names what was thrown away', async () => {
+    let discarded = false
+    const client = stubClient({
+      getAgent: async () => { return detail({
+          draft: { config: { ...published, prompt: 'A bad idea.' } },
+        }) },
+      discardAgentDraft: async () => {
+        discarded = true
+      },
+    })
+    const out = (await toolNamed('discard_agent_draft').run(client, {
+      agentId: 'a1',
+    })) as { discarded: string[]; note: string }
+    expect(discarded).toBe(true)
+    expect(out.discarded).toEqual(['prompt'])
+    expect(out.note).toContain('published version is unchanged')
+  })
+
+  test('is a no-op when there is no draft', async () => {
+    let discarded = false
+    const client = stubClient({
+      getAgent: async () => detail(),
+      discardAgentDraft: async () => {
+        discarded = true
+      },
+    })
+    const out = (await toolNamed('discard_agent_draft').run(client, {
+      agentId: 'a1',
+    })) as { note: string }
+    expect(out.note).toContain('no draft to discard')
+    expect(discarded).toBe(false)
+  })
+})
+
+describe('update_agent', () => {
+  test('renames and reports which workflows show the new name', async () => {
+    let seen: unknown
+    const client = stubClient({
+      getAgent: async () => { return detail({
+          agent: {
+            id: 'a1',
+            name: 'Intake',
+            workflows: [{ id: 'w1', name: 'Legal chat' }],
+          } as never,
+        }) },
+      updateAgentMeta: async (input) => {
+        seen = input
+      },
+    })
+    const out = (await toolNamed('update_agent').run(client, {
+      agentId: 'a1',
+      name: 'Conflict checker',
+      icon: 'scale',
+    })) as { before: { name: string }; referencedBy: string[]; note: string }
+    expect(seen).toEqual({
+      agentId: 'a1',
+      name: 'Conflict checker',
+      icon: 'scale',
+      color: undefined,
+    })
+    expect(out.before.name).toBe('Intake')
+    expect(out.referencedBy).toEqual(['Legal chat'])
+    expect(out.note).toContain('no version was created')
+  })
+
+  test('refuses a call that would change nothing', async () => {
+    const out = (await toolNamed('update_agent').run(stubClient({}), {
+      agentId: 'a1',
+    })) as { error: string }
+    expect(out.error).toContain('at least one of')
+  })
+})
+
+describe('triage_feedback', () => {
+  const row = {
+    subjectId: 'msg_1',
+    rating: 'down' as const,
+    runId: 'run_1',
+    acknowledgedAt: null,
+    internalNote: null,
+  }
+
+  // The loop this closes: the queue never drained, so the same complaint was
+  // re-triaged next session.
+  test('acknowledges and writes the resolution note in one call', async () => {
+    const calls: Record<string, unknown>[] = []
+    const client = stubClient({
+      getFeedbackForSubjects: async () => [row] as never,
+      setFeedbackAcknowledged: async (input) => {
+        calls.push({ ack: input })
+        return { ok: true as const }
+      },
+      setFeedbackInternalNote: async (input) => {
+        calls.push({ note: input })
+        return { ok: true as const }
+      },
+    })
+    const out = (await toolNamed('triage_feedback').run(client, {
+      subjectId: 'msg_1',
+      acknowledged: true,
+      internalNote: 'Venice rate limit; sample added to the refusal goal.',
+    })) as { before: { acknowledged: boolean }; note: string }
+    expect(calls).toHaveLength(2)
+    expect(out.before.acknowledged).toBe(false)
+    expect(out.note).toContain('outstanding queue')
+  })
+
+  // An empty note is the documented way to clear one, and `optString` would read
+  // it as absent.
+  test('clears the note with an empty string', async () => {
+    let seen: unknown
+    const client = stubClient({
+      getFeedbackForSubjects: async () => { return [{ ...row, internalNote: 'stale' }] as never },
+      setFeedbackInternalNote: async (input) => {
+        seen = input
+        return { ok: true as const }
+      },
+    })
+    await toolNamed('triage_feedback').run(client, {
+      subjectId: 'msg_1',
+      internalNote: '',
+    })
+    expect(seen).toEqual({ subjectId: 'msg_1', note: null })
+  })
+
+  // Neither setter checks that the row exists, so a wrong id would update zero
+  // rows and answer ok.
+  test('refuses a subjectId with no feedback rather than no-opping', async () => {
+    let wrote = false
+    const client = stubClient({
+      getFeedbackForSubjects: async () => [],
+      setFeedbackAcknowledged: async () => {
+        wrote = true
+        return { ok: true as const }
+      },
+    })
+    const out = (await toolNamed('triage_feedback').run(client, {
+      subjectId: 'nope',
+      acknowledged: true,
+    })) as { error: string }
+    expect(out.error).toContain('not the run')
+    expect(wrote).toBe(false)
+  })
+
+  test('refuses a call that would change nothing', async () => {
+    const out = (await toolNamed('triage_feedback').run(stubClient({}), {
+      subjectId: 'msg_1',
+    })) as { error: string }
+    expect(out.error).toContain('nothing else this tool changes')
+  })
+})
+
+describe('run_agent_preview — a conversation agent', () => {
+  const chatConfig = { ...published, inputKind: 'conversation' as const }
+
+  /** The shape `summarizePreview` reads — `meta`, not a bare step list. */
+  const previewResult = () => { return ({
+      output: { text: 'ok' },
+      meta: {
+        model: 'qwen',
+        steps: [],
+        totalUsage: { inputTokens: 1, outputTokens: 1 },
+        stoppedOnTokenBudget: false,
+        stoppedOnContextLimit: false,
+      },
+    }) as never }
+
+  test('passes the thread through as prior turns', async () => {
+    let seen: Record<string, unknown> = {}
+    const client = stubClient({
+      getAgent: async () => { return detail({ currentVersion: { id: 'v1', versionNumber: 1, config: chatConfig } }) },
+      runAgentPreview: async (input) => {
+        seen = input
+        return previewResult()
+      },
+    })
+    const out = (await toolNamed('run_agent_preview').run(client, {
+      agentId: 'a1',
+      input: 'And the deadline?',
+      messages: [
+        { role: 'user', text: 'What is the statute?' },
+        { role: 'assistant', text: 'Section 12.' },
+      ],
+    })) as { turnsSeeded: number }
+    // For a conversation agent the THREAD is the input; a single string tests it
+    // under conditions it never sees in production.
+    expect(seen.messages).toHaveLength(2)
+    expect(out.turnsSeeded).toBe(2)
+  })
+
+  test('drops a malformed turn rather than sending it', async () => {
+    let seen: Record<string, unknown> = {}
+    const client = stubClient({
+      getAgent: async () => { return detail({ currentVersion: { id: 'v1', versionNumber: 1, config: chatConfig } }) },
+      runAgentPreview: async (input) => {
+        seen = input
+        return previewResult()
+      },
+    })
+    await toolNamed('run_agent_preview').run(client, {
+      agentId: 'a1',
+      input: 'hi',
+      messages: [{ role: 'system', text: 'nope' }, { role: 'user' }],
+    })
+    expect(seen.messages).toBeUndefined()
+  })
+
+  // The handler ignores `messages` for a task agent, so without this it would be
+  // a silently-discarded argument and the reader would assume the thread counted.
+  test('warns that a task agent ignored the turns', async () => {
+    const client = stubClient({
+      getAgent: async () => detail(),
+      runAgentPreview: async () => previewResult(),
+    })
+    const out = (await toolNamed('run_agent_preview').run(client, {
+      agentId: 'a1',
+      input: 'hi',
+      messages: [{ role: 'user', text: 'ignored' }],
+    })) as { warning: string }
+    expect(out.warning).toContain('IGNORED')
   })
 })

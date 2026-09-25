@@ -94,6 +94,13 @@ export type RunEvalInput = {
    * present, every sample is run for each (model × prompt × attempt) cell.
    */
   matrix?: { models: EvalMatrixModel[]; prompts: EvalMatrixPrompt[] }
+  /**
+   * Pin the model every JUDGE check is graded by, for this sweep only. Omitted →
+   * the host's `evalJudgeModelId`, and failing that whatever sorts first in the
+   * enabled catalog — which means enabling a model can silently re-grade a suite.
+   * Frozen into the plan so a resuming driver grades by the same judge.
+   */
+  judgeModelId?: string
   concurrency?: number
   pollIntervalMs?: number
   timeoutMs?: number
@@ -131,6 +138,7 @@ export async function createEvalSweep(
     configOverride: input.configOverride,
     concurrency: clampConcurrency(input.concurrency),
     timeoutMs: input.timeoutMs ?? EVAL_WAIT_TIMEOUT_MS,
+    judgeModelId: input.judgeModelId,
   }
 
   const { evalRunId } = await client.createEvalRun({

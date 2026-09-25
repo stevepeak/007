@@ -128,6 +128,35 @@ export const EVAL_CHECK_TYPES: EvalCheckType[] = evalCheckSchema.options.map(
   (o) => o.shape.type.value,
 )
 
+/**
+ * Every check type as `type { field, optional? }`, derived from the union.
+ *
+ * For the writers that have to DESCRIBE the vocabulary in prose rather than
+ * render it as a picker — the MCP's `upsert_eval_sample`, whose description is
+ * the only thing telling a model what a check may contain.
+ *
+ * It exists because that description drifted exactly as {@link EVAL_CHECK_TYPES}
+ * was built to prevent: it hardcoded six types and missed `decision_judge`
+ * entirely, along with both judges' `modelId` and the decision judge's
+ * `threshold` — so the one check type built to produce a legible borderline
+ * verdict could not be authored over MCP at all. A picker deriving from the
+ * schema can't forget a type; a paragraph can, so the paragraph is generated.
+ *
+ * `?` marks a field the author declared `.optional()`, not merely one whose type
+ * tolerates `undefined` — `value` on a match check is spelled `z.unknown()` and
+ * would otherwise read as optional while a check without it compares against
+ * nothing.
+ */
+export function describeCheckVocabulary(): string[] {
+  return evalCheckSchema.options.map((option) => {
+    const shape = option.shape as Record<string, { def: { type: string } }>
+    const fields = Object.keys(shape)
+      .filter((key) => key !== 'type')
+      .map((key) => (shape[key].def.type === 'optional' ? `${key}?` : key))
+    return `${option.shape.type.value} { ${fields.join(', ')} }`
+  })
+}
+
 /** The subjective check types — the ones that need a provider to reach a verdict. */
 export const JUDGE_CHECK_TYPES = ['llm_judge', 'decision_judge'] as const
 export type JudgeCheckType = (typeof JUDGE_CHECK_TYPES)[number]

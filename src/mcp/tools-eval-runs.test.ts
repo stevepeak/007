@@ -469,16 +469,38 @@ describe('get_eval_run — bounding a matrix report', () => {
 
 describe('run_eval — bounding the sweep', () => {
   const setWith = (rows: number) => ({
-    set: { id: 'set_1', name: 'Goal', rowCount: rows },
+    set: { id: 'set_1', name: 'Goal', targetKind: 'agent', targetId: 'ag_1' },
     rows: Array.from({ length: rows }, (_, i) => ({
       id: `row_${i}`,
       archived: false,
     })),
   })
 
+  /**
+   * A catalog the gate can read. Every named model has to EXIST before the cell
+   * arithmetic is even reached now — an id that isn't in the catalog would fail
+   * at the provider in every cell of its column and read as an outage.
+   */
+  const catalogStubs = (
+    ids: string[] = ['a', 'b', 'c'],
+  ): Partial<WfDataClient> => ({
+    listModels: async () => { return ids.map((id) => ({
+        id,
+        label: id,
+        capabilities: {
+          tools: true,
+          structuredOutput: true,
+          reasoning: true,
+          webSearch: true,
+        },
+      })) },
+    listAgents: async () => [] as never,
+  })
+
   test('refuses a sweep over the cell cap and launches nothing', async () => {
     let created = false
     const client = stubClient({
+      ...catalogStubs(),
       getEvalSet: async () => setWith(20) as never,
       createEvalRun: async () => {
         created = true
@@ -499,6 +521,7 @@ describe('run_eval — bounding the sweep', () => {
   test('counts prompt variations as columns, baseline included', async () => {
     const client = stubClient({
       ...driveStubs(),
+      ...catalogStubs(),
       getEvalSet: async () => setWith(30) as never,
       // Started cells never reach a terminal status, so the assertion is about
       // the arithmetic rather than about a sweep of sixty stubbed runs
@@ -860,5 +883,515 @@ describe('run_eval — grading an unsaved draft', () => {
     })) as { launched: { target: string } }
     expect(started[0]?.config).toBeUndefined()
     expect(out.launched.target).toContain('published')
+  })
+})
+
+describe('get_eval_run — the matrix roll-up', () => {
+  /** A matrix cell's worth of results: {model × prompt} with cost + tokens. */
+  const cell = (
+    modelId: string,
+    promptLabel: string,
+    over: { status?: 'pass' | 'fail'; costUsd?: number; tokens?: number },
+  ) => { return result({
+      rowId: `row_${modelId}_${promptLabel}`,
+      modelId,
+      promptLabel,
+      attempt: 0,
+      status: over.status ?? 'pass',
+      runStats: {
+        totalTokens: over.tokens ?? 1000,
+        costUsd: over.costUsd ?? 0.01,
+        models: [modelId],
+        durationMs: 1000,
+        agentVersion: 3,
+      },
+    }) }
+
+  const sweep = [
+    cell('cheap', 'saved', { costUsd: 0.001, tokens: 2000 }),
+    cell('pricey', 'saved', { costUsd: 0.05, tokens: 500 }),
+    cell('pricey', 'terser', { costUsd: 0.05, status: 'fail' }),
+  ]
+
+  // A sweep's whole question. `run_eval` caps at 100 cells and this list is
+  // bounded at 60, so before the roll-up "which model won?" was not merely
+  // unaggregated — the answer could be outside the payload entirely.
+  test('answers which cell won on accuracy, cost and speed', async () => {
+    const client = stubClient({
+      getEvalRun: async () => detail({ results: sweep }),
+    })
+    const out = (await toolNamed('get_eval_run').run(client, {
+      evalRunId: 'er_1',
+    })) as {
+      matrix: {
+        modelAxis: string[]
+        promptAxis: string[]
+        cells: { modelId: string; passed: number; total: number }[]
+        bestAccuracy: string
+        cheapest: string
+        fastest: string
+      }
+    }
+    expect(out.matrix.modelAxis).toEqual(['cheap', 'pricey'])
+    expect(out.matrix.promptAxis).toEqual(['saved', 'terser'])
+    expect(out.matrix.cells).toHaveLength(3)
+    // Keys are `"<modelId> <promptLabel>"` — joinable back to the rows.
+    expect(out.matrix.cheapest).toBe('cheap saved')
+    // 2000 tokens in 1s beats 500 in 1s.
+    expect(out.matrix.fastest).toBe('cheap saved')
+    // The failing cell can't win accuracy.
+    expect(out.matrix.bestAccuracy).not.toBe('pricey terser')
+  })
+
+  test('reports what the sweep spent', async () => {
+    const client = stubClient({
+      getEvalRun: async () => detail({ results: sweep }),
+    })
+    const out = (await toolNamed('get_eval_run').run(client, {
+      evalRunId: 'er_1',
+    })) as { cost: { totalUsd: number; measuredCells: number } }
+    expect(out.cost.totalUsd).toBeCloseTo(0.101, 6)
+    expect(out.cost.measuredCells).toBe(3)
+  })
+
+  test('omits the matrix on a plain run, where there is nothing to compare', async () => {
+    const client = stubClient({
+      getEvalRun: async () => detail({ results: [result({})] }),
+    })
+    const out = (await toolNamed('get_eval_run').run(client, {
+      evalRunId: 'er_1',
+    })) as { matrix?: unknown }
+    expect(out.matrix).toBeUndefined()
+  })
+
+  // The roll-up must describe the RUN, not the filtered view — otherwise a
+  // status filter would crown the best of the failures.
+  test('computes the roll-up over every cell even when the list is filtered', async () => {
+    const client = stubClient({
+      getEvalRun: async () => detail({ results: sweep }),
+    })
+    const out = (await toolNamed('get_eval_run').run(client, {
+      evalRunId: 'er_1',
+      status: 'fail',
+    })) as {
+      matrix: { cells: unknown[] }
+      cost: { measuredCells: number }
+      results: unknown[]
+    }
+    expect(out.results).toHaveLength(1)
+    expect(out.matrix.cells).toHaveLength(3)
+    expect(out.cost.measuredCells).toBe(3)
+  })
+})
+
+describe('get_eval_run — narrowing and paging', () => {
+  const many = Array.from({ length: 70 }, (_, i) => { return result({
+      id: `res_${i}`,
+      rowId: `row_${i}`,
+      status: i < 5 ? 'fail' : 'pass',
+      modelId: i % 2 === 0 ? 'even' : 'odd',
+    }) },
+  )
+
+  test('pages past the first window rather than dropping the tail', async () => {
+    const client = stubClient({ getEvalRun: async () => detail({ results: many }) })
+    const first = (await toolNamed('get_eval_run').run(client, {
+      evalRunId: 'er_1',
+    })) as {
+      results: unknown[]
+      resultsWindow: { offset: number; shown: number; matched: number }
+      note: string
+    }
+    expect(first.results).toHaveLength(60)
+    expect(first.resultsWindow).toEqual({ offset: 0, shown: 60, matched: 70 })
+    expect(first.note).toContain('offset: 60')
+
+    const second = (await toolNamed('get_eval_run').run(client, {
+      evalRunId: 'er_1',
+      offset: 60,
+    })) as { results: unknown[]; resultsWindow: { offset: number } }
+    // The ten a `note` used to swallow.
+    expect(second.results).toHaveLength(10)
+    expect(second.resultsWindow.offset).toBe(60)
+  })
+
+  test('filters by model id', async () => {
+    const client = stubClient({ getEvalRun: async () => detail({ results: many }) })
+    const out = (await toolNamed('get_eval_run').run(client, {
+      evalRunId: 'er_1',
+      modelId: 'odd',
+    })) as { resultsWindow: { matched: number } }
+    expect(out.resultsWindow.matched).toBe(35)
+  })
+
+  test('a filter that matches nothing names what was available', async () => {
+    const client = stubClient({ getEvalRun: async () => detail({ results: many }) })
+    const out = (await toolNamed('get_eval_run').run(client, {
+      evalRunId: 'er_1',
+      modelId: 'nope',
+    })) as { error: string; available: { modelIds: string[] } }
+    expect(out.error).toContain('match those filters')
+    expect(out.available.modelIds.sort()).toEqual(['even', 'odd'])
+  })
+})
+
+describe('get_eval_run — what a verdict carries', () => {
+  test('keeps a decision judge’s raw probability beside its pass', async () => {
+    const client = stubClient({
+      getEvalRun: async () => { return detail({
+          results: [
+            result({
+              snapshot: snapshot('Borderline', [
+                { type: 'decision_judge', rubric: 'Is it grounded?', threshold: 0.5 },
+              ]),
+              checkResults: [
+                { pass: true, probability: 0.52, reason: 'p=0.52 ≥ 0.50' },
+              ],
+            }),
+          ],
+        }) },
+    })
+    const out = (await toolNamed('get_eval_run').run(client, {
+      evalRunId: 'er_1',
+    })) as { results: { checks: { probability: number; pass: boolean }[] }[] }
+    // 0.52 and 0.99 are both a pass and only one of them is worth looking at.
+    // Recovering it by string-parsing `reason` is not a contract.
+    expect(out.results[0]?.checks[0]?.probability).toBe(0.52)
+    expect(out.results[0]?.checks[0]?.pass).toBe(true)
+  })
+
+  test('says which Goal each verdict belongs to', async () => {
+    const withGoal = result({})
+    withGoal.snapshot = {
+      row: { name: 'Sample', description: null, input: {}, tools: {}, checks: { op: 'and', checks: [] } },
+      target: { setId: 'set_7', setName: 'Refusal cases' },
+    } as never
+    const client = stubClient({
+      getEvalRun: async () => detail({ results: [withGoal] }),
+    })
+    const out = (await toolNamed('get_eval_run').run(client, {
+      evalRunId: 'er_1',
+    })) as { results: { goalId: string; goal: string }[] }
+    // `run_eval` takes setIds PLURAL — without this a multi-goal report cannot
+    // say which goal regressed.
+    expect(out.results[0]?.goalId).toBe('set_7')
+    expect(out.results[0]?.goal).toBe('Refusal cases')
+  })
+})
+
+describe('run_eval — gating the models before spending anything', () => {
+  const oneSampleSet = {
+    set: { id: 'set_1', name: 'Goal', targetKind: 'agent', targetId: 'ag_1' },
+    rows: [{ id: 'row_0', archived: false }],
+  }
+
+  const modelCatalog = (
+    models: { id: string; capabilities?: Record<string, boolean> }[],
+  ): Partial<WfDataClient> => ({
+    listModels: async () => { return models.map((m) => ({
+        id: m.id,
+        label: m.id,
+        capabilities: m.capabilities ?? {
+          tools: true,
+          structuredOutput: true,
+          reasoning: true,
+        },
+      })) },
+  })
+
+  test('refuses an id that is not in the catalog, and launches nothing', async () => {
+    let created = false
+    const client = stubClient({
+      ...modelCatalog([{ id: 'venice:llama' }]),
+      listAgents: async () => [] as never,
+      getEvalSet: async () => oneSampleSet as never,
+      createEvalRun: async () => {
+        created = true
+        return { evalRunId: 'er_1' }
+      },
+    })
+    const out = (await toolNamed('run_eval').run(client, {
+      setIds: ['set_1'],
+      // The provider-native half of a composite id — the exact mistake
+      // `list_models` exists to prevent, which used to fail at the provider
+      // after the sweep had launched.
+      models: ['llama'],
+    })) as { error: string }
+    expect(out.error).toContain('llama')
+    expect(out.error).toContain('list_models')
+    expect(created).toBe(false)
+  })
+
+  test('refuses a model the target agent is known to fail on', async () => {
+    let created = false
+    const client = stubClient({
+      ...modelCatalog([
+        { id: 'a:no-tools', capabilities: { tools: false, structuredOutput: true } },
+      ]),
+      // The agent has tools attached, so its model must be able to call them.
+      listAgents: async () => { return [{ id: 'ag_1', modelRequirements: { tools: true } }] as never },
+      getEvalSet: async () => oneSampleSet as never,
+      createEvalRun: async () => {
+        created = true
+        return { evalRunId: 'er_1' }
+      },
+    })
+    const out = (await toolNamed('run_eval').run(client, {
+      setIds: ['set_1'],
+      models: ['a:no-tools'],
+    })) as { error: string; requirements: unknown }
+    // Every cell of that column would error, three in a row latch the circuit
+    // breaker, and the report reads as an outage.
+    expect(out.error).toContain('no tool calling')
+    expect(out.requirements).toEqual({ tools: true })
+    expect(created).toBe(false)
+  })
+
+  test('does not gate a model whose capabilities are unknown', async () => {
+    const client = stubClient({
+      ...driveStubs(),
+      // No `capabilities` at all — the pre-refresh fallback list. Unknown is not
+      // the same as known-to-lack.
+      listModels: async () => [{ id: 'a:mystery', label: 'Mystery' }] as never,
+      listAgents: async () => { return [{ id: 'ag_1', modelRequirements: { tools: true } }] as never },
+      getEvalSet: async () => oneSampleSet as never,
+      startEvalRun: async () => ({ wfRunId: 'run_1' }),
+      getRunStatus: async () => ({ status: 'running', error: null }) as never,
+    })
+    const out = (await toolNamed('run_eval').run(client, {
+      setIds: ['set_1'],
+      models: ['a:mystery'],
+    })) as { evalRunId?: string; error?: string }
+    expect(out.error).toBeUndefined()
+    expect(out.evalRunId).toBe('er_1')
+  })
+
+  test('an unreadable catalog means "cannot check", not "refuse everything"', async () => {
+    const client = stubClient({
+      ...driveStubs(),
+      listModels: async () => {
+        throw new Error('catalog down')
+      },
+      getEvalSet: async () => oneSampleSet as never,
+      startEvalRun: async () => ({ wfRunId: 'run_1' }),
+      getRunStatus: async () => ({ status: 'running', error: null }) as never,
+    })
+    const out = (await toolNamed('run_eval').run(client, {
+      setIds: ['set_1'],
+      models: ['a:anything'],
+    })) as { evalRunId?: string; error?: string }
+    expect(out.error).toBeUndefined()
+    expect(out.evalRunId).toBe('er_1')
+  })
+})
+
+describe('run_eval — per-model attempts and the judge pin', () => {
+  const setWithRows = (n: number) => ({
+    set: { id: 'set_1', name: 'Goal', targetKind: 'agent', targetId: 'ag_1' },
+    rows: Array.from({ length: n }, (_, i) => ({ id: `row_${i}`, archived: false })),
+  })
+
+  const stubs = (over: Partial<WfDataClient> = {}) => {
+    let plan: { cells: unknown[]; judgeModelId?: string } | null = null
+    return {
+      client: stubClient({
+        createEvalRun: async (input: { plan?: unknown }) => {
+          plan = input.plan as typeof plan
+          return { evalRunId: 'er_1' }
+        },
+        getEvalRunDrive: async () => null,
+        listModels: async () => { return [
+            { id: 'baseline', label: 'b', capabilities: {} },
+            { id: 'candidate', label: 'c', capabilities: {} },
+          ] as never },
+        listAgents: async () => [] as never,
+        getEvalSet: async () => setWithRows(2) as never,
+        ...over,
+      }),
+      planOf: () => plan,
+    }
+  }
+
+  // "Best-of-5 on the candidate, 1 on the baseline" is the natural variance
+  // experiment, and uniform attempts multiply the whole matrix instead.
+  test('varies attempts per model instead of across the whole sweep', async () => {
+    const { client, planOf } = stubs()
+    const out = (await toolNamed('run_eval').run(client, {
+      setIds: ['set_1'],
+      models: ['baseline', 'candidate'],
+      attemptsByModel: { candidate: 5 },
+    })) as {
+      launched: { cellsPerSample: number; attemptsPerModel: Record<string, number> }
+    }
+    expect(out.launched.attemptsPerModel).toEqual({
+      baseline: 1,
+      candidate: 5,
+    })
+    // 1 baseline attempt + 5 candidate attempts, one prompt column each.
+    expect(out.launched.cellsPerSample).toBe(6)
+    // 2 samples × 6 = 12 cells, well under the cap a uniform 5 would have
+    // pushed toward.
+    expect(planOf()?.cells).toHaveLength(12)
+  })
+
+  test('ignores an override for a model that is not in the sweep', async () => {
+    const { client } = stubs()
+    const out = (await toolNamed('run_eval').run(client, {
+      setIds: ['set_1'],
+      models: ['baseline'],
+      attemptsByModel: { notInTheSweep: 9 },
+    })) as { launched: { attemptsPerModel: Record<string, number> } }
+    expect(out.launched.attemptsPerModel).toEqual({ baseline: 1 })
+  })
+
+  // The judge is the measuring instrument: unpinned it is whatever sorts first
+  // in the enabled catalog, so enabling a model silently re-grades a suite and
+  // the drift report blames the agent.
+  test('freezes the judge onto the plan so a resuming driver grades the same way', async () => {
+    const { client, planOf } = stubs()
+    const out = (await toolNamed('run_eval').run(client, {
+      setIds: ['set_1'],
+      judgeModelId: 'venice:judge',
+    })) as { launched: { judge: string } }
+    expect(planOf()?.judgeModelId).toBe('venice:judge')
+    expect(out.launched.judge).toBe('venice:judge')
+  })
+
+  test('says plainly when the judge is unpinned', async () => {
+    const { client } = stubs()
+    const out = (await toolNamed('run_eval').run(client, {
+      setIds: ['set_1'],
+    })) as { launched: { judge: string } }
+    expect(out.launched.judge).toContain('unpinned')
+  })
+})
+
+describe('resume_eval_run', () => {
+  test('ticks a stalled sweep and reports what moved', async () => {
+    let ticked = 0
+    let results = 1
+    const client = stubClient({
+      getEvalRun: async () => { return detail({
+          status: 'running',
+          total: 4,
+          results: Array.from({ length: results }, (_, i) => { return result({ id: `res_${i}`, rowId: `row_${i}` }) },
+          ),
+        }) },
+      getEvalRunDrive: async (evalRunId: string) => {
+        ticked += 1
+        results = 2
+        return {
+          evalRunId,
+          status: 'running',
+          plan: parseEvalPlan({
+            version: 1,
+            cells: [{ rowId: 'row_0' }, { rowId: 'row_1' }],
+            concurrency: 1,
+            timeoutMs: 1000,
+          }),
+          driveState: EMPTY_DRIVE_STATE,
+          settledKeys: [],
+        }
+      },
+      saveEvalRunDrive: async () => ({ ok: true as const }),
+      startEvalRun: async () => ({ wfRunId: 'run_1' }),
+      getRunStatus: async () => ({ status: 'running', error: null }) as never,
+    })
+    const out = (await toolNamed('resume_eval_run').run(client, {
+      evalRunId: 'er_1',
+    })) as { done: boolean; progressedBy: number; next: string }
+    expect(ticked).toBeGreaterThan(0)
+    expect(out.done).toBe(false)
+    expect(out.progressedBy).toBe(1)
+    expect(out.next).toContain('resume_eval_run again')
+  })
+
+  test('changes nothing on a run that already finished', async () => {
+    let drove = false
+    const client = stubClient({
+      getEvalRun: async () => detail({ results: [], status: 'completed' }),
+      getEvalRunDrive: async () => {
+        drove = true
+        return null
+      },
+    })
+    const out = (await toolNamed('resume_eval_run').run(client, {
+      evalRunId: 'er_1',
+    })) as { done: boolean; note: string }
+    expect(out.done).toBe(true)
+    expect(out.note).toContain('already complete')
+    expect(drove).toBe(false)
+  })
+
+  test('will not restart a cancelled sweep', async () => {
+    const client = stubClient({
+      getEvalRun: async () => detail({ results: [], status: 'cancelled' }),
+    })
+    const out = (await toolNamed('resume_eval_run').run(client, {
+      evalRunId: 'er_1',
+    })) as { done: boolean; note: string }
+    expect(out.done).toBe(true)
+    expect(out.note).toContain('cancelled')
+  })
+
+  test('explains a pre-plan run rather than surfacing a stack', async () => {
+    const client = stubClient({
+      getEvalRun: async () => detail({ results: [], status: 'running' }),
+      getEvalRunDrive: async (evalRunId: string) => ({
+        evalRunId,
+        status: 'running',
+        // The permanent condition: created before plans were persisted.
+        plan: null,
+        driveState: EMPTY_DRIVE_STATE,
+        settledKeys: [],
+      }),
+    })
+    const out = (await toolNamed('resume_eval_run').run(client, {
+      evalRunId: 'er_1',
+    })) as { error: string }
+    expect(out.error).toContain('no plan')
+  })
+
+  test('a missing run is an answer, not a throw', async () => {
+    const client = stubClient({ getEvalRun: async () => null })
+    const out = (await toolNamed('resume_eval_run').run(client, {
+      evalRunId: 'nope',
+    })) as { error: string }
+    expect(out.error).toContain('No eval run found')
+  })
+})
+
+describe('cancel_eval_run', () => {
+  test('stops a sweep and says what it kept', async () => {
+    const client = stubClient({
+      cancelEvalRun: async () => ({
+        cancelled: true,
+        status: 'cancelled',
+        settled: 12,
+        total: 100,
+      }),
+    })
+    const out = (await toolNamed('cancel_eval_run').run(client, {
+      evalRunId: 'er_1',
+    })) as { cancelled: boolean; note: string }
+    expect(out.cancelled).toBe(true)
+    // The 88 that were never launched are the money this tool saves.
+    expect(out.note).toContain('12 of 100')
+  })
+
+  test('reports a no-op rather than implying it stopped something', async () => {
+    const client = stubClient({
+      cancelEvalRun: async () => ({
+        cancelled: false,
+        status: 'completed',
+        settled: 4,
+        total: 4,
+      }),
+    })
+    const out = (await toolNamed('cancel_eval_run').run(client, {
+      evalRunId: 'er_1',
+    })) as { cancelled: boolean; note: string }
+    expect(out.cancelled).toBe(false)
+    expect(out.note).toContain('already "completed"')
   })
 })
