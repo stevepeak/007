@@ -56,12 +56,18 @@ export function createCountingStep(
       const value = Reflect.get(target, prop, receiver) as unknown
       if (typeof value !== 'function') return value
       const fn = value as (...args: unknown[]) => unknown
-      if (!COUNTED.has(prop as string)) return fn.bind(target)
+      // `Reflect.apply`, never `fn.apply` / `fn.bind`: the runtime can hand us
+      // `step` as an RPC stub, whose methods are stubs too, so reading `.apply`
+      // off one is itself an RPC call — to a method named "apply" the receiver
+      // does not implement. `Reflect.apply` invokes the function directly.
+      if (!COUNTED.has(prop as string)) {
+        return (...args: unknown[]) => Reflect.apply(fn, target, args)
+      }
       return (...args: unknown[]) => {
         // Counted on CALL, not on completion: a step that throws was still
         // issued, still journaled, and still billed.
         counters.steps++
-        return fn.apply(target, args)
+        return Reflect.apply(fn, target, args)
       }
     },
   })
