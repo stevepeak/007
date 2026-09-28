@@ -1,7 +1,8 @@
 import { Check, Copy } from 'lucide-react'
-import { Fragment, type ReactNode, useState } from 'react'
+import { useState } from 'react'
 
 import { cn } from './cn'
+import { highlightCode } from './code/highlight'
 import { NoteMarkdown } from './editor/note-markdown'
 import { toText } from './to-text'
 
@@ -90,67 +91,10 @@ function TextBlock({ label, text }: { label: string; text: string }) {
   )
 }
 
-// ── JSON syntax highlighting ─────────────────────────────────────────────────
-// Tokenise the pretty-printed JSON string and wrap pieces in coloured spans.
-// Strings that are object keys (immediately followed by a colon) are tinted
-// differently from string values.
-const JSON_TOKEN_RE =
-  /("(?:\\.|[^"\\])*"(\s*:)?)|(\b-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)|(\btrue\b|\bfalse\b)|(\bnull\b)/g
-
-export function highlightJson(json: string): ReactNode[] {
-  const out: ReactNode[] = []
-  let last = 0
-  let key = 0
-  let m: RegExpExecArray | null
-  JSON_TOKEN_RE.lastIndex = 0
-  while ((m = JSON_TOKEN_RE.exec(json)) !== null) {
-    if (m.index > last) out.push(json.slice(last, m.index))
-    if (m[1] !== undefined) {
-      // String — a key when trailed by a colon, else a value.
-      if (m[2]) {
-        const str = m[1].slice(0, m[1].length - m[2].length)
-        out.push(
-          <Fragment key={key++}>
-            <span className="text-sky-700">{str}</span>
-            {m[2]}
-          </Fragment>,
-        )
-      } else {
-        out.push(
-          <span key={key++} className="text-green-700">
-            {m[1]}
-          </span>,
-        )
-      }
-    } else if (m[3] !== undefined) {
-      out.push(
-        <span key={key++} className="text-amber-700">
-          {m[3]}
-        </span>,
-      )
-    } else if (m[4] !== undefined) {
-      out.push(
-        <span key={key++} className="text-purple-700">
-          {m[4]}
-        </span>,
-      )
-    } else if (m[5] !== undefined) {
-      out.push(
-        <span key={key++} className="text-neutral-400">
-          {m[5]}
-        </span>,
-      )
-    }
-    last = m.index + m[0].length
-  }
-  if (last < json.length) out.push(json.slice(last))
-  return out
-}
-
 function JsonView({ value }: { value: unknown }) {
   return (
     <pre className="overflow-x-auto rounded bg-neutral-50 p-2 text-xs text-neutral-700">
-      {highlightJson(JSON.stringify(value, null, 2))}
+      {highlightCode(JSON.stringify(value, null, 2), 'json')}
     </pre>
   )
 }

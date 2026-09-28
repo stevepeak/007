@@ -2,12 +2,18 @@ import { Check, Copy } from 'lucide-react'
 import { useState } from 'react'
 
 import { cn } from '../cn'
+import { type CodeLanguage, highlightCode } from '../code/highlight'
 
 export type CodeBlockProps = {
   /** The literal text, copied verbatim — never re-derived from the DOM. */
   code: string
   /** Caption on the block's header bar, e.g. a filename. */
   caption?: string
+  /**
+   * Grammar to colour the snippet with. Omit for a snippet that isn't code in
+   * any language — a bare URL highlights as nothing but noise.
+   */
+  language?: CodeLanguage
   className?: string
 }
 
@@ -19,7 +25,12 @@ export type CodeBlockProps = {
  * reading the DOM back would hand the user whatever the browser decided to do
  * with the whitespace.
  */
-export function CodeBlock({ code, caption, className }: CodeBlockProps) {
+export function CodeBlock({
+  code,
+  caption,
+  language,
+  className,
+}: CodeBlockProps) {
   const [copied, setCopied] = useState(false)
 
   const copy = async () => {
@@ -59,7 +70,9 @@ export function CodeBlock({ code, caption, className }: CodeBlockProps) {
         </button>
       </div>
       <pre className="overflow-x-auto px-3 py-3 text-xs leading-relaxed text-neutral-800">
-        <code className="font-mono">{code}</code>
+        <code className="font-mono">
+          {language ? highlightCode(code, language) : code}
+        </code>
       </pre>
     </div>
   )

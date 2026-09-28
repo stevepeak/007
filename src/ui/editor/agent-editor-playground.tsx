@@ -20,8 +20,8 @@ import type {
 } from '../../server/protocol'
 import { WfAutoForm } from '../autoform/wf-auto-form'
 import { cn } from '../cn'
+import { highlightCode } from '../code/highlight'
 import { formatRelative, formatTimestamp } from '../cost'
-import { highlightJson } from '../data-view'
 import { useModels, useToolContextFields, useTools } from '../hooks'
 import { ContextField } from '../tool-context-field'
 import { Tooltip } from '../tooltip'
@@ -516,7 +516,7 @@ function PlaygroundResult({
           {textOutput == null ? (
             // Structured output → syntax-highlighted JSON.
             <pre className="whitespace-pre-wrap break-words font-mono">
-              {highlightJson(JSON.stringify(output, null, 2))}
+              {highlightCode(JSON.stringify(output, null, 2), 'json')}
             </pre>
           ) : verdict != null ? (
             // Yes/no verdict → a coloured token (green truthy, rose falsy).
@@ -652,8 +652,9 @@ function ToolCallLine({
             result
           </summary>
           <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-white px-2 py-1 font-mono text-[10px] text-neutral-600">
-            {highlightJson(
+            {highlightCode(
               clipped ? `${output.slice(0, MAX_RESULT_CHARS)}…` : output,
+              'json',
             )}
           </pre>
           {clipped ? (

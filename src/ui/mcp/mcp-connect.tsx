@@ -292,7 +292,7 @@ function ConnectSnippets({
 
       {client === 'cli' && (
         <>
-          <CodeBlock code={cli} caption="terminal" />
+          <CodeBlock code={cli} caption="terminal" language="bash" />
           <p className="text-xs text-neutral-500">
             Registers it for you in <em>this</em> directory. Add{' '}
             <code className="font-mono">--scope user</code> to register it for
@@ -315,7 +315,7 @@ function ConnectSnippets({
 
       {client === 'project' && (
         <>
-          <CodeBlock code={projectJson} caption=".mcp.json" />
+          <CodeBlock code={projectJson} caption=".mcp.json" language="json" />
           <p className="text-xs text-neutral-500">
             Checked in at the repo root, so everyone on the project gets the
             same server — and each of them authorizes as themselves the first

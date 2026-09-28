@@ -1,289 +1,45 @@
-import { Check, X } from 'lucide-react'
+import { Check, Undo2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
-import type {
-  EvalFixtures,
-  ToolOption,
-  WfEvalTargetKind,
-} from '../../server/protocol'
+import type { ToolOption } from '../../server/protocol'
 import {
   isPlainObject,
   sampleFromSchema,
   validateAgainstSchema,
 } from '../autoform/json-schema-provider'
-import { cn } from '../cn'
+import { CodeEditor } from '../code/code-editor'
+import { formatJson, parseJson } from '../code/json'
 import { useWfComponents } from '../context'
-import { useAgent, useTools } from '../hooks'
-import { toolChip } from '../tool-appearance'
-import { ToolIcon } from '../tool-icon'
 
-// Per-sample tool fixtures: a pinned output a tool returns under `simulate`, so a
-// run is deterministic and side-effect-free (e.g. a memory/search tool returns a
-// fixed value instead of executing). Stored in row.fixtures keyed by toolId — one
-// canned output per tool. The target agent is the goal's; only agent targets
-// today, so workflow "Mock Nodes" is a placeholder until workflow targets ship.
-export function MockToolsPanel({
-  targetId,
-  targetKind,
-  fixtures,
-  addOpen,
-  onAddOpenChange,
-  onChange,
-}: {
-  targetId: string
-  targetKind: WfEvalTargetKind
-  fixtures: EvalFixtures
-  /** Whether the add-mock tool picker is open (its trigger is in the header). */
-  addOpen: boolean
-  onAddOpenChange: (open: boolean) => void
-  onChange: (next: EvalFixtures) => void
-}) {
-  if (targetKind !== 'agent') {
-    return (
-      <p className="px-1 py-1 text-xs text-neutral-400">
-        Node mocks arrive with workflow targets.
-      </p>
-    )
-  }
-  return (
-    <AgentToolMocks
-      targetId={targetId}
-      fixtures={fixtures}
-      addOpen={addOpen}
-      onAddOpenChange={onAddOpenChange}
-      onChange={onChange}
-    />
-  )
-}
+// The mock a tool returns for one Sample: a pinned output it yields under
+// `simulate`, so a run is deterministic and side-effect free. Owned per tool by
+// the tool list in `eval-sample-tools.tsx` — which is why nothing here picks a
+// tool or keeps a fixture record. This is one tool's result, nothing else.
 
-function asRecord(v: unknown): Record<string, unknown> | undefined {
-  return v && typeof v === 'object' && !Array.isArray(v)
-    ? (v as Record<string, unknown>)
-    : undefined
-}
-
-function previewOutput(v: unknown): string {
-  try {
-    return JSON.stringify(v)
-  } catch {
-    return String(v)
-  }
-}
-
-function AgentToolMocks({
-  targetId,
-  fixtures,
-  addOpen,
-  onAddOpenChange,
-  onChange,
-}: {
-  targetId: string
-  fixtures: EvalFixtures
-  addOpen: boolean
-  onAddOpenChange: (open: boolean) => void
-  onChange: (next: EvalFixtures) => void
-}) {
-  const detail = useAgent(targetId)
-  const toolsQuery = useTools()
-
-  // Which tool's output editor is open (a toolId; null = none).
-  const [editing, setEditing] = useState<string | null>(null)
-
-  const toolIds = useMemo(() => {
-    return (
-      detail.data?.currentVersion?.config.toolIds ??
-      detail.data?.draft?.config.toolIds ??
-      []
-    )
-  }, [detail.data])
-  const byId = useMemo(
-    () => new Map((toolsQuery.data ?? []).map((t) => [t.id, t])),
-    [toolsQuery.data],
-  )
-  const agentTools = useMemo(() => {
-    return toolIds
-      .map((id) => byId.get(id))
-      .filter((t): t is ToolOption => !!t && t.kind === 'ai-tool')
-  }, [toolIds, byId])
-
-  const mockedIds = Object.keys(fixtures)
-  const available = agentTools.filter((t) => !mockedIds.includes(t.id))
-
-  const save = (toolId: string, output: Record<string, unknown>) => {
-    onChange({ ...fixtures, [toolId]: output })
-    setEditing(null)
-  }
-  const remove = (toolId: string) => {
-    const next = { ...fixtures }
-    delete next[toolId]
-    onChange(next)
-    if (editing === toolId) setEditing(null)
-  }
-
-  if (!targetId) {
-    return (
-      <p className="px-1 py-1 text-xs text-neutral-400">
-        This goal has no target agent yet — set one on the goal to mock its
-        tools.
-      </p>
-    )
-  }
-  // Not a QueryState ladder: the states here are domain gates (no target set,
-  // target has no tools) interleaved with two queries that must BOTH land, and
-  // neither query's data is what the body renders.
-  if (detail.isLoading || toolsQuery.isLoading) {
-    return <p className="px-1 py-1 text-xs text-neutral-400">Loading tools…</p>
-  }
-  if (agentTools.length === 0) {
-    return (
-      <p className="px-1 py-1 text-xs text-neutral-400">
-        The target agent has no tools to mock.
-      </p>
-    )
-  }
-
-  const editingTool = editing ? byId.get(editing) : undefined
-
-  return (
-    <div className="space-y-3">
-      <p className="px-1 text-xs text-neutral-400">
-        Pin a tool&apos;s output so this sample runs deterministically — under
-        simulate the tool returns your canned value instead of executing.
-      </p>
-
-      {mockedIds.length > 0 ? (
-        <div className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-neutral-200">
-          {mockedIds.map((toolId) => {
-            const tool = byId.get(toolId)
-            // Warn (but don't block) when a saved mock no longer matches the
-            // tool's output schema — mirrors the editor's warn-but-allow check.
-            const mismatch =
-              tool &&
-              !validateAgainstSchema(tool.outputSchema, fixtures[toolId]).ok
-            return (
-              <div key={toolId} className="flex items-start gap-2 px-4 py-3">
-                <span
-                  className={cn(
-                    'mt-0.5 flex size-5 shrink-0 items-center justify-center overflow-hidden rounded',
-                    toolChip(tool?.color ?? null),
-                  )}
-                >
-                  <ToolIcon
-                    icon={tool?.icon}
-                    iconName={tool?.iconName}
-                    iconUrl={tool?.iconUrl}
-                    className="size-3.5"
-                  />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm text-neutral-800">
-                      {tool?.name ?? toolId}
-                    </span>
-                    {!tool ? (
-                      <span className="shrink-0 text-xs text-amber-600">
-                        (not in agent)
-                      </span>
-                    ) : mismatch ? (
-                      <span
-                        className="shrink-0 text-xs text-amber-600"
-                        title="This mock doesn't match the tool's output schema."
-                      >
-                        (off-schema)
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="mt-0.5 truncate font-mono text-[11px] text-neutral-400">
-                    {previewOutput(fixtures[toolId])}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setEditing(toolId)}
-                  className="text-xs font-medium text-neutral-500 hover:text-neutral-800"
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  aria-label="Remove mock"
-                  onClick={() => remove(toolId)}
-                  className="text-neutral-300 transition hover:text-neutral-600"
-                >
-                  <X className="size-4" />
-                </button>
-              </div>
-            )
-          })}
-        </div>
-      ) : null}
-
-      {editingTool ? (
-        <div className="space-y-3 rounded-lg border border-neutral-200 p-4">
-          <div className="flex items-center gap-2">
-            <span
-              className={cn(
-                'flex size-5 shrink-0 items-center justify-center overflow-hidden rounded',
-                toolChip(editingTool.color),
-              )}
-            >
-              <ToolIcon
-                icon={editingTool.icon}
-                iconName={editingTool.iconName}
-                iconUrl={editingTool.iconUrl}
-                className="size-3.5"
-              />
-            </span>
-            <span className="text-sm font-medium text-neutral-800">
-              {editingTool.name}
-            </span>
-            <button
-              type="button"
-              onClick={() => setEditing(null)}
-              className="ml-auto text-xs font-medium text-neutral-500 hover:text-neutral-800"
-            >
-              Cancel
-            </button>
-          </div>
-          <MockOutputEditor
-            key={editingTool.id}
-            schema={editingTool.outputSchema}
-            initial={asRecord(fixtures[editingTool.id])}
-            onSave={(output) => save(editingTool.id, output)}
-          />
-        </div>
-      ) : (
-        <MockToolPicker
-          tools={available}
-          open={addOpen}
-          onPick={(toolId) => {
-            setEditing(toolId)
-            onAddOpenChange(false)
-          }}
-          onClose={() => onAddOpenChange(false)}
-        />
-      )}
-    </div>
-  )
-}
-
-// A raw-JSON editor for a tool's mocked output, seeded from the tool's output
-// schema so the author starts from its shape (`{ "memories": [{ "id":
-// "<string>", … }] }`) rather than a bare `{}`. It validates live against that
-// schema and *warns* on a mismatch but never blocks the save (a mock may be
-// deliberately malformed to test error handling) — only unparseable JSON, or a
-// non-object, blocks. Remounted per tool by its `key`, so the seed is computed
-// once from `initial`/the schema.
-function MockOutputEditor({
+// A JSON editor for a tool's mocked output, seeded from the tool's output schema
+// so the author starts from its shape (`{ "memories": [{ "id": "<string>", … }] }`)
+// rather than a bare `{}`. Syntax-highlighted as it is typed, and validated on
+// every keystroke: JSON that doesn't parse (or isn't an object) BLOCKS the save,
+// so a malformed fixture can never reach the row — the engine would hand the
+// model whatever survived the round trip, and a mock nobody can read is a run
+// nobody can explain. A schema *mismatch* only warns: a mock may be deliberately
+// off-shape to test the agent's error handling.
+//
+// Remounted per tool by its `key`, so the seed is computed once from
+// `initial`/the schema.
+export function MockOutputEditor({
   schema,
   initial,
   onSave,
+  onClear,
 }: {
   schema: ToolOption['outputSchema']
   initial: Record<string, unknown> | undefined
   onSave: (output: Record<string, unknown>) => void
+  /** Unpin — back to the template, and `{}` at run time. Omitted = nothing pinned. */
+  onClear?: () => void
 }) {
-  const { Button, Label, Textarea } = useWfComponents()
+  const { Button, Label } = useWfComponents()
   const [text, setText] = useState(() => {
     const seed =
       initial && Object.keys(initial).length > 0
@@ -299,17 +55,15 @@ function MockOutputEditor({
   // Live parse + validate: a JSON/shape error blocks the save; schema mismatches
   // are surfaced as non-blocking warnings.
   const { object, jsonError, warnings } = useMemo(() => {
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(text)
-    } catch {
+    const parsed = parseJson(text)
+    if (!parsed.ok) {
       return {
         object: null,
-        jsonError: 'Output must be valid JSON.',
+        jsonError: `Invalid JSON — ${parsed.error}`,
         warnings: [],
       }
     }
-    if (!isPlainObject(parsed)) {
+    if (!isPlainObject(parsed.value)) {
       return {
         object: null,
         jsonError: 'Output must be a JSON object.',
@@ -317,14 +71,16 @@ function MockOutputEditor({
       }
     }
     return {
-      object: parsed,
+      object: parsed.value,
       jsonError: null,
-      warnings: validateAgainstSchema(schema, parsed).errors,
+      warnings: validateAgainstSchema(schema, parsed.value).errors,
     }
   }, [text, schema])
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
+    // Guarded twice on purpose: the button is disabled, but Cmd+Enter submits
+    // the form directly.
     if (object) onSave(object)
   }
   function onKeyDown(e: React.KeyboardEvent<HTMLFormElement>) {
@@ -338,13 +94,20 @@ function MockOutputEditor({
     <form onSubmit={submit} onKeyDown={onKeyDown} className="space-y-3">
       <div className="space-y-1.5">
         <Label htmlFor="mock-output">Output (JSON)</Label>
-        <Textarea
+        <CodeEditor
           id="mock-output"
+          language="json"
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={setText}
+          onBlur={() => {
+            // Re-indent what parses, once the author stops typing. Pasted output
+            // arrives minified more often than not, and reformatting on every
+            // keystroke would move the caret out from under them.
+            const next = formatJson(text)
+            if (next !== null) setText(next)
+          }}
           rows={10}
-          spellCheck={false}
-          className="font-mono text-xs"
+          invalid={jsonError ? 'error' : false}
         />
       </div>
       {jsonError ? (
@@ -362,88 +125,18 @@ function MockOutputEditor({
           </ul>
         </div>
       ) : null}
-      <Button type="submit" disabled={!object}>
-        <Check className="size-4" />
-        Save mock
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button type="submit" disabled={!object}>
+          <Check className="size-4" />
+          Save mock
+        </Button>
+        {onClear ? (
+          <Button type="button" variant="ghost" size="sm" onClick={onClear}>
+            <Undo2 className="size-4" />
+            Unpin
+          </Button>
+        ) : null}
+      </div>
     </form>
-  )
-}
-
-// The agent's tools not yet mocked, shown when the header's "Add mock" trigger
-// is toggled on (`open`). Picking one opens its output editor (dedupe by toolId
-// enforces one mock per tool). Renders inline (in normal flow) rather than as an
-// absolute popover, so it can't be clipped by the StepFlow card's
-// `overflow-hidden`.
-function MockToolPicker({
-  tools,
-  open,
-  onPick,
-  onClose,
-}: {
-  tools: ToolOption[]
-  open: boolean
-  onPick: (toolId: string) => void
-  onClose: () => void
-}) {
-  if (!open) return null
-
-  if (tools.length === 0) {
-    return (
-      <p className="px-1 py-1 text-xs text-neutral-400">
-        Every tool the agent uses is already mocked.
-      </p>
-    )
-  }
-
-  return (
-    <div className="space-y-2 rounded-lg border border-neutral-200 p-2">
-      <div className="flex items-center justify-between px-1">
-        <span className="text-xs font-medium text-neutral-500">
-          Pick a tool to mock
-        </span>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-xs font-medium text-neutral-500 hover:text-neutral-800"
-        >
-          Cancel
-        </button>
-      </div>
-      <div className="max-h-72 overflow-y-auto">
-        {tools.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => onPick(t.id)}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-neutral-50"
-          >
-            <span
-              className={cn(
-                'flex size-5 shrink-0 items-center justify-center overflow-hidden rounded',
-                toolChip(t.color),
-              )}
-            >
-              <ToolIcon
-                icon={t.icon}
-                iconName={t.iconName}
-                iconUrl={t.iconUrl}
-                className="size-3.5"
-              />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium text-neutral-800">
-                {t.name}
-              </span>
-              {t.description ? (
-                <span className="block truncate text-xs text-neutral-400">
-                  {t.description}
-                </span>
-              ) : null}
-            </span>
-          </button>
-        ))}
-      </div>
-    </div>
   )
 }

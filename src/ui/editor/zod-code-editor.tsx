@@ -2,12 +2,18 @@ import { HelpCircle } from 'lucide-react'
 import { type ReactNode, useLayoutEffect, useRef, useState } from 'react'
 
 import { cn } from '../cn'
+import { CodeEditor } from '../code/code-editor'
 import { Popover } from '../popover'
 
-// A lightweight, dependency-free code editor for authoring an agent's structured
-// output as a Zod schema. It's a styled textarea plus a token-aware autocomplete
-// popup — no eval, no language server. The source is validated by the caller's
-// safe `compileZodSource` parser; this component just handles editing + completion.
+// A code editor for authoring an agent's structured output as a Zod schema: the
+// shared `CodeEditor` surface plus a token-aware autocomplete popup — no eval,
+// no language server. The source is validated by the caller's safe
+// `compileZodSource` parser; this component just handles editing + completion.
+//
+// The colours are `highlightCode`'s, over the `javascript` grammar. The Zod DSL
+// is a strict subset of JS, so a real grammar reads it — and reads a pasted
+// snippet — correctly, which the ~100-line lexer that used to live here only
+// approximated.
 
 type Completion = {
   label: string
@@ -56,117 +62,6 @@ const COMPLETIONS: Completion[] = [
     caretBack: 2,
   },
 ]
-
-// Node/JS keywords worth tinting. The Zod DSL is a strict subset of JS, but the
-// tokenizer stays generic so pasted snippets highlight sensibly too.
-const KEYWORDS = new Set([
-  'const',
-  'let',
-  'var',
-  'function',
-  'return',
-  'import',
-  'export',
-  'from',
-  'default',
-  'new',
-  'async',
-  'await',
-  'if',
-  'else',
-  'for',
-  'while',
-  'typeof',
-  'true',
-  'false',
-  'null',
-  'undefined',
-])
-
-type Token = { text: string; cls: string }
-
-// A tiny single-pass lexer for the JS/Zod subset — no library, no eval. It only
-// needs to be good enough to colorize; it never has to parse. Runs of plain
-// whitespace/punctuation are emitted verbatim so the overlay stays 1:1 with the
-// textarea's character grid.
-function tokenize(source: string): Token[] {
-  const out: Token[] = []
-  const n = source.length
-  let i = 0
-  const isIdentStart = (c: string) => /[A-Z_$]/i.test(c)
-  const isIdent = (c: string) => /[\w$]/.test(c)
-
-  while (i < n) {
-    const c = source[i]
-
-    // Line comment — `//` or `#` to end of line.
-    if ((c === '/' && source[i + 1] === '/') || c === '#') {
-      let j = c === '#' ? i + 1 : i + 2
-      while (j < n && source[j] !== '\n') j++
-      out.push({ text: source.slice(i, j), cls: 'text-neutral-400 italic' })
-      i = j
-      continue
-    }
-    // Block comment.
-    if (c === '/' && source[i + 1] === '*') {
-      let j = i + 2
-      while (j < n && !(source[j] === '*' && source[j + 1] === '/')) j++
-      j = Math.min(n, j + 2)
-      out.push({ text: source.slice(i, j), cls: 'text-neutral-400 italic' })
-      i = j
-      continue
-    }
-    // String / template literal (no interpolation parsing — colorized whole).
-    if (c === '"' || c === "'" || c === '`') {
-      let j = i + 1
-      while (j < n) {
-        if (source[j] === '\\') {
-          j += 2
-          continue
-        }
-        if (source[j] === c) {
-          j++
-          break
-        }
-        j++
-      }
-      out.push({ text: source.slice(i, j), cls: 'text-emerald-600' })
-      i = j
-      continue
-    }
-    // Number.
-    if (/\d/.test(c)) {
-      let j = i + 1
-      while (j < n && /[0-9._a-fx]/i.test(source[j])) j++
-      out.push({ text: source.slice(i, j), cls: 'text-amber-600' })
-      i = j
-      continue
-    }
-    // Identifier — classified by keyword / member / property-key context.
-    if (isIdentStart(c)) {
-      let j = i + 1
-      while (j < n && isIdent(source[j])) j++
-      const word = source.slice(i, j)
-      let k = j
-      while (k < n && (source[k] === ' ' || source[k] === '\t')) k++
-      const isKey = source[k] === ':'
-      let p = i - 1
-      while (p >= 0 && (source[p] === ' ' || source[p] === '\t')) p--
-      const isMember = source[p] === '.'
-      let cls = 'text-neutral-800'
-      if (KEYWORDS.has(word)) cls = 'text-purple-600'
-      else if (word === 'z' || isMember) cls = 'text-sky-600'
-      else if (isKey) cls = 'text-rose-600'
-      out.push({ text: word, cls })
-      i = j
-      continue
-    }
-    // Everything else (whitespace, punctuation) — verbatim, dimmed if visible.
-    out.push({ text: c, cls: /\s/.test(c) ? '' : 'text-neutral-400' })
-    i += 1
-  }
-  return out
-}
 
 export type ZodCodeEditorProps = {
   value: string
@@ -257,89 +152,47 @@ export function ZodCodeEditor({
 
   return (
     <div className="relative">
-      <div className="relative">
-        {/* Highlight layer doubles as the sizer: it sits in normal flow so its
-            height grows with the content (it holds the same wrapped text), and
-            the transparent textarea is floated on top of it. It shares the
-            textarea's box model (font, padding, wrapping) so tokens sit exactly
-            on top of the characters the author types. `min-h` keeps `rows` worth
-            of space when empty; the trailing newline keeps the last line clear. */}
-        <pre
-          aria-hidden
-          style={
-            readOnly
-              ? undefined
-              : { minHeight: `calc(${rows} * 1.625em + 1rem + 2px)` }
+      <CodeEditor
+        language="javascript"
+        textareaRef={ref}
+        value={value}
+        onChange={(next) => {
+          onChange(next)
+          // The caret has already moved with the input, so the completion list
+          // is refreshed off the live element rather than off `next`.
+          if (ref.current) refresh(ref.current)
+        }}
+        onKeyDown={(e) => {
+          if (!open || items.length === 0) return
+          if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            setActive((a) => (a + 1) % items.length)
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault()
+            setActive((a) => (a - 1 + items.length) % items.length)
+          } else if (e.key === 'Enter' || e.key === 'Tab') {
+            e.preventDefault()
+            accept(items[active])
+          } else if (e.key === 'Escape') {
+            e.preventDefault()
+            setOpen(false)
           }
-          className={cn(
-            'pointer-events-none m-0 whitespace-pre-wrap break-words rounded-md border border-transparent bg-neutral-50 px-3 py-2 font-mono text-xs leading-relaxed text-neutral-800',
-          )}
-        >
-          {value ? (
-            tokenize(value).map((t, i) => {
-              return t.cls ? (
-                <span key={i} className={t.cls}>
-                  {t.text}
-                </span>
-              ) : (
-                t.text
-              )
-            })
-          ) : placeholder ? (
-            <span className="text-neutral-400">{placeholder}</span>
-          ) : null}
-          {'\n'}
-        </pre>
-        <textarea
-          ref={ref}
-          value={value}
-          spellCheck={false}
-          // The Zod source is local to this editor (the config stores the
-          // COMPILED schema), so nothing upstream can restore a keystroke —
-          // native field undo is the only undo there is.
-          data-wf-undo="native"
-          readOnly={readOnly}
-          onChange={(e) => {
-            if (readOnly) return
-            onChange(e.target.value)
-            refresh(e.target)
-          }}
-          onKeyDown={(e) => {
-            if (!open || items.length === 0) return
-            if (e.key === 'ArrowDown') {
-              e.preventDefault()
-              setActive((a) => (a + 1) % items.length)
-            } else if (e.key === 'ArrowUp') {
-              e.preventDefault()
-              setActive((a) => (a - 1 + items.length) % items.length)
-            } else if (e.key === 'Enter' || e.key === 'Tab') {
-              e.preventDefault()
-              accept(items[active])
-            } else if (e.key === 'Escape') {
-              e.preventDefault()
-              setOpen(false)
-            }
-          }}
-          // Delay so a click on a suggestion (mousedown) still registers, then
-          // close the popup and let the parent format the committed source.
-          onBlur={() => {
-            return window.setTimeout(() => {
-              setOpen(false)
-              onBlur?.()
-            }, 120)
-          }}
-          className={cn(
-            'absolute inset-0 h-full w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded-md border bg-transparent px-3 py-2 font-mono text-xs leading-relaxed text-transparent outline-none',
-            readOnly
-              ? 'cursor-default border-neutral-200 caret-transparent'
-              : 'caret-neutral-800',
-            readOnly
-              ? undefined
-              : invalid
-                ? 'border-amber-400 focus:border-amber-500'
-                : 'border-neutral-300 focus:border-neutral-500',
-          )}
-        />
+        }}
+        // Delay so a click on a suggestion (mousedown) still registers, then
+        // close the popup and let the parent format the committed source.
+        onBlur={() => {
+          window.setTimeout(() => {
+            setOpen(false)
+            onBlur?.()
+          }, 120)
+        }}
+        readOnly={readOnly}
+        rows={readOnly ? undefined : rows}
+        placeholder={placeholder}
+        // Amber, not red: an uncompilable schema is still the author's work in
+        // progress, and the caller keeps it.
+        invalid={!readOnly && invalid ? 'warn' : false}
+      >
         {/* Sits above the (inset-0) textarea, so it stays clickable over the
             editing surface. */}
         {help ? (
@@ -366,7 +219,7 @@ export function ZodCodeEditor({
             {() => help}
           </Popover>
         ) : null}
-      </div>
+      </CodeEditor>
       {open ? (
         <ul className="absolute left-0 top-full z-10 mt-1 max-h-48 w-60 overflow-auto rounded-md border border-neutral-200 bg-white py-1 shadow-lg">
           {items.map((c, i) => (

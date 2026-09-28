@@ -1,6 +1,9 @@
 import { AlertTriangle, MessagesSquare, Plus, Wrench, X } from 'lucide-react'
+import { useState } from 'react'
 
 import type { SeededMessage, SeededToolCall } from '../../server/protocol'
+import { CodeEditor } from '../code/code-editor'
+import { parseJson } from '../code/json'
 import { useWfComponents } from '../context'
 import { useCommittedField } from '../use-committed-field'
 
@@ -189,9 +192,10 @@ function TurnCard({
 }
 
 // One staged tool interaction: the tool the assistant "called", the args it
-// used (optional), and the result it "saw". `args`/`output` are edited as raw
-// JSON and parsed leniently — unparseable text is stored as a string so a
-// half-typed value is never lost.
+// used (optional), and the result it "saw". `args`/`output` are edited as
+// highlighted JSON and parsed leniently — unparseable text is stored as a string
+// so a half-typed value is never lost, and the field says so once it's blurred
+// rather than letting a typo ride into the transcript unnoticed.
 function ToolCallEditor({
   call,
   onChange,
@@ -251,35 +255,56 @@ function JsonField({
   onChange: (next: unknown) => void
   onCommit: () => void
 }) {
-  const { Textarea } = useWfComponents()
+  const [focused, setFocused] = useState(false)
   const text =
     value === undefined
       ? ''
       : typeof value === 'string'
         ? value
         : safeStringify(value)
+  // `parseLoose` stores unparseable text verbatim, so a string here is either a
+  // half-typed document or a result the author meant as plain text. Both are
+  // kept — but say which one landed, so nobody discovers a stray trailing comma
+  // by reading the transcript the model was actually given. Only once the field
+  // is blurred: while typing, every keystroke is legitimately mid-JSON.
+  const staysText = !focused && typeof value === 'string' && value.trim() !== ''
+  const parsed = staysText ? parseJson(text) : null
+  const parseError = parsed && !parsed.ok ? parsed.error : null
+
   return (
     <div className="flex gap-2">
       <span className="w-12 shrink-0 pt-1.5 text-right font-mono text-[10px] uppercase text-neutral-400">
         {label}
       </span>
-      <Textarea
-        value={text}
-        placeholder={
-          label === 'args' ? '{ } (optional)' : '{ "chunks": [ … ] }'
-        }
-        onChange={(e) => onChange(parseLoose(e.target.value))}
-        onBlur={onCommit}
-        rows={2}
-        spellCheck={false}
-        className="flex-1 font-mono text-[11px]"
-      />
+      <div className="min-w-0 flex-1 space-y-1">
+        <CodeEditor
+          language="json"
+          aria-label={`Tool call ${label}`}
+          value={text}
+          placeholder={
+            label === 'args' ? '{ } (optional)' : '{ "chunks": [ … ] }'
+          }
+          rows={2}
+          onFocus={() => setFocused(true)}
+          onChange={(next) => onChange(parseLoose(next))}
+          onBlur={() => {
+            setFocused(false)
+            onCommit()
+          }}
+        />
+        {parseError ? (
+          <p className="text-[11px] text-amber-600">
+            Staged as plain text — not JSON ({parseError}).
+          </p>
+        ) : null}
+      </div>
     </div>
   )
 }
 
 // Parse JSON, but never throw: empty → undefined, invalid → the raw string.
-// Keeps a mid-edit value intact and lets an author paste plain text as a result.
+// Keeps a mid-edit value intact and lets an author paste plain text as a result
+// — `JsonField` flags which of the two happened once the field is blurred.
 function parseLoose(text: string): unknown {
   const trimmed = text.trim()
   if (!trimmed) return undefined
