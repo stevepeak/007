@@ -133,6 +133,13 @@ export type GraphRunContextInput = {
    * a fixture; write tools stay neutralized. See RunContext.
    */
   liveReads?: boolean
+  /**
+   * Per-tool override of {@link liveReads}, keyed by tool id. A Sample settles
+   * mocked-vs-live ONE TOOL AT A TIME — pin the search result and let the memory
+   * lookup hit real data — so this names the tools it has an opinion about and
+   * `liveReads` covers the rest.
+   */
+  toolModes?: Record<string, 'mocked' | 'live'>
   /** Eval synthesis signal — run every agent node with an empty tool set. See RunContext. */
   freezeTools?: boolean
   /** Eval matrix override — swaps an agent node's modelId/prompt. See RunContext. */

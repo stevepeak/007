@@ -130,8 +130,16 @@ export type SimulateContext = {
    * This is the only way a Sample grades the agent against live retrieval, so a
    * bad query or an empty corpus fails instead of being papered over by a canned
    * result. Never re-enables writes: `simulate` still governs those.
+   *
+   * The DEFAULT for a read tool `toolModes` says nothing about.
    */
   liveReads?: boolean
+  /**
+   * Per-tool override of {@link liveReads}, keyed by tool id — how an eval Sample
+   * says "replay this tool's pinned result, but let that one hit real data".
+   * A tool named here ignores `liveReads`; one that isn't takes it.
+   */
+  toolModes?: Record<string, 'mocked' | 'live'>
 }
 
 /**
@@ -146,9 +154,10 @@ export function simulatedToolOutput(
 ): { output: unknown } | undefined {
   if (!ctx?.simulate || !meta.sideEffect) return undefined
   if (meta.sideEffect === 'write') return { output: { simulated: true } }
-  // Reads run live only when explicitly asked to; the default stays the canned
-  // fixture, so `simulate` on its own never touches real data.
-  if (ctx.liveReads) return undefined
+  // Reads run live only when explicitly asked to — for this tool by name, else
+  // by the run-wide default — so `simulate` on its own never touches real data.
+  const mode = ctx.toolModes?.[meta.id]
+  if (mode === 'live' || (mode === undefined && ctx.liveReads)) return undefined
   return { output: ctx.fixtures?.[meta.id] ?? {} }
 }
 

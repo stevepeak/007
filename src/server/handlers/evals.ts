@@ -48,7 +48,6 @@ import type {
   WfEvalDriftChange,
   WfEvalRowDTO,
   WfEvalRunDrift,
-  WfEvalTargetKind,
 } from '../protocol'
 
 import { evalResultDTO, evalRunSummary, evalSetSummary } from './eval-dto'
@@ -56,7 +55,6 @@ import {
   BadRequestError,
   NotFoundError,
   requireHook,
-  requireStr,
   type CreateWfSdkHandlersOptions,
   type HandlerCtx,
   type WfHandlers,
@@ -181,16 +179,12 @@ export function buildEvalHandlers<TDeps>(
 > {
   return {
     listEvalSets: async (c) => {
-      const includeArchived = (c.params as { includeArchived?: boolean })
-        .includeArchived
-      const rows = await listEvalSets(c.db, { includeArchived })
+      const rows = await listEvalSets(c.db, c.params)
       return rows.map((r) => evalSetSummary(r, Number(r.rowCount)))
     },
 
     getEvalSet: async (c) => {
-      const setId = requireStr(c.params, 'setId')
-      const includeArchived =
-        (c.params as { includeArchived?: boolean }).includeArchived === true
+      const { setId, includeArchived } = c.params
       const result = await getEvalSet(c.db, setId, { includeArchived })
       if (!result) {
         return null
@@ -208,16 +202,11 @@ export function buildEvalHandlers<TDeps>(
     },
 
     createEvalSet: async (c) => {
-      const name = requireStr(c.params, 'name')
-      const targetId = requireStr(c.params, 'targetId')
-      const triggerKind = requireStr(c.params, 'triggerKind')
-      const p = c.params as {
-        description?: string
-        targetKind?: WfEvalTargetKind
-        targetVersion?: number | null
-      }
-      const targetKind: WfEvalTargetKind =
-        p.targetKind === 'workflow' ? 'workflow' : 'agent'
+      // `targetKind` used to be defaulted to 'agent' here, which quietly
+      // disagreed with the schema that has always REQUIRED it — the handler was
+      // defending against a value the dispatcher could not let through.
+      const { name, targetId, triggerKind, targetKind } = c.params
+      const p = c.params
       const setId = await createEvalSet(c.db, {
         name,
         description: p.description,
@@ -239,16 +228,8 @@ export function buildEvalHandlers<TDeps>(
     },
 
     updateEvalSet: async (c) => {
-      const setId = requireStr(c.params, 'setId')
-      const p = c.params as {
-        name?: string
-        description?: string | null
-        targetKind?: WfEvalTargetKind
-        targetId?: string
-        targetVersion?: number | null
-        triggerKind?: string
-        archived?: boolean
-      }
+      const p = c.params
+      const { setId } = p
       // Read first: a Goal has no version history, so this before-image is the
       // only record of what it used to say.
       const existing = await getEvalSet(c.db, setId)
@@ -280,7 +261,7 @@ export function buildEvalHandlers<TDeps>(
     },
 
     deleteEvalSet: async (c) => {
-      const setId = requireStr(c.params, 'setId')
+      const { setId } = c.params
       const existing = await getEvalSet(c.db, setId)
       await deleteEvalSet(c.db, setId)
       await c.change({
@@ -295,29 +276,28 @@ export function buildEvalHandlers<TDeps>(
     },
 
     upsertEvalRow: async (c) => {
-      const setId = requireStr(c.params, 'setId')
-      const name = requireStr(c.params, 'name')
-      const p = c.params as {
-        id?: string
-        description?: string | null
-        input?: WfEvalRowDTO['input']
-        tools?: WfEvalRowDTO['tools']
-        checks?: WfEvalRowDTO['checks']
-        sortOrder?: number
-      }
+      const p = c.params
+      const { setId, name } = p
       // A Sample carries the grading criteria and has no version history, so
       // the before-image here is the only way to see what a score was measured
       // against yesterday.
       const before = p.id ? ((await getEvalRow(c.db, p.id))?.row ?? null) : null
-      // The JSON payloads are validated inside `upsertEvalRow` (zod).
+      // `input` / `tools` / `checks` are the one place a cast survives this
+      // handler, and it is the honest kind: they are `PASSED_THROUGH` in the
+      // schema table on purpose (their real schemas live in `eval/checks`, and
+      // `upsertEvalRow` runs them — `evalSampleInputSchema.parse`,
+      // `parseEvalTools`, `checkTreeSchema.parse` — on the very next line it
+      // executes). So the value is genuinely `unknown` here and genuinely
+      // validated one call deeper; naming the shape twice is what this ticket
+      // is removing everywhere else.
       const rowId = await upsertEvalRow(c.db, {
         id: p.id,
         setId,
         name,
         description: p.description,
-        input: p.input,
-        tools: p.tools,
-        checks: p.checks,
+        input: p.input as WfEvalRowDTO['input'],
+        tools: p.tools as WfEvalRowDTO['tools'],
+        checks: p.checks as WfEvalRowDTO['checks'],
         sortOrder: p.sortOrder,
       })
       const after = (await getEvalRow(c.db, rowId))?.row ?? null
@@ -338,7 +318,7 @@ export function buildEvalHandlers<TDeps>(
     },
 
     deleteEvalRow: async (c) => {
-      const rowId = requireStr(c.params, 'rowId')
+      const { rowId } = c.params
       const existing = await getEvalRow(c.db, rowId)
       await deleteEvalRow(c.db, rowId)
       await c.change({
@@ -354,7 +334,7 @@ export function buildEvalHandlers<TDeps>(
     },
 
     restoreEvalRow: async (c) => {
-      const rowId = requireStr(c.params, 'rowId')
+      const { rowId } = c.params
       // `includeArchived`: the row being restored is archived by definition, so
       // the default read would report it as missing and lose the before-image.
       const existing = await getEvalRow(c.db, rowId, { includeArchived: true })
@@ -376,10 +356,8 @@ export function buildEvalHandlers<TDeps>(
     },
 
     createEvalRun: async (c) => {
-      const p = c.params as { setIds?: unknown; total?: number; plan?: unknown }
-      const setIds = Array.isArray(p.setIds)
-        ? p.setIds.filter((s): s is string => typeof s === 'string')
-        : []
+      const p = c.params
+      const { setIds } = p
       if (setIds.length === 0) {
         throw new Error('createEvalRun requires at least one set id.')
       }
@@ -400,7 +378,7 @@ export function buildEvalHandlers<TDeps>(
     },
 
     getEvalRunDrive: async (c) => {
-      const evalRunId = requireStr(c.params, 'evalRunId')
+      const { evalRunId } = c.params
       const found = await getEvalRunDrive(c.db, evalRunId)
       if (!found) return null
       return {
@@ -416,10 +394,9 @@ export function buildEvalHandlers<TDeps>(
     },
 
     saveEvalRunDrive: async (c) => {
-      const evalRunId = requireStr(c.params, 'evalRunId')
-      const p = c.params as { driveState?: unknown; release?: boolean }
+      const p = c.params
       await saveEvalRunDrive(c.db, {
-        evalRunId,
+        evalRunId: p.evalRunId,
         driveState: parseEvalDriveState(p.driveState),
         // Releasing clears the heartbeat, which is what makes the run adoptable
         // again immediately rather than after a stale window this driver has no
@@ -434,15 +411,10 @@ export function buildEvalHandlers<TDeps>(
         opts.startEvalRun,
         'Eval runs are not configured for this host.',
       )
-      const evalRunId = requireStr(c.params, 'evalRunId')
-      const rowId = requireStr(c.params, 'rowId')
       // Matrix cell overrides — swap the target agent's model / system prompt for
       // this run. Absent → the agent's own saved model/prompt (the plain path).
-      const cell = c.params as {
-        modelId?: string
-        promptBody?: string
-        config?: unknown
-      }
+      const cell = c.params
+      const { evalRunId, rowId } = cell
       // Draft override: the agent editor sends its unsaved config so a goal can
       // be run before publishing. Parsed HERE, at the API boundary, so a
       // malformed draft fails as a 400-shaped error the editor can show rather
@@ -487,7 +459,7 @@ export function buildEvalHandlers<TDeps>(
         triggerInput: invocation.triggerInput,
         promptVariables: invocation.promptVariables,
         fixtures: invocation.fixtures,
-        freezeTools: invocation.freezeTools,
+        toolModes: invocation.toolModes,
         liveReads: invocation.liveReads,
         modelId: cell.modelId,
         promptBody: cell.promptBody,
@@ -511,17 +483,9 @@ export function buildEvalHandlers<TDeps>(
     },
 
     gradeEvalResult: async (c) => {
-      const evalRunId = requireStr(c.params, 'evalRunId')
-      const rowId = requireStr(c.params, 'rowId')
-      const wfRunId = requireStr(c.params, 'wfRunId')
       // Matrix cell identity to stamp on the result — all absent for a plain run.
-      const cell = c.params as {
-        modelId?: string
-        promptLabel?: string
-        promptBody?: string
-        attempt?: number
-        judgeModelId?: string
-      }
+      const cell = c.params
+      const { evalRunId, rowId, wfRunId } = cell
       const found = await getEvalRow(c.db, rowId)
       if (!found) {
         throw new NotFoundError('Eval sample not found.')
@@ -616,16 +580,8 @@ export function buildEvalHandlers<TDeps>(
     },
 
     recordEvalFailure: async (c) => {
-      const evalRunId = requireStr(c.params, 'evalRunId')
-      const rowId = requireStr(c.params, 'rowId')
-      const error = requireStr(c.params, 'error')
-      const p = c.params as {
-        wfRunId?: string
-        modelId?: string
-        promptLabel?: string
-        promptBody?: string
-        attempt?: number
-      }
+      const p = c.params
+      const { evalRunId, rowId, error } = p
       const found = await getEvalRow(c.db, rowId)
       if (!found) {
         throw new NotFoundError('Eval sample not found.')
@@ -661,7 +617,7 @@ export function buildEvalHandlers<TDeps>(
     },
 
     finalizeEvalRun: async (c) => {
-      const evalRunId = requireStr(c.params, 'evalRunId')
+      const { evalRunId } = c.params
       const found = await getEvalRun(c.db, evalRunId)
       if (!found) {
         throw new NotFoundError('Eval run not found.')
@@ -683,7 +639,7 @@ export function buildEvalHandlers<TDeps>(
     },
 
     cancelEvalRun: async (c) => {
-      const evalRunId = requireStr(c.params, 'evalRunId')
+      const { evalRunId } = c.params
       const found = await getEvalRun(c.db, evalRunId)
       if (!found) {
         throw new NotFoundError('Eval run not found.')
@@ -705,13 +661,12 @@ export function buildEvalHandlers<TDeps>(
     },
 
     listEvalRuns: async (c) => {
-      const limit = (c.params as { limit?: number }).limit
-      const rows = await listEvalRuns(c.db, { limit })
+      const rows = await listEvalRuns(c.db, c.params)
       return rows.map(evalRunSummary)
     },
 
     getEvalRun: async (c) => {
-      const evalRunId = requireStr(c.params, 'evalRunId')
+      const { evalRunId } = c.params
       const result = await getEvalRun(c.db, evalRunId)
       if (!result) {
         return null

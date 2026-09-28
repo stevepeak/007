@@ -32,7 +32,10 @@ const SAMPLE: WfEvalRowDTO = {
   name: 'Refuses an adverse party',
   description: null,
   input: { kind: 'task', variables: { matter: 'Acme v. Byrd' } },
-  tools: { mode: 'mocked', fixtures: { search_rag: { hits: [] } } },
+  tools: {
+    fallback: 'mocked',
+    byTool: { search_rag: { mode: 'mocked', output: { hits: [] } } },
+  },
   checks: {
     op: 'and',
     checks: [{ type: 'output_match', match: 'contains', value: 'conflict' }],

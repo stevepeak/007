@@ -5,6 +5,7 @@ import { Database } from 'bun:sqlite'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 
+import type { EvalTools } from '../../eval/checks'
 import type { WfDb } from '../client'
 import { wfSchema } from '../schema'
 
@@ -75,7 +76,10 @@ async function seedRow(): Promise<string> {
     setId,
     name: 'Refuses out of scope',
     input: { kind: 'task', variables: { matterName: 'Acme v. Byrne' } },
-    tools: { mode: 'mocked', fixtures: { search_rag: { hits: [] } } },
+    tools: {
+      fallback: 'mocked',
+      byTool: { search_rag: { mode: 'mocked', output: { hits: [] } } },
+    },
     checks: CHECKS,
     sortOrder: 2,
   })
@@ -96,8 +100,8 @@ describe('upsertEvalRow — omitting a field', () => {
       variables: { matterName: 'Acme v. Byrne' },
     })
     expect(found?.row.tools).toEqual({
-      mode: 'mocked',
-      fixtures: { search_rag: { hits: [] } },
+      fallback: 'mocked',
+      byTool: { search_rag: { mode: 'mocked', output: { hits: [] } } },
     })
     // Not part of the merge, but it rode on the same call and would have been a
     // second silent reset.
@@ -110,14 +114,37 @@ describe('upsertEvalRow — omitting a field', () => {
       id: rowId,
       setId,
       name: 'Refuses out of scope',
-      tools: { mode: 'frozen' },
+      tools: { fallback: 'mocked', byTool: { search_rag: { mode: 'live' } } },
     })
     const found = await getEvalRow(db, rowId)
-    expect(found?.row.tools).toEqual({ mode: 'frozen' })
+    expect(found?.row.tools).toEqual({
+      fallback: 'mocked',
+      byTool: { search_rag: { mode: 'live' } },
+    })
     // The other two are untouched.
     expect(found?.row.checks.checks).toHaveLength(2)
     expect((found?.row.input as { variables: unknown }).variables).toEqual({
       matterName: 'Acme v. Byrne',
+    })
+  })
+
+  test('a write of the old sample-wide shape is upgraded, not emptied', async () => {
+    // An older MCP client (or a spec file) still sends `{ mode, fixtures }`. A
+    // plain schema parse would strip it to an empty setting and drop every
+    // pinned result on the way in, silently.
+    const rowId = await seedRow()
+    await upsertEvalRow(db, {
+      id: rowId,
+      setId,
+      name: 'Refuses out of scope',
+      // Cast: the legacy shape is not an `EvalTools` any more — it arrives as
+      // untyped JSON from an older client, which is exactly the case under test.
+      tools: { mode: 'mocked', fixtures: { search_rag: { hits: [1] } } } as unknown as EvalTools,
+    })
+    const found = await getEvalRow(db, rowId)
+    expect(found?.row.tools).toEqual({
+      fallback: 'mocked',
+      byTool: { search_rag: { mode: 'mocked', output: { hits: [1] } } },
     })
   })
 
@@ -137,7 +164,7 @@ describe('upsertEvalRow — omitting a field', () => {
     const rowId = await upsertEvalRow(db, { setId, name: 'Bare' })
     const found = await getEvalRow(db, rowId)
     expect(found?.row.input).toEqual({ kind: 'task', variables: {} })
-    expect(found?.row.tools).toEqual({ mode: 'mocked', fixtures: {} })
+    expect(found?.row.tools).toEqual({ fallback: 'mocked', byTool: {} })
     expect(found?.row.checks).toEqual({ op: 'and', checks: [] })
   })
 })

@@ -15,10 +15,10 @@ import {
 import {
   checkTreeSchema,
   evalSampleInputSchema,
-  evalToolsSchema,
   legacyFreezeTools,
   parseEvalSampleInput,
   parseEvalTools,
+  defaultEvalTools,
   type CheckResult,
   type CheckTree,
   type EvalRowSnapshot,
@@ -355,9 +355,11 @@ export async function upsertEvalRow(
   const sampleInput = evalSampleInputSchema.parse(
     row.input ?? base?.input ?? { kind: 'task', variables: {} },
   )
-  const tools = evalToolsSchema.parse(
-    row.tools ?? base?.tools ?? { mode: 'mocked', fixtures: {} },
-  )
+  // `parseEvalTools`, not a bare schema parse: a caller (an older MCP client,
+  // a spec file) may still send the sample-wide `{ mode, fixtures }` shape, and
+  // a plain parse would strip it to an empty setting — dropping every pinned
+  // result on the way IN, silently.
+  const tools = parseEvalTools(row.tools ?? base?.tools ?? defaultEvalTools())
   const checks = checkTreeSchema.parse(
     row.checks ?? base?.checks ?? { op: 'and', checks: [] },
   )

@@ -1,5 +1,4 @@
 import {
-  AlertTriangle,
   Binary,
   ChevronDown,
   Gauge,
@@ -11,10 +10,8 @@ import type { JsonSchema } from '../../engine'
 import type {
   CheckTree,
   EvalCheck,
-  EvalTools,
   WfEvalTargetKind,
 } from '../../server/protocol'
-import { unavailableCheckTypes } from '../../server/protocol'
 import { ArchiveButton } from '../archive-button'
 import { cn } from '../cn'
 import { useEvalRuns } from '../hooks'
@@ -45,7 +42,6 @@ import { EvalRunsTable } from './shared'
 
 export function ChecksList({
   checks,
-  tools,
   targetKind,
   hasTools,
   outputSchema,
@@ -56,8 +52,6 @@ export function ChecksList({
   onAdd,
 }: {
   checks: CheckTree
-  /** The Sample's tool setting — decides which check types can grade at all. */
-  tools: EvalTools
   /** The goal's target kind — hides the `node_*` types for an agent. */
   targetKind?: WfEvalTargetKind
   /** Whether the target has any tools — hides the `tool_*` types when it doesn't. */
@@ -73,11 +67,6 @@ export function ChecksList({
   /** Append a check and expand it — the row at the end of the list. */
   onAdd: () => void
 }) {
-  // A check the tool setting has made ungradeable is still SHOWN — deleting an
-  // author's assertion because they flipped a mode would be worse — but it is
-  // marked, because it will fail on an absence rather than on the agent.
-  const ungradeable = new Set<string>(unavailableCheckTypes(tools))
-
   const replace = (index: number, next: EvalCheck) => {
     const list = [...checks.checks]
     list[index] = next
@@ -147,7 +136,6 @@ export function ChecksList({
         <div className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-neutral-200">
           {checks.checks.map((c, i) => {
             const open = openIndex === i
-            const dead = ungradeable.has(c.type)
             return (
               <div key={i} className={cn(open && 'bg-neutral-50/60')}>
                 {/* The row's vertical padding lives on the expander button, not
@@ -167,15 +155,6 @@ export function ChecksList({
                       {describeCheck(c)}
                     </span>
                   </button>
-                  {dead ? (
-                    <span
-                      title="The agent runs with no tools, so no tool step will exist in the trace — this check grades an absence."
-                      className="flex shrink-0 items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-700"
-                    >
-                      <AlertTriangle className="size-3" />
-                      Can&apos;t grade
-                    </span>
-                  ) : null}
                   <ArchiveButton
                     icon={Trash2}
                     title="Delete check"

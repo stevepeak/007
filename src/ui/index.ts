@@ -214,6 +214,7 @@ export type {
   EvalSampleInputKind,
   EvalSampleLayer,
   EvalToolMode,
+  EvalToolSetting,
   EvalTools,
   ModelCapabilities,
   ModelCatalog,

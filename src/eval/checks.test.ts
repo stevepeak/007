@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   checkResultSchema,
   checkTreeSchema,
+  defaultEvalTools,
   describeCheckVocabulary,
   evalCheckSchema,
   EVAL_CHECK_TYPES,
@@ -13,7 +14,9 @@ import {
   legacyFreezeTools,
   parseEvalSampleInput,
   parseEvalTools,
-  unavailableCheckTypes,
+  toolFixtures,
+  toolModes,
+  toolSetting,
   type CheckTree,
   type EvalSampleInput,
 } from './checks'
@@ -106,18 +109,54 @@ describe('eval checks schema', () => {
     }).toThrow()
   })
 
-  test('tools are a tri-state; only `mocked` can carry fixtures', () => {
-    expect(evalToolsSchema.parse({ mode: 'frozen' })).toEqual({
-      mode: 'frozen',
+  test('tools are settled per tool, and a tool defaults to mocked', () => {
+    expect(evalToolsSchema.parse({})).toEqual({
+      fallback: 'mocked',
+      byTool: {},
     })
-    expect(evalToolsSchema.parse({ mode: 'mocked' })).toEqual({
-      mode: 'mocked',
-      fixtures: {},
+    // A tool named with no mode is mocked — which is why the list can render a
+    // row for every tool without first writing a setting for each one.
+    expect(evalToolsSchema.parse({ byTool: { search: {} } })).toEqual({
+      fallback: 'mocked',
+      byTool: { search: { mode: 'mocked' } },
     })
-    // The combination that used to be authorable — and silently meaningless.
     expect(
-      evalToolsSchema.parse({ mode: 'frozen', fixtures: { a: 1 } }),
-    ).toEqual({ mode: 'frozen' })
+      evalToolsSchema.parse({
+        byTool: { search: { mode: 'live' }, memory: { output: { a: 1 } } },
+      }).byTool,
+    ).toEqual({
+      search: { mode: 'live' },
+      memory: { mode: 'mocked', output: { a: 1 } },
+    })
+  })
+
+  test('an unlisted tool takes the fallback', () => {
+    const tools = evalToolsSchema.parse({
+      fallback: 'live',
+      byTool: { search: { mode: 'mocked', output: { a: 1 } } },
+    })
+    expect(toolSetting(tools, 'search')).toEqual({
+      mode: 'mocked',
+      output: { a: 1 },
+    })
+    expect(toolSetting(tools, 'never_configured')).toEqual({ mode: 'live' })
+  })
+
+  test('only a mocked tool with something pinned becomes a fixture', () => {
+    const tools = evalToolsSchema.parse({
+      byTool: {
+        pinned: { mode: 'mocked', output: { a: 1 } },
+        unpinned: { mode: 'mocked' },
+        // Keeps its output across a trip to Live, but must not be handed one.
+        live: { mode: 'live', output: { a: 2 } },
+      },
+    })
+    expect(toolFixtures(tools)).toEqual({ pinned: { a: 1 } })
+    expect(toolModes(tools)).toEqual({
+      pinned: 'mocked',
+      unpinned: 'mocked',
+      live: 'live',
+    })
   })
 })
 
@@ -158,20 +197,42 @@ describe('legacy row upgrade', () => {
     expect(parseEvalSampleInput(input)).toEqual(input)
   })
 
-  test('a bare fixtures record becomes mocked tools', () => {
+  test('a bare fixtures record becomes one pinned tool each', () => {
     expect(parseEvalTools({ search: { docs: [] } })).toEqual({
-      mode: 'mocked',
-      fixtures: { search: { docs: [] } },
+      fallback: 'mocked',
+      byTool: { search: { mode: 'mocked', output: { docs: [] } } },
     })
   })
 
-  test('the legacy freeze flag wins over the fixtures beside it', () => {
-    // It always did — freezing emptied the tool set, so those fixtures were
-    // already dead. The upgrade makes that visible instead of silent.
+  test('the sample-wide mocked mode keeps every fixture, tool for tool', () => {
+    // The behavior has to be identical: the same tools return the same results.
+    expect(
+      parseEvalTools({ mode: 'mocked', fixtures: { search: { docs: [] } } }),
+    ).toEqual({
+      fallback: 'mocked',
+      byTool: { search: { mode: 'mocked', output: { docs: [] } } },
+    })
+  })
+
+  test('the sample-wide live mode survives as the fallback', () => {
+    // "Every read tool runs for real" never recorded WHICH tools it covered, so
+    // there is nothing to write per tool — the fallback is the only lossless
+    // place to put it, and every row in the list still reads as Live.
+    expect(parseEvalTools({ mode: 'live' })).toEqual({
+      fallback: 'live',
+      byTool: {},
+    })
+  })
+
+  test('a frozen row becomes all-mocked — tools can no longer be taken away', () => {
+    // Its tools now EXIST and return `{}` rather than being absent. A synthesis
+    // sample still grades the answer it synthesizes from its staged turns, but
+    // the agent can reach for a tool instead of having none.
+    expect(parseEvalTools({ mode: 'frozen' })).toEqual(defaultEvalTools())
     const legacyInput = { freezeTools: true, promptVariables: {} }
     expect(
       parseEvalTools({ search: { docs: [] } }, legacyFreezeTools(legacyInput)),
-    ).toEqual({ mode: 'frozen' })
+    ).toEqual(defaultEvalTools())
   })
 })
 
@@ -180,25 +241,33 @@ describe('derived sample layer', () => {
   const convo = { kind: 'conversation' as const, turns: [], variables: {} }
 
   test('names the layer a sample actually belongs to', () => {
-    expect(evalSampleLayer(convo, { mode: 'frozen' })).toBe('synthesis')
-    expect(evalSampleLayer(task, { mode: 'live' })).toBe('integration')
-    expect(evalSampleLayer(task, { mode: 'mocked', fixtures: { s: {} } })).toBe(
-      'trajectory',
+    expect(evalSampleLayer(task, defaultEvalTools())).toBe('io')
+    expect(
+      evalSampleLayer(task, {
+        fallback: 'mocked',
+        byTool: { s: { mode: 'mocked', output: {} } },
+      }),
+    ).toBe('trajectory')
+    expect(
+      evalSampleLayer(task, { fallback: 'mocked', byTool: { s: { mode: 'live' } } }),
+    ).toBe('integration')
+    expect(evalSampleLayer(convo, { fallback: 'live', byTool: {} })).toBe(
+      'integration',
     )
-    expect(evalSampleLayer(task, { mode: 'mocked', fixtures: {} })).toBe('io')
   })
 
-  test('freezing a task agent is not synthesis — there is nothing staged', () => {
-    expect(evalSampleLayer(task, { mode: 'frozen' })).toBe('io')
-  })
-
-  test('trajectory checks are unavailable exactly when tools are frozen', () => {
-    expect(unavailableCheckTypes({ mode: 'frozen' })).toEqual([
-      'tool_called',
-      'tool_args_match',
-    ])
-    expect(unavailableCheckTypes({ mode: 'mocked', fixtures: {} })).toEqual([])
-    expect(unavailableCheckTypes({ mode: 'live' })).toEqual([])
+  test('one live tool decides the layer, however much else is pinned', () => {
+    // The strongest claim wins: a sample with anything running for real is not
+    // reproducible, and that is the fact worth putting on the badge.
+    expect(
+      evalSampleLayer(task, {
+        fallback: 'mocked',
+        byTool: {
+          pinned: { mode: 'mocked', output: {} },
+          real: { mode: 'live' },
+        },
+      }),
+    ).toBe('integration')
   })
 
   test('check result carries an optional confidence + reason', () => {

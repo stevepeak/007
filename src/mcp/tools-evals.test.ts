@@ -250,28 +250,27 @@ describe('upsert_eval_sample', () => {
       setId: 'set_1',
       name: 'Refuses out of scope',
       input: { kind: 'conversation', turns: [], variables: {} },
-      tools: { mode: 'frozen' },
+      tools: { byTool: { search_rag: { mode: 'live' } } },
       checks: { op: 'and', checks: [{ type: 'llm_judge', rubric: 'Refuses.' }] },
     })) as { rowId: string; layer: string; warnings: string[] }
     expect(result.rowId).toBe('row_1')
-    expect(result.layer).toBe('synthesis')
+    expect(result.layer).toBe('integration')
     expect(result.warnings).toEqual([])
   })
 
-  // The silent failure this whole return value exists for.
-  test('flags trajectory checks that frozen tools make ungradeable', async () => {
+  test('accepts the old sample-wide shape and reports what it became', async () => {
     const result = (await toolNamed('upsert_eval_sample').run(client, {
       setId: 'set_1',
       name: 'Searches first',
       input: { kind: 'conversation', turns: [], variables: {} },
-      tools: { mode: 'frozen' },
+      tools: { byTool: { search_rag: { mode: 'mocked', output: { hits: [] } } } },
       checks: {
         op: 'and',
         checks: [{ type: 'tool_called', toolId: 'search_rag', called: true }],
       },
-    })) as { warnings: string[] }
-    expect(result.warnings.join(' ')).toContain('tool_called')
-    expect(result.warnings.join(' ')).toContain('mocked')
+    })) as { layer: string; warnings: string[] }
+    expect(result.layer).toBe('trajectory')
+    expect(result.warnings).toEqual([])
   })
 
   test('flags a declared variable left unfilled', async () => {
@@ -279,7 +278,7 @@ describe('upsert_eval_sample', () => {
       setId: 'set_1',
       name: 'Empty var',
       input: { kind: 'task', variables: { matterName: '' } },
-      tools: { mode: 'mocked', fixtures: {} },
+      tools: { fallback: 'mocked', byTool: {} },
       checks: { op: 'and', checks: [] },
     })) as { warnings: string[] }
     expect(result.warnings.join(' ')).toContain('empty strings')
@@ -336,7 +335,7 @@ describe('get_eval_set', () => {
               id: 'row_1',
               name: 'Sample',
               input: { kind: 'task', variables: { blob: 'x'.repeat(20_000) } },
-              tools: { mode: 'mocked', fixtures: {} },
+              tools: { fallback: 'mocked', byTool: {} },
               checks: { op: 'and', checks: [] },
             },
           ],
@@ -445,12 +444,12 @@ describe('upsert_eval_sample — the target-keyed lints', () => {
 
   // A fixture keyed on a tool the agent cannot call validates, stores, and is
   // never read — the ART-146 failure class, one field over.
-  test('flags fixtures keyed on a tool the target does not have', async () => {
+  test('flags a tool setting keyed on a tool the target does not have', async () => {
     const out = (await toolNamed('upsert_eval_sample').run(targetedClient(), {
       setId: 'set_1',
       name: 'Mocks the wrong tool',
       input: { kind: 'task', variables: {} },
-      tools: { mode: 'mocked', fixtures: { serch_rag: { hits: [] } } },
+      tools: { byTool: { serch_rag: { mode: 'mocked', output: { hits: [] } } } },
       checks: { op: 'and', checks: [{ type: 'output_match', match: 'equals', value: 'ok' }] },
     })) as { warnings: string[] }
     const text = out.warnings.join(' ')
@@ -458,6 +457,20 @@ describe('upsert_eval_sample — the target-keyed lints', () => {
     expect(text).toContain('never be read')
     // And it names what the legal keys actually are.
     expect(text).toContain('search_rag')
+  })
+
+  test('flags a LIVE setting on a tool the target does not have', async () => {
+    // Nothing is pinned here, so a lint that only read the fixtures saw an empty
+    // setting and said nothing — while the sample claimed to run a tool the
+    // agent cannot call, which reads as a deliberate decision rather than a typo.
+    const out = (await toolNamed('upsert_eval_sample').run(targetedClient(), {
+      setId: 'set_1',
+      name: 'Runs a tool it does not have',
+      input: { kind: 'task', variables: {} },
+      tools: { byTool: { read_memory: { mode: 'live' } } },
+      checks: { op: 'and', checks: [{ type: 'output_match', match: 'equals', value: 'ok' }] },
+    })) as { warnings: string[] }
+    expect(out.warnings.join(' ')).toContain('read_memory')
   })
 
   test('accepts a fixture on a tool the target does have', async () => {
@@ -481,7 +494,7 @@ describe('upsert_eval_sample — the target-keyed lints', () => {
       setId: 'set_1',
       name: 'Judges a field that is not there',
       input: { kind: 'task', variables: {} },
-      tools: { mode: 'mocked', fixtures: {} },
+      tools: { fallback: 'mocked', byTool: {} },
       checks: {
         op: 'and',
         checks: [
@@ -499,7 +512,7 @@ describe('upsert_eval_sample — the target-keyed lints', () => {
       setId: 'set_1',
       name: 'Judges into a declared field',
       input: { kind: 'task', variables: {} },
-      tools: { mode: 'mocked', fixtures: {} },
+      tools: { fallback: 'mocked', byTool: {} },
       // Only the leading segment is knowable here, and `verdict` is declared.
       checks: {
         op: 'and',
@@ -521,7 +534,7 @@ describe('upsert_eval_sample — the target-keyed lints', () => {
       setId: 'set_1',
       name: 'Anything',
       input: { kind: 'task', variables: {} },
-      tools: { mode: 'mocked', fixtures: { whatever: {} } },
+      tools: { byTool: { whatever: { mode: 'mocked', output: {} } } },
       checks: { op: 'and', checks: [{ type: 'output_match', match: 'equals', value: 1 }] },
     })) as { warnings: string[] }
     expect(out.warnings.join(' ')).not.toContain('whatever')
@@ -532,7 +545,7 @@ describe('upsert_eval_sample — the target-keyed lints', () => {
       setId: 'set_1',
       name: 'No checks',
       input: { kind: 'task', variables: {} },
-      tools: { mode: 'mocked', fixtures: {} },
+      tools: { fallback: 'mocked', byTool: {} },
       checks: { op: 'and', checks: [] },
     })) as { warnings: string[] }
     expect(out.warnings.join(' ')).toContain('NO checks')
@@ -545,7 +558,7 @@ describe('upsert_eval_sample — editing is a patch', () => {
     setId: 'set_1',
     name: 'Refuses',
     input: { kind: 'task', variables: { a: 'b' } },
-    tools: { mode: 'mocked', fixtures: {} },
+    tools: { fallback: 'mocked', byTool: {} },
     checks: {
       op: 'and',
       checks: [{ type: 'llm_judge', rubric: 'Refuses politely.' }],
@@ -589,11 +602,10 @@ describe('upsert_eval_sample — editing is a patch', () => {
       setId: 'set_1',
       id: 'row_1',
       name: 'Refuses',
-      tools: { mode: 'frozen' },
+      tools: { fallback: 'mocked', byTool: {} },
     })) as { replaced: string[]; layer: string }
     expect(out.replaced).toEqual(['tools'])
-    // Derived from the merge — the kept `conversation`-less task input plus the
-    // new frozen tools is an io test, not synthesis.
+    // Derived from the merge — nothing pinned and nothing live is an io test.
     expect(out.layer).toBe('io')
   })
 

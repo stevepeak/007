@@ -298,18 +298,18 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
     fixtures: Record<string, unknown>
     /**
      * Integration mode — let read tools EXECUTE instead of returning a fixture
-     * (the host passes this into `startGraphRun` as `liveReads`). True when the
-     * Sample's tools are `live`, which is how a goal grades the agent against
-     * real retrieval. Write tools stay neutralized by `simulate` either way.
+     * (the host passes this into `startGraphRun` as `liveReads`). The DEFAULT
+     * for a tool `toolModes` says nothing about; true only on a Sample migrated
+     * from the old sample-wide Live mode. Write tools stay neutralized by
+     * `simulate` either way.
      */
     liveReads?: boolean
     /**
-     * Synthesis mode — run the agent with an empty tool set (the host passes this
-     * into `startGraphRun` as `freezeTools`). True when the Sample's tools are
-     * `frozen`; a conversation Sample's `triggerInput` then already carries the
-     * seeded `{ messages }`. Undefined/false → the normal tool-calling path.
+     * Per-tool mocked-vs-live, keyed by tool id (the host passes this into
+     * `startGraphRun` as `toolModes`). This is where a Sample's tool settings
+     * actually live — one answer per tool — with `liveReads` as the fallback.
      */
-    freezeTools?: boolean
+    toolModes?: Record<string, 'mocked' | 'live'>
     /**
      * Matrix cell overrides — swap the target agent's model / system prompt for
      * this run (the host passes them into `startGraphRun` as `agentOverride`).

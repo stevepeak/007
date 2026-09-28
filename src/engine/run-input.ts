@@ -61,6 +61,13 @@ export type StartGraphRunInput = {
    */
   liveReads?: boolean
   /**
+   * Per-tool override of {@link liveReads}, keyed by tool id. A Sample settles
+   * mocked-vs-live ONE TOOL AT A TIME — pin the search result and let the memory
+   * lookup hit real data — so this names the tools it has an opinion about and
+   * `liveReads` covers the rest.
+   */
+  toolModes?: Record<string, 'mocked' | 'live'>
+  /**
    * Eval synthesis signal — run every agent node with an empty tool set so the
    * model answers from its seeded message history alone. See RunContext.
    */

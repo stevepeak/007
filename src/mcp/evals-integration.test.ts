@@ -110,7 +110,7 @@ async function seedGoalWithSample(): Promise<{
     setId: goal.setId,
     name: 'Refuses out of scope',
     input: { kind: 'task', variables: { matterName: 'Acme v. Byrne' } },
-    tools: { mode: 'mocked', fixtures: { search_rag: { hits: [] } } },
+    tools: { byTool: { search_rag: { mode: 'mocked', output: { hits: [] } } } },
     checks: {
       op: 'and',
       checks: [
@@ -139,7 +139,7 @@ describe('authoring a Goal over the real dispatcher', () => {
       rows: {
         name: string
         checks: { checks: { type: string }[] }
-        tools: { fixtures: Record<string, unknown> }
+        tools: { byTool: Record<string, { mode: string; output?: unknown }> }
       }[]
     }
     expect(after.rows[0]?.name).toBe('Refuses politely')
@@ -147,9 +147,9 @@ describe('authoring a Goal over the real dispatcher', () => {
       'tool_called',
       'decision_judge',
     ])
-    expect(Object.keys(after.rows[0]?.tools.fixtures ?? {})).toEqual([
-      'search_rag',
-    ])
+    expect(after.rows[0]?.tools.byTool).toEqual({
+      search_rag: { mode: 'mocked', output: { hits: [] } },
+    })
   })
 
   // The check type that could not be authored over MCP at all, because the
@@ -184,7 +184,7 @@ describe('authoring a Goal over the real dispatcher', () => {
       setId,
       name: 'Mocks a tool that is not wired',
       input: { kind: 'task', variables: { matterName: 'x' } },
-      tools: { mode: 'mocked', fixtures: { list_matters: {} } },
+      tools: { byTool: { list_matters: { mode: 'mocked', output: {} } } },
       checks: {
         op: 'and',
         checks: [{ type: 'output_match', path: 'verdict', match: 'equals', value: 'no' }],
@@ -291,5 +291,187 @@ describe('a sweep can be called off', () => {
     })) as { cancelled: boolean; note: string }
     expect(again.cancelled).toBe(false)
     expect(again.note).toContain('already')
+  })
+})
+
+// The per-tool tool settings, all the way round: created over MCP, read back
+// over MCP, patched over MCP, archived and restored. The shape a Sample stores
+// its tools in changed (one answer per tool, rather than one mode for the whole
+// sample), and every one of these steps crosses the wire-schema boundary where
+// the payload is `unknown` — so a shape the console writes happily can still be
+// unreachable, or silently lossy, for a model.
+describe('an MCP client can CRUD a sample’s per-tool settings', () => {
+  type Row = {
+    id: string
+    name: string
+    archived?: boolean
+    tools: {
+      fallback: string
+      byTool: Record<string, { mode: string; output?: unknown }>
+    }
+  }
+  const rowsOf = async (setId: string, includeArchived = false) => {
+    const out = (await tool('get_eval_set').run(client, {
+      setId,
+      includeArchived,
+    })) as { rows: Row[] }
+    return out.rows
+  }
+
+  test('create — a sample is written with one tool pinned and another live', async () => {
+    const goal = (await tool('create_eval_set').run(client, {
+      name: 'Per-tool settings',
+      targetId: agentId,
+    })) as { setId: string }
+    const created = (await tool('upsert_eval_sample').run(client, {
+      setId: goal.setId,
+      name: 'Pins the search, reads memory for real',
+      input: { kind: 'task', variables: { matterName: 'Acme v. Byrne' } },
+      tools: {
+        byTool: {
+          search_rag: { mode: 'mocked', output: { hits: ['nothing'] } },
+          read_memory: { mode: 'live' },
+        },
+      },
+      checks: {
+        op: 'and',
+        checks: [{ type: 'output_match', path: 'verdict', match: 'equals', value: 'CLEAR' }],
+      },
+    })) as {
+      rowId: string
+      created: boolean
+      layer: string
+      replaced: string[]
+      warnings: string[]
+    }
+
+    expect(created.created).toBe(true)
+    expect(created.replaced).toEqual(['input', 'tools', 'checks'])
+    // One tool running for real is what makes the whole sample an integration
+    // test, and the receipt says so without a second read.
+    expect(created.layer).toBe('integration')
+    // …and this agent is wired to `search_rag` alone, so the `read_memory`
+    // setting is dead weight. Stored, never read, and worth saying at write
+    // time — the whole reason the write answers with warnings.
+    expect(created.warnings.join(' ')).toContain('read_memory')
+
+    const rows = await rowsOf(goal.setId)
+    expect(rows[0]?.tools).toEqual({
+      fallback: 'mocked',
+      byTool: {
+        search_rag: { mode: 'mocked', output: { hits: ['nothing'] } },
+        read_memory: { mode: 'live' },
+      },
+    })
+  })
+
+  test('read — a sample created the old way reads back in the new shape', async () => {
+    const goal = (await tool('create_eval_set').run(client, {
+      name: 'Legacy client',
+      targetId: agentId,
+    })) as { setId: string }
+    // An MCP client running against the previous tool description.
+    await tool('upsert_eval_sample').run(client, {
+      setId: goal.setId,
+      name: 'Written by an older client',
+      input: { kind: 'task', variables: { matterName: 'Acme' } },
+      tools: { mode: 'mocked', fixtures: { search_rag: { hits: [] } } },
+      checks: { op: 'and', checks: [] },
+    })
+    const rows = await rowsOf(goal.setId)
+    expect(rows[0]?.tools).toEqual({
+      fallback: 'mocked',
+      byTool: { search_rag: { mode: 'mocked', output: { hits: [] } } },
+    })
+  })
+
+  test('update — patching `tools` replaces the whole set, and the receipt says so', async () => {
+    const goal = (await tool('create_eval_set').run(client, {
+      name: 'Patching',
+      targetId: agentId,
+    })) as { setId: string }
+    const { rowId } = (await tool('upsert_eval_sample').run(client, {
+      setId: goal.setId,
+      name: 'Two pinned tools',
+      input: { kind: 'task', variables: { matterName: 'Acme' } },
+      tools: {
+        byTool: {
+          search_rag: { mode: 'mocked', output: { hits: [1] } },
+          read_memory: { mode: 'mocked', output: { items: [] } },
+        },
+      },
+      checks: { op: 'and', checks: [] },
+    })) as { rowId: string }
+
+    // A rename still touches nothing — the patch guarantee the whole tool exists
+    // for, now covering a shape with more in it to lose.
+    const renamed = (await tool('upsert_eval_sample').run(client, {
+      setId: goal.setId,
+      id: rowId,
+      name: 'Renamed',
+    })) as { replaced: string[] }
+    expect(renamed.replaced).toEqual([])
+    expect(Object.keys((await rowsOf(goal.setId))[0].tools.byTool)).toEqual([
+      'search_rag',
+      'read_memory',
+    ])
+
+    // Sending `tools` REPLACES it wholesale — the same rule `input` and `checks`
+    // follow. A model flipping one tool has to send the others back with it, and
+    // `replaced` naming `tools` is the receipt that it just rewrote all of them.
+    const patched = (await tool('upsert_eval_sample').run(client, {
+      setId: goal.setId,
+      id: rowId,
+      name: 'Renamed',
+      tools: { byTool: { search_rag: { mode: 'live' } } },
+    })) as { replaced: string[]; layer: string }
+    expect(patched.replaced).toEqual(['tools'])
+    expect(patched.layer).toBe('integration')
+    expect((await rowsOf(goal.setId))[0]?.tools).toEqual({
+      fallback: 'mocked',
+      byTool: { search_rag: { mode: 'live' } },
+    })
+  })
+
+  test('update — a malformed tool setting is rejected, not stored', async () => {
+    const goal = (await tool('create_eval_set').run(client, {
+      name: 'Bad payload',
+      targetId: agentId,
+    })) as { setId: string }
+    await expect(
+      tool('upsert_eval_sample').run(client, {
+        setId: goal.setId,
+        name: 'Bad mode',
+        tools: { byTool: { search_rag: { mode: 'stubbed' } } },
+      }),
+    ).rejects.toThrow()
+    expect(await rowsOf(goal.setId)).toHaveLength(0)
+  })
+
+  test('delete — archiving hides the sample and restoring brings its tools back', async () => {
+    const goal = (await tool('create_eval_set').run(client, {
+      name: 'Archiving',
+      targetId: agentId,
+    })) as { setId: string }
+    const { rowId } = (await tool('upsert_eval_sample').run(client, {
+      setId: goal.setId,
+      name: 'Archive me',
+      input: { kind: 'task', variables: { matterName: 'Acme' } },
+      tools: { byTool: { search_rag: { mode: 'mocked', output: { hits: [7] } } } },
+      checks: { op: 'and', checks: [] },
+    })) as { rowId: string }
+
+    await tool('delete_eval_sample').run(client, { rowId })
+    expect(await rowsOf(goal.setId)).toHaveLength(0)
+    const archived = await rowsOf(goal.setId, true)
+    expect(archived[0]?.archived).toBe(true)
+
+    await tool('delete_eval_sample').run(client, { rowId, restore: true })
+    const back = await rowsOf(goal.setId)
+    // Nothing was erased — the pinned result survives the round trip.
+    expect(back[0]?.tools.byTool.search_rag).toEqual({
+      mode: 'mocked',
+      output: { hits: [7] },
+    })
   })
 })

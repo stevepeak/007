@@ -1,5 +1,5 @@
 import { listChanges } from '../../storage/data'
-import type { WfChangeDTO, WfChangeListInput } from '../protocol'
+import type { WfChangeDTO } from '../protocol'
 
 import type { WfHandlers } from './shared'
 
@@ -42,14 +42,7 @@ function changeDTO(row: {
 export function buildChangeHandlers(): Pick<WfHandlers, 'listChanges'> {
   return {
     listChanges: async (c) => {
-      const p = (c.params ?? {}) as WfChangeListInput
-      const rows = await listChanges(c.db, {
-        entityKind: p.entityKind,
-        entityId: p.entityId,
-        parentId: p.parentId,
-        actorId: p.actorId,
-        limit: p.limit,
-      })
+      const rows = await listChanges(c.db, c.params)
       return rows.map(changeDTO)
     },
   }

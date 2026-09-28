@@ -1,4 +1,4 @@
-import { loadDashboard, type DashboardBucket } from '../../storage/data'
+import { loadDashboard } from '../../storage/data'
 import type { WfDashboardResult } from '../protocol'
 
 import {
@@ -16,14 +16,12 @@ export function buildDashboardHandlers<TDeps>(
     // unbounded range is never taken on trust), and the resolved window comes
     // back on the result so the UI labels what it actually charted.
     getDashboard: async (c) => {
-      const p = c.params as {
-        since?: number
-        until?: number
-        bucket?: DashboardBucket
-      }
       const stats = await loadDashboard(
         c.db,
-        { since: p.since, until: p.until, bucket: p.bucket },
+        // Passed through as one object rather than field-by-field so that a
+        // `bucket` the schema allows but `DashboardBucket` doesn't is a compile
+        // error here, which is the only place the two vocabularies meet.
+        c.params,
         Date.now(),
         // Null when the host wired no reader (or it's local dev) — the storage
         // layer then answers from D1 exactly as it always has.

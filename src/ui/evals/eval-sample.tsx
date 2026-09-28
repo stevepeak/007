@@ -1,7 +1,6 @@
 import { Goal, Microscope, Play } from 'lucide-react'
 import { useState } from 'react'
 
-import type { EvalSampleLayer } from '../../server/protocol'
 import { ArchiveButton } from '../archive-button'
 import { useWfComponents } from '../context'
 import { useWfNav } from '../nav'
@@ -51,25 +50,9 @@ export type EvalSampleProps = {
   className?: string
 }
 
-// The header badge for the derived testing layer. `io` gets no badge — a plain
-// input → output test is the baseline, not a mode worth naming — and neither
-// does `trajectory`: mocked tools are already visible in the Tools step, and
-// the name added nothing a reader could act on.
-const LAYERS: Partial<
-  Record<EvalSampleLayer, { label: string; className: string; title: string }>
-> = {
-  synthesis: {
-    label: 'Synthesis',
-    className: 'bg-amber-100 text-amber-700',
-    title:
-      'A staged conversation with no tools — grades the final response in isolation.',
-  },
-  integration: {
-    label: 'Integration',
-    className: 'bg-sky-100 text-sky-700',
-    title: 'Live read tools — grades the agent against real retrieval.',
-  },
-}
+// No layer badge in the header. The layer is DERIVED from the tool settings, and
+// those are now a row per tool one card below — so the chip restated, in a word
+// nobody chose, something the page already shows plainly.
 
 export function EvalSample({
   setId,
@@ -81,15 +64,9 @@ export function EvalSample({
   const { navigate } = useWfNav()
   const [tab, setTab] = useState<SampleTab>('config')
   const [runOpen, setRunOpen] = useState(false)
-  // Whether the "add mock" tool picker is open — lifted here so its trigger can
-  // live in the Tools step's header (far right) while the picker renders in the
-  // step body.
-  const [addMockOpen, setAddMockOpen] = useState(false)
-
   const state = useEvalSampleDraft({ setId, sampleId, initialCheckIndex })
   const { set, row, draft } = state
   const targetAgentCrumb = useTargetAgentCrumb(set?.targetId, set?.targetVersion)
-  const badge = LAYERS[state.layer] ?? null
 
   return (
     <WfShell
@@ -133,14 +110,6 @@ export function EvalSample({
       actions={
         row && draft ? (
           <>
-            {badge ? (
-              <span
-                title={badge.title}
-                className={`rounded-full px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide ${badge.className}`}
-              >
-                {badge.label}
-              </span>
-            ) : null}
             <ArchiveButton
               description={
                 <>
@@ -221,12 +190,7 @@ export function EvalSample({
               />
 
               {tab === 'config' ? (
-                <SampleConfigSteps
-                  state={state}
-                  draft={draft}
-                  addMockOpen={addMockOpen}
-                  onAddMockOpenChange={setAddMockOpen}
-                />
+                <SampleConfigSteps state={state} draft={draft} />
               ) : (
                 <RunsForSample setId={setId} />
               )}

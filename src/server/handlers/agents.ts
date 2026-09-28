@@ -35,7 +35,6 @@ import {
   parseStringRecord,
   requireAgentExists,
   requireHook,
-  requireStr,
   toEpoch,
   type CreateWfSdkHandlersOptions,
   type WfHandlers,
@@ -132,7 +131,7 @@ export function buildAgentHandlers<TDeps>(
     },
 
     getAgent: async (c) => {
-      const agentId = requireStr(c.params, 'agentId')
+      const { agentId } = c.params
       const result = await getAgent(c.db, agentId)
       if (!result) {
         return null
@@ -166,26 +165,20 @@ export function buildAgentHandlers<TDeps>(
     },
 
     createAgent: async (c) => {
-      const name = requireStr(c.params, 'name')
-      const config = parseAgentConfig(c.params)
-      const p = c.params as {
-        description?: string
-        icon?: string
-        color?: string
-      }
+      const p = c.params
       return await createAgent(c.db, {
-        name,
+        name: p.name,
         description: p.description,
         icon: p.icon,
         color: p.color,
         createdBy: c.ctx.userId,
-        config,
+        config: parseAgentConfig(p.config),
       })
     },
 
     updateAgentDraft: async (c) => {
-      const agentId = requireStr(c.params, 'agentId')
-      const config = parseAgentConfig(c.params)
+      const { agentId } = c.params
+      const config = parseAgentConfig(c.params.config)
       await requireAgentExists(c.db, agentId)
       await updateAgentDraft(c.db, {
         agentId,
@@ -206,12 +199,9 @@ export function buildAgentHandlers<TDeps>(
     },
 
     publishAgent: async (c) => {
-      const agentId = requireStr(c.params, 'agentId')
-      const config = parseAgentConfig(c.params)
-      const p = c.params as {
-        changeNote?: string
-        aiSummary?: { short: string; long: string } | null
-      }
+      const p = c.params
+      const { agentId } = p
+      const config = parseAgentConfig(p.config)
       // Read the outgoing config — the base for the diff, including a possible
       // background summary — before publishAgent bumps the latest pointer.
       const owner = await getAgent(c.db, agentId)
@@ -275,8 +265,8 @@ export function buildAgentHandlers<TDeps>(
     },
 
     summarizeAgentChanges: async (c) => {
-      const agentId = requireStr(c.params, 'agentId')
-      const nextConfig = parseAgentConfig(c.params)
+      const { agentId } = c.params
+      const nextConfig = parseAgentConfig(c.params.config)
       const owner = await getAgent(c.db, agentId)
       if (!owner) {
         throw new NotFoundError('Agent not found')
@@ -294,8 +284,7 @@ export function buildAgentHandlers<TDeps>(
     },
 
     getAgentVersion: async (c) => {
-      const versionId = requireStr(c.params, 'versionId')
-      const v = await getAgentVersionConfig(c.db, versionId)
+      const v = await getAgentVersionConfig(c.db, c.params.versionId)
       if (!v) {
         return null
       }
@@ -303,7 +292,7 @@ export function buildAgentHandlers<TDeps>(
     },
 
     listAgentVersions: async (c) => {
-      const agentId = requireStr(c.params, 'agentId')
+      const { agentId } = c.params
       await requireAgentExists(c.db, agentId)
       const rows = await listAgentVersions(c.db, agentId)
       return rows.map((v) => ({
@@ -318,14 +307,9 @@ export function buildAgentHandlers<TDeps>(
     },
 
     updateAgentMeta: async (c) => {
-      const agentId = requireStr(c.params, 'agentId')
+      const p = c.params
+      const { agentId } = p
       await requireAgentExists(c.db, agentId)
-      const p = c.params as {
-        name?: string
-        description?: string
-        icon?: string
-        color?: string
-      }
       // Metadata is unversioned — a rename leaves no trace anywhere else, so
       // read the before-image while it still exists.
       const before = (await getAgent(c.db, agentId))?.agent ?? null
@@ -353,28 +337,28 @@ export function buildAgentHandlers<TDeps>(
     },
 
     discardAgentDraft: async (c) => {
-      const agentId = requireStr(c.params, 'agentId')
+      const { agentId } = c.params
       await requireAgentExists(c.db, agentId)
       await discardAgentDraft(c.db, { agentId })
       return { ok: true }
     },
 
     countAgentReferences: async (c) => {
-      const agentId = requireStr(c.params, 'agentId')
+      const { agentId } = c.params
       await requireAgentExists(c.db, agentId)
       const workflows = await countWorkflowsReferencingAgent(c.db, { agentId })
       return { workflows }
     },
 
     listAgentReferences: async (c) => {
-      const agentId = requireStr(c.params, 'agentId')
+      const { agentId } = c.params
       await requireAgentExists(c.db, agentId)
       const workflows = await listWorkflowsReferencingAgent(c.db, { agentId })
       return { workflows }
     },
 
     archiveAgent: async (c) => {
-      const agentId = requireStr(c.params, 'agentId')
+      const { agentId } = c.params
       await requireAgentExists(c.db, agentId)
       const before = (await getAgent(c.db, agentId))?.agent ?? null
       await archiveAgent(c.db, { agentId })
@@ -390,10 +374,9 @@ export function buildAgentHandlers<TDeps>(
     },
 
     listAgentCalls: async (c) => {
-      const agentId = requireStr(c.params, 'agentId')
+      const { agentId, limit } = c.params
       await requireAgentExists(c.db, agentId)
-      const p = c.params as { limit?: number }
-      return await listAgentCalls(c.db, { agentId, limit: p.limit })
+      return await listAgentCalls(c.db, { agentId, limit })
     },
 
     runAgentPreview: async (c) => {
@@ -401,14 +384,18 @@ export function buildAgentHandlers<TDeps>(
         opts.runAgentPreview,
         'The agent playground is not configured on this host.',
       )
-      const config = parseAgentConfig(c.params)
+      // `runAgentPreview` is `NO_INPUT` in the schema table on purpose: the
+      // payload is one `AgentPreviewInput` the runner validates as a unit. So
+      // this is the one handler that still reads its own params, by design.
       const p = c.params as {
+        config?: unknown
         input?: unknown
         promptVariables?: unknown
         liveToolIds?: unknown
         messages?: unknown
         context?: unknown
       }
+      const config = parseAgentConfig(p.config)
       const input = typeof p.input === 'string' ? p.input : ''
       const promptVariables = parseStringRecord(p.promptVariables)
       if (!input && Object.keys(promptVariables).length === 0) {
@@ -443,23 +430,15 @@ export function buildAgentHandlers<TDeps>(
         opts.runToolPreview,
         'The tool playground is not configured on this host.',
       )
-      const toolId = requireStr(c.params, 'toolId')
+      const { toolId, args } = c.params
       // Guard against calling an unregistered tool before we build real deps.
       if (!opts.config.toolRegistry.has(toolId)) {
         throw new Error(`Tool '${toolId}' is not registered.`)
       }
-      const rawArgs = (c.params as { args?: unknown }).args
-      const args =
-        rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs)
-          ? (rawArgs as Record<string, unknown>)
-          : {}
-      const context = parseStringRecord(
-        (c.params as { context?: unknown }).context,
-      )
       return await runToolPreview({
         toolId,
         args,
-        context,
+        context: c.params.context ?? {},
         ctx: c.ctx,
         req: c.req,
       })

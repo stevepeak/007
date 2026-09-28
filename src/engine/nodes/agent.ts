@@ -74,6 +74,11 @@ export type ExecuteAgentNodeArgs<TDeps> = {
   /** Eval integration signal — read tools run live. See RunContext.liveReads. */
   liveReads?: boolean
   /**
+   * Per-tool override of `liveReads`, keyed by tool id — an eval Sample settles
+   * mocked-vs-live one tool at a time. See RunContext.
+   */
+  toolModes?: Record<string, 'mocked' | 'live'>
+  /**
    * Eval synthesis signal — run with an EMPTY tool set (no registry tools, no
    * delegation tools), forcing the model to answer from its seeded message
    * history. Grades the final response in isolation. See RunContext.freezeTools.
@@ -160,6 +165,7 @@ export async function executeAgentNode<TDeps>(
     simulate,
     fixtures,
     liveReads,
+    toolModes,
     freezeTools,
     agentOverride,
     subAgentCtx,
@@ -213,6 +219,7 @@ export async function executeAgentNode<TDeps>(
         simulate,
         fixtures,
         liveReads,
+        toolModes,
       })
   // Human-readable status templates, keyed by tool id (the ToolSet's own key, so
   // it matches `toolName` at call time). Only tools that declare a `statusLabel`

@@ -19,6 +19,7 @@ import type {
 } from '../protocol'
 
 import type { WfServerContext } from './handler-options'
+import type { WfInput } from './input-schemas'
 
 // The host-injection contract for the data handlers (`CreateWfSdkHandlersOptions`)
 // and the request context (`WfServerContext`) live in `handler-options.ts`;
@@ -154,8 +155,7 @@ export function json(body: unknown, status = 200): Response {
 // the editor save a work-in-progress that still has issues; those surface
 // non-blockingly in the editor's Issues panel. The strict `workflowGraphSchema`
 // remains the runtime gate when a run actually starts.
-export function parseGraph(params: unknown): WorkflowGraph {
-  const graph = (params as { graph?: unknown }).graph
+export function parseGraph(graph: unknown): WorkflowGraph {
   return workflowGraphShapeSchema.parse(graph)
 }
 
@@ -177,30 +177,6 @@ export class NotFoundError extends Error {}
 // than a bare `Error`.
 export class UnauthorizedError extends Error {}
 
-export function requireStr(params: unknown, key: string): string {
-  const v = (params as Record<string, unknown>)[key]
-  if (typeof v !== 'string' || !v) {
-    throw new BadRequestError(`Missing '${key}' parameter.`)
-  }
-  return v
-}
-
-// `requireStr`'s optional sibling: absent, empty, or wrong-typed all read as "not
-// supplied" rather than as an error. For params that only ever narrow what the
-// server does (a cache hint, a filter) — never for anything load-bearing.
-export function optStr(params: unknown, key: string): string | undefined {
-  const v = (params as Record<string, unknown>)[key]
-  return typeof v === 'string' && v ? v : undefined
-}
-
-// `optStr`'s numeric sibling, with the same "absent or wrong-typed reads as not
-// supplied" contract. NaN is rejected too, since it silently poisons every
-// comparison it reaches. For hints that only narrow what the server does.
-export function optNum(params: unknown, key: string): number | undefined {
-  const v = (params as Record<string, unknown>)[key]
-  return typeof v === 'number' && Number.isFinite(v) ? v : undefined
-}
-
 // Coerce an untrusted `{ [k]: v }` bag into a string→string record, dropping
 // non-string values. Used for the playground's prompt-variable inputs.
 export function parseStringRecord(value: unknown): Record<string, string> {
@@ -212,8 +188,8 @@ export function parseStringRecord(value: unknown): Record<string, string> {
   return out
 }
 
-export function parseAgentConfig(params: unknown): AgentConfig {
-  return agentConfigSchema.parse((params as { config?: unknown }).config)
+export function parseAgentConfig(config: unknown): AgentConfig {
+  return agentConfigSchema.parse(config)
 }
 
 // Per-request state each method handler receives. A handler parses what it needs
@@ -221,8 +197,19 @@ export function parseAgentConfig(params: unknown): AgentConfig {
 // owns the shared frame (auth/db resolution, JSON wrapping, error handling), so
 // the four-step ritual (validate → scope → call → shape) that used to be spelled
 // out in every `switch` arm now lives in exactly one place.
-export type HandlerCtx = {
-  params: unknown
+export type HandlerCtx<K extends keyof WfDataClient = keyof WfDataClient> = {
+  /**
+   * The params the dispatcher already validated, typed from this method's entry
+   * in `wfInputSchemas`.
+   *
+   * Handlers used to re-derive this by hand — `requireStr(c.params, 'id')` and
+   * `(c.params as { icon?: string }).icon` — which meant the schema and the
+   * handler each held their own private opinion of the wire shape and nothing
+   * compared them. Reading the shape off the schema makes the two the same
+   * statement, so the drift that used to be silent is now a type error (the
+   * flagged risk in ART-188).
+   */
+  params: WfInput<K>
   ctx: WfServerContext
   db: WfDb
   req: Request
@@ -261,7 +248,11 @@ export type HandlerCtx = {
 export type MaybePromise<T> = T | Promise<T>
 
 // The dispatcher reaches handlers by string key, so it needs a shape-agnostic
-// call signature.
+// call signature. `HandlerCtx<keyof WfDataClient>` gives `params` as the UNION
+// of every method's input — which no single handler accepts — so the dispatcher
+// casts through this type once, at the one place a string key is turned back
+// into a call. That cast is the price of dynamic dispatch and is confined to
+// `resolveCall`; every handler on the other side of it is fully typed.
 export type HandlerFn = (c: HandlerCtx) => unknown
 
 // The typed handler table: every method must return the SAME shape its protocol
@@ -272,7 +263,7 @@ export type HandlerFn = (c: HandlerCtx) => unknown
 export type HandlerResult<T> = [T] extends [void] ? unknown : T
 export type WfHandlers = {
   [K in keyof WfDataClient]: (
-    c: HandlerCtx,
+    c: HandlerCtx<K>,
   ) => MaybePromise<HandlerResult<Awaited<ReturnType<WfDataClient[K]>>>>
 }
 

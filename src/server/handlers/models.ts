@@ -19,7 +19,6 @@ import {
 import type { JsonSchema, WfToolInvocation } from '../protocol'
 
 import {
-  requireStr,
   toEpoch,
   toJsonSchema,
   type CreateWfSdkHandlersOptions,
@@ -223,7 +222,7 @@ export function buildModelHandlers<TDeps>(
     },
 
     refreshModels: async (c) => {
-      const providerId = requireStr(c.params, 'providerId')
+      const { providerId } = c.params
       const fetchCatalog = opts.config.fetchModelCatalog
       if (!fetchCatalog) {
         throw new Error(
@@ -252,8 +251,7 @@ export function buildModelHandlers<TDeps>(
     },
 
     setModelEnabled: async (c) => {
-      const modelId = requireStr(c.params, 'modelId')
-      const enabled = (c.params as { enabled?: boolean }).enabled === true
+      const { modelId, enabled } = c.params
       // A model in use by an agent cannot be disabled — it would break that
       // agent's model resolution. The UI locks the toggle; enforce it here too.
       if (!enabled) {
@@ -313,9 +311,7 @@ export function buildModelHandlers<TDeps>(
     },
 
     listToolInvocations: async (c) => {
-      const toolId = requireStr(c.params, 'toolId')
-      const limit = (c.params as { limit?: number }).limit
-      const rows = await listToolInvocations(c.db, { toolId, limit })
+      const rows = await listToolInvocations(c.db, c.params)
       const invocations: WfToolInvocation[] = rows.map((r) => {
         // `meta` is the untyped tool-step meta ({ toolId, args }); pull the
         // args out defensively so a malformed row degrades to `{}`.

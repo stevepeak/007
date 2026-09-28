@@ -22,6 +22,7 @@ export type {
   EvalSampleInputKind,
   EvalSampleLayer,
   EvalToolMode,
+  EvalToolSetting,
   EvalTools,
   SeededMessage,
   SeededToolCall,
@@ -38,7 +39,9 @@ export {
   evalSampleLayer,
   JUDGE_CONFIDENCE_MAX,
   toolFixtures,
-  unavailableCheckTypes,
+  toolSetting,
+  withToolSetting,
+  defaultEvalTools,
 } from '../eval/checks'
 
 // Wire enums for eval targets/verdicts, derived from the DB-schema `as const`

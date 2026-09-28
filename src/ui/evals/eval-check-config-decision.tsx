@@ -7,7 +7,7 @@ import { useDecisionModels } from '../hooks-models'
 import { useCommittedField } from '../use-committed-field'
 
 import { FieldHelp } from './eval-check-config-judge'
-import { outputPathOptions } from './fields'
+import { schemaPathOptions } from './fields'
 
 // ── Calibrated (decision) judge config ───────────────────────────────────────
 //
@@ -48,7 +48,7 @@ export function DecisionJudgeConfig({
   }, [check, models.data, persist])
 
   const chosen = models.data?.find((m) => m.id === check.modelId)
-  const pathOptions = outputPathOptions(outputSchema)
+  const pathOptions = schemaPathOptions(outputSchema)
   const showsCustom = Boolean(
     pathOptions &&
       check.path &&

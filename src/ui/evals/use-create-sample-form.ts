@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { AgentNode } from '../../engine'
 import type { WfRunStepDTO } from '../../server/protocol'
+import { defaultEvalTools } from '../../server/protocol'
 import {
   useAgents,
   useCreateEvalSet,
@@ -110,10 +111,10 @@ export function useCreateSampleForm({
         setId,
         name: title.trim() || 'Untitled sample',
         input: given,
-        // Mocked with nothing mocked: the sample replays the call with its tools
-        // stubbed out, which is the safe default. The author picks Live or None
-        // on the sample itself.
-        tools: { mode: 'mocked', fixtures: {} },
+        // Every tool mocked with nothing pinned: the sample replays the call
+        // with its tools stubbed out, which is the safe default. The author
+        // pins results, or switches a tool to Live, on the sample itself.
+        tools: defaultEvalTools(),
         checks: { op: 'and', checks: [] },
       })
       setOpen(false)

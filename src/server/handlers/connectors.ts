@@ -70,14 +70,6 @@ type ConnectorHandlerKeys =
   | 'saveConnectorToken'
   | 'disconnectConnector'
 
-function requireStr(params: unknown, key: string): string {
-  const value = (params as Record<string, unknown>)[key]
-  if (typeof value !== 'string' || !value) {
-    throw new BadRequestError(`\`${key}\` is required.`)
-  }
-  return value
-}
-
 function connectionInfo(
   row: ConnectorConnectionRow | null,
 ): ConnectorConnectionInfo | null {
@@ -227,7 +219,7 @@ export function buildConnectorHandlers<TDeps>(
     },
 
     getConnector: async (c): Promise<ConnectorDetail> => {
-      const connectorId = requireStr(c.params, 'connectorId')
+      const { connectorId } = c.params
       const connector = await requireConnector(c, connectorId)
       const [connection, tools] = await Promise.all([
         getConnection(c.db, connectorId),
@@ -240,17 +232,14 @@ export function buildConnectorHandlers<TDeps>(
     },
 
     saveConnector: async (c) => {
-      const p = c.params as Record<string, unknown>
-      const label = requireStr(c.params, 'label')
+      const p = c.params
+      const { label } = p
       // No id = create, and the id is ours to pick. It is derived from the
       // label and de-duplicated (`linear`, `linear-2`, …) rather than asked
       // for: it is internal, permanent, and nothing a human would type beats
       // the label's slug. An id IS accepted, for wf-spec imports that must
       // land on a known slug — and it still has to be well-formed.
-      const id =
-        typeof p.id === 'string' && p.id
-          ? p.id
-          : await uniqueConnectorId(c, slugifyConnectorId(label))
+      const id = p.id || (await uniqueConnectorId(c, slugifyConnectorId(label)))
       if (!CONNECTOR_ID_PATTERN.test(id)) {
         throw new BadRequestError(
           `'${id}' is not a valid connector id. Use lowercase letters, digits ` +
@@ -261,29 +250,24 @@ export function buildConnectorHandlers<TDeps>(
       // time: `global_fetch_strictly_public` is not enforced under wrangler
       // dev, so a private URL would pass every local test and fail only in
       // production. See `connectors/url.ts`.
-      const url = assertConnectorUrl(requireStr(c.params, 'url'), {
+      const url = assertConnectorUrl(p.url, {
         allowInsecure: opts.connectorAllowInsecureUrls,
       })
       const existing = await getConnector(c.db, id)
-      const authKind =
-        (p.authKind as 'oauth2' | 'bearer' | 'none' | undefined) ??
-        existing?.authKind ??
-        'oauth2'
+      const authKind = p.authKind ?? existing?.authKind ?? 'oauth2'
 
       await upsertConnector(c.db, {
         id,
         label,
         url,
-        transport:
-          (p.transport as 'http' | 'sse' | undefined) ?? existing?.transport,
+        transport: p.transport ?? existing?.transport,
         authKind,
-        scopes: (p.scopes as string | null | undefined) ?? null,
+        scopes: p.scopes ?? null,
         enabled: existing?.enabled ?? true,
-        icon: (p.icon as string | null | undefined) ?? existing?.icon ?? null,
-        iconName:
-          (p.iconName as string | null | undefined) ?? existing?.iconName ?? null,
-        color: (p.color as string | null | undefined) ?? existing?.color ?? null,
-        note: (p.note as string | null | undefined) ?? null,
+        icon: p.icon ?? existing?.icon ?? null,
+        iconName: p.iconName ?? existing?.iconName ?? null,
+        color: p.color ?? existing?.color ?? null,
+        note: p.note ?? null,
       })
 
       // A credential is issued by ONE server for ONE auth scheme. Re-pointing
@@ -306,7 +290,7 @@ export function buildConnectorHandlers<TDeps>(
     },
 
     deleteConnector: async (c) => {
-      const connectorId = requireStr(c.params, 'connectorId')
+      const { connectorId } = c.params
       const connector = await requireConnector(c, connectorId)
       await deleteConnector(c.db, connectorId)
       await c.change({
@@ -319,8 +303,7 @@ export function buildConnectorHandlers<TDeps>(
     },
 
     setConnectorEnabled: async (c) => {
-      const connectorId = requireStr(c.params, 'connectorId')
-      const enabled = (c.params as { enabled?: boolean }).enabled === true
+      const { connectorId, enabled } = c.params
       await requireConnector(c, connectorId)
       await setConnectorEnabled(c.db, { connectorId, enabled })
       await c.change({
@@ -335,7 +318,7 @@ export function buildConnectorHandlers<TDeps>(
     },
 
     refreshConnector: async (c) => {
-      const connectorId = requireStr(c.params, 'connectorId')
+      const { connectorId } = c.params
       const connector = await requireConnector(c, connectorId)
       const secret = await requireSecret(c)
 
@@ -415,8 +398,7 @@ export function buildConnectorHandlers<TDeps>(
     },
 
     setConnectorToolEnabled: async (c) => {
-      const toolId = requireStr(c.params, 'toolId')
-      const enabled = (c.params as { enabled?: boolean }).enabled === true
+      const { toolId, enabled } = c.params
       await setConnectorToolEnabled(c.db, { toolId, enabled })
       await c.change({
         entityKind: 'connector_tool',
@@ -431,11 +413,9 @@ export function buildConnectorHandlers<TDeps>(
     },
 
     setConnectorToolSideEffect: async (c) => {
-      const toolId = requireStr(c.params, 'toolId')
-      const sideEffect = (c.params as { sideEffect?: string }).sideEffect
-      if (sideEffect !== 'read' && sideEffect !== 'write') {
-        throw new BadRequestError("`sideEffect` must be 'read' or 'write'.")
-      }
+      // No 'read' | 'write' re-check here: the schema's `z.enum` already
+      // rejected anything else with a 400 before this ran.
+      const { toolId, sideEffect } = c.params
       await setConnectorToolSideEffect(c.db, { toolId, sideEffect })
       await c.change({
         entityKind: 'connector_tool',
@@ -449,7 +429,7 @@ export function buildConnectorHandlers<TDeps>(
     },
 
     startConnectorAuth: async (c) => {
-      const connectorId = requireStr(c.params, 'connectorId')
+      const { connectorId } = c.params
       const connector = await requireConnector(c, connectorId)
       if (connector.authKind !== 'oauth2') {
         throw new BadRequestError(
@@ -463,13 +443,12 @@ export function buildConnectorHandlers<TDeps>(
         redirectUri: callbackUrl(c),
         secret,
         userId: c.ctx.userId,
-        returnTo: (c.params as { returnTo?: string }).returnTo,
+        returnTo: c.params.returnTo,
       })
     },
 
     saveConnectorToken: async (c) => {
-      const connectorId = requireStr(c.params, 'connectorId')
-      const token = requireStr(c.params, 'token')
+      const { connectorId, token } = c.params
       const connector = await requireConnector(c, connectorId)
       const secret = await requireSecret(c)
       await saveBearerToken({
@@ -489,7 +468,7 @@ export function buildConnectorHandlers<TDeps>(
     },
 
     disconnectConnector: async (c) => {
-      const connectorId = requireStr(c.params, 'connectorId')
+      const { connectorId } = c.params
       const connector = await requireConnector(c, connectorId)
       await deleteConnection(c.db, connectorId)
       await c.change({

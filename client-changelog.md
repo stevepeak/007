@@ -15,6 +15,49 @@ without you and is still probably wrong to skip.
 
 ---
 
+## 2026-09-28 — a Sample settles its tools one at a time
+
+The eval Sample's tool setting stops being one sample-wide mode and becomes one
+answer per tool. `EvalTools` was `{ mode: 'mocked' | 'live' | 'frozen', fixtures }`
+and is now:
+
+```ts
+{
+  fallback: 'mocked' | 'live',                        // what an unlisted tool does
+  byTool: { [toolId]: { mode, output?: unknown } },   // one answer per tool
+}
+```
+
+An agent that searches AND reads memory could only answer for both at once
+before: pinning the search result meant pinning the memory lookup, and grading
+against live retrieval meant giving up determinism everywhere. Now a sample can
+run one tool for real and replay the rest.
+
+**Breaking — `EvalTools` and `EvalInvocation` changed shape.** If you build a
+Sample payload yourself, write `byTool`. The old shape is still *accepted* on
+every read and write path (`parseEvalTools` upgrades it, including over MCP and
+from a spec file), so stored rows and older clients keep working — but the type
+no longer describes it. `EvalInvocation.freezeTools` is gone and
+`EvalInvocation.toolModes` takes its place beside `liveReads`.
+
+**Breaking — there is no `frozen` any more.** A sample can no longer take an
+agent's tools away; per-tool settings have nowhere to say it. Stored `frozen`
+rows migrate to all-mocked-with-nothing-pinned on read, so their tools now
+return `{}` instead of not existing — a synthesis sample still grades the answer
+it produces from its staged conversation, but the agent CAN reach for a tool
+instead of having none. Re-read those samples once. The derived
+`EvalSampleLayer` loses `'synthesis'` for the same reason, and
+`unavailableCheckTypes` is gone (no tool setting makes a check ungradeable now).
+
+**Action — `RunContext.toolModes`.** The engine gained an optional
+`toolModes?: Record<string, 'mocked' | 'live'>` beside `liveReads`, threaded
+through `startGraphRun` and the node contexts. `liveReads` keeps working as the
+run-wide default. `freezeTools` is untouched on the engine side — nothing in the
+eval path sets it any more, but a host that passes it to `startGraphRun` still
+gets an empty tool set.
+
+---
+
 ## 2026-09-24 — `create_agent` on the MCP write surface
 
 `wf-mcp --write` (and the remote surface with writes on) gains an eleventh write

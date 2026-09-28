@@ -6,6 +6,7 @@ import type { JsonSchema } from '../../engine'
 import type { EvalCheck, WfEvalTargetKind } from '../../server/protocol'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
+import { useTools } from '../hooks'
 
 import {
   BINARY_TYPE_META,
@@ -16,7 +17,7 @@ import {
 import {
   BoolPicker,
   MatchRow,
-  outputPathOptions,
+  schemaPathOptions,
   TextField,
   EvalToolPicker,
 } from './fields'
@@ -262,21 +263,11 @@ function BinaryFields({
       )
     case 'tool_args_match':
       return (
-        <div className="space-y-3">
-          <EvalToolPicker
-            value={check.toolId}
-            onChange={(toolId) => persist({ ...check, toolId })}
-            allowToolIds={allowToolIds}
-          />
-          <MatchRow
-            path={check.path}
-            match={check.match}
-            value={check.value}
-            pathLabel="Args path (optional)"
-            pathPlaceholder="e.g. amount"
-            onChange={(p) => persist({ ...check, ...p })}
-          />
-        </div>
+        <ToolArgsFields
+          check={check}
+          persist={persist}
+          allowToolIds={allowToolIds}
+        />
       )
     case 'node_visited':
       return (
@@ -316,7 +307,7 @@ function BinaryFields({
         </div>
       )
     case 'output_match': {
-      const pathOptions = outputPathOptions(outputSchema)
+      const pathOptions = schemaPathOptions(outputSchema)
       return (
         <MatchRow
           path={check.path}
@@ -334,4 +325,57 @@ function BinaryFields({
     case 'decision_judge':
       return null
   }
+}
+
+// A tool-argument assertion. The named tool's input schema (converted from its
+// Zod `inputSchema`) is the contract for both halves of the comparison, so the
+// argument is picked from the tool's declared arguments (nested ones included,
+// as dotted paths) and — when that argument is an enum or a boolean — the
+// expected value is picked from ITS declared values. Only a tool that genuinely
+// declares no schema falls back to a free-form path box.
+//
+// Its own component because reading the tool catalog is a hook, and `BinaryFields`
+// dispatches on the check type: a hook can't live inside one arm of that switch.
+function ToolArgsFields({
+  check,
+  persist,
+  allowToolIds,
+}: {
+  check: Extract<EvalCheck, { type: 'tool_args_match' }>
+  persist: (next: EvalCheck) => void
+  allowToolIds?: string[]
+}) {
+  const tools = useTools()
+  const tool = tools.data?.find((t) => t.id === check.toolId)
+  const pathOptions = schemaPathOptions(tool?.inputSchema)
+  // No options is three different situations, and only the last one is a field
+  // to type a path into: the tool isn't chosen yet, the catalog hasn't loaded,
+  // or the tool genuinely declares no arguments.
+  const pathPending = pathOptions
+    ? null
+    : !check.toolId
+      ? 'Select a tool first'
+      : tools.isLoading
+        ? 'Loading arguments…'
+        : null
+  return (
+    <div className="space-y-3">
+      <EvalToolPicker
+        value={check.toolId}
+        onChange={(toolId) => persist({ ...check, toolId })}
+        allowToolIds={allowToolIds}
+      />
+      <MatchRow
+        path={check.path}
+        match={check.match}
+        value={check.value}
+        pathLabel="Argument"
+        pathPlaceholder="e.g. amount"
+        pathOptions={pathOptions}
+        pathPending={pathPending}
+        wholeLabel="All arguments"
+        onChange={(p) => persist({ ...check, ...p })}
+      />
+    </div>
+  )
 }

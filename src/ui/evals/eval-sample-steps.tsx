@@ -1,7 +1,4 @@
-import { Plus } from 'lucide-react'
-
 import type { EvalSampleInput } from '../../server/protocol'
-import { useWfComponents } from '../context'
 
 import { ChecksList } from './eval-sample-checks'
 import { emptyInputFor, SampleInputEditor } from './eval-sample-input'
@@ -22,22 +19,16 @@ const INPUT_TITLES: Record<EvalSampleInput['kind'], string> = {
 /**
  * The three questions a sample answers, in order: what is the target invoked
  * with, how do its tools behave, and what has to be true of the run. The Tools
- * step is conditional — an agent with no tools behaves identically under all
- * three modes, so the card would be asking a question with no answer.
+ * step is conditional — an agent with no tools has nothing to list there.
  */
 export function SampleConfigSteps({
   state,
   draft,
-  addMockOpen,
-  onAddMockOpenChange,
 }: {
   state: SampleState
   /** The loaded draft — narrowed by the caller's `QueryState`, so never null. */
   draft: Draft
-  addMockOpen: boolean
-  onAddMockOpenChange: (open: boolean) => void
 }) {
-  const { Button } = useWfComponents()
   const { set, edit } = state
   const targetKind = set?.targetKind ?? 'agent'
 
@@ -66,26 +57,12 @@ export function SampleConfigSteps({
     steps.push({
       key: 'tools',
       title: targetKind === 'workflow' ? 'Nodes' : 'Tools',
-      aside:
-        draft.tools.mode === 'mocked' && targetKind === 'agent' ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => onAddMockOpenChange(!addMockOpen)}
-          >
-            <Plus className="size-4" />
-            Add mock
-          </Button>
-        ) : undefined,
       content: (
         <SampleToolsEditor
           targetId={set?.targetId ?? ''}
           targetKind={targetKind}
           value={draft.tools}
           onChange={(tools) => edit({ ...draft, tools })}
-          addOpen={addMockOpen}
-          onAddOpenChange={onAddMockOpenChange}
-          stagedToolResults={state.stagedToolResults}
         />
       ),
     })
@@ -97,7 +74,6 @@ export function SampleConfigSteps({
     content: (
       <ChecksList
         checks={draft.checks}
-        tools={draft.tools}
         targetKind={set?.targetKind}
         hasTools={state.hasTools}
         outputSchema={state.outputSchema}

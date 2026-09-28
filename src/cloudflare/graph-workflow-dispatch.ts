@@ -221,6 +221,7 @@ async function runItemInline<TDeps, E extends GraphWorkflowEnv>(
           simulate: p.runContext.simulate,
           fixtures: p.runContext.fixtures,
           liveReads: p.runContext.liveReads,
+          toolModes: p.runContext.toolModes,
           freezeTools: p.runContext.freezeTools,
           agentOverride: p.runContext.agentOverride,
         },
@@ -862,6 +863,7 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
                       simulate: p.runContext.simulate,
                       fixtures: p.runContext.fixtures,
                       liveReads: p.runContext.liveReads,
+                      toolModes: p.runContext.toolModes,
                       freezeTools: p.runContext.freezeTools,
                       agentOverride: p.runContext.agentOverride,
                       // Delegation: an agent node may spawn sub-agents/workflows

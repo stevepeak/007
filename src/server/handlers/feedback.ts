@@ -8,13 +8,10 @@ import {
   type FeedbackRecord,
 } from '../../storage/data'
 import type {
-  WfFeedbackListInput,
   WfFeedbackRow,
-  WfFeedbackSubmitInput,
 } from '../protocol'
 
 import {
-  requireStr,
   toEpoch,
   type CreateWfSdkHandlersOptions,
   type WfHandlers,
@@ -57,14 +54,13 @@ export function buildFeedbackHandlers<TDeps>(
     // id is taken from the authenticated context (never the input); the input's
     // `raterLabel` is just the display snapshot for triage.
     submitFeedback: async (c) => {
-      const input = c.params as WfFeedbackSubmitInput
-      const subjectId = requireStr(input, 'subjectId')
+      const input = c.params
       if (input.rating == null) {
-        await deleteFeedback(c.db, subjectId)
+        await deleteFeedback(c.db, input.subjectId)
         return { ok: true as const }
       }
       await upsertFeedback(c.db, {
-        subjectId,
+        subjectId: input.subjectId,
         rating: input.rating,
         note: input.note ?? null,
         correlationId: input.correlationId ?? null,
@@ -80,7 +76,7 @@ export function buildFeedbackHandlers<TDeps>(
     },
 
     listFeedback: async (c) => {
-      const input = (c.params ?? {}) as WfFeedbackListInput
+      const input = c.params
       const result = await listFeedback(c.db, {
         ratings: input.ratings,
         ackState: input.ackState,
@@ -96,31 +92,23 @@ export function buildFeedbackHandlers<TDeps>(
     },
 
     setFeedbackAcknowledged: async (c) => {
-      const subjectId = requireStr(c.params, 'subjectId')
-      const acknowledged =
-        (c.params as { acknowledged?: boolean }).acknowledged === true
       await setFeedbackAck(c.db, {
-        subjectId,
-        acknowledged,
+        subjectId: c.params.subjectId,
+        acknowledged: c.params.acknowledged,
         ackByUserId: c.ctx.userId ?? null,
       })
       return { ok: true as const }
     },
 
     setFeedbackInternalNote: async (c) => {
-      const subjectId = requireStr(c.params, 'subjectId')
-      const raw = (c.params as { note?: unknown }).note
-      const note = typeof raw === 'string' && raw.trim() ? raw.trim() : null
-      await setFeedbackInternalNote(c.db, { subjectId, note })
+      // An all-whitespace note reads as "cleared", same as an explicit null.
+      const note = c.params.note?.trim() || null
+      await setFeedbackInternalNote(c.db, { subjectId: c.params.subjectId, note })
       return { ok: true as const }
     },
 
     getFeedbackForSubjects: async (c) => {
-      const subjectIds = (c.params as { subjectIds?: unknown }).subjectIds
-      const ids = Array.isArray(subjectIds)
-        ? subjectIds.filter((s): s is string => typeof s === 'string')
-        : []
-      const rows = await getFeedbackForSubjects(c.db, ids)
+      const rows = await getFeedbackForSubjects(c.db, c.params.subjectIds)
       return rows.map(rowToDto)
     },
   }

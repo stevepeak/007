@@ -1514,8 +1514,8 @@ clean rather than half-right:
   is an opaque string with no foreign key, so without it a hallucinated id stores
   a Goal that fails only when someone runs it.
 - **Two fields are keyed against the target, so the contract carries those too.**
-  `tools.fixtures` is keyed by tool id and a judge's `path` addresses a field of
-  the declared output — and a fixture on a tool the agent doesn't have is simply
+  `tools.byTool` is keyed by tool id and a judge's `path` addresses a field of
+  the declared output — and an entry for a tool the agent doesn't have is simply
   dead, while a `path` that doesn't resolve grades `undefined` and reads as a
   wrong answer. Both validate, store and are never reported, which is the
   ART-146 failure class. So `target` also returns `toolIds` and `outputSchema`,
@@ -1535,10 +1535,10 @@ a draft Sample and returns it without writing — the model reviews it, rewrites
 the rubric, then saves it with `upsert_eval_sample`. It is a **read** tool;
 only saving needs the write scope. Paired with `list_feedback`, whose thumbs-down rows
 name the run whose answer a human called bad, it turns a complaint into a test.
-Two layers produce different samples from the same trace: `trajectory` replays
-the run's real tool results as `mocked` fixtures (keyed on the same tool id the
-grader looks them up under), while `synthesis` folds those results into a seeded
-assistant turn and freezes the tool set so the sample grades the answer alone.
+Two layers produce different samples from the same trace: `trajectory` pins the
+run's real tool results as each tool's mocked output (keyed on the same tool id
+the grader looks them up under), while `synthesis` folds those results into a
+seeded assistant turn and pins nothing, so the sample grades the answer alone.
 Synthesis needs a thread to stage the context in, so it is refused for a `task`
 agent rather than silently degraded. The seeded rubric is never the run's own
 output: on a thumbs-down run that would enshrine the failure as correct, and on
@@ -1598,9 +1598,9 @@ framework-free and shared with the dialog.
 dispatcher validates them against the same schemas the grader reads, and its
 message names the exact path that is wrong, which is what the model needs to fix
 itself. On success it answers with the testing **layer** the Sample landed in
-(io / trajectory / synthesis / integration) and warns about combinations that
-store fine but grade nothing — a `tool_called` check under `frozen` tools grades
-the absence of a call the agent was never able to make.
+(io / trajectory / integration) and warns about combinations that store fine but
+grade nothing — a check keyed on a tool the target cannot call, or a judge `path`
+that names no declared field.
 
 ### 5c. Inbound: MCP connectors
 

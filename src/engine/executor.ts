@@ -329,6 +329,7 @@ export async function executeWorkflow<TDeps>(
           simulate: runContext.simulate,
           fixtures: runContext.fixtures,
           liveReads: runContext.liveReads,
+          toolModes: runContext.toolModes,
           freezeTools: runContext.freezeTools,
           agentOverride: runContext.agentOverride,
           // Supplied by callers that run unattended — the inline engine derives

@@ -1,17 +1,17 @@
-import type { EvalSampleInput, EvalTools } from './checks'
-import { toolFixtures } from './checks'
+import type { EvalSampleInput, EvalToolMode, EvalTools } from './checks'
+import { toolFixtures, toolModes } from './checks'
 import { seededMessagesToUiMessages } from './synthesis'
 
 // The one place a Sample's AUTHORING shape (input + tools) becomes the ENGINE's
 // run signals. Keeping the translation here — pure, and covered by
 // `invoke.test.ts` — is what lets the two vocabularies stay separate: an author
-// picks "conversation input, frozen tools", and the executor only ever sees
-// `triggerInput` / `promptVariables` / `fixtures` / `freezeTools` / `liveReads`.
+// picks "a conversation input, this tool pinned and that one live", and the
+// executor only ever sees `triggerInput` / `promptVariables` / `fixtures` /
+// `toolModes` / `liveReads`.
 //
 // Before the split these signals were assembled inline in the run handler from
 // four independently-authorable fields, where `seededMessages` silently won over
-// `triggerInput` and `freezeTools` silently voided `fixtures`. The union makes
-// each combination explicit and unrepresentable-if-contradictory.
+// `triggerInput` and `freezeTools` silently voided `fixtures`.
 
 /** The engine-facing signals one Sample invocation runs with. */
 export type EvalInvocation = {
@@ -19,18 +19,23 @@ export type EvalInvocation = {
   triggerInput: Record<string, unknown>
   /** Values the target's prompt `${vars}` interpolate from. */
   promptVariables: Record<string, string>
-  /** Canned read-tool outputs; empty outside `mocked`. */
+  /** Canned outputs for the mocked read tools, keyed by tool id. */
   fixtures: Record<string, unknown>
-  /** Run the agent with no tools at all (`frozen`). */
-  freezeTools: boolean
-  /** Let read tools execute for real instead of returning a fixture (`live`). */
+  /**
+   * Which read tools run live and which return their fixture, by tool id. The
+   * engine consults this first and falls back to `liveReads` for a tool the
+   * sample says nothing about.
+   */
+  toolModes: Record<string, EvalToolMode>
+  /** What a tool with no entry in `toolModes` does — see `EvalTools.fallback`. */
   liveReads: boolean
 }
 
 /**
  * Translate a Sample's authored input + tools into the run signals the engine
- * takes. Write tools stay neutralized in every mode — the caller runs with
- * `simulate: true` regardless, and `liveReads` only re-enables the READ side.
+ * takes. Write tools stay neutralized whatever a tool's mode says — the caller
+ * runs with `simulate: true` regardless, and a `live` tool only re-enables the
+ * READ side.
  */
 export function evalInvocation(
   input: EvalSampleInput,
@@ -39,8 +44,8 @@ export function evalInvocation(
   return {
     ...invocationInput(input),
     fixtures: toolFixtures(tools),
-    freezeTools: tools.mode === 'frozen',
-    liveReads: tools.mode === 'live',
+    toolModes: toolModes(tools),
+    liveReads: tools.fallback === 'live',
   }
 }
 

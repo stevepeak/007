@@ -79,6 +79,11 @@ export type RunNodeContext<TDeps> = {
   fixtures?: Record<string, unknown>
   /** Eval integration signal — read tools run live. See RunContext. */
   liveReads?: boolean
+  /**
+   * Per-tool override of `liveReads`, keyed by tool id — an eval Sample settles
+   * mocked-vs-live one tool at a time. See RunContext.
+   */
+  toolModes?: Record<string, 'mocked' | 'live'>
   /** Eval synthesis signal — run agent nodes with an empty tool set. See RunContext. */
   freezeTools?: boolean
   /** Eval matrix override — swaps an agent node's modelId/prompt. See RunContext. */
@@ -144,6 +149,7 @@ export async function runNode<TDeps>(
         simulate: ctx.simulate,
         fixtures: ctx.fixtures,
         liveReads: ctx.liveReads,
+        toolModes: ctx.toolModes,
         freezeTools: ctx.freezeTools,
         agentOverride: ctx.agentOverride,
         modelBudget: ctx.modelBudget,
@@ -173,6 +179,7 @@ export async function runNode<TDeps>(
         simulate: ctx.simulate,
         fixtures: ctx.fixtures,
         liveReads: ctx.liveReads,
+        toolModes: ctx.toolModes,
       })
       return {
         schedulerOutput: r.output,

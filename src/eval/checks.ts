@@ -257,77 +257,112 @@ export const evalFixturesSchema = z.record(z.string(), z.unknown())
 export type EvalFixtures = z.infer<typeof evalFixturesSchema>
 
 // ── A Sample's TOOLS ────────────────────────────────────────────────────────
-// How the target's tools behave for this Sample. One tri-state, because the
-// three settings are mutually exclusive in the engine and were previously
-// authorable as contradictory combinations: `freezeTools` (an empty tool set)
-// silently made every fixture below it dead, and every trajectory check
-// ungradeable, with nothing in the UI saying so.
+// How the target's tools behave for this Sample — settled ONE TOOL AT A TIME,
+// because that is the grain the question actually has. A sample-wide switch made
+// an agent with a search tool and a memory tool answer the same question for
+// both, so pinning one result meant pinning the other, and grading against live
+// retrieval meant giving up determinism everywhere.
 //
-// Write tools are neutralized in ALL three modes — an eval never writes.
+// A tool is `mocked` (returns its pinned `output`, or `{}` when nothing is
+// pinned yet) or `live` (executes for real). There is no third setting: taking
+// tools away entirely was a sample-wide mode, and a tool the agent can't call is
+// not something you say about one tool.
+//
+// Write tools are neutralized in BOTH modes — an eval never writes.
 
-export const evalToolsSchema = z.discriminatedUnion('mode', [
+export const evalToolModeSchema = z.enum(['mocked', 'live'])
+export type EvalToolMode = z.infer<typeof evalToolModeSchema>
+
+/** How ONE tool behaves for a Sample. */
+export const evalToolSettingSchema = z.object({
+  mode: evalToolModeSchema.default('mocked'),
   /**
-   * Read tools execute for real. The integration layer: grades the agent
-   * against live retrieval, so a bad query or an empty corpus shows up as a
-   * failure instead of being papered over by a fixture.
+   * The canned result this tool returns under `mocked`. Absent means nothing is
+   * pinned yet — the editor starts from the tool's own output schema, and a run
+   * hands the model `{}` until something is saved.
    */
-  z.object({ mode: z.literal('live') }),
+  output: z.unknown().optional(),
+})
+export type EvalToolSetting = z.infer<typeof evalToolSettingSchema>
+
+export const evalToolsSchema = z.object({
   /**
-   * Read tools return their canned `fixtures` entry (a tool with no entry
-   * returns `{}`). The trajectory layer: deterministic, side-effect free, and
-   * the only mode where `tool_called` / `tool_args_match` mean anything.
+   * What a tool with no entry of its own does. `mocked` for everything authored
+   * against the per-tool editor; `live` only on a row migrated from the old
+   * sample-wide Live mode, where "every read tool runs for real" was the whole
+   * setting and the tool ids it applied to were never written down.
    */
-  z.object({ mode: z.literal('mocked'), fixtures: evalFixturesSchema.default({}) }),
-  /**
-   * The agent runs with NO tools and must answer from its input alone. The
-   * synthesis layer: isolates response quality from retrieval / tool-selection
-   * nondeterminism. Pair with a `conversation` input that already stages the
-   * retrieved context as an assistant turn's tool result.
-   */
-  z.object({ mode: z.literal('frozen') }),
-])
+  fallback: evalToolModeSchema.default('mocked'),
+  /** Per-tool settings, keyed by tool id. A tool absent here takes `fallback`. */
+  byTool: z.record(z.string(), evalToolSettingSchema).default({}),
+})
 export type EvalTools = z.infer<typeof evalToolsSchema>
-export type EvalToolMode = EvalTools['mode']
 
-/** The canned outputs this tool setting supplies — empty outside `mocked`. */
+/** The tool setting in force for one tool — its own entry, else the fallback. */
+export function toolSetting(tools: EvalTools, toolId: string): EvalToolSetting {
+  return tools.byTool[toolId] ?? { mode: tools.fallback }
+}
+
+/**
+ * The canned outputs this setting supplies, keyed by tool id — the `fixtures`
+ * the engine hands a mocked read tool. Only tools that are BOTH mocked and have
+ * something pinned appear: a live tool has no canned result, and a mocked tool
+ * with nothing pinned falls through to `{}` in the engine exactly as an unmocked
+ * tool always did.
+ */
 export function toolFixtures(tools: EvalTools): EvalFixtures {
-  return tools.mode === 'mocked' ? tools.fixtures : {}
+  const fixtures: EvalFixtures = {}
+  for (const [toolId, setting] of Object.entries(tools.byTool)) {
+    if (setting.mode === 'mocked' && setting.output !== undefined) {
+      fixtures[toolId] = setting.output
+    }
+  }
+  return fixtures
+}
+
+/** The per-tool modes the engine applies over its `fallback` default. */
+export function toolModes(tools: EvalTools): Record<string, EvalToolMode> {
+  return Object.fromEntries(
+    Object.entries(tools.byTool).map(([toolId, s]) => [toolId, s.mode]),
+  )
+}
+
+/** A Sample's tools, with one tool's setting replaced. */
+export function withToolSetting(
+  tools: EvalTools,
+  toolId: string,
+  setting: EvalToolSetting,
+): EvalTools {
+  return { ...tools, byTool: { ...tools.byTool, [toolId]: setting } }
+}
+
+/** The tool setting a new Sample starts from: every tool mocked, nothing pinned. */
+export function defaultEvalTools(): EvalTools {
+  return { fallback: 'mocked', byTool: {} }
 }
 
 // ── Derived: what kind of test is this? ─────────────────────────────────────
 // The testing LAYER a Sample belongs to is a function of its input and its
 // tools, never a stored field — so it can't drift from the settings it names.
-// See the three layers in `docs`: trajectory, synthesis, integration.
+//
+// Per-tool settings mean a sample can now sit in two layers at once (one tool
+// pinned, another live). The name reports the STRONGEST claim it makes: any tool
+// running for real is what decides whether the sample is reproducible, so that
+// wins over the pinned ones beside it.
 
-export type EvalSampleLayer =
-  | 'io'
-  | 'trajectory'
-  | 'synthesis'
-  | 'integration'
+export type EvalSampleLayer = 'io' | 'trajectory' | 'integration'
 
 export function evalSampleLayer(
-  input: EvalSampleInput,
+  _input: EvalSampleInput,
   tools: EvalTools,
 ): EvalSampleLayer {
-  // Synthesis needs BOTH halves: staged context to answer from, and no tools to
-  // go get more. Freezing a task agent's (nonexistent) tools isn't synthesis —
-  // it's the plain input → output test it already was.
-  if (tools.mode === 'frozen') {
-    return input.kind === 'conversation' ? 'synthesis' : 'io'
-  }
-  if (tools.mode === 'live') return 'integration'
-  // Mocked tools with something actually mocked = a trajectory test; mocked
-  // with nothing mocked is just an input → output test.
+  const settings = Object.values(tools.byTool)
+  const anyLive =
+    tools.fallback === 'live' || settings.some((s) => s.mode === 'live')
+  if (anyLive) return 'integration'
+  // Something actually pinned = a trajectory test; nothing pinned is just an
+  // input → output test, whatever the tools would have returned.
   return Object.keys(toolFixtures(tools)).length > 0 ? 'trajectory' : 'io'
-}
-
-/**
- * Check types that cannot produce a meaningful verdict under a tool setting.
- * Under `frozen` the agent calls nothing, so the trace has no tool step and a
- * trajectory check grades an absence — which is a false failure, not a signal.
- */
-export function unavailableCheckTypes(tools: EvalTools): EvalCheckType[] {
-  return tools.mode === 'frozen' ? ['tool_called', 'tool_args_match'] : []
 }
 
 // ── Legacy row upgrade ──────────────────────────────────────────────────────
@@ -381,25 +416,55 @@ export function parseEvalSampleInput(value: unknown): EvalSampleInput {
 }
 
 /**
- * Parse a row's stored `tools` column. A legacy row stored a bare fixtures
- * record there, and its freeze flag on the OTHER column — so the legacy freeze
- * has to be passed in alongside. Freeze wins: it was the setting that actually
- * took effect, silently making any fixtures beside it dead.
+ * Parse a row's stored `tools` column, upgrading both older shapes on the way
+ * through — the sample-wide `{ mode, fixtures }` tri-state, and before that a
+ * bare fixtures record with its freeze flag on the OTHER column (which is why
+ * the legacy freeze is passed in alongside).
+ *
+ * The three old modes land as:
+ *  • `mocked` — each fixture becomes that tool's pinned output. Identical
+ *    behavior: the same tools return the same results.
+ *  • `live` — `fallback: 'live'`, because "every read tool runs for real" never
+ *    recorded WHICH tools it applied to. Every tool reads as Live, which is what
+ *    the row meant, and pinning one now says so explicitly.
+ *  • `frozen` — the agent no longer runs without tools; per-tool settings can't
+ *    express taking them all away. The row becomes all-mocked with nothing
+ *    pinned, so its tools return `{}` instead of not existing. A synthesis
+ *    sample that staged its context in a seeded conversation still grades the
+ *    same answer, but the agent CAN now call a tool instead of answering from
+ *    the staged turns alone — worth re-reading those samples once.
  */
 export function parseEvalTools(
   value: unknown,
   legacyFreezeTools?: boolean,
 ): EvalTools {
-  if (
-    value &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    !('mode' in value)
-  ) {
-    if (legacyFreezeTools) return { mode: 'frozen' }
-    return { mode: 'mocked', fixtures: evalFixturesSchema.parse(value) }
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>
+    // Pre-split: a bare fixtures record, freeze carried on the input column.
+    if (!('mode' in record) && !('byTool' in record)) {
+      if (legacyFreezeTools) return defaultEvalTools()
+      return fixturesToTools(evalFixturesSchema.parse(record))
+    }
+    if ('mode' in record) {
+      if (record.mode === 'live') return { fallback: 'live', byTool: {} }
+      if (record.mode === 'frozen') return defaultEvalTools()
+      return fixturesToTools(evalFixturesSchema.parse(record.fixtures ?? {}))
+    }
   }
-  return evalToolsSchema.parse(value ?? { mode: 'mocked', fixtures: {} })
+  return evalToolsSchema.parse(value ?? defaultEvalTools())
+}
+
+/** Each canned output as its own tool's pinned `mocked` setting. */
+function fixturesToTools(fixtures: EvalFixtures): EvalTools {
+  return {
+    fallback: 'mocked',
+    byTool: Object.fromEntries(
+      Object.entries(fixtures).map(([toolId, output]) => [
+        toolId,
+        { mode: 'mocked' as const, output },
+      ]),
+    ),
+  }
 }
 
 /** The legacy `freezeTools` flag on a row's stored `input` column, if any. */

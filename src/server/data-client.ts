@@ -1,3 +1,4 @@
+import type { WfInputWire } from './handlers/input-schemas'
 import type { WfDataClient } from './protocol'
 
 // The `WfDataClient` method map, with the transport pulled out.
@@ -30,7 +31,7 @@ export function createWfDataClient(call: WfDataTransport): WfDataClient {
   // error — the one wire contract the shared type otherwise couldn't enforce.
   const send = <K extends keyof WfDataClient>(
     method: K,
-    params: unknown,
+    params: WfInputWire<K>,
     timeoutMs?: number,
   ): ReturnType<WfDataClient[K]> => {
     return call(method, params, timeoutMs) as ReturnType<WfDataClient[K]>
@@ -43,7 +44,9 @@ export function createWfDataClient(call: WfDataTransport): WfDataClient {
     method: K,
     timeoutMs?: number,
   ) => {
-    return (params: unknown = {}): ReturnType<WfDataClient[K]> => {
+    return (
+      params: WfInputWire<K> = {} as WfInputWire<K>,
+    ): ReturnType<WfDataClient[K]> => {
       return send(method, params, timeoutMs)
     }
   }

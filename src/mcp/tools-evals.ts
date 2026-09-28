@@ -7,9 +7,8 @@ import {
   describeCheckVocabulary,
   evalSampleInputSchema,
   evalSampleLayer,
-  evalToolsSchema,
-  toolFixtures,
-  unavailableCheckTypes,
+  parseEvalTools,
+  defaultEvalTools,
   type CheckTree,
   type EvalTools,
 } from '../eval/checks'
@@ -51,9 +50,9 @@ import { optString, reqString, type WfMcpTool } from './tools'
 // Two fields of a Sample are keyed against the target rather than free-form, and
 // both used to be authored blind here:
 //
-//   • `tools.fixtures` is keyed by tool id. The console's mock editor only ever
-//     offers the target agent's own wired tools and seeds each fixture from that
-//     tool's JSON Schema. Over MCP it was a free record — and a fixture keyed on
+//   • `tools.byTool` is keyed by tool id. The console's tool list only ever
+//     shows the target agent's own wired tools and seeds each mock from that
+//     tool's JSON Schema. Over MCP it is a free record — and an entry keyed on
 //     a tool the agent doesn't have is simply dead. It validates, it stores, it
 //     is never read, and nothing ever says so.
 //   • a judge's `path` addresses a field of the target's declared output. The
@@ -248,16 +247,19 @@ function outputPaths(schema: JsonSchema | null): string[] | null {
 }
 
 /**
- * Fixtures keyed on a tool the target cannot call — dead weight that validates.
+ * Tool settings keyed on a tool the target cannot call — dead weight that
+ * validates. EVERY entry, not just the pinned ones: a tool set to `live` that
+ * the agent doesn't have is exactly as dead as a mock it will never read, and
+ * more misleading, because it reads as a deliberate decision to run something.
  *
  * Only ever reported against a KNOWN tool list (`toolIds != null`): a workflow
  * target, or an agent that has never been published, has no list to check
  * against, and guessing there would produce a warning about nothing.
  */
-function deadFixtures(tools: EvalTools, toolIds: string[] | null): string[] {
+function deadToolSettings(tools: EvalTools, toolIds: string[] | null): string[] {
   if (!toolIds) return []
   const allowed = new Set(toolIds)
-  return Object.keys(toolFixtures(tools)).filter((id) => !allowed.has(id))
+  return Object.keys(tools.byTool).filter((id) => !allowed.has(id))
 }
 
 /** Judge / output-match `path`s that name no field of the declared output. */
@@ -283,14 +285,11 @@ function deadPaths(checks: CheckTree, schema: JsonSchema | null): string[] {
  * The layer a Sample tests, plus anything about it that can't produce a verdict.
  *
  * Derived from the same `input` + `tools` the editor derives it from, so the
- * answer here and the badge on the sample can't disagree. Its value is the
- * silent-failure it names: a `frozen` sample with a `tool_called` check grades
- * the absence of a call the agent was never able to make, which reads as a real
- * failure and isn't one.
+ * answer here and the badge on the sample can't disagree.
  *
- * The three lints that follow are all of the same kind — things that store
- * cleanly and then grade nothing, which is the worst outcome an eval can have
- * because it looks like a result.
+ * The lints that follow are all of one kind — things that store cleanly and then
+ * grade nothing, which is the worst outcome an eval can have because it looks
+ * like a result.
  */
 function describeSample(
   input: unknown,
@@ -303,22 +302,13 @@ function describeSample(
   const parsedInput = evalSampleInputSchema.parse(
     input ?? { kind: 'task', variables: {} },
   )
-  const parsedTools = evalToolsSchema.parse(
-    tools ?? { mode: 'mocked', fixtures: {} },
-  )
+  // Upgrading parse, not a bare one: this describes what the server just
+  // accepted, and the server accepts the legacy sample-wide shape too.
+  const parsedTools = parseEvalTools(tools ?? defaultEvalTools())
   const parsedChecks = checkTreeSchema.parse(
     checks ?? { op: 'and', checks: [] },
   )
-  const unavailable = new Set<string>(unavailableCheckTypes(parsedTools))
-  const dead = [...new Set(parsedChecks.checks.map((c) => c.type))].filter(
-    (t) => unavailable.has(t),
-  )
   const warnings: string[] = []
-  if (dead.length > 0) {
-    warnings.push(
-      `Checks ${dead.join(', ')} can never pass under tools mode "${parsedTools.mode}" — the agent calls no tools, so they grade an absence. Use mode "mocked" for trajectory checks, or drop them.`,
-    )
-  }
   if (
     parsedInput.kind === 'task' &&
     Object.values(parsedInput.variables).includes('')
@@ -336,10 +326,10 @@ function describeSample(
     )
   }
   if (target) {
-    const orphaned = deadFixtures(parsedTools, target.toolIds)
+    const orphaned = deadToolSettings(parsedTools, target.toolIds)
     if (orphaned.length > 0) {
       warnings.push(
-        `Fixtures are keyed on tools this target cannot call: ${orphaned.join(', ')}. They will never be read. The target's tools are ${(target.toolIds ?? []).join(', ') || '(none)'}.`,
+        `Tool settings are keyed on tools this target cannot call: ${orphaned.join(', ')}. They will never be read. The target's tools are ${(target.toolIds ?? []).join(', ') || '(none)'}.`,
       )
     }
     const missing = deadPaths(parsedChecks, target.outputSchema)
@@ -606,13 +596,14 @@ export function evalWriteTools(): WfMcpTool[] {
         '  • conversation agent: { "kind": "conversation", "turns": [ … ], "variables": { … } }',
         '  • workflow:           { "kind": "trigger", "payload": { … }, "variables": { … } }',
         '',
-        'A conversation `turn` is { "role": "user" | "assistant", "text": "…" }. An assistant turn may also carry `toolCalls`: [{ "tool": "<toolId>", "args": …, "output": … }] — the call it is treated as having made and the result it saw. That is how you STAGE retrieved context: seed the search the assistant "already ran" and its chunks, and the run begins mid-conversation with only the final reply left to produce. Pair it with tools mode "frozen" for a synthesis test.',
+        'A conversation `turn` is { "role": "user" | "assistant", "text": "…" }. An assistant turn may also carry `toolCalls`: [{ "tool": "<toolId>", "args": …, "output": … }] — the call it is treated as having made and the result it saw. That is how you STAGE retrieved context: seed the search the assistant "already ran" and its chunks, and the run begins mid-conversation with only the final reply left to produce. Leave every tool unpinned to grade the answer it synthesizes from that context alone.',
         '',
-        '`tools` — one mode, and it decides what the sample can grade:',
-        '  • { "mode": "mocked", "fixtures": { "<toolId>": <canned result> } } — deterministic; the ONLY mode where tool_called / tool_args_match mean anything. Keys must be tools the target actually has (`target.toolIds`); any other key is never read.',
-        '  • { "mode": "live" } — read tools really execute; grades retrieval end to end.',
-        '  • { "mode": "frozen" } — no tools at all; grades the answer alone. Pair with a conversation input whose assistant `toolCalls` already stage the retrieved context (see above).',
-        'Write tools never execute in any mode.',
+        '`tools` — settled ONE TOOL AT A TIME: { "byTool": { "<toolId>": { "mode": "mocked" | "live", "output": <canned result> } } }. Tool ids must be ones the target actually has (`target.toolIds`); any other key is never read.',
+        '  • "mocked" (the default for every tool) — the tool returns `output`, or `{}` when you pin nothing. Deterministic, and what makes tool_called / tool_args_match mean anything.',
+        '  • "live" — that one tool really executes, while the others stay pinned. This is how you grade retrieval end to end without giving up determinism everywhere else.',
+        'Omit a tool entirely and it is mocked with nothing pinned. There is no way to take a tool away: a sample that should answer without retrieval stages its context in the conversation and pins nothing.',
+        'Sending `tools` REPLACES the whole object, the same as `input` and `checks` — to change one tool, send the others back alongside it or you drop their pinned results. The reply\'s `replaced` names what the call actually overwrote.',
+        'Write tools never execute, whatever a mode says.',
         '',
         '`checks` — { "op": "and" | "or", "checks": [ … ] }. Every legal check, with `?` marking an optional field:',
         CHECK_VOCABULARY,
@@ -646,7 +637,9 @@ export function evalWriteTools(): WfMcpTool[] {
         tools: z
           .record(z.string(), z.unknown())
           .nullish()
-          .describe('Tool behaviour: mocked (default) | live | frozen.'),
+          .describe(
+            'Per-tool behaviour: { "byTool": { "<toolId>": { "mode": "mocked" | "live", "output": … } } }. See the tool description.',
+          ),
         checks: z
           .record(z.string(), z.unknown())
           .nullish()

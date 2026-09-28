@@ -44,6 +44,7 @@ export type {
   EvalSampleInputKind,
   EvalSampleLayer,
   EvalToolMode,
+  EvalToolSetting,
   EvalTools,
   ModelOption,
   ConnectorCapability,

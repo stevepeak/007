@@ -8,7 +8,6 @@ import type {
   EvalTools,
   WfEvalRowDTO,
 } from '../../server/protocol'
-import { evalSampleLayer } from '../../server/protocol'
 import {
   useAgents,
   useDeleteEvalRow,
@@ -266,11 +265,5 @@ export function useEvalSampleDraft({
     addCheck,
     expectedKind,
     kindMismatch: !!draft && draft.input.kind !== expectedKind,
-    /** The derived testing layer — never stored, so it can't drift. */
-    layer: draft ? evalSampleLayer(draft.input, draft.tools) : 'io',
-    stagedToolResults:
-      draft?.input.kind === 'conversation'
-        ? draft.input.turns.reduce((n, t) => n + (t.toolCalls?.length ?? 0), 0)
-        : 0,
   }
 }

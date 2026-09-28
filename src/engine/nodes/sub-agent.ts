@@ -123,6 +123,7 @@ async function runAgentTarget<TDeps>(
     simulate: ctx.simulate,
     fixtures: ctx.fixtures,
     liveReads: ctx.liveReads,
+    toolModes: ctx.toolModes,
   })
   const toolStatusLabels: Record<string, string> = {}
   for (const id of config.toolIds) {

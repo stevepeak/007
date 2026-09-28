@@ -3,6 +3,7 @@ import type { AgentNode, ArgBinding, WorkflowGraph } from '../engine/graph'
 import type { AgentNodeMeta } from '../engine/nodes/agent'
 import { allNodes } from '../storage/data/authoring-graph'
 
+import { defaultEvalTools } from './checks'
 import type {
   CheckTree,
   EvalSampleInput,
@@ -24,13 +25,15 @@ import type {
 //
 // ── Two layers, two different samples from the same run ─────────────────────
 //
-// TRAJECTORY replays the run's real tool results as `fixtures` under
-// `mode: 'mocked'`. Deterministic, and the only mode where `tool_called` /
+// TRAJECTORY replays the run's real tool results by pinning each one as that
+// tool's mocked output. Deterministic, and the only shape where `tool_called` /
 // `tool_args_match` grade anything real.
 //
-// SYNTHESIS folds those same tool results into a seeded ASSISTANT turn and
-// freezes the tool set, so the model answers from staged context and the sample
-// grades response quality alone — no retrieval nondeterminism in the way.
+// SYNTHESIS folds those same tool results into a seeded ASSISTANT turn and pins
+// nothing, so the model answers from staged context and the sample grades
+// response quality alone — no retrieval nondeterminism in the way. Its tools are
+// still THERE (a sample can no longer take them away); left unpinned they return
+// `{}`, which is nothing to answer from but not nothing to call.
 //
 // Which one you want depends on what failed, so it is an argument rather than a
 // guess. Synthesis needs somewhere to stage the context, which is a conversation
@@ -339,7 +342,12 @@ function buildTools(
   calls: ToolCall[],
   notes: string[],
 ): EvalTools {
-  if (args.layer === 'synthesis') return { mode: 'frozen' }
+  if (args.layer === 'synthesis') {
+    notes.push(
+      'Synthesis pins nothing: the context is staged in the conversation above. The agent still HAS its tools, and calling one returns `{}` — if that shows up in the answer, pin the tool to a result it can use.',
+    )
+    return defaultEvalTools()
+  }
 
   const max = args.maxFixtureChars ?? DEFAULT_MAX_FIXTURE_CHARS
   const fixtures: Record<string, unknown> = {}
@@ -369,7 +377,15 @@ function buildTools(
       `The recorded result for ${[...truncated].join(', ')} was too large to inline and is truncated in the fixture — replace it with a representative result, or read the full value with get_run_step.`,
     )
   }
-  return { mode: 'mocked', fixtures }
+  return {
+    fallback: 'mocked',
+    byTool: Object.fromEntries(
+      Object.entries(fixtures).map(([toolId, output]) => [
+        toolId,
+        { mode: 'mocked' as const, output },
+      ]),
+    ),
+  }
 }
 
 function buildChecks(
@@ -378,8 +394,8 @@ function buildChecks(
   notes: string[],
 ): CheckTree {
   const checks: CheckTree['checks'] = []
-  // Only under mocked tools: a frozen sample's agent calls nothing, so a
-  // trajectory check there grades an absence and always fails.
+  // Only on a trajectory draft: a synthesis sample answers from staged context,
+  // so asserting it called the tools again grades the wrong thing.
   if (args.layer === 'trajectory') {
     for (const toolId of new Set(calls.map((c) => c.toolId))) {
       checks.push({ type: 'tool_called', toolId, called: true })

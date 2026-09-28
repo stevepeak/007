@@ -182,13 +182,18 @@ describe('draftSampleFromRun — trajectory', () => {
     layer: 'trajectory',
   })
 
-  test('keys fixtures on the tool id the grader looks them up under', () => {
-    // `meta.toolCalls[].toolName` is the ToolSet key; a fixture keyed any other
+  test('pins each result on the tool id the grader looks it up under', () => {
+    // `meta.toolCalls[].toolName` is the ToolSet key; a mock keyed any other
     // way is silently never used and the sample runs against an empty result.
     if ('error' in drafted) throw new Error(drafted.error)
     expect(drafted.tools).toEqual({
-      mode: 'mocked',
-      fixtures: { search_rag: { chunks: ['nothing on file'] } },
+      fallback: 'mocked',
+      byTool: {
+        search_rag: {
+          mode: 'mocked',
+          output: { chunks: ['nothing on file'] },
+        },
+      },
     })
   })
 
@@ -226,9 +231,7 @@ describe('draftSampleFromRun — trajectory', () => {
       maxFixtureChars: 500,
     })
     if ('error' in out) throw new Error(out.error)
-    const fixtures = (out.tools as { fixtures: Record<string, unknown> })
-      .fixtures
-    expect(String(fixtures.fetch_doc)).toContain('truncated')
+    expect(String(out.tools.byTool.fetch_doc?.output)).toContain('truncated')
     expect(out.notes.join(' ')).toContain('fetch_doc')
   })
 
@@ -252,13 +255,16 @@ describe('draftSampleFromRun — trajectory', () => {
       layer: 'trajectory',
     })
     if ('error' in out) throw new Error(out.error)
-    expect(out.tools).toEqual({ mode: 'mocked', fixtures: { search_rag: 2 } })
+    expect(out.tools).toEqual({
+      fallback: 'mocked',
+      byTool: { search_rag: { mode: 'mocked', output: 2 } },
+    })
     expect(out.notes.join(' ')).toContain('called more than once')
   })
 })
 
 describe('draftSampleFromRun — synthesis', () => {
-  test('stages the retrieval as an assistant turn and freezes the tools', () => {
+  test('stages the retrieval as an assistant turn and pins nothing', () => {
     const out = draftSampleFromRun({
       step: step({ meta: searched }),
       steps: [],
@@ -267,7 +273,11 @@ describe('draftSampleFromRun — synthesis', () => {
       layer: 'synthesis',
     })
     if ('error' in out) throw new Error(out.error)
-    expect(out.tools).toEqual({ mode: 'frozen' })
+    // Nothing pinned: the context to answer from is the staged turn below, not
+    // a tool result. The tools are still there — which the notes say out loud,
+    // since an unpinned tool returns `{}` rather than not existing.
+    expect(out.tools).toEqual({ fallback: 'mocked', byTool: {} })
+    expect(out.notes.join(' ')).toContain('pins nothing')
     const turns = (out.input as { turns: unknown[] }).turns
     expect(turns).toEqual([
       { role: 'user', text: 'Do we have a conflict with Acme?' },

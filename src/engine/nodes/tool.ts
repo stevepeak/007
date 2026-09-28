@@ -35,6 +35,11 @@ export type ExecuteToolNodeArgs<TDeps> = {
   fixtures?: Record<string, unknown>
   /** Eval integration signal — read tools run live. See RunContext.liveReads. */
   liveReads?: boolean
+  /**
+   * Per-tool override of `liveReads`, keyed by tool id — an eval Sample settles
+   * mocked-vs-live one tool at a time. See RunContext.
+   */
+  toolModes?: Record<string, 'mocked' | 'live'>
 }
 
 export async function executeToolNode<TDeps>(
@@ -74,6 +79,7 @@ export async function executeToolNode<TDeps>(
     simulate: deps.simulate,
     fixtures: deps.fixtures,
     liveReads: deps.liveReads,
+    toolModes: deps.toolModes,
   })
   if (sim) {
     return { output: sim.output, meta: { toolId: entry.id, args } }

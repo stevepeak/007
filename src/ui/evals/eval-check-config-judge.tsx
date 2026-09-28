@@ -11,7 +11,7 @@ import { Modal } from '../modal'
 import { unmetRequirements } from '../../engine/model-capabilities'
 import { useCommittedField } from '../use-committed-field'
 
-import { outputPathOptions } from './fields'
+import { schemaPathOptions } from './fields'
 
 // A judge grades by emitting a JSON verdict (`generateObject` in eval/grade),
 // so a model that can't do structured output can't be a judge at all. Rather
@@ -65,7 +65,7 @@ export function JudgeConfig({
     if (first) persist({ ...check, modelId: first })
   }, [check, models.data, persist])
 
-  const pathOptions = outputPathOptions(outputSchema)
+  const pathOptions = schemaPathOptions(outputSchema)
   // Preserve a stored path the schema doesn't declare (a nested path, or a
   // field the agent has since dropped) as its own option, so switching targets
   // never silently repoints the judge at the whole output.

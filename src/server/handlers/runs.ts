@@ -20,11 +20,8 @@ import type {
 
 import {
   NotFoundError,
-  optNum,
-  optStr,
   requireHook,
   runSummary,
-  requireStr,
   toEpoch,
   type CreateWfSdkHandlersOptions,
   type WfHandlers,
@@ -45,25 +42,15 @@ export function buildRunHandlers<TDeps>(
 > {
   return {
     listRuns: async (c) => {
-      const p = c.params as {
-        workflowVersionId?: string
-        workflowId?: string
-        triggerKind?: string
-        status?: string
-        search?: string
-        since?: number
-        until?: number
-        limit?: number
-        offset?: number
-      }
+      const p = c.params
       const result = await listRuns(c.db, {
         workflowVersionId: p.workflowVersionId,
         workflowId: p.workflowId,
         triggerKind: p.triggerKind,
         status: p.status,
         search: p.search?.trim() || undefined,
-        since: typeof p.since === 'number' ? new Date(p.since) : undefined,
-        until: typeof p.until === 'number' ? new Date(p.until) : undefined,
+        since: p.since === undefined ? undefined : new Date(p.since),
+        until: p.until === undefined ? undefined : new Date(p.until),
         limit: p.limit,
         offset: p.offset,
       })
@@ -84,8 +71,7 @@ export function buildRunHandlers<TDeps>(
     // it while the parent is live. Bounded by the spawning node (one callee, or
     // an iteration already fenced by `maxItems`), so it takes no page size.
     listChildRuns: async (c) => {
-      const parentRunId = requireStr(c.params, 'parentRunId')
-      const rows = await listChildRuns(c.db, parentRunId)
+      const rows = await listChildRuns(c.db, c.params.parentRunId)
       return rows.map((r) => runSummary(r, opts.sentryTraceUrl, opts.releaseUrl))
     },
 
@@ -101,8 +87,7 @@ export function buildRunHandlers<TDeps>(
     // this is one indexed row, and the whole point is that a poll loop never
     // touches the step, log, graph or price-map reads to learn a run finished.
     getRunStatus: async (c) => {
-      const runId = requireStr(c.params, 'runId')
-      const row = await getRunStatus(c.db, runId)
+      const row = await getRunStatus(c.db, c.params.runId)
       if (!row) {
         return null
       }
@@ -117,11 +102,12 @@ export function buildRunHandlers<TDeps>(
     },
 
     getRun: async (c) => {
-      const runId = requireStr(c.params, 'runId')
-      const knownVersionId = optStr(c.params, 'knownVersionId')
-      const settledStepCursor = optNum(c.params, 'settledStepCursor')
+      const { runId, settledStepCursor } = c.params
       const result = await getRun(c.db, runId, {
-        knownVersionId,
+        // `|| undefined` so an empty hint reads as "no hint" rather than as a
+        // version id that can never match — the schema allows `''` because a
+        // cache hint is not worth a 400.
+        knownVersionId: c.params.knownVersionId || undefined,
         settledStepCursor,
       })
       if (!result) {
@@ -184,11 +170,9 @@ export function buildRunHandlers<TDeps>(
     // empty string, so "has a note" is one check (`note != null`) everywhere
     // downstream — the list column, the search match, the viewer's empty state.
     setRunNote: async (c) => {
-      const runId = requireStr(c.params, 'runId')
-      const raw = (c.params as { note?: string | null }).note
-      const trimmed = raw?.trim()
+      const trimmed = c.params.note?.trim()
       const note = trimmed ? trimmed.slice(0, RUN_NOTE_MAX_LENGTH) : null
-      const updated = await setRunNote(c.db, { runId, note })
+      const updated = await setRunNote(c.db, { runId: c.params.runId, note })
       if (!updated) {
         throw new NotFoundError('Run not found.')
       }
@@ -200,9 +184,8 @@ export function buildRunHandlers<TDeps>(
         opts.retryRun,
         'Retry is not configured for this host.',
       )
-      const runId = requireStr(c.params, 'runId')
-      const mode: RetryRunMode =
-        (c.params as { mode?: string }).mode === 'resume' ? 'resume' : 'restart'
+      const { runId } = c.params
+      const mode: RetryRunMode = c.params.mode ?? 'restart'
       // The narrow read, not `getRun`: retry needs four run columns and one
       // trigger step, and used to pay for every step, every log, the whole
       // graph and the model price map to get them.
