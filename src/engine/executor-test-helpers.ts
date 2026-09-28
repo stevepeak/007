@@ -22,7 +22,6 @@ export const toolRegistry: ToolRegistry<Deps> = new Map([
       name: 'Boom',
       kind: 'function',
       description: 'Always throws.',
-      // eslint-disable-next-line @typescript-eslint/require-await
       build: () => async () => {
         throw new Error('boom failed')
       },

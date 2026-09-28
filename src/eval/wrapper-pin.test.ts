@@ -1,9 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-
-import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
-import { drizzle } from 'drizzle-orm/bun-sqlite'
 
 import type { AgentConfig, WorkflowGraph } from '../engine/graph'
 import type { WfDb } from '../storage/client'
@@ -14,7 +9,7 @@ import {
   publishAgent,
   saveVersion,
 } from '../storage/data'
-import { wfSchema } from '../storage/schema'
+import { freshDb } from '../storage/db-test-helpers'
 
 import { evalWrapperName, resolveEvalTarget } from './wrapper'
 
@@ -23,25 +18,6 @@ import { evalWrapperName, resolveEvalTarget } from './wrapper'
 // but never reached `resolveEvalTarget`, so the eval graded LATEST regardless.
 // These run against a real migrated database because the whole bug lived in the
 // db-backed half of the resolver, which the pure builder tests can't reach.
-
-const MIGRATIONS_DIR = fileURLToPath(
-  new URL('../../migrations', import.meta.url),
-)
-
-function freshDb(): WfDb {
-  const sqlite = new Database(':memory:')
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()
-  for (const f of files) {
-    const sql = readFileSync(`${MIGRATIONS_DIR}/${f}`, 'utf8')
-    for (const stmt of sql.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim()
-      if (trimmed) sqlite.run(trimmed)
-    }
-  }
-  return drizzle(sqlite, { schema: wfSchema }) as unknown as WfDb
-}
 
 function config(over: Partial<AgentConfig> = {}): AgentConfig {
   return {

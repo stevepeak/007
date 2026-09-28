@@ -1,13 +1,9 @@
-import { readdirSync, readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-
-import { Database } from 'bun:sqlite'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
-import { drizzle } from 'drizzle-orm/bun-sqlite'
 
 import type { WfDb } from '../client'
-import { wfRun, wfSchema, wfWorkflow, wfWorkflowVersion } from '../schema'
+import { freshDb } from '../db-test-helpers'
+import { wfRun, wfWorkflow, wfWorkflowVersion } from '../schema'
 
 import { countChildRuns, listChildRuns } from './runs-children'
 import { createRun } from './runs-lifecycle'
@@ -18,25 +14,6 @@ import { listRuns } from './runs-list'
 // correlated NOT EXISTS — so these tests EXECUTE them rather than asserting on
 // a built query object. A typo in either reads as a valid query returning the
 // wrong set, which no amount of typechecking catches.
-
-const MIGRATIONS_DIR = fileURLToPath(
-  new URL('../../../migrations', import.meta.url),
-)
-
-function freshDb(): WfDb {
-  const sqlite = new Database(':memory:')
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()
-  for (const f of files) {
-    const sql = readFileSync(`${MIGRATIONS_DIR}/${f}`, 'utf8')
-    for (const stmt of sql.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim()
-      if (trimmed) sqlite.run(trimmed)
-    }
-  }
-  return drizzle(sqlite, { schema: wfSchema }) as unknown as WfDb
-}
 
 let db: WfDb
 

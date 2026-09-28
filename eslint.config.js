@@ -229,7 +229,10 @@ export default [
   // parser resolves test files against tsconfig.json, which does not include
   // them, and every one fails with "was not found by the project service".
   {
-    files: ['src/**/*.test.ts'],
+    // `*test-helpers.ts` rides along: tsconfig.json excludes those too (they
+    // import `bun:sqlite` / `bun:test`), so they need the same redirect or they
+    // fail to parse — silently, per file, which is how whole trees go unlinted.
+    files: ['src/**/*.test.ts', 'src/**/*test-helpers.ts'],
     languageOptions: {
       parserOptions: {
         // The shared config turns `projectService` on, which resolves each file

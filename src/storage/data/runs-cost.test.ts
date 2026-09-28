@@ -1,11 +1,9 @@
-import { readdirSync, readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 
 import type { WfDb } from '../client'
+import { freshDb } from '../db-test-helpers'
 import { wfRun, wfSchema, wfModel } from '../schema'
 
 import {
@@ -15,25 +13,6 @@ import {
   priceMapFromTable,
 } from './runs-cost'
 import { getRunStatus } from './runs-inspector'
-
-const MIGRATIONS_DIR = fileURLToPath(
-  new URL('../../../migrations', import.meta.url),
-)
-
-function freshDb(): WfDb {
-  const sqlite = new Database(':memory:')
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()
-  for (const f of files) {
-    const sql = readFileSync(`${MIGRATIONS_DIR}/${f}`, 'utf8')
-    for (const stmt of sql.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim()
-      if (trimmed) sqlite.run(trimmed)
-    }
-  }
-  return drizzle(sqlite, { schema: wfSchema }) as unknown as WfDb
-}
 
 async function addModel(db: WfDb, id: string, modelId: string, price: number) {
   await db.insert(wfModel).values({

@@ -1,44 +1,19 @@
-import { readdirSync, readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-
-import { Database } from 'bun:sqlite'
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { drizzle } from 'drizzle-orm/bun-sqlite'
 import { z } from 'zod'
 
-import { consoleWfLogger } from '../../engine/logger'
 import type { WorkflowGraph, WorkflowNode } from '../../engine/graph'
 import type { ToolRegistry } from '../../engine/tool-registry'
 import type { WfDb } from '../../storage/client'
-import { createWorkflow, recordChange, updateDraft } from '../../storage/data'
-import { wfSchema } from '../../storage/schema'
+import { createWorkflow, updateDraft } from '../../storage/data'
+import { freshDb } from '../../storage/db-test-helpers'
 
-import type { CreateWfSdkHandlersOptions, HandlerCtx } from './shared'
+import { testHandlerCtx, testHandlerOptions } from './handler-test-helpers'
 import { buildWorkflowHandlers } from './workflows'
 
 // `validateGraph` end to end: the graph resolution (supplied / draft /
 // published / version) and the one check only the server can make — Tool-node
 // args against the registry's zod schemas, converted the same way `listTools`
 // converts them. The DB is a real migrated in-memory D1.
-
-const MIGRATIONS_DIR = fileURLToPath(
-  new URL('../../../migrations', import.meta.url),
-)
-
-function freshDb(): WfDb {
-  const sqlite = new Database(':memory:')
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()
-  for (const f of files) {
-    const sql = readFileSync(`${MIGRATIONS_DIR}/${f}`, 'utf8')
-    for (const stmt of sql.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim()
-      if (trimmed) sqlite.run(trimmed)
-    }
-  }
-  return drizzle(sqlite, { schema: wfSchema }) as unknown as WfDb
-}
 
 // The real ART-146 schema: three required, nullable fields.
 const escalateInput = z.object({
@@ -47,7 +22,7 @@ const escalateInput = z.object({
   lock: z.boolean().nullable(),
 })
 
-function options(): CreateWfSdkHandlersOptions<unknown> {
+function options() {
   const toolRegistry: ToolRegistry<unknown> = new Map([
     [
       'escalate_chat',
@@ -63,28 +38,7 @@ function options(): CreateWfSdkHandlersOptions<unknown> {
       },
     ],
   ])
-  return {
-    config: { toolRegistry, listModels: async () => [] },
-    resolveDb: () => {
-      throw new Error('unused')
-    },
-    resolveContext: () => ({}),
-  } as unknown as CreateWfSdkHandlersOptions<unknown>
-}
-
-function ctx(db: WfDb, params: unknown): HandlerCtx {
-  return {
-    params,
-    ctx: { userId: 'tester' },
-    db,
-    req: new Request('http://localhost/api/wf', { method: 'POST' }),
-    env: async () => ({}),
-    analytics: async () => null,
-    logger: consoleWfLogger,
-    change: (input) => {
-      return recordChange(db, { ...input, actor: { userId: 'tester' } })
-    },
-  }
+  return testHandlerOptions({ config: { toolRegistry } })
 }
 
 const pos = { x: 0, y: 0 }
@@ -143,7 +97,7 @@ describe('validateGraph handler', () => {
   test('a supplied graph: the ART-146 args are three errors + a warning, the fixed args none', async () => {
     const handlers = buildWorkflowHandlers(options())
     const bad = await handlers.validateGraph(
-      ctx(db, { graph: graphWith(v25Args) }),
+      testHandlerCtx(db, { graph: graphWith(v25Args) }),
     )
     expect(bad.source).toBe('supplied')
     expect(bad.errors).toBe(3)
@@ -153,7 +107,7 @@ describe('validateGraph handler', () => {
     )
 
     const good = await handlers.validateGraph(
-      ctx(db, { graph: graphWith(v27Args) }),
+      testHandlerCtx(db, { graph: graphWith(v27Args) }),
     )
     expect(good.errors).toBe(0)
     expect(good.issues).toEqual([])
@@ -166,7 +120,7 @@ describe('validateGraph handler', () => {
       createdBy: 'tester',
       graph: graphWith(v27Args),
     })
-    const published = await handlers.validateGraph(ctx(db, { workflowId }))
+    const published = await handlers.validateGraph(testHandlerCtx(db, { workflowId }))
     expect(published.source).toBe('published')
     expect(published.versionNumber).toBe(1)
     expect(published.errors).toBe(0)
@@ -176,7 +130,7 @@ describe('validateGraph handler', () => {
       graph: graphWith(v25Args),
       lastEditedBy: 'tester',
     })
-    const draft = await handlers.validateGraph(ctx(db, { workflowId }))
+    const draft = await handlers.validateGraph(testHandlerCtx(db, { workflowId }))
     expect(draft.source).toBe('draft')
     expect(draft.errors).toBe(3)
   })
@@ -188,13 +142,13 @@ describe('validateGraph handler', () => {
       createdBy: 'tester',
       graph: graphWith(v25Args),
     })
-    const v = await handlers.validateGraph(ctx(db, { versionId }))
+    const v = await handlers.validateGraph(testHandlerCtx(db, { versionId }))
     expect(v.source).toBe('version')
     expect(v.versionNumber).toBe(1)
     expect(v.errors).toBe(3)
     expect(workflowId).toBeTruthy()
 
-    await expect(handlers.validateGraph(ctx(db, {}))).rejects.toThrow(
+    await expect(handlers.validateGraph(testHandlerCtx(db, {}))).rejects.toThrow(
       'needs one of graph, versionId or workflowId',
     )
   })
@@ -204,7 +158,7 @@ describe('validateGraph handler', () => {
     const g = graphWith(v27Args)
     // Two triggers: the shape schema saves it, the runtime schema rejects it.
     g.nodes.push({ ...g.nodes[0], id: 't2' })
-    const r = await handlers.validateGraph(ctx(db, { graph: g }))
+    const r = await handlers.validateGraph(testHandlerCtx(db, { graph: g }))
     expect(r.issues.some((i) => i.message.startsWith('Runtime check:'))).toBe(
       true,
     )

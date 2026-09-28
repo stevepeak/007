@@ -1,9 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-
-import { Database } from 'bun:sqlite'
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { drizzle } from 'drizzle-orm/bun-sqlite'
 
 import { agentConfigSchema } from '../engine/graph'
 import type { WorkflowGraph, WorkflowNode } from '../engine/graph'
@@ -12,7 +7,7 @@ import type { CreateWfSdkHandlersOptions } from '../server/handlers/shared'
 import type { WfDataClient } from '../server/protocol'
 import type { WfDb } from '../storage/client'
 import { createAgent } from '../storage/data'
-import { wfSchema } from '../storage/schema'
+import { freshDb } from '../storage/db-test-helpers'
 
 import { allTools } from './catalog'
 import type { WfMcpTool } from './tools'
@@ -33,25 +28,6 @@ import type { WfMcpTool } from './tools'
 //     layer and the graph schema agreeing, not of the tool — and it caught the
 //     tool's description overclaiming: a fresh workflow has one error, its
 //     unbound Output, exactly as the console's New Workflow button produces.
-
-const MIGRATIONS_DIR = fileURLToPath(
-  new URL('../../migrations', import.meta.url),
-)
-
-function freshDb(): WfDb {
-  const sqlite = new Database(':memory:')
-  for (const f of readdirSync(MIGRATIONS_DIR)
-    .filter((n) => n.endsWith('.sql'))
-    .sort()) {
-    for (const stmt of readFileSync(`${MIGRATIONS_DIR}/${f}`, 'utf8').split(
-      '--> statement-breakpoint',
-    )) {
-      const trimmed = stmt.trim()
-      if (trimmed) sqlite.run(trimmed)
-    }
-  }
-  return drizzle(sqlite, { schema: wfSchema }) as unknown as WfDb
-}
 
 function tool(name: string): WfMcpTool {
   const found = allTools().find((t) => t.name === name)

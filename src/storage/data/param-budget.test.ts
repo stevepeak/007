@@ -1,17 +1,12 @@
-import { readdirSync, readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-
-import { Database } from 'bun:sqlite'
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { drizzle } from 'drizzle-orm/bun-sqlite'
 
 import type { WfDb } from '../client'
+import { migratedSqlite, wrapSqlite } from '../db-test-helpers'
 import {
   wfAgent,
   wfFeedback,
   wfRun,
   wfRunStep,
-  wfSchema,
   wfWorkflow,
   wfWorkflowVersion,
 } from '../schema'
@@ -31,10 +26,6 @@ import { loadRunStats } from './runs-rollup'
 // driver is actually asked to run and assert the bound-parameter count directly.
 const D1_MAX_BOUND_PARAMS = 100
 
-const MIGRATIONS_DIR = fileURLToPath(
-  new URL('../../../migrations', import.meta.url),
-)
-
 type Probe = {
   db: WfDb
   /** Bound-parameter counts of every statement executed while recording. */
@@ -48,17 +39,9 @@ type Probe = {
 /** `freshDb()` (the in-memory migrated database every storage test uses) with
  *  the driver wrapped so each statement's bound-parameter count is observable. */
 function probeDb(): Probe {
-  const sqlite = new Database(':memory:')
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()
-  for (const f of files) {
-    const sql = readFileSync(`${MIGRATIONS_DIR}/${f}`, 'utf8')
-    for (const stmt of sql.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim()
-      if (trimmed) sqlite.run(trimmed)
-    }
-  }
+  // The raw handle rather than `freshDb()`, because the proxy below has to sit
+  // between Drizzle and the driver.
+  const sqlite = migratedSqlite()
 
   const counts: number[] = []
   let on = false
@@ -110,9 +93,7 @@ function probeDb(): Probe {
   })
 
   return {
-    db: drizzle(proxied, {
-      schema: wfSchema,
-    }) as unknown as WfDb,
+    db: wrapSqlite(proxied),
     counts,
     record: (v) => {
       on = v

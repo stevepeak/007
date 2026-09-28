@@ -167,18 +167,23 @@ signatures.
 
 | project | covers | libs |
 | ------- | ------ | ---- |
-| `tsconfig.json` | everything except `src/ui` and tests | Workers types |
+| `tsconfig.json` | everything except `src/ui`, tests and `*test-helpers.ts` | Workers types |
 | `tsconfig.ui.json` | `src/ui` **and its tests** | DOM + JSX |
-| `tsconfig.test.json` | tests outside `src/ui` | Workers types, `noUnusedLocals` off |
+| `tsconfig.test.json` | tests and `*test-helpers.ts` outside `src/ui` | Workers types + `bun`, `noUnusedLocals` off |
 
 Note the asymmetry: UI tests are typechecked by `tsconfig.ui.json`, not by
 `tsconfig.test.json`, because they need the DOM lib the UI project already has.
 
+A `*test-helpers.ts` file is TEST CODE and belongs only to the test project:
+`bun:sqlite` and `bun:test` types come from `tsconfig.test.json`'s `types`, and
+nothing in production imports one. Name a new fixture file to match that suffix
+and it lands in the right project automatically.
+
 ESLint needs the same split. `eslint.config.js` sets `projectService: false` plus
-an explicit `project` for the `src/ui/**` and `src/**/*.test.ts` globs — without
-it the parser resolves those files against `tsconfig.json`, which excludes them,
-and every one fails with "was not found by the project service." That is how 37k
-lines of UI once sat unlinted.
+an explicit `project` for the `src/ui/**`, `src/**/*.test.ts` and
+`src/**/*test-helpers.ts` globs — without it the parser resolves those files
+against `tsconfig.json`, which excludes them, and every one fails with "was not
+found by the project service." That is how 37k lines of UI once sat unlinted.
 
 **`bun test` strips types, it does not check them.** Passing tests tell you
 nothing about whether their fixtures still match the types they claim to model.
@@ -188,9 +193,18 @@ Run `bun run typecheck`.
 
 ## 5. Writing tests
 
-Use the helpers. There are two, and they exist because the alternative is a
-hand-rolled node literal that silently drifts from the schema.
+Use the helpers. They exist because the alternative is a hand-rolled fixture
+that silently drifts from the thing it claims to model.
 
+- **`src/storage/db-test-helpers.ts`** — `freshDb()`: a migrated in-memory
+  database, one per test. Also `migratedSqlite()` / `wrapSqlite()` for the rare
+  test that needs the raw `bun:sqlite` handle. **Never walk the migrations
+  yourself** — 27 files once did, and `db-test-helpers.test.ts` now fails the
+  suite if a 28th tries.
+- **`src/server/handlers/handler-test-helpers.ts`** — `testHandlerCtx(db, params)`
+  and `testHandlerOptions({ config })` for driving a handler directly. `ctx` is a
+  contract with the dispatcher; a field added to `HandlerCtx` should break one
+  fixture, not four.
 - **`src/engine/executor-test-helpers.ts`** — a mock `toolRegistry`, `makeConfig`,
   and `chainGraph`. `grep -rl executor-test-helpers src` lists the tests that
   use it; open one and copy the pattern.

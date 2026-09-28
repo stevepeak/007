@@ -1,77 +1,32 @@
-import { readdirSync, readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-
-import { Database } from 'bun:sqlite'
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { drizzle } from 'drizzle-orm/bun-sqlite'
 
-import { consoleWfLogger } from '../../engine/logger'
 import type { WfDb } from '../../storage/client'
 import {
   createEvalRun,
   createEvalSet,
   getEvalRun,
-  recordChange,
   upsertEvalRow,
 } from '../../storage/data'
-import { wfRun, wfSchema } from '../../storage/schema'
+import { freshDb } from '../../storage/db-test-helpers'
+import { wfRun } from '../../storage/schema'
 
 import { buildEvalHandlers } from './evals'
-import type { CreateWfSdkHandlersOptions, HandlerCtx } from './shared'
+import { testHandlerCtx, testHandlerOptions } from './handler-test-helpers'
 
 // A graded row that ERRORS has no per-check verdict explaining itself, so its
 // reason has to reach the result's `error` column or the report renders a red
 // cell above an empty banner. This is the end-to-end proof of that chain:
 // gradeRow → the handler's record → the persisted column → the DTO.
 
-const MIGRATIONS_DIR = fileURLToPath(
-  new URL('../../../migrations', import.meta.url),
-)
-
-function freshDb(): WfDb {
-  const sqlite = new Database(':memory:')
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()
-  for (const f of files) {
-    const sql = readFileSync(`${MIGRATIONS_DIR}/${f}`, 'utf8')
-    for (const stmt of sql.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim()
-      if (trimmed) sqlite.run(trimmed)
-    }
-  }
-  return drizzle(sqlite, { schema: wfSchema }) as unknown as WfDb
-}
-
-function options(): CreateWfSdkHandlersOptions<unknown> {
-  return {
+function options() {
+  return testHandlerOptions({
     config: {
       // Never consulted: a row with no checks short-circuits before any judge.
-      listModels: async () => [],
       getModel: () => {
         throw new Error('no model should be needed to grade an empty tree')
       },
     },
-    resolveDb: () => {
-      throw new Error('unused')
-    },
-    resolveContext: () => ({}),
-  } as unknown as CreateWfSdkHandlersOptions<unknown>
-}
-
-function ctx(db: WfDb, params: unknown): HandlerCtx {
-  return {
-    params,
-    ctx: { userId: 'tester' },
-    db,
-    req: new Request('http://localhost/api/wf', { method: 'POST' }),
-    env: async () => ({}),
-    analytics: async () => null,
-    logger: consoleWfLogger,
-    // Real recorder against the same in-memory db — these tests exercise the
-    // handlers end to end, and a stub would hide a broken change write.
-    change: (input) => recordChange(db, { ...input, actor: { userId: 'tester' } }),
-  }
+  })
 }
 
 describe('gradeEvalResult — an unasserted sample', () => {
@@ -108,7 +63,7 @@ describe('gradeEvalResult — an unasserted sample', () => {
 
     const handlers = buildEvalHandlers(options())
     const dto = await handlers.gradeEvalResult(
-      ctx(db, { evalRunId, rowId, wfRunId }),
+      testHandlerCtx(db, { evalRunId, rowId, wfRunId }),
     )
 
     // The DTO the editor gets back...

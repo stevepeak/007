@@ -1,15 +1,11 @@
-import { readdirSync, readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-
-import { Database } from 'bun:sqlite'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
-import { drizzle } from 'drizzle-orm/bun-sqlite'
 
 import type { AgentConfig, WorkflowGraph } from '../../engine/graph'
 import { evalWrapperName } from '../../eval/wrapper'
 import type { WfDb } from '../client'
-import { wfSchema, wfWorkflow } from '../schema'
+import { freshDb } from '../db-test-helpers'
+import {  wfWorkflow } from '../schema'
 
 import { createAgent } from './authoring-agents'
 import { createWorkflow } from './authoring-workflows'
@@ -18,25 +14,6 @@ import {
   listWorkflowsReferencingAllAgents,
   listWorkflowsReferencingAgent,
 } from './authoring-workflows-references'
-
-const MIGRATIONS_DIR = fileURLToPath(
-  new URL('../../../migrations', import.meta.url),
-)
-
-function freshDb(): WfDb {
-  const sqlite = new Database(':memory:')
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()
-  for (const f of files) {
-    const sql = readFileSync(`${MIGRATIONS_DIR}/${f}`, 'utf8')
-    for (const stmt of sql.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim()
-      if (trimmed) sqlite.run(trimmed)
-    }
-  }
-  return drizzle(sqlite, { schema: wfSchema }) as unknown as WfDb
-}
 
 /** Trigger → one agent node → output: the smallest graph that references an agent. */
 function graphUsing(agentId: string): WorkflowGraph {

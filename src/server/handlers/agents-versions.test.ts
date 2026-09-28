@@ -1,48 +1,23 @@
-import { readdirSync, readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-
-import { Database } from 'bun:sqlite'
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { drizzle } from 'drizzle-orm/bun-sqlite'
 
-import { consoleWfLogger } from '../../engine/logger'
 import type { AgentConfig } from '../../engine/graph'
 import type { WfDb } from '../../storage/client'
 import {
   createAgent,
   listAgentVersions,
   listChanges,
-  recordChange,
 } from '../../storage/data'
-import { wfSchema } from '../../storage/schema'
+import { freshDb } from '../../storage/db-test-helpers'
 
 import { buildAgentHandlers } from './agents'
 import { buildChangeHandlers } from './changes'
-import type { CreateWfSdkHandlersOptions, HandlerCtx } from './shared'
+import { testHandlerCtx, testHandlerOptions } from './handler-test-helpers'
+import type { CreateWfSdkHandlersOptions } from './shared'
 
 // The publish path end-to-end through the handler: the AI summary riding along
 // with the publish, the background fill when it didn't, and the restore read.
 // Everything below the handler is real (a migrated in-memory D1); only the model
 // seam and the host's scheduler are stubbed.
-
-const MIGRATIONS_DIR = fileURLToPath(
-  new URL('../../../migrations', import.meta.url),
-)
-
-function freshDb(): WfDb {
-  const sqlite = new Database(':memory:')
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()
-  for (const f of files) {
-    const sql = readFileSync(`${MIGRATIONS_DIR}/${f}`, 'utf8')
-    for (const stmt of sql.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim()
-      if (trimmed) sqlite.run(trimmed)
-    }
-  }
-  return drizzle(sqlite, { schema: wfSchema }) as unknown as WfDb
-}
 
 function config(over: Partial<AgentConfig> = {}): AgentConfig {
   return {
@@ -68,38 +43,16 @@ function config(over: Partial<AgentConfig> = {}): AgentConfig {
 let pending: Promise<unknown>[] = []
 
 function options(
-  over: Partial<CreateWfSdkHandlersOptions<unknown>> = {},
+  over: Parameters<typeof testHandlerOptions>[0] = {},
 ): CreateWfSdkHandlersOptions<unknown> {
-  return {
-    config: {
-      // No model on offer → computeAgentChangeSummary falls to the heuristic,
-      // which is what keeps this test free of any network call.
-      listModels: async () => [],
-    },
-    resolveDb: () => {
-      throw new Error('unused')
-    },
-    resolveContext: () => ({}),
+  return testHandlerOptions({
+    // No model on offer → computeAgentChangeSummary falls to the heuristic,
+    // which is what keeps this test free of any network call.
     waitUntil: (p: Promise<unknown>) => {
       pending.push(p)
     },
     ...over,
-  } as unknown as CreateWfSdkHandlersOptions<unknown>
-}
-
-function ctx(db: WfDb, params: unknown): HandlerCtx {
-  return {
-    params,
-    ctx: { userId: 'tester' },
-    db,
-    req: new Request('http://localhost/api/wf', { method: 'POST' }),
-    env: async () => ({}),
-    analytics: async () => null,
-    logger: consoleWfLogger,
-    // Real recorder against the same in-memory db — these tests exercise the
-    // handlers end to end, and a stub would hide a broken change write.
-    change: (input) => recordChange(db, { ...input, actor: { userId: 'tester' } }),
-  }
+  })
 }
 
 describe('agent publish handler', () => {
@@ -116,7 +69,7 @@ describe('agent publish handler', () => {
   test("a summary supplied by the dialog is stored and no background work is queued", async () => {
     const handlers = buildAgentHandlers(options())
     await handlers.publishAgent(
-      ctx(db, {
+      testHandlerCtx(db, {
         agentId,
         config: config({ maxTurns: 9 }),
         changeNote: 'more turns',
@@ -138,7 +91,7 @@ describe('agent publish handler', () => {
   test('a publish is recorded in the change log, with its actor and diff', async () => {
     const handlers = buildAgentHandlers(options())
     await handlers.publishAgent(
-      ctx(db, {
+      testHandlerCtx(db, {
         agentId,
         config: config({ modelId: 'other-model', maxTurns: 9 }),
         changeNote: 'swap the model',
@@ -162,7 +115,7 @@ describe('agent publish handler', () => {
 
   test('an agent rename is recorded, since metadata has no version history', async () => {
     const handlers = buildAgentHandlers(options())
-    await handlers.updateAgentMeta(ctx(db, { agentId, name: 'Renamed' }))
+    await handlers.updateAgentMeta(testHandlerCtx(db, { agentId, name: 'Renamed' }))
 
     const [change] = await listChanges(db, {
       entityKind: 'agent',
@@ -178,9 +131,9 @@ describe('agent publish handler', () => {
   // only as good as this returning what the mutation wrote.
   test('the change feed serves what the handlers recorded', async () => {
     const handlers = buildAgentHandlers(options())
-    await handlers.updateAgentMeta(ctx(db, { agentId, name: 'Renamed' }))
+    await handlers.updateAgentMeta(testHandlerCtx(db, { agentId, name: 'Renamed' }))
     await handlers.publishAgent(
-      ctx(db, {
+      testHandlerCtx(db, {
         agentId,
         config: config({ modelId: 'other-model' }),
         aiSummary: { short: 's', long: 'l' },
@@ -189,7 +142,7 @@ describe('agent publish handler', () => {
 
     const feed = buildChangeHandlers()
     const rows = await feed.listChanges(
-      ctx(db, { entityKind: 'agent', entityId: agentId }),
+      testHandlerCtx(db, { entityKind: 'agent', entityId: agentId }),
     )
     // Newest first.
     expect(rows.map((r) => r.action)).toEqual(['publish', 'update'])
@@ -200,11 +153,11 @@ describe('agent publish handler', () => {
 
   test('the feed does not leak another entity\'s history', async () => {
     const handlers = buildAgentHandlers(options())
-    await handlers.updateAgentMeta(ctx(db, { agentId, name: 'Renamed' }))
+    await handlers.updateAgentMeta(testHandlerCtx(db, { agentId, name: 'Renamed' }))
 
     const feed = buildChangeHandlers()
     const rows = await feed.listChanges(
-      ctx(db, { entityKind: 'agent', entityId: 'some-other-agent' }),
+      testHandlerCtx(db, { entityKind: 'agent', entityId: 'some-other-agent' }),
     )
     expect(rows).toEqual([])
   })
@@ -212,7 +165,7 @@ describe('agent publish handler', () => {
   test('publishing without a summary fills it in the background', async () => {
     const handlers = buildAgentHandlers(options())
     await handlers.publishAgent(
-      ctx(db, { agentId, config: config({ modelId: 'other-model' }) }),
+      testHandlerCtx(db, { agentId, config: config({ modelId: 'other-model' }) }),
     )
 
     // Before the deferred work runs, the row is published but unsummarized —
@@ -232,7 +185,7 @@ describe('agent publish handler', () => {
   test('no scheduler wired means no background fill, and the publish still succeeds', async () => {
     const handlers = buildAgentHandlers(options({ waitUntil: undefined }))
     const out = await handlers.publishAgent(
-      ctx(db, { agentId, config: config({ maxTurns: 3 }) }),
+      testHandlerCtx(db, { agentId, config: config({ maxTurns: 3 }) }),
     )
 
     expect((out as { versionNumber: number }).versionNumber).toBe(2)
@@ -250,7 +203,7 @@ describe('agent publish handler', () => {
       }),
     )
     const summary = await handlers.summarizeAgentChanges(
-      ctx(db, { agentId, config: config({ maxTurns: 7 }) }),
+      testHandlerCtx(db, { agentId, config: config({ maxTurns: 7 }) }),
     )
     expect(summary).toEqual({ short: 'From the host', long: '' })
   })
@@ -258,7 +211,7 @@ describe('agent publish handler', () => {
   test('summarizeAgentChanges diffs against the published head without publishing', async () => {
     const handlers = buildAgentHandlers(options())
     const summary = await handlers.summarizeAgentChanges(
-      ctx(db, { agentId, config: config({ toolIds: ['search_catalog'] }) }),
+      testHandlerCtx(db, { agentId, config: config({ toolIds: ['search_catalog'] }) }),
     )
     expect(summary).toEqual({ short: 'Added 1 tool.', long: '' })
     // Still just the seeded version — summarizing is not publishing.
@@ -269,15 +222,15 @@ describe('agent publish handler', () => {
     const handlers = buildAgentHandlers(options())
     const [v1] = await listAgentVersions(db, agentId)
     await handlers.publishAgent(
-      ctx(db, { agentId, config: config({ prompt: 'Totally different.' }) }),
+      testHandlerCtx(db, { agentId, config: config({ prompt: 'Totally different.' }) }),
     )
 
     const restored = (await handlers.getAgentVersion(
-      ctx(db, { versionId: v1.id }),
+      testHandlerCtx(db, { versionId: v1.id }),
     )) as { config: AgentConfig; versionNumber: number }
     expect(restored.versionNumber).toBe(1)
     expect(restored.config.prompt).toBe('You are a costing assistant.')
 
-    expect(await handlers.getAgentVersion(ctx(db, { versionId: 'nope' }))).toBeNull()
+    expect(await handlers.getAgentVersion(testHandlerCtx(db, { versionId: 'nope' }))).toBeNull()
   })
 })

@@ -10,6 +10,11 @@
     "**/.*/",
     "migrations",
     "src/ui",
-    "src/**/*.test.ts"
+    "src/**/*.test.ts",
+    // Test fixtures are test code: they import `bun:sqlite` and `bun:test`,
+    // which only `tsconfig.test.json` carries types for. Nothing in production
+    // imports one (`grep -rn test-helpers src | grep -v '.test.ts'` is empty),
+    // so the production project has no reason to read them.
+    "src/**/*test-helpers.ts"
   ]
 }

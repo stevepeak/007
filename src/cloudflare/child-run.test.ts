@@ -1,17 +1,12 @@
-import { readdirSync, readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-
-import { Database } from 'bun:sqlite'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
-import { drizzle } from 'drizzle-orm/bun-sqlite'
 import { z } from 'zod'
 
 import type { WfWorkflowManifestEntry, WorkflowGraph } from '../engine/graph'
 import type { WfDb } from '../storage/client'
+import { freshDb } from '../storage/db-test-helpers'
 import {
   wfRun,
-  wfSchema,
   wfWorkflow,
   wfWorkflowVersion,
 } from '../storage/schema'
@@ -29,25 +24,6 @@ import type { GraphWorkflowParams } from './graph-workflow'
 // an answer, and a child run with no parent link still completes; you only find
 // out when the run viewer shows a workflow-call node with nothing under it, or
 // when a chat-shaped workflow starts paying for durable steps nobody asked for.
-
-const MIGRATIONS_DIR = fileURLToPath(
-  new URL('../../migrations', import.meta.url),
-)
-
-function freshDb(): WfDb {
-  const sqlite = new Database(':memory:')
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()
-  for (const f of files) {
-    const sql = readFileSync(`${MIGRATIONS_DIR}/${f}`, 'utf8')
-    for (const stmt of sql.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim()
-      if (trimmed) sqlite.run(trimmed)
-    }
-  }
-  return drizzle(sqlite, { schema: wfSchema }) as unknown as WfDb
-}
 
 /** A callee graph whose trigger declares `engine` (and its own kind). */
 function calleeGraph(

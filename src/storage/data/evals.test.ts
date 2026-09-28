@@ -1,13 +1,8 @@
-import { readdirSync, readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-
-import { Database } from 'bun:sqlite'
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { drizzle } from 'drizzle-orm/bun-sqlite'
 
 import type { EvalTools } from '../../engine/eval-schema'
 import type { WfDb } from '../client'
-import { wfSchema } from '../schema'
+import { freshDb } from '../db-test-helpers'
 
 import {
   cancelEvalRun,
@@ -30,25 +25,6 @@ import {
 // as `error` rather than failing, so the damage showed up in the next report as
 // an infrastructure problem and not as a lost test. Nothing in the console hit
 // it (the editor always sends the whole row), which is exactly why it survived.
-
-const MIGRATIONS_DIR = fileURLToPath(
-  new URL('../../../migrations', import.meta.url),
-)
-
-function freshDb(): WfDb {
-  const sqlite = new Database(':memory:')
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()
-  for (const f of files) {
-    const sql = readFileSync(`${MIGRATIONS_DIR}/${f}`, 'utf8')
-    for (const stmt of sql.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim()
-      if (trimmed) sqlite.run(trimmed)
-    }
-  }
-  return drizzle(sqlite, { schema: wfSchema }) as unknown as WfDb
-}
 
 let db: WfDb
 let setId: string
