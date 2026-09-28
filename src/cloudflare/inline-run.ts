@@ -1,5 +1,4 @@
 import { encodeRunPoint } from '../analytics/points'
-import { safeWrite } from '../analytics/sink'
 import type { RunContext, WfSdkConfig } from '../engine/config'
 import { errorFeedLine } from '../engine/error-detail'
 import { executeWorkflow, type ResumeStep } from '../engine/executor'
@@ -10,6 +9,7 @@ import { resolveNodeTimeoutMs } from '../engine/node-timeout'
 import type { ChildWorkflowRunner } from '../engine/nodes/workflow'
 import { errorMessage } from '../engine/run-node'
 import type { RunLogEntry, StreamSink } from '../engine/stream-sink'
+import { safeWrite } from '../engine/telemetry'
 import type { TriggerRegistry } from '../engine/trigger-registry'
 import { createWfDb, type WfDb } from '../storage/client'
 import {

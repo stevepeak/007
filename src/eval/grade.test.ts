@@ -2,9 +2,9 @@ import { APICallError } from 'ai'
 import { MockLanguageModelV3 } from 'ai/test'
 import { describe, expect, test } from 'bun:test'
 
+import type { CheckTree } from '../engine/eval-schema'
 import { mockFinish, mockUsage } from '../engine/model-test-helpers'
 
-import type { CheckTree } from './checks'
 import {
   gradeRow,
   rollup,

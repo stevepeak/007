@@ -7,9 +7,8 @@ import {
 import type { Implementation } from '@modelcontextprotocol/sdk/types.js'
 import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/cfworker-provider.js'
 
+import { schemaHash } from '../engine/connector-tool-id'
 import type { DiscoveredTool } from '../storage/data/connectors'
-
-import { schemaHash } from './tool-id'
 
 // The MCP client, as this SDK is allowed to construct one.
 //

@@ -1,3 +1,5 @@
+import { readdirSync } from 'node:fs'
+
 import { defineESLintConfig } from '@ocavue/eslint-config'
 
 // Inlined from the former shared `@law/eslint-config/bun.js` so this repo lints
@@ -20,6 +22,196 @@ const config = await defineESLintConfig(
   },
   { ignores: ['eslint.config.js'] },
 )
+
+// ═══════════════════════════════════════════════════════════════════════════
+// THE LAYERING RULE — one table, enforced, not merely documented.
+//
+// `src/` is eleven directories deep and the package's whole claim to being
+// publishable rests on the dependencies running ONE WAY. Prose can't fail CI;
+// this can. README.md's "Dependency direction" block and AGENTS.md §1 render
+// the same table for humans — change all three together.
+//
+// A directory may import a directory in a STRICTLY LOWER tier. Same-tier
+// imports are forbidden too: `cloudflare` and `ui` are both hosts and neither
+// may reach the other, and two peers that may import each other are one
+// refactor away from a cycle.
+//
+//   0  engine                  ai · zod · jsonata. Nothing from src/.
+//   1  analytics · documents   telemetry encoding / .docx rendering
+//   2  storage                 Drizzle over D1
+//   3  connectors · eval       remote MCP servers / the eval harness
+//   4  mcp                     the outbound MCP tool catalog
+//   5  server                  the RPC data layer (composes everything below)
+//   6  cloudflare · ui         the two hosts — nothing imports either
+//   7  cli                     unrestricted — see the `cli: null` note below
+//
+// Two directories are allowed ONE upward edge each, for TYPES ONLY:
+// `eval` and `mcp` are both drivers of `WfDataClient` — the RPC contract whose
+// implementation the host injects — and that interface is declared in
+// `server/protocol`. A `import type` is erased at build time, so it creates no
+// runtime cycle; a value import would, which is why the allowance is narrow.
+// `server` may then import them back (`handlers/evals.ts`, and `index.ts`
+// re-exporting the MCP fetch handler) without closing a loop.
+const LAYER_TIERS = {
+  engine: 0,
+  analytics: 1,
+  documents: 1,
+  storage: 2,
+  connectors: 3,
+  eval: 3,
+  mcp: 4,
+  server: 5,
+  cloudflare: 6,
+  ui: 6,
+  // `cli` is the host of last resort — the `wf-spec` bin, which wires storage
+  // to a local SQLite file and is not part of the published module graph. It
+  // imports downward by nature and nothing imports it, so it gets no rule.
+  // Every OTHER directory is still forbidden from importing it.
+  cli: null,
+}
+
+// The table must be TOTAL. A new `src/<dir>` with no layer is a directory with
+// no rule and no place on the map — which is exactly how half this tree ended up
+// unrestricted before ART-189. Failing here means `bun run lint` and
+// `bun run fix` both stop until someone decides where the directory sits; a mere
+// test would let the drift ship and get noticed later, if at all.
+const SRC_DIRS = readdirSync(new URL('./src', import.meta.url), {
+  withFileTypes: true,
+})
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name)
+
+const unplaced = SRC_DIRS.filter((dir) => !(dir in LAYER_TIERS))
+const phantom = Object.keys(LAYER_TIERS).filter(
+  (dir) => !SRC_DIRS.includes(dir),
+)
+if (unplaced.length > 0 || phantom.length > 0) {
+  throw new Error(
+    [
+      'eslint.config.js: LAYER_TIERS is out of sync with src/.',
+      unplaced.length > 0 &&
+        `  Unplaced (add a layer, and a row in README's "Dependency direction"): ${unplaced.join(', ')}`,
+      phantom.length > 0 &&
+        `  No such directory (remove the entry): ${phantom.join(', ')}`,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  )
+}
+
+/** Directories each layer may reach for TYPES ONLY. See the note above. */
+const LAYER_TYPE_ONLY = {
+  eval: ['server'],
+  mcp: ['server'],
+}
+
+/**
+ * Directories whose TESTS may additionally take a value from the layer above.
+ *
+ * An integration test stands up the real `createLocalWfDataClient` to drive the
+ * layer under test end to end (`mcp/{evals,lifecycle}-integration.test.ts`).
+ * That is the test's subject, not a production dependency — tests ship in no
+ * build. `engine` is deliberately absent: its tests get no latitude at all, and
+ * the two that needed it live in the higher layer instead (see
+ * `cloudflare/engine-contract.test.ts` and `eval/node-timeout-override.test.ts`).
+ */
+const LAYER_TEST_ESCAPES = {
+  eval: ['server'],
+  mcp: ['server'],
+}
+
+/**
+ * Every way a file can spell an import of the TOP-LEVEL `src/<dir>`.
+ *
+ * Deliberately not `**\/${dir}`: that also matches `./data/connectors` and
+ * `./connectors` — `src/storage/data/connectors.ts`, a sibling module that
+ * merely shares a name with a layer. Crossing a top-level boundary in this tree
+ * always means a specifier that climbs out with `../` first, and `src/` is four
+ * segments deep at most (`ui/evals/run-report/model.ts`), so enumerating the
+ * climbs is exact where a glob is not.
+ */
+const LAYER_CLIMBS = ['..', '../..', '../../..', '../../../..']
+
+function layerPatterns(dir) {
+  return [
+    ...LAYER_CLIMBS.flatMap((up) => [`${up}/${dir}`, `${up}/${dir}/**`]),
+    `@stevepeak/007/${dir}`,
+    `@stevepeak/007/${dir}/**`,
+  ]
+}
+
+/** Why `dir` may not reach `denied`, in the terms the table is written in. */
+function layerMessage(dir, denied) {
+  if (dir === 'engine') {
+    return (
+      'engine is layer 0: it must not import ANY other layer — it depends only on ' +
+      '`ai`, `zod` and `jsonata`, which is what makes this package publishable. ' +
+      'Move the shared value down into engine, or put the test in the higher layer.'
+    )
+  }
+  const tier = LAYER_TIERS[dir]
+  return (
+    `src/${dir} is layer ${tier} and may import layers 0..${tier - 1} only — not ` +
+    `${denied.join(', ')}. Depend downward: move the shared value to a lower ` +
+    'layer, or move your code up. See README "Dependency direction" and AGENTS.md §1.'
+  )
+}
+
+const LAYER_RULES = Object.keys(LAYER_TIERS).flatMap((dir) => {
+  const tier = LAYER_TIERS[dir]
+  if (tier === null) return []
+  const typeOnly = LAYER_TYPE_ONLY[dir] ?? []
+  // `null` (cli) reads as "above everything" here: nothing may import it.
+  const denied = Object.keys(LAYER_TIERS).filter(
+    (other) =>
+      other !== dir &&
+      (LAYER_TIERS[other] === null || LAYER_TIERS[other] >= tier),
+  )
+  const hard = denied.filter((other) => !typeOnly.includes(other))
+  const groups = []
+  if (hard.length > 0) {
+    groups.push({
+      group: hard.flatMap(layerPatterns),
+      message: layerMessage(dir, hard),
+    })
+  }
+  if (typeOnly.length > 0) {
+    groups.push({
+      group: typeOnly.flatMap(layerPatterns),
+      allowTypeImports: true,
+      message:
+        `src/${dir} may reach ${typeOnly.join(', ')} for TYPES ONLY — it drives the ` +
+        '`WfDataClient` contract, whose implementation the host injects. A value ' +
+        'import would make the cycle real at runtime. Use `import type`.',
+    })
+  }
+  const entries = [
+    {
+      files: [`src/${dir}/**`],
+      rules: { 'no-restricted-imports': ['error', { patterns: groups }] },
+    },
+  ]
+  const escapes = LAYER_TEST_ESCAPES[dir] ?? []
+  if (escapes.length > 0) {
+    // Same rule minus the escaped directories — ESLint replaces the whole rule
+    // option rather than merging, so the test entry restates it.
+    const testGroups = groups
+      .map((g) => ({
+        ...g,
+        group: g.group.filter(
+          (pattern) => !escapes.some((e) => layerPatterns(e).includes(pattern)),
+        ),
+      }))
+      .filter((g) => g.group.length > 0)
+    entries.push({
+      files: [`src/${dir}/**/*.test.ts`, `src/${dir}/**/*.test.tsx`],
+      rules: {
+        'no-restricted-imports': ['error', { patterns: testGroups }],
+      },
+    })
+  }
+  return entries
+})
 
 /** @type {import("eslint").Linter.Config[]} */
 
@@ -116,64 +308,16 @@ export default [
 
     },
   },
-  // The one-way dependency rule, enforced instead of merely documented.
-  // README.md states it (`ui → server → storage → engine`, `cloudflare →
-  // storage → engine`) and the package's whole claim to being publishable rests
-  // on `engine` depending only on `ai`, `zod` and `jsonata`. Prose can't fail
-  // CI; this can.
-  // Two engine TESTS had already drifted across the boundary before this rule
-  // existed — see cloudflare/engine-contract.test.ts, where they now live.
-  {
-    files: ['src/engine/**'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['**/storage/**', '**/cloudflare/**', '**/server/**', '**/ui/**'],
-              message:
-                'engine must not import other layers — it depends only on `ai`, `zod` and `jsonata`, which is what makes it publishable. Move the shared value into engine, or put the test in the higher layer.',
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
-    files: ['src/storage/**'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['**/cloudflare/**', '**/server/**', '**/ui/**'],
-              message:
-                'storage sits below cloudflare/server/ui — depend downward (engine) only.',
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
-    files: ['src/server/**'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['**/cloudflare/**', '**/ui/**'],
-              message:
-                'server sits below ui and beside cloudflare — depend on storage/engine only.',
-            },
-          ],
-        },
-      ],
-    },
-  },
+  // ═══════════════════════════════════════════════════════════════════════
+  // THE LAYERING RULE (ART-189) — see LAYER_TIERS above.
+  //
+  // Generated from one table rather than hand-written per directory, because
+  // the previous three hand-written blocks covered `engine`, `storage` and
+  // `server` and left eight directories with no rule and no place on the map.
+  // A new `src/<dir>` now fails at config load until someone decides where it
+  // sits, which is the only way the table stays complete.
+  ...LAYER_RULES,
+
   // Runtime code reports a swallowed fault through `WfSdkConfig.logger`, never
   // through `console` — a console line in a Worker is a Sentry breadcrumb at
   // best, so before this rule a production failure that the SDK deliberately

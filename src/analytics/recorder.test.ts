@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 
 import { createMemoryRunRecorder } from '../engine/run-recorder'
+import { createMemoryTelemetrySink } from '../engine/telemetry'
 
 import type { RunDims } from './points'
 import { withStepTelemetry } from './recorder'
-import { createMemoryTelemetrySink } from './sink'
 
 const DIMS: RunDims = {
   workflowId: 'wf-1',

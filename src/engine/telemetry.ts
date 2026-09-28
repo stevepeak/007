@@ -1,6 +1,4 @@
-import { consoleWfLogger, type WfLogger } from '../engine/logger'
-
-import type { TelemetryPoint } from './points'
+import { consoleWfLogger, type WfLogger } from './logger'
 
 // The telemetry seam, deliberately shaped like `RunRecorder`: the engine hands
 // points to an interface and an implementation decides where they land. The SDK
@@ -11,6 +9,26 @@ import type { TelemetryPoint } from './points'
 // `write` is SYNCHRONOUS and must never throw. `writeDataPoint` is itself
 // fire-and-forget, and telemetry that could fail a run — or make the recorder
 // await a second I/O hop per step — would be worse than no telemetry.
+//
+// The SEAM lives here, in `engine`, because `WfSdkConfig.resolveTelemetry`
+// declares it (`./config`) and engine may not import upward — `engine/config.ts`
+// reaching into `analytics/sink.ts` was the one cross-layer import that survived
+// the ESLint rule, because the rule never named `analytics` (ART-189). The
+// ENCODING stays in `analytics/points.ts`: the column layout is Analytics
+// Engine's business, and the engine only ever forwards what analytics built.
+
+/**
+ * A single encoded data point, in `writeDataPoint`'s exact shape.
+ *
+ * The widest shape that covers the binding, held here so the seam's payload
+ * type travels with the seam. Nothing in `engine` constructs one —
+ * `analytics/points.ts` owns the column layout and the encoders.
+ */
+export type TelemetryPoint = {
+  indexes: [string]
+  blobs: string[]
+  doubles: number[]
+}
 
 export interface TelemetrySink {
   write(point: TelemetryPoint): void

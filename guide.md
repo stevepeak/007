@@ -46,8 +46,12 @@ inspects it, it only threads it into your tools.
 
 ### Subpath entry points
 
-Import only the layer you need; the dependency direction is one-way with no
-cycles (`ui → server → storage → engine`, `cloudflare → storage → engine`).
+Import only the layer you need. The dependency direction inside the package is
+one-way with no cycles — eleven directories, each numbered, each able to import
+only strictly lower numbers, and the rule is lint-enforced. The full table is in
+the README's [Package layout](./README.md#package-layout); the short version is
+that `engine` (layer 0) depends on `ai`, `zod` and `jsonata` and nothing else,
+`storage` sits above it, and `server`, `cloudflare` and `ui` sit above that.
 
 | Import                                       | Runtime                 | Use it in                                                                                    |
 | -------------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------- |

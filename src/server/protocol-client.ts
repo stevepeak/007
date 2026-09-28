@@ -6,9 +6,9 @@ import type {
   ModelProvider,
   ProviderBudget,
 } from '../engine/config'
+import type { CheckTree, EvalSampleInput, EvalTools } from '../engine/eval-schema'
 import type { AgentConfig, WorkflowGraph } from '../engine/graph'
 import type { TriggerEventOption } from '../engine/trigger-registry'
-import type { CheckTree, EvalSampleInput, EvalTools } from '../eval/checks'
 import type { EvalDriveState, EvalPlan } from '../eval/plan'
 import type { EvalRunDrive } from '../eval/tick'
 

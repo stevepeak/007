@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import type { ModelPriceMap } from '../storage/cost'
+import type { ModelPriceMap } from '../engine/cost'
 
 import {
   encodeRunPoint,

@@ -12,9 +12,12 @@
 //   • It reads as itself in an agent config. `mcp:linear:create_issue` needs no
 //     lookup to understand in a diff.
 //
-// This module is deliberately free of storage and engine imports: both sides
-// depend on it, and neither should have to depend on the other to agree on what
-// a tool id means.
+// It lives in `engine` — the bottom layer — and imports nothing, because
+// `connectors`, `storage` and `server` all have to agree on what a tool id
+// means and none of them should have to depend on another to do it. Held in
+// `connectors/` it made `storage → connectors → storage` a real cycle, since
+// `storage/data/connectors.ts` mints ids while `connectors/client.ts` reads the
+// rows back.
 
 /** Namespace every connector tool id carries. */
 export const CONNECTOR_TOOL_PREFIX = 'mcp'

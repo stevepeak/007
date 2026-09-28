@@ -5,7 +5,7 @@ import { Database } from 'bun:sqlite'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 
-import type { EvalTools } from '../../eval/checks'
+import type { EvalTools } from '../../engine/eval-schema'
 import type { WfDb } from '../client'
 import { wfSchema } from '../schema'
 

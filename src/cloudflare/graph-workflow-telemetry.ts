@@ -1,15 +1,15 @@
 import { encodeRunPoint, type RunDims } from '../analytics/points'
 import { withStepTelemetry } from '../analytics/recorder'
+import type { WfSdkConfig } from '../engine/config'
+import type { ModelPriceMap } from '../engine/cost'
+import { resolveWfLogger, type WfLogger } from '../engine/logger'
+import type { RunRecorder } from '../engine/run-recorder'
 import {
   NOOP_TELEMETRY,
   safeWrite,
   type TelemetrySink,
-} from '../analytics/sink'
-import type { WfSdkConfig } from '../engine/config'
-import { resolveWfLogger, type WfLogger } from '../engine/logger'
-import type { RunRecorder } from '../engine/run-recorder'
+} from '../engine/telemetry'
 import type { WfDb } from '../storage/client'
-import type { ModelPriceMap } from '../storage/cost'
 import { createDurableRunRecorder } from '../storage/run-recorder'
 
 import type { GraphRunContextInput, GraphWorkflowEnv } from './graph-workflow'

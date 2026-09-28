@@ -1,16 +1,12 @@
 import { generateObject, NoObjectGeneratedError, type LanguageModel } from 'ai'
 import { z } from 'zod'
 
-import { errorFeedLine } from '../engine/error-detail'
-import type { AgentNodeMeta } from '../engine/nodes/agent'
-import type { ToolNodeMeta } from '../engine/nodes/tool'
 import {
   DEFAULT_DECISION_THRESHOLD,
   resolveVerdicts,
   type Decider,
 } from '../engine/decision'
-import { strictSchema } from '../engine/strict-schema'
-
+import { errorFeedLine } from '../engine/error-detail'
 import {
   isJudgeCheck,
   JUDGE_CONFIDENCE_MAX,
@@ -18,7 +14,10 @@ import {
   type CheckTree,
   type EvalCheck,
   type EvalMatch,
-} from './checks'
+} from '../engine/eval-schema'
+import type { AgentNodeMeta } from '../engine/nodes/agent'
+import type { ToolNodeMeta } from '../engine/nodes/tool'
+import { strictSchema } from '../engine/strict-schema'
 
 // Phase 3 — the pure grading engine. Given a row's `checks` tree and a run's
 // trace (`wf_run_step[]` + `wf_run.output`), produce a verdict:

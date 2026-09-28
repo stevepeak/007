@@ -1,15 +1,14 @@
 import { resolvePath } from '../engine/binding'
-import type { AgentNode, ArgBinding, WorkflowGraph } from '../engine/graph'
-import type { AgentNodeMeta } from '../engine/nodes/agent'
-import { allNodes } from '../storage/data/authoring-graph'
-
-import { defaultEvalTools } from './checks'
+import { defaultEvalTools } from '../engine/eval-schema'
 import type {
   CheckTree,
   EvalSampleInput,
   EvalTools,
   SeededMessage,
-} from './checks'
+} from '../engine/eval-schema'
+import type { AgentNode, ArgBinding, WorkflowGraph } from '../engine/graph'
+import type { AgentNodeMeta } from '../engine/nodes/agent'
+import { allNodes } from '../storage/data/authoring-graph'
 
 // Turning a real run into an eval Sample.
 //

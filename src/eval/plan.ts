@@ -1,4 +1,4 @@
-import type { AgentConfig } from '../server/protocol'
+import type { AgentConfig } from '../engine/agent-config-schema'
 
 // The sweep manifest — what a run was launched to do, written down.
 //

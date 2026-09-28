@@ -9,7 +9,6 @@ import {
   REQUIREMENT_REASON,
   unmetRequirements,
 } from '../engine/model-capabilities'
-import { clip } from '../server/clip'
 import type {
   AgentConfig,
   AgentNodeMeta,
@@ -19,6 +18,7 @@ import type {
   WfDataClient,
 } from '../server/protocol'
 
+import { clip } from './clip'
 import { boundedLimit, optString, reqString, type WfMcpTool } from './tools'
 
 // The agent write path — the endgame of the "extend the surface" queue, and the

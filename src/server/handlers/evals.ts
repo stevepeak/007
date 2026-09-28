@@ -1,4 +1,5 @@
 import { changedEvalRowFields, changedEvalSetFields } from '../../engine'
+import type { EvalRowSnapshot } from '../../engine/eval-schema'
 import { agentConfigSchema } from '../../engine/graph'
 import {
   collectSeededToolCalls,
@@ -11,7 +12,6 @@ import {
   type GradeModelFactory,
   type GradeStep,
 } from '../../eval'
-import type { EvalRowSnapshot } from '../../eval/checks'
 import {
   evalCellKey,
   parseEvalDriveState,
@@ -284,7 +284,7 @@ export function buildEvalHandlers<TDeps>(
       const before = p.id ? ((await getEvalRow(c.db, p.id))?.row ?? null) : null
       // `input` / `tools` / `checks` are the one place a cast survives this
       // handler, and it is the honest kind: they are `PASSED_THROUGH` in the
-      // schema table on purpose (their real schemas live in `eval/checks`, and
+      // schema table on purpose (their real schemas live in `engine/eval-schema`, and
       // `upsertEvalRow` runs them — `evalSampleInputSchema.parse`,
       // `parseEvalTools`, `checkTreeSchema.parse` — on the very next line it
       // executes). So the value is genuinely `unknown` here and genuinely

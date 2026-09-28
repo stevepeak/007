@@ -5,7 +5,6 @@ import { Database } from 'bun:sqlite'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 
-import { isEncrypted } from '../../connectors/crypto'
 import type { WfDb } from '../client'
 import { wfSchema } from '../schema'
 
@@ -241,8 +240,13 @@ describe('connections', () => {
     const conn = await getConnection(db, 'linear')
     expect(conn?.accountLabel).toBe('Steve @ Artisian')
     expect(conn?.status).toBe('connected')
-    // The storage layer only ever sees ciphertext.
-    expect(isEncrypted(conn?.accessToken)).toBe(true)
+    // The storage layer only ever sees ciphertext, and round-trips the envelope
+    // verbatim: `connectors/oauth.ts` encrypts before it calls in here. The
+    // predicate that RECOGNISES an envelope lives one layer up
+    // (`connectors/crypto.ts`), and the real "no plaintext was ever persisted"
+    // guard is `connectors/crypto.test.ts` — asserting the literal here keeps
+    // `storage` from importing the layer above it (AGENTS.md §1).
+    expect(conn?.accessToken).toBe('wfc1.aaa.bbb')
   })
 
   // Reconnecting must REPLACE, never accumulate: two live credentials for one

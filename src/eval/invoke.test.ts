@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
-import { defaultEvalTools, type EvalSampleInput } from './checks'
+import { defaultEvalTools, type EvalSampleInput } from '../engine/eval-schema'
+
 import { evalInvocation } from './invoke'
 
 // The seam between how a Sample is AUTHORED (input + per-tool settings) and what

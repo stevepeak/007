@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
-import { createMemoryTelemetrySink } from '../analytics/sink'
 import { createMemoryRunRecorder, type RecordStepArgs } from '../engine/run-recorder'
+import { createMemoryTelemetrySink } from '../engine/telemetry'
 
 import { runDims, withRunCounts } from './graph-workflow-telemetry'
 import { createRunCounters } from './step-counter'

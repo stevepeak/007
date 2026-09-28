@@ -6,9 +6,9 @@ Workflows runtime**, the **RPC data layer**, and the **editor + run-viewer UI**.
 
 Everything provider- or domain-specific — the model provider, the tools, the
 tenant identity — is **injected by the host**, so the same package drops into any
-project. The engine itself imports **no** AI provider; it depends only on `ai`
-and `zod`. Switching from OpenAI to OpenRouter to a custom endpoint is a one-line
-change in the host's `getModel`.
+project. The engine itself imports **no** AI provider; it depends only on `ai`,
+`zod` and `jsonata`. Switching from OpenAI to OpenRouter to a custom endpoint is
+a one-line change in the host's `getModel`.
 
 > **Integrating it into a project?** See [`guide.md`](./guide.md) — the practical
 > step-by-step. This README explains what the SDK _is_ and how it works.
@@ -44,29 +44,69 @@ inspects.
 
 ## Package layout
 
+Eleven directories, one per layer. The leading number is the **layer**: a
+directory may import a directory with a *strictly lower* number, and nothing
+else.
+
 ```
 src/
-├── index.ts     barrel: engine + storage + eval
-├── engine/      pure execution — NO DB, NO Cloudflare, NO provider (ai + zod + jsonata)
-│                config · graph schema · scheduler · run-node · nodes/
-├── storage/     Drizzle over Cloudflare D1 — the wf_* tables + data access
-├── cloudflare/  Workers runtime — GraphWorkflow, RunRoom, startGraphRun, tools
-├── server/      framework-agnostic RPC data layer — one POST route
-├── ui/          React editor + run-viewer, with injectable design-system chrome
-└── eval/        run a graph in-process with mock model/tools — no DB, no CF
+│
+├─ index.ts        barrel: engine + storage + eval
+│
+├─0 engine/        pure execution — NO DB, NO Cloudflare, NO provider (ai + zod + jsonata)
+│                  config · graph schema · scheduler · run-node · nodes/, plus the
+│                  vocabulary every layer above shares: agent config, eval-schema,
+│                  cost math, connector tool ids, the telemetry seam
+├─1 analytics/     Analytics Engine — the append-only column layout, the point
+│                  encoders, and the dashboard's read queries
+├─1 documents/     zod document model + deterministic .docx renderer
+├─2 storage/       Drizzle over Cloudflare D1 — the wf_* tables + data access
+├─3 connectors/    remote MCP servers — OAuth, token crypto, tool registry
+├─3 eval/          the eval harness — run a graph in-process against a mocked
+│                  model/tools, grade it, drive a resumable sweep
+├─4 mcp/           007's own outbound MCP server — one tool catalog
+├─5 server/        framework-agnostic RPC data layer — one POST route
+├─6 cloudflare/    Workers runtime — GraphWorkflow, RunRoom, startGraphRun, tools
+├─6 ui/            React editor + run-viewer, with injectable design-system chrome
+└─7 cli/           the `wf-spec` bin — unrestricted; nothing imports it
 ```
 
-**Dependency direction — one way, no cycles:**
+**Dependency direction — one way, no cycles.** Each layer may import any
+strictly lower layer. Same-layer imports are forbidden too: `cloudflare` and
+`ui` are both hosts and neither may reach the other.
 
 ```
-ui → server → storage → engine
-cloudflare  → storage → engine
-host app → (injects WfSdkConfig) → engine
+7  cli         → anything — the wf-spec bin, outside the published module graph
+6  cloudflare  → server, mcp, eval, connectors, storage, documents, analytics, engine
+6  ui          → server, mcp, eval, connectors, storage, documents, analytics, engine
+   (…but NOT each other: layer 6 may not import layer 6)
+5  server      → mcp, eval, connectors, storage, documents, analytics, engine
+4  mcp         → eval, connectors, storage, documents, analytics, engine    (+ server: TYPES only)
+3  eval        → storage, documents, analytics, engine                      (+ server: TYPES only)
+3  connectors  → storage, documents, analytics, engine
+2  storage     → documents, analytics, engine
+1  analytics   → engine
+1  documents   → engine
+0  engine      → nothing in src/. Only `ai`, `zod` and `jsonata`.
+
+host app       → (injects WfSdkConfig) → engine
 ```
 
 `engine` depends on nothing in the SDK, only `ai` + `zod` (+ `jsonata` for the
-Transform node and the graph linter). That's what makes it
-publishable and reusable.
+Transform node and the graph linter). That's what makes it publishable and
+reusable — it is the claim the whole layering exists to protect.
+
+`eval` and `mcp` each get **one** upward edge, for **types only**: both drive
+`WfDataClient`, the RPC contract declared in `server/protocol` whose
+implementation the host injects. An `import type` is erased at build time, so it
+creates no runtime cycle — a value import would, which is why the allowance is
+that narrow. `server` may then import both back without closing a loop.
+
+**This is enforced, not merely documented.** `LAYER_TIERS` in
+[`eslint.config.js`](./eslint.config.js) is the single source of truth and
+generates a `no-restricted-imports` rule per directory; a cross-layer import
+fails `bun run lint`. A new `src/<dir>` fails at config load until someone
+decides where it sits. See [`AGENTS.md`](./AGENTS.md) §1 for how to work with it.
 
 Import only the layer you need via subpaths: `@stevepeak/007/engine`,
 `/storage`, `/cloudflare`, `/server`, `/documents`, `/ui`, `/eval`. (The full table

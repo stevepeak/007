@@ -1,9 +1,9 @@
+import type { ModelPriceMap } from '../engine/cost'
 import type { WfLogger } from '../engine/logger'
 import type { RunRecorder } from '../engine/run-recorder'
-import type { ModelPriceMap } from '../storage/cost'
+import { safeWrite, type TelemetrySink } from '../engine/telemetry'
 
 import { encodeStepPoint, type RunDims } from './points'
-import { safeWrite, type TelemetrySink } from './sink'
 
 // Step telemetry rides on the recorder rather than on the dispatch path,
 // because the recorder is the only seam EVERY step passes through. Three of the

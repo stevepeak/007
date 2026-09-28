@@ -24,7 +24,7 @@ import {
   type EvalRowSnapshot,
   type EvalSampleInput,
   type EvalTools,
-} from '../../eval/checks'
+} from '../../engine/eval-schema'
 import type { WfDb } from '../client'
 import type {
   WF_EVAL_RESULT_STATUSES,
@@ -46,7 +46,7 @@ const EVAL_RUN_PAGE_MAX = 200
 //
 // Persistence only; grading (evaluate checks → verdicts) is Phase 3 (`grade.ts`)
 // and starting the real run is a host-wired hook (Phase 4). JSON columns are
-// validated against `src/eval/checks.ts` on write and cast on read.
+// validated against `src/engine/eval-schema.ts` on write and cast on read.
 
 export type EvalTargetKind = (typeof WF_EVAL_TARGET_KINDS)[number]
 export type EvalResultStatus = (typeof WF_EVAL_RESULT_STATUSES)[number]

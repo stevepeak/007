@@ -19,7 +19,7 @@ import {
   toolSetting,
   type CheckTree,
   type EvalSampleInput,
-} from './checks'
+} from './eval-schema'
 
 // Phase 2 — the shared check vocabulary. These pure zod schemas are validated at
 // the data-access boundary (on every row upsert) and reused by the Phase 3

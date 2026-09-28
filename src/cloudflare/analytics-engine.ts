@@ -1,7 +1,7 @@
 import type { AnalyticsEngineDataset } from '@cloudflare/workers-types'
 
-import type { TelemetrySink } from '../analytics/sink'
 import { consoleWfLogger, type WfLogger } from '../engine/logger'
+import type { TelemetrySink } from '../engine/telemetry'
 
 // The Analytics Engine implementation of `TelemetrySink`. `AnalyticsEngineDataset`
 // is a TYPE-ONLY import, so this module is erased at build and stays reachable

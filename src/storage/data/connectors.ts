@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm'
 
-import { connectorToolId } from '../../connectors/tool-id'
+import { connectorToolId } from '../../engine/connector-tool-id'
 import type { WfDb } from '../client'
 import {
   WF_CONNECTION_WORKSPACE_OWNER,

@@ -1,10 +1,18 @@
-import type { AgentNodeMeta } from '../engine/nodes/agent'
+import type { AgentNodeMeta } from './nodes/agent'
 
 // Per-node cost lives nowhere in the schema — a run step only records token
 // usage (inside its AgentNodeMeta) and the model id. Dollar cost is DERIVED on
 // read by multiplying that usage against the model's catalog price (wf_model).
 // These pure helpers hold that math so the runs list (aggregate per run) and the
 // run inspector (per node) compute cost the same way.
+//
+// It lives in `engine` — not `storage`, where it used to — because THREE layers
+// price the same usage and two of them sit below the other: `analytics` prices a
+// step as it happens (`analytics/points.ts`), `storage` prices it again on read,
+// and `cloudflare` carries the price map into the dispatcher. With the math in
+// storage, `analytics → storage → analytics` was a genuine import cycle. Nothing
+// here touches a database: the price map is loaded by `storage/data/runs-cost.ts`
+// and passed in.
 
 /**
  * Prices for one model, USD per 1M tokens. All optional — a model the catalog

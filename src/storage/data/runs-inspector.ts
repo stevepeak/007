@@ -1,8 +1,8 @@
 import { and, asc, desc, eq, getTableColumns, isNull, sql } from 'drizzle-orm'
 
+import { stepCost } from '../../engine/cost'
 import type { WorkflowGraph } from '../../engine/graph'
 import type { WfDb } from '../client'
-import { stepCost } from '../cost'
 import {
   TOP_LEVEL_ITEM_INDEX,
   wfRun,

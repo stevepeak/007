@@ -3,9 +3,16 @@ import { z } from 'zod'
 // The eval check vocabulary — the shared shape of a row's stored `checks` tree,
 // its `initialCondition`, its `fixtures`, and a graded `checkResult`. This
 // module is the single source of truth for BOTH the storage/data layer (which
-// validates the JSON it persists) and the Phase 3 grading engine (`grade.ts`,
-// which evaluates each check against a run trace). Only the *shapes* live here;
-// the evaluators are in `grade.ts`.
+// validates the JSON it persists) and the grading engine (`eval/grade.ts`, which
+// evaluates each check against a run trace). Only the *shapes* live here; the
+// evaluators are in `eval/grade.ts`.
+//
+// It lives in `engine` (as `eval/checks.ts` until ART-189) because five layers
+// speak this vocabulary — `storage` validates the JSON columns, `server` puts it
+// in DTOs, `mcp` authors samples, `ui` renders the editors, `eval` grades — and
+// `storage` sits BELOW `eval`. Held in `eval/`, `storage → eval → storage` was a
+// real cycle. `@stevepeak/007/eval` still re-exports every name here, so the
+// published surface is unchanged; nothing in this file knows what a run is.
 
 /** How a value check compares expected vs. actual. Not every check uses all. */
 export const evalMatchSchema = z.enum([

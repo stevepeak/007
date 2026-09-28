@@ -303,7 +303,7 @@ export const wfInputSchemas = {
     name: z.string().min(1),
     description: z.string().nullable().optional(),
     // Sample input, tool overrides and the check tree each have their own
-    // schema in `eval/checks`; they ride through as-is.
+    // schema in `engine/eval-schema`; they ride through as-is.
     input: PASSED_THROUGH.optional(),
     tools: PASSED_THROUGH.optional(),
     checks: PASSED_THROUGH.optional(),

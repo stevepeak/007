@@ -6,8 +6,8 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 
 import type { AnalyticsRow } from '../../analytics/query'
+import type { ModelPriceMap } from '../../engine/cost'
 import type { WfDb } from '../client'
-import type { ModelPriceMap } from '../cost'
 import {
   wfFeedback,
   wfModel,

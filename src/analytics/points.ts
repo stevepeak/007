@@ -1,6 +1,7 @@
+import { asAgentMeta, tokenCostUsd, type ModelPriceMap } from '../engine/cost'
 import type { WfNodeKind } from '../engine/graph'
 import type { WfRunStepStatus } from '../engine/run-recorder'
-import { asAgentMeta, tokenCostUsd, type ModelPriceMap } from '../storage/cost'
+import type { TelemetryPoint } from '../engine/telemetry'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AE COLUMN LAYOUT — schema v1. APPEND-ONLY, FOREVER.
@@ -74,16 +75,12 @@ import { asAgentMeta, tokenCostUsd, type ModelPriceMap } from '../storage/cost'
 /** Bumped only when ordinals are ADDED. Readers filter on it. */
 export const TELEMETRY_SCHEMA_VERSION = '1'
 
+export type { TelemetryPoint }
+
 /** Error text budgets. Step points are far more numerous, so they get less. */
 const STEP_ERROR_CHARS = 120
 const RUN_ERROR_CHARS = 200
 
-/** A single encoded data point, in `writeDataPoint`'s exact shape. */
-export type TelemetryPoint = {
-  indexes: [string]
-  blobs: string[]
-  doubles: number[]
-}
 
 /**
  * The run-scoped dimensions every point carries. Assembled once when a run's

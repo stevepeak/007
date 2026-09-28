@@ -12,24 +12,66 @@ will not read it all. You shouldn't have to.
 
 ## 1. The layering rule
 
+Every one of the eleven `src/` directories has a **layer number**. A directory
+may import a directory with a *strictly lower* number, and nothing else.
+
 ```
-ui → server → storage → engine
-cloudflare  → storage → engine
+7  cli          the wf-spec bin — unrestricted, and nothing imports it
+6  cloudflare   ─┐ the two hosts. Neither may import the other:
+6  ui           ─┘ same-layer imports are forbidden too.
+5  server       the RPC data layer — composes everything below
+4  mcp          007's own outbound MCP server                 (+ server: TYPES only)
+3  connectors   remote MCP servers — OAuth, crypto, registry
+3  eval         the eval harness                              (+ server: TYPES only)
+2  storage      Drizzle over D1
+1  analytics    AE column layout, encoders, dashboard reads
+1  documents    zod doc model + .docx renderer
+0  engine       ai · zod · jsonata. NOTHING from src/.
 ```
 
-One direction. No cycles. In particular:
+In particular:
 
 > **`engine` imports only `ai`, `zod` and `jsonata`.** That is what makes this
 > package publishable, and it is not a style preference.
 
-This is **enforced by ESLint**, not just documented — `no-restricted-imports`
-rules in `eslint.config.js` fail the build on a cross-layer import. If you find
-yourself wanting engine to reach sideways, the answer is almost always to move
-the shared value *down* into engine, or to put the test in the higher layer.
+This is **enforced by ESLint**, not just documented. `LAYER_TIERS` in
+`eslint.config.js` is the single source of truth; it generates a
+`no-restricted-imports` rule per directory, so a cross-layer import fails
+`bun run lint` with a message naming the layer it broke. README.md's
+"Dependency direction" block renders the same table for a reader integrating the
+SDK — **change the table and the README together.** A new `src/<dir>` with no
+entry in the table fails at config load, which is the only way it stays
+complete.
 
-There is one deliberate exception, and it is a test: `src/cloudflare/engine-contract.test.ts`
-holds the two cases that assert engine↔cloudflare boundary behaviour. They live
-in `cloudflare/` — the higher layer — precisely so `engine/` stays clean.
+**When you want to reach sideways or up, you have four honest moves** — in
+rough order of how often they're right:
+
+1. **Move the shared value *down*** to a layer both sides can see. This is
+   almost always the answer, and it is how ART-189 broke four real cycles: the
+   eval check vocabulary (`eval/checks.ts` → `engine/eval-schema.ts`), the cost
+   math (`storage/cost.ts` → `engine/cost.ts`), the connector tool-id grammar
+   (`connectors/tool-id.ts` → `engine/connector-tool-id.ts`) and the telemetry
+   seam (`analytics/sink.ts` → `engine/telemetry.ts`). Each was pure, each was
+   needed by two layers, and each was sitting in the wrong one. `engine` is
+   allowed to be the shared *vocabulary*, not just the executor.
+2. **Move your code *up***, if it turns out to belong there. `server/clip.ts`
+   became `mcp/clip.ts` because the MCP tools were its only callers.
+3. **Take the type, not the value.** `eval` and `mcp` each have exactly one
+   upward edge, and it is `import type` from `server/protocol` — both drive
+   `WfDataClient`, whose implementation the host injects. A type import is
+   erased at build time, so it is no runtime cycle; a value import from either
+   into `server` is an error, and the rule says so.
+4. **Put the test in the higher layer.** `src/cloudflare/engine-contract.test.ts`
+   holds the two cases that assert engine↔cloudflare boundary behaviour, and
+   `src/eval/node-timeout-override.test.ts` holds the eval half of
+   `engine/node-timeout.ts`'s contract. Both live above the code they test,
+   precisely so `engine/` stays clean.
+
+`eval` and `mcp` tests get one further latitude, listed as `LAYER_TEST_ESCAPES`:
+they may take a *value* from `server`, because `mcp/{evals,lifecycle}-integration.test.ts`
+stand up the real `createLocalWfDataClient` to drive the layer under test. That
+is the test's subject, and tests ship in no build. **`engine` tests get no
+latitude at all** — see move 4.
 
 ---
 

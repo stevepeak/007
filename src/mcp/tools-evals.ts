@@ -1,7 +1,6 @@
 import { z } from 'zod'
 
 import type { JsonSchema } from '../engine'
-import { MANUAL_TRIGGER_KIND } from '../engine/trigger-registry'
 import {
   checkTreeSchema,
   describeCheckVocabulary,
@@ -11,14 +10,15 @@ import {
   defaultEvalTools,
   type CheckTree,
   type EvalTools,
-} from '../eval/checks'
-import { clip } from '../server/clip'
+} from '../engine/eval-schema'
+import { MANUAL_TRIGGER_KIND } from '../engine/trigger-registry'
 import type {
   AgentConfig,
   WfDataClient,
   WfEvalTargetKind,
 } from '../server/protocol'
 
+import { clip } from './clip'
 import { optString, reqString, type WfMcpTool } from './tools'
 
 // The eval AUTHORING surface — the point of the whole MCP server. Reading a

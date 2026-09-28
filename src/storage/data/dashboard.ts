@@ -10,9 +10,9 @@ import {
 } from '../../analytics/dashboard'
 import type { AnalyticsQuery } from '../../analytics/query'
 import type { AnalyticsWindow } from '../../analytics/sql'
+import { tokenCostUsd, type ModelPriceMap } from '../../engine/cost'
 import { consoleWfLogger, type WfLogger } from '../../engine/logger'
 import type { WfDb } from '../client'
-import { tokenCostUsd, type ModelPriceMap } from '../cost'
 import {
   wfFeedback,
   wfRun,

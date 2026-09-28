@@ -1,5 +1,6 @@
-import type { EvalSampleInput, EvalToolMode, EvalTools } from './checks'
-import { toolFixtures, toolModes } from './checks'
+import type { EvalSampleInput, EvalToolMode, EvalTools } from '../engine/eval-schema'
+import { toolFixtures, toolModes } from '../engine/eval-schema'
+
 import { seededMessagesToUiMessages } from './synthesis'
 
 // The one place a Sample's AUTHORING shape (input + tools) becomes the ENGINE's

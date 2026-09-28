@@ -5,10 +5,10 @@ import { z } from 'zod'
 
 import type { ToolRegistry, WfSdkConfig } from '../engine'
 import { makeAgentConfig } from '../engine/agent-test-helpers'
+import type { SeededMessage } from '../engine/eval-schema'
 import { mockFinish, mockUsage } from '../engine/model-test-helpers'
 import type { AgentNodeMeta } from '../engine/nodes/agent'
 
-import type { SeededMessage } from './checks'
 import { collectSeededToolCalls, seededMessagesToUiMessages } from './synthesis'
 
 import { runWorkflowUnderConditions } from './index'

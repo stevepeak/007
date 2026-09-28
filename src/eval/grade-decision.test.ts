@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 
 import type { Decider, DecisionRequest } from '../engine/decision'
+import type { CheckTree } from '../engine/eval-schema'
 
-import type { CheckTree } from './checks'
 import { gradeRow } from './grade'
 
 // `decision_judge` grades with a probability instead of prose, so what matters

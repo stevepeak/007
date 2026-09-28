@@ -1,12 +1,13 @@
 import { z } from 'zod'
 
-import { clip, clipTail } from '../server/clip'
 import type {
   ToolOption,
   WfDataClient,
   WfRunDetail,
   WfRunSummary,
 } from '../server/protocol'
+
+import { clip, clipTail } from './clip'
 
 // The tools `wf-mcp` exposes, defined over `WfDataClient` — the same ~70-method
 // interface the editor and run viewer use — so an MCP session sees exactly what

@@ -1,6 +1,6 @@
 import type { UIMessage } from 'ai'
 
-import type { SeededMessage } from './checks'
+import type { SeededMessage } from '../engine/eval-schema'
 
 // Synthesis-mode helpers. A "seeded conversation" (authored on a Sample's
 // `initialCondition.seededMessages`) is a compact transcript — user turns plus

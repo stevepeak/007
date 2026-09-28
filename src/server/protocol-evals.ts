@@ -4,7 +4,7 @@ import type {
   EvalRowSnapshot,
   EvalSampleInput,
   EvalTools,
-} from '../eval/checks'
+} from '../engine/eval-schema'
 
 // ── Evals ─────────────────────────────────────────────────────────────────
 // The UI vocabulary is Goal / Sample / Test; the wire keeps the code identifiers
@@ -26,7 +26,7 @@ export type {
   EvalTools,
   SeededMessage,
   SeededToolCall,
-} from '../eval/checks'
+} from '../engine/eval-schema'
 // Runtime re-exports of the lightweight (zod-only) eval vocabulary so UI pickers
 // derive their options from the schema instead of re-hardcoding it. `checks.ts`
 // pulls in only zod, so this stays safe for the browser bundle.
@@ -42,7 +42,7 @@ export {
   toolSetting,
   withToolSetting,
   defaultEvalTools,
-} from '../eval/checks'
+} from '../engine/eval-schema'
 
 // Wire enums for eval targets/verdicts, derived from the DB-schema `as const`
 // arrays (their canonical home) so the wire and storage vocabularies can't

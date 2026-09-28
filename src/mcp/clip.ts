@@ -9,6 +9,10 @@
 // Shared across the tool files rather than duplicated so every tool agrees on
 // the limit: one that only some of them enforce is a limit that quietly stops
 // applying the day a tool moves between files.
+//
+// It lives in `mcp/` (it was `server/clip.ts` until ART-189) because the MCP
+// tools are its only callers and `mcp` sits BELOW `server`: it was the one
+// VALUE import that made `mcp → server` more than a type dependency.
 
 /** Past this many JSON characters, a single value is replaced by an excerpt. */
 const DEFAULT_MAX_CHARS = 4000

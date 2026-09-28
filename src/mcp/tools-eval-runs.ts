@@ -1,11 +1,11 @@
 import { z } from 'zod'
 
 import { agentModelRequirements } from '../engine/agent-config-schema'
+import type { CheckResult, EvalCheck } from '../engine/eval-schema'
 import {
   mergeModelRequirements,
   unmetRequirementsReason,
 } from '../engine/model-capabilities'
-import type { CheckResult, EvalCheck } from '../eval/checks'
 import { agentCallTotals, buildMatrixSummary, isMatrixRun } from '../eval/report'
 import {
   createEvalSweep,
@@ -13,7 +13,6 @@ import {
   driveEvalRun,
   type RunEvalInput,
 } from '../eval/run-eval'
-import { clip } from '../server/clip'
 import type {
   AgentConfig,
   ModelCapabilities,
@@ -24,6 +23,7 @@ import type {
   WfEvalSetDetail,
 } from '../server/protocol'
 
+import { clip } from './clip'
 import { optString, reqString, type WfMcpTool } from './tools'
 import { draftOrPublished } from './tools-agents'
 

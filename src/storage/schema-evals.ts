@@ -40,7 +40,7 @@ export const wfEvalSet = sqliteTable(
 
 // One case ("Sample"): the INPUT the target is invoked with, how its TOOLS
 // behave for this case, and the AND/OR check tree. Shapes are validated by
-// `src/eval/checks.ts` at the data-access boundary.
+// `src/engine/eval-schema.ts` at the data-access boundary.
 export const wfEvalRow = sqliteTable(
   'wf_eval_row',
   {

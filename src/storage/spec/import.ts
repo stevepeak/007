@@ -23,7 +23,7 @@ import {
   legacyFreezeTools,
   parseEvalSampleInput,
   parseEvalTools,
-} from '../../eval/checks'
+} from '../../engine/eval-schema'
 import type { WfDb } from '../client'
 import {
   assignWorkflow,

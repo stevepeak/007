@@ -1,4 +1,4 @@
-import type { EvalRowSnapshot } from '../../eval/checks'
+import type { EvalRowSnapshot } from '../../engine/eval-schema'
 
 import type { EvalRowRecord } from './evals'
 

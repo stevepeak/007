@@ -1,12 +1,12 @@
 import { z } from 'zod'
 
-import { clip } from '../server/clip'
 import type {
   ConnectorSummary,
   ConnectorToolInfo,
   WfToolInvocation,
 } from '../server/protocol'
 
+import { clip } from './clip'
 import { boundedLimit, optString, reqString, type WfMcpTool } from './tools'
 
 // Connectors — the INBOUND direction: a third party's MCP server whose tools

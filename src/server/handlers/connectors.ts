@@ -4,12 +4,12 @@ import {
   resolveAccessToken,
   saveBearerToken,
 } from '../../connectors/oauth'
+import { assertConnectorUrl } from '../../connectors/url'
+import type { JsonSchema } from '../../engine/agent-output'
 import {
   CONNECTOR_ID_PATTERN,
   slugifyConnectorId,
-} from '../../connectors/tool-id'
-import { assertConnectorUrl } from '../../connectors/url'
-import type { JsonSchema } from '../../engine/agent-output'
+} from '../../engine/connector-tool-id'
 import {
   deleteConnection,
   deleteConnector,

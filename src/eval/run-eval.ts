@@ -1,5 +1,6 @@
+import type { AgentConfig } from '../engine/agent-config-schema'
 import type { WfLogger } from '../engine/logger'
-import type { AgentConfig, WfDataClient } from '../server/protocol'
+import type { WfDataClient } from '../server/protocol'
 
 import {
   EMPTY_DRIVE_STATE,

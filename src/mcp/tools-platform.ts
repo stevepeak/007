@@ -1,6 +1,5 @@
 import { z } from 'zod'
 
-import { clip } from '../server/clip'
 import type {
   ModelCapabilities,
   ModelOption,
@@ -9,6 +8,7 @@ import type {
   WfDashboardSeries,
 } from '../server/protocol'
 
+import { clip } from './clip'
 import { boundedLimit, optString, reqString, type WfMcpTool } from './tools'
 
 // Tools pulled off the "extend the surface" queue, each because something that

@@ -32,7 +32,7 @@ export {
   type EvalTools,
   type SeededMessage,
   type SeededToolCall,
-} from './checks'
+} from '../engine/eval-schema'
 export { evalInvocation, type EvalInvocation } from './invoke'
 export {
   collectSeededToolCalls,

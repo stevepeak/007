@@ -7,7 +7,7 @@ import {
   parseConnectorToolId,
   schemaHash,
   slugifyConnectorId,
-} from './tool-id'
+} from './connector-tool-id'
 
 describe('connector tool ids', () => {
   test('round-trips', () => {

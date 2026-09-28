@@ -1,14 +1,6 @@
 import type { LanguageModel } from 'ai'
 
-import type { TelemetrySink } from '../analytics/sink'
-
 import type { WfBlobRef } from './blob-ref'
-import type {
-  AgentOverride,
-  NodeExecution,
-  WebSearchMode,
-  WfRunManifestEntry,
-} from './graph'
 import {
   DECISION_QUESTION_TYPES,
   type Decider,
@@ -17,12 +9,19 @@ import {
 } from './decision'
 import { createChatDecider } from './decision-chat'
 import type {
+  AgentOverride,
+  NodeExecution,
+  WebSearchMode,
+  WfRunManifestEntry,
+} from './graph'
+import type { WfLogger } from './logger'
+import type {
   ModelCatalogEntry,
   ModelOption,
   ModelProvider,
   ProviderBudget,
 } from './model-catalog'
-import type { WfLogger } from './logger'
+import type { TelemetrySink } from './telemetry'
 import type { ToolRegistry } from './tool-registry'
 import type { TriggerRegistry } from './trigger-registry'
 
