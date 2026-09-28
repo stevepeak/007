@@ -7,6 +7,7 @@ import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 
 import type { AgentConfig, WorkflowGraph } from '../../engine/graph'
+import { evalWrapperName } from '../../eval/wrapper'
 import type { WfDb } from '../client'
 import { wfSchema, wfWorkflow } from '../schema'
 
@@ -104,10 +105,14 @@ describe('agent workflow references', () => {
     agentId = created.agentId
   })
 
-  async function addWorkflow(name: string, opts: { archived?: boolean } = {}) {
+  async function addWorkflow(
+    name: string,
+    opts: { archived?: boolean; hidden?: boolean } = {},
+  ) {
     const { workflowId: id } = await createWorkflow(db, {
       name,
       graph: graphUsing(agentId),
+      hidden: opts.hidden,
     })
     if (opts.archived) {
       await db
@@ -146,6 +151,38 @@ describe('agent workflow references', () => {
   test('the all-agents map excludes archived workflows too', async () => {
     await addWorkflow('Ingest recipe document')
     await addWorkflow('Ingest MEP document', { archived: true })
+
+    const byAgent = await listWorkflowsReferencingAllAgents(db)
+    expect(byAgent.get(agentId)?.map((w) => w.name)).toEqual([
+      'Ingest recipe document',
+    ])
+  })
+
+  test('a hidden eval wrapper is not counted as usage', async () => {
+    await addWorkflow('Ingest recipe document')
+    await addWorkflow(evalWrapperName(agentId), { hidden: true })
+
+    // The wrapper's graph names the agent, but it is machinery the Workflows
+    // list hides — counting it would show usage pointing at nothing clickable.
+    expect(await countWorkflowsReferencingAgent(db, { agentId })).toBe(1)
+    expect(
+      (await listWorkflowsReferencingAgent(db, { agentId })).map((w) => w.name),
+    ).toEqual(['Ingest recipe document'])
+  })
+
+  test('an agent used only by its eval wrapper reads as unused', async () => {
+    await addWorkflow(evalWrapperName(agentId), { hidden: true })
+
+    // This is what lets the agent be archived. A wrapper is regenerated from
+    // its eval set, so there is nothing to "disconnect first" — holding the
+    // archive guard open on one makes the agent undeletable from the UI.
+    expect(await countWorkflowsReferencingAgent(db, { agentId })).toBe(0)
+    expect(await listWorkflowsReferencingAgent(db, { agentId })).toEqual([])
+  })
+
+  test('the all-agents map excludes hidden workflows too', async () => {
+    await addWorkflow('Ingest recipe document')
+    await addWorkflow(evalWrapperName(agentId), { hidden: true })
 
     const byAgent = await listWorkflowsReferencingAllAgents(db)
     expect(byAgent.get(agentId)?.map((w) => w.name)).toEqual([

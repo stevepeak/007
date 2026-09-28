@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 
 import type { WorkflowGraph } from '../../engine/graph'
 import type { WfDb } from '../client'
@@ -36,6 +36,13 @@ import { latestVersionGraphs } from './authoring-workflows'
 // agents-list usage column and — worse — let a dead workflow block archiving an
 // agent nothing live still calls. Drafts and versions of archived workflows drop
 // out with them, since the map below only walks the workflows this query keeps.
+//
+// Hidden workflows are excluded for the same reasons. An eval wrapper IS a row
+// here, and its graph is an agent node pointing at the agent it grades — so an
+// agent with an eval set and no authored graph would read as "1 workflow" (a
+// workflow the Workflows list deliberately hides, leaving nothing to click) and
+// could never be archived, because a wrapper is regenerated from its eval set
+// and there is nothing to disconnect. Usage means AUTHORED usage.
 async function loadWorkflowReferenceGraphs(
   db: WfDb,
 ): Promise<{ id: string; name: string; graphs: WorkflowGraph[] }[]> {
@@ -43,7 +50,9 @@ async function loadWorkflowReferenceGraphs(
     db
       .select({ id: wfWorkflow.id, name: wfWorkflow.name })
       .from(wfWorkflow)
-      .where(eq(wfWorkflow.archived, false)),
+      .where(
+        and(eq(wfWorkflow.archived, false), eq(wfWorkflow.hidden, false)),
+      ),
     db
       .select({
         workflowId: wfWorkflowDraft.workflowId,
