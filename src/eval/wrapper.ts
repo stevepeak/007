@@ -1,4 +1,5 @@
 import type { WorkflowGraph } from '../engine/graph'
+import { stableEqual } from '../engine/stable-stringify'
 import { MANUAL_TRIGGER_KIND } from '../engine/trigger-registry'
 import type { WfDb } from '../storage/client'
 import {
@@ -51,7 +52,7 @@ export function evalWrapperName(
  *
  * Ids are DERIVED, not random. A wrapper is regenerated on every
  * `ensureAgentEvalWrapper` call and compared against the stored one to detect
- * drift (see `stableStringify`); random ids would make every comparison differ
+ * drift (see `stableEqual` below); random ids would make every comparison differ
  * and republish forever. They stay internal to the frozen version and
  * are never referenced from outside it, so their form is free — readable beats
  * opaque when they show up in `wf_run_step.node_id` and Sentry `wf.node_id`.
@@ -125,28 +126,6 @@ export function buildAgentWrapperGraph(
 }
 
 /**
- * Order-insensitive structural equality for two wrapper graphs.
- *
- * A stored graph has been through JSON and zod, either of which may reorder or
- * drop-and-default keys relative to the object the builder just returned, so a
- * plain `JSON.stringify` comparison would report drift on every call. Sorting
- * keys at every level compares what the graph MEANS rather than how it happens
- * to be serialized.
- */
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value)
-  if (Array.isArray(value)) {
-    return `[${value.map(stableStringify).join(',')}]`
-  }
-  const entries = Object.entries(value as Record<string, unknown>)
-    // `undefined` never survives a JSON round-trip, so an explicitly-undefined
-    // key on the fresh side must not read as drift against an absent one.
-    .filter(([, v]) => v !== undefined)
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(',')}}`
-}
-
-/**
  * Ensure the hidden wrapper workflow for `agentId` (at the Goal's `version` pin,
  * if any) exists and is CURRENT, returning its id and latest version id.
  * Idempotent: created once per agent+pin (cached by {@link evalWrapperName}),
@@ -187,7 +166,11 @@ export async function ensureAgentEvalWrapper(
     const versionId = await getLatestVersionId(db, existing.id)
     if (versionId) {
       const stored = await getVersionGraph(db, versionId)
-      if (stored && stableStringify(stored.graph) === stableStringify(graph)) {
+      // Order-insensitive: a stored graph has been through JSON and zod,
+      // either of which may reorder keys or drop an explicitly-undefined one
+      // relative to the object the builder just returned, so a plain
+      // `JSON.stringify` comparison would report drift on every call.
+      if (stored && stableEqual(stored.graph, graph)) {
         return { workflowId: existing.id, workflowVersionId: versionId }
       }
       // Stale (or unreadable) — publish the current shape as a new version and

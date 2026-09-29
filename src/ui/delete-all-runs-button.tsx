@@ -15,7 +15,7 @@ import { Modal } from './modal'
 // `useModifierHold('meta+alt')` in the explorer), clicking it opens a dialog
 // spelling out the cascade, and confirming needs a press-and-hold.
 
-function summarize(r: WfRunPurgeResult): string {
+function describePurge(r: WfRunPurgeResult): string {
   const parts = [
     `${r.runs.toLocaleString()} run${r.runs === 1 ? '' : 's'}`,
     `${r.steps.toLocaleString()} steps`,
@@ -95,7 +95,7 @@ export function DeleteAllRunsButton({ className }: { className?: string }) {
           ) : null}
           {result ? (
             <p className="rounded-md border border-neutral-200 bg-neutral-50 p-2 font-mono text-xs text-neutral-600">
-              Deleted {summarize(result)}
+              Deleted {describePurge(result)}
             </p>
           ) : null}
         </div>

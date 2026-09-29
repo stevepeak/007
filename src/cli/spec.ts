@@ -162,7 +162,7 @@ function opt(name: string): string | undefined {
   return hit ? hit.slice(pre.length) : undefined
 }
 
-function summarize(report: ChangeReport): void {
+function printChangeReport(report: ChangeReport): void {
   const counts = { create: 0, update: 0, archive: 0, unchanged: 0 }
   for (const c of report.changes) counts[c.action]++
   for (const c of report.changes) {
@@ -206,7 +206,7 @@ async function main(): Promise<number> {
           changeNote: opt('note'),
           actor: opt('actor'),
         })
-        summarize(report)
+        printChangeReport(report)
         return 0
       }
       case 'diff': {
@@ -216,7 +216,7 @@ async function main(): Promise<number> {
           dryRun: true,
           prune: flag('prune'),
         })
-        summarize(report)
+        printChangeReport(report)
         if (!report.clean) {
           console.error('[wf-spec] DRIFT: database does not match specs.')
           return 1

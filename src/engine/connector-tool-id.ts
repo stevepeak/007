@@ -19,6 +19,8 @@
 // `storage/data/connectors.ts` mints ids while `connectors/client.ts` reads the
 // rows back.
 
+import { stableStringify } from './stable-stringify'
+
 /** Namespace every connector tool id carries. */
 export const CONNECTOR_TOOL_PREFIX = 'mcp'
 
@@ -79,24 +81,6 @@ export function parseConnectorToolId(
 }
 
 /**
- * Stable JSON: object keys sorted at every depth, so two schemas that differ
- * only in key order hash the same. Without this a server that serialises its
- * schema non-deterministically would report drift on every single refresh, and
- * the drift signal would be worth nothing.
- */
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value)
-  if (Array.isArray(value)) {
-    return `[${value.map(stableStringify).join(',')}]`
-  }
-  const entries = Object.entries(value as Record<string, unknown>)
-    .filter(([, v]) => v !== undefined)
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`)
-  return `{${entries.join(',')}}`
-}
-
-/**
  * Fingerprint a tool's input+output schema.
  *
  * Recorded per tool on refresh and frozen into the run manifest, so a Tool node
@@ -109,6 +93,10 @@ export async function schemaHash(input: {
   inputSchema?: unknown
   outputSchema?: unknown
 }): Promise<string> {
+  // Object keys sorted at every depth, so two schemas that differ only in key
+  // order hash the same — without that a server which serialises its schema
+  // non-deterministically would report drift on every single refresh and the
+  // signal would be worth nothing.
   const canonical = stableStringify({
     input: input.inputSchema ?? null,
     output: input.outputSchema ?? null,

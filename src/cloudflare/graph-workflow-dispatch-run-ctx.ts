@@ -5,13 +5,23 @@ import type { WfSdkConfig } from '../engine/config'
 import type { ModelPriceMap } from '../engine/cost'
 import type { WfRunManifestEntry } from '../engine/graph'
 import type { WfLogger } from '../engine/logger'
+import type { NodeRunResult } from '../engine/run-node'
 import type { RecordStepArgs } from '../engine/run-recorder'
 import type { Scheduler } from '../engine/scheduler'
-import type { StreamSink } from '../engine/stream-sink'
+import type { RunLogEntry, StreamSink } from '../engine/stream-sink'
 import type { TelemetrySink } from '../engine/telemetry'
 
 import type { GraphWorkflowEnv, GraphWorkflowParams } from './graph-workflow'
 import type { RunCounters } from './step-counter'
+
+// The types every hoisted dispatch helper shares: the run-level locals they close
+// over, the shape a dispatched node hands back, and what a failed attempt
+// managed to learn on its way out.
+//
+// They live in their own module because the dispatch is now five of them —
+// `dispatchNode` orchestrates, and `-plain`, `-iteration` and `-callee` each own
+// one dispatch shape — and none of those should have to import another just to
+// name its own return type.
 
 // Shared run-level locals every hoisted dispatch/log helper closes over. Bundled
 // once in `run()` and threaded through so these functions can live at module
@@ -64,3 +74,21 @@ export type RunCtx<TDeps, E extends GraphWorkflowEnv> = {
    */
   runStartedAtMs: number | null
 }
+
+// What a dispatched node hands back: the engine's NodeRunResult plus the
+// structured log entries the node emitted during its own step (captured by a
+// per-node sink), so they survive `step.do` replay via the workflow journal.
+// `execStartedAt`/`execFinishedAt` bracket the actual `runNode` call (measured
+// inside the run: step, so they're journaled) — this is the true execution
+// window the Speed stat reads, as opposed to the wider dispatch envelope that
+// spans the enter:/run:/record: durable-step boundaries. A self-stepping node
+// (iteration, workflow call) has no `run:` step, so it leaves all three unset.
+export type RunStepResult = NodeRunResult & {
+  logs?: RunLogEntry[]
+  execStartedAt?: Date
+  execFinishedAt?: Date
+}
+
+/** What a failed attempt knew about its error, captured before the error
+ * crosses the `step.do` boundary (see `runNodeBody`). */
+export type CapturedFailure = { stored: string; feed: string }

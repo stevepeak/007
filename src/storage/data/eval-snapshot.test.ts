@@ -5,15 +5,15 @@ import type { EvalRowRecord } from './evals'
 
 // The snapshot hash is PERSISTED and compared across runs to detect whether a
 // Sample's effective definition changed and to dedup identical snapshots. Its
-// wire format (the local `stableStringify`) is therefore frozen. These tests
-// lock a known digest so any accidental change — most likely someone swapping in
-// `storage/spec/util.ts`'s `stableStringify`, which handles nested `undefined`
-// differently — fails loudly instead of silently invalidating stored hashes.
+// wire format is therefore frozen. These tests lock a known digest so any
+// accidental change — most likely someone dropping the `undefinedKeys: 'literal'`
+// option and taking `stableStringify`'s `'drop'` default, which every OTHER
+// caller wants — fails loudly instead of silently invalidating stored hashes.
 
 // A representative row whose input variables and tool fixtures both contain a
-// nested `undefined`, which is exactly where this stringify diverges from the
-// spec/util one (`undefined` → the literal text `undefined` here, vs `"null"`
-// there).
+// nested `undefined`, which is exactly where the frozen format diverges from the
+// default: the key is kept and renders as the literal text `undefined` here,
+// where `'drop'` would omit it entirely.
 const row = {
   id: 'row-1',
   setId: 'set-1',

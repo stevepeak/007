@@ -4,6 +4,7 @@ import type { ExecutableNode } from '../engine/scheduler'
 import type { RunLogEntry } from '../engine/stream-sink'
 import { createWfDb } from '../storage/client'
 import {
+  appendRunLog,
   replaceNodeLogs,
   upsertNodeLogs,
   type WfRunLogRow,
@@ -18,6 +19,33 @@ import { DEFAULT_STEP_OPTS } from './graph-workflow-dispatch-step-opts'
 // backend needed them too. Re-exported here so this module stays the one import
 // site for the durable backend's dispatch.
 export { nodeLabel, startEntryOf }
+
+/**
+ * A sink entry as a persistable row, with the node's own identity filled in for
+ * anything the emitter left off.
+ *
+ * Exported because three places write a node's rows — the enter step below, the
+ * terminal rewrite below that, and the live per-node sinks in
+ * `graph-workflow-dispatch-node-sink` — and a row that disagrees between them
+ * (a missing `sequence`, a `meta` of `undefined` rather than `null`) lands in
+ * `wf_run_log` as a feed line the viewer orders or renders differently
+ * depending on which path wrote it.
+ */
+export function logRow(
+  node: ExecutableNode,
+  seq: number,
+  e: RunLogEntry,
+): WfRunLogRow {
+  return {
+    nodeId: e.nodeId ?? node.id,
+    nodeKind: e.nodeKind ?? node.kind,
+    sequence: e.sequence ?? seq,
+    level: e.level,
+    message: e.message,
+    meta: e.meta ?? null,
+    ts: e.ts ?? Date.now(),
+  }
+}
 
 /**
  * Does this node drive durable steps of its OWN, instead of running inside a
@@ -47,15 +75,7 @@ async function persistLogs<TDeps, E extends GraphWorkflowEnv>(
   bodyLogs: RunLogEntry[],
   endEntry: RunLogEntry,
 ): Promise<void> {
-  const row = (e: RunLogEntry): WfRunLogRow => ({
-    nodeId: e.nodeId ?? node.id,
-    nodeKind: e.nodeKind ?? node.kind,
-    sequence: e.sequence ?? seq,
-    level: e.level,
-    message: e.message,
-    meta: e.meta ?? null,
-    ts: e.ts ?? Date.now(),
-  })
+  const row = (e: RunLogEntry): WfRunLogRow => logRow(node, seq, e)
   const db = createWfDb(ctx.env.WF_DB)
   if (ownsItsDurableSteps(node)) {
     // Same rows, written to the SAME slots the live path already used, so this
@@ -78,6 +98,62 @@ async function persistLogs<TDeps, E extends GraphWorkflowEnv>(
     nodeId: node.id,
     entries: [startEntry, ...bodyLogs, endEntry].map(row),
   })
+}
+
+/**
+ * Light the node up (status → running), persist its "entered" line, and stream
+ * it live — all in ONE durable step, so a replay doesn't re-broadcast it.
+ *
+ * Persisting node-start here, rather than only at record time, is what makes a
+ * polling run viewer see the feed advance the instant a node starts, in step
+ * with the glow, instead of a whole node behind. {@link recordTerminal} later
+ * flips this same `(run_id, node_id)` row to its terminal status and rewrites
+ * the node's full feed.
+ *
+ * Returns the opening entry, because the terminal rewrite has to persist the
+ * very same one — re-deriving it there would re-stamp `ts` and move the node's
+ * start time to whenever it finished.
+ */
+export async function enterStep<TDeps, E extends GraphWorkflowEnv>(
+  ctx: RunCtx<TDeps, E>,
+  node: ExecutableNode,
+  seq: number,
+  input: unknown,
+): Promise<{ startEntry: RunLogEntry; startTs: number }> {
+  const startTs = Date.now()
+  const startEntry = startEntryOf(node, seq, startTs)
+  const selfStepping = ownsItsDurableSteps(node)
+  await stepDo(ctx.step, `enter:${node.id}`, DEFAULT_STEP_OPTS, async () => {
+    await ctx.recordOne({
+      nodeId: node.id,
+      nodeKind: node.kind,
+      sequence: seq,
+      input,
+      status: 'running',
+      startedAt: new Date(startTs),
+    })
+    const logDb = createWfDb(ctx.env.WF_DB)
+    // A self-stepping node's feed is written by position-keyed upsert from end
+    // to end (see `ownsItsDurableSteps`), so its opening line takes the `start`
+    // slot here and the record step rewrites that same row. Every other node
+    // replaces its feed wholesale, which is what clears it for a fresh run.
+    if (selfStepping) {
+      await appendRunLog(logDb, {
+        runId: ctx.p.workflowRunId,
+        nodeId: node.id,
+        ordinal: 'start',
+        entry: logRow(node, seq, startEntry),
+      })
+    } else {
+      await replaceNodeLogs(logDb, {
+        runId: ctx.p.workflowRunId,
+        nodeId: node.id,
+        entries: [logRow(node, seq, startEntry)],
+      })
+    }
+    return null
+  })
+  return { startEntry, startTs }
 }
 
 // Flip a node's (run_id, node_id) row to its terminal status and rewrite its

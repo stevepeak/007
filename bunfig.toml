@@ -1,0 +1,6 @@
+[test]
+# `cloudflare:workflows` is a Workers runtime built-in with no Node/Bun
+# resolution, so any module importing `NonRetryableError` from it fails to LOAD
+# under `bun test`. The preload registers a shim for the specifier — see the file
+# for why this is a test-only concern and can't affect the Worker build.
+preload = ["./src/cloudflare/workflows-test-helpers.ts"]

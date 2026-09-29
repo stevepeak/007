@@ -1,27 +1,40 @@
-import {
-  convertToModelMessages,
-  generateObject,
-  generateText,
-  jsonSchema,
-  type LanguageModel,
-  type ModelMessage,
-  NoObjectGeneratedError,
-  stepCountIs,
-  type StepResult,
-  streamText,
-  type ToolSet,
-  type UIMessage,
-  wrapLanguageModel,
-} from 'ai'
+import { convertToModelMessages, generateText, stepCountIs, streamText } from 'ai'
 
-import { BOOLEAN_OUTPUT_SCHEMA } from '../agent-output'
-import type { JsonSchema } from '../agent-output-scan'
 import { errorFeedLine } from '../error-detail'
-import type { AgentOutput } from '../graph'
-import { MODEL_MAX_RETRIES, type ModelBudget } from '../model-budget'
-import { interpolateUserText } from '../prompt-variables'
-import type { StreamSink } from '../stream-sink'
-import { strictifyJsonSchema, strictifyToolSet } from '../strict-schema'
+import { MODEL_MAX_RETRIES } from '../model-budget'
+import { strictifyToolSet } from '../strict-schema'
+
+import {
+  canStreamAnswer,
+  driveGenerate,
+  driveStream,
+} from './agent-generation-drive'
+import type { DriveArgs, LoopOutcome } from './agent-generation-drive'
+import {
+  armTotalBudget,
+  logModelCallEnd,
+  logModelCallStart,
+  markNoOutput,
+  runGuarded,
+} from './agent-generation-guard'
+import {
+  runStructuredGeneration,
+  structuredResult,
+  structuredSchema,
+  withResponseFormat,
+} from './agent-generation-structured'
+import {
+  createLoopState,
+  createOnStepFinish,
+  createPrepareStep,
+  type AgentLoopState,
+} from './agent-generation-turn'
+import {
+  recordedMessages,
+  type AgentNodeMeta,
+  type AgentNodeResult,
+  type RunAgentGenerationArgs,
+} from './agent-generation-types'
 
 // The shared model-loop core, factored out of `executeAgentNode` so a spawned
 // sub-agent (see `nodes/sub-agent.ts`) runs the IDENTICAL generation logic — one
@@ -29,488 +42,39 @@ import { strictifyJsonSchema, strictifyToolSet } from '../strict-schema'
 // entry points can never drift. Callers resolve the model, system prompt,
 // messages, and tool set; this owns only how the model is driven and how the
 // result is shaped into an {@link AgentNodeResult}.
+//
+// The pieces live beside this file, one concern each, and this module is the loop
+// that composes them:
+//   • `-types`      the request/result contract and the recorded meta
+//   • `-guard`      the total-budget clock, and which failures are fatal
+//   • `-turn`       per-turn policy (`prepareStep`) and tracing (`onStepFinish`)
+//   • `-drive`      the two ways the one options object is run
+//   • `-structured` everything about asking for an object rather than prose
+
+// Re-exported so every consumer's import path is unchanged — the loop used to be
+// one file and these are the symbols it published.
+export {
+  AGENT_NO_OUTPUT,
+  isFatalAgentError,
+  TOTAL_BUDGET_OVERRUN,
+} from './agent-generation-guard'
+export { stepAgentVersion } from './agent-generation-types'
+export type {
+  AgentNodeMeta,
+  AgentNodeResult,
+  RunAgentGenerationArgs,
+} from './agent-generation-types'
 
 /**
- * The agent version a recorded step ran, or null when unstamped.
+ * The tool-calling agent loop: one `generateText`/`streamText` call whose policy
+ * is re-decided every turn.
  *
- * Lives here, beside the type it reads, because two layers need it and neither
- * may import the other: the run viewer names the version a run executed, and the
- * eval report needs it to catch the case its snapshot hash structurally cannot —
- * a Goal with no pinned `targetVersion` floats to latest, so republishing the
- * agent leaves the hash IDENTICAL. Same hash, different agent, different score.
- *
- * Takes `unknown` because every caller reads it off a stored `meta` column.
+ * A structured agent runs the SAME loop as a text one — same turn ceiling,
+ * context guard, spend budget — and differs only in what its final turn has to
+ * write: the schema's object rather than prose. `withResponseFormat` puts the
+ * schema on the answering turn only; see `-structured` for why research turns go
+ * out bare.
  */
-export function stepAgentVersion(meta: unknown): number | null {
-  const v = (meta as { agentVersion?: unknown } | null | undefined)
-    ?.agentVersion
-  return typeof v === 'number' ? v : null
-}
-
-export type AgentNodeMeta = {
-  model: string
-  systemPrompt: string
-  /**
-   * The messages the model was actually sent, as plain role/text — the rendered
-   * user turn for a task agent, the bound thread for a conversation one.
-   *
-   * Recorded because the run viewer used to render the step's INPUT as the user
-   * message, which was true only while an incoming edge implicitly became the
-   * turn. It no longer does, and a viewer that keeps showing the edge payload as
-   * "the message" reports something the model never saw. Text-only: image parts
-   * and tool payloads would balloon every stored step.
-   */
-  messages?: Array<{ role: string; text: string }>
-  /**
-   * Which AGENT this generation ran — stamped by the caller (the agent node or a
-   * spawned sub-agent), not by generation itself, which only knows a prompt and
-   * a model. It's the only durable link from a recorded step back to the agent:
-   * a graph node id resolves to an agent only through its version's graph, and a
-   * sub-agent step has no graph node at all. The agent editor's "recent calls"
-   * queries on it. Absent on steps recorded before the stamp existed.
-   */
-  agentId?: string
-  /** The published version of that agent, from the frozen run manifest. */
-  agentVersion?: number
-  steps: Array<{
-    stepNumber: number
-    finishReason?: string
-    /** The model's internal reasoning for this step, if it emitted any. */
-    reasoning?: string
-    /** The assistant's generated output text for this step. */
-    text?: string
-    toolCalls: Array<{
-      toolCallId: string
-      toolName: string
-      input: unknown
-      output: unknown
-    }>
-    usage?: { inputTokens?: number; outputTokens?: number }
-  }>
-  totalUsage: { inputTokens: number; outputTokens: number }
-  /**
-   * The model's context window as the run manifest froze it, so a viewer can
-   * read each turn's `usage.inputTokens` as a share of the window — the
-   * occupancy the context guard above steers by. Absent when the provider
-   * reported no window, and on steps recorded before it was stamped.
-   */
-  contextLength?: number
-  /**
-   * Set when the agent's `toolTokenBudget` — not `maxTurns` — is what ended its
-   * research. The answer is still a real answer, but it was written against
-   * whatever the agent had gathered by then, so a reader comparing two runs of
-   * the same agent needs to know one of them was cut short.
-   */
-  stoppedOnTokenBudget?: boolean
-  /**
-   * Set when the conversation approached the model's context window and the loop
-   * stopped gathering to avoid overflowing it. Unlike the budget this isn't a
-   * choice anyone made, so seeing it means the agent's tools return more than
-   * this model can hold — the fix is smaller tool results or a bigger model, not
-   * a config change.
-   */
-  stoppedOnContextLimit?: boolean
-}
-
-export type AgentNodeResult = {
-  output: { text: string } | Record<string, unknown>
-  meta: AgentNodeMeta
-  /**
-   * Set only for a YES/NO (boolean) output agent — 'yes' when `answer` is true,
-   * 'no' otherwise. Lets the agent node route its outgoing yes/no edges like a
-   * Branch; `decisionReasoning` carries the model's `reason` for the trace.
-   */
-  decision?: 'yes' | 'no'
-  decisionReasoning?: string
-}
-
-export type RunAgentGenerationArgs = {
-  model: LanguageModel
-  /** The model id, reflected into `meta.model` so cost prices correctly. */
-  modelId: string
-  /** The agent's expected-output contract — selects the generation path. */
-  output: AgentOutput
-  /** Max rounds of tool-calling before a final answer. */
-  maxTurns: number
-  /**
-   * Force turn 1 to call a tool rather than letting the model answer straight
-   * away. Inert where it can't hold — no tools, or `maxTurns: 1`. See
-   * `requireToolFirstTurn` on `AgentConfig`.
-   */
-  requireToolFirstTurn?: boolean
-  /**
-   * Spend ceiling for the tool loop, in tokens summed across finished turns.
-   * Reaching it denies tools on the next turn, forcing the answer. Omitted or
-   * null → no ceiling. See `toolTokenBudget` on `AgentConfig`.
-   */
-  toolTokenBudget?: number | null
-  /**
-   * The model's context window, frozen into the run manifest. Used only by the
-   * overflow guard below. Omitted → the guard stands down (no window reported).
-   */
-  contextLength?: number
-  /**
-   * Percentage of `contextLength` to keep free for writing the answer. Defaults
-   * to 10 when unset. Ignored without a `contextLength` to take a share of.
-   */
-  answerReservePercent?: number
-  /** Stream the model's reasoning to the user's 'progress' channel when true. */
-  streamReasoning: boolean
-  /** Announce each tool the model calls on the user's 'progress' channel when
-   * true. Display only — it never affects which tools the agent may call. */
-  streamToolCalls: boolean
-  systemPrompt: string
-  messages: UIMessage[]
-  tools: ToolSet
-  /**
-   * Per-tool human-readable status templates, keyed by tool id (== the tool name
-   * the model calls). When `streamToolCalls` is on, a matching template is
-   * interpolated with the call's input and streamed to the user; tools without a
-   * template expose nothing.
-   */
-  toolStatusLabels?: Record<string, string>
-  sink?: StreamSink
-  /**
-   * Time budget for this generation (see `../model-budget`). Omitted →
-   * unbounded, which is only appropriate where something else bounds the call
-   * (tests, the inline executor).
-   */
-  budget?: ModelBudget
-}
-
-/**
- * Arm the total-budget guard for one generation.
- *
- * We use our OWN controller rather than the AI SDK's `timeout.totalMs` so the
- * catch can tell an overrun from a stall by identity (`signal.aborted`) instead
- * of matching a `DOMException` message. That distinction drives the two
- * behaviors: a stalled round-trip is transient and the node is retried, while a
- * node that burns its entire budget is failed outright — retrying it would just
- * repeat the same work and hit the same wall.
- */
-function armTotalBudget(budget: ModelBudget | undefined): {
-  signal?: AbortSignal
-  overran: () => boolean
-  disarm: () => void
-} {
-  if (!budget) return { overran: () => false, disarm: () => {} }
-  const controller = new AbortController()
-  const timer = setTimeout(() => {
-    controller.abort(
-      new DOMException(
-        `Agent exceeded its total budget of ${Math.round(budget.totalMs / 1000)}s`,
-        'TimeoutError',
-      ),
-    )
-  }, budget.totalMs)
-  return {
-    signal: controller.signal,
-    overran: () => controller.signal.aborted,
-    disarm: () => {
-      clearTimeout(timer)
-    },
-  }
-}
-
-/** Marks a total-budget overrun so the dispatch can fail the run rather than
- * retry it. Set on the error as it leaves this module. */
-export const TOTAL_BUDGET_OVERRUN = 'wfTotalBudgetOverrun'
-
-/** Marks an agent that finished its loop without writing any answer text. Like
- * a budget overrun, retrying it just repeats the same expensive dead end. */
-export const AGENT_NO_OUTPUT = 'wfAgentNoOutput'
-
-function markOverrun(err: unknown): unknown {
-  if (err != null && typeof err === 'object') {
-    ;(err as Record<string, unknown>)[TOTAL_BUDGET_OVERRUN] = true
-  }
-  return err
-}
-
-function markNoOutput(err: Error): Error {
-  ;(err as unknown as Record<string, unknown>)[AGENT_NO_OUTPUT] = true
-  return err
-}
-
-/** True for an error the engine should fail outright instead of retrying — the
- * second attempt would deterministically reach the same wall. */
-export function isFatalAgentError(err: unknown): boolean {
-  if (err == null || typeof err !== 'object') return false
-  const e = err as Record<string, unknown>
-  return e[TOTAL_BUDGET_OVERRUN] === true || e[AGENT_NO_OUTPUT] === true
-}
-
-// A model call is the longest thing a run does with nothing to say about
-// itself: `generateText` is non-streaming, so its per-step callback can't fire
-// until a whole round-trip (thinking included) lands — minutes, on a reasoning
-// model. Bookending the call gives the feed a heartbeat at the two moments that
-// actually exist without streaming: dispatch and outcome. `info` is the dev
-// feed; `progress` (the user-facing level) is deliberately untouched here.
-function logModelCallStart(
-  sink: StreamSink | undefined,
-  modelId: string,
-  detail: Record<string, unknown>,
-): number {
-  void sink?.log?.({
-    level: 'info',
-    message: `→ ${modelId}`,
-    meta: detail,
-  })
-  return Date.now()
-}
-
-function logModelCallEnd(
-  sink: StreamSink | undefined,
-  modelId: string,
-  startedAt: number,
-  detail: Record<string, unknown>,
-): void {
-  void sink?.log?.({
-    level: 'info',
-    message: `← ${modelId} (${Math.round((Date.now() - startedAt) / 1000)}s)`,
-    meta: detail,
-  })
-}
-
-/**
- * Run one generation under its budget guard, logging and classifying a failure.
- *
- * The log line matters as much as the classification: a failed model call is
- * otherwise completely silent (`onStepFinish` never fires on the error path),
- * which is what made a stall indistinguishable from a hung run. Tagging a total
- * overrun here — while the error object is still ours, before it crosses the
- * `step.do` boundary and gets reconstructed — is what lets the dispatch decide
- * between retrying the node and failing the run.
- */
-async function runGuarded<T>(
-  sink: StreamSink | undefined,
-  modelId: string,
-  startedAt: number,
-  guard: { overran: () => boolean; disarm: () => void },
-  body: () => Promise<T>,
-): Promise<T> {
-  try {
-    return await body()
-  } catch (err) {
-    const elapsed = Math.round((Date.now() - startedAt) / 1000)
-    const overran = guard.overran()
-    const reason = overran
-      ? 'exceeded its total budget'
-      : isTimeoutError(err)
-        ? 'stalled'
-        : 'failed'
-    void sink?.log?.({
-      level: 'error',
-      message: `✕ ${modelId} ${reason} after ${elapsed}s`,
-      meta: { elapsedSeconds: elapsed, totalBudgetOverrun: overran },
-    })
-    throw overran ? markOverrun(err) : err
-  } finally {
-    guard.disarm()
-  }
-}
-
-/** A watchdog firing — ours (total budget) or the AI SDK's (per round-trip,
- * per tool). Both surface as a `TimeoutError`-named DOMException. */
-function isTimeoutError(err: unknown): boolean {
-  return (
-    err != null &&
-    typeof err === 'object' &&
-    'name' in err &&
-    (err as { name?: unknown }).name === 'TimeoutError'
-  )
-}
-
-/**
- * How many times one structured call may be issued before giving up.
- *
- * A structured call can come back unusable in a way the AI SDK does NOT retry:
- * `maxRetries` covers transport-level rejections (429, 503), while a response
- * that arrives intact but isn't the object the schema asked for — truncated
- * mid-JSON, or valid JSON of the wrong shape — throws `NoObjectGeneratedError`
- * on the first occurrence. Observed in production as a body consisting of a
- * lone `{`.
- *
- * The dispatch's step-level retry does eventually catch it, but at the price of
- * replaying the ENTIRE node closure after a backoff — for a document-reading
- * agent, that's the whole source re-sent to the model seconds later. Re-issuing
- * the one call here is the cheap fix for a flake; the step retry stays as the
- * backstop for a failure that survives it. Both attempts run under the same
- * total-budget guard, so this can't extend a node past its budget.
- */
-const STRUCTURED_MAX_ATTEMPTS = 2
-
-// Flatten the sent messages to role/text for the recorded trace. Non-text parts
-// (files, tool payloads) are deliberately dropped — the trace is for reading
-// what the model was asked, not for reconstructing the request byte for byte.
-function recordedMessages(
-  messages: UIMessage[],
-): { role: string; text: string }[] {
-  return messages.map((m) => ({
-    role: m.role,
-    text: m.parts
-      .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
-      .map((p) => p.text)
-      .join('\n'),
-  }))
-}
-
-// generateObject path — the structured-object and YES/NO output kinds, when
-// there is nothing to call: no tools, or one turn (which never calls tools —
-// see `prepareStep`). One round-trip, the parsed object as the node output.
-// A structured agent WITH tools and room to call them runs the tool loop below
-// instead, and takes its object from the loop's final turn.
-async function runStructuredGeneration(
-  args: RunAgentGenerationArgs,
-): Promise<AgentNodeResult> {
-  const {
-    model,
-    modelId,
-    output,
-    contextLength,
-    systemPrompt,
-    messages,
-    sink,
-    budget,
-  } = args
-  // Only reached for the object / boolean kinds, so the schema is always there.
-  const schema = structuredSchema(output)!
-  const startedAt = logModelCallStart(sink, modelId, { mode: output.kind })
-  // `generateObject` accepts no `timeout` config — only `abortSignal` — and
-  // every attempt shares the one guard, so the total budget bounds the node
-  // however many times the call is re-issued.
-  const guard = armTotalBudget(budget)
-  const messagesForModel = await convertToModelMessages(messages)
-  const result = await runGuarded(sink, modelId, startedAt, guard, () => {
-    return issueStructured({
-      model,
-      modelId,
-      systemPrompt,
-      messages: messagesForModel,
-      schema,
-      guard,
-      sink,
-    })
-  })
-  logModelCallEnd(sink, modelId, startedAt, {
-    finishReason: result.finishReason,
-  })
-  const meta: AgentNodeMeta = {
-    model: modelId,
-    systemPrompt,
-    messages: recordedMessages(messages),
-    steps: [
-      {
-        stepNumber: 0,
-        finishReason: result.finishReason,
-        text: JSON.stringify(result.object),
-        toolCalls: [],
-        usage: result.usage
-          ? {
-              inputTokens: result.usage.inputTokens,
-              outputTokens: result.usage.outputTokens,
-            }
-          : undefined,
-      },
-    ],
-    totalUsage: {
-      inputTokens: result.usage?.inputTokens ?? 0,
-      outputTokens: result.usage?.outputTokens ?? 0,
-    },
-    ...(contextLength != null ? { contextLength } : {}),
-  }
-  return structuredResult(output, result.object, meta)
-}
-
-/**
- * One structured call, re-issued once if the object comes back unusable.
- *
- * Only an unusable OBJECT is re-issued. A provider rejection has already
- * exhausted `maxRetries` inside the call, and an overrun means there is no
- * budget left to spend on another round-trip. Callers run it under
- * `runGuarded`, which owns the guard's lifetime and the failure log line.
- */
-async function issueStructured(args: {
-  model: LanguageModel
-  modelId: string
-  systemPrompt: string
-  messages: ModelMessage[]
-  schema: JsonSchema
-  guard: { signal?: AbortSignal; overran: () => boolean }
-  sink?: StreamSink
-}) {
-  const { model, modelId, systemPrompt, messages, schema, guard, sink } = args
-  for (let attempt = 1; ; attempt++) {
-    try {
-      return await generateObject({
-        model,
-        system: systemPrompt,
-        messages,
-        schema: jsonSchema(schema),
-        abortSignal: guard.signal,
-        maxRetries: MODEL_MAX_RETRIES,
-      })
-    } catch (err) {
-      if (
-        attempt >= STRUCTURED_MAX_ATTEMPTS ||
-        !NoObjectGeneratedError.isInstance(err) ||
-        guard.overran()
-      ) {
-        throw err
-      }
-      // The retry is otherwise invisible: `runGuarded` logs the outcome of
-      // the LAST attempt only, so without this line a run that flaked and
-      // recovered looks identical to one that worked first time.
-      void sink?.log?.({
-        level: 'warn',
-        message: `⟳ ${modelId} returned no usable object (finish: ${err.finishReason ?? 'unknown'}) — re-issuing`,
-        meta: { attempt, finishReason: err.finishReason },
-      })
-    }
-  }
-}
-
-/**
- * Shape a parsed structured object into the node result. A YES/NO agent doubles
- * as a decision: its `answer` routes the node's yes/no edges (the `object` kind
- * produces data only, never routes). The full decision object still flows
- * downstream as the node's output. Shared by both structured paths — the
- * single-call one and the tool loop's final turn — so the two can't drift.
- */
-function structuredResult(
-  output: AgentOutput,
-  object: unknown,
-  meta: AgentNodeMeta,
-): AgentNodeResult {
-  const obj = object as Record<string, unknown>
-  if (output.kind === 'boolean') {
-    return {
-      output: obj,
-      meta,
-      decision: obj.answer ? 'yes' : 'no',
-      decisionReasoning: typeof obj.reason === 'string' ? obj.reason : '',
-    }
-  }
-  return { output: obj, meta }
-}
-
-/**
- * The strict JSON Schema a structured kind asks the model for; null for text.
- *
- * Run through `strictifyJsonSchema` even though the Zod-source compiler already
- * emits the strict shape: an `object` schema can also arrive from a stored agent
- * config written before the compiler enforced it, and a schema the provider
- * silently drops looks like a flaky model, not a bad schema.
- */
-function structuredSchema(output: AgentOutput): Record<string, unknown> | null {
-  if (output.kind === 'text') return null
-  return strictifyJsonSchema(
-    output.kind === 'object' ? output.schema : BOOLEAN_OUTPUT_SCHEMA,
-  )
-}
-
-// Tool-calling agent loop. Background execution is non-streaming
-// (`generateText`); per-step text is forwarded to the sink for live progress.
 async function runToolLoop(
   args: RunAgentGenerationArgs,
 ): Promise<AgentNodeResult> {
@@ -532,70 +96,9 @@ async function runToolLoop(
     sink,
     budget,
   } = args
-  // A structured agent runs the SAME loop as a text one — same turn ceiling,
-  // context guard, spend budget — and differs only in what its final turn has
-  // to write: the schema's object rather than prose.
-  //
-  // The schema reaches the provider on the ANSWERING turn only. A provider
-  // that enforces a response format with constrained decoding never emits a
-  // tool call under it — measured on Venice/DeepSeek: the same prompt calls
-  // the tool every time without `response_format` and answers straight away,
-  // in JSON, every time with it. So research turns go out bare, and
-  // `prepareStep` swaps in `answeringModel` — the model with the schema
-  // injected — for exactly the turn where tools are denied. What comes back is
-  // read below: the answering turn's text parsed as the object, or, when the
-  // loop ended on a research turn (the model answered early, in prose), one
-  // more schema-only call over the transcript to format what it found.
-  //
-  // A model given by id can't be wrapped; its answering turn is then plain
-  // text and the transcript call below does the formatting instead.
   const schema = structuredSchema(output)
-  const answeringModel =
-    schema && typeof model !== 'string'
-      ? wrapLanguageModel({
-          model,
-          middleware: {
-            transformParams: ({ params }) => {
-              return Promise.resolve({
-                ...params,
-                responseFormat: { type: 'json' as const, schema },
-              })
-            },
-          },
-        })
-      : model
-  // Turn 1 can only be forced to call a tool when there IS a tool to call and a
-  // later turn survives to answer with the result. `maxTurns: 1` makes turn 1 the
-  // final answering turn, which denies tools below — forcing here would produce a
-  // tool call the loop has no room to answer with, i.e. the empty-`text` run the
-  // final-turn rule exists to prevent.
-  const forceFirstTool =
-    (requireToolFirstTurn ?? false) &&
-    maxTurns > 1 &&
-    Object.keys(tools).length > 0
-  // Overflow guard. `inputTokens` of a round-trip IS the conversation as sent, so
-  // occupancy needs no estimation — but it can only be read AFTER sending, which
-  // makes every reading one turn stale. A naive "stop at N% full" therefore has
-  // to leave enough slack for one more turn's growth on top of the answer, and
-  // the author has no way to know how much that is: it's the size of their tool
-  // results, which they've never measured.
-  //
-  // So the engine measures it. `observedGrowth` is the largest turn-over-turn
-  // jump seen so far — deliberately the max, not the last, because a single fat
-  // tool result is exactly the thing that overflows the next request. The loop
-  // stops once `lastInput + growth` would leave less than the answer reserve.
-  // An agent with small tool results rides much closer to the window than a
-  // fixed percentage would have allowed; one with huge results stops sooner.
-  const answerReserveTokens =
-    contextLength != null
-      ? Math.floor((contextLength * (answerReservePercent ?? 10)) / 100)
-      : null
-  let lastInputTokens = 0
-  let observedGrowth = 0
-  let stoppedOnTokenBudget = false
-  let stoppedOnContextLimit = false
-  const stepTraces: AgentNodeMeta['steps'] = []
-  const totalUsage = { inputTokens: 0, outputTokens: 0 }
+  const answeringModel = withResponseFormat(model, schema)
+  const state = createLoopState()
   const guard = armTotalBudget(budget)
 
   // Heartbeat before the loop opens. Until `onStepFinish` fires — a full model
@@ -609,31 +112,7 @@ async function runToolLoop(
   })
   const messagesForModel = await convertToModelMessages(messages)
 
-  // Whether this generation streams its answer, and when.
-  //
-  // WHETHER: the sink was given a `delta` channel — which happens only on a
-  // backend that can carry a token stream (inline), and only for the node whose
-  // output IS the run's answer. See `StreamSink.delta`.
-  //
-  // WHEN is the subtler half. `result.text` is the FINAL step's text, not the
-  // concatenation across steps, so streaming every delta would show the reader
-  // any preamble an intermediate tool-calling turn wrote ("Let me search…") and
-  // then leave it stranded above the real answer — text already sent cannot be
-  // retracted, and the settled message would disagree with what was on screen.
-  //
-  // So deltas are forwarded only from a step we KNOW must answer: one where
-  // `prepareStep` denied tools, or where the agent has no tools to call. What
-  // the reader sees is then exactly the final step's text, byte for byte, and
-  // the bridge's reconciliation against `wf_run.output` is a clean no-op.
-  //
-  // The conservative direction is the safe one: a step we can't prove is the
-  // answer simply isn't streamed, which is the pre-streaming behaviour.
-  //
-  // A structured answer is never streamed: its text is JSON for the schema,
-  // not prose for a reader, and the delta channel feeds a chat bubble.
-  const streamAnswer = typeof sink?.delta === 'function' && !schema
-  const hasTools = Object.keys(tools).length > 0
-  let stepMustAnswer = false
+  const streamAnswer = canStreamAnswer(sink, schema)
 
   const callOptions = {
     model,
@@ -641,425 +120,80 @@ async function runToolLoop(
     messages: messagesForModel,
     tools,
     stopWhen: stepCountIs(maxTurns),
-    // The last turn is for answering, not for opening another line of
-    // research the loop has no room to follow up on. Without this, a model
-    // that spends every turn calling tools stops mid-investigation and
-    // `result.text` is the empty string — a completed run with nothing in it,
-    // which is how a $0.64 chat turn rendered as a blank message. Denying
-    // tools on the final turn forces the model to commit what it has to
-    // prose, caveats and all, which is what the reader needed anyway.
-    // Three rules, in strict precedence. The two that DENY tools come first and
-    // are never overridden: whatever else is configured, an agent that is out
-    // of turns or out of budget has to write its answer now.
-    // `stepNumber` is annotated because `callOptions` is a bare literal with
-    // no contextual type (it feeds both generateText and streamText), so the
-    // SDK's own parameter types don't flow in — same reason `onStepFinish`
-    // below spells out `StepResult<ToolSet>`.
-    prepareStep: ({ stepNumber }: { stepNumber: number }) => {
-      // Re-decided per step: an agent with no tools always answers, otherwise
-      // only the branches below that deny tools qualify. See `streamAnswer`.
-      stepMustAnswer = !hasTools
-      if (stepNumber >= maxTurns - 1) {
-        stepMustAnswer = true
-        void sink?.log?.({
-          level: 'info',
-          message: `→ ${modelId} (turn ${stepNumber + 1}/${maxTurns}, answering — no more tools)`,
-        })
-        return { toolChoice: 'none' as const, model: answeringModel }
-      }
-      // Would one more tool turn leave room to write the answer? Checked BEFORE
-      // the spend budget because overflowing the window is a hard error and
-      // the budget is a preference.
-      //
-      // With no growth sample yet (turn 2), the conversation's current size
-      // stands in for its growth — i.e. assume it could double. That's
-      // deliberately pessimistic and costs nothing in the normal case, where an
-      // opening prompt is a rounding error against the window; where it DOES
-      // bite, the conversation is already vast and stopping is right.
-      if (answerReserveTokens != null && lastInputTokens > 0) {
-        const growth = observedGrowth > 0 ? observedGrowth : lastInputTokens
-        const projected = lastInputTokens + growth
-        if (projected + answerReserveTokens > contextLength!) {
-          stoppedOnContextLimit = true
-          stepMustAnswer = true
-          void sink?.log?.({
-            level: 'info',
-            message: `→ ${modelId} (turn ${stepNumber + 1}/${maxTurns}, another turn would reach ~${projected.toLocaleString()} of ${contextLength!.toLocaleString()} — answering while there is room to)`,
-            meta: {
-              lastInputTokens,
-              observedGrowth: growth,
-              projected,
-              answerReserveTokens,
-              contextLength,
-            },
-          })
-          return { toolChoice: 'none' as const, model: answeringModel }
-        }
-      }
-      // Spend ceiling reached. Deliberately NOT an error: the whole point of
-      // the budget is to reach the end of the money with an answer in hand,
-      // rather than let the node's wall-clock guard fail the run outright with
-      // nothing to show for what it already spent.
-      const spent = totalUsage.inputTokens + totalUsage.outputTokens
-      if (toolTokenBudget != null && spent >= toolTokenBudget) {
-        stoppedOnTokenBudget = true
-        stepMustAnswer = true
-        void sink?.log?.({
-          level: 'info',
-          message: `→ ${modelId} (turn ${stepNumber + 1}/${maxTurns}, token budget reached at ${spent.toLocaleString()} — answering with what it has)`,
-          meta: { spent, toolTokenBudget },
-        })
-        return { toolChoice: 'none' as const, model: answeringModel }
-      }
-      // Opt-in: deny the model the option of answering turn 1 from what it
-      // already "knows". Only turn 1 — every later turn is free to answer, so
-      // this buys a first look at the tools without trapping the loop.
-      if (stepNumber === 0 && forceFirstTool) {
-        void sink?.log?.({
-          level: 'info',
-          message: `→ ${modelId} (turn 1/${maxTurns}, tool call required)`,
-        })
-        return { toolChoice: 'required' as const }
-      }
-      return {}
-    },
-    // Per-round-trip and per-tool watchdogs, native to the AI SDK: each is
-    // armed and cleared around its own call, so a single stalled request or
-    // hung tool fails fast instead of silently consuming the node's whole
-    // window. `abortSignal` carries our separate total-budget guard.
+    prepareStep: createPrepareStep({
+      state,
+      modelId,
+      maxTurns,
+      answeringModel,
+      hasTools: Object.keys(tools).length > 0,
+      contextLength,
+      answerReservePercent,
+      toolTokenBudget,
+      requireToolFirstTurn,
+      sink,
+    }),
+    // Per-round-trip and per-tool watchdogs, native to the AI SDK: each is armed
+    // and cleared around its own call, so a single stalled request or hung tool
+    // fails fast instead of silently consuming the node's whole window.
+    // `abortSignal` carries our separate total-budget guard.
     timeout: budget && { stepMs: budget.stepMs, toolMs: budget.toolMs },
     abortSignal: guard.signal,
     maxRetries: MODEL_MAX_RETRIES,
-    onStepFinish: (step: StepResult<ToolSet>) => {
-      const toolCalls = (step.toolCalls ?? []).map((tc) => {
-        const r = step.toolResults?.find(
-          (rr) => rr.toolCallId === tc.toolCallId,
-        )
-        return {
-          toolCallId: tc.toolCallId,
-          toolName: tc.toolName,
-          input: tc.input as unknown,
-          output: r && 'output' in r ? (r.output as unknown) : null,
-        }
-      })
-      stepTraces.push({
-        stepNumber: step.stepNumber,
-        finishReason: step.finishReason,
-        reasoning: step.reasoningText,
-        text: step.text,
-        toolCalls,
-        usage: step.usage
-          ? {
-              inputTokens: step.usage.inputTokens,
-              outputTokens: step.usage.outputTokens,
-            }
-          : undefined,
-      })
-      totalUsage.inputTokens += step.usage?.inputTokens ?? 0
-      totalUsage.outputTokens += step.usage?.outputTokens ?? 0
-      // Not cumulative — this is the size of the conversation as sent for THIS
-      // turn, which is exactly what the context guard needs to read. The jump
-      // since the previous turn is what one more turn would add again; keep the
-      // largest seen, since the guard has to survive the worst tool result this
-      // agent actually produces, not the average one.
-      const input = step.usage?.inputTokens
-      if (input != null) {
-        if (lastInputTokens > 0) {
-          observedGrowth = Math.max(observedGrowth, input - lastInputTokens)
-        }
-        lastInputTokens = input
-      }
-      if (sink) {
-        // DEV feed (always): the model's reasoning + a raw line per tool call.
-        // These power the run viewer's Logs panel and never reach the end user.
-        const reasoning = step.reasoningText?.trim()
-        if (reasoning) {
-          void sink.log?.({ level: 'thinking', message: reasoning })
-        }
-        for (const tc of toolCalls) {
-          void sink.log?.({
-            level: 'tool',
-            message: `Called ${tc.toolName}`,
-            meta: { tool: tc.toolName, input: tc.input },
-          })
-        }
-        // USER-FACING feed: mirror the agent's internals into the curated
-        // `progress` level so the end-user progress surface can show reasoning
-        // interleaved with human-readable tool statements. Each stream is gated
-        // independently (the node's dynamic "Inform user" sub-toggles): reasoning
-        // by `streamReasoning`, tool announcements by `streamToolCalls`. A tool
-        // without a `statusLabel` template contributes nothing.
-        //
-        // `meta.progress` tags WHICH of the two a line is, so a progress
-        // surface can render them distinctly (a thinking vs a tool icon)
-        // instead of one undifferentiated list. An untagged progress line is
-        // a plain node step (see `emitNodeStartProgress`).
-        if (streamReasoning && reasoning) {
-          void sink.log?.({
-            level: 'progress',
-            message: reasoning,
-            meta: { progress: 'reasoning' },
-          })
-        }
-        if (streamToolCalls) {
-          for (const tc of toolCalls) {
-            const template = toolStatusLabels?.[tc.toolName]
-            const message =
-              template && interpolateUserText(template, tc.input).trim()
-            if (message) {
-              void sink.log?.({
-                level: 'progress',
-                message,
-                meta: { progress: 'tool', tool: tc.toolName },
-              })
-            }
-          }
-        }
-        // A step that called tools isn't the last one: the loop is about to
-        // open another round-trip, and go quiet again for however long that
-        // takes. Mark the boundary so the gap in the feed is attributable.
-        if (toolCalls.length > 0 && step.stepNumber + 1 < maxTurns) {
-          void sink.log?.({
-            level: 'info',
-            message: `→ ${modelId} (turn ${step.stepNumber + 2}/${maxTurns})`,
-          })
-        }
-      }
-    },
+    onStepFinish: createOnStepFinish({
+      state,
+      modelId,
+      maxTurns,
+      streamReasoning,
+      streamToolCalls,
+      toolStatusLabels,
+      sink,
+    }),
   }
 
-  // ONE options object, driven two ways. `streamText` and `generateText` take
-  // the same arguments, so the loop's whole policy — the turn ceiling, the
-  // context guard, the spend budget, the watchdogs, the step tracing — is
-  // shared verbatim rather than reimplemented per path. The only difference is
-  // how the result is obtained, which is exactly the difference that matters.
-  //
-  // Both run INSIDE `runGuarded`: with `streamText`, failures surface while the
-  // stream is consumed or when the final promises are awaited, not when the
-  // call is made, so consuming has to happen where the guard can classify a
-  // stall from a budget overrun.
-  const result = await runGuarded(sink, modelId, startedAt, guard, async () => {
-    if (!streamAnswer) {
-      const generated = await generateText(callOptions)
-      if (!schema) {
-        return {
-          text: generated.text,
-          finishReason: generated.finishReason,
-          streamError: undefined as unknown,
-          object: undefined as unknown,
-        }
-      }
-      // Structured: the object is the answering turn's text when the loop got
-      // that far and it parses. Otherwise — the model answered early in prose
-      // on a research turn, or the JSON came back mangled — one schema-only
-      // call over the transcript formats what the loop found. That call sees
-      // every tool result and the model's own wrap-up, so it is a formatting
-      // step, not a second investigation; it is also the cheap re-issue this
-      // path has, since replaying the loop would re-run its tools. The
-      // trailing nudge matters: a transcript that ends on an assistant turn
-      // otherwise reads as a continuation and some providers return nothing.
-      const early = parseObject(generated.text, stepMustAnswer)
-      if (early !== undefined || generated.finishReason === 'error') {
-        return {
-          text: generated.text,
-          finishReason: generated.finishReason,
-          streamError: undefined as unknown,
-          object: early,
-        }
-      }
-      void sink?.log?.({
-        level: 'info',
-        message: stepMustAnswer
-          ? `→ ${modelId} (answering turn was not the expected object — formatting the transcript to the schema)`
-          : `→ ${modelId} (answered on turn ${stepTraces.length}/${maxTurns} — formatting the transcript to the schema)`,
-      })
-      const formatted = await issueStructured({
-        model,
-        modelId,
-        systemPrompt,
-        messages: [
-          ...messagesForModel,
-          // Every step's messages — `response.messages` is the FINAL step's
-          // only, which would drop the tool calls and results this is for.
-          ...generated.responseMessages,
-          {
-            role: 'user',
-            content:
-              'Return the result now, in the expected structured form, from what you found above.',
-          },
-        ],
-        schema,
-        guard,
-        sink,
-      })
-      stepTraces.push({
-        stepNumber: stepTraces.length,
-        finishReason: formatted.finishReason,
-        text: JSON.stringify(formatted.object),
-        toolCalls: [],
-        usage: formatted.usage
-          ? {
-              inputTokens: formatted.usage.inputTokens,
-              outputTokens: formatted.usage.outputTokens,
-            }
-          : undefined,
-      })
-      totalUsage.inputTokens += formatted.usage?.inputTokens ?? 0
-      totalUsage.outputTokens += formatted.usage?.outputTokens ?? 0
-      return {
-        text: JSON.stringify(formatted.object),
-        finishReason: formatted.finishReason,
-        streamError: undefined as unknown,
-        object: formatted.object,
-      }
-    }
-    const stream = streamText(callOptions)
-    let streamedChars = 0
-    // `streamText` NEVER rejects — by design. A failed round-trip arrives as an
-    // `error` part, sets `finishReason` to `error`, and leaves `stream.text`
-    // resolving to the empty string; the default `onError` is a bare
-    // `console.error`. Ignoring the part therefore doesn't just lose the
-    // provider's status code and response body — it converts a real failure
-    // into a silent empty answer, which the guard below then has to describe
-    // without knowing anything about it. Keep the first one (later parts are
-    // usually knock-on effects of the same fault) and let the guard decide
-    // whether it mattered.
-    let streamError: unknown
-    for await (const part of stream.fullStream) {
-      if (part.type === 'error') {
-        streamError ??= part.error
-        // Named here whether or not it proves fatal: an error the agent went on
-        // to recover from is invisible everywhere else, and it's exactly what
-        // explains a turn that took far longer than its answer suggests.
-        void sink?.log?.({
-          level: 'error',
-          message: `✕ ${modelId} stream error: ${errorFeedLine(part.error)}`,
-        })
-        continue
-      }
-      if (part.type === 'text-delta' && stepMustAnswer && part.text) {
-        streamedChars += part.text.length
-        await sink?.delta?.(part.text)
-      }
-    }
-    // Whether the answer actually streamed is otherwise invisible — the deltas
-    // are unpersisted by design, so a run that quietly fell back to delivering
-    // its answer in one piece looks identical afterwards to one that streamed.
-    // Say so in the feed, where it can be read against the run that produced it.
-    void sink?.log?.({
-      level: 'info',
-      message: streamedChars
-        ? `⇢ streamed ${streamedChars} chars of the answer live`
-        : '⇢ answer not streamed (no step was forced to answer; delivered whole)',
-      meta: { streamedChars },
-    })
-    // Awaited after the stream is drained, so these are settled.
-    //
-    // `stream.text` is the one promise here that CAN reject: when the call
-    // produced no output at all — a request that died before any stream existed
-    // (bad model id, revoked key, a 5xx on the first round-trip) — it rejects
-    // with a generic `NoOutputGeneratedError` whose message is "No output
-    // generated. Check the stream for errors." The error it's telling us to go
-    // and check is the part we just captured, and that one is the only copy
-    // carrying the provider's status code and response body. So prefer it, and
-    // fall back to the SDK's when we have nothing better.
-    try {
-      return {
-        text: await stream.text,
-        finishReason: await stream.finishReason,
-        streamError,
-        object: undefined as unknown,
-      }
-    } catch (err) {
-      if (streamError instanceof Error) throw streamError
-      throw err
-    }
+  const driveArgs: DriveArgs = {
+    state,
+    model,
+    modelId,
+    maxTurns,
+    schema,
+    systemPrompt,
+    messagesForModel,
+    guard,
+    sink,
+  }
+  const result = await runGuarded(sink, modelId, startedAt, guard, () => {
+    return streamAnswer
+      ? driveStream(() => streamText(callOptions), driveArgs)
+      : driveGenerate(() => generateText(callOptions), driveArgs)
   })
   logModelCallEnd(sink, modelId, startedAt, {
     finishReason: result.finishReason,
-    steps: stepTraces.length,
-    ...totalUsage,
+    steps: state.stepTraces.length,
+    ...state.totalUsage,
   })
 
-  // A text agent that returns nothing has failed, and must say so here. The
-  // node itself is happy to hand an empty string downstream, and everything
-  // after it — the Output node, the chat message — faithfully carries the
-  // emptiness all the way to a blank bubble the reader can only read as "it
-  // broke, silently". `prepareStep` above removes the ordinary cause; anything
-  // still landing here is a genuine fault, so name it and fail the run.
-  //
-  // WHICH fault, though, is the whole diagnosis, and for a long time this said
-  // "produced no answer after N of M turns" to all of them — including the case
-  // where the model call simply failed on turn 2 of 10. That reads as a turn
-  // ceiling that was never reached, and it sent readers (and the chat's copy)
-  // looking for a prompt problem instead of a provider outage. Three outcomes,
-  // three messages, and only the first is a wall a retry would hit again.
   if (result.text.trim() === '') {
-    const toolCount = stepTraces.reduce((n, s) => n + s.toolCalls.length, 0)
-    // The model call itself failed and we caught the provider's own error on
-    // the way past. Rethrow it UNWRAPPED: `apiErrorDetail` reads `APICallError`
-    // /`RetryError` natively, so the status code, the response body and — the
-    // part that decides whether the engine retries — `isRetryable` all survive.
-    // Wrapping it in a message here would throw every one of those away, which
-    // is what made this class of failure undiagnosable.
-    if (result.streamError instanceof Error) throw result.streamError
-    // The chunk's `error` is typed `unknown` — a provider is free to put a
-    // string or a plain object there, and JS is free to throw one, but nothing
-    // downstream can read a stack off it. Name it instead of rethrowing it.
-    if (result.streamError !== undefined) {
-      throw new Error(
-        `Agent's model call failed: ${errorFeedLine(result.streamError)}`,
-      )
-    }
-    if (result.finishReason === 'error') {
-      // Same fault, but the error part never arrived (or carried nothing) —
-      // deliberately NOT marked fatal, since unlike a turn ceiling there's no
-      // evidence a second attempt hits the same wall.
-      throw new Error(
-        `Agent's model call failed after ${stepTraces.length} of ${maxTurns} turns ` +
-          `(finish reason: error), and the provider reported no error detail. ` +
-          `It called ${toolCount} tools and wrote no text.`,
-      )
-    }
-    if (result.finishReason === 'length') {
-      // The answering turn ran out of output tokens — on a reasoning model,
-      // typically spent entirely inside `<think>`. Fatal: the same prompt
-      // reasons its way to the same cliff.
-      throw markNoOutput(
-        new Error(
-          `Agent was cut off before it wrote an answer, after ${stepTraces.length} of ` +
-            `${maxTurns} turns (finish reason: length). It called ${toolCount} tools ` +
-            `and wrote no text.`,
-        ),
-      )
-    }
-    throw markNoOutput(
-      new Error(
-        `Agent produced no answer after ${stepTraces.length} of ${maxTurns} turns ` +
-          `(finish reason: ${result.finishReason}). It called ` +
-          `${toolCount} tools and wrote no text.`,
-      ),
-    )
+    throwForEmptyAnswer(result, state, maxTurns)
   }
 
   const meta: AgentNodeMeta = {
     model: modelId,
     systemPrompt,
     messages: recordedMessages(messages),
-    steps: stepTraces,
-    totalUsage,
+    steps: state.stepTraces,
+    totalUsage: state.totalUsage,
     ...(contextLength != null ? { contextLength } : {}),
-    ...(stoppedOnTokenBudget ? { stoppedOnTokenBudget: true } : {}),
-    ...(stoppedOnContextLimit ? { stoppedOnContextLimit: true } : {}),
+    ...(state.stoppedOnTokenBudget ? { stoppedOnTokenBudget: true } : {}),
+    ...(state.stoppedOnContextLimit ? { stoppedOnContextLimit: true } : {}),
   }
   if (schema) {
     // Either the answering turn's parsed text or the transcript call's object.
-    // The one way to get here without one is a failed final round-trip that
-    // still carried text — which a text agent returns as its answer, but a
-    // structured one has nothing to shape.
+    // The one way to get here without one is a failed final round-trip that still
+    // carried text — which a text agent returns as its answer, but a structured
+    // one has nothing to shape.
     if (result.object === undefined) {
       throw new Error(
-        `Agent's model call failed after ${stepTraces.length} of ${maxTurns} turns ` +
+        `Agent's model call failed after ${state.stepTraces.length} of ${maxTurns} turns ` +
           `(finish reason: ${result.finishReason}) before it produced the structured result.`,
       )
     }
@@ -1069,22 +203,75 @@ async function runToolLoop(
 }
 
 /**
- * The answering turn's text as the object, or undefined when there isn't one.
+ * Diagnose a loop that finished with no answer text, and throw saying which
+ * fault it was. Never returns.
  *
- * Only a turn that was SENT the schema counts (`answered`): a research turn
- * that happens to contain JSON was written without the provider holding it to
- * the schema, and the transcript call is the one that does. Any parse failure
- * is likewise left to that call rather than thrown — it has the whole
- * transcript to format from, which is a better retry than the error.
+ * A text agent that returns nothing has failed, and must say so here. The node
+ * itself is happy to hand an empty string downstream, and everything after it —
+ * the Output node, the chat message — faithfully carries the emptiness all the
+ * way to a blank bubble the reader can only read as "it broke, silently".
+ * `prepareStep` removes the ordinary cause; anything still landing here is a
+ * genuine fault.
+ *
+ * WHICH fault, though, is the whole diagnosis, and for a long time this said
+ * "produced no answer after N of M turns" to all of them — including the case
+ * where the model call simply failed on turn 2 of 10. That reads as a turn
+ * ceiling that was never reached, and it sent readers (and the chat's copy)
+ * looking for a prompt problem instead of a provider outage. Four outcomes, four
+ * messages, and only the last two are a wall a retry would hit again — those are
+ * the ones marked fatal.
  */
-function parseObject(text: string, answered: boolean): unknown {
-  if (!answered || text.trim() === '') return undefined
-  try {
-    const value: unknown = JSON.parse(text)
-    return typeof value === 'object' && value !== null ? value : undefined
-  } catch {
-    return undefined
+function throwForEmptyAnswer(
+  result: LoopOutcome,
+  state: AgentLoopState,
+  maxTurns: number,
+): never {
+  const turns = state.stepTraces.length
+  const toolCount = state.stepTraces.reduce((n, s) => n + s.toolCalls.length, 0)
+  // The model call itself failed and we caught the provider's own error on the
+  // way past. Rethrow it UNWRAPPED: `apiErrorDetail` reads `APICallError` /
+  // `RetryError` natively, so the status code, the response body and — the part
+  // that decides whether the engine retries — `isRetryable` all survive. Wrapping
+  // it in a message here would throw every one of those away, which is what made
+  // this class of failure undiagnosable.
+  if (result.streamError instanceof Error) throw result.streamError
+  // The chunk's `error` is typed `unknown` — a provider is free to put a string
+  // or a plain object there, and JS is free to throw one, but nothing downstream
+  // can read a stack off it. Name it instead of rethrowing it.
+  if (result.streamError !== undefined) {
+    throw new Error(
+      `Agent's model call failed: ${errorFeedLine(result.streamError)}`,
+    )
   }
+  if (result.finishReason === 'error') {
+    // Same fault, but the error part never arrived (or carried nothing) —
+    // deliberately NOT marked fatal, since unlike a turn ceiling there's no
+    // evidence a second attempt hits the same wall.
+    throw new Error(
+      `Agent's model call failed after ${turns} of ${maxTurns} turns ` +
+        `(finish reason: error), and the provider reported no error detail. ` +
+        `It called ${toolCount} tools and wrote no text.`,
+    )
+  }
+  if (result.finishReason === 'length') {
+    // The answering turn ran out of output tokens — on a reasoning model,
+    // typically spent entirely inside `<think>`. Fatal: the same prompt reasons
+    // its way to the same cliff.
+    throw markNoOutput(
+      new Error(
+        `Agent was cut off before it wrote an answer, after ${turns} of ` +
+          `${maxTurns} turns (finish reason: length). It called ${toolCount} tools ` +
+          `and wrote no text.`,
+      ),
+    )
+  }
+  throw markNoOutput(
+    new Error(
+      `Agent produced no answer after ${turns} of ${maxTurns} turns ` +
+        `(finish reason: ${result.finishReason}). It called ` +
+        `${toolCount} tools and wrote no text.`,
+    ),
+  )
 }
 
 export async function runAgentGeneration(
@@ -1099,12 +286,12 @@ export async function runAgentGeneration(
     ...args,
     tools: strictifyToolSet(args.tools),
   }
-  // A structured agent takes the single-call path only when the loop would
-  // have nothing to do: no tools, or one turn — which `prepareStep` makes the
-  // answering turn, denying tools. Anything else is a real loop that happens
-  // to end in an object. Gating on `maxTurns` as well as on tools keeps every
-  // stored config that could never call its tools on exactly the call it made
-  // before; only agents that were actually being denied their tools change.
+  // A structured agent takes the single-call path only when the loop would have
+  // nothing to do: no tools, or one turn — which `prepareStep` makes the
+  // answering turn, denying tools. Anything else is a real loop that happens to
+  // end in an object. Gating on `maxTurns` as well as on tools keeps every stored
+  // config that could never call its tools on exactly the call it made before;
+  // only agents that were actually being denied their tools change.
   const structured =
     prepared.output.kind === 'object' || prepared.output.kind === 'boolean'
   const nothingToCall =

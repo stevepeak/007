@@ -88,7 +88,7 @@ function connectionInfo(
   }
 }
 
-function summarize(
+function toConnectorSummary(
   connector: ConnectorRow,
   connection: ConnectorConnectionRow | null,
   tools: { enabled: boolean }[],
@@ -209,7 +209,7 @@ export function buildConnectorHandlers<TDeps>(
       ])
       const byConnector = new Map(connections.map((r) => [r.connectorId, r]))
       return await Promise.all(
-        connectors.map(async (connector) => { return summarize(
+        connectors.map(async (connector) => { return toConnectorSummary(
             connector,
             byConnector.get(connector.id) ?? null,
             await listConnectorTools(c.db, connector.id),
@@ -226,7 +226,7 @@ export function buildConnectorHandlers<TDeps>(
         listConnectorTools(c.db, connectorId),
       ])
       return {
-        connector: summarize(connector, connection, tools),
+        connector: toConnectorSummary(connector, connection, tools),
         tools: tools.map(toolInfo),
       }
     },

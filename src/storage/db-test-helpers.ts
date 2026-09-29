@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-import { Database } from 'bun:sqlite'
+import type { D1Database } from '@cloudflare/workers-types'
+import { Database, type SQLQueryBindings } from 'bun:sqlite'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 
 import type { WfDb } from './client'
@@ -65,4 +66,71 @@ export function wrapSqlite(sqlite: Database): WfDb {
 /** A migrated, empty {@link WfDb}. One per test — `:memory:` makes it cheap. */
 export function freshDb(): WfDb {
   return wrapSqlite(migratedSqlite())
+}
+
+/**
+ * A {@link D1Database}-shaped facade over a `bun:sqlite` handle.
+ *
+ * {@link freshDb} is the right answer whenever a test can hold a {@link WfDb}
+ * directly. This exists for the handful of places that CANNOT: the Cloudflare
+ * dispatch calls `createWfDb(env.WF_DB)` from inside its own `step.do` closures,
+ * on purpose (a D1 binding is cheap to re-wrap and the closure replays), so the
+ * only way to give that code a database is to hand it a binding.
+ *
+ * Only the four calls drizzle-d1 actually makes are implemented — `prepare`,
+ * `bind`, `run`/`all`/`raw`, and `batch`. `batch` is NOT atomic here (bun's
+ * SQLite runs the statements in sequence), which production's binding is; a test
+ * asserting all-or-nothing rollback wants the real thing, not this.
+ */
+export function d1FromSqlite(sqlite: Database): D1Database {
+  const bound = (sql: string, params: unknown[]) => {
+    const stmt = () => sqlite.prepare(sql)
+    const args = () => params as SQLQueryBindings[]
+    return {
+      bind: (...next: unknown[]) => bound(sql, next),
+      run: () => {
+        const r = stmt().run(...args())
+        return Promise.resolve({
+          success: true,
+          results: [],
+          meta: {
+            changes: r.changes,
+            last_row_id: Number(r.lastInsertRowid),
+            rows_read: 0,
+            rows_written: r.changes,
+          },
+        })
+      },
+      all: () => {
+        return Promise.resolve({
+          success: true,
+          results: stmt().all(...args()) as Record<string, unknown>[],
+          meta: {},
+        })
+      },
+      raw: () => Promise.resolve(stmt().values(...args()) as unknown[][]),
+      first: (column?: string) => {
+        const row = stmt().get(...args()) as Record<string, unknown> | null
+        if (!row) return Promise.resolve(null)
+        return Promise.resolve(column == null ? row : (row[column] ?? null))
+      },
+    }
+  }
+  const client = {
+    prepare: (sql: string) => bound(sql, []),
+    batch: (statements: { all: () => Promise<unknown> }[]) => {
+      // Sequential, not concurrent: these are writes against one connection and
+      // a later statement in a batch may depend on an earlier one.
+      return statements.reduce<Promise<unknown[]>>(async (acc, s) => {
+        const done = await acc
+        return [...done, await s.all()]
+      }, Promise.resolve([]))
+    },
+  }
+  return client as unknown as D1Database
+}
+
+/** A migrated, empty database as a {@link D1Database} binding. */
+export function freshD1(): D1Database {
+  return d1FromSqlite(migratedSqlite())
 }
