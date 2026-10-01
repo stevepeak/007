@@ -1,4 +1,4 @@
-import type { AgentConfig } from '../engine/agent-config-schema'
+import type { AnyAgentConfig } from '../engine/decision-agent-schema'
 
 // The sweep manifest — what a run was launched to do, written down.
 //
@@ -40,17 +40,35 @@ export type EvalMatrix = {
   prompts: EvalMatrixPrompt[]
 }
 
+/**
+ * How a cell of this sweep is executed — the one structural difference between
+ * the two agent kinds, frozen at launch alongside everything else.
+ *
+ * `'run'` is every sweep before ART-238 and every one against a workflow or a
+ * generation agent: the cell STARTS a `wf_run` and later ticks poll it to a
+ * terminal status. `'decision'` is a decision-agent target, which has no graph
+ * and no run — one provider call, settled inside the tick that started it.
+ *
+ * It lives on the plan rather than being re-derived from the Goal's target on
+ * every tick for the same reason the cells do: re-reading the live target would
+ * let a half-finished sweep change how it executes mid-flight.
+ */
+export type EvalCellMode = 'run' | 'decision'
+
 export type EvalPlan = {
   /** Bumped only if the shape changes incompatibly; readers skip what they can't parse. */
   version: 1
   cells: EvalCell[]
+  /** See {@link EvalCellMode}. Absent on every plan written before ART-238. */
+  mode?: EvalCellMode
   /**
    * Run every cell against this agent config instead of the target's published
    * version — the agent editor grading UNSAVED edits. Frozen into the plan
    * because a resuming driver has no other way to learn it: the draft it was
-   * launched from may have been edited again, or saved, since.
+   * launched from may have been edited again, or saved, since. Of whichever
+   * shape the target agent's kind declares.
    */
-  configOverride?: AgentConfig
+  configOverride?: AnyAgentConfig
   concurrency: number
   /** How long one cell's run may take before the driver stops waiting for it. */
   timeoutMs: number
@@ -181,6 +199,9 @@ export function parseEvalPlan(raw: unknown): EvalPlan | null {
   return {
     version: 1,
     cells,
+    // Absent on every pre-ART-238 plan, which is exactly what `'run'` means —
+    // so no migration is needed.
+    mode: p.mode === 'decision' ? 'decision' : 'run',
     configOverride: p.configOverride,
     concurrency: typeof p.concurrency === 'number' ? p.concurrency : 1,
     timeoutMs: typeof p.timeoutMs === 'number' ? p.timeoutMs : 15 * 60_000,
@@ -216,4 +237,39 @@ export function parseEvalDriveState(raw: unknown): EvalDriveState {
       typeof s.consecutiveErrors === 'number' ? s.consecutiveErrors : 0,
     providerDown: s.providerDown === true,
   }
+}
+
+/**
+ * Which execution mode a sweep over these Goals runs in.
+ *
+ * A sweep is one plan with one mode, so a set of Goals that mixes a decision
+ * agent with anything else has no answer and is refused. That is not a
+ * limitation worth engineering around: the two produce incomparable reports —
+ * one has runs, steps, tool traces and a cost per cell, the other has a
+ * verdict and a matrix — and running them together would put both in one table
+ * with half the columns empty.
+ *
+ * Pure, and takes the kinds as a map rather than a client, so the caller
+ * decides how to fetch them (the UI already holds `listAgents`; MCP reads it
+ * once for the model gate).
+ */
+export function resolveEvalCellMode(
+  targets: readonly { targetKind: string; targetId: string }[],
+  agentKinds: ReadonlyMap<string, 'generation' | 'decision'>,
+): { mode: EvalCellMode } | { error: string } {
+  const modes = new Set(
+    targets.map((t): EvalCellMode => {
+      return t.targetKind === 'agent' &&
+        agentKinds.get(t.targetId) === 'decision'
+        ? 'decision'
+        : 'run'
+    }),
+  )
+  if (modes.size > 1) {
+    return {
+      error:
+        'One run cannot cover both a decision agent and a workflow or generation agent — they produce incomparable reports. Run those goals separately.',
+    }
+  }
+  return { mode: modes.has('decision') ? 'decision' : 'run' }
 }

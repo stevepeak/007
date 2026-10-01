@@ -27,7 +27,7 @@ const DIMS: RunDims = {
 
 const AGENT_META = {
   model: 'venice:llama-3.3-70b',
-  systemPrompt: 'you are a lawyer',
+  systemPrompt: 'you are an assistant',
   agentId: 'agent-7',
   agentVersion: 3,
   steps: [

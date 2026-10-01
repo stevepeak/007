@@ -96,17 +96,64 @@ export function asAgentMeta(meta: unknown): AgentNodeMeta | null {
 }
 
 /**
- * Narrow an untyped step `meta` to its agent token usage, or null for non-agent
- * steps (branches, tools, iteration — no LLM tokens).
+ * Narrow an untyped step `meta` to a DECISION agent's meta, or null.
+ *
+ * A second shape rather than a widened {@link asAgentMeta}, because the two
+ * share no field: a decider makes one call and returns a distribution, so there
+ * is no `steps` transcript and no `totalUsage` — it records `modelId` and
+ * `usage`. `questionIds` is the discriminator: it is the one key only a decision
+ * step writes, so nothing else can be mistaken for one.
+ */
+export function asDecisionMeta(
+  meta: unknown,
+): { modelId?: string; usage?: { inputTokens?: number; outputTokens?: number } } | null {
+  if (
+    meta &&
+    typeof meta === 'object' &&
+    Array.isArray((meta as { questionIds?: unknown }).questionIds) &&
+    'usage' in meta
+  ) {
+    return meta as {
+      modelId?: string
+      usage?: { inputTokens?: number; outputTokens?: number }
+    }
+  }
+  return null
+}
+
+/**
+ * Narrow an untyped step `meta` to its token usage, or null for a step that
+ * spent none (branches, tools, iteration).
+ *
+ * Reads BOTH agent shapes. A decision step was invisible here until it was
+ * added, which meant a run whose only model call was a decision agent reported
+ * `totalTokens: null` and no cost at all — the tokens were on the step the whole
+ * time, under different key names.
+ *
+ * A decision step's `modelId` is the COMPOSITE catalog id while a generation
+ * step's `model` is the provider-native one. That is fine: the price map is
+ * keyed by both, precisely so either resolves.
  */
 export function agentUsage(
   meta: unknown,
 ): { model: string; inputTokens: number; outputTokens: number } | null {
   const m = asAgentMeta(meta)
-  if (!m) return null
-  return {
-    model: m.model,
-    inputTokens: m.totalUsage?.inputTokens ?? 0,
-    outputTokens: m.totalUsage?.outputTokens ?? 0,
+  if (m) {
+    return {
+      model: m.model,
+      inputTokens: m.totalUsage?.inputTokens ?? 0,
+      outputTokens: m.totalUsage?.outputTokens ?? 0,
+    }
   }
+  const d = asDecisionMeta(meta)
+  if (d) {
+    return {
+      // An unreported model prices as nothing rather than throwing off the
+      // lookup — same as a generation step that recorded no model.
+      model: d.modelId ?? '',
+      inputTokens: d.usage?.inputTokens ?? 0,
+      outputTokens: d.usage?.outputTokens ?? 0,
+    }
+  }
+  return null
 }

@@ -5,6 +5,8 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/sqlite-core'
 
+import { WF_AGENT_KINDS } from '../engine/agent-kind'
+
 import { createdAt } from './schema-common'
 
 // A reusable agent — same lifecycle as workflows: a globally shared, editable
@@ -26,6 +28,15 @@ export const wfAgent = sqliteTable('wf_agent', {
   // slug (slugified from `name`) and persists it.
   slug: text('slug'),
   name: text('name').notNull(),
+  // What KIND of agent this is — 'generation' (prompt + tools + an answer) or
+  // 'decision' (a question set judged by a decider and rolled up to a verdict).
+  // The two `config` shapes are DISJOINT, so this is what tells a reader which
+  // schema to parse a version with, and it is IMMUTABLE after creation: there
+  // is no meaningful conversion between the shapes.
+  //
+  // Defaulted rather than backfilled — every row written before ART-238 is a
+  // generation agent, so the default IS the migration.
+  kind: text('kind', { enum: WF_AGENT_KINDS }).notNull().default('generation'),
   description: text('description'),
   // Lucide icon name + a color token — purely for the agent cards.
   icon: text('icon'),

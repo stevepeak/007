@@ -349,11 +349,9 @@ export interface WfSdkConfig<TDeps = unknown> {
   /**
    * Optional: resolve a decision `modelId` to a {@link Decider} (see
    * `decision.ts`). The decision counterpart of {@link WfSdkConfig.getModel},
-   * and the gate on the whole feature: **omit it and Decision nodes are simply
-   * off** — the editor's palette hides the kind and the node inspector says what
-   * to wire. A graph that ALREADY contains one still parses (graph validation is
-   * pure and cannot see the host config); it fails when the node runs, naming
-   * this hook. Same shape as {@link WfSdkConfig.resolveConnectorSecret}.
+   * and the gate on the whole feature: **omit it and decision agents are simply
+   * off** — an agent node pointing at one still parses (graph validation is pure
+   * and cannot see the host config) and fails when it runs, naming this hook. Same shape as {@link WfSdkConfig.resolveConnectorSecret}.
    *
    * A host with no purpose-built decision endpoint does not have to go without:
    * `createChatDecider` (`./decision-chat`) implements the contract on any chat
@@ -361,7 +359,7 @@ export interface WfSdkConfig<TDeps = unknown> {
    */
   getDecider?: (modelId: string, ctx: RunContext) => Decider
   /**
-   * Turn Decision support on using the host's OWN chat models, with no decision
+   * Turn decision support on using the host's OWN chat models, with no decision
    * provider to wire.
    *
    * The other half of the story from {@link WfSdkConfig.getDecider}: provide a
@@ -380,9 +378,9 @@ export interface WfSdkConfig<TDeps = unknown> {
    */
   decisionsViaChatModels?: boolean
   /**
-   * Optional: deciders offered in the Decision node's model dropdown. Required
+   * Optional: deciders offered in a decision agent's model dropdown. Required
    * (non-empty) whenever {@link WfSdkConfig.getDecider} is set — a factory with
-   * no catalog gives the author a node they cannot configure.
+   * no catalog gives the author an agent they cannot configure.
    */
   listDecisionModels?: (
     ctx: ModelListContext,
@@ -601,7 +599,7 @@ export function defineWfConfig<TDeps = unknown>(
     problems.push(
       `decision support needs all of \`getDecider\`, \`listDecisionModels\` and \`listDecisionProviders\` — missing ${missing
         .map((m) => `\`${m}\``)
-        .join(', ')}. Omit all three to turn Decision nodes off.`,
+        .join(', ')}. Omit all three to turn decision agents off.`,
     )
   }
   if (

@@ -1,6 +1,7 @@
 import {
   ArrowRightToLine,
   Braces,
+  ListChecks,
   type LucideIcon,
   Text,
   Waypoints,
@@ -55,6 +56,11 @@ export const BINARY_TYPE_META: Record<
     desc: 'The final output matches a value',
     icon: Text,
   },
+  decision_answers: {
+    label: CHECK_TYPE_LABELS.decision_answers,
+    desc: 'A decision agent’s verdict and per-question answers',
+    icon: ListChecks,
+  },
 }
 
 export function familyOf(check: EvalCheck): CheckFamily {
@@ -79,5 +85,9 @@ export function defaultCheck(type: EvalCheck['type']): EvalCheck {
     case 'decision_judge':
       // Same: the decision model list fills `modelId` in on first render.
       return { type, rubric: '' }
+    case 'decision_answers':
+      // Empty on purpose: the editor seeds one expectation row per question
+      // from the TARGET agent, which this pure function cannot see.
+      return { type, expect: [] }
   }
 }

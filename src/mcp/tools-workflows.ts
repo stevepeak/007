@@ -949,6 +949,8 @@ export function workflowWriteTools(): WfMcpTool[] {
         '',
         '`informUser` and `execution` are SIBLINGS of `config`, not keys inside it, so merge_node_config cannot reach them — that is what the two dedicated ops are for.',
         '',
+        'An `agent` node points at either kind of agent through `config.agentId` (list_agents, `kind`). For a published DECISION agent it runs THAT agent\'s questions, thresholds, verdicts and rules — one provider call, no prompt — judging the value `config.source` refs (a ref binding; unset judges the whole incoming input), with `config.inputs` binding any `${variables}` its questions use. It outputs `{ verdict, because, reasoning, answers }`, so one Switch binding `verdict` routes on the agent\'s rolled-up outcome, and `answers.<questionId>.value` stays addressable. It floats to the agent\'s latest published version (or a pinned `version`), frozen per run.',
+        '',
         'Every op reaches into an `iteration` node’s per-item subgraph as well as the top level, addressing inner nodes by their own ids. An edge must have both ends in the same graph: an iteration subgraph is a closed scope, so feed it from ONE node via its `source` ref rather than wiring across the boundary.',
         '',
         'Ops apply in order and all-or-nothing: one bad op writes nothing. The reply lints the result and names every node that now differs from the published version. Nothing runs the draft; publish_workflow makes it live. Read get_workflow first for node ids, and validate_workflow_graph or get_tool_catalog for what a tool’s args are called and typed.',

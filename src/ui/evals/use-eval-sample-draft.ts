@@ -72,6 +72,10 @@ const DEFAULT_CHECK_NO_TOOLS: EvalCheck = {
   match: 'contains',
   value: '',
 }
+// A decision agent's output is a matrix, so the only assertion worth starting
+// from is the one that grades it. `output_match` would work and reads far
+// worse: `answers.is_urgent.value` contains `true`.
+const DEFAULT_CHECK_DECISION: EvalCheck = { type: 'decision_answers', expect: [] }
 
 export type EvalSampleDraftOptions = {
   setId: string
@@ -111,9 +115,12 @@ export function useEvalSampleDraft({
   // workflows keep the free-form path.
   const outputSchema = useMemo<JsonSchema | null>(() => {
     if (set?.targetKind !== 'agent') return null
-    const output = targetAgent?.output
+    // A decision agent declares no output contract — its output is always
+    // `{ verdict, because, answers }`, which the `decision_answers` check knows
+    // the shape of without a schema.
+    const output = targetAgent?.kind === 'decision' ? null : targetAgent?.output
     return output ? agentOutputJsonSchema(output) : null
-  }, [set?.targetKind, targetAgent?.output])
+  }, [set?.targetKind, targetAgent?.kind, targetAgent?.output])
 
   // The target agent's wired tools — the only tools a run could ever call, so a
   // check's tool pickers are scoped to them. Undefined for workflow targets
@@ -123,6 +130,13 @@ export function useEvalSampleDraft({
     () => (set?.targetKind === 'agent' ? targetAgent?.toolIds : undefined),
     [set?.targetKind, targetAgent?.toolIds],
   )
+
+  // The target's published question set, when it is a decision agent — what the
+  // state editor names its variables from and what the `decision_answers` check
+  // offers as question ids and verdicts. Null for every other target, which is
+  // what makes those surfaces fall back to free text rather than empty pickers.
+  const decisionContract =
+    targetAgent?.kind === 'decision' ? targetAgent.decision : null
 
   // The draft lives on an undo stack, seeded once per row id so a background
   // refetch can't clobber an in-progress edit.
@@ -223,20 +237,26 @@ export function useEvalSampleDraft({
       ...draft.checks,
       checks: [
         ...draft.checks.checks,
-        hasTools ? DEFAULT_CHECK : DEFAULT_CHECK_NO_TOOLS,
+        decisionContract
+          ? DEFAULT_CHECK_DECISION
+          : hasTools
+            ? DEFAULT_CHECK
+            : DEFAULT_CHECK_NO_TOOLS,
       ],
     }
     edit({ ...draft, checks })
     setOpenCheck(checks.checks.length - 1)
-  }, [draft, hasTools, edit])
+  }, [draft, hasTools, decisionContract, edit])
 
   // A sample authored before its goal's target changed input kind still holds
   // the old variant. Offer the swap rather than silently rewriting an author's
   // work — the old input's values are what they'd have to retype.
-  const expectedKind =
-    draft?.input.kind === 'trigger'
-      ? 'trigger'
-      : (targetAgent?.inputKind ?? 'task')
+  const expectedKind: EvalSampleInput['kind'] =
+    targetAgent?.kind === 'decision'
+      ? 'decision'
+      : draft?.input.kind === 'trigger'
+        ? 'trigger'
+        : (targetAgent?.inputKind ?? 'task')
 
   return {
     isLoading,
@@ -246,6 +266,7 @@ export function useEvalSampleDraft({
     hasTools,
     outputSchema,
     allowToolIds,
+    decisionContract,
     draft,
     edit,
     save,

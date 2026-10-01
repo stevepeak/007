@@ -1,6 +1,4 @@
 import {
-  Check,
-  ChevronDown,
   HelpCircle,
   Play,
   Plus,
@@ -17,9 +15,9 @@ import type {
 import { agentColor, agentIcon } from '../agent-appearance'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
+import { FilterPill } from '../filters'
 import { useAgents, useEvalRuns, useEvalSets, useWorkflows } from '../hooks'
 import { useWfNav } from '../nav'
-import { Popover } from '../popover'
 import { QueryState } from '../query-state'
 
 import { EvalsHelpDialog } from './evals-help-dialog'
@@ -166,12 +164,12 @@ function GoalsTable({ goals }: { goals: WfEvalSetSummary[] }) {
       <div className="overflow-hidden rounded-lg border border-neutral-200">
         <div className="grid grid-cols-[1fr_auto_5rem] items-center gap-4 border-b border-neutral-100 bg-neutral-50 px-4 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-neutral-400">
           <span>Goals</span>
-          <span>Target</span>
+          <span>Agent</span>
           <span>Samples</span>
         </div>
         {shown.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-neutral-400">
-            No goals target this selection.
+            No goals for this selection.
           </div>
         ) : (
           shown.map((g) => (
@@ -213,9 +211,8 @@ function WorkflowChip() {
   )
 }
 
-// Filter the goals list by target. A custom dropdown (native <select> can't
-// render logos) listing every agent (its icon on its color tint) and every
-// workflow (generic glyph), plus an "All targets" reset.
+// Filter the goals list by target: every agent (its icon on its color tint) and
+// every workflow (generic glyph).
 function TargetFilter({
   value,
   onChange,
@@ -227,121 +224,36 @@ function TargetFilter({
   agents: WfAgentSummary[]
   workflows: WfWorkflowSummary[]
 }) {
-  const selectedAgent = agents.find((a) => a.id === value)
-  const selectedWorkflow = workflows.find((w) => w.id === value)
-
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs text-neutral-400">Filter by target</span>
-      <Popover
-        className="relative"
-        panelClassName="absolute z-50 mt-1 max-h-80 w-64 overflow-y-auto rounded-md border border-neutral-200 bg-white py-1 shadow-lg"
-        trigger={({ open, toggle }) => (
-          <button
-            type="button"
-            aria-haspopup="listbox"
-            aria-expanded={open}
-            onClick={toggle}
-            className="flex h-8 min-w-52 items-center gap-2 rounded-md border border-neutral-300 bg-white px-2 text-sm outline-none transition hover:border-neutral-400"
-          >
-            {selectedAgent ? (
-              <AgentGlyph agent={selectedAgent} />
-            ) : selectedWorkflow ? (
-              <WorkflowChip />
-            ) : null}
-            <span
-              className={cn(
-                'min-w-0 flex-1 truncate text-left',
-                value ? 'text-neutral-800' : 'text-neutral-500',
-              )}
-            >
-              {selectedAgent?.name ?? selectedWorkflow?.name ?? 'All targets'}
+    <FilterPill
+      label="Agent"
+      value={value}
+      onChange={onChange}
+      searchPlaceholder="Search agents…"
+      options={[
+        ...agents.map((a) => ({
+          value: a.id,
+          label: a.name,
+          node: (
+            <span className="inline-flex items-center gap-1.5">
+              <AgentGlyph agent={a} />
+              {a.name}
             </span>
-            <ChevronDown className="size-4 shrink-0 text-neutral-400" />
-          </button>
-        )}
-      >
-        {({ close }) => {
-          const select = (id: string) => {
-            onChange(id)
-            close()
-          }
-          return (
-            <>
-              <FilterOption
-                label="All targets"
-                selected={!value}
-                onClick={() => select('')}
-              />
-              {agents.length > 0 ? (
-                <div className="mt-1 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
-                  Agents
-                </div>
-              ) : null}
-              {agents.map((a) => (
-                <FilterOption
-                  key={a.id}
-                  label={a.name}
-                  icon={<AgentGlyph agent={a} />}
-                  selected={a.id === value}
-                  onClick={() => select(a.id)}
-                />
-              ))}
-              {workflows.length > 0 ? (
-                <div className="mt-1 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
-                  Workflows
-                </div>
-              ) : null}
-              {workflows.map((w) => (
-                <FilterOption
-                  key={w.id}
-                  label={w.name}
-                  icon={<WorkflowChip />}
-                  selected={w.id === value}
-                  onClick={() => select(w.id)}
-                />
-              ))}
-            </>
-          )
-        }}
-      </Popover>
-    </div>
-  )
-}
-
-function FilterOption({
-  label,
-  icon,
-  selected,
-  onClick,
-}: {
-  label: string
-  icon?: React.ReactNode
-  selected: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      role="option"
-      aria-selected={selected}
-      onClick={onClick}
-      className={cn(
-        'flex w-full items-center gap-2 px-3 py-1.5 text-left transition',
-        selected ? 'bg-neutral-100' : 'hover:bg-neutral-50',
-      )}
-    >
-      {icon ?? <span className="size-5 shrink-0" />}
-      <span className="min-w-0 flex-1 truncate text-sm text-neutral-800">
-        {label}
-      </span>
-      <Check
-        className={cn(
-          'size-4 shrink-0 text-neutral-900',
-          selected ? 'opacity-100' : 'opacity-0',
-        )}
-      />
-    </button>
+          ),
+        })),
+        ...workflows.map((w, i) => ({
+          value: w.id,
+          label: w.name,
+          separatorBefore: i === 0 && agents.length > 0,
+          node: (
+            <span className="inline-flex items-center gap-1.5">
+              <WorkflowChip />
+              {w.name}
+            </span>
+          ),
+        })),
+      ]}
+    />
   )
 }
 

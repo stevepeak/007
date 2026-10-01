@@ -85,6 +85,58 @@ export function questionChoices(
   return []
 }
 
+/**
+ * Build the provider-facing question from an AUTHORED one.
+ *
+ * Every authoring surface stores questions FLAT — one `choices` array, a `type`
+ * string — because the editors and the MCP `create_*` tools all write through
+ * those schemas and a discriminated union there would fan out into every one of
+ * them. The provider contract is a union. This is the one place the two meet,
+ * used by decision agents, so a `category` with no options fails with one
+ * wording wherever it is authored.
+ *
+ * `where` names the thing being authored — "Decision agent question 'urgent'".
+ */
+export function buildProviderQuestion(
+  authored: {
+    id: string
+    type: DecisionQuestionType
+    prompt: string
+    considerations?: Readonly<Record<string, string>>
+  },
+  choices: readonly DecisionOption[],
+  where: string,
+  opts: { dynamicChoices?: boolean } = {},
+): DecisionQuestion {
+  const prompt = authored.prompt.trim()
+  if (!prompt) {
+    throw new Error(`${where} has no prompt — there is nothing to judge.`)
+  }
+  if (authored.type === 'boolean') {
+    const considerations = authored.considerations
+    return {
+      id: authored.id,
+      type: 'boolean',
+      prompt,
+      // Omitted rather than sent empty: `criteria: {}` is a different request
+      // from no criteria at all, and an author who wrote none meant the latter.
+      ...(considerations && Object.keys(considerations).length > 0
+        ? { considerations }
+        : {}),
+    }
+  }
+  if (choices.length < 2) {
+    throw new Error(
+      opts.dynamicChoices
+        ? `${where} takes its choices from an upstream value, which arrived with ${choices.length} — it needs at least two.`
+        : `${where} is a ${authored.type} question with ${choices.length} choice(s); it needs at least two.`,
+    )
+  }
+  return authored.type === 'category'
+    ? { id: authored.id, type: 'category', prompt, options: choices }
+    : { id: authored.id, type: 'scale', prompt, levels: choices }
+}
+
 // ── What a provider returns ──────────────────────────────────────────────────
 
 /** One key's share of the probability mass. */
@@ -181,7 +233,7 @@ export type DecisionProvider = {
 
 /**
  * A decider the editor can offer and `getDecider` can resolve. Mirrors
- * {@link ModelOption}, with the capability fields a decision node actually
+ * {@link ModelOption}, with the capability fields a decision agent actually
  * gates on.
  */
 export type DecisionModelOption = {

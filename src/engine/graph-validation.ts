@@ -175,61 +175,6 @@ function checkBranchNodes(g: GraphShape, ctx: GraphCheckCtx): void {
   }
 }
 
-/**
- * Decision nodes: questions are well-formed, and no outgoing edge is
- * conditioned.
- *
- * The edge check is the one that matters. A Decision does not route — it
- * answers, and a Branch or Switch downstream routes on the answer. So a
- * conditioned edge out of one is an author expecting an arm that will never be
- * emitted: the scheduler only keeps a conditioned edge alive when its source
- * reported a matching result (see `isEdgeLive`), and this node reports none. The
- * edge would match nothing, the path below it would never run, and the run would
- * drain without reaching an Output. Catching it here turns a silent stall into a
- * rejected graph.
- */
-function checkDecisionNodes(g: GraphShape, ctx: GraphCheckCtx): void {
-  for (const n of g.nodes) {
-    if (n.kind !== 'decision') continue
-
-    const ids = n.config.questions.map((q) => q.id)
-    if (new Set(ids).size !== ids.length) {
-      ctx.addIssue({
-        code: 'custom',
-        message: `Decision node ${n.id} has duplicate question ids.`,
-      })
-    }
-    for (const q of n.config.questions) {
-      if (q.type === 'boolean') continue
-      // Choices coming from upstream are unknowable here — `decision.ts` counts
-      // what actually arrives. Rejecting the graph for an empty authored list
-      // would reject exactly the shape the binding exists for.
-      if (q.choicesSource) continue
-      const keys = q.choices.map((c) => c.key)
-      if (keys.length < 2) {
-        ctx.addIssue({
-          code: 'custom',
-          message: `Decision node ${n.id} question '${q.id}' is a ${q.type} question with ${keys.length} choice(s); it needs at least two.`,
-        })
-      }
-      if (new Set(keys).size !== keys.length) {
-        ctx.addIssue({
-          code: 'custom',
-          message: `Decision node ${n.id} question '${q.id}' has duplicate choice keys.`,
-        })
-      }
-    }
-
-    for (const e of g.edges) {
-      if (e.source !== n.id || e.condition == null) continue
-      ctx.addIssue({
-        code: 'custom',
-        message: `Decision node ${n.id} edge ${e.id} has condition '${e.condition}', but a Decision never routes — it answers. Remove the condition, and route with a Branch or Switch reading \`answers.<questionId>.value\`.`,
-      })
-    }
-  }
-}
-
 // Iteration subgraph contract: it must start with an `iteration_item` trigger
 // (its output is the current element) and may not nest another iteration
 // (unsupported this version). The subgraph is otherwise validated at run time by
@@ -297,7 +242,6 @@ export const workflowGraphSchema = workflowGraphShapeSchema.superRefine(
     checkRefBindings(g, ctx)
     checkSwitchNodes(g, ctx)
     checkBranchNodes(g, ctx)
-    checkDecisionNodes(g, ctx)
     checkIterationSubgraphs(g, ctx)
     checkJoinTopology(g, ctx)
   },

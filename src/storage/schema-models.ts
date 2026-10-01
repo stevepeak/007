@@ -37,6 +37,21 @@ export const wfModel = sqliteTable(
     providerId: text('provider_id').notNull(),
     modelId: text('model_id').notNull(),
     label: text('label').notNull(),
+    // Which catalog this row belongs to — engine `ModelKind`: chat | decision.
+    // The pickers are separated on THIS and nothing else: `listEnabledModels`
+    // serves 'chat' to the agent model dropdown, `listEnabledDecisionModels`
+    // serves 'decision' to decision agents.
+    //
+    // Before this column, a decision model stayed out of the chat dropdown by
+    // being ABSENT from the table — Venice's `/models?type=text` simply never
+    // mentioned Jev. That worked only for as long as nobody catalogued one, and
+    // `?type=decision` (which does list Jev, with pricing) is exactly how we
+    // now catalogue them. The separation had to become something the schema
+    // states rather than something the upstream payload happened to imply.
+    //
+    // Defaults to 'chat' so every row written before this existed reads back as
+    // what it is.
+    kind: text('kind').notNull().default('chat'),
     // Grouping/filter key: the vendor prefix (before '/') for OpenRouter ids,
     // else the provider label.
     vendor: text('vendor'),
@@ -81,5 +96,8 @@ export const wfModel = sqliteTable(
   (t) => [
     index('wf_model_provider_idx').on(t.providerId),
     index('wf_model_enabled_idx').on(t.enabled),
+    // Both list paths are `kind = ? and enabled = ?`; the picker read sits
+    // behind every editor load.
+    index('wf_model_kind_enabled_idx').on(t.kind, t.enabled),
   ],
 )

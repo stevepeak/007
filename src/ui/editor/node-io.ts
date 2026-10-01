@@ -6,7 +6,6 @@ import {
   predecessorIds,
   SWITCH_DEFAULT_CASE,
   type ArgBinding,
-  type DecisionNode,
   type JsonSchema,
   type WorkflowGraph,
   type WorkflowNode,
@@ -425,9 +424,6 @@ export function nodeRequires(node: WorkflowNode, maps: IoMaps): NodeInput[] {
     case 'trigger':
     case 'branch':
     case 'switch':
-    // A Decision's `source` is edited in its own inspector, exactly like
-    // Branch's and Switch's, so it is not a required INPUT the node must satisfy.
-    case 'decision':
     case 'feature-request':
     case 'passthrough':
     case 'transform':
@@ -529,80 +525,35 @@ function decisionOutputFields(node: WorkflowNode): DataField[] {
 }
 
 /**
- * The bindable shape of a Decision node's output.
+ * The bindable shape of a DECISION agent's output, as an agent node emits it.
  *
  * Every question becomes a subtree under `answers`, so a downstream node can
- * bind one judgment (`answers.is_urgent.probability`) without the author knowing
- * the provider's response format. That is the payoff of asking many questions in
- * one call: the node is a small typed record several later nodes read from, not a
- * single yes/no that has to be re-derived.
+ * bind one judgment (`answers.is_urgent.confidence`) without the author knowing
+ * the provider's response format — and `verdict` is the one named outcome a
+ * Switch routes on. Built from the agent's listing summary, which carries the
+ * question ids and the verdicts but not each question's type, so the per-answer
+ * `value` is untyped rather than a guess.
  */
-function decisionQuestionFields(node: DecisionNode): DataField[] {
-  const fields: DataField[] = []
-  for (const question of node.config.questions) {
-    const base = `answers.${question.id}`
-    const keys = node.config.questions.find((q) => q.id === question.id)
-    fields.push({
-      key: question.id,
-      label: question.id,
-      path: `${base}.value`,
-      type:
-        question.type === 'boolean'
-          ? 'boolean'
-          : question.type === 'scale'
-            ? 'number'
-            : 'string',
-      enum:
-        question.type === 'category' && !question.choicesSource
-          ? question.choices.map((c) => c.key)
-          : undefined,
-      description:
-        question.prompt.trim() ||
-        `The verdict for '${question.id}' (unprompted).`,
-    })
-    fields.push({
-      key: `${question.id}.confidence`,
-      label: `${question.id}.confidence`,
-      path: `${base}.confidence`,
-      type: 'number',
-      description:
-        'How sure the judgment was, 0–1 (the margin between the top two options). Compare against a threshold to decide whether to act or escalate.',
-    })
-    if (question.type === 'boolean') {
-      fields.push({
-        key: `${question.id}.probability`,
-        label: `${question.id}.probability`,
-        path: `${base}.probability`,
-        type: 'number',
-        description: 'Probability the answer is yes, before the threshold.',
-      })
-    }
-    if (question.type === 'scale') {
-      // A bound list has no keys to name until the run resolves it, so the
-      // picker offers a plain string rather than an enum that would be a guess.
-      const levels = question.choicesSource ? [] : (keys?.choices ?? [])
-      fields.push({
-        key: `${question.id}.level`,
-        label: `${question.id}.level`,
-        path: `${base}.level`,
-        type:
-          levels.length > 0
-            ? levels.map((c) => JSON.stringify(c.key)).join(' | ')
-            : 'string',
-        enum: levels.length > 0 ? levels.map((c) => c.key) : undefined,
-        description: 'The level the weighted score landed nearest.',
-      })
-    }
-  }
-  return fields
-}
-
-function decisionNodeOutput(node: DecisionNode): {
-  fields: DataField[]
-  type: string
-} {
+function decisionAgentOutput(
+  decision: NonNullable<WfAgentSummary['decision']>,
+): { fields: DataField[]; type: string } {
   const fields: DataField[] = [
-    ...decisionQuestionFields(node),
+    {
+      key: 'verdict',
+      label: 'verdict',
+      path: 'verdict',
+      type: decision.verdicts.map((v) => JSON.stringify(v)).join(' | ') || 'string',
+      enum: decision.verdicts,
+      description:
+        'The one verdict the agent’s rules rolled the answers up to. Route on this with a Switch.',
+    },
+    {
+      key: 'because',
+      label: 'because',
+      path: 'because',
+      type: 'string',
+      description: 'Which rule fired and what it read.',
+    },
     {
       key: 'reasoning',
       label: 'reasoning',
@@ -611,6 +562,26 @@ function decisionNodeOutput(node: DecisionNode): {
       description: 'How every question was answered.',
     },
   ]
+  for (const id of decision.questionIds) {
+    const base = `answers.${id}`
+    fields.push(
+      {
+        key: `${id}.value`,
+        label: `${id}.value`,
+        path: `${base}.value`,
+        type: 'unknown',
+        description: `The answer to '${id}'.`,
+      },
+      {
+        key: `${id}.confidence`,
+        label: `${id}.confidence`,
+        path: `${base}.confidence`,
+        type: 'number',
+        description:
+          'How sure the judgment was, 0–1 (the margin between the top two options).',
+      },
+    )
+  }
   return { fields, type: 'object' }
 }
 
@@ -696,7 +667,11 @@ function nodeOutput(
 
   switch (node.kind) {
     case 'agent': {
-      const output = maps.agentsById.get(node.config.agentId)?.output
+      const agent = maps.agentsById.get(node.config.agentId)
+      // A decision agent answers rather than generates: its output is the
+      // verdict + per-question answers, not an authored contract.
+      if (agent?.decision) return decisionAgentOutput(agent.decision)
+      const output = agent?.output
       if (!output) return { fields: [], type: 'unknown' }
       return {
         fields: fieldsOf(agentOutputJsonSchema(output), ''),
@@ -770,10 +745,6 @@ function nodeOutput(
     case 'switch':
       // Routing nodes emit their decision, not a forwarded input.
       return { fields: decisionOutputFields(node), type: 'object' }
-
-    case 'decision':
-      // Same rule, richer shape: one subtree per question asked.
-      return decisionNodeOutput(node)
 
     case 'text':
       // A Text node emits its filled-in body — one string, no fields. Reporting

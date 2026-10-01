@@ -33,6 +33,20 @@ export const CAP_FILTERS: {
 ]
 
 export type ChosenFilter = 'all' | 'enabled' | 'disabled'
+
+/**
+ * Which catalog to show. Decision models share this table and this page but a
+ * DIFFERENT resolution path (`getDecider`, not `getModel`), so they are a
+ * category here rather than a capability — a capability is something a model
+ * can additionally do, and this is what a model fundamentally is.
+ */
+export type KindFilter = 'all' | 'chat' | 'decision'
+
+export const KIND_FILTERS: { value: KindFilter; label: string }[] = [
+  { value: 'chat', label: 'Generation' },
+  { value: 'decision', label: 'Decision' },
+]
+
 export type AgeFilter = 'any' | 'new' | 'recent' | 'older'
 
 export const AGE_MAX_DAYS: Record<Exclude<AgeFilter, 'any' | 'older'>, number> = {

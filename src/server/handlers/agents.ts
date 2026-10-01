@@ -1,8 +1,15 @@
 import { changedEntityMetaFields, changedFields } from '../../engine'
+import { toAgentKind, type WfAgentKind } from '../../engine/agent-kind'
+import { runDecisionAgent } from '../../engine/decision-agent'
+import {
+  decisionAgentConfigSchema,
+  decisionAgentInputVariables,
+} from '../../engine/decision-agent-schema'
 import {
   agentConfigSchema,
   agentInputVariables,
   agentModelRequirements,
+  type AgentConfig,
 } from '../../engine/graph'
 import {
   archiveAgent,
@@ -22,16 +29,21 @@ import {
   updateAgentDraft,
   updateAgentMeta,
 } from '../../storage/data'
+import type { WfDb } from '../../storage/client'
 import type {
   AgentPreviewMessage,
   WfAgentDetail,
   WfAgentSummary,
+  WfDecisionAgentSummary,
 } from '../protocol'
 
 import { computeAgentChangeSummary } from './change-summary'
 import {
+  BadRequestError,
   NotFoundError,
   parseAgentConfig,
+  parseConfigOfKind,
+  parseDecisionAgentConfig,
   parseStringRecord,
   requireAgentExists,
   requireHook,
@@ -58,10 +70,24 @@ function parsePreviewMessages(value: unknown): AgentPreviewMessage[] {
   return out
 }
 
+/** The decision half of a summary, or null when the config won't parse. */
+function decisionSummary(config: unknown): WfDecisionAgentSummary | null {
+  const parsed = decisionAgentConfigSchema.safeParse(config)
+  if (!parsed.success) return null
+  const cfg = parsed.data
+  return {
+    questionCount: cfg.questions.length,
+    questionIds: cfg.questions.map((q) => q.id),
+    verdicts: cfg.verdicts,
+    inputVariables: decisionAgentInputVariables(cfg),
+  }
+}
+
 function agentSummary(
   a: {
     id: string
     name: string
+    kind?: string | null
     description: string | null
     icon: string | null
     color: string | null
@@ -71,28 +97,58 @@ function agentSummary(
   workflows: { id: string; name: string }[] = [],
   latestVersionNumber: number | null = null,
 ): WfAgentSummary {
+  const kind = toAgentKind(a.kind)
   // `config` is an untyped JSON column; parse it defensively so a malformed row
   // degrades to "no variables/output" rather than throwing the whole listing.
-  const parsed = config ? agentConfigSchema.safeParse(config) : null
+  // A decision agent's config never satisfies `agentConfigSchema`, which is why
+  // the parse is gated on the kind rather than tried and shrugged off — a
+  // `safeParse` that always fails would silently blank half the card.
+  const parsed =
+    config && kind === 'generation' ? agentConfigSchema.safeParse(config) : null
   const cfg = parsed?.success ? parsed.data : null
+  const decision = kind === 'decision' && config ? decisionSummary(config) : null
   return {
     id: a.id,
     name: a.name,
+    kind,
     description: a.description,
     icon: a.icon,
     color: a.color,
     createdAt: a.createdAt.getTime(),
     // The union across BOTH prompts — a variable used only in the user message is
     // just as much a required node binding as one in the system prompt.
-    inputVariables: cfg ? agentInputVariables(cfg) : [],
+    inputVariables: cfg
+      ? agentInputVariables(cfg)
+      : (decision?.inputVariables ?? []),
     output: cfg?.output ?? null,
-    modelId: cfg?.modelId ?? null,
+    // `modelId` is the one field both shapes happen to share by name, so it is
+    // read from whichever config this agent actually has — a decision agent
+    // that reported a null model would look unpublished on every card.
+    modelId: cfg?.modelId ?? decisionModelId(kind, config),
     toolIds: cfg?.toolIds ?? [],
     modelRequirements: cfg ? agentModelRequirements(cfg) : null,
     inputKind: cfg?.inputKind ?? 'task',
     latestVersionNumber,
     workflows,
+    decision,
   }
+}
+
+/**
+ * The stored kind of one agent — read before a write, because the kind is what
+ * says which schema the incoming config is checked against and the client is
+ * not trusted to say. One indexed lookup on a path that is already doing
+ * several.
+ */
+async function agentKindOf(db: WfDb, agentId: string): Promise<WfAgentKind> {
+  return toAgentKind((await getAgent(db, agentId))?.agent.kind)
+}
+
+/** A decision config's model id, read without committing to the whole parse. */
+function decisionModelId(kind: WfAgentKind, config: unknown): string | null {
+  if (kind !== 'decision' || !config || typeof config !== 'object') return null
+  const modelId = (config as { modelId?: unknown }).modelId
+  return typeof modelId === 'string' && modelId.length > 0 ? modelId : null
 }
 
 export function buildAgentHandlers<TDeps>(
@@ -114,6 +170,7 @@ export function buildAgentHandlers<TDeps>(
   | 'archiveAgent'
   | 'listAgentCalls'
   | 'runAgentPreview'
+  | 'runDecisionPreview'
   | 'runToolPreview'
 > {
   return {
@@ -143,6 +200,7 @@ export function buildAgentHandlers<TDeps>(
       // true answer has. Blast radius is the first question before editing a
       // draft and the precondition for any publish or archive.
       const workflows = await listWorkflowsReferencingAgent(c.db, { agentId })
+      const kind = toAgentKind(result.agent.kind)
       const detail: WfAgentDetail = {
         agent: agentSummary(
           result.agent,
@@ -151,13 +209,13 @@ export function buildAgentHandlers<TDeps>(
           result.currentVersion?.versionNumber ?? null,
         ),
         draft: result.draft
-          ? { config: agentConfigSchema.parse(result.draft.config) }
+          ? { config: parseConfigOfKind(kind, result.draft.config) }
           : null,
         currentVersion: result.currentVersion
           ? {
               id: result.currentVersion.id,
               versionNumber: result.currentVersion.versionNumber,
-              config: agentConfigSchema.parse(result.currentVersion.config),
+              config: parseConfigOfKind(kind, result.currentVersion.config),
             }
           : null,
       }
@@ -166,20 +224,28 @@ export function buildAgentHandlers<TDeps>(
 
     createAgent: async (c) => {
       const p = c.params
+      // The kind is fixed HERE and nowhere else — there is no update path for
+      // it, so the config is checked against the schema this choice names and
+      // every later write is checked against the stored value.
+      const kind = toAgentKind(p.kind)
       return await createAgent(c.db, {
         name: p.name,
+        kind,
         description: p.description,
         icon: p.icon,
         color: p.color,
         createdBy: c.ctx.userId,
-        config: parseAgentConfig(p.config),
+        config: parseConfigOfKind(kind, p.config),
       })
     },
 
     updateAgentDraft: async (c) => {
       const { agentId } = c.params
-      const config = parseAgentConfig(c.params.config)
       await requireAgentExists(c.db, agentId)
+      const config = parseConfigOfKind(
+        await agentKindOf(c.db, agentId),
+        c.params.config,
+      )
       await updateAgentDraft(c.db, {
         agentId,
         config,
@@ -201,16 +267,24 @@ export function buildAgentHandlers<TDeps>(
     publishAgent: async (c) => {
       const p = c.params
       const { agentId } = p
-      const config = parseAgentConfig(p.config)
       // Read the outgoing config — the base for the diff, including a possible
       // background summary — before publishAgent bumps the latest pointer.
       const owner = await getAgent(c.db, agentId)
       if (!owner) {
         throw new NotFoundError('Agent not found')
       }
-      const previousConfig = owner.currentVersion
-        ? parseStoredAgentConfig(owner.currentVersion.config)
-        : null
+      const kind = toAgentKind(owner.agent.kind)
+      const config = parseConfigOfKind(kind, p.config)
+      // The AI change summary and the field-level diff are both written
+      // against `AgentConfig`'s field names, so they only apply to a
+      // generation agent. A decision agent publishes with the change LOG
+      // entry and its change note, and no generated summary — summarizing a
+      // rules table is a different job from summarizing a prompt, and
+      // pretending otherwise would produce confident nonsense.
+      const previousConfig =
+        kind === 'generation' && owner.currentVersion
+          ? parseStoredAgentConfig(owner.currentVersion.config)
+          : null
       const out = await publishAgent(c.db, {
         agentId,
         config,
@@ -225,9 +299,10 @@ export function buildAgentHandlers<TDeps>(
         entityKind: 'agent',
         entityId: agentId,
         action: 'publish',
-        fields: previousConfig
-          ? changedFields(previousConfig, config)
-          : ['initial'],
+        fields:
+          previousConfig && kind === 'generation'
+            ? changedFields(previousConfig, config as AgentConfig)
+            : ['initial'],
         after: { versionId: out.versionId, versionNumber: out.versionNumber },
         note: p.changeNote ?? null,
       })
@@ -238,14 +313,14 @@ export function buildAgentHandlers<TDeps>(
       // explicit summarizeAgentChanges call. `env` is resolved now, inside the
       // request scope, so the deferred work doesn't depend on request-bound
       // context that may be gone once the response is sent.
-      if (!p.aiSummary && opts.waitUntil) {
+      if (!p.aiSummary && opts.waitUntil && kind === 'generation') {
         const env = await c.env()
         opts.waitUntil(
           (async () => {
             try {
               const summary = await computeAgentChangeSummary(opts, {
                 previousConfig,
-                nextConfig: config,
+                nextConfig: config as AgentConfig,
                 ctx: c.ctx,
                 req: c.req,
                 env,
@@ -266,11 +341,19 @@ export function buildAgentHandlers<TDeps>(
 
     summarizeAgentChanges: async (c) => {
       const { agentId } = c.params
-      const nextConfig = parseAgentConfig(c.params.config)
       const owner = await getAgent(c.db, agentId)
       if (!owner) {
         throw new NotFoundError('Agent not found')
       }
+      if (toAgentKind(owner.agent.kind) !== 'generation') {
+        // The summarizer's prompt is written around a system prompt, tools and
+        // an output contract. Pointed at a question set it would describe
+        // fields that aren't there — so this says no rather than guessing.
+        throw new BadRequestError(
+          'Change summaries are only generated for generation agents. Write the change note yourself.',
+        )
+      }
+      const nextConfig = parseAgentConfig(c.params.config)
       const previousConfig = owner.currentVersion
         ? parseStoredAgentConfig(owner.currentVersion.config)
         : null
@@ -288,7 +371,7 @@ export function buildAgentHandlers<TDeps>(
       if (!v) {
         return null
       }
-      return { config: v.config, versionNumber: v.versionNumber }
+      return { config: v.config, kind: v.kind, versionNumber: v.versionNumber }
     },
 
     listAgentVersions: async (c) => {
@@ -422,6 +505,36 @@ export function buildAgentHandlers<TDeps>(
         context,
         ctx: c.ctx,
         req: c.req,
+      })
+    },
+
+    runDecisionPreview: async (c) => {
+      // Pure SDK — no host hook. A decision agent is one call through the
+      // config's own `getDecider` seam, so there is no tool registry to build,
+      // no run scope to assemble and nothing live to touch. That is also why
+      // this preview has none of `runAgentPreview`'s safety apparatus: there
+      // is no simulated-vs-live axis when nothing executes but the provider.
+      const getDecider = opts.config.getDecider
+      if (!getDecider) {
+        throw new BadRequestError(
+          'No decision provider is wired on this host (WfSdkConfig.getDecider), so a decision agent cannot run here.',
+        )
+      }
+      // One `DecisionPreviewInput`, validated as a unit — `state` is any JSON
+      // value, so the schema table passes the whole payload through.
+      const p = c.params as {
+        config?: unknown
+        state?: unknown
+        variables?: unknown
+      }
+      const config = parseDecisionAgentConfig(p.config)
+      const env = await c.env()
+      return await runDecisionAgent({
+        config,
+        state: p.state,
+        variables: parseStringRecord(p.variables),
+        getDecider: (modelId) =>
+          getDecider(modelId, { triggerKind: 'preview', env }),
       })
     },
 

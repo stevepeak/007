@@ -2,6 +2,7 @@ import type { EvalSampleInput } from '../../server/protocol'
 
 import { ChecksList } from './eval-sample-checks'
 import { emptyInputFor, SampleInputEditor } from './eval-sample-input'
+import { DecisionStateEditor } from './eval-sample-decision'
 import { SampleToolsEditor } from './eval-sample-tools'
 import { StepFlow, type Step } from './step-flow'
 import type { Draft, useEvalSampleDraft } from './use-eval-sample-draft'
@@ -14,6 +15,7 @@ const INPUT_TITLES: Record<EvalSampleInput['kind'], string> = {
   task: 'Input',
   conversation: 'Conversation',
   trigger: 'Trigger payload',
+  decision: 'State',
 }
 
 /**
@@ -41,11 +43,19 @@ export function SampleConfigSteps({
           {state.kindMismatch ? (
             <KindMismatchNotice state={state} draft={draft} />
           ) : null}
-          <SampleInputEditor
-            targetId={set?.targetId ?? ''}
-            value={draft.input}
-            onChange={(input) => edit({ ...draft, input })}
-          />
+          {draft.input.kind === 'decision' ? (
+            <DecisionStateEditor
+              value={draft.input}
+              variableNames={state.decisionContract?.inputVariables ?? []}
+              onChange={(input) => edit({ ...draft, input })}
+            />
+          ) : (
+            <SampleInputEditor
+              targetId={set?.targetId ?? ''}
+              value={draft.input}
+              onChange={(input) => edit({ ...draft, input })}
+            />
+          )}
         </div>
       ),
     },
@@ -78,6 +88,7 @@ export function SampleConfigSteps({
         hasTools={state.hasTools}
         outputSchema={state.outputSchema}
         allowToolIds={state.allowToolIds}
+        decisionContract={state.decisionContract}
         openIndex={state.openCheck}
         onOpenChange={state.setOpenCheck}
         onChange={(checks) => edit({ ...draft, checks })}

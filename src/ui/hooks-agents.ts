@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import type { AgentConfig } from '../engine/graph'
+import type { WfAgentKind } from '../engine/agent-kind'
+import type { AnyAgentConfig } from '../engine/decision-agent-schema'
 import type { AgentPreviewInput, WfChangeSummary } from '../server/protocol'
 
 import { useWfClient } from './context'
@@ -51,7 +52,7 @@ export function useAgentVersions(agentId: string) {
 export function useSummarizeAgentChanges() {
   const client = useWfClient()
   return useMutation({
-    mutationFn: (input: { agentId: string; config: AgentConfig }) => {
+    mutationFn: (input: { agentId: string; config: AnyAgentConfig }) => {
       return client.summarizeAgentChanges(input)
     },
   })
@@ -63,10 +64,12 @@ export function useCreateAgent() {
       client,
       input: {
         name: string
+        /** Immutable after creation — see `wf_agent.kind`. */
+        kind?: WfAgentKind
         description?: string
         icon?: string
         color?: string
-        config: AgentConfig
+        config: AnyAgentConfig
       },
     ) => client.createAgent(input),
     () => [keys.agents],
@@ -75,7 +78,7 @@ export function useCreateAgent() {
 
 export function useSaveAgentDraft() {
   return useWfMutation(
-    (client, input: { agentId: string; config: AgentConfig }) => {
+    (client, input: { agentId: string; config: AnyAgentConfig }) => {
       return client.updateAgentDraft(input)
     },
     (input) => [keys.agent(input.agentId)],
@@ -88,7 +91,7 @@ export function usePublishAgent() {
   return useMutation({
     mutationFn: (input: {
       agentId: string
-      config: AgentConfig
+      config: AnyAgentConfig
       changeNote?: string
       aiSummary?: WfChangeSummary
     }) => client.publishAgent(input),

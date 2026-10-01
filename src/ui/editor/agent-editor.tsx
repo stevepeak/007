@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import type { AgentConfig } from '../../engine'
+import type { AgentConfig, DecisionAgentConfig } from '../../engine'
 import type { WfAgentCall } from '../../server/protocol'
 import { ActivityList } from '../activity/activity-list'
 import { AGENT_ICONS, DEFAULT_AGENT_COLOR } from '../agent-appearance'
@@ -20,6 +20,7 @@ import { AgentEvalsPanel } from './agent-editor-evals'
 import { AgentEditorHeaderActions } from './agent-editor-header-actions'
 import { PlaygroundPanel } from './agent-editor-playground'
 import { PublishAgentDialog } from './agent-editor-publish'
+import { DecisionAgentEditorInner } from './decision-agent-editor'
 import {
   useAgentDraft,
   useAgentMeta,
@@ -68,20 +69,33 @@ export function AgentEditor({
     >
       {(data) => {
         const initialConfig = data.draft?.config ?? data.currentVersion?.config
-        return initialConfig ? (
-          <AgentEditorInner
-            agentId={agentId}
-            initialConfig={initialConfig}
-            initialName={data.agent.name}
-            initialDescription={data.agent.description ?? ''}
-            // `||`, not `??`: the column holds '' for agents that predate
-            // appearance, and an empty icon name resolves to nothing.
-            initialIcon={data.agent.icon || AGENT_ICONS[0].name}
-            initialColor={data.agent.color || DEFAULT_AGENT_COLOR}
-            className={className}
-            onPublished={onPublished}
+        if (!initialConfig) return null
+        const shared = {
+          agentId,
+          initialName: data.agent.name,
+          initialDescription: data.agent.description ?? '',
+          // `||`, not `??`: the column holds '' for agents that predate
+          // appearance, and an empty icon name resolves to nothing.
+          initialIcon: data.agent.icon || AGENT_ICONS[0].name,
+          initialColor: data.agent.color || DEFAULT_AGENT_COLOR,
+          className,
+          onPublished,
+        }
+        // The entity's `kind` picks the editor, and the cast beside it is the
+        // narrowing TypeScript can't make: `config` is the union of both
+        // shapes and `kind` is the discriminator, but they are sibling fields
+        // on different objects. One cast, at the one place the kind is read.
+        return data.agent.kind === 'decision' ? (
+          <DecisionAgentEditorInner
+            {...shared}
+            initialConfig={initialConfig as DecisionAgentConfig}
           />
-        ) : null
+        ) : (
+          <AgentEditorInner
+            {...shared}
+            initialConfig={initialConfig as AgentConfig}
+          />
+        )
       }}
     </QueryState>
   )

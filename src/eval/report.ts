@@ -179,9 +179,17 @@ export type AgentCallTotals = {
 /**
  * Roll the per-result agent-call stats up into run-level figures.
  *
- * Everything is agent-call-scoped upstream in `loadRunStats`, so judge/test
- * grading never enters these numbers — which is what makes `totalCostUsd` the
- * cost of the thing under test rather than the cost of measuring it.
+ * Everything is scoped to the thing under test before it reaches here — agent
+ * cells by `loadRunStats` (the run's agent steps only), decision cells by
+ * `runlessCellStats` (the decider call only) — so judge and test grading never
+ * enter these numbers. That is what makes `totalCostUsd` the cost of what is
+ * being measured rather than the cost of measuring it.
+ *
+ * `count` is cells that reported stats AT ALL, and a decision cell now does, so
+ * a decision sweep reports a real bill instead of `measuredCells: 0`. It still
+ * contributes no `avgDurationMs`: there was no run to time, and inventing one
+ * from wall-clock would make a decision cell look slower than the provider call
+ * it actually is.
  */
 export function agentCallTotals(
   results: WfEvalResultDTO[],

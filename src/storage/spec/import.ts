@@ -14,7 +14,7 @@
 import { eq } from 'drizzle-orm'
 
 import {
-  agentConfigSchema,
+  toAgentKind,
   workflowGraphSchema,
   workflowGraphShapeSchema,
   type WorkflowGraph,
@@ -46,7 +46,7 @@ import type { WfChangeAction, WfChangeEntityKind } from '../schema'
 import { graphSlugsToIds } from './graph-refs'
 import { slugify } from './slug'
 import type { EvalSpec, SpecBundle } from './spec-schema'
-import { specBundleSchema } from './spec-schema'
+import { agentSpecConfigSchema, specBundleSchema } from './spec-schema'
 import { payloadEqual } from './util'
 
 export type ChangeAction = 'create' | 'update' | 'unchanged' | 'archive'
@@ -233,6 +233,11 @@ async function reconcileAgents(
 
   for (const spec of bundle.agents) {
     const row = existing.get(spec.slug)
+    // Validated here, where the kind is finally known — the spec keeps `config`
+    // opaque because the two shapes are disjoint and a union would report the
+    // wrong one as a dozen missing fields rather than as one wrong kind.
+    const configSchema = agentSpecConfigSchema(spec.agentKind)
+    const config = configSchema.parse(spec.config)
     if (!row) {
       changes.push({ kind: 'agent', slug: spec.slug, action: 'create' })
       if (opts.dryRun) {
@@ -246,7 +251,8 @@ async function reconcileAgents(
         icon: spec.icon ?? undefined,
         color: spec.color ?? undefined,
         createdBy: opts.actor,
-        config: spec.config,
+        kind: spec.agentKind,
+        config,
       })
       if (spec.archived) await markArchived(db, wfAgent, agentId)
       idBySlug.set(spec.slug, agentId)
@@ -254,13 +260,21 @@ async function reconcileAgents(
     }
 
     idBySlug.set(spec.slug, row.id)
+    // The kind is IMMUTABLE, so a spec that disagrees with the row is not an
+    // update — it is two different agents sharing a slug, and publishing one
+    // over the other would write a config nothing can read back.
+    if (toAgentKind(row.kind) !== spec.agentKind) {
+      throw new Error(
+        `Agent '${spec.slug}' is a ${toAgentKind(row.kind)} agent here and a ${spec.agentKind} agent in the spec. An agent's kind cannot change — rename one of them.`,
+      )
+    }
     const metaChanged = agentMetaChanged(row, spec)
     const current = await latestAgentVersion(db, row.id)
     // Compare *normalized* configs: a stored config missing a field the schema
     // now defaults (e.g. `subAgents`) is behaviorally identical to the spec's,
     // so it must not read as drift.
     const configChanged =
-      !current || !normalizedEqual(agentConfigSchema, current.config, spec.config)
+      !current || !normalizedEqual(configSchema, current.config, config)
 
     if (!metaChanged && !configChanged) {
       changes.push({ kind: 'agent', slug: spec.slug, action: 'unchanged' })
@@ -284,7 +298,7 @@ async function reconcileAgents(
     if (configChanged) {
       await publishAgent(db, {
         agentId: row.id,
-        config: spec.config,
+        config,
         changeNote: opts.changeNote ?? 'spec import',
         publishedBy: opts.actor,
       })

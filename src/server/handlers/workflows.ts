@@ -1,6 +1,7 @@
 import { loadConnectorCatalog } from '../../connectors/registry'
 import {
   changedEntityMetaFields,
+  collectAgentRefIssues,
   collectGraphIssues,
   collectToolArgIssues,
   workflowGraphSchema,
@@ -14,6 +15,7 @@ import {
   discardDraft,
   getVersionGraph,
   getWorkflow,
+  listAgentRefs,
   listVersions,
   listWorkflowsWithStats,
   parseStoredGraph,
@@ -354,6 +356,11 @@ export function buildWorkflowHandlers<TDeps>(
         }
       }
       issues.push(...collectToolArgIssues(graph, await toolInputs(c.db)))
+      // The agent-pointer counterpart: a dangling `agentId` or a pin on a
+      // version that was never published fails in `resolveRunManifest`, before
+      // the run records a single step — so it has to be caught here rather than
+      // by the first trigger that reaches it.
+      issues.push(...collectAgentRefIssues(graph, await listAgentRefs(c.db)))
 
       return {
         source,

@@ -262,9 +262,14 @@ export function useAgentDraft({
   async function loadVersion(versionId: string) {
     const v = await client.getAgentVersion(versionId)
     setShowVersions(false)
-    if (!v) return
+    // Kind-guarded: a version id is all this holds, and a decision config
+    // rendered through the prompt editor would be a page of empty fields. It
+    // cannot happen through the UI — a version belongs to one agent and an
+    // agent has one kind — so this is a backstop, not a path.
+    if (!v || v.kind !== 'generation') return
+    const config = v.config as AgentConfig
     history.load({
-      state: { config: v.config, zodSource: initialZodSource(v.config) },
+      state: { config, zodSource: initialZodSource(config) },
       label: `Loaded v${v.versionNumber}`,
     })
   }

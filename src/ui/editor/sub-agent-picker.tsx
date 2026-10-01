@@ -58,6 +58,11 @@ export function SubAgentPicker({
 
   const options = useMemo<PickOption[]>(() => {
     const a = (agents.data ?? [])
+      // Generation agents only, for the same reason the agent node picker
+      // filters: the synthesized `spawn_*` tool derives its input schema from
+      // the target's prompt variables and runs it through the agent loop,
+      // neither of which a decision agent has.
+      .filter((x: WfAgentSummary) => x.kind === 'generation')
       .filter((x: WfAgentSummary) => x.id !== currentAgentId)
       .map((x: WfAgentSummary) => ({
         key: `agent:${x.id}`,

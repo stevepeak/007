@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react'
 import { AgentSelect, type AgentSelectValue } from '../agent-select'
 import { useWfComponents } from '../context'
 import { useAgents, useCreateEvalSet, useEvalSets } from '../hooks'
-import { IdeaSpark } from '../idea-spark'
 import { Modal } from '../modal'
 
 // Create-goal dialog. A goal (wf_eval_set) exists to grade ONE target, so
@@ -80,33 +79,7 @@ export function NewGoalDialog({ open, onClose, onCreated }: NewGoalDialogProps) 
     >
       <div className="space-y-4 px-5 py-4">
         <div className="space-y-1">
-          <div className="flex items-center gap-1.5">
-            <Label>Agent to test</Label>
-            <IdeaSpark
-              title="Let AI seed samples & checks from the agent"
-              hint="Idea: generate sample data + checks from the agent itself"
-            >
-              <p>
-                The agent already describes what it&apos;s for — its prompt, its
-                declared inputs, its tools. On create, AI could read that and
-                propose a starter kit for the goal:
-              </p>
-              <ul className="list-disc space-y-1 pl-5">
-                <li>
-                  a handful of realistic <strong>samples</strong> whose inputs
-                  match the variables the agent actually declares
-                </li>
-                <li>
-                  candidate <strong>checks</strong> — the binary assertions and
-                  scored judges that would prove the agent does its job
-                </li>
-              </ul>
-              <p>
-                Suggestions only — you accept, edit, or discard each one — so a
-                blank goal starts warm instead of empty.
-              </p>
-            </IdeaSpark>
-          </div>
+          <Label>Agent to test</Label>
           <AgentSelect
             agents={agents}
             value={target}

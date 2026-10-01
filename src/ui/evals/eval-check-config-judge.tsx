@@ -103,7 +103,7 @@ export function JudgeConfig({
             <Label>Output field</Label>
             <FieldHelp title="Output field">
               <p>
-                Pin the judge to a single field of the target’s output instead
+                Pin the judge to a single field of the agent’s output instead
                 of the whole thing. The options are the fields the agent
                 actually declares, so a check can’t end up aimed at a field that
                 will never be there.

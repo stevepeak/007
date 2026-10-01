@@ -1,20 +1,22 @@
-import { ExternalLink, Search } from 'lucide-react'
+import { Cpu, ExternalLink, Scale, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import type { ModelCapabilities, ModelCatalogEntry } from '../server/protocol'
 
 import { cn } from './cn'
 import { EmptyState } from './evals/shared'
-import { FilterSelect } from './filters'
+import { FilterPill, FilterPillMulti } from './filters'
 import { useModelCatalog, useProviderBudgets } from './hooks'
 import { ProviderCard } from './models-list-provider-card'
 import {
   AGE_MAX_DAYS,
   CAP_FILTERS,
   DAY_MS,
+  KIND_FILTERS,
   OPENROUTER_COMPARE_URL,
   type AgeFilter,
   type ChosenFilter,
+  type KindFilter,
 } from './models-list-shared'
 import { QueryState } from './query-state'
 import { usePickedAt } from './use-now'
@@ -35,10 +37,9 @@ export function ModelsList({ className }: ModelsListProps) {
   // renders without waiting on a round-trip to each provider's API.
   const budgets = useProviderBudgets()
   const [query, setQuery] = useState('')
-  const [caps, setCaps] = useState<ReadonlySet<keyof ModelCapabilities>>(
-    () => new Set(),
-  )
+  const [caps, setCaps] = useState<(keyof ModelCapabilities)[]>([])
   const [chosen, setChosen] = useState<ChosenFilter>('all')
+  const [kind, setKind] = useState<KindFilter>('all')
   const [age, pickedAt, setAge] = usePickedAt<AgeFilter>('any')
 
   const modelsByProvider = useMemo(() => {
@@ -71,6 +72,9 @@ export function ModelsList({ className }: ModelsListProps) {
       }
       if (chosen === 'enabled' && !m.enabled) return false
       if (chosen === 'disabled' && m.enabled) return false
+      // Absent reads as 'chat', matching the column's default — a row written
+      // before the catalogs were separated is a chat model.
+      if (kind !== 'all' && (m.kind ?? 'chat') !== kind) return false
       // Type filter matches ALL selected capabilities.
       for (const k of caps) if (m.capabilities?.[k] !== true) return false
       if (age !== 'any') {
@@ -85,24 +89,20 @@ export function ModelsList({ className }: ModelsListProps) {
       }
       return true
     }
-  }, [pickedAt, query, caps, chosen, age])
+  }, [pickedAt, query, caps, chosen, kind, age])
 
   const anyActive =
-    query.trim() !== '' || caps.size > 0 || chosen !== 'all' || age !== 'any'
-
-  const toggleCap = (key: keyof ModelCapabilities) => {
-    return setCaps((prev) => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-  }
+    query.trim() !== '' ||
+    caps.length > 0 ||
+    chosen !== 'all' ||
+    kind !== 'all' ||
+    age !== 'any'
 
   const clearFilters = () => {
     setQuery('')
-    setCaps(new Set())
+    setCaps([])
     setChosen('all')
+    setKind('all')
     setAge('any')
   }
 
@@ -150,48 +150,54 @@ export function ModelsList({ className }: ModelsListProps) {
             />
           </label>
 
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
-            {/* Type: capability chips (match ALL selected). */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs text-neutral-400">Type</span>
-              {CAP_FILTERS.map(({ key, label, icon: Icon }) => {
-                const on = caps.has(key)
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => toggleCap(key)}
-                    className={cn(
-                      'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors',
-                      on
-                        ? 'border-neutral-900 bg-neutral-900 text-white'
-                        : 'border-neutral-200 text-neutral-600 hover:bg-neutral-50',
-                    )}
-                  >
-                    <Icon className="size-3" />
+          <div className="flex flex-wrap items-center gap-2">
+            <FilterPillMulti
+              label="Type"
+              value={caps}
+              onChange={(v) => setCaps(v as (keyof ModelCapabilities)[])}
+              options={CAP_FILTERS.map(({ key, label, icon: Icon }) => ({
+                value: key,
+                label,
+                node: (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Icon className="size-3.5" />
                     {label}
-                  </button>
-                )
+                  </span>
+                ),
+              }))}
+            />
+            <FilterPill
+              label="Kind"
+              value={kind === 'all' ? '' : kind}
+              onChange={(v) => setKind((v || 'all') as KindFilter)}
+              options={KIND_FILTERS.map(({ value, label }) => {
+                const Icon = value === 'decision' ? Scale : Cpu
+                return {
+                  value,
+                  label,
+                  node: (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Icon className="size-3.5" />
+                      {label}
+                    </span>
+                  ),
+                }
               })}
-            </div>
-
-            <FilterSelect
+            />
+            <FilterPill
               label="Chosen"
-              value={chosen}
-              onChange={(v) => setChosen(v as ChosenFilter)}
+              value={chosen === 'all' ? '' : chosen}
+              onChange={(v) => setChosen((v || 'all') as ChosenFilter)}
               options={[
-                { value: 'all', label: 'All' },
                 { value: 'enabled', label: 'Enabled' },
                 { value: 'disabled', label: 'Disabled' },
               ]}
             />
-            <FilterSelect
+            <FilterPill
               label="Age"
-              value={age}
-              onChange={(v) => setAge(v as AgeFilter)}
+              value={age === 'any' ? '' : age}
+              onChange={(v) => setAge((v || 'any') as AgeFilter)}
               options={[
-                { value: 'any', label: 'Any' },
                 { value: 'new', label: 'New (≤30d)' },
                 { value: 'recent', label: 'Recent (≤90d)' },
                 { value: 'older', label: 'Older (>90d)' },

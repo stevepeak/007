@@ -33,7 +33,11 @@ export {
   type SeededMessage,
   type SeededToolCall,
 } from '../engine/eval-schema'
-export { evalInvocation, type EvalInvocation } from './invoke'
+export {
+  decisionInvocation,
+  evalInvocation,
+  type EvalInvocation,
+} from './invoke'
 export {
   collectSeededToolCalls,
   seededMessagesToUiMessages,
@@ -67,7 +71,9 @@ export {
   expandEvalCells,
   parseEvalDriveState,
   parseEvalPlan,
+  resolveEvalCellMode,
   type EvalCell,
+  type EvalCellMode,
   type EvalDriveState,
   type EvalPlan,
 } from './plan'

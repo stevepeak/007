@@ -51,9 +51,10 @@ export {
   branchOperatorTakesValue,
   DECISION_NODE_KINDS,
   // The decision-provider domain (`decision.ts`) — the second kind of provider,
-  // and the Decision node that judges with it.
+  // and the decision agents that judge with it.
   DECISION_QUESTION_TYPES,
   DEFAULT_DECISION_THRESHOLD,
+  buildProviderQuestion,
   chunkQuestions,
   distributionConfidence,
   questionChoices,
@@ -68,8 +69,6 @@ export {
   type DecisionAnswer,
   type DecisionDistributionEntry,
   type DecisionModelOption,
-  type DecisionNode,
-  type DecisionNodeQuestion,
   type DecisionOption,
   type DecisionProvider,
   type DecisionProviderKind,
@@ -153,7 +152,6 @@ export { answerCriticalIds } from './graph-answer-cone'
 export { ancestorIds, predecessorIds } from './graph-traverse'
 export {
   nodeRefs,
-  renameGraphRefPaths,
   stripGraphRefsTo,
   stripNodeRefsTo,
   type NodeRef,
@@ -198,6 +196,11 @@ export {
   type GraphIssueSeverity,
 } from './graph-issues'
 export { collectToolArgIssues, type ToolInputSchemas } from './graph-tool-args'
+export {
+  collectAgentRefIssues,
+  type AgentRefEntry,
+  type AgentRefIndex,
+} from './graph-agent-refs'
 export {
   DEFAULT_NODE_BUDGET,
   Scheduler,
@@ -283,6 +286,7 @@ export {
   type ModelCapabilities,
   type ModelCatalog,
   type ModelCatalogEntry,
+  type ModelKind,
   type ModelFactory,
   type ModelListContext,
   type ModelOption,
@@ -367,12 +371,48 @@ export {
 // (a native decider for some models, emulation for the rest).
 export { createChatDecider, type ChatDeciderOptions } from './decision-chat'
 
-// The SDK's built-in agent-facing decision tool. Its own module rather than a
-// re-export through `./graph`: it is a tool, not part of the graph model.
+// ── Decision agents (ART-238) ───────────────────────────────────────────────
+// A second kind of `wf_agent`: a question set judged by a decider and rolled up
+// into one verdict. `agent-kind.ts` holds the discriminator (also read by the
+// storage schema), `decision-agent-schema.ts` the authored shape, and
+// `decision-agent.ts` the direct invoke path the playground, the eval runner
+// and MCP all call — no graph, no manifest, one provider call.
 export {
-  assess,
-  createAssessTool,
-  type AssessArgs,
-  type AssessResult,
-  type CreateAssessToolOptions,
-} from './decision-tool'
+  EVAL_WRAPPER_NAME_PREFIX,
+  evalWrapperName,
+} from './eval-wrapper-name'
+export {
+  DEFAULT_AGENT_KIND,
+  WF_AGENT_KINDS,
+  toAgentKind,
+  type WfAgentKind,
+} from './agent-kind'
+export {
+  DECISION_CONDITION_OPS,
+  DECISION_CONDITION_OPS_BY_TYPE,
+  decisionAgentChoiceSchema,
+  decisionAgentConfigIssues,
+  decisionAgentConfigSchema,
+  decisionAgentInputVariables,
+  decisionAgentProviderChoices,
+  decisionAgentQuestionSchema,
+  decisionRuleConditionSchema,
+  decisionRuleSchema,
+  starterDecisionAgentConfig,
+  type AnyAgentConfig,
+  type DecisionAgentChoice,
+  type DecisionAgentConfig,
+  type DecisionAgentQuestion,
+  type DecisionConditionOp,
+  type DecisionRule,
+  type DecisionRuleCondition,
+} from './decision-agent-schema'
+export {
+  applyDecisionRules,
+  decisionAgentQuestions,
+  decisionAgentReasoning,
+  runDecisionAgent,
+  type DecisionAgentResult,
+  type DecisionRollup,
+  type RunDecisionAgentInput,
+} from './decision-agent'

@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm'
 
+import { decisionAgentConfigSchema } from '../../engine/decision-agent-schema'
 import {
   agentConfigSchema,
   type WfRunManifestEntry,
@@ -69,11 +70,30 @@ export async function resolveRunManifest(
     }
     const agent = (
       await db
-        .select({ name: wfAgent.name })
+        .select({ name: wfAgent.name, kind: wfAgent.kind })
         .from(wfAgent)
         .where(eq(wfAgent.id, agentId))
         .limit(1)
     )[0]
+    // A DECISION agent is a question set, not a prompt and a tool loop, so it
+    // freezes into its own entry kind — parsed against its own schema BEFORE
+    // `agentConfigSchema` ever sees it, which would otherwise throw
+    // `prompt: expected string, received undefined` and leave the run sitting at
+    // `queued` with no error and no logs (manifest resolution runs before
+    // `markRunRunning`). It floats or pins like any agent: the same node shape
+    // points at either kind, and `runNode` asks the manifest which it got.
+    if (agent?.kind === 'decision') {
+      entries.push({
+        kind: 'decision-agent',
+        id: agentId,
+        pinnedVersion: pin,
+        versionId: version.id,
+        versionNumber: version.versionNumber,
+        name: agent.name,
+        config: decisionAgentConfigSchema.parse(version.config),
+      })
+      return
+    }
     const config = agentConfigSchema.parse(version.config)
     // Freeze the model's context window alongside the config: the engine's
     // overflow guard needs it, and `getModel` only returns a model, not its

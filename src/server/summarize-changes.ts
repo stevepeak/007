@@ -64,14 +64,61 @@ export function repairSummaryText(text: string): string | null {
   }
 
   const lines = body.split('\n')
-  const firstIdx = lines.findIndex((l) => l.trim().length > 0)
+  let firstIdx = lines.findIndex((l) => l.trim().length > 0)
   if (firstIdx === -1) return null
-  const short = lines[firstIdx].trim().replace(/\.$/, '')
+
+  // Skip a conversational lead-in. A model answering this in prose frequently
+  // opens with one ("Let me compare the two versions:"), and taking line 1
+  // blindly made THAT the published subject — a version whose entire recorded
+  // summary was the model clearing its throat, with the real content pushed
+  // down into the body where the history never shows it.
+  //
+  // Only ever skips when a later non-empty line exists, so a genuine one-line
+  // subject is never discarded in favour of nothing.
+  while (firstIdx < lines.length) {
+    const candidate = lines[firstIdx].trim()
+    const next = lines.findIndex(
+      (l, i) => i > firstIdx && l.trim().length > 0,
+    )
+    if (next === -1 || !isPreamble(candidate)) break
+    firstIdx = next
+  }
+
+  const short = stripLeadIn(lines[firstIdx].trim()).replace(/\.$/, '')
+  if (!short) return null
   const long = lines
     .slice(firstIdx + 1)
     .join('\n')
     .trim()
   return JSON.stringify({ short, long })
+}
+
+/**
+ * Whether a line is the model talking about the task rather than answering it.
+ *
+ * Two signals, both deliberately narrow — a false positive here throws away a
+ * real subject line:
+ *   • it ends in a colon, which a commit subject does not; or
+ *   • it opens with a recognised conversational lead-in.
+ */
+function isPreamble(line: string): boolean {
+  const bare = stripLeadIn(line)
+  if (!bare) return true
+  if (bare.endsWith(':')) return true
+  // Deliberately NOT "changes" — "Changes the output contract" is a plausible
+  // subject, and skipping it would replace a correct line with the one below it.
+  return /^(?:let me|let's|here(?:'s| is| are)|i(?:'ll| will| have)|looking at|based on|comparing|okay|sure|alright|summary of)\b/i.test(
+    bare,
+  )
+}
+
+/** Drop markdown decoration a prose answer wraps its first line in. */
+function stripLeadIn(line: string): string {
+  return line
+    .replace(/^#{1,6}\s*/, '')
+    .replace(/^[-*+]\s+/, '')
+    .replace(/^\*\*(.*)\*\*$/, '$1')
+    .trim()
 }
 
 // Positions are cosmetic (canvas layout) and would just be noise to the model —

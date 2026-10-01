@@ -129,6 +129,9 @@ export function createWfDataClient(call: WfDataTransport): WfDataClient {
     // A tool-calling agent can run well past the default 20s UI backstop, so
     // give the playground its own longer budget.
     runAgentPreview: bind('runAgentPreview', 120000),
+    // One provider call, but Venice can sit on a decision for a while and the
+    // eval path already allows 45s for one — so give the playground room.
+    runDecisionPreview: bind('runDecisionPreview', 120000),
 
     // Evals.
     listEvalSets: bind('listEvalSets'),
@@ -137,6 +140,9 @@ export function createWfDataClient(call: WfDataTransport): WfDataClient {
     updateEvalSet: bind('updateEvalSet'),
     deleteEvalSet: (setId) => send('deleteEvalSet', { setId }),
     upsertEvalRow: bind('upsertEvalRow'),
+    // One provider call plus a deterministic grade — but Venice's own request
+    // budget for an eval decision is 45s, so this needs more than the default.
+    runDecisionEvalCell: bind('runDecisionEvalCell', 120000),
     deleteEvalRow: (rowId) => send('deleteEvalRow', { rowId }),
     restoreEvalRow: (rowId) => send('restoreEvalRow', { rowId }),
     createEvalRun: bind('createEvalRun'),

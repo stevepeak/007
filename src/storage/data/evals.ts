@@ -774,6 +774,15 @@ export async function insertEvalResult(
     promptLabel?: string | null
     promptBody?: string | null
     attempt?: number | null
+    /** What actually answered, echoed by the provider — see the column note. */
+    answeredModelId?: string | null
+    /**
+     * Tokens this cell spent, for a cell that produced NO `wf_run` — a decision
+     * cell. Leave unset for a run-backed cell: there the usage is on the run's
+     * agent steps and `loadRunStats` is the one reader of it.
+     */
+    inputTokens?: number | null
+    outputTokens?: number | null
   },
 ): Promise<string> {
   const id = crypto.randomUUID()
@@ -792,6 +801,12 @@ export async function insertEvalResult(
     promptLabel: input.promptLabel ?? null,
     promptBody: input.promptBody ?? null,
     attempt: input.attempt ?? null,
+    answeredModelId: input.answeredModelId ?? null,
+    // `??`, never `||`: a real zero (a decision model Venice prices at $0 on the
+    // output side reports exactly that) must survive as 0 and not be recorded as
+    // "unmeasured".
+    inputTokens: input.inputTokens ?? null,
+    outputTokens: input.outputTokens ?? null,
   })
   return id
 }

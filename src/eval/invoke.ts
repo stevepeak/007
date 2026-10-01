@@ -73,5 +73,31 @@ function invocationInput(
     // the values that template interpolates from and nothing else.
     case 'task':
       return { triggerInput: {}, promptVariables: input.variables }
+    // A decision Sample never reaches the engine: a decision agent runs through
+    // the direct invoke path (`runDecisionAgent`), not a graph. This case exists
+    // so the switch stays total, and degrades to "no trigger payload" for the
+    // one way it can be reached — a decision-shaped Sample sitting in a Goal
+    // whose target is a workflow, which the editor doesn't offer and the
+    // runner reports as an unanswered matrix rather than a crash.
+    case 'decision':
+      return { triggerInput: {}, promptVariables: input.variables }
   }
+}
+
+/**
+ * The decision runner's half of the same translation: a Sample's authored input
+ * becomes the state + variables `runDecisionAgent` takes.
+ *
+ * A non-decision Sample still resolves to something rather than throwing — its
+ * variables, and no state — so a Goal retargeted from a generation agent to a
+ * decision one reports an unjudgeable empty state instead of failing before the
+ * report exists.
+ */
+export function decisionInvocation(input: EvalSampleInput): {
+  state: unknown
+  variables: Record<string, string>
+} {
+  return input.kind === 'decision'
+    ? { state: input.state, variables: input.variables }
+    : { state: undefined, variables: 'variables' in input ? input.variables : {} }
 }

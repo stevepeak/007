@@ -2,6 +2,7 @@ import type { JsonSchema } from '../../engine'
 import {
   isJudgeCheck,
   type EvalCheck,
+  type WfDecisionAgentSummary,
   type WfEvalTargetKind,
 } from '../../server/protocol'
 import { cn } from '../cn'
@@ -28,6 +29,7 @@ export function CheckConfigBody({
   hasTools,
   outputSchema,
   allowToolIds,
+  decisionContract,
 }: {
   check: EvalCheck
   persist: (next: EvalCheck) => void
@@ -37,6 +39,8 @@ export function CheckConfigBody({
   outputSchema?: JsonSchema | null
   /** Scope the tool pickers to the target agent's wired tools (undefined = all). */
   allowToolIds?: string[]
+  /** The target's question set, when it is a decision agent — see its own field. */
+  decisionContract?: WfDecisionAgentSummary | null
 }) {
   if (isJudgeCheck(check)) {
     // The two judges are the same assertion reached two ways, so switching
@@ -70,6 +74,7 @@ export function CheckConfigBody({
       hasTools={hasTools}
       outputSchema={outputSchema}
       allowToolIds={allowToolIds}
+      decisionContract={decisionContract}
     />
   )
 }

@@ -52,7 +52,10 @@ export function ResultDetail({ row }: { row: ResultRow }) {
         )}
       </div>
 
-      <RunStatsLine stats={result.runStats} />
+      <RunStatsLine
+        stats={result.runStats}
+        answeredBy={result.answeredModelId}
+      />
 
       {/* The one place a user learns that a zero pass rate was infrastructure
           rather than their agent. An errored cell has no check verdicts to
@@ -85,18 +88,44 @@ export function ResultDetail({ row }: { row: ResultRow }) {
 
 // A single subdued line of the agent-call's model + measured stats — the color
 // that used to sit in every card, now confined to the expanded detail.
-function RunStatsLine({ stats }: { stats: WfEvalResultRunStats | null }) {
-  if (!stats) return null
-  const model = stats.models.length > 0 ? stats.models.join(', ') : null
-  const parts = [
-    stats.durationMs != null ? formatDurationMs(stats.durationMs) : null,
-    stats.costUsd != null ? formatUsd(stats.costUsd) : null,
-    stats.totalTokens != null ? `${formatTokens(stats.totalTokens)} tok` : null,
-  ].filter(Boolean)
-  if (!model && parts.length === 0) return null
+/**
+ * Model, duration, cost, tokens — and, for a decision cell, what ANSWERED.
+ *
+ * `answeredBy` is the id the provider echoed, which is not always the id the
+ * cell asked with: a decision agent can point at a floating `…-latest`, and
+ * when what sits behind that changes, no version, plan or snapshot hash in 007
+ * moves with it. A report whose verdicts shifted for no visible reason has its
+ * reason on this line. Decision cells also have no `wf_run`, so `stats` is
+ * null for them and this is the only model the detail panel can show at all.
+ */
+function RunStatsLine({
+  stats,
+  answeredBy,
+}: {
+  stats: WfEvalResultRunStats | null
+  answeredBy: string | null
+}) {
+  const model =
+    stats && stats.models.length > 0 ? stats.models.join(', ') : null
+  const parts = stats
+    ? [
+        stats.durationMs != null ? formatDurationMs(stats.durationMs) : null,
+        stats.costUsd != null ? formatUsd(stats.costUsd) : null,
+        stats.totalTokens != null
+          ? `${formatTokens(stats.totalTokens)} tok`
+          : null,
+      ].filter(Boolean)
+    : []
+  const echoed = answeredBy !== model ? answeredBy : null
+  if (!model && !echoed && parts.length === 0) return null
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-neutral-500">
       {model && <span className="font-medium text-neutral-700">{model}</span>}
+      {echoed && (
+        <span className="font-medium text-neutral-700">
+          {model ? `answered by ${echoed}` : echoed}
+        </span>
+      )}
       {parts.map((p, i) => (
         <span key={i} className="tabular-nums">
           {p}

@@ -1,3 +1,9 @@
+import type { WfAgentKind } from '../engine/agent-kind'
+import type {
+  AnyAgentConfig,
+  DecisionAgentConfig,
+} from '../engine/decision-agent-schema'
+import type { DecisionAgentResult } from '../engine/decision-agent'
 import type { AgentConfig, AgentOutput } from '../engine/graph'
 import type { ModelCapabilities } from '../engine/model-catalog'
 import type { AgentNodeMeta } from '../engine/nodes/agent'
@@ -5,18 +11,40 @@ import type { AgentNodeMeta } from '../engine/nodes/agent'
 export type { AgentNodeMeta } from '../engine/nodes/agent'
 
 export type { AgentConfig, AgentOutput } from '../engine/graph'
+export type { WfAgentKind } from '../engine/agent-kind'
+export type {
+  AnyAgentConfig,
+  DecisionAgentConfig,
+  DecisionAgentQuestion,
+  DecisionRule,
+  DecisionRuleCondition,
+} from '../engine/decision-agent-schema'
+export type { DecisionAgentResult } from '../engine/decision-agent'
 
 export type WfAgentSummary = {
   id: string
   name: string
+  /**
+   * Which of the two agent shapes this is (`wf_agent.kind`) — and therefore
+   * which schema `config` parses with everywhere below.
+   *
+   * Every surface that assumes one shape gates on this: the eval editor
+   * branches its Sample form on it, the model pickers read a different catalog
+   * (`listDecisionModels`) for a decision agent, and the workflow editor's agent
+   * node shows a "Judge this" field instead of a conversation link. (An agent
+   * node points at either kind through `config.agentId`; the run manifest
+   * settles which one it got.)
+   */
+  kind: WfAgentKind
   description: string | null
   icon: string | null
   color: string | null
   createdAt: number
   /**
    * The `${variables}` the agent's latest published prompt requires, inferred
-   * from its body. Drives the "requires" side of agent-node data-mapping. Empty
-   * when the agent has no published version yet or its prompt has no variables.
+   * from its body — for a decision agent, from its questions and considerations.
+   * Drives the "requires" side of agent-node data-mapping. Empty when the agent
+   * has no published version yet or has no variables.
    */
   inputVariables: string[]
   /**
@@ -63,6 +91,22 @@ export type WfAgentSummary = {
    * the single-agent {@link WfDataClient.getAgent} summary.
    */
   workflows: { id: string; name: string }[]
+  /**
+   * Decision agents only — a card's worth of the matrix without its config: how
+   * many questions it asks and what verdicts it can reach. Null for a
+   * generation agent, and for a decision agent whose config is unreadable.
+   */
+  decision: WfDecisionAgentSummary | null
+}
+
+/** The decision half of {@link WfAgentSummary} — see its `decision` field. */
+export type WfDecisionAgentSummary = {
+  questionCount: number
+  verdicts: string[]
+  /** Question ids, in order — what an eval expectation and a rule address. */
+  questionIds: string[]
+  /** Every `${name}` the questions interpolate, across prompts and considerations. */
+  inputVariables: string[]
 }
 
 // Structurally identical to `WfVersionSummary` — deliberately, so one
@@ -81,13 +125,35 @@ export type WfAgentVersionSummary = {
 
 export type WfAgentDetail = {
   agent: WfAgentSummary
-  draft: { config: AgentConfig } | null
+  // `config` is of whichever shape `agent.kind` declares. Narrow on that, not
+  // on a field's presence — the two shapes share no field, so a structural test
+  // would read as a type guard while actually testing for a typo.
+  draft: { config: AnyAgentConfig } | null
   currentVersion: {
     id: string
     versionNumber: number
-    config: AgentConfig
+    config: AnyAgentConfig
   } | null
 }
+
+/**
+ * Playground: judge one state with a decision agent's DRAFT config, so unsaved
+ * question wording is testable before it is published.
+ *
+ * The decision twin of {@link AgentPreviewInput}, and deliberately much
+ * smaller: there is no tool loop to stand in for, no conversation to seed and
+ * nothing live to touch, so the whole safety apparatus that surrounds an agent
+ * preview has nothing to guard here. One provider call, in and out.
+ */
+export type DecisionPreviewInput = {
+  config: DecisionAgentConfig
+  /** The state every question is judged against. Any JSON value. */
+  state: unknown
+  /** Values for `${…}` tokens in the question prompts and considerations. */
+  variables?: Record<string, string>
+}
+
+export type DecisionPreviewResult = DecisionAgentResult
 
 /**
  * One authored turn in the playground's scratch conversation. Only what a chat

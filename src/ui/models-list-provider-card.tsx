@@ -1,4 +1,4 @@
-import { Lock, RefreshCw } from 'lucide-react'
+import { Lock, RefreshCw, Scale } from 'lucide-react'
 import { useMemo } from 'react'
 
 import type {
@@ -167,6 +167,14 @@ function ModelRow({
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
+          {model.kind === 'decision' && (
+            <Tooltip content="A decision model: answers typed questions with calibrated probabilities. Resolved by getDecider — available to decision agents, never to an agent's model picker.">
+              <Scale
+                aria-label="Decision model"
+                className="size-3.5 shrink-0 text-violet-600"
+              />
+            </Tooltip>
+          )}
           <span className="truncate text-sm text-neutral-900">{model.label}</span>
           <CapabilityBadges capabilities={model.capabilities} />
         </div>

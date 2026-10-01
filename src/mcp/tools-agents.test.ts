@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import { makeAgentConfig } from '../engine/agent-test-helpers'
 import type {
   AgentConfig,
+  AnyAgentConfig,
   AgentPreviewInput,
   AgentPreviewResult,
   ModelOption,
@@ -88,7 +89,7 @@ describe('create_agent', () => {
   const tool = toolNamed('create_agent')
 
   test('creates the agent with a fully defaulted config', async () => {
-    const calls: { name: string; config: AgentConfig }[] = []
+    const calls: { name: string; config: unknown }[] = []
     const client = createClient({
       createAgent: async (input) => {
         calls.push(input)
@@ -582,7 +583,7 @@ describe('update_agent_draft — the fields nothing prompts for', () => {
 
 describe('update_agent_draft — fromVersion', () => {
   test('restores a published version into the draft', async () => {
-    const writes: { config: { prompt: string } }[] = []
+    const writes: { config: AnyAgentConfig }[] = []
     const old = { ...published, prompt: 'The old wording.' }
     const client = stubClient({
       getAgent: async () => detail(),
@@ -590,7 +591,11 @@ describe('update_agent_draft — fromVersion', () => {
           { id: 'v1', versionNumber: 1 },
           { id: 'v2', versionNumber: 2 },
         ] as never },
-      getAgentVersion: async () => ({ config: old, versionNumber: 1 }),
+      getAgentVersion: async () => ({
+        config: old,
+        kind: 'generation' as const,
+        versionNumber: 1,
+      }),
       updateAgentDraft: async (input) => {
         writes.push(input)
       },
@@ -600,7 +605,7 @@ describe('update_agent_draft — fromVersion', () => {
       fromVersion: 1,
     })) as { restoredFrom: number }
     expect(result.restoredFrom).toBe(1)
-    expect(writes[0]?.config.prompt).toBe('The old wording.')
+    expect((writes[0]?.config as AgentConfig).prompt).toBe('The old wording.')
   })
 
   test('names the versions that exist when the number is wrong', async () => {
@@ -670,6 +675,7 @@ describe('list_agent_versions', () => {
       client({
         getAgentVersion: async () => ({
           config: { ...published, prompt: 'v1 wording' },
+          kind: 'generation' as const,
           versionNumber: 1,
         }),
       }),

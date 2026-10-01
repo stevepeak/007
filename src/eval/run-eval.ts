@@ -1,9 +1,10 @@
-import type { AgentConfig } from '../engine/agent-config-schema'
+import type { AnyAgentConfig } from '../engine/decision-agent-schema'
 import type { WfLogger } from '../engine/logger'
 import type { WfDataClient } from '../server/protocol'
 
 import {
   EMPTY_DRIVE_STATE,
+  type EvalCellMode,
   type EvalMatrixModel,
   type EvalMatrixPrompt,
   type EvalPlan,
@@ -88,7 +89,7 @@ export type RunEvalInput = {
    * across models and alternate prompts exactly like a published agent.
    * Omitted → the published version (every other caller).
    */
-  configOverride?: AgentConfig
+  configOverride?: AnyAgentConfig
   /**
    * The model × prompt sweep. Omitted → a single plain run per sample on the
    * target's own saved model + prompt (preserves the pre-matrix behavior). When
@@ -102,6 +103,14 @@ export type RunEvalInput = {
    * Frozen into the plan so a resuming driver grades by the same judge.
    */
   judgeModelId?: string
+  /**
+   * How each cell executes — see {@link EvalCellMode}. Omitted → `'run'`, the
+   * workflow/generation-agent path. The caller supplies it because only the
+   * caller has already resolved the Goal's target; the plan then freezes it so
+   * a resuming driver doesn't have to re-derive it from a target that may have
+   * been repointed since.
+   */
+  mode?: EvalCellMode
   concurrency?: number
   pollIntervalMs?: number
   timeoutMs?: number
@@ -136,6 +145,7 @@ export async function createEvalSweep(
   const plan: EvalPlan = {
     version: 1,
     cells: expandEvalCells(rowIds, input.matrix),
+    mode: input.mode ?? 'run',
     configOverride: input.configOverride,
     concurrency: clampConcurrency(input.concurrency),
     timeoutMs: input.timeoutMs ?? EVAL_WAIT_TIMEOUT_MS,

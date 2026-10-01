@@ -508,13 +508,13 @@ describe('patch ops that reach the fields merge_node_config cannot', () => {
     const applied = applyPatchOp(g, {
       op: 'set_inform_user',
       nodeId: 'esc',
-      informUser: { mode: 'static', note: 'Escalating to a lawyer…' },
+      informUser: { mode: 'static', note: 'Escalating to a person…' },
     })
     expect(g.nodes[1].informUser).toEqual({
       mode: 'static',
-      note: 'Escalating to a lawyer…',
+      note: 'Escalating to a person…',
     })
-    expect(applied.summary).toContain('Escalating to a lawyer')
+    expect(applied.summary).toContain('Escalating to a person')
   })
 
   test('set_inform_user refuses dynamic on a non-agent node', () => {

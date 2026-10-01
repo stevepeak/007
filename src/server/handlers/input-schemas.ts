@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { WF_AGENT_KINDS } from '../../engine/agent-kind'
 import {
   WF_CHANGE_ENTITY_KINDS,
   WF_EVAL_TARGET_KINDS,
@@ -227,6 +228,10 @@ export const wfInputSchemas = {
   }),
   createAgent: z.object({
     name: z.string().min(1),
+    // Which config schema `config` is then checked against. Enumerated here
+    // rather than passed through, because it is the only field that decides
+    // how the payload beside it is read — and it is immutable afterward.
+    kind: z.enum(WF_AGENT_KINDS).optional(),
     description: z.string().optional(),
     icon: z.string().optional(),
     color: z.string().optional(),
@@ -257,6 +262,10 @@ export const wfInputSchemas = {
   // one unit (it has to build a real agent config out of it), so naming the
   // fields here would only risk stripping one.
   runAgentPreview: NO_INPUT,
+  // Same reasoning: the payload is one `DecisionPreviewInput` the handler
+  // validates as a unit, and `state` is any JSON value — naming it would only
+  // risk stripping it.
+  runDecisionPreview: NO_INPUT,
 
   // ---- evals --------------------------------------------------------------
   getEvalSet: z.object({
@@ -328,6 +337,15 @@ export const wfInputSchemas = {
     modelId: z.string().optional(),
     promptBody: z.string().optional(),
     // The unsaved-draft override — a whole AgentConfig, parsed by the runner.
+    config: PASSED_THROUGH.optional(),
+  }),
+  runDecisionEvalCell: z.object({
+    evalRunId: z.string().min(1),
+    rowId: z.string().min(1),
+    modelId: z.string().optional(),
+    attempt: z.number().optional(),
+    // The unsaved-draft override — a whole DecisionAgentConfig, parsed by the
+    // handler against the target agent's kind.
     config: PASSED_THROUGH.optional(),
   }),
   gradeEvalResult: z.object({

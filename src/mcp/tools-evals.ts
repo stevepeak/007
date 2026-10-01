@@ -14,6 +14,8 @@ import {
 import { MANUAL_TRIGGER_KIND } from '../engine/trigger-registry'
 import type {
   AgentConfig,
+  AnyAgentConfig,
+  WfAgentKind,
   WfDataClient,
   WfEvalTargetKind,
 } from '../server/protocol'
@@ -76,7 +78,7 @@ type TargetContract = {
   targetId: string
   name: string
   /** The `input.kind` a Sample against this target MUST use. */
-  sampleInputKind: 'task' | 'conversation' | 'trigger'
+  sampleInputKind: 'task' | 'conversation' | 'trigger' | 'decision'
   /** A ready-to-fill `input` value in exactly that shape. */
   inputTemplate: Record<string, unknown>
   /** The trigger kind the target is actually invoked under. */
@@ -137,9 +139,14 @@ function graphTriggerKind(detail: {
  * see, which is a worse lie than saying nothing.
  */
 function gradedConfig(detail: {
-  currentVersion: { config: AgentConfig } | null
+  agent: { kind: WfAgentKind }
+  currentVersion: { config: AnyAgentConfig } | null
 }): AgentConfig | null {
-  return detail.currentVersion?.config ?? null
+  // Generation only: `toolIds` and `output` are what the caller reads off this,
+  // and a decision agent has neither. Its own contract is described from the
+  // `decision` summary instead — see `resolveTargetContract`.
+  if (detail.agent.kind !== 'generation') return null
+  return (detail.currentVersion?.config as AgentConfig | undefined) ?? null
 }
 
 /**
@@ -164,6 +171,40 @@ async function resolveTargetContract(
       warnings.push(
         `Agent "${agent.name}" has no published version, so a run of this goal has nothing to execute. Publish it before running the goal.`,
       )
+    }
+    // A decision agent's Samples are a different shape entirely: one state
+    // blob, no prompt variables to fill, no tools to pin and no prose to judge.
+    // Describing it with the generation contract would hand the caller a
+    // template that grades nothing.
+    if (agent.kind === 'decision') {
+      const questionIds = agent.decision?.questionIds ?? []
+      if (questionIds.length === 0) {
+        warnings.push(
+          `Decision agent "${agent.name}" declares no questions in its published version, so there is nothing for a sample to expect.`,
+        )
+      }
+      return {
+        targetKind: 'agent',
+        targetId,
+        name: agent.name,
+        sampleInputKind: 'decision',
+        inputTemplate: {
+          kind: 'decision',
+          state: '',
+          variables: Object.fromEntries(
+            (agent.decision?.inputVariables ?? []).map((v) => [v, '']),
+          ),
+        },
+        triggerKind: MANUAL_TRIGGER_KIND,
+        // Neither applies: a decision agent calls no tools, and its output is
+        // always `{ verdict, because, answers }` rather than an authored schema.
+        toolIds: [],
+        outputSchema: null,
+        warnings: [
+          ...warnings,
+          `Grade this with a \`decision_answers\` check: { type: "decision_answers", verdict: "<one of ${(agent.decision?.verdicts ?? []).join(' | ') || '…'}>", expect: [{ questionId: "<${questionIds.join(' | ') || '…'}>", yes: true } ] }. Every cell is one provider call — no tool loop, no wrapper workflow.`,
+        ],
+      }
     }
     const config = gradedConfig(detail)
     return {

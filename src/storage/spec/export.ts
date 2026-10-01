@@ -11,7 +11,7 @@
 
 import { desc, eq } from 'drizzle-orm'
 
-import { workflowGraphShapeSchema } from '../../engine'
+import { toAgentKind, workflowGraphShapeSchema } from '../../engine'
 import type { WfDb } from '../client'
 import {
   getEvalSet,
@@ -63,11 +63,15 @@ export async function exportBundle(db: WfDb): Promise<SpecBundle> {
       kind: 'agent',
       slug: agentSlugById.get(a.id)!,
       name: a.name,
+      // Written out even for a generation agent, not just for a decision one:
+      // the spec is the desired state, and a reader (human or import) should
+      // not have to know that an absent field means one of the two.
+      agentKind: toAgentKind(a.kind),
       description: a.description ?? undefined,
       icon: a.icon ?? undefined,
       color: a.color ?? undefined,
       archived: a.archived || undefined,
-      config: version.config as AgentSpec['config'],
+      config: version.config,
     })
   }
 

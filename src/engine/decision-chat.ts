@@ -16,7 +16,7 @@ import { strictSchema } from './strict-schema'
  * A {@link Decider} built on any chat model, via structured output.
  *
  * This exists so the decision seam is portable in fact and not just in type:
- * a host with no purpose-built decision endpoint still gets decision nodes, and
+ * a host with no purpose-built decision endpoint still gets decision agents, and
  * the contract in `decision.ts` is proven satisfiable by something that isn't
  * the vendor it was designed against. A contract with exactly one possible
  * implementation is a vendor API wearing a hat.

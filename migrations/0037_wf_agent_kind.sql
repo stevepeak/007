@@ -1,0 +1,1 @@
+ALTER TABLE `wf_agent` ADD `kind` text DEFAULT 'generation' NOT NULL;

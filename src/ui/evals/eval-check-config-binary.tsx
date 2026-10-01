@@ -3,11 +3,16 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import type { JsonSchema } from '../../engine'
-import type { EvalCheck, WfEvalTargetKind } from '../../server/protocol'
+import type {
+  EvalCheck,
+  WfDecisionAgentSummary,
+  WfEvalTargetKind,
+} from '../../server/protocol'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { useTools } from '../hooks'
 
+import { DecisionAnswersFields } from './eval-check-config-decision-answers'
 import {
   BINARY_TYPE_META,
   BINARY_TYPES,
@@ -31,6 +36,7 @@ export function BinaryConfig({
   hasTools,
   outputSchema,
   allowToolIds,
+  decisionContract,
 }: {
   check: EvalCheck
   persist: (next: EvalCheck) => void
@@ -39,6 +45,8 @@ export function BinaryConfig({
   hasTools?: boolean | null
   outputSchema?: JsonSchema | null
   allowToolIds?: string[]
+  /** The target's question set, when it is a decision agent. */
+  decisionContract?: WfDecisionAgentSummary | null
 }) {
   const { Label } = useWfComponents()
   return (
@@ -49,6 +57,7 @@ export function BinaryConfig({
           value={check.type as BinaryType}
           targetKind={targetKind}
           hasTools={hasTools}
+          isDecisionTarget={decisionContract != null}
           onChange={(t) => persist(defaultCheck(t))}
         />
       </div>
@@ -57,6 +66,7 @@ export function BinaryConfig({
         persist={persist}
         outputSchema={outputSchema}
         allowToolIds={allowToolIds}
+        decisionContract={decisionContract}
       />
       <p className="text-xs text-neutral-400">
         Binary checks are pure pass/fail — they never enter the score.
@@ -78,22 +88,32 @@ export function BinaryConfig({
 // holds even when the check ALREADY is one of them (authored before the target
 // lost its tools, or via the family toggle): the type stays visible in the
 // trigger, but it isn't offered, and a line underneath says why.
+//
+// `decision_answers` is the third, and it cuts BOTH ways: it can only hold
+// against a decision agent (nothing else produces a verdict and a matrix), and
+// against one it is the only assertion worth making — a decision agent visits
+// no nodes, calls no tools, and its output is a structure `output_match` can
+// only reach one field of at a time.
 const NODE_TYPES: readonly BinaryType[] = ['node_visited', 'node_input_match']
 const TOOL_TYPES: readonly BinaryType[] = ['tool_called', 'tool_args_match']
+const DECISION_TYPES: readonly BinaryType[] = ['decision_answers']
 
 function BinaryTypePicker({
   value,
   onChange,
   targetKind,
   hasTools,
+  isDecisionTarget,
 }: {
   value: BinaryType
   onChange: (type: BinaryType) => void
   targetKind?: WfEvalTargetKind
   hasTools?: boolean | null
+  isDecisionTarget?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const applies = (t: BinaryType) => {
+    if (DECISION_TYPES.includes(t)) return isDecisionTarget === true
     return (
       (targetKind !== 'agent' || !NODE_TYPES.includes(t)) &&
       (hasTools !== false || !TOOL_TYPES.includes(t))
@@ -105,9 +125,11 @@ function BinaryTypePicker({
   // worse — but it's not in the menu, so the only way out is a type that works.
   const staleReason = applies(value)
     ? null
-    : TOOL_TYPES.includes(value)
-      ? 'This agent has no tools, so this check can never pass.'
-      : 'This goal targets an agent, which has no workflow nodes, so this check can never pass.'
+    : DECISION_TYPES.includes(value)
+      ? 'This goal is not for a decision agent, so there is no verdict or answer matrix to grade.'
+      : TOOL_TYPES.includes(value)
+        ? 'This agent has no tools, so this check can never pass.'
+        : 'This goal runs an agent, which has no workflow nodes, so this check can never pass.'
   const [rect, setRect] = useState<DOMRect | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -237,11 +259,13 @@ function BinaryFields({
   persist,
   outputSchema,
   allowToolIds,
+  decisionContract,
 }: {
   check: EvalCheck
   persist: (next: EvalCheck) => void
   outputSchema?: JsonSchema | null
   allowToolIds?: string[]
+  decisionContract?: WfDecisionAgentSummary | null
 }) {
   switch (check.type) {
     case 'tool_called':
@@ -320,6 +344,14 @@ function BinaryFields({
         />
       )
     }
+    case 'decision_answers':
+      return (
+        <DecisionAnswersFields
+          check={check}
+          persist={persist}
+          contract={decisionContract}
+        />
+      )
     // Judges have no binary fields; their own panel owns the rubric.
     case 'llm_judge':
     case 'decision_judge':

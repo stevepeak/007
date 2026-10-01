@@ -1,10 +1,11 @@
-import { asc, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 
 import type {
   AgentUsageRef,
   ModelCapabilities,
   ModelCatalog,
   ModelCatalogEntry,
+  ModelKind,
   ModelOption,
   ModelProvider,
   ModelProviderKind,
@@ -57,6 +58,16 @@ function rowCapabilities(r: WfModelRow): ModelCapabilities | undefined {
   }
 }
 
+/**
+ * A stored `kind` as the engine type. Unknown values read as 'chat' rather than
+ * throwing: the column is free-ish text so a future provider kind can land
+ * without a migration, and a row nobody can classify belongs in the list that
+ * everything already handles.
+ */
+function asModelKind(kind: string): ModelKind {
+  return kind === 'decision' ? 'decision' : 'chat'
+}
+
 /** Map a stored row to the picker-facing {@link ModelOption} (enabled subset). */
 function rowToModelOption(r: WfModelRow): ModelOption {
   return {
@@ -77,6 +88,7 @@ function rowToCatalogEntry(r: WfModelRow): ModelCatalogEntry {
     modelId: r.modelId,
     label: r.label,
     providerId: r.providerId,
+    kind: asModelKind(r.kind),
     vendor: r.vendor ?? undefined,
     enabled: r.enabled,
     costPerMTok: r.costPerMTok ?? undefined,
@@ -98,9 +110,49 @@ export async function listEnabledModels(db: WfDb): Promise<ModelOption[]> {
   const rows = await db
     .select()
     .from(wfModel)
-    .where(eq(wfModel.enabled, true))
+    // CHAT models only. A decision model lives in the same table and is resolved
+    // by `getDecider`, not `getModel` — offering one in an agent's model dropdown
+    // would hand the author a model that 404s on `/chat/completions`.
+    .where(and(eq(wfModel.kind, 'chat'), eq(wfModel.enabled, true)))
     .orderBy(asc(wfModel.vendor), asc(wfModel.label))
   return rows.map(rowToModelOption)
+}
+
+/**
+ * The enabled DECISION models, as the decision-agent
+ * editor consumes them — the `listEnabledModels` of the other catalog.
+ *
+ * Returns the facts the catalog actually knows: identity, label, price and
+ * context window, freshly refreshed from the provider. It deliberately does NOT
+ * invent the two fields a `DecisionModelOption` also carries — `questionTypes`
+ * and `calibrated` are provider SEMANTICS (what shapes the endpoint answers, and
+ * whether its numbers are calibrated or a chat model's self-report), which no
+ * `/models` payload reports and only the host's adapter knows. The handler merges
+ * the two; see `handlers/models.ts`.
+ */
+export async function listEnabledDecisionModelFacts(
+  db: WfDb,
+): Promise<DecisionModelFacts[]> {
+  const rows = await db
+    .select()
+    .from(wfModel)
+    .where(and(eq(wfModel.kind, 'decision'), eq(wfModel.enabled, true)))
+    .orderBy(asc(wfModel.vendor), asc(wfModel.label))
+  return rows.map((r) => ({
+    id: r.id,
+    label: r.label,
+    providerId: r.providerId,
+    contextLength: r.contextLength ?? undefined,
+  }))
+}
+
+/** What the catalog knows about a decision model, as opposed to what the host's
+ *  adapter knows. See {@link listEnabledDecisionModelFacts}. */
+export type DecisionModelFacts = {
+  id: string
+  label: string
+  providerId: string
+  contextLength?: number
 }
 
 /** The wired-up providers, as the pickers' grouping consumes them. */
@@ -246,6 +298,10 @@ const REFRESH_SET = {
   providerId: sql`excluded.provider_id`,
   modelId: sql`excluded.model_id`,
   label: sql`excluded.label`,
+  // Refreshed like any other fact. A model that changes catalog (a chat endpoint
+  // gaining a decision mode, say) must move, or it would be offered in the wrong
+  // picker forever on the strength of how it was first seen.
+  kind: sql`excluded.kind`,
   vendor: sql`excluded.vendor`,
   costPerMTok: sql`excluded.cost_per_m_tok`,
   promptPricePerMTok: sql`excluded.prompt_price_per_m_tok`,
@@ -286,6 +342,9 @@ export async function upsertModels(
       providerId,
       modelId: e.modelId,
       label: e.label,
+      // An adapter that says nothing means a chat model — the overwhelming case,
+      // and the only one that existed before decision models were catalogued.
+      kind: e.kind ?? 'chat',
       vendor: e.vendor ?? null,
       costPerMTok: e.costPerMTok ?? null,
       promptPricePerMTok: e.promptPricePerMTok ?? null,

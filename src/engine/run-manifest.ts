@@ -1,3 +1,4 @@
+import type { DecisionAgentConfig } from './decision-agent-schema'
 import type { AgentConfig, WorkflowGraph } from './graph-schema'
 
 // Frozen-at-run-start resolution of every floating reference in a workflow to
@@ -47,7 +48,30 @@ export type WfWorkflowManifestEntry = {
   graph: WorkflowGraph
 }
 
-export type WfRunManifestEntry = WfAgentManifestEntry | WfWorkflowManifestEntry
+// A DECISION agent resolved to the exact published version an agent node ran
+// against. Its own entry kind rather than a widened `WfAgentManifestEntry`,
+// because the two configs share no field: everything that reads a `kind: 'agent'`
+// entry reaches straight for a prompt, a tool list and an output contract, none
+// of which a decision agent has. Giving it a separate kind means a decision agent
+// in a manifest is invisible to that code instead of being a config-shaped hole
+// in the middle of it.
+export type WfDecisionAgentManifestEntry = {
+  kind: 'decision-agent'
+  /** The stable `wf_agent.id` an agent node references. */
+  id: string
+  /** As {@link WfAgentManifestEntry.pinnedVersion}: null floats to latest. */
+  pinnedVersion: number | null
+  versionId: string
+  versionNumber: number
+  name: string
+  /** The frozen question set, verdicts and rollup rules. */
+  config: DecisionAgentConfig
+}
+
+export type WfRunManifestEntry =
+  | WfAgentManifestEntry
+  | WfDecisionAgentManifestEntry
+  | WfWorkflowManifestEntry
 
 /**
  * Look up the resolved agent entry for an `agentId` + version pin in a run
@@ -77,5 +101,28 @@ export function workflowFromManifest(
 ): WfWorkflowManifestEntry | undefined {
   return manifest.find((e): e is WfWorkflowManifestEntry => {
     return e.kind === 'workflow' && e.id === workflowId
+  })
+}
+
+/**
+ * Look up the resolved DECISION agent entry for an `agentId` + pin.
+ *
+ * Deliberately separate from {@link agentFromManifest} rather than a `kind`
+ * parameter on it: a lookup for the wrong kind of agent must come back EMPTY
+ * and fail with "not in the manifest" — not come back with an entry whose config is the wrong shape.
+ * Two functions make that the default instead of a thing each caller remembers
+ * to check.
+ */
+export function decisionAgentFromManifest(
+  manifest: readonly WfRunManifestEntry[],
+  agentId: string,
+  version: number | null = null,
+): WfDecisionAgentManifestEntry | undefined {
+  return manifest.find((e): e is WfDecisionAgentManifestEntry => {
+    return (
+      e.kind === 'decision-agent' &&
+      e.id === agentId &&
+      (e.pinnedVersion ?? null) === (version ?? null)
+    )
   })
 }

@@ -9,6 +9,7 @@ import { useWfComponents } from '../context'
 import { useAgents, useTools, useTriggerEvents, useWorkflows } from '../hooks'
 
 import { MarkdownField } from './markdown-hint'
+import { DataRefField } from './node-data-panel'
 import {
   field,
   ToolSelect,
@@ -109,28 +110,62 @@ export function TriggerInspector({ node, onChange }: NodeInspectorProps) {
   )
 }
 
-export function AgentInspector({ node, onChange }: NodeInspectorProps) {
+export function AgentInspector({
+  node,
+  graph,
+  onChange,
+  itemSchema,
+}: NodeInspectorProps) {
+  const { Label } = useWfComponents()
   const agents = useAgents()
-  const agentOptions = agents.data ?? []
   if (node.kind !== 'agent') return null
+  const picked = (agents.data ?? []).find((a) => a.id === node.config.agentId)
   // Just the agent picker, headed directly by the panel title. The shared
   // inspector renders the "Inform user" and "Needs" sections around it (and the
   // "Open in new tab" shortcut in the title row); the "Expose thinking" toggle
   // lives with the Progress note it supersedes.
   return (
-    <AgentSelect
-      agents={agentOptions}
-      value={{
-        agentId: node.config.agentId,
-        version: node.config.version ?? null,
-      }}
-      onChange={({ agentId, version }) => {
-        return onChange({
-          ...node,
-          config: { ...node.config, agentId, version },
-        })
-      }}
-    />
+    <>
+      <AgentSelect
+        agents={agents.data ?? []}
+        value={{
+          agentId: node.config.agentId,
+          version: node.config.version ?? null,
+        }}
+        onChange={({ agentId, version }) => {
+          return onChange({
+            ...node,
+            config: { ...node.config, agentId, version },
+          })
+        }}
+      />
+      {/* A decision agent owns its questions, decider and rules; the node
+          contributes only the subject they are judged against. A generation
+          agent has no such field — its `${variables}` and conversation are
+          bound under "Needs". */}
+      {picked?.kind === 'decision' ? (
+        <div className={field}>
+          <Label>Judge this</Label>
+          <DataRefField
+            node={node}
+            graph={graph}
+            value={node.config.source}
+            itemSchema={itemSchema}
+            onChange={(source) => {
+              return onChange({
+                ...node,
+                config: { ...node.config, source },
+              })
+            }}
+          />
+          <p className="text-muted-foreground text-xs">
+            The value the agent’s questions are judged against. Leave unset to
+            judge the whole incoming input. It outputs one <code>verdict</code>
+            {' '}— route on it with a Switch below.
+          </p>
+        </div>
+      ) : null}
+    </>
   )
 }
 

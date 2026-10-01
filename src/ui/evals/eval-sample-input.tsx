@@ -101,7 +101,7 @@ function VariablesEditor({
         <p className="px-1 text-xs text-neutral-400">
           Inputs required by{' '}
           <span className="font-medium text-neutral-500">
-            {agent?.name ?? 'the target agent'}
+            {agent?.name ?? 'the agent'}
           </span>{' '}
           — fill in the values this sample runs from.
         </p>
@@ -149,8 +149,8 @@ function VariablesEditor({
     <div className="space-y-2">
       <p className="px-1 py-1 text-xs text-neutral-400">
         {targetId
-          ? 'The target agent has no declared input variables — add initial state manually.'
-          : 'This goal has no target agent yet — set one on the goal, or add state manually.'}
+          ? 'The agent has no declared input variables — add initial state manually.'
+          : 'This goal has no agent yet — set one on the goal, or add state manually.'}
       </p>
       {entries.map(([k, v], i) => (
         <div key={i} className="flex items-center gap-2">

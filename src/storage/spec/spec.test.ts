@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 
-import { MANUAL_TRIGGER_KIND } from '../../engine'
+import { MANUAL_TRIGGER_KIND, type AgentConfig } from '../../engine'
 import { makeAgentConfig } from '../../engine/agent-test-helpers'
 import type { WfDb } from '../client'
 import { freshDb } from '../db-test-helpers'
@@ -23,6 +23,7 @@ function sampleBundle(prompt = 'Say hello to ${name}.'): SpecBundle {
         kind: 'agent',
         slug: 'greeter',
         name: 'Greeter',
+        agentKind: 'generation',
         description: 'Greets people',
         config: makeAgentConfig({
           modelId: 'test-model',
@@ -196,7 +197,9 @@ describe('import/export round-trip', () => {
 
     // Export reflects the new prompt.
     const out = await exportBundle(db)
-    expect(out.agents[0].config.prompt).toBe('A different prompt ${name}.')
+    expect((out.agents[0].config as AgentConfig).prompt).toBe(
+      'A different prompt ${name}.',
+    )
   })
 
   test('dry-run reports changes without writing', async () => {
@@ -204,5 +207,108 @@ describe('import/export round-trip', () => {
     expect(report.changes.every((c) => c.action === 'create')).toBe(true)
     const out = await exportBundle(db)
     expect(out.agents).toHaveLength(0)
+  })
+})
+
+// ── decision agents (ART-238) ────────────────────────────────────────────────
+
+describe('spec round trip for a decision agent', () => {
+  let db: WfDb
+  beforeEach(() => {
+    db = freshDb()
+  })
+
+  const decisionBundle = (prompt = 'Is this urgent?'): SpecBundle => ({
+    formatVersion: 1,
+    agents: [
+      {
+        kind: 'agent',
+        slug: 'triage',
+        name: 'Triage',
+        agentKind: 'decision',
+        config: {
+          modelId: 'venice:jev-latest',
+          questions: [
+            {
+              id: 'is_urgent',
+              type: 'boolean',
+              prompt,
+              considerations: { overdue: 'No reply in 48h' },
+              choices: [],
+              threshold: 0.7,
+            },
+          ],
+          verdicts: ['escalate', 'auto_reply'],
+          rules: [
+            {
+              id: 'r1',
+              verdict: 'escalate',
+              conditions: [{ questionId: 'is_urgent', op: 'is', yes: true, keys: [] }],
+            },
+            { id: 'r2', verdict: 'auto_reply', conditions: [] },
+          ],
+        },
+      },
+    ],
+    workflows: [],
+    evals: [],
+  })
+
+  test('imports, exports and re-imports as unchanged', async () => {
+    await importBundle(db, decisionBundle())
+    const out = await exportBundle(db)
+    expect(out.agents[0].agentKind).toBe('decision')
+    // The considerations survive the round trip — they are the one field no
+    // other authoring surface could set, so losing them here would put the
+    // feature straight back out of reach.
+    expect(out.agents[0].config).toMatchObject({
+      questions: [{ considerations: { overdue: 'No reply in 48h' } }],
+    })
+
+    const again = await importBundle(db, out)
+    expect(again.changes.every((c) => c.action === 'unchanged')).toBe(true)
+  })
+
+  test('a changed question publishes a new version', async () => {
+    await importBundle(db, decisionBundle())
+    const report = await importBundle(db, decisionBundle('Is this REALLY urgent?'))
+    expect(report.changes.find((c) => c.kind === 'agent')?.action).toBe('update')
+  })
+
+  test('changing an agent’s KIND is refused rather than published over', async () => {
+    // Two different agents sharing a slug, not an update — the configs are
+    // disjoint, so publishing one over the other writes a row nothing reads.
+    await importBundle(db, decisionBundle())
+    const clash: SpecBundle = {
+      ...decisionBundle(),
+      agents: [
+        {
+          ...decisionBundle().agents[0],
+          agentKind: 'generation',
+          config: makeAgentConfig({ modelId: 'test-model', prompt: 'Hi.' }),
+        },
+      ],
+    }
+    await expect(importBundle(db, clash)).rejects.toThrow(/kind cannot change/)
+  })
+
+  test('a spec with no agentKind reads as a generation agent', async () => {
+    // Every spec file written before ART-238 — the default IS the migration.
+    const legacy = {
+      formatVersion: 1,
+      agents: [
+        {
+          kind: 'agent',
+          slug: 'legacy',
+          name: 'Legacy',
+          config: makeAgentConfig({ modelId: 'test-model', prompt: 'Hi.' }),
+        },
+      ],
+      workflows: [],
+      evals: [],
+    }
+    await importBundle(db, legacy)
+    const out = await exportBundle(db)
+    expect(out.agents[0].agentKind).toBe('generation')
   })
 })

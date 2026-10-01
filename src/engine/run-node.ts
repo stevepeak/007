@@ -9,7 +9,10 @@ import type { ModelBudget } from './model-budget'
 import { executeAgentNode } from './nodes/agent'
 import { executeAggregateNode } from './nodes/aggregate'
 import { executeBranchNode } from './nodes/branch'
-import { decisionNodeMeta, executeDecisionNode } from './nodes/decision'
+import {
+  executeDecisionAgentNode,
+  isDecisionAgentNode,
+} from './nodes/decision-agent'
 import { executeFeatureRequestNode } from './nodes/feature-request'
 import {
   executeSubgraph,
@@ -43,8 +46,8 @@ export type NodeRunResult = {
   /**
    * Routing kinds only (branch/switch) — the decision that selects the live
    * outgoing edge. A branch emits 'yes'|'no'; a switch emits a case key or
-   * 'else'. Matched against `edge.condition`. A Decision node reports none: it
-   * answers, and a Branch downstream routes on the answer.
+   * 'else'. Matched against `edge.condition`. A decision agent reports none: it
+   * answers, and a Switch downstream routes on its `verdict`.
    */
   branchResult?: string
   branchReasoning?: string
@@ -53,10 +56,11 @@ export type NodeRunResult = {
 export type RunNodeContext<TDeps> = {
   getModel: ModelFactory
   /**
-   * Resolves a Decision node's `modelId` to a decider (from
+   * Resolves a decision agent's `modelId` to a decider (from
    * `WfSdkConfig.getDecider`). Omitted when the host wired no decision provider
-   * — a graph containing a Decision node then fails with a message naming the
-   * missing hook, which is a better failure than a crash inside the node.
+   * — an agent node pointing at a decision agent then fails with a message
+   * naming the missing hook, which is a better failure than a crash inside the
+   * node.
    */
   getDecider?: DeciderFactory
   toolRegistry: ToolRegistry<TDeps>
@@ -136,6 +140,36 @@ export async function runNode<TDeps>(
 
   switch (node.kind) {
     case 'agent': {
+      // A decision agent is one provider call, not a generation: the frozen
+      // manifest says which kind this node points at. It answers rather than
+      // forwards and routes nothing itself — a Switch downstream routes on its
+      // `verdict`, so it reports no `branchResult`.
+      if (isDecisionAgentNode(node, ctx.manifest ?? [])) {
+        if (!ctx.getDecider) {
+          throw new Error(
+            `Agent node ${node.id} points at a decision agent, but this host wired no \`getDecider\`. See WfSdkConfig.getDecider, or use \`createChatDecider\` to run decisions on an existing chat model.`,
+          )
+        }
+        const { result, meta } = await executeDecisionAgentNode({
+          node,
+          input,
+          nodeOutputs: ctx.nodeOutputs,
+          getDecider: ctx.getDecider,
+          rehydrate,
+          manifest: ctx.manifest ?? [],
+        })
+        // `reasoning` rides in the OUTPUT so an author can bind the rationale
+        // into a message instead of it being inspector-only, and `verdict` /
+        // `because` are what a Switch binds to route on one named outcome rather
+        // than re-deriving the agent's rules over `answers.*`.
+        const output = {
+          answers: result.answers,
+          reasoning: result.reasoning,
+          verdict: result.verdict,
+          because: result.because,
+        }
+        return { schedulerOutput: output, recordedOutput: output, meta }
+      }
       const r = await executeAgentNode({
         node,
         getModel: ctx.getModel,
@@ -223,35 +257,6 @@ export async function runNode<TDeps>(
         recordedOutput: decision,
         branchResult: r.result,
         branchReasoning: r.reasoning,
-      }
-    }
-    case 'decision': {
-      // Probabilistic judgment. Like branch/switch it emits its judgment rather
-      // than forwarding its input — but it does NOT route: it answers every
-      // question it was given in ONE call and leaves the routing to whatever
-      // Branch or Switch reads an answer. So it reports no `branchResult`, and
-      // every one of its outgoing edges is unconditional.
-      if (!ctx.getDecider) {
-        throw new Error(
-          `Decision node ${node.id} needs a decision provider, but this host wired no \`getDecider\`. See WfSdkConfig.getDecider, or use \`createChatDecider\` to run decisions on an existing chat model.`,
-        )
-      }
-      const r = await executeDecisionNode({
-        node,
-        input,
-        nodeOutputs: ctx.nodeOutputs,
-        getDecider: ctx.getDecider,
-        rehydrate,
-      })
-      // `reasoning` rides in the OUTPUT, so an author can bind the rationale
-      // into a message ("I flagged this because …") instead of it being
-      // inspector-only — and so it survives without a `branchResult` to carry
-      // it, which a non-routing node has no business reporting.
-      const output = { answers: r.answers, reasoning: r.reasoning }
-      return {
-        schedulerOutput: output,
-        recordedOutput: output,
-        meta: decisionNodeMeta(node, r),
       }
     }
     case 'workflow': {

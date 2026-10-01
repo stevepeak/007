@@ -1,5 +1,10 @@
 import { desc, eq, inArray } from 'drizzle-orm'
 
+import { toAgentKind, type WfAgentKind } from '../../engine/agent-kind'
+import {
+  decisionAgentConfigSchema,
+  type AnyAgentConfig,
+} from '../../engine/decision-agent-schema'
 import { agentConfigSchema, type AgentConfig } from '../../engine/graph'
 import type { WfDb } from '../client'
 import { wfAgent, wfAgentDraft, wfAgentVersion } from '../schema'
@@ -7,6 +12,8 @@ import { createVersionedEntity } from '../versioned-entity'
 
 import { listWorkflowsReferencingAgent } from './authoring-workflows-references'
 import { pickDefined, selectChunked } from './shared'
+
+export type { AnyAgentConfig }
 
 // ---------------------------------------------------------------------------
 // Agents + versions + drafts
@@ -53,10 +60,86 @@ export async function listAgents(db: WfDb) {
   }))
 }
 
-// Same version/draft lifecycle as workflows (payload is the AgentConfig). The
-// entity row (name/icon/color) is created here; versions go through the factory.
+/**
+ * Every agent id with the little the graph linter needs: its name, whether it is
+ * archived, and every published version number.
+ *
+ * Deliberately not `listAgents`: that one filters archived agents out (they
+ * leave the node picker) and keeps only each agent's LATEST version, while the
+ * linter has to judge a node pointing at an archived agent — which still runs —
+ * and a node pinned to any published version. It also drags each agent's whole
+ * config along, which this does not need.
+ *
+ * Two queries regardless of how many agents there are: the ids, then their
+ * version numbers chunked by parameter budget.
+ */
+export async function listAgentRefs(db: WfDb): Promise<
+  Map<
+    string,
+    {
+      name: string
+      archived: boolean
+      latestVersionNumber: number | null
+      versionNumbers: Set<number>
+    }
+  >
+> {
+  const agents = await db
+    .select({
+      id: wfAgent.id,
+      name: wfAgent.name,
+      archived: wfAgent.archived,
+    })
+    .from(wfAgent)
+  const index = new Map<
+    string,
+    {
+      name: string
+      archived: boolean
+      latestVersionNumber: number | null
+      versionNumbers: Set<number>
+    }
+  >()
+  if (agents.length === 0) return index
+  for (const a of agents) {
+    index.set(a.id, {
+      name: a.name,
+      archived: a.archived,
+      latestVersionNumber: null,
+      versionNumbers: new Set(),
+    })
+  }
+  const versions = await selectChunked(
+    agents.map((a) => a.id),
+    (ids) => {
+      return db
+        .select({
+          agentId: wfAgentVersion.agentId,
+          versionNumber: wfAgentVersion.versionNumber,
+        })
+        .from(wfAgentVersion)
+        .where(inArray(wfAgentVersion.agentId, ids))
+    },
+  )
+  for (const v of versions) {
+    const entry = index.get(v.agentId)
+    if (!entry) continue
+    entry.versionNumbers.add(v.versionNumber)
+    if (
+      entry.latestVersionNumber == null ||
+      v.versionNumber > entry.latestVersionNumber
+    ) {
+      entry.latestVersionNumber = v.versionNumber
+    }
+  }
+  return index
+}
+
+// Same version/draft lifecycle as workflows (payload is the agent's config,
+// whichever shape its kind declares). The entity row (name/icon/color/kind) is
+// created here; versions go through the factory.
 const agentVersions = createVersionedEntity<
-  AgentConfig,
+  AnyAgentConfig,
   typeof wfAgentVersion.$inferSelect,
   typeof wfAgent.$inferSelect,
   typeof wfAgentDraft.$inferSelect
@@ -82,7 +165,9 @@ export async function createAgent(
     icon?: string
     color?: string
     createdBy?: string
-    config: AgentConfig
+    /** Immutable once written — see `wfAgent.kind`. Omitted → 'generation'. */
+    kind?: WfAgentKind
+    config: AnyAgentConfig
   },
 ) {
   const agentId = crypto.randomUUID()
@@ -90,6 +175,7 @@ export async function createAgent(
     id: agentId,
     slug: input.slug ?? null,
     name: input.name,
+    kind: input.kind ?? 'generation',
     description: input.description ?? null,
     icon: input.icon ?? null,
     color: input.color ?? null,
@@ -139,7 +225,7 @@ export async function getAgent(db: WfDb, agentId: string) {
 
 export async function updateAgentDraft(
   db: WfDb,
-  input: { agentId: string; config: AgentConfig; lastEditedBy?: string },
+  input: { agentId: string; config: AnyAgentConfig; lastEditedBy?: string },
 ) {
   await agentVersions.updateDraft(db, {
     ownerId: input.agentId,
@@ -153,7 +239,7 @@ export async function publishAgent(
   db: WfDb,
   input: {
     agentId: string
-    config: AgentConfig
+    config: AnyAgentConfig
     changeNote?: string
     /** The AI summary, when the publish dialog already had it (else filled later). */
     aiSummaryShort?: string
@@ -197,6 +283,21 @@ export function parseStoredAgentConfig(value: unknown): AgentConfig {
 }
 
 /**
+ * The same boundary, for a row whose KIND is only known at run time — which is
+ * every read that starts from `wf_agent` rather than from an already-narrowed
+ * caller. The two schemas are disjoint, so parsing a decision config as an
+ * `AgentConfig` doesn't degrade, it throws; the kind is what picks.
+ */
+export function parseStoredConfigOfKind(
+  kind: WfAgentKind,
+  value: unknown,
+): AnyAgentConfig {
+  return kind === 'decision'
+    ? decisionAgentConfigSchema.parse(value)
+    : agentConfigSchema.parse(value)
+}
+
+/**
  * One published version's config, for loading history back into the editor.
  * The agent twin of `getVersionGraph`.
  */
@@ -204,24 +305,33 @@ export async function getAgentVersionConfig(
   db: WfDb,
   versionId: string,
 ): Promise<{
-  config: AgentConfig
+  config: AnyAgentConfig
+  kind: WfAgentKind
   versionNumber: number
   agentId: string
 } | null> {
   const row = (
     await db
-      .select()
+      .select({
+        version: wfAgentVersion,
+        kind: wfAgent.kind,
+      })
       .from(wfAgentVersion)
+      .leftJoin(wfAgent, eq(wfAgent.id, wfAgentVersion.agentId))
       .where(eq(wfAgentVersion.id, versionId))
       .limit(1)
   )[0]
-  return row
-    ? {
-        config: parseStoredAgentConfig(row.config),
-        versionNumber: row.versionNumber,
-        agentId: row.agentId,
-      }
-    : null
+  if (!row) return null
+  // The join is LEFT because a version outlives nothing — but a row whose
+  // agent has been hard-deleted would otherwise drop out of history entirely,
+  // and reading it as a generation config is what every such row is.
+  const kind = toAgentKind(row.kind)
+  return {
+    config: parseStoredConfigOfKind(kind, row.version.config),
+    kind,
+    versionNumber: row.version.versionNumber,
+    agentId: row.version.agentId,
+  }
 }
 
 export async function listAgentVersions(db: WfDb, agentId: string) {

@@ -1,6 +1,6 @@
 import { and, inArray, sql, type SQL } from 'drizzle-orm'
 
-import { asAgentMeta, tokenCostUsd, type ModelPriceMap } from '../../engine/cost'
+import { agentUsage, tokenCostUsd, type ModelPriceMap } from '../../engine/cost'
 import { stepAgentVersion } from '../../engine/nodes/agent-generation'
 import type { WfDb } from '../client'
 import { wfRunStep } from '../schema'
@@ -30,23 +30,44 @@ import { selectChunked } from './shared'
 // there is no second cost implementation to drift from the first.
 
 /**
- * The JSON paths below mirror {@link asAgentMeta} / `agentUsage` exactly, and
- * `runs-usage.test.ts` pins them to each other by running both over the same
- * rows. A step counts as an agent call when its meta has a `steps` ARRAY and a
- * `totalUsage` KEY — `json_type` returns `'null'` (not SQL NULL) for a key
- * present with a JSON null value, which is what makes it the faithful
- * translation of JS's `'totalUsage' in meta`.
+ * The JSON paths below mirror {@link asAgentMeta} / {@link asDecisionMeta} /
+ * `agentUsage` exactly, and `runs-usage.test.ts` pins them to each other by
+ * running both over the same rows.
+ *
+ * TWO shapes count as a model call, because the two agent kinds record usage
+ * under different keys and share no field:
+ *
+ *   • generation — a `steps` ARRAY and a `totalUsage` KEY. `json_type` returns
+ *     `'null'` (not SQL NULL) for a key present with a JSON null value, which
+ *     is what makes it the faithful translation of JS's `'totalUsage' in meta`.
+ *   • decision — a `questionIds` ARRAY and a `usage` KEY. `questionIds` is the
+ *     discriminator because it is the one key only a decision step writes.
+ *
+ * Until the second was added, a run whose only model call was a decision agent
+ * folded to no rows at all and reported `totalTokens: null` with no cost.
  */
 function agentStepCondition(): SQL {
-  return sql`json_type(${wfRunStep.meta}, '$.steps') = 'array' and json_type(${wfRunStep.meta}, '$.totalUsage') is not null`
+  return sql`(
+    (json_type(${wfRunStep.meta}, '$.steps') = 'array' and json_type(${wfRunStep.meta}, '$.totalUsage') is not null)
+    or
+    (json_type(${wfRunStep.meta}, '$.questionIds') = 'array' and json_type(${wfRunStep.meta}, '$.usage') is not null)
+  )`
 }
 
-/** The provider-native model id the step recorded, or NULL if it recorded none. */
-const modelExpr = sql<string | null>`json_extract(${wfRunStep.meta}, '$.model')`
+/**
+ * The model id the step recorded, or NULL if it recorded none.
+ *
+ * A generation step writes the provider-native id to `model`; a decision step
+ * writes the COMPOSITE catalog id to `modelId`. Both resolve, because the price
+ * map is keyed by each.
+ */
+const modelExpr = sql<
+  string | null
+>`coalesce(json_extract(${wfRunStep.meta}, '$.model'), json_extract(${wfRunStep.meta}, '$.modelId'))`
 
 /** `coalesce` to 0 mirrors `agentUsage`'s `?? 0` for a usage field never written. */
-const inputTokensExpr = sql<number>`sum(coalesce(json_extract(${wfRunStep.meta}, '$.totalUsage.inputTokens'), 0))`
-const outputTokensExpr = sql<number>`sum(coalesce(json_extract(${wfRunStep.meta}, '$.totalUsage.outputTokens'), 0))`
+const inputTokensExpr = sql<number>`sum(coalesce(json_extract(${wfRunStep.meta}, '$.totalUsage.inputTokens'), json_extract(${wfRunStep.meta}, '$.usage.inputTokens'), 0))`
+const outputTokensExpr = sql<number>`sum(coalesce(json_extract(${wfRunStep.meta}, '$.totalUsage.outputTokens'), json_extract(${wfRunStep.meta}, '$.usage.outputTokens'), 0))`
 
 /**
  * Summed agent-call wall clock, in MILLISECONDS.
@@ -135,13 +156,18 @@ export function usageRowFromMeta(
   runId: string,
   meta: unknown,
 ): RunUsageRow | null {
-  const m = asAgentMeta(meta)
-  if (!m) return null
+  // Via `agentUsage` rather than the narrowings directly, so this reads exactly
+  // the two shapes `agentStepCondition` accepts and cannot drift from them.
+  const usage = agentUsage(meta)
+  if (!usage) return null
   return {
     runId,
-    model: m.model ?? null,
-    inputTokens: m.totalUsage?.inputTokens ?? 0,
-    outputTokens: m.totalUsage?.outputTokens ?? 0,
+    // Null for a step that recorded no model, whether that reached us as
+    // `undefined` (generation meta missing the key) or `''` (decision meta
+    // missing `modelId`) — the SQL side is a single NULL either way.
+    model: usage.model ? usage.model : null,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
     agentMs: null,
     agentVersion: stepAgentVersion(meta),
   }

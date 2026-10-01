@@ -1,5 +1,5 @@
 import { Check } from 'lucide-react'
-import { type ReactNode, useState } from 'react'
+import { Fragment, type ReactNode, useState } from 'react'
 
 import { cn } from './cn'
 import { Popover } from './popover'
@@ -145,44 +145,60 @@ export type FilterPillOption = {
   value: string
   label: string
   /**
-   * Rich rendering for the option — a run-status badge, a coloured dot, an
-   * icon + name. Used in place of the bare label on BOTH the option row and the
-   * trigger, so a picked option looks the same open or closed. `label` still
-   * drives search and the a11y name, so always give a real one.
+   * Rich rendering for the option — a coloured dot, an icon + name, an avatar.
+   * Used in place of the bare label on BOTH the option row and the trigger badge,
+   * so a picked option looks the same open or closed. `label` still drives search
+   * and the a11y name, so always give a real one.
    */
   node?: ReactNode
+  /** The `node` already renders its own badge, so the trigger skips the wrapper. */
+  selfBadged?: boolean
+  /** Draws a divider line above this option in the panel. */
+  separatorBefore?: boolean
 }
 
-/**
- * A pill filter trigger with a popover option list — the toolbar affordance the
- * host uses for its data tables (`DataTableFilter`), mirrored here so the SDK's
- * filter bars read the same. Unset it renders dashed + muted (`[Trigger]`); set
- * it renders solid with the chosen option as a badge (`[Trigger  chat]`).
- *
- * Single-select: `value` is the chosen option's value, `''` meaning "no filter".
- * Picking a row closes the panel; clicking the already-checked row unchecks it
- * (back to `''`), as does "Clear" at the foot of the panel.
- */
-export function FilterPill({
-  label,
-  options,
-  value,
-  onChange,
-  align = 'start',
-  searchPlaceholder,
-  className,
-}: {
+/** A chosen option as it reads on a pill trigger: always in a badge. */
+function PickedBadge({ option }: { option: FilterPillOption }) {
+  const content = option.node ?? option.label
+  if (option.selfBadged) return <>{content}</>
+  return (
+    <span className="inline-flex max-w-56 items-center rounded-sm bg-accent px-1.5 py-0.5 text-xs font-normal">
+      <span className="truncate">{content}</span>
+    </span>
+  )
+}
+
+type PillProps = {
   label: string
   options: FilterPillOption[]
-  /** Selected option value; `''` = unset (no filter applied). */
-  value: string
-  onChange: (next: string) => void
   align?: 'start' | 'end'
   /** Forces the in-panel search box on; it auto-appears past 8 options. */
   searchPlaceholder?: string
   className?: string
+}
+
+/**
+ * The toolbar filter affordance: a pill trigger with a popover option list.
+ * Unset it renders dashed + muted (`[Type]`); set it renders solid with each
+ * chosen option as a badge (`[Type | Tools]`). The panel is just the options —
+ * no title — with a small centered "Clear" at the foot once something is set.
+ * `FilterPill` is single-select; `FilterPillMulti` toggles any number of rows.
+ */
+function PillBase({
+  label,
+  options,
+  align = 'start',
+  searchPlaceholder,
+  className,
+  values,
+  multiple,
+  onChange,
+}: PillProps & {
+  values: string[]
+  multiple: boolean
+  onChange: (next: string[]) => void
 }) {
-  const selected = options.find((o) => o.value === value)
+  const picked = options.filter((o) => values.includes(o.value))
   const searchable = searchPlaceholder != null || options.length > 8
 
   return (
@@ -200,20 +216,18 @@ export function FilterPill({
           onClick={toggle}
           className={cn(
             'inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-sm font-medium outline-none transition-colors hover:bg-accent',
-            value
+            picked.length > 0
               ? 'border-input'
               : 'border-dashed border-input text-muted-foreground',
           )}
         >
           {label}
-          {selected ? (
+          {picked.length > 0 ? (
             <>
               <span className="mx-0.5 h-4 w-px bg-border" />
-              {selected.node ?? (
-                <span className="rounded-sm bg-accent px-1.5 py-0.5 text-xs font-normal">
-                  {selected.label}
-                </span>
-              )}
+              {picked.map((o) => (
+                <PickedBadge key={o.value} option={o} />
+              ))}
             </>
           ) : null}
         </button>
@@ -221,14 +235,25 @@ export function FilterPill({
     >
       {({ close }) => (
         <FilterPillPanel
-          label={label}
           options={options}
-          value={value}
+          values={values}
           searchable={searchable}
           searchPlaceholder={searchPlaceholder ?? `Search ${label.toLowerCase()}…`}
-          onPick={(next) => {
-            onChange(next)
-            close()
+          onPick={(v) => {
+            if (!multiple) {
+              onChange(values.includes(v) ? [] : [v])
+              close()
+            } else {
+              onChange(
+                values.includes(v)
+                  ? values.filter((x) => x !== v)
+                  : [...values, v],
+              )
+            }
+          }}
+          onClear={() => {
+            onChange([])
+            if (!multiple) close()
           }}
         />
       )}
@@ -236,20 +261,47 @@ export function FilterPill({
   )
 }
 
-function FilterPillPanel({
-  label,
-  options,
+/** Single-select pill. `value` is the chosen option's value; `''` = no filter. */
+export function FilterPill({
   value,
+  onChange,
+  ...rest
+}: PillProps & { value: string; onChange: (next: string) => void }) {
+  return (
+    <PillBase
+      {...rest}
+      multiple={false}
+      values={value ? [value] : []}
+      onChange={(next) => onChange(next[0] ?? '')}
+    />
+  )
+}
+
+/** Multi-select pill. `value` is the chosen values; `[]` = no filter. */
+export function FilterPillMulti({
+  value,
+  onChange,
+  ...rest
+}: PillProps & { value: string[]; onChange: (next: string[]) => void }) {
+  return (
+    <PillBase {...rest} multiple values={value} onChange={onChange} />
+  )
+}
+
+function FilterPillPanel({
+  options,
+  values,
   searchable,
   searchPlaceholder,
   onPick,
+  onClear,
 }: {
-  label: string
   options: FilterPillOption[]
-  value: string
+  values: string[]
   searchable: boolean
   searchPlaceholder: string
-  onPick: (next: string) => void
+  onPick: (value: string) => void
+  onClear: () => void
 }) {
   const [query, setQuery] = useState('')
   const q = query.trim().toLowerCase()
@@ -260,51 +312,52 @@ function FilterPillPanel({
   return (
     <>
       {searchable ? (
-        <input
-          autoFocus
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={searchPlaceholder}
-          className="mb-1 h-8 w-full rounded-sm bg-transparent px-2 text-sm outline-none placeholder:text-muted-foreground"
-        />
-      ) : (
-        <div className="px-2 py-1.5 text-xs font-normal uppercase tracking-wide text-muted-foreground">
-          {label}
-        </div>
-      )}
-      <div className="h-px bg-border" />
+        <>
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={searchPlaceholder}
+            className="mb-1 h-8 w-full rounded-sm bg-transparent px-2 text-sm outline-none placeholder:text-muted-foreground"
+          />
+          <div className="h-px bg-border" />
+        </>
+      ) : null}
       {shown.length === 0 ? (
         <div className="px-2 py-3 text-xs text-muted-foreground">
           No matches.
         </div>
       ) : null}
-      {shown.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          role="option"
-          aria-selected={opt.value === value}
-          // Re-picking the checked option clears the filter, so the row acts
-          // as a toggle rather than a dead click.
-          onClick={() => onPick(opt.value === value ? '' : opt.value)}
-          className={cn(
-            'mt-0.5 flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition hover:bg-accent',
-            opt.value === value && 'bg-accent',
-          )}
-        >
-          <span className="min-w-0 flex-1 truncate">
-            {opt.node ?? opt.label}
-          </span>
-          {opt.value === value ? <Check className="size-3.5 shrink-0" /> : null}
-        </button>
-      ))}
-      {value ? (
+      {shown.map((opt) => {
+        const on = values.includes(opt.value)
+        return (
+          <Fragment key={opt.value}>
+            {opt.separatorBefore ? <div className="mt-1 h-px bg-border" /> : null}
+            <button
+              type="button"
+              role="option"
+              aria-selected={on}
+              onClick={() => onPick(opt.value)}
+              className={cn(
+                'mt-0.5 flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition hover:bg-accent',
+                on && 'bg-accent',
+              )}
+            >
+              <span className="min-w-0 flex-1 truncate">
+                {opt.node ?? opt.label}
+              </span>
+              {on ? <Check className="size-3.5 shrink-0" /> : null}
+            </button>
+          </Fragment>
+        )
+      })}
+      {values.length > 0 ? (
         <>
           <div className="mt-1 h-px bg-border" />
           <button
             type="button"
-            onClick={() => onPick('')}
-            className="mt-0.5 w-full rounded-sm px-2 py-1.5 text-left text-sm transition hover:bg-accent"
+            onClick={onClear}
+            className="mt-0.5 w-full rounded-sm px-2 py-1.5 text-center text-xs transition hover:bg-accent"
           >
             Clear
           </button>

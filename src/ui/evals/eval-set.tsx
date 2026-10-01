@@ -328,7 +328,7 @@ function TargetRow({
             Cancel
           </Button>
           <Button size="sm" disabled={!canSave} onClick={() => void save()}>
-            {updateSet.isPending ? 'Saving…' : 'Save target'}
+            {updateSet.isPending ? 'Saving…' : 'Save agent'}
           </Button>
         </div>
       </div>

@@ -26,6 +26,7 @@ export const CHECK_TYPE_LABELS: Record<EvalCheck['type'], string> = {
   output_match: 'Output matches',
   llm_judge: 'Judge',
   decision_judge: 'Calibrated judge',
+  decision_answers: 'Decision matrix',
 }
 
 // Third-person verb for each comparison, so a derived name reads as a sentence
@@ -73,6 +74,22 @@ export function heuristicCheckName(check: EvalCheck): string | null {
       return `Reaches ${check.nodeId} where ${check.path || 'input'} ${MATCH_VERB[check.match]} ${formatValue(check.value)}`
     case 'output_match':
       return `Output${check.path ? `.${check.path}` : ''} ${MATCH_VERB[check.match]} ${formatValue(check.value)}`
+    case 'decision_answers': {
+      // Named by what it pins, in the order an author reads it: the verdict
+      // first (the thing that acts on the world) and then how many answers had
+      // to be right for it. A bare count would say nothing about which.
+      const parts = check.expect.map((e) => {
+        const value =
+          e.yes != null ? (e.yes ? 'yes' : 'no') : (e.key ?? '?')
+        return `${e.questionId} ${value}`
+      })
+      if (check.verdict) {
+        return parts.length > 0
+          ? `Verdict ${check.verdict}, with ${truncate(parts.join(', '), 40)}`
+          : `Verdict ${check.verdict}`
+      }
+      return parts.length > 0 ? `Answers ${truncate(parts.join(', '), 50)}` : null
+    }
     // Both judges assert in prose, so `describeCheck` quotes the rubric rather
     // than deriving a sentence from config that isn't there.
     case 'llm_judge':

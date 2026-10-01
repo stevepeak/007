@@ -19,7 +19,6 @@ import { useWfComponents } from '../context'
 import { WfLink } from '../nav'
 
 import { NodeInputsPanel } from './node-data-panel'
-import { DecisionInspector } from './node-inspector-decision'
 import {
   BranchInspector,
   IterationInspector,
@@ -64,7 +63,6 @@ const NODE_INSPECTORS: Partial<
   tool: ToolInspector,
   branch: BranchInspector,
   switch: SwitchInspector,
-  decision: DecisionInspector,
   output: OutputInspector,
   iteration: IterationInspector,
   workflow: WorkflowInspector,

@@ -183,6 +183,38 @@ export const wfEvalResult = sqliteTable(
     promptLabel: text('prompt_label'),
     promptBody: text('prompt_body'),
     attempt: integer('attempt'),
+    // What ACTUALLY answered, echoed by the provider — distinct from `modelId`
+    // above, which is the matrix cell's identity (the id we ASKED with, and
+    // part of the cell key).
+    //
+    // The two differ whenever a provider id floats. `jev-latest` is the live
+    // example: Venice can change what answers behind it without telling us, so
+    // a decision agent pinned to an exact 007 version can change behaviour with
+    // no version bump anywhere. That is a third eval-drift axis beyond the two
+    // the change log covers, and a scheduled sweep is the only detector — which
+    // only works if each result records what it was actually graded against.
+    //
+    // Null for a cell that produced a `wf_run`: there the per-step model is
+    // already recorded on the run and read back by `loadRunStats`.
+    answeredModelId: text('answered_model_id'),
+    // ── Usage, for the cells that have nowhere else to record it ─────────────
+    // Set ONLY for a cell with no `wf_run` — today that means a decision cell,
+    // which calls a provider directly and leaves no run, no steps and so no
+    // usage behind. The comment above still holds for every OTHER cell: a cell
+    // that produced a run has its tokens on that run's agent steps, which are
+    // the single source of truth and are read back by `loadRunStats`. These
+    // columns do not duplicate that; they cover the case it cannot reach.
+    //
+    // Without them a decision sweep's cost panel reported `measuredCells: 0`
+    // and `totalUsd: null` while the provider was returning usage on every
+    // single call — the numbers existed and were thrown away at the boundary.
+    //
+    // Tokens are stored and the DOLLARS are derived at read time from
+    // `wf_model`, exactly as a run's cost is: one price table, one fold, so a
+    // decision cell and an agent cell can never disagree about what a token
+    // costs. (`costUsd` is deliberately NOT a column here for that reason.)
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
     createdAt: createdAt(),
   },
   (t) => [

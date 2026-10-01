@@ -9,6 +9,7 @@ import {
   getModelCatalog,
   getModelUsage,
   invalidateModelPriceMap,
+  listEnabledDecisionModelFacts,
   listEnabledModels,
   listModelProviders,
   listToolInvocations,
@@ -109,13 +110,48 @@ export function buildModelHandlers<TDeps>(
       }
     },
 
-    // Straight from the host config, with no DB layer and no curation: a host
-    // declares exactly the deciders its `getDecider` can resolve, so there is
-    // nothing for an admin page to enable or disable. An unwired host returns
-    // `[]`, and the editor reads that as "Decision nodes are off here".
+    // The host DECLARES which deciders its `getDecider` can resolve; the catalog
+    // knows what they currently cost and how big their window is. Both are needed
+    // and neither can supply the other's half:
+    //
+    //   • host  → `questionTypes`, `calibrated`, `maxQuestionsPerCall`. Provider
+    //     semantics. No `/models` payload reports whether a model's
+    //     probabilities are calibrated, and getting that wrong silently changes
+    //     what every threshold an author sets actually means.
+    //   • catalog → label, `contextLength`, and (via `wf_model`'s price columns)
+    //     the numbers the cost fold reads. Live, refreshed, and admin-curated.
+    //
+    // So: the host list is the SPINE — a decider absent from it cannot be
+    // resolved and must not be offered however many catalog rows mention it —
+    // and catalog facts are layered over each entry. Before the first refresh,
+    // or for a host that catalogues no decision models, the host list passes
+    // through untouched, which is exactly how this behaved before the catalog
+    // learned about them.
     listDecisionModels: async (c) => {
       if (!opts.config.listDecisionModels) return []
-      return await opts.config.listDecisionModels({ env: await c.env() })
+      const declared = await opts.config.listDecisionModels({
+        env: await c.env(),
+      })
+      let facts: Awaited<ReturnType<typeof listEnabledDecisionModelFacts>>
+      try {
+        facts = await listEnabledDecisionModelFacts(c.db)
+      } catch (err) {
+        // The catalog is an enrichment, never a gate — a failed read must not
+        // take the Decision pickers down with it.
+        c.logger.error('[wf] listDecisionModels: catalog read failed', err)
+        return declared
+      }
+      if (facts.length === 0) return declared
+      const byId = new Map(facts.map((f) => [f.id, f]))
+      return declared.map((m) => {
+        const fact = byId.get(m.id)
+        if (!fact) return m
+        return {
+          ...m,
+          label: fact.label,
+          contextLength: fact.contextLength ?? m.contextLength,
+        }
+      })
     },
 
     listDecisionProviders: async (c) => {

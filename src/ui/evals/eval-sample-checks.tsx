@@ -10,6 +10,7 @@ import type { JsonSchema } from '../../engine'
 import type {
   CheckTree,
   EvalCheck,
+  WfDecisionAgentSummary,
   WfEvalTargetKind,
 } from '../../server/protocol'
 import { ArchiveButton } from '../archive-button'
@@ -46,6 +47,7 @@ export function ChecksList({
   hasTools,
   outputSchema,
   allowToolIds,
+  decisionContract,
   openIndex,
   onOpenChange,
   onChange,
@@ -60,6 +62,8 @@ export function ChecksList({
   outputSchema?: JsonSchema | null
   /** Scope the tool pickers to the target agent's wired tools (undefined = all). */
   allowToolIds?: string[]
+  /** The target's question set, when it is a decision agent. */
+  decisionContract?: WfDecisionAgentSummary | null
   /** Which check is expanded (accordion — at most one). */
   openIndex: number | null
   onOpenChange: (index: number | null) => void
@@ -188,6 +192,7 @@ export function ChecksList({
                       hasTools={hasTools}
                       outputSchema={outputSchema}
                       allowToolIds={allowToolIds}
+                      decisionContract={decisionContract}
                     />
                   </div>
                 ) : null}

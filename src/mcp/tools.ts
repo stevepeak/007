@@ -169,7 +169,7 @@ export function readTools(): WfMcpTool[] {
       name: 'list_agents',
       title: 'List agents',
       description:
-        'List every agent — the reusable LLM workers that workflows call — with its model, tools, required prompt variables and declared output. Start here to see what exists.',
+        'List every agent with its model, tools, required prompt variables and declared output. Start here to see what exists. Note `kind`: a "generation" agent is the reusable LLM worker a workflow calls; a "decision" agent is a question set judged by a decision model and rolled up to one verdict — its `decision` field carries the question ids and the verdicts it can reach, it has no prompt or tools, and a workflow runs it through an ordinary agent node whose `config.agentId` names it, with `config.source` binding the value to judge — the node outputs `verdict`, `because`, `reasoning` and `answers` for a Switch to route on.',
       inputSchema: {},
       readOnly: true,
       run: async (client) => await client.listAgents(),
@@ -179,7 +179,7 @@ export function readTools(): WfMcpTool[] {
       name: 'get_agent',
       title: 'Get agent',
       description:
-        "Read one agent's full config: system prompt, user prompt, allowed tools, model, max turns, sub-agent delegation, and output contract. Returns both the published version and the unsaved draft, which can differ.",
+        "Read one agent's full config, published version and unsaved draft (which can differ). Check `agent.kind` first — it says which shape `config` is. A \"generation\" agent has a system prompt, user prompt, allowed tools, max turns, sub-agent delegation and an output contract; a \"decision\" agent has `questions` (boolean/category/scale, with per-question `considerations` and `threshold`), the `verdicts` it may reach, and the ordered `rules` that roll answers up into one — first match wins, last rule is the fallback.",
       inputSchema: {
         agentId: z.string().describe('Agent id, from list_agents.'),
       },

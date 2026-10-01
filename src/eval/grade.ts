@@ -5,6 +5,7 @@ import {
   DEFAULT_DECISION_THRESHOLD,
   resolveVerdicts,
   type Decider,
+  type DecisionVerdict,
 } from '../engine/decision'
 import { errorFeedLine } from '../engine/error-detail'
 import {
@@ -12,6 +13,7 @@ import {
   JUDGE_CONFIDENCE_MAX,
   type CheckResult,
   type CheckTree,
+  type DecisionExpectation,
   type EvalCheck,
   type EvalMatch,
 } from '../engine/eval-schema'
@@ -264,10 +266,95 @@ function gradeBinary(check: EvalCheck, input: GradeRowInput): CheckResult {
             reason: `output${check.path ? `.${check.path}` : ''} did not ${check.match} ${preview(check.value)}; actual: ${preview(actual)}`,
           }
     }
+    case 'decision_answers':
+      return gradeDecisionAnswers(check, input.output)
     /* c8 ignore next */
     default:
       return { pass: false, reason: 'unknown binary check' }
   }
+}
+
+// ── decision matrix check ───────────────────────────────────────────────────
+
+/**
+ * Grade a decision agent's `{ verdict, answers }` against the expected matrix.
+ *
+ * Deterministic, and reads the SAME `DecisionVerdict` shape `resolveVerdicts`
+ * produces — the answer has already been through the engine's interpretation
+ * layer by the time it is persisted, so the threshold a boolean was judged at
+ * is the agent's own and not one this check re-applies.
+ *
+ * Every mismatch is reported, not just the first: a matrix that got three of
+ * five questions wrong should say so in one read, because the next edit is to
+ * the questions and the author needs to know which ones.
+ */
+function gradeDecisionAnswers(
+  check: Extract<EvalCheck, { type: 'decision_answers' }>,
+  output: unknown,
+): CheckResult {
+  const result = output as
+    | { verdict?: unknown; answers?: Record<string, DecisionVerdict> }
+    | null
+    | undefined
+  const answers = result?.answers
+  if (!answers || typeof answers !== 'object') {
+    return {
+      pass: false,
+      reason:
+        'the run produced no decision answers — this check grades a decision agent, whose output is { verdict, because, answers }',
+    }
+  }
+
+  const misses: string[] = []
+  if (check.verdict != null && result?.verdict !== check.verdict) {
+    misses.push(
+      `verdict expected ${check.verdict}, got ${preview(result?.verdict)}`,
+    )
+  }
+  for (const expectation of check.expect) {
+    const miss = expectationMiss(expectation, answers[expectation.questionId])
+    if (miss) misses.push(miss)
+  }
+  return misses.length === 0
+    ? { pass: true }
+    : { pass: false, reason: misses.join('; ') }
+}
+
+/** One expectation's failure sentence, or null when it held. */
+function expectationMiss(
+  expectation: DecisionExpectation,
+  verdict: DecisionVerdict | undefined,
+): string | null {
+  const id = expectation.questionId
+  if (!verdict) return `${id} was not answered`
+  // The winning outcome's share of the mass, on one scale for all three types —
+  // the number `minProbability` is a floor on. For a boolean expecting `no`
+  // that is `1 - p`, because "no with p(yes)=0.1" is a confident no.
+  const confidenceOf = (key: string) =>
+    verdict.distribution.find((e) => e.key === key)?.probability ?? 0
+
+  if (verdict.type === 'boolean') {
+    if (expectation.yes != null && verdict.value !== expectation.yes) {
+      return `${id} expected ${expectation.yes ? 'yes' : 'no'}, got ${verdict.value ? 'yes' : 'no'} (p=${verdict.probability.toFixed(2)})`
+    }
+    const p = expectation.yes === false ? 1 - verdict.probability : verdict.probability
+    if (expectation.minProbability != null && p < expectation.minProbability) {
+      return `${id} answered ${verdict.value ? 'yes' : 'no'} at ${p.toFixed(2)}, below the ${expectation.minProbability} the sample asked for`
+    }
+    return null
+  }
+
+  const actual = verdict.type === 'category' ? verdict.value : verdict.level
+  if (expectation.key != null && actual !== expectation.key) {
+    return `${id} expected ${expectation.key}, got ${actual}`
+  }
+  if (expectation.minProbability != null) {
+    const p = confidenceOf(actual)
+    if (p < expectation.minProbability) {
+      return `${id} answered ${actual} at ${p.toFixed(2)}, below the ${expectation.minProbability} the sample asked for`
+    }
+  }
+  return null
 }
 
 // ── judge check ─────────────────────────────────────────────────────────────

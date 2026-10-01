@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { MODEL_KINDS, type ModelKind } from '../engine/model-catalog'
 import type {
   ModelCapabilities,
   ModelOption,
@@ -34,8 +35,8 @@ import { boundedLimit, optString, reqString, type WfMcpTool } from './tools'
 //   • `list_decision_models` — the same argument as `list_models`, one namespace
 //     over. Deciders are a SEPARATE catalog from chat models, and two write
 //     tools already take an id out of it: a `decision_judge` check's `modelId`
-//     (`upsert_eval_sample`) and a Decision node's `config.modelId`
-//     (`patch_workflow_draft`). With nothing listing them, a model either
+//     (`upsert_eval_sample`) and a decision agent's `config.modelId`
+//     (`create_agent`). With nothing listing them, a model either
 //     invented an id — failing at the provider after a sweep had launched, the
 //     exact failure `list_models` was built to prevent — or omitted it and
 //     silently got whatever sorts first.
@@ -174,8 +175,16 @@ export function platformReadTools(): WfMcpTool[] {
         'Each provider carries `enabledCount` / `modelCount` and `lastRefreshedAt`. Those two are what explain a surprising result: "only 3 of 312 are enabled" and "last refreshed six weeks ago" are the usual reasons a model you expected is missing. A stale catalog is fixed with refresh_model_catalog; a disabled model with set_model_enabled.',
         '',
         '`usedByAgents` names the agents pointing at each model — the blast radius before disabling one, and the reason the platform refuses to disable a model still in use.',
+        '',
+        'CHAT models only by default. Deciders share this table but resolve through a different path and cannot run an agent, so offering them here would advertise ids that create_agent refuses. `kind: "decision"` lists them (list_decision_models is the richer read), `kind: "all"` shows both with a `kind` on every row.',
       ].join('\n'),
       inputSchema: {
+        kind: z
+          .enum([...MODEL_KINDS, 'all'])
+          .nullish()
+          .describe(
+            'Which catalog: "chat" (the default — the only models an agent can run on), "decision" (deciders, resolved via getDecider) or "all". A row written before this distinction existed reads as "chat".',
+          ),
         query: z
           .string()
           .nullish()
@@ -224,8 +233,24 @@ export function platformReadTools(): WfMcpTool[] {
         // prompt-side price?") that were one click in the console and
         // unanswerable here. `listModels()` is the fallback, because a filtered
         // enabled list is still worth more than an error.
+        // Chat unless asked otherwise. A decider cannot run an agent — it
+        // resolves through `getDecider`, not `getModel` — so listing one here by
+        // default advertises an id that `create_agent`'s preflight then refuses,
+        // which reads as the catalog and the writer disagreeing.
+        const requestedKind: ModelKind | 'all' =
+          (optString(args.kind) as ModelKind | 'all' | undefined) ?? 'chat'
+
         const catalog = await client.getModelCatalog().catch(() => null)
         if (!catalog) {
+          // `listModels` is the enabled CHAT list and nothing else, so it cannot
+          // stand in for a decision query — answering one from it would hand
+          // back chat ids under a decision heading. Say so instead.
+          if (requestedKind === 'decision') {
+            return {
+              error:
+                'The full catalog could not be read, and the fallback list holds chat models only — it cannot answer a decision query. Use list_decision_models, which reads the host config directly.',
+            }
+          }
           const [models, providers] = await Promise.all([
             client.listModels(),
             client.listProviders().catch(() => []),
@@ -234,7 +259,7 @@ export function platformReadTools(): WfMcpTool[] {
             providers,
             models: models.map(projectModel),
             degraded:
-              'The full catalog could not be read, so this is the plain enabled list: no disabled rows, no price split, no provider refresh status.',
+              'The full catalog could not be read, so this is the plain enabled list: no disabled rows, no price split, no provider refresh status. Chat models only.',
           }
         }
 
@@ -256,6 +281,14 @@ export function platformReadTools(): WfMcpTool[] {
 
         const matched = catalog.models.filter((m) => {
           if (!includeDisabled && !m.enabled) return false
+          // Absent `kind` means a row written before the column existed, which
+          // is a chat model — the same default the storage layer applies.
+          if (
+            requestedKind !== 'all' &&
+            (m.kind ?? 'chat') !== requestedKind
+          ) {
+            return false
+          }
           if (providerId && m.providerId !== providerId) return false
           if (vendor && m.vendor?.toLowerCase() !== vendor) return false
           if (query) {
@@ -312,9 +345,14 @@ export function platformReadTools(): WfMcpTool[] {
             shown: shown.length,
             enabledInCatalog: catalog.models.filter((m) => m.enabled).length,
             inCatalog: catalog.models.length,
+            // Named so a surprising `matched` is self-explaining: "0 matched,
+            // and you were looking at the chat catalog" is the answer to most
+            // "where did my model go" questions this tool produces.
+            kind: requestedKind,
           },
           models: shown.map((m) => ({
             ...projectModel(m),
+            kind: m.kind ?? 'chat',
             enabled: m.enabled,
             vendor: m.vendor,
             // The split, not just the blend: a prompt-heavy workload and a
@@ -340,7 +378,7 @@ export function platformReadTools(): WfMcpTool[] {
       name: 'list_decision_models',
       title: 'List decision models',
       description:
-        'The DECISION models (deciders) this deployment can reach — a separate catalog from list_models, which returns chat models. A decider answers one closed question with a probability instead of prose. Pass an `id` from here VERBATIM wherever a decision model is named: a `decision_judge` check’s `modelId`, or a Decision node’s `config.modelId`. A chat model id in either slot resolves to nothing. `calibrated` says whether the probabilities are real or the model’s self-report — a threshold means much less against an uncalibrated decider. An empty list means this deployment has no decision provider wired, so `decision_judge` checks cannot be graded here and Decision nodes are off.',
+        'The DECISION models (deciders) this deployment can reach — a separate catalog from list_models, which returns chat models. A decider answers one closed question with a probability instead of prose. Pass an `id` from here VERBATIM wherever a decision model is named: a `decision_judge` check’s `modelId`, or a decision agent’s `config.modelId`. A chat model id in either slot resolves to nothing. `calibrated` says whether the probabilities are real or the model’s self-report — a threshold means much less against an uncalibrated decider. An empty list means this deployment has no decision provider wired, so `decision_judge` checks cannot be graded here and decision agents are off.',
       inputSchema: {},
       readOnly: true,
       run: async (client) => {

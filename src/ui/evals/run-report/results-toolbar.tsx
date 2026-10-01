@@ -1,7 +1,13 @@
-import { ArrowDown, ArrowUp } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  CheckCircle2,
+  XCircle,
+} from 'lucide-react'
 
 import { cn } from '../../cn'
-import { FilterSelect } from '../../filters'
+import { FilterPill, FilterSelect } from '../../filters'
 
 import type { GroupBy, SortKey, SortState } from './model'
 import type { useResultsView } from './use-results-view'
@@ -73,40 +79,35 @@ export function ResultsToolbar({ view }: { view: ResultsView }) {
           )}
         </button>
       </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <FilterSelect
+      <div className="flex flex-wrap items-center gap-2">
+        <FilterPill
           label="Status"
-          value={view.status}
-          onChange={view.setStatus}
-          options={[
-            { value: 'all', label: 'All' },
-            { value: 'pass', label: 'Passed' },
-            { value: 'fail', label: 'Failed' },
-            { value: 'error', label: 'Errored' },
-          ]}
+          value={view.status === 'all' ? '' : view.status}
+          onChange={(v) => view.setStatus(v || 'all')}
+          options={STATUS_OPTIONS}
         />
         {isMatrix && view.modelNames.length > 1 && (
-          <FilterSelect
+          <FilterPill
             label="Model"
-            value={view.model}
-            onChange={view.setModel}
-            options={allOf(view.modelNames)}
+            value={view.model === 'all' ? '' : view.model}
+            onChange={(v) => view.setModel(v || 'all')}
+            options={plain(view.modelNames)}
           />
         )}
         {isMatrix && view.promptNames.length > 1 && (
-          <FilterSelect
+          <FilterPill
             label="Prompt"
-            value={view.prompt}
-            onChange={view.setPrompt}
-            options={allOf(view.promptNames)}
+            value={view.prompt === 'all' ? '' : view.prompt}
+            onChange={(v) => view.setPrompt(v || 'all')}
+            options={plain(view.promptNames)}
           />
         )}
         {view.goals.length > 1 && (
-          <FilterSelect
+          <FilterPill
             label="Goal"
-            value={view.goal}
-            onChange={view.setGoal}
-            options={allOf(view.goals)}
+            value={view.goal === 'all' ? '' : view.goal}
+            onChange={(v) => view.setGoal(v || 'all')}
+            options={plain(view.goals)}
           />
         )}
       </div>
@@ -114,12 +115,24 @@ export function ResultsToolbar({ view }: { view: ResultsView }) {
   )
 }
 
-/** An "All" option ahead of each distinct value — every filter has this shape. */
-function allOf(values: string[]) {
-  return [
-    { value: 'all', label: 'All' },
-    ...values.map((v) => ({ value: v, label: v })),
-  ]
+const STATUS_OPTIONS = [
+  { value: 'pass', label: 'Passed', Icon: CheckCircle2, tone: 'text-emerald-600' },
+  { value: 'fail', label: 'Failed', Icon: XCircle, tone: 'text-red-600' },
+  { value: 'error', label: 'Errored', Icon: AlertTriangle, tone: 'text-amber-600' },
+].map(({ value, label, Icon, tone }) => ({
+  value,
+  label,
+  node: (
+    <span className="inline-flex items-center gap-1.5">
+      <Icon className={cn('size-3.5', tone)} />
+      {label}
+    </span>
+  ),
+}))
+
+/** Every distinct value as a pill option — "no filter" is the pill's unset state. */
+function plain(values: string[]) {
+  return values.map((v) => ({ value: v, label: v }))
 }
 
 // A sortable column header — clicking toggles/sets the sort, mirroring the Sort

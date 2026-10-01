@@ -51,7 +51,7 @@ describe('decision hooks', () => {
     ).toThrow('decision support needs all of')
   })
 
-  test('are absent by default — Decision nodes are simply off', () => {
+  test('are absent by default — decision agents are simply off', () => {
     const config = defineWfConfig(baseConfig())
     expect(config.getDecider).toBeUndefined()
     expect(config.listDecisionModels).toBeUndefined()

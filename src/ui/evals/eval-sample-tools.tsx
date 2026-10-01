@@ -2,6 +2,7 @@ import { ChevronDown, Radio, Wrench } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import type {
+  AgentConfig,
   EvalToolMode,
   EvalToolSetting,
   EvalTools,
@@ -73,11 +74,14 @@ function AgentToolList({
   const [editing, setEditing] = useState<string | null>(null)
 
   const toolIds = useMemo(() => {
-    return (
-      detail.data?.currentVersion?.config.toolIds ??
-      detail.data?.draft?.config.toolIds ??
-      []
-    )
+    // Generation agents only. A decision agent has no `toolIds` at all, and
+    // `useTargetHasTools` already answers `false` for one, so this list is
+    // never rendered against it — the guard keeps that true structurally
+    // rather than by coincidence of call order.
+    if (detail.data?.agent.kind !== 'generation') return []
+    const config = (detail.data.currentVersion?.config ??
+      detail.data.draft?.config) as AgentConfig | undefined
+    return config?.toolIds ?? []
   }, [detail.data])
 
   const byId = useMemo(
@@ -396,7 +400,11 @@ export function useTargetHasTools(
   // rendered ladder — `null` here means "don't decide yet", which is why the
   // caller can't use QueryState either.
   if (detail.isLoading) return null
-  const config = detail.data?.currentVersion?.config ?? detail.data?.draft?.config
+  // A decision agent calls nothing — the Tools card would be a question with
+  // no answer, exactly as it is for a generation agent with an empty tool list.
+  if (detail.data?.agent.kind !== 'generation') return false
+  const config = (detail.data.currentVersion?.config ??
+    detail.data.draft?.config) as AgentConfig | undefined
   if (!config) return false
   return (
     config.toolIds.length > 0 || (config.subAgents?.targets.length ?? 0) > 0

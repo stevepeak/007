@@ -1,3 +1,7 @@
+import {
+  EVAL_WRAPPER_NAME_PREFIX,
+  evalWrapperName,
+} from '../engine/eval-wrapper-name'
 import type { WorkflowGraph } from '../engine/graph'
 import { stableEqual } from '../engine/stable-stringify'
 import { MANUAL_TRIGGER_KIND } from '../engine/trigger-registry'
@@ -26,23 +30,10 @@ import {
 // the immutable result, so a silent float would make the stored record a lie
 // about what was graded — which is exactly the bug this path used to have.
 
-/** Stable name of an agent's wrapper workflow — also its cache key. */
-export const EVAL_WRAPPER_NAME_PREFIX = 'eval-wrapper:'
-
-/**
- * A wrapper's name doubles as its cache key. It must fold in the version pin so
- * a goal pinned to a specific version gets its own wrapper rather than reusing
- * the float-to-latest one. An unpinned (latest) target keeps the historic
- * `eval-wrapper:{agentId}` name for backward compatibility.
- */
-export function evalWrapperName(
-  agentId: string,
-  version: number | null = null,
-): string {
-  return version == null
-    ? `${EVAL_WRAPPER_NAME_PREFIX}${agentId}`
-    : `${EVAL_WRAPPER_NAME_PREFIX}${agentId}@v${version}`
-}
+// The wrapper's NAME lives one layer down (`engine/eval-wrapper-name`): storage
+// has to recognise one too, and storage sits below this. Re-exported here so
+// every existing importer — and `@stevepeak/007/eval` — is unchanged.
+export { EVAL_WRAPPER_NAME_PREFIX, evalWrapperName }
 
 /**
  * The minimal runnable graph for an agent eval: a manual trigger wired through

@@ -16,7 +16,7 @@ export function useProviders() {
   })
 }
 
-// The decision catalog — a Decision node's model picker. Both are empty on a
+// The decision catalog — a decision agent's model picker. Both are empty on a
 // host that wired no decision provider, which is the signal the palette reads to
 // hide the node kind entirely.
 export function useDecisionModels() {

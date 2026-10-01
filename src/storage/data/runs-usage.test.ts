@@ -71,6 +71,38 @@ const META_SHAPES: Array<{ name: string; meta: unknown }> = [
     meta: { steps: [], totalUsage: { inputTokens: 5, outputTokens: 5 } },
   },
   {
+    name: 'a decision agent call',
+    // The OTHER agent kind. Shares no field with a generation step: one call, no
+    // transcript, so `modelId` + `usage` rather than `model` + `totalUsage`.
+    meta: {
+      modelId: 'venice:jev-latest',
+      questionIds: ['needs_human', 'topic'],
+      usage: { inputTokens: 528, outputTokens: 80 },
+      agentId: 'a1',
+      agentName: 'Triage',
+      agentVersion: 1,
+    },
+  },
+  {
+    name: 'a decision agent whose usage is explicitly null',
+    // As with `totalUsage: null` above: the key exists, so it IS a model call.
+    meta: { modelId: 'm', questionIds: ['q'], usage: null },
+  },
+  {
+    name: 'a decision agent with no model recorded',
+    meta: { questionIds: ['q'], usage: { inputTokens: 5, outputTokens: 5 } },
+  },
+  {
+    name: 'a meta whose questionIds is not an array',
+    // The decision twin of the `steps: 3` near-miss.
+    meta: { modelId: 'm', questionIds: 3, usage: { inputTokens: 1, outputTokens: 1 } },
+  },
+  {
+    name: 'a decision-shaped meta with no usage key at all',
+    // `questionIds` alone is not a model call — nothing was spent.
+    meta: { modelId: 'm', questionIds: ['q'] },
+  },
+  {
     name: 'a tool call',
     meta: { toolId: 'find_photos', args: { q: 'x' } },
   },
@@ -123,9 +155,54 @@ describe('the SQL read and asAgentMeta classify identically', () => {
       (n, r) => n + Number(r.inputTokens) + Number(r.outputTokens),
       0,
     )
-    // 100+20 from the real generation, 5+5 from the unnamed model. Everything
-    // else contributes zero, and the two non-agent lookalikes contribute nothing.
-    expect(total).toBe(130)
+    // 100+20 from the real generation and 5+5 from the unnamed model, plus
+    // 528+80 from the real decision call and 5+5 from the decision step with no
+    // model. Everything else contributes zero, and the non-agent lookalikes —
+    // including `questionIds` without a `usage` key — contribute nothing.
+    expect(total).toBe(130 + 618)
+  })
+})
+
+describe('a decision agent step reaches the cost fold', () => {
+  // The regression this guards: a run whose only model call was a decision agent
+  // reported `totalTokens: null` and no cost, because the fold only recognised
+  // the generation shape. The tokens were on the step the whole time, under
+  // `usage`/`modelId` instead of `totalUsage`/`model`.
+  test('its tokens and dollars land on the run', async () => {
+    await addStep('run-1', {
+      modelId: 'venice:jev-latest',
+      questionIds: ['needs_human'],
+      usage: { inputTokens: 1_000_000, outputTokens: 0 },
+      agentId: 'a1',
+      agentName: 'Triage',
+      agentVersion: 1,
+    })
+
+    const rows = await selectRunUsage(db, ['run-1'])
+    expect(rows.length).toBe(1)
+    expect(rows[0]?.model).toBe('venice:jev-latest')
+
+    const out = foldUsage(
+      rows,
+      new Map([
+        ['venice:jev-latest', { promptPerMTok: 0.042, completionPerMTok: 0 }],
+      ]),
+    )
+    expect(out.totalTokens).toBe(1_000_000)
+    expect(out.costUsd).toBeCloseTo(0.042, 6)
+  })
+
+  test('its frozen agent version is still stamped', async () => {
+    await addStep('run-1', {
+      modelId: 'venice:jev-latest',
+      questionIds: ['q'],
+      usage: { inputTokens: 1, outputTokens: 1 },
+      agentId: 'a1',
+      agentName: 'Triage',
+      agentVersion: 7,
+    })
+    const rows = await selectRunUsage(db, ['run-1'])
+    expect(rows[0]?.agentVersion).toBe(7)
   })
 })
 

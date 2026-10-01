@@ -16,7 +16,12 @@
 
 import { z } from 'zod'
 
-import { agentConfigSchema } from '../../engine'
+import {
+  agentConfigSchema,
+  decisionAgentConfigSchema,
+  WF_AGENT_KINDS,
+  type AnyAgentConfig,
+} from '../../engine'
 import { WF_EVAL_TARGET_KINDS } from '../schema'
 
 /** Bumped only on a breaking change to the on-disk shape. */
@@ -28,14 +33,48 @@ export const agentSpecSchema = z.object({
   kind: z.literal('agent'),
   slug: z.string().min(1),
   name: z.string().min(1),
+  /**
+   * Which of the two shapes `config` is (`wf_agent.kind`). Optional and
+   * defaulted, so every spec file written before ART-238 still reads — a spec
+   * with no `agentKind` is a generation agent, which is what all of them were.
+   *
+   * Named `agentKind` rather than `kind`: `kind` is already this schema's
+   * discriminator within the bundle ('agent' | 'workflow' | 'eval'), and two
+   * fields called `kind` in one object is the kind of thing that reads fine
+   * until someone greps for it.
+   */
+  agentKind: z.enum(WF_AGENT_KINDS).default('generation'),
   description: z.string().nullish(),
   icon: z.string().nullish(),
   color: z.string().nullish(),
   archived: z.boolean().optional(),
-  /** The full versioned behavior — model, prompt, tools, output contract. */
-  config: agentConfigSchema,
+  /**
+   * The full versioned behavior, of whichever shape `agentKind` names —
+   * model/prompt/tools/output for a generation agent, questions/verdicts/rules
+   * for a decision one.
+   *
+   * Opaque here and validated by {@link agentSpecConfigSchema} after the kind
+   * is known, the same way `workflowSpecSchema.graph` is opaque until its slug
+   * refs are translated. A union of the two schemas would parse a decision
+   * config as a generation one and fail on every field rather than on the one
+   * fact that is wrong.
+   */
+  config: z.unknown(),
 })
 export type AgentSpec = z.infer<typeof agentSpecSchema>
+
+/**
+ * The schema a spec's `config` is checked against, once its kind is known.
+ *
+ * Returned as the narrow `{ parse }` contract its callers use rather than as
+ * the union of two zod types: the two have different `parse` signatures, so
+ * the union's is the intersection of them and infers as neither.
+ */
+export function agentSpecConfigSchema(kind: AgentSpec['agentKind']): {
+  parse: (value: unknown) => AnyAgentConfig
+} {
+  return kind === 'decision' ? decisionAgentConfigSchema : agentConfigSchema
+}
 
 // ── Workflow ─────────────────────────────────────────────────────────────────
 

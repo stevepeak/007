@@ -583,7 +583,7 @@ describe('get_dashboard', () => {
 
 describe('list_decision_models', () => {
   // Deciders are a SEPARATE catalog from chat models, and two write tools take
-  // an id out of it — a `decision_judge` check's `modelId` and a Decision node's.
+  // an id out of it — a `decision_judge` check's `modelId` and a decision agent's.
   // With nothing listing them a model either invented an id (failing at the
   // provider after the sweep had launched — the exact failure `list_models`
   // exists to prevent, one namespace over) or omitted it and silently got

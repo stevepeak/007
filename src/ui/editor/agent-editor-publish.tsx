@@ -1,7 +1,7 @@
 import { AlertTriangle, Loader2, Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
-import type { AgentConfig } from '../../engine/graph'
+import type { AnyAgentConfig } from '../../engine'
 import { useWfClient, useWfComponents } from '../context'
 import { useSummarizeAgentChanges } from '../hooks'
 import { Modal } from '../modal'
@@ -14,13 +14,22 @@ import { Modal } from '../modal'
 export function PublishAgentDialog({
   agentId,
   config,
+  summarize: wantsSummary = true,
   publishing,
   error,
   onCancel,
   onConfirm,
 }: {
   agentId: string
-  config: AgentConfig
+  config: AnyAgentConfig
+  /**
+   * Whether to ask for an AI summary of the change. False for a decision
+   * agent: the summarizer's prompt is written around a system prompt, tools
+   * and an output contract, so pointed at a question set it would describe
+   * fields that aren't there — the server refuses, and asking anyway would put
+   * an error in a dialog whose job is to publish.
+   */
+  summarize?: boolean
   publishing: boolean
   error: string | null
   onCancel: () => void
@@ -49,7 +58,9 @@ export function PublishAgentDialog({
       .catch(() => setRefCount(0))
     // Kick off the AI summary once. It populates the panel below when it lands;
     // it never gates the Publish button.
-    summarize.mutate({ agentId, config }, { onSuccess: (r) => setAiSummary(r) })
+    if (wantsSummary) {
+      summarize.mutate({ agentId, config }, { onSuccess: (r) => setAiSummary(r) })
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

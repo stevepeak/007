@@ -1,5 +1,11 @@
 import { z } from 'zod'
 
+import type { WfAgentKind } from '../../engine/agent-kind'
+import {
+  decisionAgentConfigSchema,
+  type AnyAgentConfig,
+  type DecisionAgentConfig,
+} from '../../engine/decision-agent-schema'
 import {
   agentConfigSchema,
   workflowGraphShapeSchema,
@@ -190,6 +196,62 @@ export function parseStringRecord(value: unknown): Record<string, string> {
 
 export function parseAgentConfig(config: unknown): AgentConfig {
   return agentConfigSchema.parse(config)
+}
+
+/**
+ * Keys that only a GENERATION config has. Their presence in a payload aimed at
+ * a decision agent is the tell that the caller sent the wrong shape.
+ *
+ * The check is needed because zod cannot make it. `decisionAgentConfigSchema`
+ * is deliberately permissive — the editor saves a draft on every keystroke, so
+ * `questions`, `verdicts` and `rules` all default to empty — and `z.object`
+ * STRIPS unknown keys. So a generation config sent to a decision agent parses
+ * cleanly into `{ modelId, questions: [], verdicts: [], rules: [] }` and
+ * silently erases the matrix. That is the one failure mode a kind discriminator
+ * exists to prevent, so it is caught by name rather than by shape.
+ */
+const GENERATION_ONLY_KEYS = [
+  'prompt',
+  'userPrompt',
+  'toolIds',
+  'maxTurns',
+  'output',
+  'inputKind',
+  'subAgents',
+] as const
+
+/** A DECISION agent's config off the wire. The sibling of {@link parseAgentConfig}. */
+export function parseDecisionAgentConfig(
+  config: unknown,
+): DecisionAgentConfig {
+  if (config && typeof config === 'object' && !Array.isArray(config)) {
+    const sent = config as Record<string, unknown>
+    const generationKeys = GENERATION_ONLY_KEYS.filter((k) => k in sent)
+    if (generationKeys.length > 0) {
+      throw new BadRequestError(
+        `This is a decision agent, but the config carries ${generationKeys.join(', ')} — that is a generation agent's shape. A decision config is { modelId, questions, verdicts, rules }.`,
+      )
+    }
+  }
+  return decisionAgentConfigSchema.parse(config)
+}
+
+/**
+ * Parse an agent config against the schema its KIND names.
+ *
+ * Every write path that starts from an existing agent goes through this rather
+ * than picking a schema itself: the two shapes are disjoint, so sending a
+ * generation config to a decision agent is not a config with missing fields,
+ * it is the wrong config entirely — and this is where that becomes a 400 rather
+ * than a row nothing can read back.
+ */
+export function parseConfigOfKind(
+  kind: WfAgentKind,
+  config: unknown,
+): AnyAgentConfig {
+  return kind === 'decision'
+    ? parseDecisionAgentConfig(config)
+    : parseAgentConfig(config)
 }
 
 // Per-request state each method handler receives. A handler parses what it needs

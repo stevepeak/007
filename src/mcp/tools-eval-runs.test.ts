@@ -27,7 +27,11 @@ function toolNamed(name: string): WfMcpTool {
 }
 
 function stubClient(partial: Partial<WfDataClient>): WfDataClient {
-  return partial as WfDataClient
+  // `listAgents` is defaulted rather than left to each case: `run_eval` reads
+  // it on every path now (to tell a decision-agent sweep from a run one), so a
+  // case that says nothing about agents means "no decision agents", not
+  // "this method does not exist".
+  return { listAgents: async () => [], ...partial } as WfDataClient
 }
 
 /**
@@ -65,6 +69,7 @@ function result(over: Partial<WfEvalResultDTO>): WfEvalResultDTO {
     rowId: 'row_1',
     wfRunId: 'run_1',
     runStats: null,
+    answeredModelId: null,
     status: 'pass',
     score: null,
     checkResults: [],
@@ -215,6 +220,44 @@ describe('get_eval_run — error is not fail', () => {
       evalRunId: 'er_1',
     })) as { summary: { pending: number } }
     expect(out.summary.pending).toBe(9)
+  })
+})
+
+describe('get_eval_run — the model that actually answered', () => {
+  // The third drift axis. A decision agent can be pointed at a floating id,
+  // and when what sits behind it changes, nothing else in a report moves —
+  // not the agent version, not the plan, not the snapshot hash. Recording the
+  // echoed id was only half of it; this is the half a reader sees.
+  async function rows(over: Partial<WfEvalResultDTO>) {
+    const client = stubClient({
+      getEvalRun: async () => detail({ results: [result(over)] }),
+    })
+    const out = (await toolNamed('get_eval_run').run(client, {
+      evalRunId: 'er_1',
+    })) as { results: { answeredBy?: string }[] }
+    return out.results[0]
+  }
+
+  test('reports what answered when it is not what the cell asked with', async () => {
+    const row = await rows({
+      modelId: 'venice:jev-latest',
+      answeredModelId: 'venice:jev-2026-01',
+    })
+    expect(row?.answeredBy).toBe('venice:jev-2026-01')
+  })
+
+  test('says nothing when the provider echoed the id it was given', async () => {
+    // Otherwise every row of every sweep carries a field that never differs,
+    // and the one that does stops standing out.
+    const row = await rows({
+      modelId: 'venice:jev-latest',
+      answeredModelId: 'venice:jev-latest',
+    })
+    expect(row?.answeredBy).toBeUndefined()
+  })
+
+  test('is absent for a generation cell, which never echoes one', async () => {
+    expect((await rows({ answeredModelId: null }))?.answeredBy).toBeUndefined()
   })
 })
 

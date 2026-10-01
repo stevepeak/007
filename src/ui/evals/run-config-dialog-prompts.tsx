@@ -139,7 +139,7 @@ function PromptAxisPitch() {
         <li>
           Add any number of <strong>extra system prompts</strong>, authored in
           the same tiptap editor as the agent editor — with the same{' '}
-          <code>${'{'}variable{'}'}</code> chips. Only variables the target
+          <code>${'{'}variable{'}'}</code> chips. Only variables the agent
           already defines are meaningful; a prompt may skip or repeat one
           freely.
         </li>

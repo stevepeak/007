@@ -7,7 +7,9 @@ import type {
   ProviderBudget,
 } from '../engine/config'
 import type { CheckTree, EvalSampleInput, EvalTools } from '../engine/eval-schema'
-import type { AgentConfig, WorkflowGraph } from '../engine/graph'
+import type { WfAgentKind } from '../engine/agent-kind'
+import type { AnyAgentConfig } from '../engine/decision-agent-schema'
+import type { WorkflowGraph } from '../engine/graph'
 import type { TriggerEventOption } from '../engine/trigger-registry'
 import type { EvalDriveState, EvalPlan } from '../eval/plan'
 import type { EvalRunDrive } from '../eval/tick'
@@ -15,6 +17,8 @@ import type { EvalRunDrive } from '../eval/tick'
 import type {
   AgentPreviewInput,
   AgentPreviewResult,
+  DecisionPreviewInput,
+  DecisionPreviewResult,
   WfAgentCall,
   WfAgentDetail,
   WfAgentSummary,
@@ -78,10 +82,9 @@ export interface WfDataClient {
    */
   listProviders(): Promise<ModelProvider[]>
   /**
-   * The deciders offered in a Decision node's model picker, and the providers
-   * they group under. EMPTY when the host wired no decision provider — which is
-   * how the editor knows to hide the Decision node kind rather than offering one
-   * that cannot run. Unlike the chat catalog these are served straight from the
+   * The deciders offered in a decision agent's model picker, and the providers
+   * they group under. EMPTY when the host wired no decision provider, so the
+   * editor can say none is wired rather than offering a picker that cannot run. Unlike the chat catalog these are served straight from the
    * host config: there is no `wf_decision_model` table, because there is nothing
    * to curate (a host declares exactly the deciders it can resolve).
    */
@@ -369,18 +372,28 @@ export interface WfDataClient {
   getAgent(agentId: string): Promise<WfAgentDetail | null>
   createAgent(input: {
     name: string
+    /**
+     * Which shape this agent is, and therefore which schema `config` must
+     * match. Omitted → 'generation', which is every agent created before
+     * ART-238 and the one the console's plain "New agent" still makes.
+     *
+     * There is no `updateAgentKind`, deliberately: the two configs share no
+     * field, so a conversion would have nothing to carry over and would only
+     * ever produce a blank agent under an old name.
+     */
+    kind?: WfAgentKind
     description?: string
     icon?: string
     color?: string
-    config: AgentConfig
+    config: AnyAgentConfig
   }): Promise<{ agentId: string; versionId: string }>
   updateAgentDraft(input: {
     agentId: string
-    config: AgentConfig
+    config: AnyAgentConfig
   }): Promise<void>
   publishAgent(input: {
     agentId: string
-    config: AgentConfig
+    config: AnyAgentConfig
     changeNote?: string
     /** Ridden along when the publish dialog's summary landed in time. */
     aiSummary?: WfChangeSummary
@@ -388,12 +401,20 @@ export interface WfDataClient {
   /** AI-summarize the changes since the latest published version (publish dialog). */
   summarizeAgentChanges(input: {
     agentId: string
-    config: AgentConfig
+    config: AnyAgentConfig
   }): Promise<WfChangeSummary>
   listAgentVersions(agentId: string): Promise<WfAgentVersionSummary[]>
-  getAgentVersion(
-    versionId: string,
-  ): Promise<{ config: AgentConfig; versionNumber: number } | null>
+  /**
+   * One published version's config. `kind` rides along because a version id is
+   * often all a caller holds — restoring history into the editor, diffing two
+   * versions — and without it there is no way to know which schema the config
+   * it just received satisfies.
+   */
+  getAgentVersion(versionId: string): Promise<{
+    config: AnyAgentConfig
+    kind: WfAgentKind
+    versionNumber: number
+  } | null>
   updateAgentMeta(input: {
     agentId: string
     name?: string
@@ -428,6 +449,15 @@ export interface WfDataClient {
   }): Promise<WfAgentCall[]>
   /** Playground — run an agent draft in isolation against a scratch input. */
   runAgentPreview(input: AgentPreviewInput): Promise<AgentPreviewResult>
+  /**
+   * Playground — judge one state with a DECISION agent's draft config.
+   *
+   * Pure SDK, unlike `runAgentPreview`: a decision agent is one call through
+   * `WfSdkConfig.getDecider`, with no tool registry to build and no run scope
+   * to assemble, so there is no host hook to wire. A host with no decision
+   * provider gets a clear refusal rather than a broken playground.
+   */
+  runDecisionPreview(input: DecisionPreviewInput): Promise<DecisionPreviewResult>
 
   // Evals — sets (Goals) of rows (Samples) run against a target and graded by a
   // check tree. Data methods operate on the global set (host-gatekept at the
@@ -544,8 +574,32 @@ export interface WfDataClient {
      * Nothing is persisted: the config travels with this one run. Omitted → the
      * published version the run manifest resolves (the normal path).
      */
-    config?: AgentConfig
+    config?: AnyAgentConfig
   }): Promise<{ wfRunId: string }>
+  /**
+   * Run and grade ONE cell of a DECISION-agent sweep, in a single call.
+   *
+   * The whole of a decision cell: resolve the target's config (or the caller's
+   * draft override), judge the Sample's state in one provider call, grade the
+   * answers deterministically and persist the result. There is no `wf_run` to
+   * start and poll because a decision agent has no graph — which is also why
+   * this returns the finished result rather than a run id.
+   *
+   * It writes a `wf_eval_result` on every path a verdict is reached, exactly
+   * as `gradeEvalResult` does; a THROW means no row was written and the caller
+   * records the failure (see `tickEvalRun`), preserving the invariant that
+   * every requested cell lands something.
+   */
+  runDecisionEvalCell(input: {
+    evalRunId: string
+    rowId: string
+    /** Matrix cell: override the agent's decision model (composite catalog id). */
+    modelId?: string
+    /** Matrix cell: which best-of-N attempt this is. */
+    attempt?: number
+    /** Grade this decision config instead of the published version (a draft). */
+    config?: AnyAgentConfig
+  }): Promise<WfEvalResultDTO>
   /**
    * Grade a finished row run: load the `wf_run` trace, evaluate the row's check
    * tree (judge checks use the host's model seam), and persist the verdict as a

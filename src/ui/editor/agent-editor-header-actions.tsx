@@ -6,19 +6,29 @@ import { Tooltip } from '../tooltip'
 
 import { HistoryMenu, VersionsMenu } from './editor-menus'
 import type { useAgentDraft } from './use-agent-editor-state'
+import type { useDecisionAgentDraft } from './use-decision-agent-editor-state'
 
 // The agent editor's header strip: save/publish, the version history menu, and
 // the three transient notices that report what the draft is doing (unsaved,
 // just published, failed to save).
 //
-// It takes the whole `useAgentDraft` return rather than a dozen props because
+// It takes the whole draft hook's return rather than a dozen props because
 // every control here is a view of that one hook — spelling the fields out
 // individually would be a second copy of its shape, kept in sync by hand.
+//
+// It serves BOTH editors. The two hooks differ in what they hold (a compiled
+// output schema, prompt-editor refs) and agree exactly on what this strip
+// reads — save, publish, dirty, history, versions — so the union of their
+// return types is the honest way to say "either editor's draft" without
+// widening this to a structural shape that would stop catching a renamed
+// field on either side.
 export function AgentEditorHeaderActions({
   draft,
   onArchive,
 }: {
-  draft: ReturnType<typeof useAgentDraft>
+  draft:
+    | ReturnType<typeof useAgentDraft>
+    | ReturnType<typeof useDecisionAgentDraft>
   onArchive: () => void
 }) {
   const { Button } = useWfComponents()

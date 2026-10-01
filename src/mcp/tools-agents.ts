@@ -1,5 +1,14 @@
 import { z } from 'zod'
 
+import { decisionAgentQuestions } from '../engine/decision-agent'
+import {
+  decisionAgentConfigIssues,
+  decisionAgentConfigSchema,
+} from '../engine/decision-agent-schema'
+import {
+  unsupportedQuestionTypes,
+  type DecisionModelOption,
+} from '../engine/decision'
 import {
   agentConfigSchema,
   agentInputVariables,
@@ -12,7 +21,9 @@ import {
 import type {
   AgentConfig,
   AgentNodeMeta,
+  AnyAgentConfig,
   AgentPreviewResult,
+  DecisionAgentConfig,
   ModelOption,
   ToolOption,
   WfDataClient,
@@ -180,13 +191,13 @@ function droppedKeys(
  * caller reads it as evidence their edit was measured, when the run measured the
  * published config under another name. Empty here means "same as live".
  */
-export function draftOrPublished(
+export function draftOrPublished<TConfig extends Record<string, unknown>>(
   detail: {
-    draft: { config: AgentConfig } | null
-    currentVersion: { config: AgentConfig } | null
+    draft: { config: TConfig } | null
+    currentVersion: { config: TConfig } | null
   } | null,
 ): {
-  config: AgentConfig
+  config: TConfig
   source: 'draft' | 'published'
   unsavedFields: string[]
 } | null {
@@ -209,6 +220,29 @@ export function draftOrPublished(
     }
   }
   return null
+}
+
+/**
+ * A detail narrowed to the GENERATION shape, at a site that has already checked
+ * `agent.kind`.
+ *
+ * `WfAgentDetail`'s configs are the union of both shapes and `agent.kind` is
+ * what picks between them — a correspondence TypeScript cannot carry from a
+ * guard on one field to the type of another. One localized cast, made at the
+ * place the guard is, beats a cast at every field read below it. Exported so
+ * the eval tools can make the same narrowing after the same check.
+ */
+export function asGenerationDetail(detail: {
+  draft: { config: AnyAgentConfig } | null
+  currentVersion: { config: AnyAgentConfig } | null
+}): {
+  draft: { config: AgentConfig } | null
+  currentVersion: { config: AgentConfig } | null
+} {
+  return detail as {
+    draft: { config: AgentConfig } | null
+    currentVersion: { config: AgentConfig } | null
+  }
 }
 
 /**
@@ -309,6 +343,72 @@ async function preflightAgentConfig(
     }
   }
 
+  return { config }
+}
+
+/**
+ * The same gate for a DECISION agent's config: the schema, then the decision
+ * model against the decision CATALOG.
+ *
+ * A separate catalog and therefore a separate check — `listDecisionModels` and
+ * `listModels` share no ids, so the chat-model preflight above would reject
+ * every valid decider and accept none. The capability gate is the question-TYPE
+ * one (`unsupportedQuestionTypes`) rather than tools/structured-output, for the
+ * same reason: a decider is only ever gated out for a type it is KNOWN to lack.
+ *
+ * `decisionAgentConfigIssues` runs too, because the schema deliberately accepts
+ * an incomplete config (a draft must save mid-edit) and a tool call is not
+ * mid-edit — a rule reading a question that isn't there should fail here, not
+ * on the first eval cell.
+ */
+async function preflightDecisionAgentConfig(
+  client: WfDataClient,
+  raw: unknown,
+): Promise<{ config: DecisionAgentConfig } | { error: string }> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return {
+      error:
+        'Missing required argument `config` — an object with at least `modelId`, `questions`, `verdicts` and `rules`.',
+    }
+  }
+  const parsed = decisionAgentConfigSchema.safeParse(raw)
+  if (!parsed.success) {
+    const issues = parsed.error.issues
+      .map((i) => `${i.path.join('.') || 'config'}: ${i.message}`)
+      .join('\n')
+    return { error: `The config is not valid:\n${issues}` }
+  }
+  const config = parsed.data
+
+  const issues = decisionAgentConfigIssues(config)
+  if (issues.length > 0) {
+    return {
+      error: `This decision agent would not run:\n${issues.map((i) => `- ${i}`).join('\n')}`,
+    }
+  }
+
+  const models: DecisionModelOption[] = await client.listDecisionModels()
+  if (models.length === 0) {
+    return {
+      error:
+        'No decision provider is wired on this host (WfSdkConfig.listDecisionModels / getDecider), so a decision agent cannot run here.',
+    }
+  }
+  const model = models.find((m) => m.id === config.modelId)
+  if (!model) {
+    return {
+      error: `No decision model has the id "${config.modelId}". Ids are composite \`provider:model\` and come from list_decision_models verbatim. Available: ${nameIds(models.map((m) => m.id))}`,
+    }
+  }
+  const unsupported = unsupportedQuestionTypes(
+    model,
+    decisionAgentQuestions(config),
+  )
+  if (unsupported.length > 0) {
+    return {
+      error: `Decision model "${model.id}" cannot answer ${unsupported.join(', ')} questions. Change those questions' types, or pick a model that answers them.`,
+    }
+  }
   return { config }
 }
 
@@ -514,17 +614,23 @@ export function agentWriteTools(): WfMcpTool[] {
       name: 'create_agent',
       title: 'Create agent',
       description:
-        'Create a new reusable agent — the same thing the console’s "New agent" button makes, configured in one call instead of by hand. It starts at version 1 with a matching draft, and NO workflow references it yet, so nothing runs it until someone adds an agent node pointing at it; that wiring is a separate, gated step. `config` needs three fields: `modelId` (from list_models, verbatim — ids are composite `provider:model`), `prompt` (the system prompt: INSTRUCTIONS only, since it is the provider’s cache prefix) and `userPrompt` (the single user turn, and the only way per-call data reaches a task agent — write `${variable}` tokens and each workflow node maps them). Everything else defaults: `toolIds` [] (ids from get_tool_catalog), `maxTurns` 5, `output` {"kind":"text"} (or `boolean`, or `object` with a `schema`), `inputKind` "task" (use "conversation" for a chat agent, whose nodes must bind `conversation`), `reasoning` false, `webSearch` "off". The model, the tool ids and the model’s capabilities are checked before anything is written, so a wrong id fails here rather than on the first real run. Preview it with run_agent_preview, then give it a Goal with create_eval_set.',
+        'Create a new agent — the same thing the console’s "New agent" button makes, configured in one call instead of by hand. `kind` picks the shape and is IMMUTABLE afterwards, because the two configs share no field. A "decision" agent takes a different `config` entirely (see below) and is described at the end. For the default, "generation": It starts at version 1 with a matching draft, and NO workflow references it yet, so nothing runs it until someone adds an agent node pointing at it; that wiring is a separate, gated step. `config` needs three fields: `modelId` (from list_models, verbatim — ids are composite `provider:model`), `prompt` (the system prompt: INSTRUCTIONS only, since it is the provider’s cache prefix) and `userPrompt` (the single user turn, and the only way per-call data reaches a task agent — write `${variable}` tokens and each workflow node maps them). Everything else defaults: `toolIds` [] (ids from get_tool_catalog), `maxTurns` 5, `output` {"kind":"text"} (or `boolean`, or `object` with a `schema`), `inputKind` "task" (use "conversation" for a chat agent, whose nodes must bind `conversation`), `reasoning` false, `webSearch` "off". The model, the tool ids and the model’s capabilities are checked before anything is written, so a wrong id fails here rather than on the first real run. Preview it with run_agent_preview, then give it a Goal with create_eval_set.\n\nFor `kind: "decision"`, `config` is instead `{ modelId (from list_decision_models — a DIFFERENT catalog), questions[], verdicts[], rules[] }`. Each question is `{ id, type: "boolean"|"category"|"scale", prompt, considerations?: {name: "what to weigh"} (boolean only), choices?: [{key,label}] (category/scale, ordered lowest-first for a scale), threshold?: 0–1 (boolean) }`. Each rule is `{ id, verdict (one of `verdicts`), conditions: [{questionId, op, …}] }` — every condition must hold, the FIRST matching rule wins, and the LAST rule must have no conditions (the required fallback). Ops by question type: boolean `gte`/`lt` (with `probability`) or `is` (with `yes`); category `equals`/`in` (with `keys`); scale `atLeast`/`atMost` (with `keys`, compared through the declared level order). There is no prompt and no tool loop. Preview it with run_decision_preview, grade it with a `decision_answers` check, and RUN it from a workflow with an ordinary agent node: set its `config.agentId` and bind `config.source` to the value to judge — the node outputs one `verdict` (plus `because`, `reasoning` and the raw `answers`) for a Switch to route on.',
       inputSchema: {
         name: z
           .string()
           .describe(
             'Display name, e.g. "Conflict checker". Shown on the agent card and in a workflow’s node picker.',
           ),
+        kind: z
+          .string()
+          .nullish()
+          .describe(
+            '"generation" (the default — prompt, tools, an answer) or "decision" (questions, verdicts, rules). Immutable after creation.',
+          ),
         config: z
           .record(z.string(), z.unknown())
           .describe(
-            'The AgentConfig — same shape get_agent returns under `currentVersion.config`. Only modelId, prompt and userPrompt are required; see the tool description for the defaults.',
+            'The config, of whichever shape `kind` names — the same object get_agent returns under `currentVersion.config`. Generation: only modelId, prompt and userPrompt are required. Decision: modelId, questions, verdicts and rules. See the tool description.',
           ),
         description: z
           .string()
@@ -546,12 +652,52 @@ export function agentWriteTools(): WfMcpTool[] {
       readOnly: false,
       run: async (client, args) => {
         const name = reqString(args.name, 'name')
+        const rawKind = optString(args.kind) ?? 'generation'
+        if (rawKind !== 'generation' && rawKind !== 'decision') {
+          return {
+            error: `Unknown agent kind "${rawKind}". It is "generation" or "decision".`,
+          }
+        }
+
+        if (rawKind === 'decision') {
+          const preflight = await preflightDecisionAgentConfig(
+            client,
+            args.config,
+          )
+          if ('error' in preflight) return preflight
+          const { config } = preflight
+          const { agentId } = await client.createAgent({
+            name,
+            kind: 'decision',
+            description: optString(args.description),
+            icon: optString(args.icon),
+            color: optString(args.color),
+            config,
+          })
+          return {
+            ok: true,
+            agentId,
+            kind: 'decision',
+            name,
+            versionNumber: 1,
+            questions: config.questions.map((q) => ({
+              id: q.id,
+              type: q.type,
+              threshold: q.threshold,
+            })),
+            verdicts: config.verdicts,
+            note: 'Version 1 is published. Reachable from the playground, MCP and evals, and from a workflow: point an agent node at it with `config.agentId` (patch_workflow_draft) and bind `config.source` to the value to judge; the node runs these questions and rules, outputting one `verdict`. It floats to the latest published version, frozen into each run manifest at run start.',
+            next: `Smoke-test it with run_decision_preview({ agentId: "${agentId}", state: "…" }), then create_eval_set({ targetId: "${agentId}", targetKind: "agent", … }) and write samples with input.kind "decision".`,
+          }
+        }
+
         const preflight = await preflightAgentConfig(client, args.config)
         if ('error' in preflight) return preflight
         const { config } = preflight
 
         const { agentId } = await client.createAgent({
           name,
+          kind: 'generation',
           description: optString(args.description),
           icon: optString(args.icon),
           color: optString(args.color),
@@ -595,6 +741,8 @@ export function agentWriteTools(): WfMcpTool[] {
       title: 'Update agent draft',
       description: [
         'Replace an agent’s unsaved DRAFT config. Read get_agent first and send the WHOLE config back with your edits applied — this overwrites the draft outright, so any field you omit is LOST. Not a patch.',
+        '',
+        'Works for both kinds. The config is checked against the schema the AGENT’s stored `kind` names, not against whatever you send — so a decision agent takes `{ modelId, questions, verdicts, rules }` and a generation agent takes the prompt/tools shape, and sending the wrong one is refused rather than half-saved.',
         '',
         'The fields it is easiest to lose by omission, because nothing prompts for them: `subAgents` (the delegation whitelist — `targets`, `maxConcurrent`, `maxSpawns`, `allowStopSignal`), `toolTokenBudget`, `answerReservePercent`, `requireToolFirstTurn` and `webCitations`. An edit that reads a config, changes the prompt and re-sends will silently delete a sub-agent whitelist it never knew about. `removed` in the reply names anything that disappeared — check it.',
         '',
@@ -643,7 +791,11 @@ export function agentWriteTools(): WfMcpTool[] {
           | Record<string, unknown>
           | undefined
 
-        let config: AgentConfig
+        // Which schema the payload is checked against. The agent's stored
+        // kind decides it, never the caller — a decision config sent to a
+        // generation agent is not a config with holes, it is the wrong config.
+        const kind = before.agent.kind
+        let config: AnyAgentConfig
         if (fromVersion != null) {
           const versions = await client.listAgentVersions(agentId)
           const target = versions.find((v) => v.versionNumber === fromVersion)
@@ -669,7 +821,10 @@ export function agentWriteTools(): WfMcpTool[] {
           // a restore needs to be told about before it is graded.
           config = full.config
         } else {
-          const checked = await preflightAgentConfig(client, raw)
+          const checked =
+            kind === 'decision'
+              ? await preflightDecisionAgentConfig(client, raw)
+              : await preflightAgentConfig(client, raw)
           if ('error' in checked) return checked
           config = checked.config
         }
@@ -705,7 +860,105 @@ export function agentWriteTools(): WfMcpTool[] {
           note: published
             ? 'Saved as a draft only — the published version is unchanged and still what every workflow runs. Check the field list above: anything you did not mean to change means the config you sent was incomplete.'
             : 'Saved as a draft. This agent has never been published, so it has no live version to compare against.',
-          next: `Try it with run_agent_preview, or grade it with run_eval({ setIds: […], draftAgentId: "${agentId}" }).`,
+          next:
+            kind === 'decision'
+              ? `Try it with run_decision_preview({ agentId: "${agentId}", state: "…" }), or grade it with run_eval({ setIds: […], draftAgentId: "${agentId}" }).`
+              : `Try it with run_agent_preview, or grade it with run_eval({ setIds: […], draftAgentId: "${agentId}" }).`,
+        }
+      },
+    },
+
+    {
+      name: 'run_decision_preview',
+      title: 'Run decision preview',
+      description: [
+        'Judge one state with a DECISION agent and see what it answers — the decision counterpart of run_agent_preview, and the cheapest way to check a question’s wording before writing samples for it.',
+        '',
+        'It runs the agent’s DRAFT by default (pass `usePublished` for the live version), so a question edited with update_agent_draft can be tried before anyone publishes it. One provider call, no tool loop, nothing outside this process is touched — so unlike the generation preview there is no simulated-vs-live caveat to read: nothing executes but the decider.',
+        '',
+        'Read the DISTRIBUTIONS, not just the verdict. `answers.<id>.distribution` is the whole point of a decision model: a verdict reached at 0.51 and one reached at 0.99 look identical in `verdict` and are not the same answer. `because` names which rule fired and what it read.',
+        '',
+        '`answeredBy` is what ACTUALLY answered, echoed by the provider. A floating id like `jev-latest` can change what sits behind it with no version bump anywhere in 007, so a preview that disagrees with yesterday’s starts here.',
+      ].join('\n'),
+      inputSchema: {
+        agentId: z.string().describe('Decision agent id, from list_agents.'),
+        state: z
+          .string()
+          .describe(
+            'The thing to judge — every question is answered against this one value. Paste the real thing; a decision agent is only as calibrated as the states it is tuned on.',
+          ),
+        variables: z
+          .record(z.string(), z.string())
+          .nullish()
+          .describe(
+            'Values for the `${name}` tokens the questions interpolate, keyed by name. get_agent shows which ones they declare.',
+          ),
+        usePublished: z
+          .boolean()
+          .nullish()
+          .describe(
+            'Judge the latest PUBLISHED version instead of the draft. Default false — the draft is what you just edited.',
+          ),
+      },
+      // Not read-only, for the same reason `run_agent_preview` isn't: nothing
+      // is written, but a real (billed) provider call is made, and that is the
+      // line this flag actually draws on a surface a model drives.
+      readOnly: false,
+      run: async (client, args) => {
+        const agentId = reqString(args.agentId, 'agentId')
+        const state = reqString(args.state, 'state')
+        const detail = await client.getAgent(agentId)
+        if (!detail) return { error: `No agent found for id ${agentId}.` }
+        if (detail.agent.kind !== 'decision') {
+          return {
+            error: `Agent ${agentId} is a GENERATION agent — it has questions to answer only in the sense that a prompt does. Use run_agent_preview instead.`,
+          }
+        }
+        const decision = detail as {
+          draft: { config: DecisionAgentConfig } | null
+          currentVersion: { config: DecisionAgentConfig } | null
+        }
+        const usePublished = args.usePublished === true
+        const chosen = usePublished
+          ? decision.currentVersion
+            ? {
+                config: decision.currentVersion.config,
+                source: 'published' as const,
+                unsavedFields: [],
+              }
+            : null
+          : draftOrPublished(decision)
+        if (!chosen) {
+          return {
+            error: usePublished
+              ? `Agent ${agentId} has never been published; omit usePublished to judge its draft.`
+              : `Agent ${agentId} has neither a draft nor a published version to run.`,
+          }
+        }
+
+        const issues = decisionAgentConfigIssues(chosen.config)
+        if (issues.length > 0) {
+          return {
+            error: `This decision agent would not run:\n${issues.map((i) => `- ${i}`).join('\n')}`,
+          }
+        }
+
+        const result = await client.runDecisionPreview({
+          config: chosen.config,
+          state,
+          variables: stringRecord(args.variables),
+        })
+        return {
+          ranConfig: chosen.source,
+          // Said explicitly because "ran the draft" is true of almost every
+          // agent and means nothing on its own — see `draftOrPublished`.
+          unsavedFields: chosen.unsavedFields,
+          verdict: result.verdict,
+          because: result.because,
+          answers: result.answers,
+          answeredBy: result.modelId,
+          usage: result.usage,
+          next: `Pin this as a sample with create_eval_set({ targetId: "${agentId}", targetKind: "agent", … }) + upsert_eval_sample({ input: { kind: "decision", state: "…" }, checks: { op: "and", checks: [{ type: "decision_answers", verdict: "${result.verdict}", expect: [] }] } }).`,
         }
       },
     },
@@ -753,16 +1006,22 @@ export function agentWriteTools(): WfMcpTool[] {
         const detail = await client.getAgent(agentId)
         if (!detail) return { error: `No agent found for id ${agentId}.` }
 
+        if (detail.agent.kind === 'decision') {
+          return {
+            error: `Agent ${agentId} is a DECISION agent — it has no prompt and no tool loop, so there is nothing for this to preview. Use run_decision_preview({ agentId, state }) instead.`,
+          }
+        }
         const usePublished = args.usePublished === true
+        const generation = asGenerationDetail(detail)
         const chosen = usePublished
-          ? detail.currentVersion
+          ? generation.currentVersion
             ? {
-                config: detail.currentVersion.config,
+                config: generation.currentVersion.config,
                 source: 'published' as const,
                 unsavedFields: [],
               }
             : null
-          : draftOrPublished(detail)
+          : draftOrPublished(generation)
         if (!chosen) {
           return {
             error: usePublished

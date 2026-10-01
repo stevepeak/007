@@ -374,3 +374,131 @@ describe('tickEvalRun — finishing', () => {
     expect(out.done).toBe(true)
   })
 })
+
+// ── decision sweeps ──────────────────────────────────────────────────────────
+// A decision cell has no `wf_run` to poll: it is one provider call, so it is
+// started AND settled inside the tick that reaches it. The rule it breaks —
+// "a tick never blocks on a run" — exists so a driver can leave and come back
+// across a run that takes minutes; a decision is over before the tick's next
+// statement.
+
+describe('a decision sweep settles inside the tick', () => {
+  test('runs each cell and marks it settled without ever starting a run', async () => {
+    const ran: string[] = []
+    let startedRuns = 0
+    const result = await tickEvalRun(
+      stubClient({
+        runDecisionEvalCell: async (input) => {
+          ran.push(input.rowId)
+          return {} as never
+        },
+        startEvalRun: async () => {
+          startedRuns += 1
+          return { wfRunId: 'never' }
+        },
+      }),
+      {
+        drive: driveOf(
+          planOf([{ rowId: 'row_1' }, { rowId: 'row_2' }], { mode: 'decision' }),
+        ),
+      },
+    )
+    expect(ran).toEqual(['row_1', 'row_2'])
+    expect(startedRuns).toBe(0)
+    // Nothing in flight and every cell settled — the sweep is done in one tick.
+    expect(result.state.inflight).toEqual([])
+    expect(result.done).toBe(true)
+    expect(result.settled).toBe(2)
+  })
+
+  test('concurrency still bounds how many are in the air at once', async () => {
+    const ran: string[] = []
+    const result = await tickEvalRun(
+      stubClient({
+        runDecisionEvalCell: async (input) => {
+          ran.push(input.rowId)
+          return {} as never
+        },
+      }),
+      {
+        drive: driveOf(
+          planOf([{ rowId: 'a' }, { rowId: 'b' }, { rowId: 'c' }], {
+            mode: 'decision',
+            concurrency: 2,
+          }),
+        ),
+      },
+    )
+    expect(ran).toEqual(['a', 'b'])
+    expect(result.done).toBe(false)
+  })
+
+  test('a refusing provider trips the same circuit breaker', async () => {
+    const cells = Array.from({ length: 6 }, (_, i) => ({ rowId: `row_${i}` }))
+    const recorded: string[] = []
+    const result = await tickEvalRun(
+      stubClient({
+        runDecisionEvalCell: async () => {
+          throw new Error('Venice is down')
+        },
+        recordEvalFailure: async (input) => {
+          recorded.push(input.error)
+          return {} as never
+        },
+      }),
+      {
+        drive: driveOf(
+          planOf(cells, { mode: 'decision', concurrency: MAX_CONSECUTIVE_CELL_ERRORS }),
+        ),
+      },
+    )
+    expect(result.state.providerDown).toBe(true)
+    // Three calls, then the breaker latches and the tick stops calling — the
+    // remaining cells are not attempted against a provider already ruled out.
+    expect(recorded).toHaveLength(MAX_CONSECUTIVE_CELL_ERRORS)
+    expect(recorded.every((e) => e.includes('Venice is down'))).toBe(true)
+
+    // The next tick drains the rest into recorded skips, so every requested
+    // cell still lands a row and the report's totals match what was asked for.
+    const drained = await tickEvalRun(
+      stubClient({
+        runDecisionEvalCell: async () => {
+          throw new Error('should not be called once the breaker has latched')
+        },
+        recordEvalFailure: async (input) => {
+          recorded.push(input.error)
+          return {} as never
+        },
+      }),
+      {
+        drive: driveOf(
+          planOf(cells, { mode: 'decision', concurrency: MAX_CONSECUTIVE_CELL_ERRORS }),
+          { driveState: result.state, settledKeys: result.settledKeys },
+        ),
+      },
+    )
+    expect(drained.done).toBe(true)
+    expect(recorded).toHaveLength(cells.length)
+    expect(recorded.at(-1)).toContain('Skipped')
+  })
+
+  test('a cell that already has a result is never run again', async () => {
+    const ran: string[] = []
+    await tickEvalRun(
+      stubClient({
+        runDecisionEvalCell: async (input) => {
+          ran.push(input.rowId)
+          return {} as never
+        },
+      }),
+      {
+        drive: driveOf(
+          planOf([{ rowId: 'row_1' }, { rowId: 'row_2' }], { mode: 'decision' }),
+          { settledKeys: [evalCellKey({ rowId: 'row_1' })] },
+        ),
+      },
+    )
+    expect(ran).toEqual(['row_2'])
+  })
+})
+

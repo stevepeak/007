@@ -29,10 +29,10 @@ describe('the tool catalog', () => {
   // tool added with the flag left at its neighbor's value would otherwise reach
   // an un-flagged `wf-mcp` in silence.
   //
-  // Three of these are writes for a reason other than editing a definition:
-  // `run_eval` and `run_agent_preview` spend real model calls, and
-  // `resume_eval_run` spends the rest of a sweep's — which is the line the flag
-  // is actually drawing. `cancel_eval_run` is the inverse and still a write: it
+  // Four of these are writes for a reason other than editing a definition:
+  // `run_eval`, `run_agent_preview` and `run_decision_preview` spend real
+  // provider calls, and `resume_eval_run` spends the rest of a sweep's — which
+  // is the line the flag is actually drawing. `cancel_eval_run` is the inverse and still a write: it
   // moves a run to a terminal status, which no read-only session should do.
   //
   // The two model tools are the odd ones out in a different way: they are the
@@ -59,6 +59,7 @@ describe('the tool catalog', () => {
       'resume_eval_run',
       'retry_run',
       'run_agent_preview',
+      'run_decision_preview',
       'run_eval',
       'set_model_enabled',
       'triage_feedback',

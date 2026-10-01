@@ -1,8 +1,15 @@
 import { changedEvalRowFields, changedEvalSetFields } from '../../engine'
+import { toAgentKind } from '../../engine/agent-kind'
+import { runDecisionAgent } from '../../engine/decision-agent'
+import {
+  decisionAgentConfigSchema,
+  type DecisionAgentConfig,
+} from '../../engine/decision-agent-schema'
 import type { EvalRowSnapshot } from '../../engine/eval-schema'
 import { agentConfigSchema } from '../../engine/graph'
 import {
   collectSeededToolCalls,
+  decisionInvocation,
   EVAL_NODE_EXECUTION,
   gradeRow,
   type GradeDeciderFactory,
@@ -18,6 +25,7 @@ import {
   parseEvalPlan,
 } from '../../eval/plan'
 import {
+  agentVersionByNumber,
   buildEvalSnapshot,
   cancelEvalRun,
   changesBetween,
@@ -28,14 +36,17 @@ import {
   getEvalRow,
   getEvalRun,
   getEvalRunDrive,
+  getAgent,
   getEvalSet,
   getRunForGrading,
   hashEvalSnapshot,
   insertEvalResult,
+  latestAgentVersion,
   listEvalRuns,
   listEvalSets,
   loadPreviousEvalRun,
   loadPreviousSnapshotHashes,
+  loadModelPriceMap,
   loadRunStats,
   restoreEvalRow,
   saveEvalRunDrive,
@@ -50,7 +61,12 @@ import type {
   WfEvalRunDrift,
 } from '../protocol'
 
-import { evalResultDTO, evalRunSummary, evalSetSummary } from './eval-dto'
+import {
+  evalResultDTO,
+  evalRunSummary,
+  evalSetSummary,
+  runlessCellStats,
+} from './eval-dto'
 import {
   BadRequestError,
   NotFoundError,
@@ -168,6 +184,7 @@ export function buildEvalHandlers<TDeps>(
   | 'restoreEvalRow'
   | 'createEvalRun'
   | 'startEvalRun'
+  | 'runDecisionEvalCell'
   | 'gradeEvalResult'
   | 'recordEvalFailure'
   | 'finalizeEvalRun'
@@ -482,6 +499,144 @@ export function buildEvalHandlers<TDeps>(
       return started
     },
 
+    runDecisionEvalCell: async (c) => {
+      // A decision cell, start to finish, in one call. There is no `wf_run`
+      // here: a decision agent has no graph, so there is nothing to start, poll
+      // or record steps against. What that buys is worth naming — a generation
+      // agent's eval cell goes through a hidden wrapper workflow, a Durable
+      // Object and a poll loop to produce one model call's worth of answer.
+      const p = c.params
+      const { evalRunId, rowId } = p
+      const getDecider = opts.config.getDecider
+      if (!getDecider) {
+        throw new BadRequestError(
+          'No decision provider is wired on this host (WfSdkConfig.getDecider), so a decision agent cannot be evaluated here.',
+        )
+      }
+      const run = await getEvalRun(c.db, evalRunId)
+      if (!run) {
+        throw new NotFoundError('Eval run not found.')
+      }
+      if (run.run.status === 'queued') {
+        await updateEvalRun(c.db, {
+          evalRunId,
+          status: 'running',
+          startedAt: new Date(),
+        })
+      }
+      const found = await getEvalRow(c.db, rowId)
+      if (!found) {
+        throw new NotFoundError('Eval sample not found.')
+      }
+      const { row, set } = found
+      if (set.targetKind !== 'agent') {
+        throw new BadRequestError(
+          'This goal does not target an agent, so it has no decision agent to run.',
+        )
+      }
+      const agent = await getAgent(c.db, set.targetId)
+      if (!agent) {
+        throw new NotFoundError('The goal’s target agent no longer exists.')
+      }
+      if (toAgentKind(agent.agent.kind) !== 'decision') {
+        throw new BadRequestError(
+          'This goal targets a generation agent; use startEvalRun for it.',
+        )
+      }
+
+      // The draft override wins, then the Goal's pin, then latest published —
+      // the same precedence `resolveEvalTarget` applies, minus the wrapper. A
+      // pin that names nothing THROWS rather than floating: the frozen
+      // snapshot records `targetVersion`, so a silent float would make the
+      // stored result a lie about what was graded.
+      let config: DecisionAgentConfig
+      if (p.config) {
+        config = decisionAgentConfigSchema.parse(p.config)
+      } else {
+        const version =
+          set.targetVersion == null
+            ? await latestAgentVersion(c.db, set.targetId)
+            : await agentVersionByNumber(c.db, set.targetId, set.targetVersion)
+        if (!version) {
+          throw new BadRequestError(
+            set.targetVersion == null
+              ? `Decision agent ${set.targetId} has no published version to eval against.`
+              : `This goal pins v${set.targetVersion} of agent ${set.targetId}, which has no published version ${set.targetVersion}. Repoint the goal at Latest, or at a version that exists.`,
+          )
+        }
+        config = decisionAgentConfigSchema.parse(version.config)
+      }
+      // The matrix's model column, layered on top — the only axis a decision
+      // sweep has. There is no prompt to A/B: the questions ARE the prompt, and
+      // swapping them wholesale is a different agent, not a cell.
+      if (p.modelId) config = { ...config, modelId: p.modelId }
+
+      const { state, variables } = decisionInvocation(row.input)
+      const env = await c.env()
+      const result = await runDecisionAgent({
+        config,
+        state,
+        variables,
+        getDecider: (modelId) =>
+          getDecider(modelId, { triggerKind: 'eval', env }),
+      })
+
+      // Graded off the SAME `{ verdict, because, answers }` object the
+      // playground shows, with no steps — a decision agent visits no nodes and
+      // calls no tools, so `node_visited` / `tool_called` checks in a tree
+      // authored for a generation agent correctly fail rather than throw.
+      const graded = await gradeRow({
+        checks: row.checks,
+        steps: [],
+        output: result,
+        getModel: (modelId) =>
+          opts.config.getModel(modelId, { triggerKind: 'eval', env }),
+        defaultJudgeModelId:
+          opts.evalJudgeModelId ??
+          (await opts.config.listModels({ env }))[0]?.id,
+        getDecider: (modelId) => getDecider(modelId, { triggerKind: 'eval', env }),
+        defaultDecisionModelId: config.modelId,
+      })
+
+      const snapshot = buildEvalSnapshot(row, set)
+      const snapshotHash = await hashEvalSnapshot(snapshot)
+      const record = {
+        evalRunId,
+        rowId,
+        // No run to link. The report renders the cell from `snapshot` +
+        // `checkResults` alone, which is what `recordEvalFailure` already
+        // relies on for a cell that never started one.
+        wfRunId: null,
+        status: graded.status,
+        score: graded.score,
+        checkResults: graded.checkResults,
+        error: graded.error?.slice(0, MAX_RECORDED_ERROR_CHARS) ?? null,
+        snapshot,
+        snapshotHash,
+        modelId: p.modelId,
+        promptLabel: undefined,
+        promptBody: undefined,
+        attempt: p.attempt,
+        // The echoed id, not the one we asked with — `jev-latest` floats, and
+        // this is the only place a report can see that it moved.
+        answeredModelId: result.modelId ?? null,
+        // The provider returns usage on every decision call and this cell has no
+        // `wf_run` to park it on, so it is recorded here or it is lost. Already
+        // summed across chunks by `runDecisionAgent` — a question set too big for
+        // one request is still one cell and must report one bill.
+        inputTokens: result.usage?.inputTokens ?? null,
+        outputTokens: result.usage?.outputTokens ?? null,
+      }
+      const resultId = await insertEvalResult(c.db, record)
+      return evalResultDTO(
+        { ...record, id: resultId, createdAt: new Date() },
+        // No run to load stats from — assembled from the usage just recorded, so
+        // the cell reports its cost on the response that creates it rather than
+        // only once the report is re-read.
+        runlessCellStats(record, await loadModelPriceMap(c.db)),
+      )
+    },
+
     gradeEvalResult: async (c) => {
       // Matrix cell identity to stamp on the result — all absent for a plain run.
       const cell = c.params
@@ -677,6 +832,10 @@ export function buildEvalHandlers<TDeps>(
         .map((r) => r.wfRunId)
         .filter((id): id is string => id != null)
       const stats = await loadRunStats(c.db, runIds)
+      // Cells with no run (decision cells) carry their own usage; price it with
+      // the same table the run fold uses. Loaded unconditionally — it is memoized
+      // per isolate and `loadRunStats` has already paid for it.
+      const priceMap = await loadModelPriceMap(c.db)
       // What each sample looked like the last time it ran, so the report can say
       // whether a moved score followed a moved test.
       // The frozen target identity — every result in a run shares it.
@@ -693,7 +852,7 @@ export function buildEvalHandlers<TDeps>(
         results: result.results.map((r) => {
           return evalResultDTO(
             r,
-            r.wfRunId ? stats.get(r.wfRunId) : null,
+            r.wfRunId ? stats.get(r.wfRunId) : runlessCellStats(r, priceMap),
             previous.get(r.rowId)?.hash ?? null,
           )
         }),

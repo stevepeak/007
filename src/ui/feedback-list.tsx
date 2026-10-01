@@ -13,7 +13,7 @@ import type { WfFeedbackRow } from '../server/protocol'
 import { cn } from './cn'
 import { useWfComponents } from './context'
 import { formatTimestamp } from './cost'
-import { Segmented } from './filters'
+import { FilterPillMulti, Segmented } from './filters'
 import { useFeedback, useSetFeedbackAck } from './hooks-feedback'
 import { useWfNav } from './nav'
 
@@ -39,8 +39,26 @@ const ACK_OPTIONS: { value: AckState; label: string }[] = [
 ]
 
 const RATING_OPTIONS = [
-  { value: 'up', label: '👍 Thumbs up' },
-  { value: 'down', label: '👎 Thumbs down' },
+  {
+    value: 'up',
+    label: 'Thumbs up',
+    node: (
+      <span className="inline-flex items-center gap-1.5">
+        <ThumbsUp className="size-3.5 text-emerald-600" />
+        Thumbs up
+      </span>
+    ),
+  },
+  {
+    value: 'down',
+    label: 'Thumbs down',
+    node: (
+      <span className="inline-flex items-center gap-1.5">
+        <ThumbsDown className="size-3.5 text-red-600" />
+        Thumbs down
+      </span>
+    ),
+  },
 ]
 
 function raterLabel(row: WfFeedbackRow): string {
@@ -116,19 +134,19 @@ export function FeedbackList({ className }: FeedbackListProps) {
             value={ackState}
             onChange={setAckState}
           />
-          <MultiFilter
+          <FilterPillMulti
             label="Thumbs"
             options={RATING_OPTIONS}
             value={ratings}
             onChange={setRatings}
           />
-          <MultiFilter
+          <FilterPillMulti
             label="Client"
             options={clientOptions}
             value={correlationIds}
             onChange={setCorrelationIds}
           />
-          <MultiFilter
+          <FilterPillMulti
             label="User"
             options={raterOptions}
             value={raterIds}
@@ -387,65 +405,4 @@ function groupRows(rows: WfFeedbackRow[], groupBy: GroupBy): Group[] {
     groups.sort((a, b) => b.rows.length - a.rows.length)
   }
   return groups
-}
-
-// Lightweight multi-select filter — a native <details> disclosure holding a
-// checkbox list. No popover primitive needed; closes on outside interaction via
-// the browser's default <details> behavior when another opens is not automatic,
-// so a plain summary toggle is fine for a filter bar.
-function MultiFilter({
-  label,
-  options,
-  value,
-  onChange,
-}: {
-  label: string
-  options: { value: string; label: string }[]
-  value: string[]
-  onChange: (next: string[]) => void
-}) {
-  const count = value.length
-  const toggle = (v: string) => {
-    return onChange(
-      value.includes(v) ? value.filter((x) => x !== v) : [...value, v],
-    )
-  }
-
-  return (
-    <details className="relative">
-      <summary
-        className={cn(
-          'flex h-8 cursor-pointer list-none items-center gap-1.5 rounded-md border border-neutral-300 px-2.5 text-sm text-neutral-700 hover:bg-neutral-100',
-          count > 0 && 'border-neutral-500',
-        )}
-      >
-        {label}
-        {count > 0 ? (
-          <span className="rounded bg-neutral-900 px-1.5 text-xs text-white">
-            {count}
-          </span>
-        ) : null}
-      </summary>
-      <div className="absolute z-10 mt-1 max-h-72 min-w-52 overflow-y-auto rounded-md border border-neutral-200 bg-white p-1 shadow-lg">
-        {options.length === 0 ? (
-          <p className="px-2 py-1.5 text-xs text-neutral-500">No options</p>
-        ) : (
-          options.map((opt) => (
-            <label
-              key={opt.value}
-              className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-neutral-100"
-            >
-              <input
-                type="checkbox"
-                checked={value.includes(opt.value)}
-                onChange={() => toggle(opt.value)}
-                className="size-4 rounded border-neutral-300"
-              />
-              <span className="truncate">{opt.label}</span>
-            </label>
-          ))
-        )}
-      </div>
-    </details>
-  )
 }

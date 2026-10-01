@@ -31,6 +31,57 @@ describe('repairSummaryText', () => {
     })
   })
 
+  // Observed on a real publish: the recorded summary for the version was
+  // "Let me compare the two versions:" and nothing else — the model's opening
+  // line became the subject, and the actual content was pushed into the body
+  // where the version history never shows it.
+  test('skips a conversational lead-in rather than publishing it', () => {
+    const raw =
+      'Let me compare the two versions:\n' +
+      '\n' +
+      'Point the triage node at the decision agent\n' +
+      '\n' +
+      '- The agent node now names the ART-238 agent.\n'
+    expect(JSON.parse(repairSummaryText(raw)!)).toEqual({
+      short: 'Point the triage node at the decision agent',
+      long: '- The agent node now names the ART-238 agent.',
+    })
+  })
+
+  test('skips a markdown heading used as a lead-in', () => {
+    const raw = '## Summary of changes\n\nSwap the model\n'
+    expect(JSON.parse(repairSummaryText(raw)!)).toEqual({
+      short: 'Swap the model',
+      long: '',
+    })
+  })
+
+  test('drops a bullet marker from the subject it keeps', () => {
+    expect(JSON.parse(repairSummaryText('- Swap the model')!)).toEqual({
+      short: 'Swap the model',
+      long: '',
+    })
+  })
+
+  test('a one-line answer is never discarded for nothing', () => {
+    // Ends in a colon and so READS as a lead-in, but there is nothing after it.
+    // Better a slightly odd subject than a null summary.
+    expect(JSON.parse(repairSummaryText('Changes:')!)).toEqual({
+      short: 'Changes:',
+      long: '',
+    })
+  })
+
+  test('a real subject beginning "Changes" survives', () => {
+    // "changes" is deliberately not a lead-in word: skipping this would replace
+    // a correct subject with the line below it.
+    const raw = 'Changes the output contract\n\nNow returns an object.\n'
+    expect(JSON.parse(repairSummaryText(raw)!)).toEqual({
+      short: 'Changes the output contract',
+      long: 'Now returns an object.',
+    })
+  })
+
   test('strips inlined reasoning before reading the answer', () => {
     const raw =
       '<think>The user changed one config field, so keep it short.</think>\n' +

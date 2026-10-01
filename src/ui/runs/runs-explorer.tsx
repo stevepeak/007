@@ -65,6 +65,7 @@ export function RunsExplorer({
             value: s,
             label: s,
             node: <RunStatusBadge status={s} />,
+            selfBadged: true,
           }))}
         />
         {!workflowId ? (

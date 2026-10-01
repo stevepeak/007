@@ -56,7 +56,7 @@ that `engine` (layer 0) depends on `ai`, `zod` and `jsonata` and nothing else,
 | Import                                       | Runtime                 | Use it in                                                                                    |
 | -------------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------- |
 | `@stevepeak/007`                             | any                     | barrel: engine + storage + eval                                                              |
-| `@stevepeak/007/engine`                      | any (`ai`, `zod`, `jsonata`) | custom backends, graph types, `createAssessTool`, `createChatDecider`                        |
+| `@stevepeak/007/engine`                      | any (`ai`, `zod`, `jsonata`) | custom backends, graph types, `createChatDecider`                        |
 | `@stevepeak/007/analytics`                   | any server route        | `AnalyticsQuery` + dashboard aggregates over the telemetry dataset                           |
 | `@stevepeak/007/storage`                     | Workers (D1)            | `createWfDb`, data access, schema                                                            |
 | `@stevepeak/007/storage/schema`              | build-time              | drizzle-kit / migrations                                                                     |
@@ -253,14 +253,50 @@ Key rules:
 - **`getDecider` is a SEPARATE provider from `getModel`.** A decision model
   judges a state against typed questions and answers with probabilities; it is
   not a chat model and must never appear in `listModels`. Wire it (or flip
-  `decisionsViaChatModels`) to get the Decision node, the built-in `assess` tool
-  and calibrated eval grading — see below. Omit it and all three stay off.
+  `decisionsViaChatModels`) to get decision agents and calibrated eval grading —
+  see below. Omit it and both stay off.
 - **Optional hooks:** `fetchModelCatalog` (live provider `/models` refresh on the
-  Models admin page), `fetchProviderBudget` (spend/credit remaining — see below),
+  Models admin page — tag each entry's `kind`, `'chat'` or `'decision'`, and both
+  catalogs refresh in one pass; see below), `fetchProviderBudget` (spend/credit
+  remaining — see below),
   `resolveImageRef` (vision inputs), `onRunComplete` / `onRunFailed` (reflect
   a run's terminal state back onto your own entity — the one named by
   `subjectId`), and `resolveTelemetry` (per-step/per-run analytics — see §7b).
   Omit any you don't use.
+
+### One catalog table, two catalogs — `ModelKind`
+
+`wf_model` holds chat and decision models together, separated by `kind`
+(`'chat' | 'decision'`, defaulting to chat). That one field decides which picker a
+model is offered in, and nothing else does:
+
+- `kind: 'chat'` → `listEnabledModels` → the agent editor's model dropdown, the
+  eval matrix, the LLM judge. Resolved by `getModel`.
+- `kind: 'decision'` → decision agents. Resolved by
+  `getDecider`.
+
+The two are not interchangeable in either direction — a decision model has no
+`/chat/completions` to call, and a chat model reports no calibrated distribution —
+so a `fetchModelCatalog` that returns decision models **must** tag them. Untagged
+entries read as chat and land in the dropdown where nothing can call them.
+
+It is a field rather than a second table because everything else about a
+catalogued model is identical: the composite id, the price columns the cost fold
+reads, the `enabled` opt-in, the provider grouping, the refresh upsert. A `kind`
+is also re-read on every refresh, so a model that changes catalog moves rather
+than being stuck with how it was first seen.
+
+**What the catalog owns vs what your adapter owns.** For decision models the two
+are merged, and neither can supply the other's half:
+
+| | Source | Why it can't come from the other side |
+| --- | --- | --- |
+| label, context window, price | the catalog | live, refreshed, admin-curated |
+| `questionTypes`, `calibrated` | your `listDecisionModels` | no `/models` payload reports them, and claiming calibration for a chat model in a costume silently changes what every threshold an author sets means |
+
+Your declaration is the **spine**: a decider absent from it is never offered,
+however many catalog rows mention it, because `getDecider` could not resolve it.
+Before the first refresh the declaration passes through untouched.
 
 ### Provider spend budgets (optional)
 
@@ -357,7 +393,7 @@ and, for events, lists the fields reflected from each `inputSchema`. Only events
 live in your config; `manual`/`periodic` are SDK constants
 (`MANUAL_TRIGGER_KIND`, `PERIODIC_TRIGGER_KIND`).
 
-### Decision providers — `assess`, the Decision node, calibrated evals (optional)
+### Decision providers — decision agents, calibrated evals (optional)
 
 A **decider** is the SDK's second kind of provider. Where `getModel` resolves a
 chat model — messages in, text out — `getDecider` resolves something that judges
@@ -367,17 +403,36 @@ messages, no tool calls and no stream, and a purpose-built decision endpoint wil
 not answer a `/chat/completions` request. Keep decision models out of
 `listModels` — an author who picks one there gets a 404 mid-run.
 
-Wire one and three things light up at once:
+Wire one and two things light up at once:
 
 | Surface                          | What it is                                                           |
 | -------------------------------- | -------------------------------------------------------------------- |
-| The **Decision** node            | Judges a bound value against its questions in ONE call. Doesn't route — a Branch or Switch below reads `answers.<questionId>.value` |
-| The built-in **`assess`** tool   | The agent-facing half: the model calls it mid-reasoning when it wants a number instead of a hunch |
+| **Decision agents**              | A question set as a reusable entity — a second kind of agent: versioned, change-logged, rolled up to one verdict by ordered rules, and graded by its own Goals. A workflow runs one through an ordinary **agent node** |
 | The **`decision_judge`** eval check | Grades a Goal on a probability and your threshold, instead of an LLM writing a verdict and then rating its own confidence in it |
 
-Leave it unwired and all three are simply absent: the palette hides the Decision
-kind, the eval check's panel says what to wire, and nothing fails at run time
-because nothing offered itself.
+Leave it unwired and both are simply absent: the eval check's panel says what to
+wire, and nothing fails at run time because nothing offered itself.
+
+#### Running a decision agent from a workflow
+
+There is no separate node kind. An **agent node** points at either kind of agent
+through `config.agentId`, and the run manifest settles which one it got:
+
+|                | generation agent                                | decision agent                                       |
+| -------------- | ----------------------------------------------- | ---------------------------------------------------- |
+| Runs as        | a prompt and a tool loop                        | one provider call — no prompt, no tools              |
+| Input          | `config.inputs` → `${variables}`, `conversation`| `config.source` → the value judged; `config.inputs` → `${variables}` in its questions |
+| Output         | its declared output                             | `{ verdict, because, reasoning, answers }`           |
+
+A decision agent does not route. A Switch below the node binds `verdict` — the one
+named outcome the agent's ordered rollup **rules** produced — instead of you
+re-deriving those rules as edge conditions over `answers.*`. The raw answers stay
+addressable (`answers.<questionId>.value`) for anything finer.
+
+`config.source` is a ref into an upstream node's output; leave it unset to judge
+the whole incoming input. The reference floats to the agent's latest published
+version (or a pinned `version`) and is frozen into the run manifest at run start,
+exactly like a generation agent's pointer.
 
 #### The rule that makes a decider portable
 
@@ -415,34 +470,20 @@ export const wfConfig = defineWfConfig<HostDeps>({
 ```
 
 Models **known** to lack structured output are filtered out; the rest are offered
-marked `calibrated: false`, and the editor says so on the node. It is opt-in
+marked `calibrated: false`, and the editor says so on the agent. It is opt-in
 rather than a default on purpose: an emulated decider's probabilities are a chat
 model's self-report, every threshold an author sets is a threshold on those
 numbers, and a deployment that hasn't thought about that shouldn't quietly
 acquire them. Setting the flag **and** `getDecider` is a construction error, not
 a silent preference.
 
-The flag fills in the config's hooks, which is everything the **Decision node**
-and the **eval check** need. The `assess` **tool** needs one more line, because a
-tool's `build` is handed only your deps — so put a decider in the bundle,
-choosing the model you want agents judging with:
-
-```ts
-import { createChatDecider } from '@stevepeak/007/engine'
-
-buildRunDeps: (ctx) => ({
-  /* …your deps */
-  decide: createChatDecider({
-    model: getModel((ctx.env as HostEnv).MODEL_API_KEY, 'model-a'),
-    modelId: 'model-a',
-  }),
-}),
-```
+The flag fills in the config's hooks, which is everything decision agents and the
+**eval check** need.
 
 #### Option B — provide a real decision provider
 
 Three hooks, all-or-nothing (`defineWfConfig` refuses a partial set: a factory
-with no catalog is a node the author can't configure, a catalog with no factory
+with no catalog is an agent the author can't configure, a catalog with no factory
 is a dropdown that resolves to nothing at run time):
 
 ```ts
@@ -529,31 +570,6 @@ and the engine chunks a larger request rather than failing. Leave it off when
 your provider caps by tokens rather than by question count — a made-up number
 there splits requests that would have fit while still failing the ones that
 don't.
-
-#### Wiring the `assess` tool
-
-`assess` is an SDK built-in (`origin: 'sdk'`), so it registers like the other
-two — with an accessor into your per-run deps:
-
-```ts
-import { createAssessTool } from '@stevepeak/007/engine'
-
-// Build ONE decider per run and point both the tool and the node at it, so an
-// agent's judgment and a graph's judgment come from the same provider.
-buildRunDeps: (ctx) => ({
-  /* …your deps */
-  decide: createMyDecider({ apiKey: (ctx.env as HostEnv).DECISION_API_KEY, modelId: 'my-provider:judge-1' }),
-}),
-
-const toolRegistry = new Map(
-  [...hostTools, createAssessTool<HostDeps>({ getDecider: (d) => d.decide })]
-    .map((t) => [t.id, t]),
-)
-```
-
-It comes from `TDeps` rather than from `WfSdkConfig.getDecider` for a structural
-reason: a tool's `build` is handed only your deps bundle, and the `RunContext`
-that `getDecider` needs never reaches it.
 
 #### Calibrated eval grading
 
@@ -1329,12 +1345,12 @@ scopes, and the client stores and silently refreshes the token from then on.
 `offline_access` is what makes that a one-time cost rather than a prompt at
 every expiry.
 
-**What it exposes.** Fifty-one tools — twenty-seven reads, and twenty-four writes
+**What it exposes.** Fifty-two tools — twenty-seven reads, and twenty-five writes
 registered only for a session whose token carries the write scope.
 
 | Tool                              | Gate      | What it does                                                        |
 | --------------------------------- | --------- | ------------------------------------------------------------------- |
-| `list_agents` / `get_agent`       | read      | the reusable LLM workers, published version + unsaved draft, and the workflows referencing them |
+| `list_agents` / `get_agent`       | read      | the reusable agents, published version + unsaved draft, and the workflows referencing them. Check `kind`: a **generation** agent has a prompt, tools and an output contract; a **decision** agent has questions, verdicts and rollup rules |
 | `list_agent_versions`             | read      | an agent's publish history; pass `versionNumber` for that config    |
 | `list_agent_calls`                | read      | its recent REAL executions — turns, tokens, cost, per-tool counts, early stops |
 | `list_workflows` / `get_workflow` | read      | the graphs, published + draft                                       |
@@ -1350,7 +1366,7 @@ registered only for a session whose token carries the write scope.
 | `list_connectors`                 | read      | the third-party MCP servers we consume tools from, with connection HEALTH. Pass `connectorId` for its tools + schemas |
 | `list_tool_invocations`           | read      | what one tool was really called with, across runs — args, output, failures |
 | `list_models`                     | read      | the catalog, enabled-only unless asked; filter by capability/vendor/price. Pass `id` verbatim wherever one is named |
-| `list_decision_models`            | read      | the DECISION models — a separate catalog from `list_models`; where a `decision_judge` or Decision node's `modelId` comes from |
+| `list_decision_models`            | read      | the DECISION models — a separate catalog from `list_models`; where a `decision_judge` check's or a decision agent's `modelId` comes from |
 | `set_model_enabled`               | **write** | offer or withdraw one model workspace-wide. Refused while an agent still uses it |
 | `refresh_model_catalog`           | **write** | re-read a provider's `/models`. New models arrive DISABLED            |
 | `refresh_connector`               | **write** | re-read a connector's `tools/list`; reports `drifted` schemas. Grants no new trust |
@@ -1371,7 +1387,8 @@ registered only for a session whose token carries the write scope.
 | `discard_agent_draft`             | **write** | drop the draft; says what was lost                                  |
 | `update_agent`                    | **write** | rename or restyle an agent. Cosmetic; no version created            |
 | `triage_feedback`                 | **write** | acknowledge a complaint and write the staff-only resolution note    |
-| `run_agent_preview`               | **write** | one throwaway run of an agent. **Every tool simulated**             |
+| `run_agent_preview`               | **write** | one throwaway run of a GENERATION agent. **Every tool simulated**   |
+| `run_decision_preview`            | **write** | judge one state with a DECISION agent — verdict, which rule fired, and the raw distributions |
 | `retry_run`                       | **write** | re-execute a finished run — `restart` on latest, or `resume` the original version. **Real side effects** |
 | `create_workflow`                 | **write** | a new workflow: the chosen trigger wired to an Output, published as v1 |
 | `update_workflow`                 | **write** | rename, or archive/restore — archiving is how a workflow is retired    |
@@ -1381,9 +1398,9 @@ registered only for a session whose token carries the write scope.
 | `discard_workflow_draft`          | **write** | drop the draft; says what was lost                                  |
 | `update_description`              | **write** | rewrite what a workflow, agent, Goal or Sample is *for*, or a run's triage note. Unversioned; changes nothing a run does |
 
-`run_eval` and `run_agent_preview` are writes not because they edit a definition
-but because they **spend money** — which is the line the flag is actually
-drawing.
+`run_eval`, `run_agent_preview` and `run_decision_preview` are writes not
+because they edit a definition but because they **spend money** — which is the
+line the flag is actually drawing.
 
 **Documenting the surface.** The table above is hand-written and will drift the
 day someone adds the twenty-fifth tool, so nothing else should retype it.

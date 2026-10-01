@@ -15,6 +15,7 @@ function result(over: Partial<WfEvalResultDTO> = {}): WfEvalResultDTO {
     rowId: 'row-1',
     wfRunId: 'wf-1',
     runStats: null,
+  answeredModelId: null,
     status: 'pass',
     score: null,
     checkResults: [],

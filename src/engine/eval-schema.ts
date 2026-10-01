@@ -40,6 +40,34 @@ export type EvalMatch = z.infer<typeof evalMatchSchema>
 /** How sure the judge is of its own verdict, 0 (a coin flip) to 10 (certain). */
 export const JUDGE_CONFIDENCE_MAX = 10
 
+// ── Expected decision answers ───────────────────────────────────────────────
+// What one question's answer should have been. The fields are per question
+// TYPE and only one applies, but they are flat rather than a union for the same
+// reason the question schema is: the editor's row and the MCP sample-authoring
+// tool both write through this, and neither gains from a discriminator it would
+// have to restate.
+
+export const decisionExpectationSchema = z.object({
+  /** The question this grades, by the id the agent declares. */
+  questionId: z.string().min(1),
+  /** `boolean`: the expected side of the question's own threshold. */
+  yes: z.boolean().optional(),
+  /** `category`: the expected option key. `scale`: the expected level key. */
+  key: z.string().optional(),
+  /**
+   * How sure the answer had to be for the match to count, 0–1 — the tolerance
+   * for a borderline call. For a boolean it is the probability of YES (so an
+   * expectation of `no` reads it as `1 - p`); for the other two it is the
+   * winning key's share of the mass.
+   *
+   * Omitted, only the value is compared — which is the right default: the
+   * verdict is what acts on the world, and a correct call at 0.55 is still a
+   * correct call. Set it where a near-tie would be a real problem.
+   */
+  minProbability: z.number().min(0).max(1).optional(),
+})
+export type DecisionExpectation = z.infer<typeof decisionExpectationSchema>
+
 // A single assertion. Two families, split by how they produce a verdict:
 //   • binary/deterministic — pass|fail read straight off the run trace.
 //   • subjective/scored    — an LLM judge returns pass|fail AND a 0..1 score.
@@ -107,6 +135,27 @@ export const evalCheckSchema = z.discriminatedUnion('type', [
      * author's line to draw, which is exactly why the provider never sees it.
      */
     threshold: z.number().min(0).max(1).optional(),
+  }),
+  /**
+   * The whole DECISION MATRIX graded as one row: the expected answer per
+   * question id, and optionally the expected verdict.
+   *
+   * No judge, no cost, no judge flakiness — a decision agent's output is
+   * already structured, so grading it is a comparison rather than an opinion.
+   *
+   * `output_match` with `path: answers.is_urgent.value` technically works and
+   * stays the fallback, but it costs one check row per question and cannot
+   * express a probability tolerance. This grades the matrix in one row, which
+   * is also the grain the author thinks in.
+   */
+  z.object({
+    type: z.literal('decision_answers'),
+    /**
+     * The verdict the rollup should reach. Omit to grade the raw answers only
+     * — useful while the questions are settled and the rules are not.
+     */
+    verdict: z.string().optional(),
+    expect: z.array(decisionExpectationSchema).default([]),
   }),
   z.object({
     type: z.literal('llm_judge'),
@@ -251,10 +300,32 @@ export const triggerInputSchema = z.object({
   variables: z.record(z.string(), z.string()).default({}),
 })
 
+/**
+ * A Sample's input for a DECISION agent — the state every question is judged
+ * against, verbatim.
+ *
+ * None of the other three fit. `task` supplies prompt variables to a template
+ * that doesn't exist here; `conversation` supplies a thread to an agent that
+ * takes none; `trigger` supplies a routed payload to a workflow. A decision
+ * agent's input is one opaque state blob — a string, an object, whatever the
+ * caller would have handed the node — so the Sample preserves it as-is.
+ *
+ * `variables` rides along for the same reason it does on a conversation input:
+ * question prompts and considerations interpolate `${…}` tokens, so a Goal can
+ * sweep the same state past a parameterised question.
+ */
+export const decisionInputSchema = z.object({
+  kind: z.literal('decision'),
+  /** Any JSON value. A string is the common case and reads best in the editor. */
+  state: z.unknown(),
+  variables: z.record(z.string(), z.string()).default({}),
+})
+
 export const evalSampleInputSchema = z.discriminatedUnion('kind', [
   taskInputSchema,
   conversationInputSchema,
   triggerInputSchema,
+  decisionInputSchema,
 ])
 export type EvalSampleInput = z.infer<typeof evalSampleInputSchema>
 export type EvalSampleInputKind = EvalSampleInput['kind']

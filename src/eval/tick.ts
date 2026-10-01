@@ -207,6 +207,49 @@ export async function tickEvalRun(
   } else {
     const slots = Math.max(0, plan.concurrency - stillInflight.length)
     for (const cell of remaining.slice(0, slots)) {
+      // ── A decision cell settles inside this tick ───────────────────────────
+      // It is one provider call with no `wf_run` behind it, so there is nothing
+      // to poll: the call returns the answers, the SDK grades them, and the
+      // result row is written before this loop moves on.
+      //
+      // That is a deliberate exception to "a tick never blocks on a run", and
+      // the reason the rule exists does not apply. The rule is about a tick
+      // outliving its driver — an agent run takes minutes and may outlast a
+      // Worker request, so the driver must be able to leave and come back. A
+      // decision is a single request on a 45-second budget; making it
+      // resumable would mean a second round trip and a persisted in-flight
+      // entry for something that is over before the tick's next statement.
+      // Concurrency still bounds how many are in the air at once.
+      if (plan.mode === 'decision') {
+        try {
+          await client.runDecisionEvalCell({
+            evalRunId,
+            rowId: cell.rowId,
+            modelId: cell.modelId,
+            attempt: cell.attempt,
+            config: plan.configOverride,
+          })
+          settled.add(evalCellKey(cell))
+          settledNow += 1
+          started += 1
+          consecutiveErrors = 0
+        } catch (err) {
+          // The provider refused, or the config is unrunnable. Same breaker as
+          // a failed run: three in a row and the rest are recorded, not called.
+          consecutiveErrors += 1
+          if (consecutiveErrors >= MAX_CONSECUTIVE_CELL_ERRORS) providerDown = true
+          await record(cell, err instanceof Error ? err.message : String(err))
+          // Stop calling a provider that has just been declared down. The run
+          // path cannot do this — its failures arrive on a LATER tick, long
+          // after the loop that started them — but a decision cell fails
+          // in-line, so continuing would spend the rest of this tick's slots
+          // on calls the breaker has already ruled out. The remaining cells
+          // drain into recorded skips on the next tick, exactly as they do
+          // for a run sweep.
+          if (providerDown) break
+        }
+        continue
+      }
       try {
         const { wfRunId } = await client.startEvalRun({
           evalRunId,

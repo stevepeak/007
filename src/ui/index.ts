@@ -219,6 +219,7 @@ export type {
   ModelCapabilities,
   ModelCatalog,
   ModelCatalogEntry,
+  ModelKind,
   ModelOption,
   ModelProvider,
   ModelProviderKind,

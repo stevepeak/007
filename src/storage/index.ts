@@ -98,6 +98,7 @@ export {
   listAgents,
   listAgentVersions,
   listWorkflowsReferencingAgent,
+  listEnabledDecisionModelFacts,
   listEnabledModels,
   listEvalRuns,
   listStaleEvalRuns,

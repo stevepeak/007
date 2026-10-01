@@ -88,9 +88,41 @@ export type ModelOption = {
  * `id` is the COMPOSITE `providerId:modelId` so it routes unambiguously through
  * `WfSdkConfig.getModel`; `modelId` keeps the provider-native id.
  */
+/**
+ * What a catalogued model ANSWERS WITH, and therefore which picker may offer it.
+ *
+ *   • 'chat'     — a text/tool model resolved by `getModel`; the agent editor's
+ *                  model dropdown and every `ModelOption` consumer.
+ *   • 'decision' — a decision endpoint resolved by `getDecider`; the Decision
+ *                  node and decision agents, via `listDecisionModels`.
+ *
+ * The two are not interchangeable in either direction — a decision model has no
+ * `/chat/completions` to call and a chat model reports no calibrated
+ * distribution — so the catalog keeps them in one table and separates them HERE,
+ * at the only point where it matters: which list a model is offered in.
+ *
+ * It is a field rather than two tables because everything else about a
+ * catalogued model is identical: the composite id, the pricing columns the cost
+ * fold reads, the `enabled` opt-in, the provider grouping, the refresh upsert.
+ * Splitting the table would duplicate all of that to express one adjective.
+ *
+ * Defaults to 'chat' everywhere it is absent, so a provider adapter that has
+ * never heard of this keeps working and rows written before the column existed
+ * read back as what they are.
+ */
+export type ModelKind = 'chat' | 'decision'
+
+export const MODEL_KINDS = ['chat', 'decision'] as const
+
 export type ModelCatalogEntry = ModelOption & {
   /** Provider-native id (e.g. `anthropic/claude-sonnet-4.6`) — what `getModel` resolves. */
   modelId: string
+  /**
+   * Which catalog this model belongs to — see {@link ModelKind}. Omit for a chat
+   * model; a provider adapter that returns decision models MUST set it, or they
+   * land in the agent model dropdown where nothing can call them.
+   */
+  kind?: ModelKind
   /** Grouping key: vendor prefix (OpenRouter) or the provider label. */
   vendor?: string
   /** Whether the platform has enabled this model for use. */

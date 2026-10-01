@@ -418,6 +418,7 @@ describe('upsert_eval_sample — the target-keyed lints', () => {
           agent: {
             id: 'ag_1',
             name: 'Conflict check',
+            kind: 'generation',
             inputKind: 'task',
             inputVariables: [],
             latestVersionNumber: 3,

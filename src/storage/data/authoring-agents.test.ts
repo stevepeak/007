@@ -125,8 +125,10 @@ describe('agent version history', () => {
     const restored = await getAgentVersionConfig(db, v1.id)
     expect(restored?.versionNumber).toBe(1)
     expect(restored?.agentId).toBe(agentId)
-    expect(restored?.config.prompt).toBe('You are a costing assistant.')
-    expect(restored?.config.maxTurns).toBe(5)
+    expect(restored?.kind).toBe('generation')
+    const config1 = restored?.config as AgentConfig
+    expect(config1.prompt).toBe('You are a costing assistant.')
+    expect(config1.maxTurns).toBe(5)
   })
 
   test('getAgentVersionConfig is null for an unknown version', async () => {

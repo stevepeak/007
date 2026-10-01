@@ -7,6 +7,7 @@ import {
   unmetRequirementsReason,
 } from '../engine/model-capabilities'
 import { agentCallTotals, buildMatrixSummary, isMatrixRun } from '../eval/report'
+import { resolveEvalCellMode } from '../eval/plan'
 import {
   createEvalSweep,
   DEFAULT_EVAL_CONCURRENCY,
@@ -15,7 +16,9 @@ import {
 } from '../eval/run-eval'
 import type {
   AgentConfig,
+  AnyAgentConfig,
   ModelCapabilities,
+  WfAgentSummary,
   ModelOption,
   WfDataClient,
   WfEvalResultDTO,
@@ -191,6 +194,17 @@ function summarizeResult(result: WfEvalResultDTO, name: string): unknown {
     error: result.error,
     wfRunId: result.wfRunId,
     cell: cellOf(result),
+    // What ACTUALLY answered, echoed by the provider, and shown only when it
+    // is not the id the cell asked with. A decision agent can be pointed at a
+    // floating id like `jev-latest`, and when what sits behind it changes,
+    // nothing else in 007 moves: not the agent version, not the plan, not the
+    // snapshot hash. A report whose verdicts shifted for no visible reason
+    // has its reason here, and nowhere else.
+    answeredBy:
+      result.answeredModelId != null &&
+      result.answeredModelId !== result.modelId
+        ? result.answeredModelId
+        : undefined,
     checks: describeChecks(result),
     runStats: result.runStats,
     // See `previousSnapshotHash`: the sample's own definition changed since it
@@ -643,13 +657,38 @@ export function evalRunWriteTools(): WfMcpTool[] {
               'Those goals have no samples, so there is nothing to run. Add samples with upsert_eval_sample first.',
           }
         }
+        // Which way this sweep executes. A decision-agent Goal has no runs to
+        // start and poll — its cells settle inside a tick — and a set of Goals
+        // that mixes the two kinds has no single answer, so it is refused here
+        // rather than half-launched.
+        // A failed read means "cannot tell", which lands every target as a
+        // `run` cell — the pre-ART-238 behaviour, and the safe one: a decision
+        // Goal launched that way reports per-cell errors rather than silently
+        // grading nothing.
+        const allAgents: WfAgentSummary[] = await client
+          .listAgents()
+          .catch(() => [])
+        const agentKinds = new Map(allAgents.map((a) => [a.id, a.kind] as const))
+        const resolvedMode = resolveEvalCellMode(
+          sets.flatMap((s) => (s ? [s.set] : [])),
+          agentKinds,
+        )
+        if ('error' in resolvedMode) return { error: resolvedMode.error }
+        const isDecisionSweep = resolvedMode.mode === 'decision'
+        if (isDecisionSweep && prompts.length > 0) {
+          return {
+            error:
+              'A decision agent has no system prompt to A/B, so `prompts` does nothing here. Its questions ARE the prompt — sweep `models` instead, or edit the questions on a draft and pass draftAgentId.',
+          }
+        }
+
         // The draft override rides on every cell of the sweep and the server
         // applies it without checking WHOSE config it is — the editor can't hit
         // that because it only ever runs its own agent's goals, but a tool call
         // naming an unrelated setId would silently grade agent A's draft against
         // agent B's samples and report the result as B's.
         const draftAgentId = optString(args.draftAgentId)
-        let configOverride: AgentConfig | undefined
+        let configOverride: AnyAgentConfig | undefined
         let unsavedFields: string[] = []
         if (draftAgentId) {
           const mismatched = sets.filter((s) => {
@@ -714,7 +753,7 @@ export function evalRunWriteTools(): WfMcpTool[] {
             .catch(() => [])
           // An empty catalog means the read failed or nothing is enabled; gating
           // on it would refuse every legal sweep, so it means "cannot check".
-          if (catalog.length > 0) {
+          if (catalog.length > 0 && !isDecisionSweep) {
             const known = new Map(catalog.map((m) => [m.id, m]))
             const unknown = models.filter((id) => !known.has(id))
             if (unknown.length > 0) {
@@ -722,11 +761,16 @@ export function evalRunWriteTools(): WfMcpTool[] {
                 error: `Not a model id in this catalog: ${unknown.join(', ')}. Ids are composite \`provider:model\` and come from list_models — the provider-native half alone will 404 at the provider.`,
               }
             }
-            const requirements = await targetRequirements(
-              client,
-              sets,
-              configOverride,
-            )
+            // Chat-model capabilities, which a decision sweep has none of —
+            // its models come from a different catalog entirely and are gated
+            // on question TYPES, not on tools or structured output.
+            const requirements = isDecisionSweep
+              ? undefined
+              : await targetRequirements(
+                  client,
+                  sets,
+                  configOverride as AgentConfig | undefined,
+                )
             if (requirements) {
               const gated = models
                 .map((id) => ({
@@ -761,6 +805,7 @@ export function evalRunWriteTools(): WfMcpTool[] {
 
         const input: RunEvalInput = {
           setIds,
+          mode: resolvedMode.mode,
           configOverride,
           judgeModelId: optString(args.judgeModelId),
           concurrency:

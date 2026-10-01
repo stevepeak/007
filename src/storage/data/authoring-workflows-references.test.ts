@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
 
 import type { AgentConfig, WorkflowGraph } from '../../engine/graph'
-import { evalWrapperName } from '../../eval/wrapper'
+import { evalWrapperName } from '../../engine/eval-wrapper-name'
 import type { WfDb } from '../client'
 import { freshDb } from '../db-test-helpers'
 import {  wfWorkflow } from '../schema'
