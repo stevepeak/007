@@ -53,21 +53,21 @@
     "@modelcontextprotocol/sdk": "^1.31.0",
     "@sentry/cloudflare": "^11.1.0",
     "@tanstack/react-query": "^5.104.0",
-    "@tiptap/core": "^3.31.2",
-    "@tiptap/extension-placeholder": "^3.31.3",
-    "@tiptap/extensions": "^3.31.3",
-    "@tiptap/markdown": "^3.31.3",
-    "@tiptap/pm": "^3.31.3",
-    "@tiptap/react": "^3.31.3",
-    "@tiptap/starter-kit": "^3.31.3",
+    "@tiptap/core": "^3.31.4",
+    "@tiptap/extension-placeholder": "^3.31.4",
+    "@tiptap/extensions": "^3.31.4",
+    "@tiptap/markdown": "^3.31.4",
+    "@tiptap/pm": "^3.31.4",
+    "@tiptap/react": "^3.31.4",
+    "@tiptap/starter-kit": "^3.31.4",
     "@xyflow/react": "^12.12.0",
-    "ai": "^7.0.122",
+    "ai": "^7.0.126",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.3",
-    "highlight.js": "~11.11.0",
+    "highlight.js": "~11.12.0",
     "jsonata": "^2.2.2",
     "lowlight": "^3.3.0",
-    "lucide-react": "^1.48.0",
+    "lucide-react": "^1.49.0",
     "react-hook-form": "^7.89.0",
     "react-is": "^19.3.0",
     "recharts": "^3.10.1",
@@ -84,7 +84,7 @@
     }
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260928.1",
+    "@cloudflare/workers-types": "^5.20260930.2",
     "@dexaai/config": "^0.0.10",
     "@ocavue/eslint-config": "^4.18.0",
     "@types/bun": "^1.4.2",
@@ -97,6 +97,6 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "typescript": "^5.9.3",
-    "wrangler": "^4.143.0"
+    "wrangler": "^4.145.0"
   }
 }
