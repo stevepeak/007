@@ -34,6 +34,7 @@ export function ConditionEdge({
   data,
 }: EdgeProps) {
   const sourceNode = useNodesData<EditorNode>(source)
+  const fastTrack = data?.fastTrack === true
   const condition = typeof data?.condition === 'string' ? data.condition : null
   const [path, labelX, labelY] = getSmoothStepPath({
     sourceX,
@@ -48,7 +49,9 @@ export function ConditionEdge({
       id={id}
       path={path}
       markerEnd={markerEnd}
-      style={style}
+      style={
+        fastTrack ? { ...style, stroke: '#f59e0b', strokeWidth: 3 } : style
+      }
       label={conditionLabel(sourceNode?.data, condition)}
       labelX={labelX}
       labelY={labelY}

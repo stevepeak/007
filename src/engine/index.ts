@@ -149,6 +149,7 @@ export {
   unmetRequirementsReason,
 } from './model-capabilities'
 export { answerCriticalIds } from './graph-answer-cone'
+export { fastTrackIds } from './graph-fast-track'
 export { ancestorIds, predecessorIds } from './graph-traverse'
 export {
   nodeRefs,

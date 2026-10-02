@@ -9,6 +9,7 @@ import {
 } from './graph'
 import { buildAdjacency } from './graph-adjacency'
 import { answerCriticalIds } from './graph-answer-cone'
+import { fastTrackIds } from './graph-fast-track'
 
 // The Scheduler is the runtime-agnostic heart of workflow execution. It owns
 // the graph walk — which node is ready next, how branches route, how inputs
@@ -25,10 +26,7 @@ import { answerCriticalIds } from './graph-answer-cone'
 // Trigger/Output are engine-managed bookends; Note is a portless canvas
 // annotation with no incoming edges, so `isReady` never selects it. None of
 // the three is ever an executable instruction.
-export type ExecutableNode = Exclude<
-  WorkflowNode,
-  { kind: BookendNodeKind }
->
+export type ExecutableNode = Exclude<WorkflowNode, { kind: BookendNodeKind }>
 
 /** A node the backend must execute, with its resolved input. */
 export type ExecuteInstruction = {
@@ -137,6 +135,9 @@ export class Scheduler {
   // Nodes that can influence some Output's value. Derived once from the graph
   // (see `answerCriticalIds`); drives dispatch order only, never readiness.
   private readonly answerCritical: Set<string>
+  // Nodes on the author's fast track (see `fastTrackIds`). Unlike the set above
+  // this one GATES: while any is running or ready, `takeReady` holds the rest.
+  private readonly fastTrack: Set<string>
   private readonly branchResults = new Map<string, string>()
   // Seeded with the graph's node identities so a failed ref names the boxes the
   // author drew rather than their uuids. Assigned in the constructor — it needs
@@ -167,6 +168,7 @@ export class Scheduler {
     }
     this.incoming = buildAdjacency(this.graph).incoming
     this.answerCritical = answerCriticalIds(this.graph)
+    this.fastTrack = fastTrackIds(this.graph)
   }
 
   /**
@@ -224,9 +226,7 @@ export class Scheduler {
    * {@link hasPendingWork} for the question a backend actually wants answered.
    */
   hasReadyWork(): boolean {
-    return this.graph.nodes.some(
-      (n) => !isBookendKind(n) && this.isReady(n.id),
-    )
+    return this.graph.nodes.some((n) => !isBookendKind(n) && this.isReady(n.id))
   }
 
   /**
@@ -373,7 +373,11 @@ export class Scheduler {
   next(): SchedulerInstruction {
     const out = this.reachableOutput()
     if (out) {
-      return { type: 'output', nodeId: out.id, output: this.resolveOutputValue(out) }
+      return {
+        type: 'output',
+        nodeId: out.id,
+        output: this.resolveOutputValue(out),
+      }
     }
 
     const next = this.graph.nodes.find((n) => this.isReady(n.id))
@@ -433,9 +437,22 @@ export class Scheduler {
    * nodes go out in the same call, so nothing is deferred behind the answer.
    */
   takeReady(): BatchItem[] {
-    const ready = this.graph.nodes.filter(
+    let ready = this.graph.nodes.filter(
       (n): n is ExecutableNode => !isBookendKind(n) && this.isReady(n.id),
     )
+    // Fast track hold-back. While fast-track work is running or ready, nodes
+    // off the track stay unclaimed — they remain ready, and the next call after
+    // the track settles picks them up. Never a deadlock: the hold only applies
+    // while a fast node is actually running or ready, and a fast node blocked
+    // on something off the track can't happen, since `fastTrackIds` pulls in
+    // every ancestor of the track.
+    if (this.fastTrack.size > 0) {
+      const fastReady = ready.filter((n) => this.fastTrack.has(n.id))
+      const fastRunning = [...this.inFlight].some((id) => {
+        return this.fastTrack.has(id)
+      })
+      if (fastReady.length > 0 || fastRunning) ready = fastReady
+    }
     if (ready.length === 0) return []
 
     this.nodesFired += ready.length
@@ -443,10 +460,12 @@ export class Scheduler {
       throw new WorkflowBudgetError(this.nodeBudget)
     }
 
-    const ordered = [
-      ...ready.filter((n) => this.answerCritical.has(n.id)),
-      ...ready.filter((n) => !this.answerCritical.has(n.id)),
-    ]
+    const rank = (n: ExecutableNode): number => {
+      if (this.fastTrack.has(n.id)) return 0
+      return this.answerCritical.has(n.id) ? 1 : 2
+    }
+    // Stable sort: declaration order is kept within each tier.
+    const ordered = [...ready].sort((a, b) => rank(a) - rank(b))
     // Resolve inputs BEFORE marking anything in flight: `resolveInput` reads
     // only `completed` state, but keeping the two phases apart means a future
     // change to either can't quietly make a node's input depend on whether a

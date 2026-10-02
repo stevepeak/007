@@ -250,6 +250,20 @@ function CanvasInner({
               onNodesChange={handleNodesChange}
               onEdgesChange={readOnly ? undefined : onEdgesChange}
               onConnect={readOnly ? undefined : handleConnect}
+              // Double-click a pipe to toggle it onto the fast track.
+              onEdgeDoubleClick={
+                readOnly
+                  ? undefined
+                  : (_, edge) => {
+                      setEdges((eds) => {
+                        return eds.map((e) => {
+                          if (e.id !== edge.id) return e
+                          const on = e.data?.fastTrack !== true
+                          return { ...e, data: { ...e.data, fastTrack: on } }
+                        })
+                      })
+                    }
+              }
               onSelectionChange={handleSelectionChange}
               onNodeDragStop={readOnly ? undefined : handleNodeDragStop}
               isValidConnection={isValidConnection}

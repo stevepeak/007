@@ -1,10 +1,6 @@
 import type { Edge, Node } from '@xyflow/react'
 
-import type {
-  WorkflowEdge,
-  WorkflowGraph,
-  WorkflowNode,
-} from '../../engine'
+import type { WorkflowEdge, WorkflowGraph, WorkflowNode } from '../../engine'
 
 import { editorTypeForKind, type EditorNodeData } from './node-renderers'
 
@@ -36,7 +32,7 @@ export function edgeToFlow(e: WorkflowEdge): EditorEdge {
     // No `label` here on purpose: `ConditionEdge` derives what the edge reads as
     // from the SOURCE node at render time, because a Switch arm's name lives on
     // that node's case row and has to follow a rename immediately.
-    data: { condition: e.condition },
+    data: { condition: e.condition, fastTrack: e.fastTrack === true },
   }
 }
 
@@ -124,6 +120,8 @@ function edgeToEngine(e: EditorEdge): WorkflowEdge {
     // decision, a case key or 'default' for a switch. Non-decision edges have no
     // handle id, so this is null.
     condition: e.sourceHandle ?? null,
+    // Only written when set, so graphs that never use it stay unchanged.
+    ...(e.data?.fastTrack === true ? { fastTrack: true } : {}),
   }
 }
 
@@ -138,7 +136,10 @@ function engineNodeOf(n: EditorNode): WorkflowNode {
 // Reverse of engineToFlow: re-nest each iteration container's children back into
 // its `config.subgraph`. Top-level nodes form the main graph; a node's children
 // (by `parentId`) plus the edges wholly inside that container become its subgraph.
-export function flowToEngine(nodes: EditorNode[], edges: EditorEdge[]): WorkflowGraph {
+export function flowToEngine(
+  nodes: EditorNode[],
+  edges: EditorEdge[],
+): WorkflowGraph {
   const parentOf = new Map(nodes.map((n) => [n.id, n.parentId]))
   const childrenByParent = new Map<string, EditorNode[]>()
   const topLevel: EditorNode[] = []

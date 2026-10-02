@@ -846,6 +846,12 @@ export const workflowEdgeSchema = z.object({
   source: z.string().min(1),
   target: z.string().min(1),
   condition: z.string().min(1).nullable().default(null),
+  // Fast track: this pipe is on the priority path. The walk runs the marked
+  // path (and whatever it needs) to completion BEFORE starting unrelated ready
+  // nodes — a hold-back, not just a dispatch-order preference. Optional with no
+  // default so graphs that never use it round-trip byte-identical. See
+  // `fastTrackIds`.
+  fastTrack: z.boolean().optional(),
 })
 export type WorkflowEdge = z.infer<typeof workflowEdgeSchema>
 
