@@ -52,6 +52,17 @@ export type ModelCapabilities = {
    * setting (Venice `supportsWebSearch`, xAI Live Search, …).
    */
   webSearch?: boolean
+  /**
+   * Zero data retention: the provider does not keep prompts or completions. Its
+   * absence means "not guaranteed" (anonymized or unreported), so a deployment
+   * restricted to confidential data can filter on it.
+   */
+  private?: boolean
+  /**
+   * End-to-end encrypted: prompts are encrypted client-side and only decrypted
+   * inside a verified secure enclave. Implies `private`.
+   */
+  e2ee?: boolean
 }
 
 /**

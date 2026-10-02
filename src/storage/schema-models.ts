@@ -89,6 +89,15 @@ export const wfModel = sqliteTable(
     supportsWebSearch: integer('supports_web_search', { mode: 'boolean' })
       .notNull()
       .default(false),
+    // Data handling, from the provider catalog (Venice `model_spec.privacy` and
+    // `supportsE2EE`). `isPrivate` = zero data retention; `supportsE2ee` implies
+    // it. Both false = anonymized or unreported — "not guaranteed private".
+    isPrivate: integer('is_private', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    supportsE2ee: integer('supports_e2ee', { mode: 'boolean' })
+      .notNull()
+      .default(false),
     raw: text('raw', { mode: 'json' }),
     createdAt: createdAt(),
     updatedAt: integer('updated_at', { mode: 'timestamp' }),

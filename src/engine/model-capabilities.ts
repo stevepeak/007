@@ -18,6 +18,8 @@ export const REQUIREMENT_REASON: Record<keyof ModelCapabilities, string> = {
   reasoning: 'no reasoning',
   vision: 'no vision',
   webSearch: 'no web search',
+  private: 'not private',
+  e2ee: 'no end-to-end encryption',
 }
 
 /**

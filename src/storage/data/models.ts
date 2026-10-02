@@ -45,7 +45,9 @@ function rowCapabilities(r: WfModelRow): ModelCapabilities | undefined {
     !r.supportsReasoning &&
     !r.supportsStructuredOutput &&
     !r.supportsVision &&
-    !r.supportsWebSearch
+    !r.supportsWebSearch &&
+    !r.isPrivate &&
+    !r.supportsE2ee
   ) {
     return undefined
   }
@@ -55,6 +57,8 @@ function rowCapabilities(r: WfModelRow): ModelCapabilities | undefined {
     structuredOutput: r.supportsStructuredOutput,
     vision: r.supportsVision,
     webSearch: r.supportsWebSearch,
+    private: r.isPrivate,
+    e2ee: r.supportsE2ee,
   }
 }
 
@@ -314,6 +318,8 @@ const REFRESH_SET = {
   supportsStructuredOutput: sql`excluded.supports_structured_output`,
   supportsVision: sql`excluded.supports_vision`,
   supportsWebSearch: sql`excluded.supports_web_search`,
+  isPrivate: sql`excluded.is_private`,
+  supportsE2ee: sql`excluded.supports_e2ee`,
   raw: sql`excluded.raw`,
   updatedAt: sql`excluded.updated_at`,
 }
@@ -357,6 +363,8 @@ export async function upsertModels(
       supportsStructuredOutput: caps.structuredOutput ?? false,
       supportsVision: caps.vision ?? false,
       supportsWebSearch: caps.webSearch ?? false,
+      isPrivate: caps.private ?? false,
+      supportsE2ee: caps.e2ee ?? false,
       raw: e.raw ?? null,
       updatedAt: now,
     }

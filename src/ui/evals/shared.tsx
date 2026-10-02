@@ -1,4 +1,12 @@
-import { Braces, Eye, Globe, Sparkles, Wrench } from 'lucide-react'
+import {
+  Braces,
+  Eye,
+  Globe,
+  Lock,
+  ShieldCheck,
+  Sparkles,
+  Wrench,
+} from 'lucide-react'
 import type { MouseEvent, ReactNode } from 'react'
 
 import type {
@@ -134,6 +142,8 @@ const CAPABILITY_META = [
   { key: 'vision', label: 'Vision', icon: Eye },
   { key: 'structuredOutput', label: 'Structured output', icon: Braces },
   { key: 'webSearch', label: 'Web search', icon: Globe },
+  { key: 'private', label: 'Private (zero retention)', icon: ShieldCheck },
+  { key: 'e2ee', label: 'End-to-end encrypted', icon: Lock },
 ] as const
 
 export function CapabilityBadges({

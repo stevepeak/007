@@ -170,7 +170,7 @@ export function platformReadTools(): WfMcpTool[] {
         '',
         'ENABLED models only by default — the catalog is larger and the rest are off on purpose. `includeDisabled: true` shows the whole thing with an `enabled` flag on each row, which is how you answer "is there a cheaper model we already have but have not turned on?".',
         '',
-        'Narrow it rather than reading all of it: `query` matches id/label/vendor, `capability` keeps models that can do a thing (tools, structuredOutput, reasoning, vision, webSearch), and `maxCostPerMTok` / `minContextLength` bound the rest. Filtering by capability is also how you pick a model FOR a requirement instead of guessing and being refused by the gate.',
+        'Narrow it rather than reading all of it: `query` matches id/label/vendor, `capability` keeps models that can do a thing (tools, structuredOutput, reasoning, vision, webSearch, private, e2ee), and `maxCostPerMTok` / `minContextLength` bound the rest. Filtering by capability is also how you pick a model FOR a requirement instead of guessing and being refused by the gate.',
         '',
         'Each provider carries `enabledCount` / `modelCount` and `lastRefreshedAt`. Those two are what explain a surprising result: "only 3 of 312 are enabled" and "last refreshed six weeks ago" are the usual reasons a model you expected is missing. A stale catalog is fixed with refresh_model_catalog; a disabled model with set_model_enabled.',
         '',
@@ -193,7 +193,7 @@ export function platformReadTools(): WfMcpTool[] {
           .string()
           .nullish()
           .describe(
-            'Keep only models KNOWN to support this: tools, structuredOutput, reasoning, vision or webSearch. A model whose capabilities are unreported is kept either way — unknown is not the same as unsupported.',
+            'Keep only models KNOWN to support this: tools, structuredOutput, reasoning, vision, webSearch, private (zero data retention) or e2ee. A model whose capabilities are unreported is kept either way — unknown is not the same as unsupported.',
           ),
         vendor: z
           .string()
