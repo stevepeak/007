@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import { Scheduler } from './scheduler'
 import { agent, edge, output, trigger } from './scheduler-test-helpers'
 
-const fast = (source: string, target: string) => {
+function fast(source: string, target: string) {
   return { ...edge(source, target), fastTrack: true }
 }
 
