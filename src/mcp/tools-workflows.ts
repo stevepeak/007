@@ -180,6 +180,12 @@ const opSchema = z.object({
     .describe(
       `add_node: the node kind to add — one of ${ADDABLE_KINDS.join(', ')}. It starts life with its kind's default config (usually incomplete on purpose, so the graph lints as "not configured yet" rather than looking finished).`,
     ),
+  toolId: z
+    .string()
+    .nullish()
+    .describe(
+      'add_node (kind "tool"): the tool id the new node calls — required, from get_tool_catalog. A tool node cannot exist without one, so it is set at creation rather than patched in after.',
+    ),
   informUser: z
     .record(z.string(), z.unknown())
     .nullish()
@@ -287,7 +293,13 @@ export function applyPatchOp(graph: WorkflowGraph, op: PatchOp): Applied {
       // one dropped on the canvas — including the deliberately-incomplete configs
       // (an agent with no agentId, a Text node with an empty body) that make the
       // graph lint as "not configured yet" instead of looking finished.
-      const seeded = seed({ toolId: optString(op.arg) ?? '' })
+      const toolId = optString(op.toolId)
+      if (kind === 'tool' && !toolId) {
+        throw new Error(
+          `${op.op}: a tool node needs \`toolId\` (an id from get_tool_catalog) — it cannot be created unconfigured.`,
+        )
+      }
+      const seeded = seed({ toolId: toolId ?? '' })
       const node = {
         ...seeded,
         id: crypto.randomUUID(),
@@ -938,7 +950,7 @@ export function workflowWriteTools(): WfMcpTool[] {
       description: [
         'Apply a list of small, named changes to a workflow’s DRAFT — starting from the existing draft, or from the published graph if there is none. Ops:',
         '',
-        `  • add_node (kind, label?, subgraphOf?) — kind is one of ${ADDABLE_KINDS.join(', ')}. Returns the new node's id; it arrives with its kind's default config and NO edges, so follow it with the ops that configure and wire it.`,
+        `  • add_node (kind, toolId? — required for kind "tool", label?, subgraphOf?) — kind is one of ${ADDABLE_KINDS.join(', ')}. Returns the new node's id; it arrives with its kind's default config and NO edges, so follow it with the ops that configure and wire it.`,
         '  • set_tool_arg (nodeId, arg, binding) / remove_tool_arg (nodeId, arg)',
         '  • set_node_label (nodeId, label)',
         '  • merge_node_config (nodeId, config) — shallow merge into the node’s `config`',

@@ -553,6 +553,14 @@ describe('patch ops that reach the fields merge_node_config cannot', () => {
 })
 
 describe('add_node', () => {
+  test('a tool node is created with its toolId, and refuses to exist without one', () => {
+    const g = structuredClone(published)
+    applyPatchOp(g, { op: 'add_node', kind: 'tool', toolId: 'escalate_chat' })
+    const added = g.nodes.at(-1) as Extract<WorkflowNode, { kind: 'tool' }>
+    expect(added.config.toolId).toBe('escalate_chat')
+    expect(() => applyPatchOp(g, { op: 'add_node', kind: 'tool' })).toThrow(/toolId/)
+  })
+
   test('adds a node seeded from the engine’s own table, with no edges', () => {
     const g = structuredClone(published)
     const before = g.nodes.length
