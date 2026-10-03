@@ -8,7 +8,12 @@ import {
   type WorkflowNode,
 } from './graph'
 import { nodeRefs } from './graph-bindings'
-import { graphShapeFacts, joinViolation, switchCoverage } from './graph-rules'
+import {
+  duplicateNodeIdsDeep,
+  graphShapeFacts,
+  joinViolation,
+  switchCoverage,
+} from './graph-rules'
 import { analyzeJoinTopology } from './graph-topology'
 import { ancestorIds } from './graph-traverse'
 
@@ -288,6 +293,36 @@ function capitalize(s: string): string {
 // Collect every author-time issue for a graph. Pure and metadata-free — the UI
 // appends binding-completeness issues (missing required inputs) on top.
 export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
+  // Id collisions are the one check that spans levels, so it is asked once here
+  // of the whole tree rather than inside the per-level walk (which recurses into
+  // iteration subgraphs and would otherwise re-report the same pair). Flagged on
+  // EVERY node carrying the reused id, since neither occurrence is the "wrong"
+  // one and the author needs both highlighted to pick which to renumber.
+  const dupes = new Set(duplicateNodeIdsDeep(graph))
+  const dupeIssues: GraphIssue[] = []
+  if (dupes.size > 0) {
+    const walk = (g: WorkflowGraph): void => {
+      for (const n of g.nodes) {
+        if (dupes.has(n.id)) {
+          dupeIssues.push({
+            nodeId: n.id,
+            nodeLabel: n.label,
+            severity: 'error',
+            message: `Node id ${n.id} is used by more than one node — ids must be unique across the whole workflow, including inside iteration loops. Data links, run steps and the canvas all address a node by id alone, so one of them has to be renumbered.`,
+          })
+        }
+        if (n.kind === 'iteration') walk(n.config.subgraph)
+      }
+    }
+    walk(graph)
+  }
+  return [...dupeIssues, ...collectLevelIssues(graph)]
+}
+
+// The per-level walk: everything whose scope is ONE graph (its own nodes, edges
+// and topology), recursing into each iteration subgraph as a graph in its own
+// right. Tree-wide checks belong in `collectGraphIssues` above.
+function collectLevelIssues(graph: WorkflowGraph): GraphIssue[] {
   const issues: GraphIssue[] = []
   const byId = new Map(graph.nodes.map((n) => [n.id, n]))
 
@@ -501,7 +536,7 @@ export function collectGraphIssues(graph: WorkflowGraph): GraphIssue[] {
   // is disallowed by the schema, so this recursion is one level deep.
   for (const node of graph.nodes) {
     if (node.kind === 'iteration') {
-      issues.push(...collectGraphIssues(node.config.subgraph))
+      issues.push(...collectLevelIssues(node.config.subgraph))
       // A step inside a loop cannot reach the user: the feed is one flat list,
       // with nowhere to put the same line thirty times over. The editor
       // disables the control, so this can only come from a graph published

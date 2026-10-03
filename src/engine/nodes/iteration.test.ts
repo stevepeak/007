@@ -669,6 +669,31 @@ describe('iteration schema', () => {
     )
   })
 
+  test('rejects a top-level node reusing a subgraph node id', () => {
+    // The ids a subgraph holds are not private to it: refs, run steps and the
+    // flattened canvas all address a node by id alone, so a top-level node that
+    // takes an Item trigger's id reads as both nodes at once.
+    const node = iterNode()
+    const itemTriggerId = node.config.subgraph.nodes[0].id
+    const g = wrap(node) as { nodes: unknown[]; edges: unknown[] }
+    g.nodes.push({
+      id: itemTriggerId,
+      kind: 'passthrough',
+      label: 'Collides',
+      position: { x: 200, y: 200 },
+      config: {},
+    })
+    g.edges.push({
+      id: 'e3',
+      source: 'it',
+      target: itemTriggerId,
+      condition: null,
+    })
+    expect(() => workflowGraphSchema.parse(g)).toThrow(
+      /Node ids must be unique across the whole graph/,
+    )
+  })
+
   test('rejects a nested iteration node inside the subgraph', () => {
     const bad = iterNode()
     const sub = structuredClone(bad.config.subgraph)

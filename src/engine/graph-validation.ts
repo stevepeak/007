@@ -1,6 +1,11 @@
 import type { z } from 'zod'
 
-import { graphShapeFacts, joinViolation, switchCoverage } from './graph-rules'
+import {
+  duplicateNodeIdsDeep,
+  graphShapeFacts,
+  joinViolation,
+  switchCoverage,
+} from './graph-rules'
 import {
   BRANCH_ARMS,
   SWITCH_DEFAULT_CASE,
@@ -20,8 +25,9 @@ type GraphCheckCtx = {
   addIssue(issue: { code: 'custom'; message: string }): void
 }
 
-// Exactly one trigger, at least one output, unique ids, edges pointing at real
-// nodes, and every Output reachable (it has an incoming edge, else it stalls).
+// Exactly one trigger, at least one output, ids unique across the whole graph
+// tree, edges pointing at real nodes, and every Output reachable (it has an
+// incoming edge, else it stalls).
 function checkGraphShape(g: GraphShape, ctx: GraphCheckCtx): void {
   const facts = graphShapeFacts(g)
   if (facts.triggerCount !== 1) {
@@ -36,8 +42,16 @@ function checkGraphShape(g: GraphShape, ctx: GraphCheckCtx): void {
       message: 'Graph must have at least one output node.',
     })
   }
-  if (facts.hasDuplicateIds) {
-    ctx.addIssue({ code: 'custom', message: 'Node ids must be unique.' })
+  // Tree-wide, not level-local: a top-level node sharing an id with a node inside
+  // an iteration subgraph is just as ambiguous as two siblings sharing one, and
+  // refs/steps/manifest entries carry a bare node id with no level to tell them
+  // apart. See `duplicateNodeIdsDeep`.
+  const dupes = duplicateNodeIdsDeep(g)
+  if (dupes.length > 0) {
+    ctx.addIssue({
+      code: 'custom',
+      message: `Node ids must be unique across the whole graph, including iteration subgraphs (reused: ${dupes.join(', ')}).`,
+    })
   }
   for (const e of facts.danglingEdges) {
     ctx.addIssue({

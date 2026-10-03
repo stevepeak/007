@@ -628,3 +628,80 @@ describe('control-flow edge arms', () => {
     expect(collectGraphIssues(g).filter((i) => i.nodeId === 'b')).toEqual([])
   })
 })
+
+// A node id is addressable from anywhere — refs, run steps, the flattened canvas
+// — so it has to be unique across the whole tree, not just within one level. The
+// collision that prompted this — a new top-level tool node handed the id an
+// iteration's Item trigger already held — passed every check there was, because
+// each level on its own was fine.
+describe('node id collisions across levels', () => {
+  const itemTrigger: WorkflowNode = {
+    id: 'it',
+    kind: 'trigger',
+    position: pos,
+    label: 'Item',
+    informUser: { mode: 'off' },
+    config: { triggerKind: 'iteration_item' },
+  }
+  const loopWith = (childId: string): WorkflowNode => ({
+    id: 'loop',
+    kind: 'iteration',
+    position: pos,
+    label: 'Loop',
+    informUser: { mode: 'off' },
+    config: {
+      source: { kind: 'ref', nodeId: 't', path: '' },
+      concurrency: 1,
+      stopOnError: false,
+      itemExecution: 'inline',
+      itemTitle: '',
+      maxItems: 10,
+      subgraph: graph(
+        [itemTrigger, agent(childId), output('res', childId)],
+        [edge('it', childId), edge(childId, 'res')],
+      ),
+    },
+  })
+
+  const dupeIssues = (g: WorkflowGraph) => {
+    return collectGraphIssues(g).filter((i) => /is used by more than one/.test(i.message))
+  }
+
+  test('errors on a top-level node sharing an id with a node inside a loop', () => {
+    const g = graph(
+      [trigger, loopWith('dup'), tool('dup'), output('o', 'dup')],
+      [edge('t', 'loop'), edge('loop', 'dup'), edge('dup', 'o')],
+    )
+    const issues = dupeIssues(g)
+    // Both occurrences are flagged: neither is the "wrong" one on its own.
+    expect(issues.length).toBe(2)
+    expect(issues.every((i) => i.severity === 'error')).toBe(true)
+    expect(issues.every((i) => i.nodeId === 'dup')).toBe(true)
+  })
+
+  test('errors on two siblings at the same level sharing an id', () => {
+    const g = graph(
+      [trigger, tool('dup'), agent('dup'), output('o', 'dup')],
+      [edge('t', 'dup'), edge('dup', 'o')],
+    )
+    expect(dupeIssues(g).length).toBe(2)
+  })
+
+  test('reports a collision once, not once per level walked', () => {
+    // `collectGraphIssues` recurses into subgraphs; the check is deliberately
+    // hoisted out of that walk so one collision isn't reported twice over.
+    const g = graph(
+      [trigger, loopWith('dup'), tool('dup'), output('o', 'dup')],
+      [edge('t', 'loop'), edge('loop', 'dup'), edge('dup', 'o')],
+    )
+    expect(dupeIssues(g).length).toBe(2)
+  })
+
+  test('a loop whose ids are all distinct raises nothing', () => {
+    const g = graph(
+      [trigger, loopWith('child'), tool('persist'), output('o', 'persist')],
+      [edge('t', 'loop'), edge('loop', 'persist'), edge('persist', 'o')],
+    )
+    expect(dupeIssues(g)).toEqual([])
+  })
+})

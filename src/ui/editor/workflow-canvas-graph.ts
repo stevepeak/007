@@ -42,15 +42,29 @@ export function edgeToFlow(e: WorkflowEdge): EditorEdge {
 // edges become edges among those children. `flowToEngine` reverses this. React
 // Flow requires a parent to appear before its children in the array, which this
 // order (container, then its children) satisfies.
+//
+// A node id reused elsewhere in the tree is rejected at author time now
+// (`duplicateNodeIdsDeep`), but a version PUBLISHED before that gate can still
+// carry one, and the run viewer renders exactly those frozen graphs. React Flow
+// keys children by id, so emitting both occurrences means a duplicate-key error
+// and one of the two silently dropped from the DOM — hence `pushNode`, which
+// keeps the first occurrence and skips the rest: a page that renders beats a
+// warning, and the Issues panel is where the collision gets named.
 export function engineToFlow(graph: WorkflowGraph): {
   nodes: EditorNode[]
   edges: EditorEdge[]
 } {
   const nodes: EditorNode[] = []
+  const emitted = new Set<string>()
+  const pushNode = (node: EditorNode): void => {
+    if (emitted.has(node.id)) return
+    emitted.add(node.id)
+    nodes.push(node)
+  }
   const edges: EditorEdge[] = []
   for (const n of graph.nodes) {
     if (n.kind === 'iteration') {
-      nodes.push({
+      pushNode({
         id: n.id,
         type: editorTypeForKind('iteration'),
         position: n.position,
@@ -62,7 +76,7 @@ export function engineToFlow(graph: WorkflowGraph): {
         },
       })
       for (const child of n.config.subgraph.nodes) {
-        nodes.push({
+        pushNode({
           id: child.id,
           type: editorTypeForKind(child.kind),
           position: child.position,
@@ -78,7 +92,7 @@ export function engineToFlow(graph: WorkflowGraph): {
     } else if (n.kind === 'note') {
       // A resizable sticky note — its size lives on config.width/height so it
       // round-trips; NodeResizer reads it off the node style.
-      nodes.push({
+      pushNode({
         id: n.id,
         type: editorTypeForKind('note'),
         position: n.position,
@@ -90,7 +104,7 @@ export function engineToFlow(graph: WorkflowGraph): {
         },
       })
     } else {
-      nodes.push({
+      pushNode({
         id: n.id,
         type: editorTypeForKind(n.kind),
         position: n.position,

@@ -15,22 +15,24 @@ import { bothArmsJoinDecision, type JoinTopology } from './graph-topology'
 // analysis they both build on lives one layer down, in `graph-topology.ts`.)
 
 /**
- * Graph-wide shape facts: trigger count, output presence, id uniqueness, edges
- * whose endpoints don't resolve, and Output nodes with no incoming edge. Callers
- * pick the subset they report — the author-time collector, for instance, surfaces
- * unreachable outputs through its per-node connectivity check instead.
+ * Graph-wide shape facts: trigger count, output presence, edges whose endpoints
+ * don't resolve, and Output nodes with no incoming edge. Callers pick the subset
+ * they report — the author-time collector, for instance, surfaces unreachable
+ * outputs through its per-node connectivity check instead.
+ *
+ * Scoped to ONE graph level: an iteration subgraph is a closed scope for edges
+ * and triggers, so these are asked of it separately. Node *ids* are the one fact
+ * that is not level-scoped — see {@link duplicateNodeIdsDeep}.
  */
 export function graphShapeFacts(graph: WorkflowGraph): {
   triggerCount: number
   hasOutput: boolean
-  hasDuplicateIds: boolean
   danglingEdges: WorkflowEdge[]
   outputIdsMissingIncoming: string[]
 } {
   const triggerCount = graph.nodes.filter((n) => n.kind === 'trigger').length
   const hasOutput = graph.nodes.some((n) => n.kind === 'output')
   const ids = new Set(graph.nodes.map((n) => n.id))
-  const hasDuplicateIds = ids.size !== graph.nodes.length
   const danglingEdges = graph.edges.filter(
     (e) => !ids.has(e.source) || !ids.has(e.target),
   )
@@ -42,10 +44,36 @@ export function graphShapeFacts(graph: WorkflowGraph): {
   return {
     triggerCount,
     hasOutput,
-    hasDuplicateIds,
     danglingEdges,
     outputIdsMissingIncoming,
   }
+}
+
+/**
+ * Node ids used more than once anywhere in the graph TREE — top level plus every
+ * iteration subgraph — in first-seen order.
+ *
+ * A node id has to be unique across the whole tree, not just within its own
+ * level, because everything downstream keys on it flatly: refs and `config.source`
+ * resolve a bare `nodeId`, run steps record a bare `node_id`, the manifest is one
+ * flat map, and the editor renders subgraph children onto the SAME canvas as their
+ * container (React Flow then sees two nodes with one id and drops one). A
+ * top-level node that reuses an iteration trigger's id therefore reads as both
+ * nodes at once, with nothing to say which was meant — so it is rejected rather
+ * than resolved by position.
+ */
+export function duplicateNodeIdsDeep(graph: WorkflowGraph): string[] {
+  const seen = new Set<string>()
+  const dupes = new Set<string>()
+  const walk = (g: WorkflowGraph): void => {
+    for (const n of g.nodes) {
+      if (seen.has(n.id)) dupes.add(n.id)
+      else seen.add(n.id)
+      if (n.kind === 'iteration') walk(n.config.subgraph)
+    }
+  }
+  walk(graph)
+  return [...dupes]
 }
 
 /**
