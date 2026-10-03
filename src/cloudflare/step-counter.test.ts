@@ -99,6 +99,41 @@ describe('createCountingStep', () => {
     expect(counters.steps).toBe(1)
   })
 
+  test('works when step is an RPC stub, where every property is a remote method', async () => {
+    // Local Workflows passes `step` as an RpcTarget stub. On a stub, ANY
+    // property — `do`, but equally `apply` or `bind` — reads back as another
+    // callable stub naming a remote method, so `step.do.apply(...)` becomes a
+    // call to a method "apply" that the runtime rejects.
+    const calls: string[] = []
+    const stub = (path: string[]): unknown => {
+      return new Proxy(() => {}, {
+        get: (_t, prop) => stub([...path, String(prop)]),
+        apply: (_t, _this, args: unknown[]) => {
+          const method = path.join('.')
+          if (method !== 'do' && method !== 'getId') {
+            throw new TypeError(
+              `The RPC receiver does not implement the method "${method}".`,
+            )
+          }
+          calls.push(method)
+          const body = args.at(-1) as (() => unknown) | undefined
+          return body ? body() : 'id-1'
+        },
+      })
+    }
+    const counters = createRunCounters()
+    const counting = createCountingStep(
+      stub([]) as WorkflowStep,
+      counters,
+    )
+    expect(await counting.do('load-graph', async () => 'graph')).toBe('graph')
+    // A non-billable method goes through the same stub, uncounted.
+    const uncounted = counting as unknown as { getId: () => unknown }
+    expect(uncounted.getId()).toBe('id-1')
+    expect(calls).toEqual(['do', 'getId'])
+    expect(counters.steps).toBe(1)
+  })
+
   test('the wrapper passes return values through untouched', async () => {
     const { step } = fakeStep()
     const counting = createCountingStep(step, createRunCounters())

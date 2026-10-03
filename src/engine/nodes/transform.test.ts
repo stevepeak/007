@@ -142,6 +142,20 @@ describe('executeTransformNode', () => {
     await expect(promise).rejects.toThrow(/does not match at `2.role`/)
   })
 
+  test('emits plain objects, so the output survives a Workflows step boundary', async () => {
+    // JSONata constructs objects with a null prototype, which the Workers
+    // runtime refuses to serialize out of `step.do`.
+    const r = await executeTransformNode({
+      node: node({ expression: '{"claim": {"id": id}, "tags": [role]}' }),
+      input: ROWS[0],
+      nodeOutputs: new Map(),
+    })
+    const output = r.output as { claim: object; tags: unknown[] }
+    expect(Object.getPrototypeOf(output)).toBe(Object.prototype)
+    expect(Object.getPrototypeOf(output.claim)).toBe(Object.prototype)
+    expect(output).toEqual({ claim: { id: 'm1' }, tags: ['user'] })
+  })
+
   test('an unchecked transform emits whatever the expression returned', async () => {
     const r = await executeTransformNode({
       node: node({ expression: '{ "anything": true }' }),

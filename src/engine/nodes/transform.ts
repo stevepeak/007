@@ -145,7 +145,7 @@ export async function executeTransformNode(
 
   let result: unknown
   try {
-    result = await compiled.evaluate(subject, bindings)
+    result = toPlainData(await compiled.evaluate(subject, bindings))
   } catch (err) {
     throw new Error(`${self} failed to evaluate its expression: ${messageOf(err)}`)
   }
@@ -162,6 +162,17 @@ export async function executeTransformNode(
   }
 
   return { output: result }
+}
+
+// JSONata builds every object it constructs with `Object.create(null)`. That is
+// invisible in-process, but the durable engine returns a node's output from
+// `step.do`, and the Workers runtime refuses to serialize a null-prototype
+// object ("Could not serialize object of type Object") — failing the node after
+// the expression already succeeded. A structured clone never keeps prototypes,
+// so it rebuilds the value as ordinary objects and arrays.
+function toPlainData(value: unknown): unknown {
+  if (value === null || typeof value !== 'object') return value
+  return structuredClone(value)
 }
 
 // JSONata rejects with plain objects (`{ code, position, token, message }`), not
