@@ -100,6 +100,8 @@ export interface GraphWorkflowEnv extends ReleaseBindings {
    * workflow rather than as a typecheck failure here.
    */
   RUN_ROOM: DurableObjectNamespace<RunRoom>
+  /** Optional: pin every RunRoom to a jurisdiction. See `RunRoomBindings`. */
+  RUN_ROOM_JURISDICTION?: string
 }
 
 // Serializable run context carried in the workflow params (no live `env`).

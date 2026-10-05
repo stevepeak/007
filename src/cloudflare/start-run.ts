@@ -8,6 +8,7 @@ import { createRun, getVersionGraph } from '../storage/data'
 
 import type { GraphWorkflowParams } from './graph-workflow'
 import { releaseFromEnv, type ReleaseBindings } from './release'
+import { runRoomStub } from './room-address'
 import type { RunRoom } from './run-room'
 
 // Turnkey run starter for the host worker. Mints the RunRoom address, creates
@@ -19,6 +20,8 @@ export interface GraphRunBindings extends ReleaseBindings {
   /** The SDK's own D1 (`wf_*` tables) — see `GraphWorkflowEnv.WF_DB`. */
   WF_DB: D1Database
   RUN_ROOM: DurableObjectNamespace<RunRoom>
+  /** See `RunRoomBindings.RUN_ROOM_JURISDICTION`. */
+  RUN_ROOM_JURISDICTION?: string
   GRAPH_WORKFLOW: Workflow<GraphWorkflowParams>
 }
 
@@ -102,7 +105,7 @@ export async function startGraphRun(
   // same way for either engine; `runId` additionally addresses the RunRoom,
   // which on the inline engine holds the streaming answer buffer.
   if (engine === 'inline') {
-    const room = env.RUN_ROOM.get(env.RUN_ROOM.idFromName(runId))
+    const room = runRoomStub(env, runId)
     await room.startInline(params)
     return { runId, workflowRunId, instanceId: null, engine }
   }

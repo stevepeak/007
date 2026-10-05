@@ -22,6 +22,7 @@ import type {
   GraphWorkflowParams,
 } from './graph-workflow'
 import { releaseFromEnv } from './release'
+import { runRoomStub } from './room-address'
 import type { GraphRunBindings } from './start-run'
 
 // Starting a called workflow as a RUN OF ITS OWN — the one place either backend
@@ -61,7 +62,10 @@ import type { GraphRunBindings } from './start-run'
  */
 export type ChildRunBindings = Pick<
   GraphRunBindings,
-  'GRAPH_WORKFLOW' | 'RUN_ROOM' | 'WF_HOST_RELEASE' | 'WF_SDK_RELEASE'
+  'GRAPH_WORKFLOW'
+  | 'RUN_ROOM'
+  | 'RUN_ROOM_JURISDICTION'
+  | 'WF_HOST_RELEASE' | 'WF_SDK_RELEASE'
 >
 
 /** What a spawned callee is, once it exists. */
@@ -162,7 +166,7 @@ export async function spawnCalleeRun(
     // call returns as soon as the walk is handed off, exactly as
     // `WORKFLOW.create()` does — both are "the run is accepted", not "the run
     // is finished".
-    const room = env.RUN_ROOM.get(env.RUN_ROOM.idFromName(roomId))
+    const room = runRoomStub(env, roomId)
     await room.startInline(params)
     return { childRunId, engine, instanceId: null }
   }
@@ -218,7 +222,7 @@ export async function reportCalleeResult(
 ): Promise<void> {
   const wire = toCalleeWire(payload)
   if (sub.parent.kind === 'room') {
-    const room = env.RUN_ROOM.get(env.RUN_ROOM.idFromName(sub.parent.roomId))
+    const room = runRoomStub(env, sub.parent.roomId)
     await room.deliverCallee(sub.eventType, wire)
     return
   }
