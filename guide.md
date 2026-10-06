@@ -70,6 +70,7 @@ that `engine` (layer 0) depends on `ai`, `zod` and `jsonata` and nothing else,
 | `@stevepeak/007/documents`                   | any (needs `docx`³)     | `documentModelSchema` + `renderDocx` — model → `.docx` bytes                                 |
 | `@stevepeak/007/ui`                          | browser (React 19)      | `WfApp`, `WfSdkProvider`, `RunViewer`, hooks                                                 |
 | `@stevepeak/007/ui/run-progress`             | browser (React 19)      | `WorkflowRunProgress` + the progress source, without pulling the editor                      |
+| `@stevepeak/007/ui/message-feedback`         | browser (React 19)      | `MessageFeedbackView` / `MessageFeedback` — the thumbs strip, without the editor or icon map |
 | `@stevepeak/007/ui/styles.css`               | host CSS (Tailwind v4)  | `@import` once — emits the SDK's utilities + xyflow CSS (§6)                                 |
 | `@stevepeak/007/eval`                        | test, or any server/CLI | `runWorkflowUnderConditions`; `runEval` — the Goal orchestrator, framework-free              |
 

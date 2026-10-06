@@ -10,6 +10,9 @@
     "url": "git+https://github.com/stevepeak/007.git"
   },
   "main": "src/index.ts",
+  "sideEffects": [
+    "**/*.css"
+  ],
   "exports": {
     ".": "./src/index.ts",
     "./analytics": "./src/analytics/index.ts",
@@ -26,6 +29,7 @@
     "./storage": "./src/storage/index.ts",
     "./storage/schema": "./src/storage/schema.ts",
     "./ui": "./src/ui/index.ts",
+    "./ui/message-feedback": "./src/ui/message-feedback.tsx",
     "./ui/run-progress": "./src/ui/runs/run-progress.ts",
     "./ui/styles.css": "./src/ui/styles.css"
   },

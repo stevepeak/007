@@ -27,6 +27,14 @@ import { useSubmitFeedback } from './hooks-feedback'
 // The active thumb stays lit regardless of hover so a glance shows "this answer
 // has feedback"; the rest reveal on the parent's `group` hover. Clicking a thumb
 // saves immediately and opens an inline note box.
+//
+// Published directly as `@stevepeak/007/ui/message-feedback` (see guide.md), a
+// LIGHT entry point like `./ui/run-progress`: a host that only wants the thumbs
+// strip under its own chat/answer surface must not pay for the `./ui` barrel,
+// which reaches the editor and the full by-name lucide icon map. Keep this
+// file's imports to React, lucide named icons, `cn`, and the feedback hook.
+
+export type { WfFeedbackRating }
 
 export type MessageFeedbackSubmit = {
   rating: WfFeedbackRating | null
