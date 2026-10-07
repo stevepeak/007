@@ -131,7 +131,7 @@ function coerceField(v: unknown, f: ParsedField): unknown {
     case 'number': {
       if (v === '' || v == null) return OMIT
       const n = Number(v)
-      if (Number.isNaN(n)) throw new Error(`"${labelOf(f)}" must be a number.`)
+      if (Number.isNaN(n)) throw new TypeError(`"${labelOf(f)}" must be a number.`)
       return n
     }
 
