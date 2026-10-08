@@ -2,6 +2,7 @@ import type { LanguageModel, ToolSet, UIMessage } from 'ai'
 
 import type { AgentOutput } from '../graph'
 import type { ModelBudget } from '../model-budget'
+import type { ReferenceIssue } from '../references'
 import type { StreamSink } from '../stream-sink'
 
 // What a generation is ASKED for and what it hands BACK — the contract between
@@ -94,6 +95,12 @@ export type AgentNodeMeta = {
    * a config change.
    */
   stoppedOnContextLimit?: boolean
+  /**
+   * The inline-reference check, when the agent opted into reference kinds: how
+   * many distinct references survived, and every one that was unwrapped or
+   * trimmed (see `checkReferences`). Absent for agents with no kinds.
+   */
+  references?: { kept: number; issues: ReferenceIssue[] }
 }
 
 export type AgentNodeResult = {

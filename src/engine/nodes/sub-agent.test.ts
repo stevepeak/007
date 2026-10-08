@@ -85,6 +85,7 @@ function makeCtx(
   const ctx: RunNodeContext<unknown> = {
     getModel,
     toolRegistry: new Map() as ToolRegistry<unknown>,
+    referenceKinds: [],
     toolDeps: {},
     nodeOutputs: new Map(),
     manifest,

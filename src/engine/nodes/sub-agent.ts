@@ -12,6 +12,11 @@ import { errorMessage, type RunNodeContext } from '../run-node'
 import { buildAgentToolSet } from '../tool-registry'
 
 import { coerceToMessages, runAgentGeneration } from './agent'
+import {
+  enabledReferenceKinds,
+  finalizeReferences,
+  withReferencePrompt,
+} from './agent-references'
 import { executeSubgraph } from './iteration'
 import {
   type RunSubAgent,
@@ -148,13 +153,19 @@ async function runAgentTarget<TDeps>(
 
   const { message, vars: spawnVars } = agentSpawnInput(input)
   const vars = { ...ctx.promptVariables, ...spawnVars }
-  const systemPrompt = substitutePromptVariables(config.prompt, vars)
+  const authorPrompt = substitutePromptVariables(config.prompt, vars)
+  const kinds = enabledReferenceKinds(
+    config,
+    ctx.referenceKinds,
+    `Sub-agent ${target.id}`,
+  )
+  const systemPrompt = withReferencePrompt(authorPrompt, kinds)
   const messages = coerceToMessages(message)
 
   // Bracket the sub-agent generation so the child step's Speed reflects real
   // work. Runs inline within the primary node's step, so wall-clock is exact.
   const startedAt = new Date()
-  const result = await runAgentGeneration({
+  const generated = await runAgentGeneration({
     model,
     modelId: config.modelId,
     output: config.output,
@@ -182,6 +193,15 @@ async function runAgentTarget<TDeps>(
     // A sub-agent runs inline inside the primary node's step, so it shares that
     // node's budget rather than getting one of its own.
     budget: ctx.modelBudget,
+  })
+
+  // Same check as the primary agent node — what the sub-agent hands back is
+  // what its parent may re-cite, so it must already be clean.
+  const result = await finalizeReferences({
+    result: generated,
+    kinds,
+    authorPrompt,
+    sink: ctx.sink,
   })
 
   // Fallback stop channel for object/boolean sub-agents, which don't get the

@@ -54,6 +54,7 @@ export function buildModelHandlers<TDeps>(
   | 'listTools'
   | 'listToolInvocations'
   | 'listToolContextFields'
+  | 'listReferenceKinds'
   | 'listTriggerEvents'
 > {
   // The tool registry is static for the isolate's lifetime, but converting each
@@ -77,6 +78,7 @@ export function buildModelHandlers<TDeps>(
     requiresContext: entry.requiresContext
       ? [...entry.requiresContext]
       : undefined,
+    produces: entry.produces ? [...entry.produces] : undefined,
     inputSchema: toJsonSchema(entry.inputSchema, 'input'),
     outputSchema: toJsonSchema(entry.outputSchema, 'output'),
   }))
@@ -373,6 +375,17 @@ export function buildModelHandlers<TDeps>(
     },
 
     listToolContextFields: () => opts.toolContextFields ?? [],
+
+    listReferenceKinds: () => {
+      return (opts.config.referenceKinds ?? []).map((k) => ({
+        id: k.id,
+        label: k.label,
+        description: k.description,
+        guidance: k.guidance,
+        anchor: k.anchor != null,
+        quote: k.quote === true,
+      }))
+    },
 
     listTriggerEvents: () => describeTriggerEvents(opts.config.triggers),
   }

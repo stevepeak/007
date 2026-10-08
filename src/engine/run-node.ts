@@ -26,6 +26,7 @@ import { executeTextNode } from './nodes/text'
 import { executeToolNode } from './nodes/tool'
 import { executeTransformNode } from './nodes/transform'
 import { executeWorkflowNode, type ChildWorkflowRunner } from './nodes/workflow'
+import type { ReferenceKind } from './references'
 import type { RunRecorder } from './run-recorder'
 import type { ExecuteInstruction } from './scheduler'
 import { withoutUserProgress, type StreamSink } from './stream-sink'
@@ -64,6 +65,13 @@ export type RunNodeContext<TDeps> = {
    */
   getDecider?: DeciderFactory
   toolRegistry: ToolRegistry<TDeps>
+  /**
+   * The host's reference-kind catalog (`WfSdkConfig.referenceKinds`, `[]` when
+   * none). Required, not optional, so a backend that builds this context and
+   * forgets it fails typecheck instead of silently running every agent without
+   * its references.
+   */
+  referenceKinds: readonly ReferenceKind[]
   toolDeps: TDeps
   /** Live node-output cache (from `scheduler.getOutputs()`) for tool refs. */
   nodeOutputs: Map<string, unknown>
@@ -174,6 +182,7 @@ export async function runNode<TDeps>(
         node,
         getModel: ctx.getModel,
         toolRegistry: ctx.toolRegistry,
+        referenceKinds: ctx.referenceKinds,
         toolDeps: ctx.toolDeps,
         sink: ctx.sink,
         promptVariables: ctx.promptVariables ?? {},

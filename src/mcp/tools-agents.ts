@@ -744,7 +744,7 @@ export function agentWriteTools(): WfMcpTool[] {
         '',
         'Works for both kinds. The config is checked against the schema the AGENT’s stored `kind` names, not against whatever you send — so a decision agent takes `{ modelId, questions, verdicts, rules }` and a generation agent takes the prompt/tools shape, and sending the wrong one is refused rather than half-saved.',
         '',
-        'The fields it is easiest to lose by omission, because nothing prompts for them: `subAgents` (the delegation whitelist — `targets`, `maxConcurrent`, `maxSpawns`, `allowStopSignal`), `toolTokenBudget`, `answerReservePercent`, `requireToolFirstTurn` and `webCitations`. An edit that reads a config, changes the prompt and re-sends will silently delete a sub-agent whitelist it never knew about. `removed` in the reply names anything that disappeared — check it.',
+        'The fields it is easiest to lose by omission, because nothing prompts for them: `subAgents` (the delegation whitelist — `targets`, `maxConcurrent`, `maxSpawns`, `allowStopSignal`), `toolTokenBudget`, `answerReservePercent`, `requireToolFirstTurn`, `webCitations` and `referenceKinds`. An edit that reads a config, changes the prompt and re-sends will silently delete a sub-agent whitelist it never knew about. `removed` in the reply names anything that disappeared — check it.',
         '',
         'The config is checked before it is written, the same way create_agent checks it: the schema field by field, `modelId` against the enabled catalog, every `toolId` against the tool catalog, and the model’s capabilities against what the config needs. Those used to pass straight through, so a bogus model id or an unregistered tool saved cleanly and failed on the first real run.',
         '',

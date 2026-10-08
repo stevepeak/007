@@ -184,6 +184,7 @@ export async function executeAgentPreview<TDeps>(opts: {
       })
     },
     toolRegistry,
+    referenceKinds: wfConfig.referenceKinds ?? [],
     // Every entry closes over what it needs (the simulator model, or the real
     // deps bound above), so the node itself has nothing to thread through.
     toolDeps: {},

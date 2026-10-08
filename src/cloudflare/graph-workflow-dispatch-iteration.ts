@@ -141,6 +141,7 @@ async function runItemInline<TDeps, E extends GraphWorkflowEnv>(
             ? (modelId) => config.getDecider!(modelId, rc)
             : undefined,
           toolRegistry: config.toolRegistry,
+          referenceKinds: config.referenceKinds ?? [],
           toolDeps,
           modelBudget: modelBudgetFor(resolveStepTimeoutMs(node)),
           // Overridden per item inside executeSubgraph.

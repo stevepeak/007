@@ -23,6 +23,7 @@
     "./cloudflare/extract-text": "./src/cloudflare/extract-text.ts",
     "./cloudflare/runtime": "./src/cloudflare/runtime.ts",
     "./documents": "./src/documents/index.ts",
+    "./references": "./src/engine/references.ts",
     "./engine": "./src/engine/index.ts",
     "./eval": "./src/eval/index.ts",
     "./server": "./src/server/index.ts",

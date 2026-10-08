@@ -109,6 +109,14 @@ export type ToolMeta = {
    * when called; the raw call is still recorded in the run viewer's dev log.
    */
   statusLabel?: string
+  /**
+   * Optional: the reference kinds (`WfSdkConfig.referenceKinds` ids) whose ids
+   * this tool's output hands out — a search returning record ids `produces` the
+   * record kind. A hint, not a gate: the editor uses it to suggest a kind when
+   * the tool is attached, and to say which tools can feed a kind. Provenance is
+   * checked against what a run actually saw, wherever the id came from.
+   */
+  produces?: readonly string[]
 }
 
 /** How a tool behaves under the eval `simulate` signal. See {@link ToolMeta}. */

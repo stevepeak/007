@@ -319,6 +319,7 @@ export async function executeWorkflow<TDeps>(
             ? (modelId) => config.getDecider!(modelId, runContext)
             : undefined,
           toolRegistry: config.toolRegistry,
+          referenceKinds: config.referenceKinds ?? [],
           toolDeps,
           nodeOutputs: scheduler.getOutputs(),
           promptVariables: runContext.promptVariables,

@@ -22,6 +22,7 @@ import { useWfComponents } from '../context'
 import { AgentBudgetSection } from './agent-editor-budget'
 import { AgentInputEditor } from './agent-input-editor'
 import { AgentOutputEditor } from './agent-output-editor'
+import { AgentReferencesSection } from './agent-references-section'
 import { EditorSection } from './editor-section'
 import { ModelSelect } from './model-select'
 import { PromptBodyEditor } from './prompt-body-editor'
@@ -43,7 +44,8 @@ import { useAgentConfigFacts } from './use-agent-config-facts'
 // LENGTH: this function runs past the ~200-line bar the codebase otherwise
 // keeps to, and that is a decision rather than an omission. What remains after
 // the derivations moved out is a FLAT SEQUENCE of seven `<EditorSection>`
-// blocks — no nesting, no branching, no shared local state between them — read
+// blocks (plus References, its own component) — no nesting, no branching, no
+// shared local state between them — read
 // top to bottom in the order they appear on screen. Splitting it would trade
 // one file you can read straight through for seven you have to assemble in your
 // head, and would break the property that the file order IS the screen order.
@@ -426,6 +428,10 @@ export function AgentConfigPanel({
           </p>
         ) : null}
       </EditorSection>
+
+      {/* References — which host-declared kinds of inline link the answer
+      carries. Renders nothing when the host declares none. */}
+      <AgentReferencesSection config={config} patch={patch} aiTools={aiTools} />
     </div>
   )
 }

@@ -69,6 +69,7 @@ describe('agent workflow references', () => {
         reasoning: false,
         webSearch: 'off',
         webCitations: false,
+        referenceKinds: [],
         inputKind: 'task',
         output: { kind: 'text' },
         subAgents: {

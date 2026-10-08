@@ -21,6 +21,10 @@ import type {
   ModelProvider,
   ProviderBudget,
 } from './model-catalog'
+import {
+  referenceKindProblems,
+  type ReferenceKind,
+} from './references'
 import type { TelemetrySink } from './telemetry'
 import type { ToolRegistry } from './tool-registry'
 import type { TriggerRegistry } from './trigger-registry'
@@ -412,6 +416,15 @@ export interface WfSdkConfig<TDeps = unknown> {
   ) => Promise<ProviderBudget | null>
   /** Host tool registry, generic over the host's per-run deps. */
   toolRegistry: ToolRegistry<TDeps>
+  /**
+   * Optional: the kinds of inline reference agents may write into their answers
+   * (see `@stevepeak/007/references`). Declared ONCE here and shared by every
+   * agent that opts in by id (`AgentConfig.referenceKinds`), by tools that hand
+   * out ids of a kind (`ToolMeta.produces`), and by the host's renderer. The
+   * engine teaches an opted-in agent the grammar and each kind's guidance, then
+   * unwraps any reference whose id the agent never actually saw. Omit for none.
+   */
+  referenceKinds?: readonly ReferenceKind[]
   /** Build the opaque per-run deps from a run context (live bindings inside). */
   buildRunDeps: (ctx: RunContext) => TDeps | Promise<TDeps>
   /**
@@ -544,6 +557,18 @@ export function defineWfConfig<TDeps = unknown>(
   if (!fn('buildRunDeps')) problems.push('`buildRunDeps` must be a function')
   if (!(config.toolRegistry instanceof Map)) {
     problems.push('`toolRegistry` must be a Map (see ToolRegistry)')
+  }
+  problems.push(...referenceKindProblems(config.referenceKinds ?? []))
+  for (const [id, entry] of config.toolRegistry instanceof Map
+    ? config.toolRegistry
+    : []) {
+    for (const kind of entry.produces ?? []) {
+      if (!(config.referenceKinds ?? []).some((k) => k.id === kind)) {
+        problems.push(
+          `tool '${id}' produces reference kind '${kind}', which \`referenceKinds\` does not declare`,
+        )
+      }
+    }
   }
   if (config.triggers == null || typeof config.triggers !== 'object') {
     problems.push('`triggers` must be an object (`{}` if you have no events)')

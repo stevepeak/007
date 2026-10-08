@@ -58,6 +58,7 @@ import type {
   WfRunSummary,
 } from './protocol-runs'
 import type {
+  ReferenceKindOption,
   ToolContextField,
   ToolOption,
   WfToolInvocation,
@@ -205,6 +206,11 @@ export interface WfDataClient {
    * client to scope to). Empty when the host wires none. See {@link ToolContextField}.
    */
   listToolContextFields(): Promise<ToolContextField[]>
+  /**
+   * The host's inline-reference kinds (`WfSdkConfig.referenceKinds`), for the
+   * agent editor's References section. Empty when the host declares none.
+   */
+  listReferenceKinds(): Promise<ReferenceKindOption[]>
   /**
    * Playground — run a tool FOR REAL against scratch args, with the host's live
    * per-run deps. This is not a simulation: the actual tool executes, so it can

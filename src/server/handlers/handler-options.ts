@@ -51,6 +51,7 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
     | 'fetchModelCatalog'
     | 'fetchProviderBudget'
     | 'toolRegistry'
+    | 'referenceKinds'
     | 'triggers'
     | 'resolveConnectorSecret'
     | 'logger'

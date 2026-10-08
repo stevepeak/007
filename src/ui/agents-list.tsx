@@ -131,6 +131,7 @@ export function AgentsList({ className }: AgentsListProps) {
           reasoning: false,
           webSearch: 'off',
           webCitations: false,
+          referenceKinds: [],
           toolTokenBudget: null,
           answerReservePercent: 10,
           output: { kind: 'text' },

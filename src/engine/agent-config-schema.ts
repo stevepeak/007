@@ -295,6 +295,12 @@ const agentConfigObjectSchema = z.object({
   // Delegation whitelist + guardrails. Non-empty `targets` makes the engine
   // synthesize `spawn_*` + `await_subagents` tools into this agent's tool set.
   subAgents: subAgentsConfigSchema,
+  // Inline references this agent writes — ids into the host's
+  // `WfSdkConfig.referenceKinds`. Non-empty makes the engine append the
+  // reference grammar + each kind's guidance to the system prompt, check every
+  // reference against what the run saw, and return a `references` array beside
+  // `text`. Text output only; ignored for object/boolean agents.
+  referenceKinds: z.array(z.string()).default([]),
 })
 
 /**

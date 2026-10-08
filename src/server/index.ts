@@ -53,6 +53,7 @@ export type {
   ConnectorRefreshResult,
   ConnectorSummary,
   ConnectorToolInfo,
+  ReferenceKindOption,
   ToolContextField,
   ToolOption,
   WfChangeSummary,

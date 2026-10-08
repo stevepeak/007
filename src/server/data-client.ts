@@ -65,6 +65,7 @@ export function createWfDataClient(call: WfDataTransport): WfDataClient {
     listTools: bind('listTools'),
     listToolInvocations: bind('listToolInvocations'),
     listToolContextFields: bind('listToolContextFields'),
+    listReferenceKinds: bind('listReferenceKinds'),
     // A real tool call can run past the default 20s UI backstop (external
     // services), so give the playground its own longer budget.
     runToolPreview: bind('runToolPreview', 120000),

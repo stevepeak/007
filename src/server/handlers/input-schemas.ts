@@ -79,6 +79,7 @@ export const wfInputSchemas = {
   // ---- tools --------------------------------------------------------------
   listTools: NO_INPUT,
   listToolContextFields: NO_INPUT,
+  listReferenceKinds: NO_INPUT,
   listToolInvocations: z.object({
     toolId: z.string().min(1),
     limit: z.number().optional(),

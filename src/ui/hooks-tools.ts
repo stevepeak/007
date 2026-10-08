@@ -16,6 +16,16 @@ export function useToolContextFields() {
   })
 }
 
+export function useReferenceKinds() {
+  const client = useWfClient()
+  return useQuery({
+    queryKey: keys.referenceKinds,
+    queryFn: () => client.listReferenceKinds(),
+    // The catalog is host code — it changes only on deploy.
+    staleTime: Infinity,
+  })
+}
+
 export function useToolInvocations(toolId: string, limit?: number) {
   const client = useWfClient()
   return useQuery({

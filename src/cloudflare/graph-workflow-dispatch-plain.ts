@@ -194,6 +194,7 @@ export async function dispatchPlain<TDeps, E extends GraphWorkflowEnv>(
                 ? (modelId) => config.getDecider!(modelId, rc)
                 : undefined,
               toolRegistry: config.toolRegistry,
+              referenceKinds: config.referenceKinds ?? [],
               toolDeps,
               modelBudget,
               nodeOutputs: scheduler.getOutputs(),

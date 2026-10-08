@@ -26,6 +26,7 @@ export const keys = {
   providerBudgets: ['wf', 'provider-budgets'] as const,
   tools: ['wf', 'tools'] as const,
   toolContextFields: ['wf', 'tool-context-fields'] as const,
+  referenceKinds: ['wf', 'reference-kinds'] as const,
   toolInvocations: (toolId: string, limit?: number) => {
     return ['wf', 'tool-invocations', toolId, limit ?? null] as const
   },

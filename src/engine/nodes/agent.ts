@@ -8,6 +8,7 @@ import {
   type WfRunManifestEntry,
 } from '../graph'
 import type { ModelBudget } from '../model-budget'
+import type { ReferenceKind } from '../references'
 import type { StreamSink } from '../stream-sink'
 import { buildAgentToolSet, type ToolRegistry } from '../tool-registry'
 
@@ -21,6 +22,11 @@ import {
   coerceToMessages,
   resolveNodeInputs,
 } from './agent-inputs'
+import {
+  enabledReferenceKinds,
+  finalizeReferences,
+  withReferencePrompt,
+} from './agent-references'
 import { type SubAgentRunCtx, synthesizeDelegationTools } from './sub-agent'
 
 // `./agent` is the single entry point for the agent node: the input helpers live
@@ -43,6 +49,12 @@ export type ExecuteAgentNodeArgs<TDeps> = {
   // `nodeOutputs`, which is the supported path.
   getModel: ModelFactory
   toolRegistry: ToolRegistry<TDeps>
+  /**
+   * The host's reference-kind catalog; the agent's `referenceKinds` pick from
+   * it. Optional HERE (direct callers and tests) but required on
+   * `RunNodeContext`, which is what every real backend builds.
+   */
+  referenceKinds?: readonly ReferenceKind[]
   toolDeps: TDeps
   /**
    * Live progress sink. When the node has `stream: true`, each completed
@@ -156,6 +168,7 @@ export async function executeAgentNode<TDeps>(
     node,
     getModel,
     toolRegistry,
+    referenceKinds = [],
     toolDeps,
     sink,
     promptVariables,
@@ -234,7 +247,11 @@ export async function executeAgentNode<TDeps>(
     ...promptVariables,
     ...(await resolveNodeInputs(node, nodeOutputs, rehydrate)),
   }
-  const systemPrompt = substitutePromptVariables(promptTemplate, vars)
+  const authorPrompt = substitutePromptVariables(promptTemplate, vars)
+  // Inline references: the grammar and each opted-in kind's guidance go AFTER
+  // the author's prompt, so an author never writes link syntax by hand.
+  const kinds = enabledReferenceKinds(config, referenceKinds, `Agent ${node.id}`)
+  const systemPrompt = withReferencePrompt(authorPrompt, kinds)
   // The agent's messages, built ONLY from what the author declared. An incoming
   // edge means sequencing and a source for `ref` bindings — never content. It is
   // deliberately not consulted here: `input` reaches the model only where a
@@ -280,7 +297,7 @@ export async function executeAgentNode<TDeps>(
     effectiveTools = { ...tools, ...delegation }
   }
 
-  const result = await runAgentGeneration({
+  const generated = await runAgentGeneration({
     model,
     modelId,
     output: config.output,
@@ -297,6 +314,12 @@ export async function executeAgentNode<TDeps>(
     toolStatusLabels,
     sink,
     budget: deps.modelBudget,
+  })
+  const result = await finalizeReferences({
+    result: generated,
+    kinds,
+    authorPrompt,
+    sink,
   })
   // Stamp WHICH agent this was onto the recorded meta. Generation only knows a
   // prompt and a model; without this, a step can only be traced back to an agent

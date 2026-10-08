@@ -68,6 +68,7 @@ that `engine` (layer 0) depends on `ai`, `zod` and `jsonata` and nothing else,
 | `@stevepeak/007/cloudflare/analytics-engine` | Workers (AE binding)    | `createAnalyticsEngineTelemetry` — the write half of run telemetry (§7b)                     |
 | `@stevepeak/007/server`                      | any server route        | `createWfSdkHandlers`, `createHttpWfDataClient`, `describeToolCatalog`                        |
 | `@stevepeak/007/documents`                   | any (needs `docx`³)     | `documentModelSchema` + `renderDocx` — model → `.docx` bytes                                 |
+| `@stevepeak/007/references`                  | any (no deps)           | `ReferenceKind`, `parseReferences`, `stripReferences` — the inline-reference grammar (§2, Inline references) |
 | `@stevepeak/007/ui`                          | browser (React 19)      | `WfApp`, `WfSdkProvider`, `RunViewer`, hooks                                                 |
 | `@stevepeak/007/ui/run-progress`             | browser (React 19)      | `WorkflowRunProgress` + the progress source, without pulling the editor                      |
 | `@stevepeak/007/ui/message-feedback`         | browser (React 19)      | `MessageFeedbackView` / `MessageFeedback` — the thumbs strip, without the editor or icon map |
@@ -582,6 +583,47 @@ yours (default `0.5`), the rubric is put to the model **as the question itself**
 so phrase it so that "yes" means the row passed.
 
 ---
+
+### Inline references (optional) — `referenceKinds`
+
+Let agents write clickable references into their answers — "open this record",
+"jump to this passage" — without any author learning a link syntax. The host
+declares the KINDS once; an agent opts in per kind in its editor (References
+section, text-output agents only).
+
+```ts
+import type { ReferenceKind } from '@stevepeak/007/references'
+
+const recordKind: ReferenceKind = {
+  id: 'record', // written into links: [a-z][a-z0-9_-]*
+  label: 'Record',
+  description: 'A stored record. Opens in the side panel.', // editor copy
+  guidance: 'Reference every record you relied on; the id is the `recordId` of a search result.', // told to the model
+  anchor: 'The `partId` of the passage, when you have one.', // optional
+  quote: true, // allow a verbatim excerpt
+  example: { id: 'rec-123', anchor: 'p2', quote: 'the exact words', label: 'Order history' },
+}
+
+defineWfConfig({ /* … */ referenceKinds: [recordKind] })
+// and on a tool that hands out record ids:  produces: ['record']
+```
+
+The grammar is a plain markdown link, so un-decorated surfaces still read fine:
+`[label](#ref:<kind>/<id>[/<anchor>] "<quote>")`. For an opted-in agent the
+engine:
+
+1. appends a generated "Referencing sources" section (grammar + each kind's
+   `guidance` + example) after the author's system prompt;
+2. checks every reference against what the generation actually SAW — its
+   interpolated prompt (so an upstream agent's references bound into it are
+   valid), its messages, and every tool result — and unwraps any other to its
+   plain label, logging a `warn`;
+3. returns `{ text, references }`: the structured `references[]` can be bound
+   by downstream nodes like any output field.
+
+`@stevepeak/007/references` is dependency-free (`parseReferences`,
+`stripReferences`, `referenceHref`, …): render chips in the host UI, or strip
+references before text leaves for a surface that can't show them.
 
 ### Managing agents/workflows: the spec CLI (recommended over seed files)
 

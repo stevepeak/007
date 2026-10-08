@@ -48,6 +48,11 @@ export type ToolOption = {
    */
   requiresContext?: string[]
   /**
+   * Reference-kind ids whose ids this tool hands out (`ToolMeta.produces`). The
+   * agent editor suggests a kind when a tool that produces it is attached.
+   */
+  produces?: string[]
+  /**
    * JSON Schema of the tool's input arguments (converted from the tool's Zod
    * `inputSchema`). Drives the "requires" side of node data-mapping. Absent when
    * the tool didn't declare one.
@@ -111,4 +116,20 @@ export type WfToolPreviewResult = {
   args: Record<string, unknown>
   /** Wall-clock duration of the tool call, in milliseconds. */
   durationMs: number
+}
+
+/**
+ * One host-declared inline-reference kind, as the agent editor lists it (see
+ * `@stevepeak/007/references`). The wire shape of `ReferenceKind` minus its
+ * worked example, which only the prompt needs.
+ */
+export type ReferenceKindOption = {
+  id: string
+  label: string
+  description: string
+  /** What the model is told about this kind — shown so an author knows. */
+  guidance: string
+  /** Whether references of this kind carry an anchor / a quote. */
+  anchor: boolean
+  quote: boolean
 }
