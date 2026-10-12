@@ -32,6 +32,51 @@ export function stepAgentVersion(meta: unknown): number | null {
   return typeof v === 'number' ? v : null
 }
 
+/**
+ * When one turn of the tool loop ran, and where its time went. Every field is
+ * optional: steps recorded before timing existed carry none of them, and a
+ * reader must render those without a timeline rather than inventing one.
+ *
+ * Times are epoch milliseconds; durations are milliseconds. The model call is
+ * taken to start when the turn does — the gap between them is prompt assembly,
+ * which is microseconds.
+ */
+export type AgentTurnTiming = {
+  /** When the turn began (epoch ms). */
+  startedAt?: number
+  /** Turn start to turn end: model call, tool calls and any overlap between them. */
+  durationMs?: number
+  /** The model call alone, retries included. */
+  modelMs?: number
+  /**
+   * Wall time of the tool phase — first tool start to last tool end. Tools in a
+   * turn run in parallel, so this is NOT the sum of the per-call durations.
+   */
+  toolMs?: number
+  /**
+   * Model start to its first output chunk of any kind. Streamed turns only; a
+   * non-streamed call has no chunks to time.
+   */
+  firstOutputMs?: number
+  /**
+   * First reasoning chunk to the first chunk that was not reasoning (answer text
+   * or a tool call) — the "thinking" share of `modelMs`. Streamed turns whose
+   * provider sends reasoning as its own parts only.
+   */
+  reasoningMs?: number
+}
+
+/** When one tool call inside an agent turn ran. Absent on older steps. */
+export type AgentToolCallTiming = {
+  /** When `execute` was entered (epoch ms). */
+  startedAt?: number
+  /** When it returned or threw (epoch ms). */
+  finishedAt?: number
+  durationMs?: number
+  /** Set when the call threw rather than returning. */
+  failed?: boolean
+}
+
 export type AgentNodeMeta = {
   model: string
   systemPrompt: string
@@ -57,21 +102,25 @@ export type AgentNodeMeta = {
   agentId?: string
   /** The published version of that agent, from the frozen run manifest. */
   agentVersion?: number
-  steps: Array<{
-    stepNumber: number
-    finishReason?: string
-    /** The model's internal reasoning for this step, if it emitted any. */
-    reasoning?: string
-    /** The assistant's generated output text for this step. */
-    text?: string
-    toolCalls: Array<{
-      toolCallId: string
-      toolName: string
-      input: unknown
-      output: unknown
-    }>
-    usage?: { inputTokens?: number; outputTokens?: number }
-  }>
+  steps: Array<
+    {
+      stepNumber: number
+      finishReason?: string
+      /** The model's internal reasoning for this step, if it emitted any. */
+      reasoning?: string
+      /** The assistant's generated output text for this step. */
+      text?: string
+      toolCalls: Array<
+        {
+          toolCallId: string
+          toolName: string
+          input: unknown
+          output: unknown
+        } & AgentToolCallTiming
+      >
+      usage?: { inputTokens?: number; outputTokens?: number }
+    } & AgentTurnTiming
+  >
   totalUsage: { inputTokens: number; outputTokens: number }
   /**
    * The model's context window as the run manifest froze it, so a viewer can

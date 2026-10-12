@@ -143,6 +143,7 @@ export async function driveGenerate(
   // this path has, since replaying the loop would re-run its tools. The trailing
   // nudge matters: a transcript that ends on an assistant turn otherwise reads as
   // a continuation and some providers return nothing.
+  const formattingStartedAt = Date.now()
   const formatted = await issueStructured({
     model: args.model,
     modelId,
@@ -162,8 +163,13 @@ export async function driveGenerate(
     guard: args.guard,
     sink,
   })
+  // One model call and nothing else, so the whole turn is model time.
+  const formattingMs = Date.now() - formattingStartedAt
   state.stepTraces.push({
     stepNumber: state.stepTraces.length,
+    startedAt: formattingStartedAt,
+    durationMs: formattingMs,
+    modelMs: formattingMs,
     finishReason: formatted.finishReason,
     text: JSON.stringify(formatted.object),
     toolCalls: [],

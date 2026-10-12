@@ -1,8 +1,13 @@
 import type { LanguageModel, StepResult, ToolSet } from 'ai'
 
-import { interpolateUserText } from '../prompt-variables'
 import type { StreamSink } from '../stream-sink'
 
+import {
+  createTurnClock,
+  logToolCallStart,
+  type TurnClock,
+  type TurnClockArgs,
+} from './agent-generation-timing'
 import type { AgentNodeMeta } from './agent-generation-types'
 
 // What happens per TURN of the tool loop, on both sides of the model call.
@@ -55,10 +60,22 @@ export type AgentLoopState = {
    * was sent the schema counts as the object).
    */
   stepMustAnswer: boolean
+  /**
+   * Times each turn, model call and tool call, and writes the live tool lines.
+   * Its callbacks go on the SDK call; `onStepFinish` reads a turn back from it.
+   */
+  clock: TurnClock
 }
 
-export function createLoopState(): AgentLoopState {
+/**
+ * Fresh loop state. `clock` configures the live tool lines; omitted, the clock
+ * still times turns but has nowhere to narrate them.
+ */
+export function createLoopState(
+  clock: TurnClockArgs = { streamToolCalls: false },
+): AgentLoopState {
   return {
+    clock: createTurnClock(clock),
     stepTraces: [],
     totalUsage: { inputTokens: 0, outputTokens: 0 },
     lastInputTokens: 0,
@@ -256,15 +273,8 @@ export type TurnTraceArgs = {
 export function createOnStepFinish(
   args: TurnTraceArgs,
 ): (step: StepResult<ToolSet>) => void {
-  const {
-    state,
-    modelId,
-    maxTurns,
-    streamReasoning,
-    streamToolCalls,
-    toolStatusLabels,
-    sink,
-  } = args
+  const { state, modelId, maxTurns, streamReasoning, sink } = args
+  const { clock } = state
   return (step) => {
     const toolCalls = (step.toolCalls ?? []).map((tc) => {
       const r = step.toolResults?.find((rr) => rr.toolCallId === tc.toolCallId)
@@ -273,8 +283,11 @@ export function createOnStepFinish(
         toolName: tc.toolName,
         input: tc.input as unknown,
         output: r && 'output' in r ? (r.output as unknown) : null,
+        ...clock.toolTiming(tc.toolCallId),
       }
     })
+    // Read before `takeTurn` closes the turn's notes.
+    const reasoningAt = clock.reasoningEndedAt()
     state.stepTraces.push({
       stepNumber: step.stepNumber,
       finishReason: step.finishReason,
@@ -287,6 +300,7 @@ export function createOnStepFinish(
             outputTokens: step.usage.outputTokens,
           }
         : undefined,
+      ...clock.takeTurn(toolCalls.map((tc) => tc.toolCallId)),
     })
     state.totalUsage.inputTokens += step.usage?.inputTokens ?? 0
     state.totalUsage.outputTokens += step.usage?.outputTokens ?? 0
@@ -303,38 +317,28 @@ export function createOnStepFinish(
       }
       state.lastInputTokens = input
     }
-    if (!sink) return
 
+    // Tool lines normally went out live, from the clock, as each call started
+    // and ended. This catches only the calls that never executed.
+    if (!sink) return
+    for (const tc of toolCalls) {
+      if (!clock.announced(tc.toolCallId)) logToolCallStart(args, tc)
+    }
+
+    // Stamped with when the reasoning actually ended, when that was timed, so the
+    // line sorts BEFORE the tool calls it led to rather than after them.
+    const stamp = reasoningAt != null ? { ts: reasoningAt } : {}
     const reasoning = step.reasoningText?.trim()
     if (reasoning) {
-      void sink.log?.({ level: 'thinking', message: reasoning })
-    }
-    for (const tc of toolCalls) {
-      void sink.log?.({
-        level: 'tool',
-        message: `Called ${tc.toolName}`,
-        meta: { tool: tc.toolName, input: tc.input },
-      })
+      void sink.log?.({ ...stamp, level: 'thinking', message: reasoning })
     }
     if (streamReasoning && reasoning) {
       void sink.log?.({
+        ...stamp,
         level: 'progress',
         message: reasoning,
         meta: { progress: 'reasoning' },
       })
-    }
-    if (streamToolCalls) {
-      for (const tc of toolCalls) {
-        const template = toolStatusLabels?.[tc.toolName]
-        const message = template && interpolateUserText(template, tc.input).trim()
-        if (message) {
-          void sink.log?.({
-            level: 'progress',
-            message,
-            meta: { progress: 'tool', tool: tc.toolName },
-          })
-        }
-      }
     }
     // A step that called tools isn't the last one: the loop is about to open
     // another round-trip, and go quiet again for however long that takes. Mark

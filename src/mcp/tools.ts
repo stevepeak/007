@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { agentTimingSummary } from '../engine/agent-timeline'
 import type {
   ToolOption,
   WfDataClient,
@@ -153,6 +154,10 @@ function runOverview(detail: WfRunDetail): unknown {
             // that ran is in here. `get_run_step` is the way to read it; said
             // once, here, rather than left to be discovered.
             meta: clip(s.meta, RUN_OVERVIEW_FIELD_CHARS),
+            // An agent step's per-turn / per-tool timing, computed BEFORE the
+            // clip above turns `meta` into a truncated string. Absent for
+            // non-agent steps and for runs recorded before timing existed.
+            agentTiming: agentTimingSummary(s.meta) ?? undefined,
           }
     }),
     // Presence flags the server sets when it could not return everything. A
@@ -290,7 +295,7 @@ export function readTools(): WfMcpTool[] {
       name: 'get_run',
       title: 'Get run trace',
       description:
-        "The workhorse. An overview of one run's trace: every recorded step with its input, output, LLM reasoning and tool I/O, its timing and the arm any branch took, plus the progress log feed, cost and tokens. Step errors here ARE the failure detail. Each step's fat fields are aggressively truncated — read one in full with get_run_step, using the `cursor` shown here, which is also the only way to read a step's `meta` (where the agent version that actually ran is stamped). `children` appears when the run called other workflows: each is its own run, and a parent can read green while a child failed. The run's workflow graph is NOT included; read it with get_workflow.",
+        "The workhorse. An overview of one run's trace: every recorded step with its input, output, LLM reasoning and tool I/O, its timing and the arm any branch took (an agent step adds `agentTiming`: per turn its duration, model time, reasoning time where the provider streamed it, tool-phase wall time, every tool call's duration, and a one-line `slowest` naming where most of the step went), plus the progress log feed, cost and tokens. Step errors here ARE the failure detail. Each step's fat fields are aggressively truncated — read one in full with get_run_step, using the `cursor` shown here, which is also the only way to read a step's `meta` (where the agent version that actually ran is stamped). `children` appears when the run called other workflows: each is its own run, and a parent can read green while a child failed. The run's workflow graph is NOT included; read it with get_workflow.",
       inputSchema: {
         runId: z.string().describe('Run id, from list_runs or list_feedback.'),
       },
@@ -362,6 +367,8 @@ export function readTools(): WfMcpTool[] {
           input: clip(step.input, RUN_STEP_FIELD_CHARS),
           output: clip(step.output, RUN_STEP_FIELD_CHARS),
           meta: clip(step.meta, RUN_STEP_FIELD_CHARS),
+          // Survives a clipped `meta`: see the overview's `agentTiming`.
+          agentTiming: agentTimingSummary(step.meta) ?? undefined,
         }
       },
     },

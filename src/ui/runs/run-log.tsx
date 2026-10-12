@@ -29,8 +29,10 @@ import { toolChip } from '../tool-appearance'
 import { ToolIcon } from '../tool-icon'
 import { Tooltip } from '../tooltip'
 
+import { AgentWaterfall } from './agent-waterfall'
 import { type IterationMeta, readIterationMeta } from './run-activity-tree'
 import { runLogSections } from './run-log-sections'
+import { toolCallDurationLabel, turnDurationLabel } from './run-log-timing'
 
 // The Logs view renders a step's execution as an AI-style vertical timeline:
 //   Input → thinking → tool call → … → Output.
@@ -234,16 +236,15 @@ function responseStep(value: unknown): LogStep {
 // A tool call is itself a mini run: Input → (any logs) → Output. Nesting a
 // Timeline in the body gives the "step-into depth" — expand the call, then
 // expand its input or output.
-function toolStep(tc: {
-  toolName: string
-  input: unknown
-  output: unknown
-}): LogStep {
+function toolStep(
+  tc: AgentNodeMeta['steps'][number]['toolCalls'][number],
+): LogStep {
+  const duration = toolCallDurationLabel(tc)
   return {
     tone: 'tool',
     icon: <Wrench className="size-3.5" />,
     title: tc.toolName,
-    subtitle: 'tool call',
+    subtitle: duration ? `tool call · ${duration}` : 'tool call',
     body: <Timeline steps={[inputStep(tc.input), outputStep(tc.output)]} />,
   }
 }
@@ -272,12 +273,16 @@ function turnStep(args: {
   count: number
   inputTokens: number | undefined
   contextLength: number | undefined
+  /** Where the turn's time went; null on a step recorded before timing. */
+  duration: string | null
 }): LogStep {
   return {
     tone: 'turn',
     icon: <span className="text-[10px] font-semibold">{args.index + 1}</span>,
     title: <span className="text-neutral-400">Turn {args.index + 1}</span>,
-    subtitle: `of ${args.count}`,
+    subtitle: args.duration
+      ? `of ${args.count} · ${args.duration}`
+      : `of ${args.count}`,
     aside: (
       <ContextChip
         inputTokens={args.inputTokens}
@@ -612,6 +617,7 @@ export function RunLog({ step }: { step: WfRunStepDTO }) {
           count: turnCount,
           inputTokens: s.usage?.inputTokens,
           contextLength,
+          duration: turnDurationLabel(s),
         }),
       )
       if (s.reasoning) steps.push(thinkingStep(s.reasoning))
@@ -676,6 +682,7 @@ export function RunLog({ step }: { step: WfRunStepDTO }) {
           contextLength={contextLength}
         />
       ) : null}
+      {agentMeta ? <AgentWaterfall meta={agentMeta} /> : null}
       {iterMeta ? (
         <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[11px] text-neutral-500">
           <span className="inline-flex items-center gap-1 rounded bg-neutral-100 px-1.5 py-0.5 font-medium text-neutral-600">

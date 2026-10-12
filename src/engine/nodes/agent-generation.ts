@@ -98,7 +98,7 @@ async function runToolLoop(
   } = args
   const schema = structuredSchema(output)
   const answeringModel = withResponseFormat(model, schema)
-  const state = createLoopState()
+  const state = createLoopState({ streamToolCalls, toolStatusLabels, sink })
   const guard = armTotalBudget(budget)
 
   // Heartbeat before the loop opens. Until `onStepFinish` fires — a full model
@@ -148,6 +148,9 @@ async function runToolLoop(
       toolStatusLabels,
       sink,
     }),
+    // Turn, model-call and tool-call timing, plus the live tool lines — see
+    // `-timing`. Callbacks the SDK fires on both paths.
+    ...state.clock.callbacks,
   }
 
   const driveArgs: DriveArgs = {
@@ -163,7 +166,12 @@ async function runToolLoop(
   }
   const result = await runGuarded(sink, modelId, startedAt, guard, () => {
     return streamAnswer
-      ? driveStream(() => streamText(callOptions), driveArgs)
+      ? driveStream(
+          // Chunks exist only on this path, and they are what splits a turn's
+          // model time into reasoning and writing.
+          () => streamText({ ...callOptions, onChunk: state.clock.onChunk }),
+          driveArgs,
+        )
       : driveGenerate(() => generateText(callOptions), driveArgs)
   })
   logModelCallEnd(sink, modelId, startedAt, {

@@ -166,7 +166,9 @@ describe('agent node — structured output with tools', () => {
     expect(seen.formats).toEqual([undefined, 'json'])
     expect(result.output).toEqual({ decision: 'FLAG', matched: 'Dana White' })
     expect(result.meta.steps).toHaveLength(2)
-    expect(result.meta.steps[0]?.toolCalls).toEqual([
+    // `toMatchObject`: the call also carries its timing, which is not this
+    // test's subject.
+    expect(result.meta.steps[0]?.toolCalls).toMatchObject([
       {
         toolCallId: 'c1',
         toolName: 'lookup',

@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/cloudflare'
 
+import { agentTimingSpans, type TimingSpan } from '../engine/agent-timeline'
 import { apiErrorDetail } from '../engine/error-detail'
 
 // Per-node Sentry tracing for the durable backend. Worker-only (imports
@@ -84,7 +85,9 @@ export async function withNodeSpan<T>(
   // rejection reason is one click away in Sentry, not just "Bad Request".
   const captured = async (): Promise<T> => {
     try {
-      return await fn()
+      const result = await fn()
+      recordTimingSpans(result)
+      return result
     } catch (err) {
       Sentry.captureException(err, (scope) => {
         scope.setTag('wf.run_id', info.runId)
@@ -153,6 +156,42 @@ export async function withNodeSpan<T>(
     { sentryTrace: `${info.traceId}-${spanId}-1`, baggage: undefined },
     runSpan,
   )
+}
+
+/**
+ * Emit an agent node's turns and tool calls as child spans of the node span
+ * that is active right now — `wf.agent.turn`, each holding its `wf.tool.call`s.
+ *
+ * Retroactive: the engine records ms-precision timing on the step's `meta` as
+ * the loop runs, and this replays it with explicit start/end times once the
+ * node returns. That keeps the engine free of any tracer (it imports only
+ * `ai`/`zod`), works identically for both backends, and means a turn's span
+ * can never be left open by a node that died mid-turn — a failed node simply
+ * has no turn spans, and its error is on the node span.
+ *
+ * Reads `result.meta` structurally: anything that isn't an agent step with
+ * timing yields no spans. Never throws — telemetry must not fail a node.
+ */
+function recordTimingSpans(result: unknown): void {
+  try {
+    const meta = (result as { meta?: unknown } | null | undefined)?.meta
+    for (const span of agentTimingSpans(meta)) emitSpan(span, undefined)
+  } catch {
+    // Best-effort, like every other Sentry call here.
+  }
+}
+
+function emitSpan(span: TimingSpan, parent: Sentry.Span | undefined): void {
+  const s = Sentry.startInactiveSpan({
+    name: span.name,
+    op: span.op,
+    startTime: new Date(span.startAt),
+    attributes: span.attributes,
+    // Omitted for a turn, so it parents onto the active node span.
+    ...(parent ? { parentSpan: parent } : {}),
+  })
+  for (const child of span.children) emitSpan(child, s)
+  s.end(new Date(span.endAt))
 }
 
 /**
