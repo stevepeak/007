@@ -45,6 +45,19 @@ export type ExecuteWorkflowDeps<TDeps> = {
    */
   resolveModelBudget?: (node: ExecutableNode) => ModelBudget | undefined
   /**
+   * Wraps each top-level node's execution — the `runNode` call itself, inside
+   * the running/terminal step records. This is how a backend puts tracing
+   * around a node without the engine importing a tracer: the inline engine
+   * opens the node's Sentry span here, exactly where the durable backend opens
+   * it inside its `run:` step. Must call `run` once and return (or rethrow)
+   * its result. Omitted by evals, tests and the playground.
+   */
+  wrapNode?: <T>(
+    node: ExecutableNode,
+    sequence: number,
+    run: () => Promise<T>,
+  ) => Promise<T>
+  /**
    * Called the moment the run's answer is final — BEFORE the walk drains the
    * arms that don't feed it. This is what lets a backend mark the run `done`
    * and release whoever is waiting on the answer, while the leftover work keeps
@@ -298,54 +311,59 @@ export async function executeWorkflow<TDeps>(
     // run through `runNode` directly) stay quiet in the user feed.
     emitNodeStartProgress(nodeSink, node, runContext.promptVariables)
     try {
-      const result = await runNode(
-        { type: 'execute', node, input },
-        {
-          getModel: (modelId, opts) => {
-            return config.getModel(modelId, {
-              ...runContext,
-              reasoning: opts?.reasoning ?? runContext.reasoning,
-              // Web search is per-AGENT, never run-wide: only an agent node
-              // that passes its own setting turns it on for its calls.
-              webSearch: opts?.webSearch,
-              webCitations: opts?.webCitations,
-            })
-          },
-          // Decision agents only. Bound the same way as `getModel` — the host
-          // sees the run context so it can read a live binding — and left
-          // undefined when the host wired no decision provider, which is what
-          // makes a decision agent cleanly unrunnable rather than half-present.
-          getDecider: config.getDecider
-            ? (modelId) => config.getDecider!(modelId, runContext)
-            : undefined,
-          toolRegistry: config.toolRegistry,
-          referenceKinds: config.referenceKinds ?? [],
-          toolDeps,
-          nodeOutputs: scheduler.getOutputs(),
-          promptVariables: runContext.promptVariables,
-          manifest: runContext.manifest,
-          sink: nodeSink,
-          resolveBlobRef: config.resolveBlobRef,
+      const execute = () => {
+        return runNode(
+          { type: 'execute', node, input },
+          {
+            getModel: (modelId, opts) => {
+              return config.getModel(modelId, {
+                ...runContext,
+                reasoning: opts?.reasoning ?? runContext.reasoning,
+                // Web search is per-AGENT, never run-wide: only an agent node
+                // that passes its own setting turns it on for its calls.
+                webSearch: opts?.webSearch,
+                webCitations: opts?.webCitations,
+              })
+            },
+            // Decision agents only. Bound the same way as `getModel` — the host
+            // sees the run context so it can read a live binding — and left
+            // undefined when the host wired no decision provider, which is what
+            // makes a decision agent cleanly unrunnable rather than half-present.
+            getDecider: config.getDecider
+              ? (modelId) => config.getDecider!(modelId, runContext)
+              : undefined,
+            toolRegistry: config.toolRegistry,
+            referenceKinds: config.referenceKinds ?? [],
+            toolDeps,
+            nodeOutputs: scheduler.getOutputs(),
+            promptVariables: runContext.promptVariables,
+            manifest: runContext.manifest,
+            sink: nodeSink,
+            resolveBlobRef: config.resolveBlobRef,
 
-          simulate: runContext.simulate,
-          fixtures: runContext.fixtures,
-          liveReads: runContext.liveReads,
-          toolModes: runContext.toolModes,
-          freezeTools: runContext.freezeTools,
-          agentOverride: runContext.agentOverride,
-          // Supplied by callers that run unattended — the inline engine derives
-          // it from the node's declared timeout, the same number the durable
-          // backend gives `step.do`. Absent for evals/tests/the playground,
-          // which block a process they own and can simply wait.
-          modelBudget: deps.resolveModelBudget?.(node),
-          // An iteration node records its inner subgraph steps (once per item)
-          // through the same recorder that persists top-level steps.
-          subStepRecorder: recorder,
-          // Threaded through unchanged, so a workflow node nested in an
-          // iteration item spawns its callee exactly like a top-level one.
-          runChildWorkflow: deps.runChildWorkflow,
-        },
-      )
+            simulate: runContext.simulate,
+            fixtures: runContext.fixtures,
+            liveReads: runContext.liveReads,
+            toolModes: runContext.toolModes,
+            freezeTools: runContext.freezeTools,
+            agentOverride: runContext.agentOverride,
+            // Supplied by callers that run unattended — the inline engine derives
+            // it from the node's declared timeout, the same number the durable
+            // backend gives `step.do`. Absent for evals/tests/the playground,
+            // which block a process they own and can simply wait.
+            modelBudget: deps.resolveModelBudget?.(node),
+            // An iteration node records its inner subgraph steps (once per item)
+            // through the same recorder that persists top-level steps.
+            subStepRecorder: recorder,
+            // Threaded through unchanged, so a workflow node nested in an
+            // iteration item spawns its callee exactly like a top-level one.
+            runChildWorkflow: deps.runChildWorkflow,
+          },
+        )
+      }
+      const result = deps.wrapNode
+        ? await deps.wrapNode(node, seq, execute)
+        : await execute()
       await recorder.record({
         nodeId: node.id,
         nodeKind: node.kind,

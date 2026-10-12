@@ -154,3 +154,22 @@ export async function withNodeSpan<T>(
     runSpan,
   )
 }
+
+/**
+ * Deliver whatever spans and events are queued on the current Sentry client.
+ *
+ * The inline engine needs this; the durable one does not. A Workflows step is
+ * its own instrumented invocation, flushed when it returns. An inline run walks
+ * inside the RunRoom's `waitUntil`, long after the RPC that started it — and the
+ * Durable Object wrapper flushes and disposes that RPC's client ~2s after the
+ * RPC returns. The client still accepts spans after that, but its transport
+ * only queues them until someone flushes, so without this a minutes-long chat
+ * run lands in Sentry as an empty trace. Never throws.
+ */
+export async function flushTraces(timeoutMs = 2_000): Promise<void> {
+  try {
+    await Sentry.flush(timeoutMs)
+  } catch {
+    // Telemetry is best-effort; a failed send must never touch the run.
+  }
+}

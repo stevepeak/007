@@ -5,6 +5,7 @@ import { executeWorkflow, type ResumeStep } from '../engine/executor'
 import type { WfRunManifestEntry } from '../engine/graph'
 import { resolveWfLogger, type WfLogger } from '../engine/logger'
 import { modelBudgetFor } from '../engine/model-budget'
+import { nodeSpanLabel } from '../engine/node-label'
 import { resolveNodeTimeoutMs } from '../engine/node-timeout'
 import type { ChildWorkflowRunner } from '../engine/nodes/workflow'
 import { errorMessage } from '../engine/run-node'
@@ -46,6 +47,7 @@ import {
 } from './graph-workflow-telemetry'
 import { runContextFor } from './run-context'
 import { createRunCounters } from './step-counter'
+import { flushTraces, withNodeSpan } from './tracing'
 
 // The INLINE backend — the peer of `graph-workflow.ts`.
 //
@@ -416,6 +418,10 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
     }
   }
 
+  // Per-node Sentry sends in flight (see `wrapNode`). `flushTraces` never
+  // rejects, so these can sit unawaited until the walk ends.
+  const traceFlushes: Promise<void>[] = []
+
   try {
     if (p.resumeFromRunId && p.resumeFromRunId !== p.workflowRunId) {
       // Loud rather than silent: a resume INTO A FRESH RUN replays a prior
@@ -548,6 +554,34 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
           resolveNodeTimeoutMs(node, p.runContext.executionOverride),
         )
       },
+      // One Sentry span per node, pinned to the run's trace id — the same span
+      // the durable backend opens inside its `run:` step, so the run viewer's
+      // trace link shows the same tree whichever engine ran it. Flushed as each
+      // node ends, not just at the end: this walk outlives the client's own
+      // flush (see `flushTraces`), and a run that wedges or loses its room
+      // mid-walk should still have shipped the nodes it finished. Not awaited
+      // here — the send must not sit between one node and the next on a chat
+      // turn; the walk's `finally` waits for every one of them.
+      wrapNode: async (node, sequence, run) => {
+        try {
+          return await withNodeSpan(
+            {
+              traceId: p.runContext.traceId,
+              runId: p.workflowRunId,
+              nodeId: node.id,
+              nodeKind: node.kind,
+              sequence,
+              label: nodeSpanLabel(node, manifest),
+              actorId: p.runContext.actorId,
+              subjectId: p.runContext.subjectId,
+              correlationId: p.runContext.correlationId,
+            },
+            run,
+          )
+        } finally {
+          traceFlushes.push(flushTraces())
+        }
+      },
       // The answer landed. Publish it and release the reader NOW — the walk
       // may still have arms to drain (a `branch → tool` side effect that the
       // Output never depended on), and making a chat turn wait on those is
@@ -607,5 +641,10 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
     const message = errorFeedLine(err)
     emit('failed', { error: message })
     await recordInlineRunFailure(config, { env, params: p }, message)
+  } finally {
+    // The per-node sends, then anything captured outside a node — a run-level
+    // failure above, a host lifecycle callback.
+    await Promise.all(traceFlushes)
+    await flushTraces()
   }
 }
