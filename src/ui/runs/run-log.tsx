@@ -2,6 +2,7 @@ import {
   Bot,
   Brain,
   CircleCheck,
+  CircleDashed,
   CircleDot,
   Cog,
   FileText,
@@ -29,6 +30,7 @@ import { ToolIcon } from '../tool-icon'
 import { Tooltip } from '../tooltip'
 
 import { type IterationMeta, readIterationMeta } from './run-activity-tree'
+import { runLogSections } from './run-log-sections'
 
 // The Logs view renders a step's execution as an AI-style vertical timeline:
 //   Input → thinking → tool call → … → Output.
@@ -136,6 +138,25 @@ function inputStep(value: unknown): LogStep {
     icon: <CircleDot className="size-3.5" />,
     title: 'Input',
     body: <DataView value={value} />,
+  }
+}
+
+// A live step's output doesn't exist yet. Saying so beats rendering the `{}`
+// column default as if the node had finished with an empty result.
+function pendingStep(nodeKind: string): LogStep {
+  return {
+    tone: 'turn',
+    icon: <CircleDashed className="size-3.5 animate-spin text-blue-500" />,
+    title: nodeKind === 'agent' ? 'Agent is working…' : 'Running…',
+    subtitle: 'output appears when this step finishes',
+  }
+}
+
+function noOutputStep(): LogStep {
+  return {
+    tone: 'output',
+    icon: <CircleCheck className="size-3.5" />,
+    title: 'No output',
   }
 }
 
@@ -465,12 +486,11 @@ function AgentMetaBar({
   // The fullest the window got: the largest single turn's input, not the
   // cumulative spend — a 5-turn loop re-sends its whole conversation every
   // turn, so the sum says nothing about how close it came to overflowing.
-  const peakInput = (meta.steps ?? []).reduce<number | null>(
-    (peak, s) => { return s.usage?.inputTokens != null
-        ? Math.max(peak ?? 0, s.usage.inputTokens)
-        : peak },
-    null,
-  )
+  const peakInput = (meta.steps ?? []).reduce<number | null>((peak, s) => {
+    return s.usage?.inputTokens != null
+      ? Math.max(peak ?? 0, s.usage.inputTokens)
+      : peak
+  }, null)
   const peakPct =
     peakInput != null && contextLength
       ? Math.round((peakInput / contextLength) * 100)
@@ -622,8 +642,13 @@ export function RunLog({ step }: { step: WfRunStepDTO }) {
     })
   }
 
+  const sections = runLogSections({
+    step,
+    hasBespokeMeta: Boolean(agentMeta || iterMeta),
+  })
+
   // Any other captured meta we don't have a bespoke view for.
-  if (!agentMeta && !iterMeta && step.meta) {
+  if (sections.details) {
     steps.push({
       tone: 'tool',
       icon: <FileText className="size-3.5" />,
@@ -632,7 +657,15 @@ export function RunLog({ step }: { step: WfRunStepDTO }) {
     })
   }
 
-  steps.push(agentMeta ? responseStep(step.output) : outputStep(step.output))
+  steps.push(
+    sections.tail === 'pending'
+      ? pendingStep(step.nodeKind)
+      : sections.tail === 'empty'
+        ? noOutputStep()
+        : agentMeta
+          ? responseStep(step.output)
+          : outputStep(step.output),
+  )
 
   return (
     <div>
