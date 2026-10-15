@@ -98,16 +98,22 @@ export function ConnectorIcon({
   className?: string
 }) {
   if (icon) {
+    // Admin-supplied brand markup, but "admin" here is anyone who may edit
+    // workflows, and the page it renders on belongs to every other admin. As
+    // an <img> source the SVG keeps its look but cannot run script, attach
+    // handlers or fetch anything — innerHTML would let a pasted icon do all
+    // three on this origin. The cost is `currentColor`, which an image cannot
+    // inherit; brand marks carry their own colours anyway.
     return (
       <span
         className={cn('inline-flex h-8 w-8 items-center justify-center', className)}
-        // Trusted, admin-supplied brand markup, and the same treatment
-        // `ToolMeta.icon` already gets for built-in tools. Explicitly NOT the
-        // remote server's own content — descriptions and tool names are third
-        // party and are only ever rendered as text.
-        // eslint-disable-next-line @eslint-react/dom-no-dangerously-set-innerhtml
-        dangerouslySetInnerHTML={{ __html: icon }}
-      />
+      >
+        <img
+          src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(icon)}`}
+          alt=""
+          className="h-full w-full"
+        />
+      </span>
     )
   }
   if (iconUrl) {

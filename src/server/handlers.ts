@@ -205,26 +205,20 @@ export function createWfSdkHandlers<TDeps>(
     // name — but the catch needs it for `onError`, so it is read out here.
     const method = envelope.method ?? '(missing)'
 
-    let call: { handler: HandlerFn; params: unknown }
-    try {
-      call = resolveCall(handlers, envelope.method, envelope.params)
-    } catch (err) {
-      // Validation and lookup failures are the caller's, not ours — answered
-      // as a 400 here rather than falling into the 500 path below.
-      return json({ error: errorMessage(err) }, 400)
-    }
-
     // Hoisted out of the `try` so the catch can attribute a failure to the
     // caller who hit it. Stays undefined when `resolveContext` was what threw.
     let ctx: WfServerContext | undefined
     try {
+      // Who is asking comes BEFORE what they asked. Validating first would
+      // answer an anonymous caller with each method's input schema, spelled
+      // out in the zod message — a map of the API for someone with no session.
       ctx = await opts.resolveContext(req)
+      const call = resolveCall(handlers, envelope.method, envelope.params)
       return json(await invokeHandler(opts, call.handler, call.params, ctx, req))
     } catch (err) {
-      // Bad client input (a handler-level zod parse, or a guard a handler
-      // raised itself) is a 400, not a server fault — don't log it as a 500.
-      // Dispatcher-level schema rejections never reach here: `resolveCall` runs
-      // before this `try` and answers its own 400.
+      // Bad client input — a missing/unknown method or a params schema
+      // rejection from `resolveCall`, a handler-level zod parse, or a guard a
+      // handler raised itself — is a 400, not a server fault.
       if (err instanceof BadRequestError || err instanceof z.ZodError) {
         return json({ error: errorMessage(err) }, 400)
       }
