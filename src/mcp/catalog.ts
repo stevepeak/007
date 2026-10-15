@@ -1,9 +1,11 @@
 import { readTools, type WfMcpTool } from './tools'
+import { agentPublishTools } from './tools-agent-publish'
 import { agentReadTools, agentWriteTools } from './tools-agents'
 import {
   connectorReadTools,
   connectorWriteTools,
 } from './tools-connectors'
+import { docsTools } from './tools-docs'
 import { draftTools } from './tools-drafts'
 import { evalRunReadTools, evalRunWriteTools } from './tools-eval-runs'
 import { evalReadTools, evalWriteTools } from './tools-evals'
@@ -22,6 +24,9 @@ import { workflowReadTools, workflowWriteTools } from './tools-workflows'
 /** Every tool this build knows about, read and write alike. */
 export function allTools(): WfMcpTool[] {
   return [
+    // First, so a client listing tools meets the manual before the controls.
+    // It reads the catalog lazily — the tool dictionary it renders is this list.
+    ...docsTools(allTools),
     ...readTools(),
     ...platformReadTools(),
     ...connectorReadTools(),
@@ -36,6 +41,7 @@ export function allTools(): WfMcpTool[] {
     ...platformWriteTools(),
     ...connectorWriteTools(),
     ...agentWriteTools(),
+    ...agentPublishTools(),
     ...workflowWriteTools(),
   ]
 }

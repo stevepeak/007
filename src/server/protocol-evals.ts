@@ -194,7 +194,7 @@ export type WfEvalResultDTO = {
    *
    * Set on a decision cell (which has no `wf_run` for `runStats` to read a
    * model off), null elsewhere. It is the only record of the third eval-drift
-   * axis: a floating provider id like `jev-latest` can change what answers
+   * axis: a floating provider id (a `-latest` alias) can change what answers
    * without a version bump anywhere in 007, so two runs of the same pinned
    * agent can disagree and nothing else in the report would say why.
    */

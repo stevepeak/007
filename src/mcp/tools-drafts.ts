@@ -75,7 +75,7 @@ export function draftTools(): WfMcpTool[] {
         '',
         'Two layers produce different samples from the same run, so pick one:',
         "  • trajectory (default) — the run's real tool results become `mocked` fixtures. Deterministic, and the only layer where tool_called / tool_args_match grade anything.",
-        '  • synthesis — the same tool results are folded into a seeded assistant turn and the tool set is frozen, so the sample grades the answer alone with no retrieval nondeterminism. Conversation agents only.',
+        '  • synthesis — the same tool results are folded into a seeded assistant turn, so the sample grades the answer from that staged context with no retrieval nondeterminism. Nothing is pinned: the agent keeps its tools and any call returns `{}` — pin a tool if the answer leans on calling it again. Conversation agents only.',
         '',
         'A run with several agent steps answers with the choice of steps rather than guessing; name one with `cursor`.',
       ].join('\n'),

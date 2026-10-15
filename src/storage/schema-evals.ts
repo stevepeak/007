@@ -187,8 +187,8 @@ export const wfEvalResult = sqliteTable(
     // above, which is the matrix cell's identity (the id we ASKED with, and
     // part of the cell key).
     //
-    // The two differ whenever a provider id floats. `jev-latest` is the live
-    // example: Venice can change what answers behind it without telling us, so
+    // The two differ whenever a provider id floats. A `-latest` alias is the
+    // live example: the provider can change what answers behind it unannounced, so
     // a decision agent pinned to an exact 007 version can change behaviour with
     // no version bump anywhere. That is a third eval-drift axis beyond the two
     // the change log covers, and a scheduled sweep is the only detector — which

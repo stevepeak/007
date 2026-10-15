@@ -91,12 +91,16 @@ now derived from one registry, so the compiler walks you through it.
 | 5 | `src/engine/nodes/<kind>.ts` | the executor itself |
 | 6 | `src/ui/editor/node-renderers.tsx` | an entry in `NODE_TYPES` |
 | 7 | `src/ui/editor/node-io.ts` | `nodeRequires` + `nodeOutput` — what the node consumes and advertises |
+| 8 | `src/mcp/docs/topics/nodes/<kind>.md` | the MCP manual page — what it does, every config key, its output, its gotchas. `bun run docs:mcp` after |
 
 **Step 1 alone is a compile error until step 3 is done**, and step 3 is a compile
 error until step 2 is — `NODE_KIND_SEEDS` is typed `Record<WfNodeKind, …>` with
 each seed `Extract`ed to its own kind, so a missing entry and a wrong config
 shape both fail at the same place. Steps 4 and 7 are guarded by `satisfies never`
 in their `default:` branches.
+
+Step 8 is forced by `src/mcp/docs.test.ts` rather than the compiler: a kind
+with no page, or a config key its page never names, fails `bun test`.
 
 Steps 5 and 6 are the two the compiler *cannot* force — a missing renderer falls
 back to xyflow's default box rather than failing. Don't skip them.
@@ -279,7 +283,46 @@ as an oversight.
 
 ---
 
-## 7. Before you commit
+## 7. The MCP documentation
+
+`get_docs` is how an AI client learns what the engine *does* — every other MCP
+tool only shows what exists. Its pages live in `src/mcp/docs/topics/` (one
+Markdown file per topic, frontmatter `title` / `summary` / `order`) and are
+compiled into `src/mcp/docs/sources.generated.ts` by `bun run docs:mcp`, because
+the server runs in a Worker with no filesystem.
+
+**Change behaviour an author can observe → change the page in the same commit.**
+That means: a node kind or a config key (its `nodes/<kind>` page), scheduler
+or join semantics (`execution`), agent config (`agents`, `agents/*`), what
+streams to a user (`streaming`), eval mechanics (`evals`), a limit
+(`limits`), or an MCP tool's workflow (`authoring`, `debugging`). Then
+`bun run docs:mcp`.
+
+What keeps it honest — `src/mcp/docs.test.ts` fails when:
+
+- the generated file is stale against `topics/`;
+- a node kind has no page, or its page doesn't name one of its config keys;
+- `execution` / `graph` / `agents` / `agents/sub-agents` miss a field of the
+  execution policy, edge, agent config or delegation schema;
+- a page names an MCP tool that doesn't exist, links `[[a-topic]]` that
+  doesn't exist, or uses a `{{placeholder}}` nothing fills;
+- a page mentions a host or its domain — 007 is public, and a host documents
+  its own tools through their descriptions.
+
+What is generated rather than written, so never retype it in prose: the node-kind
+dictionary (`{{node-kinds}}`, from `NODE_KIND_REGISTRY`), the tool dictionary
+(`{{mcp-tools}}`, from the catalog) and the topic index (`{{topics}}`). A new
+MCP tool appears in the dictionary automatically; it still needs its row in
+`guide.md` (`catalog.test.ts`) and, if it changes how authoring works, a line
+in `authoring`.
+
+The test can check that a key is *named*, not that what is said about it is
+true. Write pages from the code and the tests, never from memory, and say
+plainly where the code leaves something open.
+
+---
+
+## 8. Before you commit
 
 ```sh
 bun run typecheck   # all three projects

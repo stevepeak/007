@@ -31,7 +31,8 @@ import type {
 import { optString, reqString, type WfMcpTool } from './tools'
 
 // The workflow write path. Same neighborhood as `tools-agents.ts`, one line
-// drawn differently: **workflows can be published from here, agents cannot.**
+// drawn differently: a workflow publishes in ONE gated call, an agent only
+// after a dry run (`tools-agent-publish.ts`).
 //
 // An agent version floats into every workflow that references it, so a publish
 // there changes what every one of those workflows does at once. A workflow
@@ -120,7 +121,8 @@ function freshPosition(graph: WorkflowGraph): { x: number; y: number } {
 // Patch ops
 // ---------------------------------------------------------------------------
 
-const OPS = [
+/** The `patch_workflow_draft` op names — exported so the docs test can hold `authoring` to them. */
+export const PATCH_OPS = [
   'add_node',
   'set_tool_arg',
   'remove_tool_arg',
@@ -132,7 +134,7 @@ const OPS = [
   'remove_edge',
   'remove_node',
 ] as const
-type OpName = (typeof OPS)[number]
+type OpName = (typeof PATCH_OPS)[number]
 
 /**
  * One flat op shape with every field optional, validated per-op at run time.
@@ -141,7 +143,7 @@ type OpName = (typeof OPS)[number]
  * conventions note at the top of `tools.ts`.
  */
 const opSchema = z.object({
-  op: z.enum(OPS).describe('Which change to make. See the tool description.'),
+  op: z.enum(PATCH_OPS).describe('Which change to make. See the tool description.'),
   nodeId: z
     .string()
     .nullish()
@@ -1110,7 +1112,7 @@ export function workflowWriteTools(): WfMcpTool[] {
       name: 'publish_workflow',
       title: 'Publish workflow',
       description:
-        'Publish the workflow’s current DRAFT as a new immutable version — from this moment it is what the trigger runs. THIS CHANGES WHAT CUSTOMERS GET. Two gates, both refusals rather than warnings: the draft must lint with zero errors (see validate_workflow_graph), and baseVersionNumber must equal the version that is live right now — pass the versionNumber you read from get_workflow or list_workflow_versions, so a version someone else published since you read is never silently overwritten. changeNote is required and becomes the version’s note in the history and the wf_change feed. Does not publish agents; that is deliberately unavailable.',
+        'Publish the workflow’s current DRAFT as a new immutable version — from this moment it is what the trigger runs. THIS CHANGES WHAT CUSTOMERS GET. Two gates, both refusals rather than warnings: the draft must lint with zero errors (see validate_workflow_graph), and baseVersionNumber must equal the version that is live right now — pass the versionNumber you read from get_workflow or list_workflow_versions, so a version someone else published since you read is never silently overwritten. changeNote is required and becomes the version’s note in the history and the wf_change feed. Does not publish agents — publish_agent does that, separately.',
       inputSchema: {
         workflowId: z.string().describe('Workflow id, from list_workflows.'),
         changeNote: z

@@ -617,7 +617,7 @@ export function buildEvalHandlers<TDeps>(
         promptLabel: undefined,
         promptBody: undefined,
         attempt: p.attempt,
-        // The echoed id, not the one we asked with — `jev-latest` floats, and
+        // The echoed id, not the one we asked with — a `-latest` alias floats, and
         // this is the only place a report can see that it moved.
         answeredModelId: result.modelId ?? null,
         // The provider returns usage on every decision call and this cell has no

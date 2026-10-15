@@ -1388,11 +1388,12 @@ scopes, and the client stores and silently refreshes the token from then on.
 `offline_access` is what makes that a one-time cost rather than a prompt at
 every expiry.
 
-**What it exposes.** Fifty-two tools — twenty-seven reads, and twenty-five writes
+**What it exposes.** Fifty-four tools — twenty-eight reads, and twenty-six writes
 registered only for a session whose token carries the write scope.
 
 | Tool                              | Gate      | What it does                                                        |
 | --------------------------------- | --------- | ------------------------------------------------------------------- |
+| `get_docs`                        | read      | the manual: the TL;DR, a dictionary of node kinds and tools, engine semantics (joins, `fastTrack`, race), every node kind's config, agents, evals, limits. Pass `topic` or `query`. Also served as `wf-docs://<topic>` resources |
 | `list_agents` / `get_agent`       | read      | the reusable agents, published version + unsaved draft, and the workflows referencing them. Check `kind`: a **generation** agent has a prompt, tools and an output contract; a **decision** agent has questions, verdicts and rollup rules |
 | `list_agent_versions`             | read      | an agent's publish history; pass `versionNumber` for that config    |
 | `list_agent_calls`                | read      | its recent REAL executions — turns, tokens, cost, per-tool counts, early stops |
@@ -1427,6 +1428,7 @@ registered only for a session whose token carries the write scope.
 | `cancel_eval_run`                 | **write** | stop a sweep that is still launching cells. Keeps the verdicts it has |
 | `create_agent`                    | **write** | a new agent, model/tools/capabilities preflighted. Starts at v1, referenced by nothing |
 | `update_agent_draft`              | **write** | replace an agent's unsaved draft, preflighted; or restore one with `fromVersion`. Never publishes |
+| `publish_agent`                   | **write** | an agent's draft → its next version. Called once without `confirm` it is a dry run naming every workflow that floats on the agent; publishing echoes the dry run's token. Refused on a stale `baseVersionNumber` or a draft that would not run |
 | `discard_agent_draft`             | **write** | drop the draft; says what was lost                                  |
 | `update_agent`                    | **write** | rename or restyle an agent. Cosmetic; no version created            |
 | `triage_feedback`                 | **write** | acknowledge a complaint and write the staff-only resolution note    |
@@ -1440,6 +1442,16 @@ registered only for a session whose token carries the write scope.
 | `publish_workflow`                | **write** | the draft → a new version. Refused on a lint error or a stale `baseVersionNumber` |
 | `discard_workflow_draft`          | **write** | drop the draft; says what was lost                                  |
 | `update_description`              | **write** | rewrite what a workflow, agent, Goal or Sample is *for*, or a run's triage note. Unversioned; changes nothing a run does |
+
+**The manual travels with the server.** The server's MCP `instructions` tell
+a client to call `get_docs` before authoring, and `get_docs` serves pages from
+`src/mcp/docs/topics/` — compiled into the bundle, because a Worker has no
+filesystem to read them from. The node-kind and tool dictionaries in it are
+generated from the registry and this catalog, so they cannot drift; the prose
+is held to the code by `src/mcp/docs.test.ts` (every node kind has a page, every
+config key is named on it, every tool a page names exists). The pages are
+host-neutral: a host's own tools are documented by their descriptions, which
+`get_tool_catalog` serves.
 
 `run_eval`, `run_agent_preview` and `run_decision_preview` are writes not
 because they edit a definition but because they **spend money** — which is the

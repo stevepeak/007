@@ -69,12 +69,12 @@ export const decisionAgentQuestionSchema = z.object({
   type: z.enum(DECISION_QUESTION_TYPES).default('boolean'),
   prompt: z.string().default(''),
   // `boolean` only: named things to weigh, e.g.
-  // `{ overdue: 'No reply in 48h' }`. This reaches Jev's noul `criteria`
-  // through the host adapter, which has read it since ART-231 — but until now
+  // `{ overdue: 'No reply in 48h' }`. This reaches the provider's own
+  // criteria field through the host adapter, which has read it since ART-231 — but until now
   // NO authoring surface could set it, so a live provider feature was
   // unreachable from the product. It is within-question structure, which is
   // exactly where the matrix is allowed to get richer; between-question
-  // dependencies are ruled out on Jev's contract (see the ticket's non-goals).
+  // dependencies are ruled out on the provider contract (see the ticket's non-goals).
   considerations: z.record(z.string(), z.string()).default({}),
   // `category`: the options to choose between. `scale`: the ordered levels,
   // LOWEST FIRST — the order IS the scale, so reordering changes every answer's
@@ -90,8 +90,8 @@ export type DecisionAgentQuestion = z.infer<typeof decisionAgentQuestionSchema>
 /**
  * A question's choices in the provider's vocabulary.
  *
- * `description ?? label ?? key` — the fallback chain matters. The Jev adapter
- * sends `description ?? key` as the criterion text, so a question authored with
+ * `description ?? label ?? key` — the fallback chain matters. The reference host
+ * adapter sends `description ?? key` as the criterion text, so a question authored with
  * labels alone would have its options described to the model as `needs_review`
  * and `auto_reply`. The label is the text a human wrote to mean the option; it
  * is strictly better than the slug derived from it.

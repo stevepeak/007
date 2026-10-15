@@ -24,8 +24,8 @@ import {
 //
 // Authors the three question types against the provider contract, plus
 // `considerations` — the per-question criteria
-// Jev has read since ART-231 and which NO authoring surface could set until
-// now. That is a live provider feature the product could not reach.
+// the decision provider has read since ART-231 and which NO authoring surface
+// could set until now. That is a live provider feature the product could not reach.
 //
 // Raw `<input>`/`<select>` rather than the host's injected primitives, for the
 // same reason the node inspector uses them: `cn` is clsx alone (no

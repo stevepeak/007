@@ -3,7 +3,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { WfDataClient } from '../server/protocol'
 
 import { allTools, selectTools } from './catalog'
+import { docTopics, renderTopic } from './docs/registry'
 import type { WfMcpTool } from './tools'
+import { WF_MCP_INSTRUCTIONS } from './tools-docs'
 
 // Assembling the MCP server from the tool definitions.
 //
@@ -31,17 +33,20 @@ export type CreateWfMcpServerOptions = {
 function toContent(value: unknown): {
   content: { type: 'text'; text: string }[]
 } {
-  return {
-    content: [{ type: 'text', text: JSON.stringify(value, null, 2) }],
-  }
+  // A string is already prose (`get_docs` answers in Markdown). Stringifying it
+  // would hand the model one escaped line of `\n`s instead of the page.
+  const text =
+    typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+  return { content: [{ type: 'text', text }] }
 }
 
 export function createWfMcpServer(opts: CreateWfMcpServerOptions): McpServer {
-  const server = new McpServer({
-    name: 'wf',
-    title: '007 workflows',
-    version: '0.1.0',
-  })
+  const server = new McpServer(
+    { name: 'wf', title: '007 workflows', version: '0.1.0' },
+    // Shown to the client before any tool is called — the pointer to
+    // `get_docs`, so a session learns the engine before it edits a graph.
+    { instructions: WF_MCP_INSTRUCTIONS },
+  )
 
   const tools = selectTools(opts.tools ?? allTools(), opts.write === true)
 
@@ -81,6 +86,27 @@ export function createWfMcpServer(opts: CreateWfMcpServerOptions): McpServer {
           }
         }
       },
+    )
+  }
+
+  // The same pages as resources, for clients that let a person attach one
+  // (an `@`-mention in Claude Code). `get_docs` stays the primary path — resources
+  // are not something a model reaches for on its own in most clients.
+  for (const topic of docTopics()) {
+    const uri = `wf-docs://${topic.id}`
+    server.registerResource(
+      `docs/${topic.id}`,
+      uri,
+      { title: topic.title, description: topic.summary, mimeType: 'text/markdown' },
+      () => ({
+        contents: [
+          {
+            uri,
+            mimeType: 'text/markdown',
+            text: renderTopic(topic, tools),
+          },
+        ],
+      }),
     )
   }
 

@@ -13,7 +13,7 @@ import { ThresholdScale } from './decision-question-types'
 
 // The rollup: ordered rules, first match wins.
 //
-// This is the layer Jev deliberately does not provide — "the caller picks the
+// This is the layer a calibrated decision provider deliberately does not provide — "the caller picks the
 // threshold, because where to cut is a policy decision and not the model's" —
 // so the agent, not the provider, decides. It is also what makes the output one
 // gradeable value, which is what an eval needs.
@@ -25,7 +25,7 @@ import { ThresholdScale } from './decision-question-types'
 //     an ordered list already expresses everything a tree would, while staying
 //     readable to the person whose request got escalated and lintable by the
 //     editor.
-//   • A weighted score. Jev's `score` answers are already probability-weighted
+//   • A weighted score. A provider's `scale` answers are already probability-weighted
 //     indices, so weighting them again double-counts the mass — and a weight is
 //     far harder to justify to a human than "rule 2 fired".
 

@@ -164,7 +164,7 @@ export function runlessCellStats(
   //
   // Prefer the asked id when there IS one (a matrix cell), since that is the id
   // the catalog holds a row for. When the echo resolves to something the catalog
-  // has never seen — a provider that turns `jev-latest` into a dated build —
+  // has never seen — a provider that turns a `-latest` alias into a dated build —
   // there is no price to find and `costUsd` stays null, which is the honest
   // answer rather than a zero.
   const priced = r.modelId ?? r.answeredModelId ?? null

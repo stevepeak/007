@@ -43,8 +43,8 @@ export type DecisionAgentResult = {
   /**
    * What ACTUALLY answered, echoed by the provider.
    *
-   * Not the id we asked with, and the difference is the point: `jev-latest`
-   * floats, so a decision agent can be fully version-pinned in 007 and still
+   * Not the id we asked with, and the difference is the point: a `-latest`
+   * alias floats, so a decision agent can be fully version-pinned in 007 and still
    * change behaviour with no version bump anywhere. Recording the echo is what
    * lets an eval report attribute a moved score to the model rather than to the
    * questions.
@@ -173,8 +173,8 @@ export type DecisionRollup = {
 }
 
 /**
- * Apply the ordered rules to a set of verdicts — the policy layer Jev requires
- * its caller to own, and the step that makes the output a DECISION rather than
+ * Apply the ordered rules to a set of verdicts — the policy layer a calibrated
+ * provider requires its caller to own, and the step that makes the output a DECISION rather than
  * a measurement.
  *
  * First match wins. The fallback is required by the schema, so the only way to

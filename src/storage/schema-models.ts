@@ -43,9 +43,9 @@ export const wfModel = sqliteTable(
     // serves 'decision' to decision agents.
     //
     // Before this column, a decision model stayed out of the chat dropdown by
-    // being ABSENT from the table — Venice's `/models?type=text` simply never
-    // mentioned Jev. That worked only for as long as nobody catalogued one, and
-    // `?type=decision` (which does list Jev, with pricing) is exactly how we
+    // being ABSENT from the table — a provider's chat `/models` listing simply
+    // never mentioned one. That worked only for as long as nobody catalogued
+    // one, and a decision-type listing (which does list them, with pricing) is exactly how we
     // now catalogue them. The separation had to become something the schema
     // states rather than something the upstream payload happened to imply.
     //

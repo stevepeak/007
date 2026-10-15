@@ -53,6 +53,7 @@ describe('the tool catalog', () => {
       'discard_agent_draft',
       'discard_workflow_draft',
       'patch_workflow_draft',
+      'publish_agent',
       'publish_workflow',
       'refresh_connector',
       'refresh_model_catalog',
@@ -73,16 +74,13 @@ describe('the tool catalog', () => {
     ])
   })
 
-  // The line drawn in `tools-agents.ts`: a draft is reversible and invisible to
-  // customers, an AGENT publish floats into every workflow that references the
-  // agent. (`publish_workflow` is the deliberate exception — one trigger, two
-  // refusal gates; see `tools-workflows.ts`. `create_agent` is not one: its v1 is
-  // published into a graph that does not exist yet.) Neither of these belongs to
-  // a surface that can be prompted into using it.
-  test('exposes no publish and no live tool execution at all', () => {
+  // Live tool execution and bulk deletion have no gate a tool call can carry:
+  // the playground's live toggle is a person reading a warning. (Publishing an
+  // agent DOES have one — a mandatory dry run and a confirmation token, see
+  // `tools-agent-publish.ts` — which is why `publish_agent` is not listed here.)
+  test('exposes no live tool execution and no bulk deletion', () => {
     const names = new Set(allTools().map((t) => t.name))
     for (const forbidden of [
-      'publish_agent',
       'run_tool_preview',
       'delete_eval_set',
       'delete_all_runs',

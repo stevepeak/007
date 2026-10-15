@@ -159,7 +159,7 @@ function DecisionResult({ result }: { result: DecisionPreviewResult }) {
         ))}
       </div>
 
-      {/* What ACTUALLY answered. `jev-latest` floats, so a pinned agent can
+      {/* What ACTUALLY answered. A floating provider id (a `-latest` alias) can move, so a pinned agent can
           change behaviour with no version bump anywhere — this is the only
           place the playground can say which model the answer came from. */}
       {result.modelId ? (

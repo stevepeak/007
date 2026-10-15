@@ -196,7 +196,7 @@ function summarizeResult(result: WfEvalResultDTO, name: string): unknown {
     cell: cellOf(result),
     // What ACTUALLY answered, echoed by the provider, and shown only when it
     // is not the id the cell asked with. A decision agent can be pointed at a
-    // floating id like `jev-latest`, and when what sits behind it changes,
+    // floating id (a `-latest` alias), and when what sits behind it changes,
     // nothing else in 007 moves: not the agent version, not the plan, not the
     // snapshot hash. A report whose verdicts shifted for no visible reason
     // has its reason here, and nowhere else.

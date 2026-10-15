@@ -22,8 +22,8 @@
 //   • Swapping providers cannot silently move a threshold, because no provider
 //     ever saw it.
 //
-// Nothing in this file names a vendor. The Venice/Jev vocabulary (`noul`,
-// `criteria`, `legend`) exists only in the host adapter that translates to it.
+// Nothing in this file names a vendor. A provider's own vocabulary exists only in
+// the host adapter that translates to it.
 
 /** The three shapes of judgment a decider can be asked for. */
 export const DECISION_QUESTION_TYPES = [

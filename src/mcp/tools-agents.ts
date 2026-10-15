@@ -43,13 +43,13 @@ import { boundedLimit, optString, reqString, type WfMcpTool } from './tools'
 // Two lines are drawn deliberately, and both of them are about who is left
 // holding the consequence:
 //
-//   • **Drafts, never re-publishes.** `publish_agent` is NOT here. A published
-//     version floats into every workflow that references the agent (see the
+//   • **Drafts here; publishing is its own gated tool.** A published version
+//     floats into every workflow that references the agent (see the
 //     float-to-latest rule), so publishing OVER an agent workflows already run
-//     is the single action in this file's neighborhood that changes what
-//     customers get. A draft changes what the next eval run measures and nothing
-//     else, and the editor's "discard draft" undoes it wholesale. The model
-//     proposes; a person ships.
+//     is the single action in this neighborhood that changes what customers
+//     get. A draft changes what the next eval run measures and nothing else,
+//     and the editor's "discard draft" undoes it wholesale. Publishing lives in
+//     `tools-agent-publish.ts`, behind the gates described below.
 //
 //     `create_agent` is not the exception it looks like. Creating an agent seeds
 //     a published v1 — `createAgent` always has, and the UI's "New agent" button
@@ -64,11 +64,10 @@ import { boundedLimit, optString, reqString, type WfMcpTool } from './tools'
 //     there is no unarchive anywhere in the SDK, so the asymmetry is at least
 //     the safe way round.
 //
-//     ── `publish_agent`: the decision, made rather than inherited (ART-234) ──
+//     ── `publish_agent`: kept out by ART-234, shipped by ART-271 ──
 //
-//     It stays out. The argument above was written for `create_agent` and has
-//     been re-examined on its own terms; this is the conclusion, not an
-//     inheritance.
+//     ART-234 kept it out, and the reasoning below is why it shipped gated
+//     rather than bare (`tools-agent-publish.ts`).
 //
 //     What makes it different from `publish_workflow`, which IS here: a workflow
 //     version changes one thing, what its own trigger runs next, and the caller
@@ -78,18 +77,14 @@ import { boundedLimit, optString, reqString, type WfMcpTool } from './tools'
 //     of live workflows do, at once, with no per-workflow gate and no natural
 //     concurrency token. The blast radius is not knowable from the arguments.
 //
-//     The cost of keeping it out is real and worth stating plainly: every
-//     improvement authored here needs a person to open the console and press
-//     Publish. That is the intended shape — the model proposes, a person ships —
-//     and the rest of this ticket's work is about making the proposal complete
-//     enough to review: `update_agent_draft` now preflights, `list_agent_versions`
-//     shows what would change, `get_agent` reports which workflows are affected,
-//     and `run_eval({ draftAgentId })` grades the draft before anyone publishes it.
-//
-//     If it ever ships, these are the gates it needs, and none of them exist yet:
-//     the reference count as a refusal above some threshold, a dry run naming
-//     every affected workflow, and a confirmation token echoed from a prior call
-//     so the publish cannot be the first thing a session does.
+//     Keeping it out meant every improvement authored here waited on a person
+//     opening the console, which in practice stalled MCP-driven authoring. It
+//     shipped with the gates ART-234 named: a mandatory dry run naming every
+//     published workflow that floats on the agent (and the pinned ones that
+//     won't move), a confirmation token bound to the exact draft and live
+//     version that dry run saw, and `baseVersionNumber` as the concurrency
+//     token. No reference-count threshold: the dry run SHOWS the count, and
+//     the caller is told to put it in front of the user before confirming.
 //   • **Simulated tools, never live ones.** `run_agent_preview` does not accept
 //     `liveToolIds`, so every tool in a previewed run is stood in for by the
 //     model and nothing outside this process is touched. The playground in the
@@ -283,7 +278,7 @@ function nameIds(ids: string[]): string {
  * `update_agent_draft` has no such check either. A wrong target there fails on a
  * draft, which is the shape of mistake this file is relaxed about.
  */
-async function preflightAgentConfig(
+export async function preflightAgentConfig(
   client: WfDataClient,
   raw: unknown,
 ): Promise<{ config: AgentConfig } | { error: string }> {
@@ -361,7 +356,7 @@ async function preflightAgentConfig(
  * mid-edit — a rule reading a question that isn't there should fail here, not
  * on the first eval cell.
  */
-async function preflightDecisionAgentConfig(
+export async function preflightDecisionAgentConfig(
   client: WfDataClient,
   raw: unknown,
 ): Promise<{ config: DecisionAgentConfig } | { error: string }> {
@@ -726,7 +721,7 @@ export function agentWriteTools(): WfMcpTool[] {
           },
           output: config.output.kind,
           toolIds: config.toolIds,
-          note: 'Version 1 is published, but no workflow references this agent yet, so nothing runs it. Publishing a LATER version is not available here — a person does that in the console once it is wired up.',
+          note: 'Version 1 is published, but no workflow references this agent yet, so nothing runs it. Later versions go draft → publish: update_agent_draft, then publish_agent (dry run first).',
           next: `Smoke-test it with run_agent_preview({ agentId: "${agentId}", ${
             variables.length > 0
               ? `promptVariables: { ${variables.map((v) => `${v}: "…"`).join(', ')} }`
@@ -750,7 +745,7 @@ export function agentWriteTools(): WfMcpTool[] {
         '',
         '`fromVersion` restores a published version into the draft instead of sending a config — how you get back to a known-good agent after an edit made things worse, without relaying the whole object.',
         '',
-        'Nothing is published: the draft changes what run_eval (with draftAgentId) and run_agent_preview measure, and no workflow runs it until a person publishes. It also replaces whatever draft someone had open in the editor, so say what you changed. Publishing is deliberately not available here.',
+        'Nothing is published: the draft changes what run_eval (with draftAgentId) and run_agent_preview measure, and no workflow runs it until it is published with publish_agent (a dry run, then a confirmed publish). It also replaces whatever draft someone had open in the editor, so say what you changed.',
       ].join('\n'),
       inputSchema: {
         agentId: z.string().describe('Agent id, from list_agents.'),
@@ -878,7 +873,7 @@ export function agentWriteTools(): WfMcpTool[] {
         '',
         'Read the DISTRIBUTIONS, not just the verdict. `answers.<id>.distribution` is the whole point of a decision model: a verdict reached at 0.51 and one reached at 0.99 look identical in `verdict` and are not the same answer. `because` names which rule fired and what it read.',
         '',
-        '`answeredBy` is what ACTUALLY answered, echoed by the provider. A floating id like `jev-latest` can change what sits behind it with no version bump anywhere in 007, so a preview that disagrees with yesterday’s starts here.',
+        '`answeredBy` is what ACTUALLY answered, echoed by the provider. A floating model id (a `-latest` alias) can change what sits behind it with no version bump anywhere in 007, so a preview that disagrees with yesterday’s starts here.',
       ].join('\n'),
       inputSchema: {
         agentId: z.string().describe('Decision agent id, from list_agents.'),
