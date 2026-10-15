@@ -18,9 +18,6 @@ const config = await defineESLintConfig(
         'error',
         { hexadecimalValue: 'lowercase' },
       ],
-      // The preset ships this as a warning, and warnings don't fail CI. Raw
-      // HTML from anything a user, model or document can influence is XSS.
-      '@eslint-react/dom-no-dangerously-set-innerhtml': 'error',
       // SQL is built only from drizzle's parameterised `sql` template.
       // `sql.raw` splices a string verbatim; a genuine need is a disable with
       // the reason the input is not user-controlled.
@@ -34,6 +31,13 @@ const config = await defineESLintConfig(
         },
       ],
     },
+  },
+  {
+    // The preset ships this as a warning, and warnings don't fail CI. Raw HTML
+    // from anything a user, model or document can influence is XSS. Scoped to
+    // JSX files: the React plugin isn't loaded for package.json.
+    files: ['**/*.tsx', '**/*.jsx'],
+    rules: { '@eslint-react/dom-no-dangerously-set-innerhtml': 'error' },
   },
   { ignores: ['eslint.config.js'] },
 )
