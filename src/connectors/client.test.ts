@@ -39,7 +39,7 @@ describe('the MCP client factory is the only constructor', () => {
       .filter((f) => !f.endsWith('/connectors/client.test.ts'))
       // The MCP *server* tests construct an in-memory client against our own
       // server; that is the outbound half and never touches a remote schema.
-      .filter((f) => !f.endsWith('/mcp/server.test.ts'))
+      .filter((f) => !/\/mcp\/[^/]+\.test\.ts$/.test(f))
       .filter((f) => /new Client\(/.test(readFileSync(f, 'utf8')))
       .map((f) => f.slice(SRC_DIR.length))
     expect(offenders).toEqual([])

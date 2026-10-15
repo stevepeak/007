@@ -30,9 +30,11 @@ describe('tool categories', () => {
 
   test('the platform fallback holds only what belongs there', () => {
     const fallback = NAMES.filter((n) => categoryOf(n) === 'platform').sort()
-    // Health, the audit feed, and the one tool that edits prose on anything.
+    // Health, the manual, the audit feed, and the one tool that edits prose
+    // on anything.
     expect(fallback).toEqual([
       'get_dashboard',
+      'get_docs',
       'list_changes',
       'update_description',
     ])
