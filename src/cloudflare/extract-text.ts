@@ -172,6 +172,14 @@ function isPlainText(mimeType: string, filename: string): boolean {
   )
 }
 
+// toMarkdown opens with a `## Metadata` bullet list of the file's info/XMP
+// properties (CreationDate, pdf:producer, xmpmm:documentid, …). That is not
+// document content, so it is dropped before the text reaches anyone.
+// Removes the block up to the next `##`/`###` heading or EOF.
+export function stripMarkdownMetadata(markdown: string): string {
+  return markdown.replace(/^## Metadata[\s\S]*?(?=^##|(?![\s\S]))/m, '')
+}
+
 // Heuristic: is this `toMarkdown` output suspiciously empty for its page count?
 // toMarkdown emits a `### Page N` heading per PDF page; a scanned PDF has the
 // headings but almost no body text under them.
@@ -182,10 +190,8 @@ export function looksLikeScannedPdf(
   const minCharsPerPage = opts.minCharsPerPage ?? 40
   const pageHeaders = markdown.match(/^### Page \d+\s*$/gm) ?? []
   if (pageHeaders.length === 0) return false
-  const body = markdown
+  const body = stripMarkdownMetadata(markdown)
     .replace(/^# .+\n/m, '')
-    // Strip the `## Metadata` block up to the next `##`/`###` heading or EOF.
-    .replace(/^## Metadata[\s\S]*?(?=^##|(?![\s\S]))/m, '')
     .replaceAll(/^### Page \d+\s*$/gm, '')
     .replaceAll(/\s+/g, ' ')
     .trim()
@@ -198,7 +204,7 @@ async function runToMarkdown(
   blob: Blob,
 ): Promise<string> {
   const res = await (ai as unknown as ToMarkdownAI).toMarkdown([{ name, blob }])
-  return res[0]?.data ?? ''
+  return stripMarkdownMetadata(res[0]?.data ?? '')
 }
 
 // When the freshly extracted text is larger than the spill threshold, write it
