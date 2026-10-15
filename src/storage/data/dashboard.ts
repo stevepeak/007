@@ -539,6 +539,7 @@ export async function loadDashboard(
   const until = new Date(window.until)
   // Server-controlled constant (3600 or 86400), so inlining it raw keeps the
   // fragment param-free and safe to reuse verbatim in GROUP BY.
+  // eslint-disable-next-line no-restricted-properties
   const size = sql.raw(String(bucketSeconds(window.bucket)))
   const runBucket = sql<number>`cast(${wfRun.createdAt} / ${size} as integer)`
   const feedbackBucket = sql<number>`cast(${wfFeedback.createdAt} / ${size} as integer)`

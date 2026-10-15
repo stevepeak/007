@@ -94,20 +94,25 @@ export async function listRuns(db: WfDb, input: ListRunsFilter) {
   // way to write this and the obvious way for the two halves to drift, which on
   // a filter means quietly returning the wrong set.
   const matchPredicate = (run: string, workflow: string): SQL | null => {
+    // Both aliases are literals at the call sites below, never user input.
+    // eslint-disable-next-line no-restricted-properties
+    const r = sql.raw(run)
+    // eslint-disable-next-line no-restricted-properties
+    const w = sql.raw(workflow)
     const parts: SQL[] = []
     if (input.status) {
-      parts.push(sql`${sql.raw(run)}.status = ${input.status}`)
+      parts.push(sql`${r}.status = ${input.status}`)
     }
     if (input.search) {
       const q = `%${input.search}%`
       // The note is the only free text a human writes about a run, so it is
       // the term most likely to be searched for — "the timeout one".
       parts.push(sql`(
-        ${sql.raw(workflow)}.name like ${q}
-        or ${sql.raw(run)}.trigger_kind like ${q}
-        or ${sql.raw(run)}.subject_id like ${q}
-        or ${sql.raw(run)}.correlation_id like ${q}
-        or ${sql.raw(run)}.note like ${q}
+        ${w}.name like ${q}
+        or ${r}.trigger_kind like ${q}
+        or ${r}.subject_id like ${q}
+        or ${r}.correlation_id like ${q}
+        or ${r}.note like ${q}
       )`)
     }
     return parts.length > 0 ? sql.join(parts, sql` and `) : null

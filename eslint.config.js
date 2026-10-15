@@ -18,6 +18,21 @@ const config = await defineESLintConfig(
         'error',
         { hexadecimalValue: 'lowercase' },
       ],
+      // The preset ships this as a warning, and warnings don't fail CI. Raw
+      // HTML from anything a user, model or document can influence is XSS.
+      '@eslint-react/dom-no-dangerously-set-innerhtml': 'error',
+      // SQL is built only from drizzle's parameterised `sql` template.
+      // `sql.raw` splices a string verbatim; a genuine need is a disable with
+      // the reason the input is not user-controlled.
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'sql',
+          property: 'raw',
+          message:
+            'sql.raw splices its argument unescaped. Use the sql`` template, or disable with the reason the input is not user-controlled.',
+        },
+      ],
     },
   },
   { ignores: ['eslint.config.js'] },
