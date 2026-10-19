@@ -184,7 +184,7 @@ export function readTools(): WfMcpTool[] {
       name: 'get_agent',
       title: 'Get agent',
       description:
-        "Read one agent's full config, published version and unsaved draft (which can differ). Check `agent.kind` first — it says which shape `config` is. A \"generation\" agent has a system prompt, user prompt, allowed tools, max turns, sub-agent delegation and an output contract; a \"decision\" agent has `questions` (boolean/category/scale, with per-question `considerations` and `threshold`), the `verdicts` it may reach, and the ordered `rules` that roll answers up into one — first match wins, last rule is the fallback.",
+        "Read one agent's full config, published version and unsaved draft (which can differ). Check `agent.kind` first — it says which shape `config` is. A \"generation\" agent has a system prompt, user prompt, allowed tools, max turns, sub-agent delegation and an output contract; a \"decision\" agent has `questions` (boolean/category/scale, with per-question `threshold` and, on a boolean, optional `yesMeans`/`noMeans` definitions), the `verdicts` it may reach, and the ordered `rules` that roll answers up into one — first match wins, last rule is the fallback.",
       inputSchema: {
         agentId: z.string().describe('Agent id, from list_agents.'),
       },

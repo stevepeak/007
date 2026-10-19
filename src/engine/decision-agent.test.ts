@@ -24,7 +24,6 @@ function question(
     id: 'is_urgent',
     type: 'boolean',
     prompt: 'Does this need a person to look at it before we act?',
-    considerations: {},
     choices: [],
     ...over,
   }
@@ -53,28 +52,26 @@ function stubDecider(answers: DecisionAnswer[], modelId = 'venice:jev-1'): Decid
 }
 
 describe('decisionAgentQuestions', () => {
-  test('sends considerations as the provider contract names them', () => {
+  test('sends the yes/no definitions as the provider contract names them', () => {
     const [q] = decisionAgentQuestions(
       config({
         questions: [
-          question({
-            considerations: { overdue: 'No reply in 48h', threat: 'Mentions a regulator' },
-          }),
+          question({ yesMeans: 'No reply in 48h', noMeans: ' Answered today ' }),
         ],
       }),
     )
-    expect(q.type).toBe('boolean')
-    expect(q.type === 'boolean' ? q.considerations : null).toEqual({
-      overdue: 'No reply in 48h',
-      threat: 'Mentions a regulator',
+    expect(q).toMatchObject({
+      type: 'boolean',
+      yesMeans: 'No reply in 48h',
+      noMeans: 'Answered today',
     })
   })
 
-  test('omits considerations entirely when none are authored', () => {
-    // `criteria: {}` is a different request from no criteria at all, and an
-    // author who wrote none meant the latter.
-    const [q] = decisionAgentQuestions(config())
-    expect(q.type === 'boolean' && 'considerations' in q).toBe(false)
+  test('omits a definition that is blank rather than sending it empty', () => {
+    const [q] = decisionAgentQuestions(
+      config({ questions: [question({ yesMeans: '  ' })] }),
+    )
+    expect('yesMeans' in q || 'noMeans' in q).toBe(false)
   })
 
   test("a choice's label reaches the provider when no description is written", () => {
@@ -99,22 +96,72 @@ describe('decisionAgentQuestions', () => {
     ])
   })
 
-  test('interpolates ${vars} into prompts and considerations', () => {
+  test('interpolates ${vars} into prompts and yes/no definitions', () => {
     const [q] = decisionAgentQuestions(
       config({
         questions: [
           question({
             prompt: 'Is this urgent for ${client}?',
-            considerations: { sla: '${client} is on a 24h SLA' },
+            yesMeans: '${client} is on a 24h SLA and it has lapsed',
           }),
         ],
       }),
       { client: 'Acme' },
     )
     expect(q.prompt).toBe('Is this urgent for Acme?')
-    expect(q.type === 'boolean' ? q.considerations?.sla : null).toBe(
-      'Acme is on a 24h SLA',
+    expect(q.type === 'boolean' ? q.yesMeans : null).toBe(
+      'Acme is on a 24h SLA and it has lapsed',
     )
+  })
+})
+
+describe('provider limits', () => {
+  test('a scale with more than ten levels is an issue, not a provider 400', () => {
+    const levels = Array.from({ length: 11 }, (_, i) => ({ key: `l${i}` }))
+    const issues = decisionAgentConfigIssues(
+      config({ questions: [question({ type: 'scale', choices: levels })] }),
+    )
+    expect(issues.join('\n')).toContain('at most 10')
+  })
+})
+
+describe('a question saved with legacy considerations', () => {
+  // No provider reads named factors — a yes/no question's criteria are keyed
+  // `true`/`false` — so they were accepted and ignored. Reading one now folds
+  // them into the prompt, the one place every provider reads.
+  const legacy = {
+    modelId: 'venice:jev-latest',
+    questions: [
+      {
+        id: 'is_legal',
+        type: 'boolean',
+        prompt: 'Is this a legal question?',
+        considerations: { not_automated: 'Not an auto-reply', blank: ' ' },
+      },
+    ],
+    verdicts: ['yes', 'no'],
+    rules: [{ id: 'r1', verdict: 'no', conditions: [] }],
+  }
+
+  test('folds them into the prompt as a list', () => {
+    const [q] = decisionAgentConfigSchema.parse(legacy).questions
+    expect(q.prompt).toBe(
+      'Is this a legal question?\n\nTake these into account:\n- not automated: Not an auto-reply',
+    )
+    expect('considerations' in q).toBe(false)
+  })
+
+  test('the upgrade is stable: reading the result again changes nothing', () => {
+    const once = decisionAgentConfigSchema.parse(legacy)
+    expect(decisionAgentConfigSchema.parse(once)).toEqual(once)
+  })
+
+  test('an empty map leaves the prompt alone', () => {
+    const [q] = decisionAgentConfigSchema.parse({
+      ...legacy,
+      questions: [{ ...legacy.questions[0], considerations: {} }],
+    }).questions
+    expect(q.prompt).toBe('Is this a legal question?')
   })
 })
 

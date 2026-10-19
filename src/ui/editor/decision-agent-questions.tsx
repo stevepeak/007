@@ -24,10 +24,9 @@ import {
 
 // The question list of a decision agent's editor.
 //
-// Authors the three question types against the provider contract, plus
-// `considerations` — the per-question criteria
-// the decision provider has read since ART-231 and which NO authoring surface
-// could set until now. That is a live provider feature the product could not reach.
+// Authors the three question types against the provider contract, including
+// a yes/no question's optional definitions of what counts as yes and as no —
+// the provider's own yes/no criteria.
 //
 // Raw `<input>`/`<select>` rather than the host's injected primitives, for the
 // same reason the node inspector uses them: `cn` is clsx alone (no
@@ -82,7 +81,6 @@ export function newDecisionQuestion(
     id: nextQuestionId(existing),
     type: 'boolean',
     prompt: '',
-    considerations: {},
     choices: [],
   }
 }
@@ -208,13 +206,9 @@ function QuestionCard({
   const needsChoices = question.type !== 'boolean'
   const unsupported =
     model != null && !supportsQuestionType(model, question.type)
-  const considerations = Object.entries(question.considerations)
 
   const setChoices = (choices: DecisionAgentQuestion['choices']) => {
     onChange({ choices })
-  }
-  const setConsiderations = (entries: [string, string][]) => {
-    onChange({ considerations: Object.fromEntries(entries) })
   }
 
   return (
@@ -369,8 +363,8 @@ function QuestionCard({
                     type: t,
                     choices: t === 'boolean' ? [] : question.choices,
                     threshold: t === 'boolean' ? question.threshold : undefined,
-                    considerations:
-                      t === 'boolean' ? question.considerations : {},
+                    yesMeans: t === 'boolean' ? question.yesMeans : undefined,
+                    noMeans: t === 'boolean' ? question.noMeans : undefined,
                   })
                 }}
               >
@@ -400,85 +394,30 @@ function QuestionCard({
             />
           </Row>
 
-          {/* Considerations — the provider's own within-question structure, and
-              the reason this editor is not just the node inspector again. Each
-              is a named thing to weigh; the model is told about them by name,
-              so an answer can be argued with rather than only accepted. */}
-          <div className="space-y-1.5">
-            <Row label="Weigh">
-              <span className="text-muted-foreground text-[11px]">
-                Factors to take into account, each a short name and what it
-                means. The model is told both, so it can answer{' '}
-                <i>because</i> of something rather than only answering.
-              </span>
-            </Row>
-            {/* STACKED, not side by side. A consideration is a name plus a
-                sentence, and this card sits in a half-width column: two inputs
-                on one line left the sentence about 80px wide — present, but
-                impossible to read or type into. Each is now its own small block,
-                name over meaning, so both get the full width and the pair still
-                reads as one unit.
-
-                It also makes their different jobs obvious, which the cramped
-                version hid: the mono field is the KEY the model is told (and a
-                rule could name), the wide one is what it means. */}
-            {considerations.map(([name, text], i) => (
-              <div
-                key={i}
-                className="border-input/60 bg-muted/20 ml-[72px] space-y-1 rounded-md border p-1.5"
-              >
-                <div className="flex items-center gap-1">
-                  <input
-                    className={cn(FIELD, 'font-mono')}
-                    placeholder="overdue — name this factor"
-                    aria-label={`Consideration ${i + 1} name for ${question.id}`}
-                    value={name}
-                    onChange={(e) => {
-                      const next = [...considerations]
-                      next[i] = [e.target.value, text]
-                      setConsiderations(next)
-                    }}
-                  />
-                  <button
-                    type="button"
-                    aria-label={`Remove consideration ${name}`}
-                    className="text-muted-foreground hover:text-foreground hover:bg-accent shrink-0 rounded p-1"
-                    onClick={() => {
-                      setConsiderations(considerations.filter((_, j) => j !== i))
-                    }}
-                  >
-                    <X className="size-3" />
-                  </button>
-                </div>
-                <input
-                  className={FIELD}
-                  placeholder="What counts as overdue here — say, no reply in 48 hours"
-                  aria-label={`Consideration ${i + 1} for ${question.id}`}
-                  value={text}
-                  onChange={(e) => {
-                    const next = [...considerations]
-                    next[i] = [name, e.target.value]
-                    setConsiderations(next)
-                  }}
-                />
-              </div>
-            ))}
-            <div className={GUTTER}>
-              <button
-                type="button"
-                className="border-input hover:bg-accent text-muted-foreground hover:text-foreground flex items-center gap-1 rounded-md border border-dashed px-2 py-1 text-[11px]"
-                onClick={() => {
-                  const taken = new Set(considerations.map(([k]) => k))
-                  setConsiderations([
-                    ...considerations,
-                    [keyFromLabel('consideration', taken), ''],
-                  ])
-                }}
-              >
-                <Plus className="size-3" /> Add a consideration
-              </button>
-            </div>
-          </div>
+          {/* Where the yes/no boundary sits, when the question alone leaves it
+              open. Sent as the provider's own yes/no criteria, which is the only
+              place it reads such guidance; most questions need neither, so both
+              are optional and blank means none. */}
+          <Row label="Yes means" align="start">
+            <textarea
+              className={AREA}
+              rows={1}
+              placeholder="Optional — what counts as yes, e.g. asks for advice on their own situation"
+              aria-label={`What counts as yes for ${question.id}`}
+              value={question.yesMeans ?? ''}
+              onChange={(e) => onChange({ yesMeans: e.target.value || undefined })}
+            />
+          </Row>
+          <Row label="No means" align="start">
+            <textarea
+              className={AREA}
+              rows={1}
+              placeholder="Optional — what counts as no, e.g. auto-replies, receipts, scheduling"
+              aria-label={`What counts as no for ${question.id}`}
+              value={question.noMeans ?? ''}
+              onChange={(e) => onChange({ noMeans: e.target.value || undefined })}
+            />
+          </Row>
         </>
       ) : null}
 

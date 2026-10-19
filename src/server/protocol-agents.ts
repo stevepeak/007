@@ -43,7 +43,7 @@ export type WfAgentSummary = {
   createdAt: number
   /**
    * The `${variables}` the agent's latest published prompt requires, inferred
-   * from its body — for a decision agent, from its questions and considerations.
+   * from its body — for a decision agent, from its questions and yes/no definitions.
    * Drives the "requires" side of agent-node data-mapping. Empty when the agent
    * has no published version yet or has no variables.
    */
@@ -112,7 +112,7 @@ export type WfDecisionAgentSummary = {
    * `value` is a weighted index that never equals a level key.
    */
   questions: WfDecisionQuestionSummary[]
-  /** Every `${name}` the questions interpolate, across prompts and considerations. */
+  /** Every `${name}` the questions interpolate, across prompts and yes/no definitions. */
   inputVariables: string[]
 }
 
@@ -164,7 +164,7 @@ export type DecisionPreviewInput = {
   config: DecisionAgentConfig
   /** The state every question is judged against. Any JSON value. */
   state: unknown
-  /** Values for `${…}` tokens in the question prompts and considerations. */
+  /** Values for `${…}` tokens in the question prompts and yes/no definitions. */
   variables?: Record<string, string>
 }
 

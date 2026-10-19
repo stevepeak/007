@@ -318,7 +318,7 @@ export const triggerInputSchema = z.object({
  * caller would have handed the node — so the Sample preserves it as-is.
  *
  * `variables` rides along for the same reason it does on a conversation input:
- * question prompts and considerations interpolate `${…}` tokens, so a Goal can
+ * question prompts and yes/no definitions interpolate `${…}` tokens, so a Goal can
  * sweep the same state past a parameterised question.
  */
 export const decisionInputSchema = z.object({

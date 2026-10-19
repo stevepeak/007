@@ -12,7 +12,7 @@ A **decision agent** (`kind: "decision"`, fixed at creation) asks a decision pro
 {
   "modelId": "<provider>:<model>",
   "questions": [
-    { "id": "urgent", "type": "boolean", "prompt": "Is this urgent?", "considerations": { "deadline": "Mentions a date within 48h" }, "threshold": 0.7 },
+    { "id": "urgent", "type": "boolean", "prompt": "Is this urgent?", "yesMeans": "Mentions a deadline within 48h", "threshold": 0.7 },
     { "id": "topic", "type": "category", "prompt": "What is it about?", "choices": [{ "key": "billing", "label": "Billing" }, { "key": "other", "label": "Other" }] },
     { "id": "risk", "type": "scale", "prompt": "How risky?", "choices": [{ "key": "low" }, { "key": "medium" }, { "key": "high" }] }
   ],
@@ -25,7 +25,7 @@ A **decision agent** (`kind: "decision"`, fixed at creation) asks a decision pro
 }
 ```
 
-- **Question types**: `boolean` (provider returns a probability; `threshold` 0–1 is that question's yes cut; `considerations` names things to weigh), `category` (≥2 `choices`, provider returns a distribution), `scale` (≥2 `choices`, ordered **lowest first** — the order is the scale). A choice's `description`, else `label`, else `key` is what the provider sees.
+- **Question types**: `boolean` (provider returns a probability; `threshold` 0–1 is that question's yes cut; optional `yesMeans` / `noMeans` define what counts as yes and as no, for when the prompt leaves the boundary open), `category` (≥2 `choices`, provider returns a distribution), `scale` (2–10 `choices`, ordered **lowest first** — the order is the scale). A category takes at most 255 choices; past either limit the provider refuses the request. A choice's `description`, else `label`, else `key` is what the provider sees.
 - **Rules**: ordered; all of a rule's conditions must hold (AND); the **first** matching rule names the verdict; the **last** rule must have no conditions (the fallback) and only the last may. Every rule's `verdict` must be declared in `verdicts`.
 - **Condition ops by type**: boolean `gte`/`lt` (with `probability`) or `is` (with `yes`, using the question's own threshold); category `equals`/`in` (with `keys`); scale `atLeast`/`atMost` (with `keys`, compared by declared order).
 - `${variables}` in question text bind through the node's `config.inputs`, like a generation agent's.
@@ -59,3 +59,5 @@ Each `answers.<questionId>` is shaped by its question's type: a boolean has `val
 - `validate_workflow_graph` and the editor's Issues panel check a decision node against its agent's latest published matrix: every `${variable}` its questions use must be bound in `inputs`; refs into the node must name a real field (`answers.<id>` for a question that exists, and a field that question's type has); and a Switch case, or a Branch `equals`/`not_equals`, on `verdict`, a category's `.value` or a scale's `.level` must compare against a value the agent can produce. Each is an error, because none of them fails a run: the run takes a different arm instead. Nodes pinned to a version are not checked.
 - `run_decision_preview` judges one value with the draft (or `usePublished`). Read the distributions, not just the verdict.
 - Grade with a `decision_answers` eval check. See [[evals]].
+
+**Legacy `considerations`.** Questions saved before `yesMeans`/`noMeans` existed may carry `considerations`, a map of named factors. No provider reads that shape, so it never reached the model. When such a question is read, the factors are folded into the end of its `prompt` as a "Take these into account:" list, which every provider reads. Rewriting them into `yesMeans`/`noMeans` usually works better.

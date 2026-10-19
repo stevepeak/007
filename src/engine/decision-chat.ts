@@ -88,10 +88,8 @@ function renderQuestion(question: DecisionQuestion): string {
   const lines = [`- id: ${question.id}`, `  question: ${question.prompt}`]
   if (question.type === 'boolean') {
     lines.push('  keys: yes, no')
-    const considerations = Object.entries(question.considerations ?? {})
-    for (const [name, meaning] of considerations) {
-      lines.push(`  consider ${name}: ${meaning}`)
-    }
+    if (question.yesMeans) lines.push(`  yes means: ${question.yesMeans}`)
+    if (question.noMeans) lines.push(`  no means: ${question.noMeans}`)
     return lines.join('\n')
   }
   if (question.type === 'scale') {

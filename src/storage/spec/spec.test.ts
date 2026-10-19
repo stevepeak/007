@@ -233,7 +233,7 @@ describe('spec round trip for a decision agent', () => {
               id: 'is_urgent',
               type: 'boolean',
               prompt,
-              considerations: { overdue: 'No reply in 48h' },
+              yesMeans: 'No reply in 48h',
               choices: [],
               threshold: 0.7,
             },
@@ -258,11 +258,9 @@ describe('spec round trip for a decision agent', () => {
     await importBundle(db, decisionBundle())
     const out = await exportBundle(db)
     expect(out.agents[0].agentKind).toBe('decision')
-    // The considerations survive the round trip — they are the one field no
-    // other authoring surface could set, so losing them here would put the
-    // feature straight back out of reach.
+    // The yes/no definitions survive the round trip.
     expect(out.agents[0].config).toMatchObject({
-      questions: [{ considerations: { overdue: 'No reply in 48h' } }],
+      questions: [{ yesMeans: 'No reply in 48h' }],
     })
 
     const again = await importBundle(db, out)

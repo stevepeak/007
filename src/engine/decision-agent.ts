@@ -60,7 +60,7 @@ export type RunDecisionAgentInput = {
   /** Resolves `config.modelId` to a decider. `WfSdkConfig.getDecider`, bound. */
   getDecider: (modelId: string) => Decider
   /**
-   * Values for `${name}` tokens in the question prompts and considerations.
+   * Values for `${name}` tokens in the question prompts and yes/no definitions.
    * The same bag shape a generation agent's prompts interpolate from, so a Goal
    * can parameterise a question the way it parameterises a prompt.
    */
@@ -75,14 +75,14 @@ function interpolateQuestion(
   variables: Record<string, string> | undefined,
 ): DecisionAgentQuestion {
   if (!variables || Object.keys(variables).length === 0) return question
-  const considerations: Record<string, string> = {}
-  for (const [key, text] of Object.entries(question.considerations)) {
-    considerations[key] = substitutePromptVariables(text, variables)
+  const fill = (text: string | undefined) => {
+    return text == null ? undefined : substitutePromptVariables(text, variables)
   }
   return {
     ...question,
     prompt: substitutePromptVariables(question.prompt, variables),
-    considerations,
+    yesMeans: fill(question.yesMeans),
+    noMeans: fill(question.noMeans),
   }
 }
 
@@ -98,7 +98,8 @@ export function decisionAgentQuestions(
         id: question.id,
         type: question.type,
         prompt: question.prompt,
-        considerations: question.considerations,
+        yesMeans: question.yesMeans,
+        noMeans: question.noMeans,
       },
       decisionAgentProviderChoices(question),
       `Decision agent question '${question.id}'`,

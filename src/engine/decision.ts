@@ -46,8 +46,10 @@ export type BooleanQuestion = {
   id: string
   type: 'boolean'
   prompt: string
-  /** Optional named things to weigh, e.g. `{ overdue: 'No reply in 48h' }`. */
-  considerations?: Readonly<Record<string, string>>
+  /** What counts as yes, when the prompt leaves the boundary open. */
+  yesMeans?: string
+  /** What counts as no, likewise. */
+  noMeans?: string
 }
 
 /** Pick one of several unordered options. */
@@ -102,7 +104,8 @@ export function buildProviderQuestion(
     id: string
     type: DecisionQuestionType
     prompt: string
-    considerations?: Readonly<Record<string, string>>
+    yesMeans?: string
+    noMeans?: string
   },
   choices: readonly DecisionOption[],
   where: string,
@@ -112,16 +115,16 @@ export function buildProviderQuestion(
     throw new Error(`${where} has no prompt — there is nothing to judge.`)
   }
   if (authored.type === 'boolean') {
-    const considerations = authored.considerations
+    // Omitted rather than sent blank: an empty definition is a different
+    // request from none at all, and an author who wrote none meant the latter.
+    const yesMeans = authored.yesMeans?.trim()
+    const noMeans = authored.noMeans?.trim()
     return {
       id: authored.id,
       type: 'boolean',
       prompt,
-      // Omitted rather than sent empty: `criteria: {}` is a different request
-      // from no criteria at all, and an author who wrote none meant the latter.
-      ...(considerations && Object.keys(considerations).length > 0
-        ? { considerations }
-        : {}),
+      ...(yesMeans ? { yesMeans } : {}),
+      ...(noMeans ? { noMeans } : {}),
     }
   }
   if (choices.length < 2) {

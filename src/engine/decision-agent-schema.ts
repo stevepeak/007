@@ -62,20 +62,23 @@ export type DecisionAgentChoice = z.infer<typeof decisionAgentChoiceSchema>
  * {@link decisionAgentConfigIssues}, which can say "a category question needs
  * options" far better than a union mismatch can.
  */
-export const decisionAgentQuestionSchema = z.object({
+/** The most levels a scale question may have — a decision provider's limit. */
+export const MAX_SCALE_LEVELS = 10
+/** The most options a category question may have — a decision provider's limit. */
+export const MAX_CATEGORY_OPTIONS = 255
+
+const decisionAgentQuestionObjectSchema = z.object({
   // Stable identity: the key the answer lands under (`answers.<id>`), what a
   // rule names, and what an eval expectation addresses.
   id: z.string().min(1),
   type: z.enum(DECISION_QUESTION_TYPES).default('boolean'),
   prompt: z.string().default(''),
-  // `boolean` only: named things to weigh, e.g.
-  // `{ overdue: 'No reply in 48h' }`. This reaches the provider's own
-  // criteria field through the host adapter, which has read it since ART-231 — but until now
-  // NO authoring surface could set it, so a live provider feature was
-  // unreachable from the product. It is within-question structure, which is
-  // exactly where the matrix is allowed to get richer; between-question
-  // dependencies are ruled out on the provider contract (see the ticket's non-goals).
-  considerations: z.record(z.string(), z.string()).default({}),
+  // `boolean` only: what counts as yes, and what counts as no. Optional
+  // boundary definitions for a question whose wording leaves its edges open —
+  // the native shape of a decision provider's yes/no criteria. The prompt alone
+  // is enough for most questions; these are for the ones it isn't.
+  yesMeans: z.string().optional(),
+  noMeans: z.string().optional(),
   // `category`: the options to choose between. `scale`: the ordered levels,
   // LOWEST FIRST — the order IS the scale, so reordering changes every answer's
   // weighted index and every `atLeast`/`atMost` rule that reads it.
@@ -85,6 +88,42 @@ export const decisionAgentQuestionSchema = z.object({
   // `gte`/`lt` names its own cut instead.
   threshold: z.number().min(0).max(1).optional(),
 })
+
+/**
+ * A question saved before yes/no definitions existed may carry
+ * `considerations`: named factors, `{ overdue: 'No reply in 48h' }`. No provider
+ * reads that shape — a yes/no question's criteria are keyed `true`/`false` only,
+ * so the factors were accepted and ignored. They are folded into the prompt,
+ * which every provider reads, so the guidance the author wrote reaches the
+ * model and the editor shows exactly the text that is sent. Stored rows are not
+ * rewritten; the next save writes the new shape.
+ */
+export function upgradeLegacyDecisionQuestion(value: unknown): unknown {
+  if (value == null || typeof value !== 'object' || !('considerations' in value)) {
+    return value
+  }
+  const { considerations, ...rest } = value as Record<string, unknown>
+  const factors =
+    considerations != null && typeof considerations === 'object'
+      ? Object.entries(considerations).filter((entry): entry is [string, string] => {
+          return typeof entry[1] === 'string' && entry[1].trim() !== ''
+        })
+      : []
+  if (factors.length === 0) return rest
+  const prompt = typeof rest.prompt === 'string' ? rest.prompt.trimEnd() : ''
+  const list = factors
+    .map(([name, text]) => `- ${name.replaceAll('_', ' ')}: ${text.trim()}`)
+    .join('\n')
+  return {
+    ...rest,
+    prompt: `${prompt}${prompt ? '\n\n' : ''}Take these into account:\n${list}`,
+  }
+}
+
+export const decisionAgentQuestionSchema = z.preprocess(
+  upgradeLegacyDecisionQuestion,
+  decisionAgentQuestionObjectSchema,
+)
 export type DecisionAgentQuestion = z.infer<typeof decisionAgentQuestionSchema>
 
 /**
@@ -243,6 +282,14 @@ export function decisionAgentConfigIssues(config: {
         `Question '${question.id}' is a ${question.type} question with ${question.choices.length} choice(s); it needs at least two.`,
       )
     }
+    // The decision providers' own ceilings (Jev and OpenAI agree): past them
+    // the request is refused outright.
+    const most = question.type === 'scale' ? MAX_SCALE_LEVELS : MAX_CATEGORY_OPTIONS
+    if (question.type !== 'boolean' && question.choices.length > most) {
+      issues.push(
+        `Question '${question.id}' is a ${question.type} question with ${question.choices.length} choices; decision providers accept at most ${most}.`,
+      )
+    }
     const keys = new Set<string>()
     for (const choice of question.choices) {
       if (keys.has(choice.key)) {
@@ -384,11 +431,11 @@ export type AnyAgentConfig = AgentConfig | DecisionAgentConfig
 
 /**
  * A decision agent's input contract: every `${name}` its questions reference,
- * across the prompts AND the considerations.
+ * across the prompts AND the yes/no definitions.
  *
  * The twin of `agentInputVariables`, and the union for the same reason: the two
  * are interpolated from one bag at run time, so a variable used only inside a
- * consideration is just as much a required input as one in the prompt.
+ * definition is just as much a required input as one in the prompt.
  */
 export function decisionAgentInputVariables(
   config: Pick<DecisionAgentConfig, 'questions'>,
@@ -396,8 +443,8 @@ export function decisionAgentInputVariables(
   const names = new Set<string>()
   for (const question of config.questions) {
     for (const name of inferPromptVariables(question.prompt)) names.add(name)
-    for (const text of Object.values(question.considerations)) {
-      for (const name of inferPromptVariables(text)) names.add(name)
+    for (const text of [question.yesMeans, question.noMeans]) {
+      for (const name of inferPromptVariables(text ?? '')) names.add(name)
     }
   }
   return [...names]
@@ -414,7 +461,6 @@ export function starterDecisionAgentConfig(
         id: 'needs_review',
         type: 'boolean',
         prompt: '',
-        considerations: {},
         choices: [],
         threshold: 0.7,
       },
