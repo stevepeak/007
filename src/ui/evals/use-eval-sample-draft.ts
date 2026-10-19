@@ -248,15 +248,28 @@ export function useEvalSampleDraft({
     setOpenCheck(checks.checks.length - 1)
   }, [draft, hasTools, decisionContract, edit])
 
-  // A sample authored before its goal's target changed input kind still holds
-  // the old variant. Offer the swap rather than silently rewriting an author's
-  // work — the old input's values are what they'd have to retype.
-  const expectedKind: EvalSampleInput['kind'] =
-    targetAgent?.kind === 'decision'
-      ? 'decision'
-      : draft?.input.kind === 'trigger'
-        ? 'trigger'
-        : (targetAgent?.inputKind ?? 'task')
+  // A sample's input follows its target agent's input kind. One authored before
+  // the agent changed kind (or seeded from a stale template) is rewritten to the
+  // agent's kind once on load, carrying its variables over — a mismatched input
+  // would be ignored by the run anyway. Recorded as an edit, so it saves with the
+  // sample and Cmd+Z can still get the old values back to copy from.
+  const expectedKind: EvalSampleInput['kind'] | null =
+    set?.targetKind !== 'agent' || !targetAgent
+      ? null
+      : targetAgent.kind === 'decision'
+        ? 'decision'
+        : (targetAgent.inputKind ?? 'task')
+  const coercedIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!row || !draft || !expectedKind) return
+    if (coercedIdRef.current === row.id) return
+    coercedIdRef.current = row.id
+    if (draft.input.kind === expectedKind) return
+    history.record({
+      ...draft,
+      input: coerceInput({ input: draft.input, kind: expectedKind }),
+    })
+  }, [row, draft, expectedKind, history])
 
   return {
     isLoading,
@@ -284,7 +297,23 @@ export function useEvalSampleDraft({
     openCheck,
     setOpenCheck,
     addCheck,
-    expectedKind,
-    kindMismatch: !!draft && draft.input.kind !== expectedKind,
+  }
+}
+
+/** `input` re-shaped as `kind`, keeping the prompt variables every kind carries. */
+function coerceInput(args: {
+  input: EvalSampleInput
+  kind: EvalSampleInput['kind']
+}): EvalSampleInput {
+  const { variables } = args.input
+  switch (args.kind) {
+    case 'task':
+      return { kind: 'task', variables }
+    case 'conversation':
+      return { kind: 'conversation', turns: [], variables }
+    case 'trigger':
+      return { kind: 'trigger', payload: {}, variables }
+    case 'decision':
+      return { kind: 'decision', state: '', variables }
   }
 }

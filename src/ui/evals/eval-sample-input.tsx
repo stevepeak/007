@@ -60,15 +60,6 @@ export function SampleInputEditor({
   )
 }
 
-/** The empty input matching an agent's declared contract. */
-export function emptyInputFor(
-  inputKind: 'task' | 'conversation' | undefined,
-): EvalSampleInput {
-  return inputKind === 'conversation'
-    ? { kind: 'conversation', turns: [], variables: {} }
-    : { kind: 'task', variables: {} }
-}
-
 // ── Variables ────────────────────────────────────────────────────────────────
 // One value field per `${var}` the target's published prompt declares. Absent a
 // schema, a free-form key/value editor — the same fallback the Given had, since

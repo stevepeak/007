@@ -1,7 +1,7 @@
 import type { EvalSampleInput } from '../../server/protocol'
 
 import { ChecksList } from './eval-sample-checks'
-import { emptyInputFor, SampleInputEditor } from './eval-sample-input'
+import { SampleInputEditor } from './eval-sample-input'
 import { DecisionStateEditor } from './eval-sample-decision'
 import { SampleToolsEditor } from './eval-sample-tools'
 import { StepFlow, type Step } from './step-flow'
@@ -39,10 +39,7 @@ export function SampleConfigSteps({
       key: 'input',
       title: INPUT_TITLES[draft.input.kind],
       content: (
-        <div className="space-y-3">
-          {state.kindMismatch ? (
-            <KindMismatchNotice state={state} draft={draft} />
-          ) : null}
+        <>
           {draft.input.kind === 'decision' ? (
             <DecisionStateEditor
               value={draft.input}
@@ -56,7 +53,7 @@ export function SampleConfigSteps({
               onChange={(input) => edit({ ...draft, input })}
             />
           )}
-        </div>
+        </>
       ),
     },
   ]
@@ -100,40 +97,3 @@ export function SampleConfigSteps({
   return <StepFlow steps={steps} />
 }
 
-/**
- * A sample authored before its goal's target changed input kind still holds the
- * old variant. Offer the swap rather than silently rewriting an author's work —
- * the old input's values are what they'd have to retype.
- */
-function KindMismatchNotice({
-  state,
-  draft,
-}: {
-  state: SampleState
-  draft: Draft
-}) {
-  return (
-    <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
-      <p className="text-[11px] text-amber-700">
-        This sample holds a <strong>{draft.input.kind}</strong> input, but{' '}
-        {state.targetAgent?.name ?? 'the target agent'} now takes a{' '}
-        <strong>{state.expectedKind}</strong> one — the run will ignore
-        what&apos;s below.
-      </p>
-      <button
-        type="button"
-        onClick={() => {
-          return state.edit({
-            ...draft,
-            input: emptyInputFor(
-              state.expectedKind === 'conversation' ? 'conversation' : 'task',
-            ),
-          })
-        }}
-        className="ml-auto shrink-0 text-[11px] font-medium text-amber-800 underline"
-      >
-        Switch to {state.expectedKind}
-      </button>
-    </div>
-  )
-}
