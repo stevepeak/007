@@ -1388,7 +1388,7 @@ scopes, and the client stores and silently refreshes the token from then on.
 `offline_access` is what makes that a one-time cost rather than a prompt at
 every expiry.
 
-**What it exposes.** Fifty-four tools — twenty-eight reads, and twenty-six writes
+**What it exposes.** Fifty-five tools — twenty-eight reads, and twenty-seven writes
 registered only for a session whose token carries the write scope.
 
 | Tool                              | Gate      | What it does                                                        |
@@ -1414,6 +1414,7 @@ registered only for a session whose token carries the write scope.
 | `set_model_enabled`               | **write** | offer or withdraw one model workspace-wide. Refused while an agent still uses it |
 | `refresh_model_catalog`           | **write** | re-read a provider's `/models`. New models arrive DISABLED            |
 | `refresh_connector`               | **write** | re-read a connector's `tools/list`; reports `drifted` schemas. Grants no new trust |
+| `run_tool`                        | **write** | execute one catalog tool FOR REAL — the playground. A `write`/untagged tool needs `allowWrite: true` |
 | `list_changes`                    | read      | the `wf_change` feed — the only who-touched-this record             |
 | `get_dashboard`                   | read      | the health rollup — failures, spend, in-flight, feedback queue      |
 | `list_eval_sets` / `get_eval_set` | read      | Goals and their Samples                                             |
@@ -1518,8 +1519,10 @@ reports an error, and requires the `baseVersionNumber` the caller read, refusing
 if a newer one is live.) And `run_agent_preview` does not accept `liveToolIds`, so a
 previewed run touches nothing outside the process — the UI playground does offer
 live tools, behind a per-tool toggle a person flips having read the warning, and
-a tool call has no equivalent of that moment. `run_tool_preview`, whose whole
-purpose is executing the real thing, is absent for the same reason.
+a tool call has no equivalent of that moment. Running one real tool on purpose is
+`run_tool`, the playground's counterpart: a `read`-tagged tool runs on the write
+surface alone, and a `write` or untagged one is refused unless the call passes
+`allowWrite: true`.
 
 **Why HTTP and not D1 directly.** `wf-spec` reaches D1 straight, and copying
 that here is the tempting mistake. Direct-DB bypasses the

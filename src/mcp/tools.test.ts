@@ -62,6 +62,7 @@ describe('the tool catalog', () => {
       'run_agent_preview',
       'run_decision_preview',
       'run_eval',
+      'run_tool',
       'set_model_enabled',
       'triage_feedback',
       'update_agent',
@@ -74,14 +75,12 @@ describe('the tool catalog', () => {
     ])
   })
 
-  // Live tool execution and bulk deletion have no gate a tool call can carry:
-  // the playground's live toggle is a person reading a warning. (Publishing an
-  // agent DOES have one — a mandatory dry run and a confirmation token, see
-  // `tools-agent-publish.ts` — which is why `publish_agent` is not listed here.)
-  test('exposes no live tool execution and no bulk deletion', () => {
+  // Bulk deletion has no gate a tool call can carry. (Publishing an agent and
+  // running a write tool DO have one — a dry run + confirmation token in
+  // `tools-agent-publish.ts`, `allowWrite` on `run_tool`.)
+  test('exposes no bulk deletion', () => {
     const names = new Set(allTools().map((t) => t.name))
     for (const forbidden of [
-      'run_tool_preview',
       'delete_eval_set',
       'delete_all_runs',
     ]) {

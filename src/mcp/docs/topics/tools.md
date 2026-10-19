@@ -53,4 +53,8 @@ Under eval simulation, per tool (keyed by tool id):
 - A synthesis sample stages earlier tool results as a seeded assistant turn and pins nothing; the agent keeps its tools, and calling one returns `{}`. (Older samples saved with a `frozen` mode load this same way.)
 - `run_agent_preview` is different again: all tools are simulated by the model writing plausible results.
 
+## Running one tool directly
+
+`run_tool({ toolId, args, context })` executes one catalog tool **for real**, outside any workflow — the console's tool playground. `args` are validated and defaulted by the tool's input schema; `context` fills its `requiresContext` keys. A tool tagged `write`, or untagged, is refused unless `allowWrite: true`. The call is not recorded as a run, so it does not appear in `list_tool_invocations`.
+
 See [[evals]].

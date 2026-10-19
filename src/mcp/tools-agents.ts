@@ -91,8 +91,8 @@ import { boundedLimit, optString, reqString, type WfMcpTool } from './tools'
 //     UI does offer live tools — behind a per-tool toggle a person flips, having
 //     read the warning. That confirmation has no equivalent in a tool call, and
 //     the tools in question search real client matters and write real records.
-//     `run_tool_preview` is absent for the same reason and more bluntly: its
-//     entire purpose is to execute the real thing.
+//     Executing one real tool on purpose is `run_tool` (`tools-connectors.ts`),
+//     gated per call by `allowWrite`.
 //
 // What a preview IS good for, given simulated tools: prompt shape, output
 // contract, tone, and whether the agent asks for the right tools in the right

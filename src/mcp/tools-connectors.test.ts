@@ -358,3 +358,65 @@ describe('refresh_connector', () => {
     expect(refreshed).toBe(false)
   })
 })
+
+describe('run_tool — a real execution, gated on writes', () => {
+  const tools = [
+    { id: 'search', name: 'Search', sideEffect: 'read', requiresContext: ['clientId'] },
+    { id: 'send', name: 'Send', sideEffect: 'write' },
+    { id: 'mystery', name: 'Mystery' },
+  ]
+  const run = (args: Record<string, unknown>, calls: unknown[] = []) => { return toolNamed('run_tool').run(
+      stubClient({
+        listTools: async () => tools as never,
+        listToolContextFields: async () => [
+          { key: 'clientId', label: 'Client', required: true },
+        ],
+        runToolPreview: async (input) => {
+          calls.push(input)
+          return { output: { hits: 1 }, args: { ...input.args, limit: 5 }, durationMs: 12 }
+        },
+      }),
+      args,
+    ) as Promise<Record<string, unknown>> }
+
+  test('is a write, so a read-only session never sees it', () => {
+    expect(toolNamed('run_tool').readOnly).toBe(false)
+  })
+
+  test('runs a read tool and reports what actually ran', async () => {
+    const calls: unknown[] = []
+    const out = await run(
+      { toolId: 'search', args: { q: 'x' }, context: { clientId: 'c1' } },
+      calls,
+    )
+    expect(calls).toEqual([
+      { toolId: 'search', args: { q: 'x' }, context: { clientId: 'c1' } },
+    ])
+    expect(out.args).toEqual({ q: 'x', limit: 5 })
+    expect(out.output).toEqual({ hits: 1 })
+  })
+
+  test('refuses a missing required context key without running', async () => {
+    const calls: unknown[] = []
+    const out = await run({ toolId: 'search', args: {} }, calls)
+    expect(calls).toHaveLength(0)
+    expect(String(out.error)).toContain('clientId')
+  })
+
+  test('refuses write and untagged tools unless allowWrite', async () => {
+    for (const toolId of ['send', 'mystery']) {
+      const calls: unknown[] = []
+      const out = await run({ toolId }, calls)
+      expect(calls).toHaveLength(0)
+      expect(String(out.error)).toContain('allowWrite')
+    }
+    const calls: unknown[] = []
+    await run({ toolId: 'send', allowWrite: true }, calls)
+    expect(calls).toHaveLength(1)
+  })
+
+  test('an unknown id is an answer, not a throw', async () => {
+    const out = await run({ toolId: 'nope' })
+    expect(String(out.error)).toContain('nope')
+  })
+})

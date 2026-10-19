@@ -80,13 +80,6 @@ const RULES: (ToolCategory & { match: string[] })[] = [
     match: ['eval', 'sample'],
   },
   {
-    key: 'runs',
-    title: 'Runs',
-    blurb: 'Execution history and traces — what happened, and re-running it.',
-    navKey: 'runs',
-    match: ['run'],
-  },
-  {
     key: 'connectors',
     title: 'Connectors',
     blurb: 'Third-party MCP servers whose tools are proxied in, and their health.',
@@ -101,7 +94,15 @@ const RULES: (ToolCategory & { match: string[] })[] = [
     title: 'Tools',
     blurb: 'What an agent can be given, and what it was really called with.',
     navKey: 'tools',
+    // Before `run`, so `run_tool` stays here.
     match: ['tool'],
+  },
+  {
+    key: 'runs',
+    title: 'Runs',
+    blurb: 'Execution history and traces — what happened, and re-running it.',
+    navKey: 'runs',
+    match: ['run'],
   },
   {
     key: 'models',

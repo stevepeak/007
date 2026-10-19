@@ -48,6 +48,8 @@ describe('tool categories', () => {
     expect(categoryOf('list_agent_calls')).toBe('agents')
     // `eval` before `run`.
     expect(categoryOf('run_eval')).toBe('evals')
+    // `tool` before `run`.
+    expect(categoryOf('run_tool')).toBe('tools')
     expect(categoryOf('get_eval_run')).toBe('evals')
     expect(categoryOf('resume_eval_run')).toBe('evals')
     expect(categoryOf('cancel_eval_run')).toBe('evals')

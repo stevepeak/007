@@ -49,9 +49,8 @@ import { boundedLimit, optString, reqString, type WfMcpTool } from './tools'
 //     enforce the in-use guard and write the `wf_change` row), reversible, and
 //     audited — well below `publish_workflow` on risk, which is already here.
 //
-// Deliberately NOT here: `run_tool_preview` (executes the real tool against
-// live services — see `tools-agents.ts`) and `list_tool_invocations` (nothing has
-// wanted it).
+// Tool execution (`run_tool`) and `list_tool_invocations` live with connectors
+// in `tools-connectors.ts`.
 //
 // `get_model_catalog` and `list_providers` are not separate tools either, but the
 // reason changed. The old one — that offering the full catalog "would only invite

@@ -15,6 +15,20 @@ without you and is still probably wrong to skip.
 
 ---
 
+## 2026-10-19 — `run_tool`: execute one tool over the MCP
+
+The MCP write surface gains `run_tool`, which executes one catalog tool **for
+real** through your `runToolPreview` handler — the same hook the console's tool
+playground calls. A tool tagged `sideEffect: 'write'`, or untagged, is refused
+unless the call passes `allowWrite: true`; a `read` tool runs on the write scope
+alone.
+
+**Action:** none if the tool playground already works. Without `runToolPreview`
+wired, `run_tool` answers "not configured". Tag every tool with an external
+effect `write` — an untagged tool is treated as one here, as it is in evals.
+
+---
+
 ## 2026-09-28 — a Sample settles its tools one at a time
 
 The eval Sample's tool setting stops being one sample-wide mode and becomes one

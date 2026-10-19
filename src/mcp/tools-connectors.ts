@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type {
   ConnectorSummary,
   ConnectorToolInfo,
+  ToolOption,
   WfToolInvocation,
 } from '../server/protocol'
 
@@ -53,22 +54,26 @@ import { boundedLimit, optString, reqString, type WfMcpTool } from './tools'
 //     into a model's context and into the session transcript. That one is
 //     disqualified permanently, not pending a design.
 //
-//   • `run_tool_preview`. Its entire purpose is to execute the real thing; see
-//     the same argument in `tools-agents.ts`. `list_tool_invocations` is the
-//     read-only substitute: what the tool was ACTUALLY called with, in runs that
-//     already happened.
+// `refresh_connector` is the one connector write. It is idempotent, it grants no
+// new trust (a tool that was disabled stays disabled, and nothing becomes
+// callable that wasn't), it is the fix for the most common connector fault, and
+// its `drifted` array is exactly the signal an MCP session wants: the third party
+// changed a tool's schema under an agent that still binds the old one.
 //
-// `refresh_connector` IS here, and it is the one write. It is idempotent, it
-// grants no new trust (a tool that was disabled stays disabled, and nothing
-// becomes callable that wasn't), it is the fix for the most common connector
-// fault, and its `drifted` array is exactly the signal an MCP session wants: the
-// third party changed a tool's schema under an agent that still binds the old one.
+// `run_tool` executes one catalog tool FOR REAL — the console's "Run tool for
+// real" playground, over the same host `runToolPreview` hook. The playground's
+// gate is a person reading a warning; the gate here is `allowWrite`, which a
+// tool tagged `write` (or untagged — the host has not said it is safe) refuses
+// to run without. A `read` tool runs on the write surface alone.
 
 /** A connector tool's description is third-party prose and can run long. */
 const CONNECTOR_DESC_CHARS = 600
 
 /** Recorded tool args/outputs are real client data; they are read, not dumped. */
 const INVOCATION_FIELD_CHARS = 2000
+
+/** A `run_tool` result is real data and can be a whole document. */
+const TOOL_OUTPUT_CHARS = 20_000
 
 /** Invocations one call returns. A busy tool has thousands. */
 const DEFAULT_INVOCATIONS = 10
@@ -347,5 +352,110 @@ export function connectorWriteTools(): WfMcpTool[] {
         }
       },
     },
+
+    {
+      name: 'run_tool',
+      title: 'Run a tool',
+      description: [
+        'Execute ONE tool from get_tool_catalog FOR REAL, outside any workflow — the console’s tool playground. Not a simulation: the actual tool runs with the host’s live dependencies, so it can call external services, cost money and change real records. Nothing about a workflow or agent changes, and the call is not recorded as a run.',
+        '',
+        'Read the tool’s `inputSchema` and `requiresContext` first (get_tool_catalog with `toolIds`). `args` are the tool’s own arguments, validated and defaulted by its schema — the reply’s `args` is what actually ran. `context` is the ambient scope an agent never supplies (for example which client a search is limited to), keyed by the `requiresContext` keys; a tool whose scope is empty usually matches nothing rather than failing.',
+        '',
+        'A tool tagged `sideEffect: "write"`, or untagged, is refused unless `allowWrite: true`. Only pass that when the user has asked for the effect.',
+      ].join('\n'),
+      inputSchema: {
+        toolId: z
+          .string()
+          .describe(
+            'Tool id, from get_tool_catalog. A connector tool is `mcp:<connector>:<tool>`.',
+          ),
+        args: z
+          .record(z.string(), z.unknown())
+          .nullish()
+          .describe('The tool’s arguments, matching its inputSchema.'),
+        context: z
+          .record(z.string(), z.string())
+          .nullish()
+          .describe(
+            'Values for the tool’s `requiresContext` keys, as get_tool_catalog lists them.',
+          ),
+        allowWrite: z
+          .boolean()
+          .nullish()
+          .describe(
+            'Required true to run a tool whose sideEffect is "write" or untagged. Default false.',
+          ),
+      },
+      readOnly: false,
+      run: async (client, args) => {
+        const toolId = reqString(args.toolId, 'toolId')
+        const tool = (await client.listTools()).find(
+          (t: ToolOption) => t.id === toolId,
+        )
+        if (!tool) {
+          return {
+            error: `No tool in the catalog with id ${toolId}. get_tool_catalog lists them; a connector tool disappears when its connector is disconnected — list_connectors says which.`,
+          }
+        }
+        if (tool.sideEffect !== 'read' && args.allowWrite !== true) {
+          return {
+            error: `${toolId} is ${tool.sideEffect === 'write' ? 'tagged as a WRITE' : 'untagged, so not known to be safe'} — running it may change real records or call external services. Pass allowWrite: true only if the user asked for that effect.`,
+            sideEffect: tool.sideEffect ?? null,
+          }
+        }
+
+        const context = stringRecord(args.context)
+        const required = (tool.requiresContext ?? []).length > 0
+          ? (await client.listToolContextFields().catch(() => []))
+              .filter(
+                (f) => f.required === true &&
+                  (tool.requiresContext ?? []).includes(f.key),
+              )
+              .map((f) => f.key)
+          : []
+        const missingContext = required.filter((k) => !Object.hasOwn(context, k))
+        if (missingContext.length > 0) {
+          return {
+            error: `Missing required context: ${missingContext.join(', ')}. get_tool_catalog with toolIds describes each key.`,
+          }
+        }
+
+        const toolArgs =
+          args.args && typeof args.args === 'object' && !Array.isArray(args.args)
+            ? (args.args as Record<string, unknown>)
+            : {}
+        try {
+          const result = await client.runToolPreview({
+            toolId,
+            args: toolArgs,
+            context,
+          })
+          return {
+            toolId,
+            sideEffect: tool.sideEffect ?? null,
+            durationMs: result.durationMs,
+            args: result.args,
+            output: clip(result.output, TOOL_OUTPUT_CHARS),
+          }
+        } catch (err) {
+          // A schema rejection or the tool's own throw — the reader's next move
+          // is to fix the args, so it is an answer, not a transport failure.
+          return {
+            toolId,
+            error: err instanceof Error ? err.message : String(err),
+          }
+        }
+      },
+    },
   ]
+}
+
+/** A context bag — strings only, as the handler maps them into the run scope. */
+function stringRecord(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === 'string' && v.length > 0) out[k] = v
+  }
+  return out
 }
