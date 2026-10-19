@@ -36,6 +36,7 @@ A Goal floats by default, which keeps it grading what ships. Pin `targetVersion`
 - A **conversation** Sample's `turns` become the agent's message history; the run begins mid-conversation and only the model's next reply is produced and graded. A turn is `{ "role": "user" | "assistant", "text"?, "toolCalls"? }`.
 - A **workflow** Sample's `payload` is the trigger payload, verbatim — the same object the host's event would have routed. `list_trigger_events` lists each event kind's `fields`; the Goal contract pre-fills them. `variables` are run-level prompt variables for agents nested in the workflow.
 - An unfilled `${var}` renders literally into the prompt.
+- Every input except `decision` also takes an optional `"context": { … }`: the run scope that **live** tools read (which client, firm or chat thread), keyed by the host's tool context fields. It is the same bag the agent playground collects, and the agent never sees it. A tool lists the keys it needs as `requiresContext` in `get_tool_catalog`; without them, a live scoped tool matches nothing.
 
 ## Tools under an eval
 
@@ -62,7 +63,7 @@ Consequences worth knowing:
 Pick by what you are testing:
 
 - **Pin the reading tool's result.** If the tool that reads an attachment is tagged `read`, set `byTool["<that tool>"] = { "mode": "mocked", "output": <what it would have returned, document text included> }`. Deterministic, and the agent still has to decide to call it. Copy a real output from `get_run_step` so the shape is right.
-- **Let it run live.** `"mode": "live"` and put real ids/references in the trigger `payload` (or variables) that the tool can resolve. Grades the retrieval end to end; the Sample becomes `integration`.
+- **Let it run live.** `"mode": "live"` and put real ids/references in the trigger `payload` (or variables) that the tool can resolve, plus whatever `context` it `requiresContext`. Grades the retrieval end to end; the Sample becomes `integration`.
 - **Synthesis — stage it in the conversation** (conversation agents only). Add an assistant turn with `toolCalls: [{ "tool": "<toolId>", "args": …, "output": <document text> }]`. The model sees a completed tool call it can answer from, and the judges are shown these staged calls. The agent still has its tools; calling one returns `{}` unless pinned.
 - **Workflow target:** there is no per-node input injection. Document text reaches the graph only through the trigger `payload`, a pinned tool output, or a live tool.
 

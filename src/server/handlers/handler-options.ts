@@ -312,6 +312,13 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
      */
     toolModes?: Record<string, 'mocked' | 'live'>
     /**
+     * The run scope the sample's live tools read, keyed by `toolContextFields`
+     * key. Map these into `startGraphRun`'s identity/host fields — the same
+     * mapping `runAgentPreview` performs — or a live tool runs unscoped. `{}`
+     * when the sample sets none.
+     */
+    context: Record<string, string>
+    /**
      * Matrix cell overrides — swap the target agent's model / system prompt for
      * this run (the host passes them into `startGraphRun` as `agentOverride`).
      * Undefined → the agent's saved value (the plain, non-matrix path).

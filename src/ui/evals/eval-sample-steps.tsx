@@ -1,8 +1,9 @@
 import type { EvalSampleInput } from '../../server/protocol'
 
 import { ChecksList } from './eval-sample-checks'
-import { SampleInputEditor } from './eval-sample-input'
+import { SampleContextEditor } from './eval-sample-context'
 import { DecisionStateEditor } from './eval-sample-decision'
+import { SampleInputEditor } from './eval-sample-input'
 import { SampleToolsEditor } from './eval-sample-tools'
 import { StepFlow, type Step } from './step-flow'
 import type { Draft, useEvalSampleDraft } from './use-eval-sample-draft'
@@ -39,7 +40,7 @@ export function SampleConfigSteps({
       key: 'input',
       title: INPUT_TITLES[draft.input.kind],
       content: (
-        <>
+        <div className="space-y-4">
           {draft.input.kind === 'decision' ? (
             <DecisionStateEditor
               value={draft.input}
@@ -47,13 +48,26 @@ export function SampleConfigSteps({
               onChange={(input) => edit({ ...draft, input })}
             />
           ) : (
-            <SampleInputEditor
-              targetId={set?.targetId ?? ''}
-              value={draft.input}
-              onChange={(input) => edit({ ...draft, input })}
-            />
+            <>
+              <SampleInputEditor
+                targetId={set?.targetId ?? ''}
+                value={draft.input}
+                onChange={(input) => edit({ ...draft, input })}
+              />
+              <SampleContextEditor
+                targetId={set?.targetId ?? ''}
+                targetKind={targetKind}
+                tools={draft.tools}
+                value={draft.input.context ?? {}}
+                onChange={(context) => {
+                  const { input } = draft
+                  if (input.kind === 'decision') return
+                  edit({ ...draft, input: { ...input, context } })
+                }}
+              />
+            </>
           )}
-        </>
+        </div>
       ),
     },
   ]

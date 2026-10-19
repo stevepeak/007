@@ -276,11 +276,21 @@ export type SeededMessage = z.infer<typeof seededMessageSchema>
 // Exactly one variant applies to a given Sample, so the editor never renders two
 // competing input sources and the runner never has to guess which one wins.
 
+/**
+ * The ambient run scope the sample's LIVE tools read (which client, which firm,
+ * which chat thread), keyed by the host's `toolContextFields` keys — the same bag
+ * the agent playground collects. Not prompt variables: an agent never sees these.
+ * The host maps them into the run's RunContext; without them a live tool runs
+ * unscoped and "finds nothing". Absent on samples that run no live tools.
+ */
+const sampleContextSchema = z.record(z.string(), z.string()).optional()
+
 /** A Sample's input for a `task` agent — the values its `${vars}` resolve to. */
 export const taskInputSchema = z.object({
   kind: z.literal('task'),
   /** Values for the target's declared prompt variables, keyed by name. */
   variables: z.record(z.string(), z.string()).default({}),
+  context: sampleContextSchema,
 })
 
 /**
@@ -293,6 +303,7 @@ export const conversationInputSchema = z.object({
   kind: z.literal('conversation'),
   turns: z.array(seededMessageSchema).default([]),
   variables: z.record(z.string(), z.string()).default({}),
+  context: sampleContextSchema,
 })
 
 /**
@@ -305,6 +316,7 @@ export const triggerInputSchema = z.object({
   payload: z.record(z.string(), z.unknown()).default({}),
   /** Run-level prompt variables, for agents nested inside the workflow. */
   variables: z.record(z.string(), z.string()).default({}),
+  context: sampleContextSchema,
 })
 
 /**

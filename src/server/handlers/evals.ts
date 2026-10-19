@@ -477,6 +477,7 @@ export function buildEvalHandlers<TDeps>(
         fixtures: invocation.fixtures,
         toolModes: invocation.toolModes,
         liveReads: invocation.liveReads,
+        context: invocation.context,
         modelId: cell.modelId,
         promptBody: cell.promptBody,
         configOverride,

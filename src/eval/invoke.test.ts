@@ -48,6 +48,15 @@ describe('evalInvocation — input', () => {
     )
     expect(i.triggerInput).toEqual({ chatId: 'c1' })
   })
+
+  test('a sample’s tool context reaches the run, and defaults to empty', () => {
+    const scoped = evalInvocation(
+      { ...task, context: { clientOrgId: 'org1' } },
+      defaultEvalTools(),
+    )
+    expect(scoped.context).toEqual({ clientOrgId: 'org1' })
+    expect(evalInvocation(task, defaultEvalTools()).context).toEqual({})
+  })
 })
 
 describe('evalInvocation — tools', () => {

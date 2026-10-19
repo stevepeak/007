@@ -300,19 +300,20 @@ export function useEvalSampleDraft({
   }
 }
 
-/** `input` re-shaped as `kind`, keeping the prompt variables every kind carries. */
+/** `input` re-shaped as `kind`, keeping its prompt variables and tool context. */
 function coerceInput(args: {
   input: EvalSampleInput
   kind: EvalSampleInput['kind']
 }): EvalSampleInput {
   const { variables } = args.input
+  const context = 'context' in args.input ? args.input.context : undefined
   switch (args.kind) {
     case 'task':
-      return { kind: 'task', variables }
+      return { kind: 'task', variables, context }
     case 'conversation':
-      return { kind: 'conversation', turns: [], variables }
+      return { kind: 'conversation', turns: [], variables, context }
     case 'trigger':
-      return { kind: 'trigger', payload: {}, variables }
+      return { kind: 'trigger', payload: {}, variables, context }
     case 'decision':
       return { kind: 'decision', state: '', variables }
   }

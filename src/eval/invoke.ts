@@ -8,7 +8,7 @@ import { seededMessagesToUiMessages } from './synthesis'
 // `invoke.test.ts` — is what lets the two vocabularies stay separate: an author
 // picks "a conversation input, this tool pinned and that one live", and the
 // executor only ever sees `triggerInput` / `promptVariables` / `fixtures` /
-// `toolModes` / `liveReads`.
+// `toolModes` / `liveReads` / `context`.
 //
 // Before the split these signals were assembled inline in the run handler from
 // four independently-authorable fields, where `seededMessages` silently won over
@@ -30,6 +30,8 @@ export type EvalInvocation = {
   toolModes: Record<string, EvalToolMode>
   /** What a tool with no entry in `toolModes` does — see `EvalTools.fallback`. */
   liveReads: boolean
+  /** The run scope live tools read, by `toolContextFields` key. */
+  context: Record<string, string>
 }
 
 /**
@@ -47,6 +49,7 @@ export function evalInvocation(
     fixtures: toolFixtures(tools),
     toolModes: toolModes(tools),
     liveReads: tools.fallback === 'live',
+    context: ('context' in input ? input.context : undefined) ?? {},
   }
 }
 
