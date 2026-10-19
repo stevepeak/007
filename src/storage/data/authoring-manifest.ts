@@ -61,20 +61,21 @@ export async function resolveRunManifest(
     // `null` pin floats to latest; a number resolves that exact version. A
     // pin pointing at a version that no longer exists resolves to nothing —
     // the node then fails at run time with a clear "not in manifest" error.
-    const version =
+    // The agent row does not depend on the version, so both reads run together.
+    const [version, agentRows] = await Promise.all([
       pin == null
-        ? await latestAgentVersion(db, agentId)
-        : await agentVersionByNumber(db, agentId, pin)
-    if (!version) {
-      return
-    }
-    const agent = (
-      await db
+        ? latestAgentVersion(db, agentId)
+        : agentVersionByNumber(db, agentId, pin),
+      db
         .select({ name: wfAgent.name, kind: wfAgent.kind })
         .from(wfAgent)
         .where(eq(wfAgent.id, agentId))
-        .limit(1)
-    )[0]
+        .limit(1),
+    ])
+    if (!version) {
+      return
+    }
+    const agent = agentRows[0]
     // A DECISION agent is a question set, not a prompt and a tool loop, so it
     // freezes into its own entry kind — parsed against its own schema BEFORE
     // `agentConfigSchema` ever sees it, which would otherwise throw
@@ -141,17 +142,20 @@ export async function resolveRunManifest(
       return
     }
     seenWorkflows.add(workflowId)
-    const version = await latestVersion(db, workflowId)
-    if (!version) {
-      return
-    }
-    const workflow = (
-      await db
+    // The workflow row does not depend on the version, so both reads run
+    // together.
+    const [version, workflowRows] = await Promise.all([
+      latestVersion(db, workflowId),
+      db
         .select({ name: wfWorkflow.name })
         .from(wfWorkflow)
         .where(eq(wfWorkflow.id, workflowId))
-        .limit(1)
-    )[0]
+        .limit(1),
+    ])
+    if (!version) {
+      return
+    }
+    const workflow = workflowRows[0]
     const calleeGraph = version.graph as WorkflowGraph
     entries.push({
       kind: 'workflow',

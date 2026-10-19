@@ -308,7 +308,12 @@ export function makeGraphWorkflow<
       // run cost.
       const loaded = await stepDo(step, 'load-graph', async () => {
         const db = createWfDb(env.WF_DB)
-        const v = await getVersionGraph(db, p.workflowVersionId)
+        // Independent reads, so they run concurrently. The price table is
+        // fetched even when the version is missing; the throw below still wins.
+        const [v, priceTable] = await Promise.all([
+          getVersionGraph(db, p.workflowVersionId),
+          loadRunPriceTable(db),
+        ])
         if (!v) {
           throw new Error(`Workflow version ${p.workflowVersionId} not found.`)
         }
@@ -322,7 +327,7 @@ export function makeGraphWorkflow<
             ? iterationSubgraphOf(v.graph, p.subRun.iterationNodeId)
             : v.graph,
           workflowId: v.workflowId,
-          prices: await loadRunPriceTable(db),
+          prices: priceTable,
         }
       })
       // An instance that started on the previous deploy resumes with the OLD
