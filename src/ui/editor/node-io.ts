@@ -14,6 +14,7 @@ import type {
   ToolOption,
   TriggerEventOption,
   WfAgentSummary,
+  WfDecisionQuestionSummary,
   WfWorkflowListItem,
 } from '../../server/protocol'
 
@@ -530,9 +531,13 @@ function decisionOutputFields(node: WorkflowNode): DataField[] {
  * Every question becomes a subtree under `answers`, so a downstream node can
  * bind one judgment (`answers.is_urgent.confidence`) without the author knowing
  * the provider's response format — and `verdict` is the one named outcome a
- * Switch routes on. Built from the agent's listing summary, which carries the
- * question ids and the verdicts but not each question's type, so the per-answer
- * `value` is untyped rather than a guess.
+ * Switch routes on. The fields per answer follow the question's type, mirroring
+ * `DecisionVerdict`: a scale's `value` is a weighted index, so the field a
+ * matcher can compare to a level key is `level`.
+ *
+ * TODO: built from the latest published summary, so a node pinned to an older
+ * version is offered that version's successor's questions (generation agents
+ * share the limitation).
  */
 function decisionAgentOutput(
   decision: NonNullable<WfAgentSummary['decision']>,
@@ -562,27 +567,66 @@ function decisionAgentOutput(
       description: 'How every question was answered.',
     },
   ]
-  for (const id of decision.questionIds) {
-    const base = `answers.${id}`
-    fields.push(
-      {
-        key: `${id}.value`,
-        label: `${id}.value`,
-        path: `${base}.value`,
-        type: 'unknown',
-        description: `The answer to '${id}'.`,
-      },
-      {
-        key: `${id}.confidence`,
-        label: `${id}.confidence`,
-        path: `${base}.confidence`,
-        type: 'number',
-        description:
-          'How sure the judgment was, 0–1 (the margin between the top two options).',
-      },
-    )
+  for (const question of decision.questions) {
+    fields.push(...decisionAnswerFields(question))
   }
   return { fields, type: 'object' }
+}
+
+/** The answer fields one question produces, by its type. */
+function decisionAnswerFields(question: WfDecisionQuestionSummary): DataField[] {
+  const { id } = question
+  const field = (
+    name: string,
+    rest: Omit<DataField, 'key' | 'label' | 'path'>,
+  ): DataField => {
+    return { key: `${id}.${name}`, label: `${id}.${name}`, path: `answers.${id}.${name}`, ...rest }
+  }
+  const confidence = field('confidence', {
+    type: 'number',
+    description:
+      'How sure the judgment was, 0–1 (the margin between the top two options).',
+  })
+  if (question.type === 'boolean') {
+    return [
+      field('value', {
+        type: 'boolean',
+        enum: [true, false],
+        description: `Whether '${id}' is yes — its probability at or above the question's threshold.`,
+      }),
+      field('probability', {
+        type: 'number',
+        description: `The probability that '${id}' is yes, 0–1.`,
+      }),
+      field('threshold', {
+        type: 'number',
+        description: 'The cut `value` was judged at.',
+      }),
+      confidence,
+    ]
+  }
+  if (question.type === 'category') {
+    return [
+      field('value', {
+        type: 'string',
+        enum: question.choiceKeys,
+        description: `The option '${id}' landed on.`,
+      }),
+      confidence,
+    ]
+  }
+  return [
+    field('level', {
+      type: 'string',
+      enum: question.choiceKeys,
+      description: `The level '${id}' landed nearest — route on this.`,
+    }),
+    field('value', {
+      type: 'number',
+      description: `The probability-weighted position on the scale, 0 to ${Math.max(0, question.choiceKeys.length - 1)} — a number, not a level key.`,
+    }),
+    confidence,
+  ]
 }
 
 // The output shape a node produces (for the accessible-data tree). Branch/switch

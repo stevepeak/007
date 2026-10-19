@@ -74,9 +74,10 @@ export function DecisionAgentEditorInner({
   const config = draft.config
   const chosen = (models.data ?? []).find((m) => m.id === config.modelId)
 
-  // Everything wrong with the config right now, as sentences. Shown rather than
-  // enforced: a half-written matrix has to save as a draft, so the schema
-  // accepts it and this is what says it would not yet run.
+  // Everything wrong with the config right now, as sentences. A half-written
+  // matrix still saves as a draft, so the schema accepts it; these gate
+  // PUBLISH instead, because a rule that cannot hold evaluates false at run time
+  // and silently falls through to the fallback.
   const issues = useMemo(
     () => decisionAgentConfigIssues(config),
     [config],
@@ -117,6 +118,11 @@ export function DecisionAgentEditorInner({
           <AgentEditorHeaderActions
             draft={draft}
             onArchive={() => setShowArchive(true)}
+            publishBlockedReason={
+              issues.length > 0
+                ? `Fix ${issues.length === 1 ? 'the issue' : `the ${issues.length} issues`} in the Issues panel before publishing.`
+                : undefined
+            }
           />
         }
       >

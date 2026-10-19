@@ -5,7 +5,7 @@
 //
 // The SINK SEAM itself (`TelemetrySink`, `NOOP_TELEMETRY`, `safeWrite`) lives in
 // `../engine/telemetry.ts`, because `WfSdkConfig.resolveTelemetry` declares it
-// and `engine` may not import upward (ART-189). It is re-exported below so
+// and `engine` may not import upward. It is re-exported below so
 // `@stevepeak/007/analytics` keeps the same surface it always had.
 export {
   encodeRunPoint,

@@ -40,6 +40,8 @@ Use an ordinary [[nodes/agent]] node: set `config.agentId` to the decision agent
 
 It does **not** route by itself. Put a [[nodes/switch]] after it with `source` bound to the node's `verdict` and one case per verdict. (A generation agent with `output.kind: "boolean"` is different: it routes yes/no edges directly — see [[agents]].)
 
+Each `answers.<questionId>` is shaped by its question's type: a boolean has `value` (yes/no at its threshold), `probability`, `threshold`; a category has `value` (the option key); a scale has `level` (the nearest level key) and `value` (the probability-weighted index, a **number**). All three carry `confidence` and `distribution`. To route on a scale, bind `answers.<id>.level` — its `value` never equals a level key.
+
 ## Providers and model ids
 
 - `modelId` is resolved by the host's decision provider (`getDecider`). Ids come from `list_decision_models` — a **different catalog** from `list_models`.
@@ -53,6 +55,6 @@ It does **not** route by itself. Put a [[nodes/switch]] after it with `source` b
 
 ## Tooling
 
-- `create_agent({ kind: "decision", config })`, then `update_agent_draft` (the config is validated against the agent's stored kind). Publish with `publish_agent` (a dry run, then a confirmed publish).
+- `create_agent({ kind: "decision", config })`, then `update_agent_draft` (the config is validated against the agent's stored kind). Publish with `publish_agent` (a dry run, then a confirmed publish). A draft may be incomplete, but publishing — from MCP or the editor — is refused while the matrix has any issue (a rule op its question type doesn't support, an unknown choice key, an `is` with no side, a missing fallback), because a rule that cannot hold evaluates false and silently falls through to the fallback.
 - `run_decision_preview` judges one value with the draft (or `usePublished`). Read the distributions, not just the verdict.
 - Grade with a `decision_answers` eval check. See [[evals]].

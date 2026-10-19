@@ -25,11 +25,14 @@ import type { useDecisionAgentDraft } from './use-decision-agent-editor-state'
 export function AgentEditorHeaderActions({
   draft,
   onArchive,
+  publishBlockedReason,
 }: {
   draft:
     | ReturnType<typeof useAgentDraft>
     | ReturnType<typeof useDecisionAgentDraft>
   onArchive: () => void
+  /** Set when the draft would not run — Publish is disabled and this explains why. */
+  publishBlockedReason?: string
 }) {
   const { Button } = useWfComponents()
 
@@ -84,13 +87,21 @@ export function AgentEditorHeaderActions({
         >
           {draft.saving ? 'Saving…' : 'Save draft'}
         </Button>
-        <Button
-          size="sm"
-          onClick={() => draft.setShowPublish(true)}
-          disabled={draft.publishing}
-        >
-          Publish
-        </Button>
+        {publishBlockedReason ? (
+          <Tooltip content={publishBlockedReason} side="bottom">
+            <Button size="sm" disabled>
+              Publish
+            </Button>
+          </Tooltip>
+        ) : (
+          <Button
+            size="sm"
+            onClick={() => draft.setShowPublish(true)}
+            disabled={draft.publishing}
+          >
+            Publish
+          </Button>
+        )}
     </>
   )
 }

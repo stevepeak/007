@@ -53,6 +53,19 @@ export function keyFromLabel(label: string, taken: Set<string>): string {
   }
 }
 
+/**
+ * Whether `key` is still the one {@link keyFromLabel} would mint for `label` —
+ * its base, or that base de-duplicated (`option_2`). The suffix depends on what
+ * else was taken at the time, so comparing against a fresh derivation alone
+ * would strand every de-duplicated key.
+ */
+export function isDerivedKey(key: string, label: string): boolean {
+  const base = keyFromLabel(label, new Set())
+  if (key === base) return true
+  const suffix = key.startsWith(`${base}_`) ? key.slice(base.length + 1) : ''
+  return /^\d+$/.test(suffix)
+}
+
 /** A fresh question id: `answer`, `answer_2`, … */
 export function nextQuestionId(
   existing: readonly DecisionAgentQuestion[],
@@ -96,6 +109,16 @@ export function DecisionQuestionList({
     return rules.filter((r) => r.conditions.some((c) => c.questionId === id))
       .length
   }
+  /** The choice keys of one question that some rule compares against. */
+  const keysReadByRules = (id: string) => {
+    return new Set(
+      rules.flatMap((r) => {
+        return r.conditions
+          .filter((c) => c.questionId === id)
+          .flatMap((c) => c.keys)
+      }),
+    )
+  }
   /**
    * The name is an address, so a rename has to be followed wherever it is used
    * — otherwise renaming a question quietly detaches every rule that reads it,
@@ -124,6 +147,7 @@ export function DecisionQuestionList({
           key={i}
           question={question}
           usedBy={readers(question.id)}
+          keysInUse={keysReadByRules(question.id)}
           model={model}
           onChange={(patch) => setQuestion(i, patch)}
           onRename={(raw) => {
@@ -164,6 +188,7 @@ export function DecisionQuestionList({
 function QuestionCard({
   question,
   usedBy,
+  keysInUse,
   model,
   onChange,
   onRename,
@@ -171,6 +196,8 @@ function QuestionCard({
 }: {
   question: DecisionAgentQuestion
   usedBy: number
+  /** Choice keys a rule reads — these stay put when their label changes. */
+  keysInUse: ReadonlySet<string>
   model: DecisionModelOption | undefined
   onChange: (patch: Partial<DecisionAgentQuestion>) => void
   onRename: (raw: string) => void
@@ -474,11 +501,12 @@ function QuestionCard({
                         .filter((_, j) => j !== i)
                         .map((c) => c.key),
                     )
-                    // The key is re-derived only while the author hasn't leaned
-                    // on it — once a rule names a key, renaming the label must
-                    // not silently repoint it.
+                    // The key follows the label only while it is still the one
+                    // derived from it AND no rule reads it — once a rule names a
+                    // key, renaming the label must not silently repoint it.
                     const stillDerived =
-                      choice.key === keyFromLabel(choice.label ?? '', new Set())
+                      isDerivedKey(choice.key, choice.label ?? '') &&
+                      !keysInUse.has(choice.key)
                     setChoices(
                       question.choices.map((c, j) => { return j === i
                           ? {

@@ -8,6 +8,7 @@ import {
   coerceLiteral,
   literalIssue,
   missingRequiredInputs,
+  nodeProvides,
   nodeRequires,
   outputContractIssue,
   refEnumOptions,
@@ -518,5 +519,58 @@ describe('nullable arguments keep their type', () => {
     expect(lock?.description).toBe('Locks the thread.')
     expect(acceptsValueType(lock?.type, 'string')).toBe(false)
     expect(acceptsValueType(lock?.type, 'boolean')).toBe(true)
+  })
+})
+
+describe('a decision agent node offers fields by question type', () => {
+  const decisionMaps = {
+    ...maps,
+    agentsById: new Map([
+      [
+        'triage',
+        {
+          decision: {
+            questionCount: 3,
+            questionIds: ['urgent', 'topic', 'tone'],
+            questions: [
+              { id: 'urgent', type: 'boolean', choiceKeys: [] },
+              { id: 'topic', type: 'category', choiceKeys: ['billing', 'other'] },
+              { id: 'tone', type: 'scale', choiceKeys: ['calm', 'annoyed', 'furious'] },
+            ],
+            verdicts: ['escalate', 'default'],
+            inputVariables: [],
+          },
+        },
+      ],
+    ]),
+  } as unknown as IoMaps
+  const provided = nodeProvides(
+    graph([node('d', 'agent', 'Triage', { agentId: 'triage' })]),
+    'd',
+    decisionMaps,
+  )
+  const byPath = new Map(provided?.fields.map((f) => [f.path, f]))
+
+  test('a boolean exposes its probability and threshold', () => {
+    expect(byPath.get('answers.urgent.value')?.type).toBe('boolean')
+    expect(byPath.get('answers.urgent.probability')?.type).toBe('number')
+    expect(byPath.has('answers.urgent.threshold')).toBe(true)
+  })
+
+  test('a category offers its option keys as the value enum', () => {
+    expect(byPath.get('answers.topic.value')?.enum).toEqual(['billing', 'other'])
+  })
+
+  test('a scale routes on level, and its value is a number', () => {
+    expect(byPath.get('answers.tone.level')?.enum).toEqual([
+      'calm',
+      'annoyed',
+      'furious',
+    ])
+    expect(byPath.get('answers.tone.value')?.type).toBe('number')
+  })
+
+  test('the verdict carries the declared verdicts', () => {
+    expect(byPath.get('verdict')?.enum).toEqual(['escalate', 'default'])
   })
 })

@@ -1,4 +1,5 @@
 import type { WfAgentKind } from '../engine/agent-kind'
+import type { DecisionQuestionType } from '../engine/decision'
 import type {
   AnyAgentConfig,
   DecisionAgentConfig,
@@ -105,8 +106,22 @@ export type WfDecisionAgentSummary = {
   verdicts: string[]
   /** Question ids, in order — what an eval expectation and a rule address. */
   questionIds: string[]
+  /**
+   * Each question's type and choice keys, in order. The type decides which
+   * answer fields exist downstream — a scale routes on `level`, since its
+   * `value` is a weighted index that never equals a level key.
+   */
+  questions: WfDecisionQuestionSummary[]
   /** Every `${name}` the questions interpolate, across prompts and considerations. */
   inputVariables: string[]
+}
+
+/** One question of {@link WfDecisionAgentSummary}. */
+export type WfDecisionQuestionSummary = {
+  id: string
+  type: DecisionQuestionType
+  /** Category options or scale levels (lowest first); `[]` for a boolean. */
+  choiceKeys: string[]
 }
 
 // Structurally identical to `WfVersionSummary` — deliberately, so one

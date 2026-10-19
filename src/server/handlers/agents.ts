@@ -2,6 +2,7 @@ import { changedEntityMetaFields, changedFields } from '../../engine'
 import { toAgentKind, type WfAgentKind } from '../../engine/agent-kind'
 import { runDecisionAgent } from '../../engine/decision-agent'
 import {
+  decisionAgentConfigIssues,
   decisionAgentConfigSchema,
   decisionAgentInputVariables,
 } from '../../engine/decision-agent-schema'
@@ -78,6 +79,11 @@ function decisionSummary(config: unknown): WfDecisionAgentSummary | null {
   return {
     questionCount: cfg.questions.length,
     questionIds: cfg.questions.map((q) => q.id),
+    questions: cfg.questions.map((q) => ({
+      id: q.id,
+      type: q.type,
+      choiceKeys: q.type === 'boolean' ? [] : q.choices.map((c) => c.key),
+    })),
     verdicts: cfg.verdicts,
     inputVariables: decisionAgentInputVariables(cfg),
   }
@@ -275,6 +281,20 @@ export function buildAgentHandlers<TDeps>(
       }
       const kind = toAgentKind(owner.agent.kind)
       const config = parseConfigOfKind(kind, p.config)
+      // The schema accepts a half-written decision matrix so drafts can save;
+      // a published one must be complete, because a rule that cannot hold
+      // (wrong op for its question type, unknown choice key, `is` with no side)
+      // evaluates false at run time and silently falls through to the fallback.
+      if (kind === 'decision') {
+        const issues = decisionAgentConfigIssues(
+          parseDecisionAgentConfig(p.config),
+        )
+        if (issues.length > 0) {
+          throw new BadRequestError(
+            `This decision agent would not run:\n${issues.map((i) => `- ${i}`).join('\n')}`,
+          )
+        }
+      }
       // The AI change summary and the field-level diff are both written
       // against `AgentConfig`'s field names, so they only apply to a
       // generation agent. A decision agent publishes with the change LOG

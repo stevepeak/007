@@ -79,6 +79,7 @@ describe('agent handlers — kind', () => {
     expect(detail.agent.decision).toEqual({
       questionCount: 1,
       questionIds: ['needs_review'],
+      questions: [{ id: 'needs_review', type: 'boolean', choiceKeys: [] }],
       verdicts: ['review', 'proceed'],
       inputVariables: [],
     })
@@ -130,6 +131,39 @@ describe('agent handlers — kind', () => {
       'proceed',
       'escalate',
     ])
+  })
+
+  test('publishing a matrix whose rules cannot hold is refused, and the live version stays', async () => {
+    const { agentId } = await createDecisionAgent()
+    // Schema-valid, so it saves as a draft — but `gte` names no probability and
+    // `is` names no side, so neither rule could ever match and every state
+    // would fall through to the fallback.
+    const broken: DecisionAgentConfig = {
+      ...workingConfig(),
+      rules: [
+        {
+          id: 'rule_1',
+          verdict: 'review',
+          conditions: [{ questionId: 'needs_review', op: 'gte', keys: [] }],
+        },
+        {
+          id: 'rule_2',
+          verdict: 'review',
+          conditions: [{ questionId: 'needs_review', op: 'is', keys: [] }],
+        },
+        { id: 'rule_3', verdict: 'proceed', conditions: [] },
+      ],
+    }
+    await handlers().updateAgentDraft(
+      testHandlerCtx(db, { agentId, config: broken }),
+    )
+    await expect(
+      handlers().publishAgent(testHandlerCtx(db, { agentId, config: broken })),
+    ).rejects.toThrow(/would not run[\s\S]*probability[\s\S]*yes or no/)
+    const detail = (await handlers().getAgent(
+      testHandlerCtx(db, { agentId }),
+    )) as WfAgentDetail
+    expect(detail.currentVersion?.versionNumber).toBe(1)
   })
 
   test('a version read back says which shape it is', async () => {
