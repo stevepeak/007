@@ -11,6 +11,7 @@ import {
   deleteEvalRow,
   getEvalRow,
   getEvalRun,
+  getEvalRunStatus,
   getEvalSet,
   restoreEvalRow,
   updateEvalRun,
@@ -115,7 +116,10 @@ describe('upsertEvalRow — omitting a field', () => {
       name: 'Refuses out of scope',
       // Cast: the legacy shape is not an `EvalTools` any more — it arrives as
       // untyped JSON from an older client, which is exactly the case under test.
-      tools: { mode: 'mocked', fixtures: { search_rag: { hits: [1] } } } as unknown as EvalTools,
+      tools: {
+        mode: 'mocked',
+        fixtures: { search_rag: { hits: [1] } },
+      } as unknown as EvalTools,
     })
     const found = await getEvalRow(db, rowId)
     expect(found?.row.tools).toEqual({
@@ -204,5 +208,27 @@ describe('cancelEvalRun', () => {
     expect(await cancelEvalRun(db, evalRunId)).toBe(false)
     // Writing `cancelled` over a finished report would rewrite its history.
     expect((await getEvalRun(db, evalRunId))?.run.status).toBe('completed')
+  })
+})
+
+describe('narrow eval run reads', () => {
+  test('getEvalRunStatus reads the status, and null for a missing run', async () => {
+    const evalRunId = await createEvalRun(db, { setIds: [setId], total: 3 })
+    expect(await getEvalRunStatus(db, evalRunId)).toEqual({ status: 'queued' })
+    expect(await getEvalRunStatus(db, 'missing')).toBeNull()
+  })
+
+  test('updateEvalRun returns the written row, and null for a missing run', async () => {
+    const evalRunId = await createEvalRun(db, { setIds: [setId], total: 3 })
+    const updated = await updateEvalRun(db, {
+      evalRunId,
+      status: 'completed',
+      passed: 2,
+    })
+    expect(updated?.status).toBe('completed')
+    expect(updated?.passed).toBe(2)
+    expect(
+      await updateEvalRun(db, { evalRunId: 'missing', status: 'completed' }),
+    ).toBeNull()
   })
 })

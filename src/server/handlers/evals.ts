@@ -36,12 +36,14 @@ import {
   getEvalRow,
   getEvalRun,
   getEvalRunDrive,
+  getEvalRunStatus,
   getAgent,
   getEvalSet,
   getRunForGrading,
   hashEvalSnapshot,
   insertEvalResult,
   latestAgentVersion,
+  listEvalRunVerdicts,
   listEvalRuns,
   listEvalSets,
   loadPreviousEvalRun,
@@ -210,10 +212,7 @@ export function buildEvalHandlers<TDeps>(
       return {
         // Counted over live rows even when archived ones are included, so a
         // Goal's advertised size doesn't change depending on who asked.
-        set: evalSetSummary(
-          result.set,
-          rows.filter((r) => !r.archived).length,
-        ),
+        set: evalSetSummary(result.set, rows.filter((r) => !r.archived).length),
         rows,
       }
     },
@@ -439,7 +438,7 @@ export function buildEvalHandlers<TDeps>(
       const configOverride = cell.config
         ? agentConfigSchema.parse(cell.config)
         : undefined
-      const run = await getEvalRun(c.db, evalRunId)
+      const run = await getEvalRunStatus(c.db, evalRunId)
       if (!run) {
         throw new NotFoundError('Eval run not found.')
       }
@@ -489,7 +488,7 @@ export function buildEvalHandlers<TDeps>(
         req: c.req,
       })
       // Flip the umbrella run to running on its first started row.
-      if (run.run.status === 'queued') {
+      if (run.status === 'queued') {
         await updateEvalRun(c.db, {
           evalRunId,
           status: 'running',
@@ -513,11 +512,11 @@ export function buildEvalHandlers<TDeps>(
           'No decision provider is wired on this host (WfSdkConfig.getDecider), so a decision agent cannot be evaluated here.',
         )
       }
-      const run = await getEvalRun(c.db, evalRunId)
+      const run = await getEvalRunStatus(c.db, evalRunId)
       if (!run) {
         throw new NotFoundError('Eval run not found.')
       }
-      if (run.run.status === 'queued') {
+      if (run.status === 'queued') {
         await updateEvalRun(c.db, {
           evalRunId,
           status: 'running',
@@ -594,7 +593,8 @@ export function buildEvalHandlers<TDeps>(
         defaultJudgeModelId:
           opts.evalJudgeModelId ??
           (await opts.config.listModels({ env }))[0]?.id,
-        getDecider: (modelId) => getDecider(modelId, { triggerKind: 'eval', env }),
+        getDecider: (modelId) =>
+          getDecider(modelId, { triggerKind: 'eval', env }),
         defaultDecisionModelId: config.modelId,
       })
 
@@ -671,10 +671,14 @@ export function buildEvalHandlers<TDeps>(
       // undefined on a host with no decision provider, and `gradeDecisionJudge`
       // then reports that in the check's own error rather than failing the row
       // with something opaque.
-      const getDecider: GradeDeciderFactory | undefined =
-        opts.config.getDecider
-          ? (modelId) => { return opts.config.getDecider!(modelId, { triggerKind: 'eval', env }) }
-          : undefined
+      const getDecider: GradeDeciderFactory | undefined = opts.config.getDecider
+        ? (modelId) => {
+            return opts.config.getDecider!(modelId, {
+              triggerKind: 'eval',
+              env,
+            })
+          }
+        : undefined
       const defaultDecisionModelId = opts.config.listDecisionModels
         ? (await opts.config.listDecisionModels({ env }))[0]?.id
         : undefined
@@ -773,14 +777,9 @@ export function buildEvalHandlers<TDeps>(
 
     finalizeEvalRun: async (c) => {
       const { evalRunId } = c.params
-      const found = await getEvalRun(c.db, evalRunId)
-      if (!found) {
-        throw new NotFoundError('Eval run not found.')
-      }
-      const summary = rollup(
-        found.results.map((r) => ({ status: r.status, score: r.score })),
-      )
-      await updateEvalRun(c.db, {
+      const verdicts = await listEvalRunVerdicts(c.db, evalRunId)
+      const summary = rollup(verdicts)
+      const updated = await updateEvalRun(c.db, {
         evalRunId,
         status: 'completed',
         total: summary.total,
@@ -789,8 +788,10 @@ export function buildEvalHandlers<TDeps>(
         score: summary.meanScore,
         finishedAt: new Date(),
       })
-      const updated = await getEvalRun(c.db, evalRunId)
-      return evalRunSummary(updated?.run ?? found.run)
+      if (!updated) {
+        throw new NotFoundError('Eval run not found.')
+      }
+      return evalRunSummary(updated)
     },
 
     cancelEvalRun: async (c) => {

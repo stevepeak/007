@@ -501,7 +501,8 @@ export async function saveEvalRunDrive(
     .update(wfEvalRun)
     .set({
       driveState: input.driveState,
-      heartbeatAt: input.heartbeatAt === undefined ? new Date() : input.heartbeatAt,
+      heartbeatAt:
+        input.heartbeatAt === undefined ? new Date() : input.heartbeatAt,
     })
     .where(eq(wfEvalRun.id, input.evalRunId))
 }
@@ -563,7 +564,7 @@ export async function claimStaleEvalRun(
   // D1 and better-sqlite3 both report affected rows here; a driver that can't
   // tell would have to assume it won, so treat an absent count as a win and
   // let the per-cell in-flight check be the backstop's backstop.
-  const changed = (res as { meta?: { changes?: number }; changes?: number })
+  const changed = res as { meta?: { changes?: number }; changes?: number }
   const count = changed.meta?.changes ?? changed.changes
   return count == null || count > 0
 }
@@ -582,7 +583,7 @@ export async function updateEvalRun(
     finishedAt?: Date
   },
 ) {
-  await db
+  const [updated] = await db
     .update(wfEvalRun)
     .set(
       pickDefined(input, [
@@ -596,6 +597,8 @@ export async function updateEvalRun(
       ]),
     )
     .where(eq(wfEvalRun.id, input.evalRunId))
+    .returning()
+  return updated ?? null
 }
 
 /**
@@ -641,6 +644,30 @@ export async function listEvalRuns(db: WfDb, opts?: { limit?: number }) {
     .limit(clampLimit(opts?.limit, { fallback: 50, max: EVAL_RUN_PAGE_MAX }))
 }
 
+/**
+ * An eval run's status, or null if missing.
+ *
+ * Each cell checks its run before starting, so this stays one indexed row:
+ * `getEvalRun` also reads every result, which per cell is quadratic in the
+ * sweep's size.
+ */
+export async function getEvalRunStatus(db: WfDb, evalRunId: string) {
+  const [run] = await db
+    .select({ status: wfEvalRun.status })
+    .from(wfEvalRun)
+    .where(eq(wfEvalRun.id, evalRunId))
+    .limit(1)
+  return run ?? null
+}
+
+/** The status and score of every result in a run — all a rollup reads. */
+export async function listEvalRunVerdicts(db: WfDb, evalRunId: string) {
+  return await db
+    .select({ status: wfEvalResult.status, score: wfEvalResult.score })
+    .from(wfEvalResult)
+    .where(eq(wfEvalResult.evalRunId, evalRunId))
+}
+
 /** An eval run with its per-row results, or null if missing. */
 export async function getEvalRun(db: WfDb, evalRunId: string) {
   const [run] = await db
@@ -656,7 +683,6 @@ export async function getEvalRun(db: WfDb, evalRunId: string) {
     .orderBy(asc(wfEvalResult.createdAt))
   return { run, results }
 }
-
 
 /**
  * For each sample in a run, the snapshot hash it carried the LAST time it ran
@@ -708,7 +734,6 @@ export async function loadPreviousSnapshotHashes(
   return previous
 }
 
-
 /**
  * The eval run these samples were most recently measured against before this
  * one, plus the agent version IT ran.
@@ -728,7 +753,8 @@ export async function loadPreviousEvalRun(
 ): Promise<{ id: string; at: Date; agentVersion: number | null } | null> {
   let newest: { evalRunId: string; at: Date } | null = null
   for (const p of previous.values()) {
-    if (!newest || p.at > newest.at) newest = { evalRunId: p.evalRunId, at: p.at }
+    if (!newest || p.at > newest.at)
+      newest = { evalRunId: p.evalRunId, at: p.at }
   }
   if (!newest) return null
 
@@ -750,7 +776,6 @@ export async function loadPreviousEvalRun(
   }
   return { id: newest.evalRunId, at: newest.at, agentVersion }
 }
-
 
 /** Insert a per-row result placeholder (before or after the row's run grades). */
 export async function insertEvalResult(
@@ -810,4 +835,3 @@ export async function insertEvalResult(
   })
   return id
 }
-
