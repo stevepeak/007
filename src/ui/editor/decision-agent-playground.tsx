@@ -2,6 +2,7 @@ import { Loader2, Play } from 'lucide-react'
 import { useState } from 'react'
 
 import {
+  decisionAgentConfigIssues,
   decisionAgentInputVariables,
   verdictReasoning,
   type DecisionAgentConfig,
@@ -37,13 +38,16 @@ export function DecisionPlaygroundPanel({
   const [running, setRunning] = useState(false)
 
   const variableNames = decisionAgentInputVariables(config)
+  // The server refuses these too; saying so here keeps the button honest.
+  const issueCount = decisionAgentConfigIssues(config).length
+  const subject = parseSubject(state)
 
   async function run() {
     setRunning(true)
     setError(null)
     try {
       setResult(
-        await client.runDecisionPreview({ config, state, variables }),
+        await client.runDecisionPreview({ config, state: subject, variables }),
       )
     } catch (e: unknown) {
       setResult(null)
@@ -57,7 +61,7 @@ export function DecisionPlaygroundPanel({
     <section className="space-y-3 rounded-lg border border-neutral-200 bg-white p-4">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-sm font-medium text-neutral-900">Playground</h2>
-        <Button size="sm" onClick={run} disabled={running || !state.trim()}>
+        <Button size="sm" onClick={run} disabled={running || !state.trim() || issueCount > 0}>
           {running ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (
@@ -70,15 +74,25 @@ export function DecisionPlaygroundPanel({
         Judges the unsaved draft — every question in one call. Nothing is saved
         and nothing is published.
       </p>
+      {issueCount > 0 ? (
+        <p className="text-xs text-amber-700">
+          Fix the {issueCount === 1 ? 'issue' : `${issueCount} issues`} in the
+          Issues panel to judge — a rule that cannot hold would fall through to
+          the fallback and show a verdict the rules never reached.
+        </p>
+      ) : null}
 
       <Textarea
         value={state}
         onChange={(e) => setState(e.target.value)}
         rows={6}
         spellCheck={false}
-        placeholder="Paste the thing to judge — an email, a message, a clause…"
+        placeholder="Paste the thing to judge — a message, an email, or JSON (an object or array is sent as JSON, the way a node judges its bound value)"
         className="font-mono text-[11px]"
       />
+      {typeof subject === 'string' ? null : (
+        <p className="text-[11px] text-neutral-500">Sent as JSON.</p>
+      )}
 
       {variableNames.map((name) => (
         <div key={name} className="flex items-center gap-2">
@@ -172,4 +186,19 @@ function DecisionResult({ result }: { result: DecisionPreviewResult }) {
       ) : null}
     </div>
   )
+}
+
+/**
+ * What a node would judge for this text. A node judges whatever its `source`
+ * binds — often an object — so text that parses as a JSON object or array is
+ * sent as that value; anything else is the string itself.
+ */
+function parseSubject(text: string): unknown {
+  const trimmed = text.trim()
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return text
+  try {
+    return JSON.parse(trimmed) as unknown
+  } catch {
+    return text
+  }
 }

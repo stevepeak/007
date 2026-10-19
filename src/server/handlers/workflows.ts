@@ -2,20 +2,26 @@ import { loadConnectorCatalog } from '../../connectors/registry'
 import {
   changedEntityMetaFields,
   collectAgentRefIssues,
+  collectDecisionWiringIssues,
   collectGraphIssues,
   collectToolArgIssues,
   workflowGraphSchema,
+  decisionWiringEntry,
+  type DecisionWiringEntry,
+  type DecisionWiringIndex,
   type GraphIssue,
   type JsonSchema,
   type ToolInputSchemas,
   type WorkflowGraph,
 } from '../../engine'
+import { decisionAgentConfigSchema } from '../../engine/decision-agent-schema'
 import {
   createWorkflow,
   discardDraft,
   getVersionGraph,
   getWorkflow,
   listAgentRefs,
+  listAgents,
   listVersions,
   listWorkflowsWithStats,
   parseStoredGraph,
@@ -42,6 +48,22 @@ import {
   type HandlerCtx,
   type WfHandlers,
 } from './shared'
+
+/**
+ * Every decision agent's latest published matrix, for the wiring lint. A config
+ * that no longer parses is left out rather than failing the whole validation —
+ * the run would refuse it, and that is a different problem to report.
+ */
+async function decisionWiringIndex(db: HandlerCtx['db']): Promise<DecisionWiringIndex> {
+  const index = new Map<string, DecisionWiringEntry>()
+  for (const a of await listAgents(db)) {
+    if (a.kind !== 'decision' || a.config == null) continue
+    const parsed = decisionAgentConfigSchema.safeParse(a.config)
+    if (!parsed.success) continue
+    index.set(a.id, decisionWiringEntry({ name: a.name, config: parsed.data }))
+  }
+  return index
+}
 
 function workflowSummary(w: {
   id: string
@@ -361,6 +383,9 @@ export function buildWorkflowHandlers<TDeps>(
       // the run records a single step — so it has to be caught here rather than
       // by the first trigger that reaches it.
       issues.push(...collectAgentRefIssues(graph, await listAgentRefs(c.db)))
+      issues.push(
+        ...collectDecisionWiringIssues(graph, await decisionWiringIndex(c.db)),
+      )
 
       return {
         source,

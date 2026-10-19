@@ -7,6 +7,7 @@ import type { WfRunManifestEntry } from '../run-manifest'
 
 import {
   executeDecisionAgentNode,
+  failureMustAbort,
   isDecisionAgentNode,
 } from './decision-agent'
 
@@ -89,7 +90,7 @@ async function run(
   args: Partial<Parameters<typeof executeDecisionAgentNode>[0]> = {},
 ) {
   const { decide } = stubDecider()
-  const { result } = await executeDecisionAgentNode({
+  const { result, meta } = await executeDecisionAgentNode({
     node: node(),
     input: 'A customer is furious about a duplicate charge.',
     nodeOutputs: new Map(),
@@ -97,7 +98,7 @@ async function run(
     manifest: manifest(),
     ...args,
   })
-  return result
+  return { ...result, meta }
 }
 
 describe('an agent node pointed at a decision agent', () => {
@@ -128,10 +129,29 @@ describe('an agent node pointed at a decision agent', () => {
     expect(Object.keys(r.answers)).toEqual(['needs_review'])
   })
 
-  test('carries the echoed model id and the usage through', async () => {
+  test('records the echoed model id and the usage on the step, not the output', async () => {
     const r = await run()
-    expect(r.modelId).toBe('agent:decider@2026-09')
-    expect(r.usage).toEqual({ inputTokens: 80, outputTokens: 6 })
+    expect(r.meta.modelId).toBe('agent:decider@2026-09')
+    expect(r.meta.usage).toEqual({ inputTokens: 80, outputTokens: 6 })
+    expect(Object.keys(r).sort()).toEqual(
+      ['answers', 'because', 'meta', 'reasoning', 'verdict'],
+    )
+  })
+
+  test('records the value it judged, which is not the whole incoming input', async () => {
+    const r = await run({
+      node: node({ source: { kind: 'ref', nodeId: 'upstream', path: 'body' } }),
+      input: { body: 'the right thing', noise: true },
+      nodeOutputs: new Map([['upstream', { body: 'the right thing' }]]),
+    })
+    expect(r.meta.subject).toBe('the right thing')
+  })
+
+  test('a failure aborts the run even under continueOnError', () => {
+    // A null output would hand the Switch on `verdict` nothing, and it would
+    // silently take `else`.
+    expect(failureMustAbort(node(), manifest())).toBe(true)
+    expect(failureMustAbort(node(), [])).toBe(false)
   })
 
   test('judges an explicit `source` ref rather than whatever arrived', async () => {

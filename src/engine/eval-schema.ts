@@ -156,6 +156,13 @@ export const evalCheckSchema = z.discriminatedUnion('type', [
      */
     verdict: z.string().optional(),
     expect: z.array(decisionExpectationSchema).default([]),
+    /**
+     * The workflow node whose output to grade. A workflow's output is whatever
+     * its Output node returns — usually not the decision itself, which a Switch
+     * routed on — so a workflow-target sample names the decision node here.
+     * Omit for a decision-agent target, whose output IS the decision.
+     */
+    nodeId: z.string().optional(),
   }),
   z.object({
     type: z.literal('llm_judge'),

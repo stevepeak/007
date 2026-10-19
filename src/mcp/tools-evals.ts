@@ -337,6 +337,7 @@ function describeSample(
   tools: unknown,
   checks: unknown,
   target?: { toolIds: string[] | null; outputSchema: JsonSchema | null },
+  targetKind?: string,
 ): { layer: string; warnings: string[] } {
   // Both parses are of payloads the server just ACCEPTED, so neither can throw;
   // re-parsing here applies the same defaults the stored row got.
@@ -364,6 +365,17 @@ function describeSample(
   if (parsedChecks.checks.length === 0) {
     warnings.push(
       'This sample has NO checks, so a run of it produces an `error` verdict rather than a pass or a fail — it will read in the report as infrastructure trouble. Add at least one check.',
+    )
+  }
+  // A workflow's output is what its Output node returns, which is rarely the
+  // decision a Switch routed on — so a matrix check with no node to read grades
+  // the wrong value and fails with "no decision answers".
+  if (
+    targetKind === 'workflow' &&
+    parsedChecks.checks.some((c) => c.type === 'decision_answers' && !c.nodeId)
+  ) {
+    warnings.push(
+      'A `decision_answers` check on a workflow Goal needs `nodeId` — the agent node that runs the decision agent. Without it the check grades the workflow’s final output, which is not the decision, and fails with "no decision answers".',
     )
   }
   if (target) {
@@ -754,6 +766,7 @@ export function evalWriteTools(): WfMcpTool[] {
             merged.tools,
             merged.checks,
             'error' in contract ? undefined : contract,
+            detail.set.targetKind,
           ),
         }
       },

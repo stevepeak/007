@@ -79,7 +79,7 @@ If the reading tool is **untagged**, it runs for real no matter what the Sample 
 | `node_visited` | `nodeId`, `visited` | the node ran (or didn't) |
 | `node_input_match` | `nodeId`, `path?`, `match`, `value` | the node's recorded input matches |
 | `output_match` | `path?`, `match`, `value` | the run output matches |
-| `decision_answers` | `verdict?`, `expect: [{ questionId, yes? \| key?, minProbability? }]` | a decision agent's matrix matches, every miss reported |
+| `decision_answers` | `verdict?`, `expect: [{ questionId, yes? \| key?, minProbability? }]`, `nodeId?` | a decision agent's matrix matches, every miss reported. On a workflow Goal, set `nodeId` to the decision node: the workflow's output is what its Output returns, not the decision |
 | `llm_judge` | `rubric`, `path?`, `modelId?` | a chat model writes a reason, then pass/fail, then a 0–10 confidence |
 | `decision_judge` | `rubric`, `path?`, `modelId?`, `threshold?` | a decision model's P(yes) ≥ `threshold` (default 0.5) |
 

@@ -266,8 +266,14 @@ function gradeBinary(check: EvalCheck, input: GradeRowInput): CheckResult {
             reason: `output${check.path ? `.${check.path}` : ''} did not ${check.match} ${preview(check.value)}; actual: ${preview(actual)}`,
           }
     }
-    case 'decision_answers':
-      return gradeDecisionAnswers(check, input.output)
+    case 'decision_answers': {
+      if (check.nodeId == null) return gradeDecisionAnswers(check, input.output)
+      const step = input.steps.find((s) => s.nodeId === check.nodeId)
+      if (!step) {
+        return { pass: false, reason: `node ${check.nodeId} did not run` }
+      }
+      return gradeDecisionAnswers(check, step.output)
+    }
     /* c8 ignore next */
     default:
       return { pass: false, reason: 'unknown binary check' }
@@ -301,7 +307,9 @@ function gradeDecisionAnswers(
     return {
       pass: false,
       reason:
-        'the run produced no decision answers — this check grades a decision agent, whose output is { verdict, because, answers }',
+        check.nodeId == null
+          ? 'the run produced no decision answers — this check grades a decision agent, whose output is { verdict, because, answers }. On a workflow, set nodeId to the decision node'
+          : `node ${check.nodeId} produced no decision answers — point nodeId at an agent node that runs a decision agent`,
     }
   }
 

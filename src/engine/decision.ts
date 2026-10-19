@@ -106,7 +106,6 @@ export function buildProviderQuestion(
   },
   choices: readonly DecisionOption[],
   where: string,
-  opts: { dynamicChoices?: boolean } = {},
 ): DecisionQuestion {
   const prompt = authored.prompt.trim()
   if (!prompt) {
@@ -127,9 +126,7 @@ export function buildProviderQuestion(
   }
   if (choices.length < 2) {
     throw new Error(
-      opts.dynamicChoices
-        ? `${where} takes its choices from an upstream value, which arrived with ${choices.length} — it needs at least two.`
-        : `${where} is a ${authored.type} question with ${choices.length} choice(s); it needs at least two.`,
+      `${where} is a ${authored.type} question with ${choices.length} choice(s); it needs at least two.`,
     )
   }
   return authored.type === 'category'

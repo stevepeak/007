@@ -1,8 +1,10 @@
 import { useMemo } from 'react'
 
 import {
+  collectDecisionWiringIssues,
   collectGraphIssues,
   collectToolArgIssues,
+  type DecisionWiringEntry,
   type GraphIssue,
   type JsonSchema,
   type WorkflowGraph,
@@ -33,6 +35,16 @@ export function useGraphIssues(graph: WorkflowGraph): GraphIssue[] {
       // of the wrong type, an arg the tool no longer declares. One report per
       // problem: listing the unbound arg here as well showed it twice.
       if (node.kind === 'tool') return
+      // Likewise a decision agent's variables: `collectDecisionWiringIssues`
+      // reports them with the agent's name, unless the node is pinned (that
+      // lint only knows the latest matrix).
+      if (
+        node.kind === 'agent' &&
+        node.config.version == null &&
+        maps.agentsById.get(node.config.agentId)?.kind === 'decision'
+      ) {
+        return
+      }
       const missing = missingRequiredInputs(node, maps)
       if (missing.length === 0) return
       // Every `${variable}` an agent declares — across its system prompt AND its
@@ -149,7 +161,21 @@ export function useGraphIssues(graph: WorkflowGraph): GraphIssue[] {
           )
         : []
 
-    const all = [...structural, ...bindingIssues, ...toolArgIssues]
+    // Decision-agent wiring — the server runs the same function, as above.
+    const decisions = new Map<string, DecisionWiringEntry>()
+    for (const [id, a] of maps.agentsById) {
+      if (a.kind === 'decision' && a.decision) {
+        decisions.set(id, { name: a.name, ...a.decision })
+      }
+    }
+    const decisionIssues = collectDecisionWiringIssues(graph, decisions)
+
+    const all = [
+      ...structural,
+      ...bindingIssues,
+      ...toolArgIssues,
+      ...decisionIssues,
+    ]
     // Errors before warnings; otherwise stable in discovery order.
     return all
       .map((issue, i) => ({ issue, i }))

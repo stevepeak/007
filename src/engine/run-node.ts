@@ -155,7 +155,7 @@ export async function runNode<TDeps>(
       if (isDecisionAgentNode(node, ctx.manifest ?? [])) {
         if (!ctx.getDecider) {
           throw new Error(
-            `Agent node ${node.id} points at a decision agent, but this host wired no \`getDecider\`. See WfSdkConfig.getDecider, or use \`createChatDecider\` to run decisions on an existing chat model.`,
+            `Agent node ${node.id} points at a decision agent, but this host wired no \`getDecider\`. See WfSdkConfig.getDecider, or set WfSdkConfig.decisionsViaChatModels to run decisions on the host's chat models.`,
           )
         }
         const { result, meta } = await executeDecisionAgentNode({

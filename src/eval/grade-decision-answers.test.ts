@@ -163,3 +163,43 @@ describe('decision_answers', () => {
     expect(result.checkResults[0]?.reason).toContain('no decision answers')
   })
 })
+
+describe('decision_answers on a workflow', () => {
+  // A workflow's output is what its Output node returns — here the arm a Switch
+  // chose — so the decision has to be read off its own step.
+  const steps = [
+    {
+      nodeId: 'decide',
+      nodeKind: 'agent',
+      output: output({ is_urgent: boolean('is_urgent', 0.9) }),
+    },
+  ]
+  const check = {
+    type: 'decision_answers',
+    verdict: 'escalate',
+    expect: [{ questionId: 'is_urgent', yes: true }],
+  }
+
+  test('grades the named node, not the final output', async () => {
+    const result = await gradeRow({
+      checks: tree({ ...check, nodeId: 'decide' }),
+      steps,
+      output: 'ESCALATED',
+    })
+    expect(result.status).toBe('pass')
+  })
+
+  test('without a nodeId it says where to point it', async () => {
+    const result = await gradeRow({ checks: tree(check), steps, output: 'ESCALATED' })
+    expect(result.checkResults[0]?.reason).toContain('set nodeId')
+  })
+
+  test('a node that never ran fails by name', async () => {
+    const result = await gradeRow({
+      checks: tree({ ...check, nodeId: 'elsewhere' }),
+      steps,
+      output: 'ESCALATED',
+    })
+    expect(result.checkResults[0]?.reason).toBe('node elsewhere did not run')
+  })
+})

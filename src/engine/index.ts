@@ -203,6 +203,12 @@ export {
   type AgentRefIndex,
 } from './graph-agent-refs'
 export {
+  collectDecisionWiringIssues,
+  decisionWiringEntry,
+  type DecisionWiringEntry,
+  type DecisionWiringIndex,
+} from './graph-decision-wiring'
+export {
   DEFAULT_NODE_BUDGET,
   Scheduler,
   WorkflowBudgetError,

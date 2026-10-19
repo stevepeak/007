@@ -22,8 +22,9 @@ const positionSchema = z.object({
 export const nodeExecutionSchema = z.object({
   // Best-effort node. If it still fails after any retries, the backend records
   // the failure but continues the run with a `null` output instead of aborting
-  // — downstream `ref`s to this node resolve to null. Ignored for decision
-  // nodes (branch/switch): a routing decision has no safe default.
+  // — downstream `ref`s to this node resolve to null. Ignored for routing
+  // nodes (branch/switch, and an agent node running a decision agent): a
+  // routing decision has no safe default.
   continueOnError: z.boolean().optional(),
   // Wall-clock budget for ONE attempt, in milliseconds.
   timeoutMs: z.number().int().positive().optional(),

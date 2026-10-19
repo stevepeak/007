@@ -1,8 +1,8 @@
 import { NonRetryableError } from 'cloudflare:workflows'
 
 import { errorFeedLine, errorStored } from '../engine/error-detail'
-import { isDecisionKind } from '../engine/graph'
 import { emitNodeStartProgress } from '../engine/node-progress'
+import { failureMustAbort } from '../engine/nodes/decision-agent'
 import { recordedBranchResult } from '../engine/run-recorder'
 import type { ExecutableNode, ReportResult } from '../engine/scheduler'
 import type { RunLogEntry } from '../engine/stream-sink'
@@ -123,7 +123,10 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
     // `null` output (downstream refs resolve to null). Never for decision
     // nodes — a routing decision has no safe default, so it must still
     // abort. The failed step above keeps the failure visible in the trace.
-    if (node.execution?.continueOnError && !isDecisionKind(node.kind)) {
+    if (
+      node.execution?.continueOnError &&
+      !failureMustAbort(node, ctx.manifest)
+    ) {
       return { nodeId: node.id, report: { output: null } }
     }
     throw err

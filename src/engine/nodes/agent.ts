@@ -149,9 +149,12 @@ function resolveAgentConfig(
     if (override) {
       return { config: override, versionNumber: null }
     }
+    // Every agent node lands here when its entry is missing, decision agents
+    // included: the manifest is the only record of an agent's kind, so a node
+    // with no entry cannot be told apart. The message has to serve both.
     const at = pin == null ? 'latest' : `v${pin}`
     throw new Error(
-      `Agent node ${node.id} references agent ${node.config.agentId || '(none)'} (${at}), which is not in the run manifest.`,
+      `Agent node ${node.id} references agent ${node.config.agentId || '(none)'} (${at}), which is not in the run manifest. ${pin == null ? 'Publish a version of that agent' : 'Pin a published version of that agent'}, then republish this workflow so the reference resolves.`,
     )
   }
   return {

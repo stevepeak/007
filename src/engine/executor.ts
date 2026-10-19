@@ -6,6 +6,7 @@ import { resolveWfLogger } from './logger'
 import type { ModelBudget } from './model-budget'
 import { emitNodeStartProgress } from './node-progress'
 import { settleOf, type NodeSettlement } from './node-settlement'
+import { failureMustAbort } from './nodes/decision-agent'
 import type { ChildWorkflowRunner } from './nodes/workflow'
 import { endEntryOf, startEntryOf } from './run-log-entries'
 import { errorMessage, runNode } from './run-node'
@@ -405,7 +406,10 @@ export async function executeWorkflow<TDeps>(
       await nodeSink?.log?.(endEntryOf(node, seq, Date.now(), true, message))
       // Best-effort node: continue the run with a `null` output rather than
       // aborting. Mirrors the Cloudflare backend; never for decision nodes.
-      if (node.execution?.continueOnError && !isDecisionKind(node.kind)) {
+      if (
+      node.execution?.continueOnError &&
+      !failureMustAbort(node, runContext.manifest ?? [])
+    ) {
         return { nodeId: node.id, report: { output: null } }
       }
       throw err

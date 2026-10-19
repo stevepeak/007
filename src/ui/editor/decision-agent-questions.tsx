@@ -1,4 +1,4 @@
-import { AlertTriangle, Plus, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, Plus, X } from 'lucide-react'
 
 import {
   DECISION_QUESTION_TYPES,
@@ -11,8 +11,10 @@ import { cn } from '../cn'
 import { Tooltip } from '../tooltip'
 
 import {
+  GuardedIconButton,
   GUTTER,
   Row,
+  ruleCount,
   ThresholdScale,
   TYPE_HELP,
   TYPE_ICON,
@@ -276,14 +278,17 @@ function QuestionCard({
             }
           }}
         />
-        <button
-          type="button"
-          aria-label={`Remove question ${question.id}`}
-          className="text-muted-foreground hover:text-foreground hover:bg-accent shrink-0 rounded p-1"
+        <GuardedIconButton
+          label={`Remove question ${question.id}`}
+          blockedReason={
+            usedBy > 0
+              ? `${ruleCount(usedBy)} read this question — remove those conditions first.`
+              : undefined
+          }
           onClick={onRemove}
         >
           <X className="size-3.5" />
-        </button>
+        </GuardedIconButton>
       </div>
       <p className={cn(GUTTER, 'text-muted-foreground text-[11px]')}>
         What the rules and your eval samples call this answer.{' '}
@@ -328,16 +333,23 @@ function QuestionCard({
             // the currently picked model can't answer, and hiding the segment
             // would hide why the card is complaining.
             const blocked = model != null && !supportsQuestionType(model, t)
+            // A rule's comparison only means something for the type it was
+            // written against (`is yes`, `is one of`, `is at least`), so the
+            // type is fixed while any rule reads the question.
+            const locked = !active && usedBy > 0
             return (
               <button
                 key={t}
                 type="button"
                 role="radio"
                 aria-checked={active}
+                aria-disabled={locked ? true : undefined}
                 title={
-                  blocked
-                    ? `This decider can’t answer “${TYPE_LABEL[t]}” questions.`
-                    : TYPE_HELP[t]
+                  locked
+                    ? `${ruleCount(usedBy)} compare this question as ${TYPE_LABEL[question.type]} — remove those conditions before changing its type.`
+                    : blocked
+                      ? `This decider can’t answer “${TYPE_LABEL[t]}” questions.`
+                      : TYPE_HELP[t]
                 }
                 className={cn(
                   'flex flex-1 items-center justify-center gap-1 rounded px-1.5 py-1 text-xs transition-colors',
@@ -345,9 +357,10 @@ function QuestionCard({
                     ? 'border-input bg-card text-foreground border shadow-sm'
                     : 'text-muted-foreground hover:text-foreground',
                   blocked && 'line-through opacity-60',
+                  locked && 'cursor-not-allowed opacity-40',
                 )}
                 onClick={() => {
-                  if (active) return
+                  if (active || locked) return
                   // Clearing the irrelevant half on the way through stops a
                   // stale value outliving the type that gave it meaning — and
                   // a rule that reads a threshold on what is now a category
@@ -519,17 +532,65 @@ function QuestionCard({
                     )
                   }}
                 />
-                <button
-                  type="button"
-                  aria-label={`Remove choice ${choice.key}`}
-                  className="text-muted-foreground hover:text-foreground hover:bg-accent shrink-0 rounded p-1"
+                {/* Order is the meaning of a scale — it drives the weighted
+                    index and every "at least" / "at most" rule — so levels move
+                    with their keys rather than being deleted and re-added. */}
+                {question.type === 'scale' ? (
+                  <>
+                    <GuardedIconButton
+                      label={`Move ${choice.key} up, lower on the scale`}
+                      blockedReason={i === 0 ? 'Already the lowest level.' : undefined}
+                      onClick={() => setChoices(moved(question.choices, i, -1))}
+                    >
+                      <ArrowUp className="size-3" />
+                    </GuardedIconButton>
+                    <GuardedIconButton
+                      label={`Move ${choice.key} down, higher on the scale`}
+                      blockedReason={
+                        i === question.choices.length - 1
+                          ? 'Already the highest level.'
+                          : undefined
+                      }
+                      onClick={() => setChoices(moved(question.choices, i, 1))}
+                    >
+                      <ArrowDown className="size-3" />
+                    </GuardedIconButton>
+                  </>
+                ) : null}
+                <GuardedIconButton
+                  label={`Remove choice ${choice.key}`}
+                  blockedReason={
+                    keysInUse.has(choice.key)
+                      ? `A rule compares against ${choice.key} — change or remove that condition first.`
+                      : undefined
+                  }
                   onClick={() => {
                     setChoices(question.choices.filter((_, j) => j !== i))
                   }}
                 >
                   <X className="size-3" />
-                </button>
+                </GuardedIconButton>
               </div>
+              {/* What the provider is actually shown for this choice, ahead of
+                  the label — a label is a name, and "Billing" leaves the model to
+                  guess where billing ends. Optional: blank falls back to the
+                  label. */}
+              <input
+                className={cn(FIELD, 'mt-1')}
+                placeholder="What this means to the model (optional — the label is used if blank)"
+                aria-label={`Description of choice ${choice.key}`}
+                value={choice.description ?? ''}
+                onChange={(e) => {
+                  const description = e.target.value
+                  setChoices(
+                    question.choices.map((c, j) => {
+                      return j === i
+                        ? { ...c, description: description || undefined }
+                        : c
+                    }),
+                  )
+                }}
+              />
               {/* The key UNDER the label, not beside it. It was a `shrink-0` tag
                   on the same line, so a key as ordinary as
                   `needs_attention_today` pushed the row past the card's edge and
@@ -566,4 +627,13 @@ function QuestionCard({
       ) : null}
     </div>
   )
+}
+
+/** `items` with the one at `index` moved by `delta`, clamped to the ends. */
+export function moved<T>(items: readonly T[], index: number, delta: number): T[] {
+  const to = Math.min(Math.max(index + delta, 0), items.length - 1)
+  const next = [...items]
+  const [item] = next.splice(index, 1)
+  next.splice(to, 0, item)
+  return next
 }

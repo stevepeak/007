@@ -9,7 +9,7 @@ import {
 } from '../../engine'
 import { cn } from '../cn'
 
-import { ThresholdScale } from './decision-question-types'
+import { GuardedIconButton, ThresholdScale } from './decision-question-types'
 
 // The rollup: ordered rules, first match wins.
 //
@@ -92,6 +92,10 @@ export function DecisionRulesEditor({
       ) : null}
       {rules.map((rule, i) => {
         const isFallback = rule.conditions.length === 0
+        // The last rule must stay unconditional — the saved schema rejects a
+        // matrix without it — so this one can neither be removed nor given a
+        // condition. An unconditional rule higher up is just a rule.
+        const isFinalFallback = isFallback && i === rules.length - 1
         return (
           <div
             key={rule.id}
@@ -151,14 +155,17 @@ export function DecisionRulesEditor({
                   </button>
                 </span>
               )}
-              <button
-                type="button"
-                aria-label={`Remove rule ${i + 1}`}
-                className="text-muted-foreground hover:text-foreground hover:bg-accent shrink-0 rounded p-1"
+              <GuardedIconButton
+                label={`Remove rule ${i + 1}`}
+                blockedReason={
+                  isFinalFallback
+                    ? 'The fallback can’t be removed — it is what gives every state a verdict.'
+                    : undefined
+                }
                 onClick={() => onChange(rules.filter((_, j) => j !== i))}
               >
                 <X className="size-3.5" />
-              </button>
+              </GuardedIconButton>
             </div>
 
             {rule.conditions.map((condition, ci) => (
@@ -181,6 +188,7 @@ export function DecisionRulesEditor({
               />
             ))}
 
+            {isFinalFallback ? null : (
             <div className="pl-6">
               <button
                 type="button"
@@ -196,11 +204,10 @@ export function DecisionRulesEditor({
                 }}
               >
                 <Plus className="size-3" />
-                {rule.conditions.length === 0
-                  ? 'Add a condition (this is the fallback)'
-                  : 'and…'}
+                {rule.conditions.length === 0 ? 'Add a condition' : 'and…'}
               </button>
             </div>
+            )}
 
             {/* THEN, on its own line and at the end — where the sentence puts
                 it. The verdict is the rule's product, and the one field an
@@ -236,6 +243,24 @@ export function DecisionRulesEditor({
           </div>
         )
       })}
+
+      {/* A matrix that arrived without a fallback (written outside the editor,
+          or saved before this guard) cannot be saved again until it has one;
+          this is the one-click way back. */}
+      {rules.length > 0 && rules.at(-1)?.conditions.length !== 0 ? (
+        <button
+          type="button"
+          className="border-destructive text-destructive hover:bg-accent flex w-full items-center justify-center gap-1 rounded-md border border-dashed py-1.5 text-xs"
+          onClick={() => {
+            onChange([
+              ...rules,
+              { id: nextRuleId(), verdict: verdicts[0] ?? '', conditions: [] },
+            ])
+          }}
+        >
+          <Plus className="size-3" /> Add the fallback (otherwise …)
+        </button>
+      ) : null}
 
       <button
         type="button"
@@ -435,13 +460,16 @@ function ConditionValue({
     )
   }
   if (condition.op === 'is') {
+    // Unset is shown as unset: an `is` with no side never matches, and
+    // rendering it as "yes" hid exactly that.
     return (
       <select
-        className={cn(FIELD, 'w-full')}
+        className={cn(FIELD, 'w-full', condition.yes == null && 'border-destructive')}
         aria-label={`Expected answer for ${condition.questionId}`}
-        value={condition.yes === false ? 'no' : 'yes'}
+        value={condition.yes == null ? '' : condition.yes ? 'yes' : 'no'}
         onChange={(e) => onChange({ yes: e.target.value === 'yes' })}
       >
+        {condition.yes == null ? <option value="">(pick yes or no)</option> : null}
         <option value="yes">yes</option>
         <option value="no">no</option>
       </select>

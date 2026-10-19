@@ -17,8 +17,8 @@ import { inferPromptVariables } from './prompt-variables'
 // made and why it is immutable.
 //
 // ── Why this exists at all ──────────────────────────────────────────────────
-// The decision primitive shipped inline on a workflow node (`decisionNodeSchema`
-// in `graph-schema.ts`): a question set authored per placement, with no entity
+// The decision primitive shipped inline on a workflow node: a question set
+// authored per placement, with no entity
 // to version, no playground to exercise it and — the one that matters — no eval
 // target. "Did that change to the question wording make the decisions better or
 // worse?" was unanswerable. Promoting the question set into the agents surface
@@ -187,11 +187,12 @@ const decisionAgentConfigObjectSchema = z.object({
   /**
    * Composite `providerId:modelId`, resolved through `WfSdkConfig.getDecider`.
    *
-   * DECIDERS ONLY — there is no `createChatDecider` fallback for this type. A
-   * deployment with no decision provider simply cannot use it, which is the
-   * same empty state `eval-check-config-decision.tsx` already shows for the
-   * decision judge. A chat model dressed up as a decider would make every
-   * threshold on the agent mean something different, silently.
+   * A real decision provider, or — only when the host opts in with
+   * `WfSdkConfig.decisionsViaChatModels` — a chat model behind
+   * `createChatDecider`. The emulated ones are offered under a
+   * "chat-emulated" provider, so the author picking one can see that the
+   * thresholds on this agent mean something different on it. A host with
+   * neither cannot run this type at all.
    */
   modelId: z.string().min(1),
   questions: z.array(decisionAgentQuestionSchema).default([]),

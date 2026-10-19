@@ -548,6 +548,15 @@ export function buildAgentHandlers<TDeps>(
         variables?: unknown
       }
       const config = parseDecisionAgentConfig(p.config)
+      // The same gate publishing applies: a rule that cannot hold falls
+      // through to the fallback, so a preview of this matrix would show a
+      // verdict the rules never actually reached.
+      const issues = decisionAgentConfigIssues(config)
+      if (issues.length > 0) {
+        throw new BadRequestError(
+          `This decision agent would not run:\n${issues.map((i) => `- ${i}`).join('\n')}`,
+        )
+      }
       const env = await c.env()
       return await runDecisionAgent({
         config,

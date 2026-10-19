@@ -244,3 +244,47 @@ const BAND_ORDER = Object.keys(BANDS) as Band[]
 function bandOf(threshold: number): Band {
   return BAND_ORDER.find((k) => threshold <= BANDS[k].max) ?? 'sure'
 }
+
+/**
+ * A small icon button that refuses, saying why, when the edit it makes would
+ * leave a rule pointing at something that is gone — which the saved schema
+ * rejects, or worse, accepts and never matches.
+ *
+ * `aria-disabled` rather than `disabled`: a disabled button swallows the hover
+ * that shows the reason, and the reason is the whole point.
+ */
+export function GuardedIconButton({
+  label,
+  blockedReason,
+  onClick,
+  children,
+}: {
+  label: string
+  /** Set to refuse the click; shown on hover. */
+  blockedReason?: string
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-disabled={blockedReason ? true : undefined}
+      title={blockedReason}
+      className={cn(
+        'text-muted-foreground shrink-0 rounded p-1',
+        blockedReason
+          ? 'cursor-not-allowed opacity-30'
+          : 'hover:text-foreground hover:bg-accent',
+      )}
+      onClick={blockedReason ? undefined : onClick}
+    >
+      {children}
+    </button>
+  )
+}
+
+/** "1 rule" / "3 rules" — for the reasons above. */
+export function ruleCount(n: number): string {
+  return n === 1 ? '1 rule' : `${n} rules`
+}

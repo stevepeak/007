@@ -1,6 +1,13 @@
 import { resolveBinding } from '../binding'
 import { decisionAgentReasoning, runDecisionAgent } from '../decision-agent'
-import type { AgentNode, Decider, DecisionUsage, DecisionVerdict } from '../graph'
+import {
+  isDecisionKind,
+  type AgentNode,
+  type Decider,
+  type DecisionUsage,
+  type DecisionVerdict,
+  type WorkflowNode,
+} from '../graph'
 import {
   decisionAgentFromManifest,
   type WfRunManifestEntry,
@@ -30,9 +37,6 @@ export type DecisionAgentNodeResult = {
   verdict: string
   /** Which rule fired and what it read. */
   because: string
-  /** What actually answered, for the run record. */
-  modelId?: string
-  usage?: DecisionUsage
 }
 
 export type DecisionAgentNodeMeta = {
@@ -49,6 +53,13 @@ export type DecisionAgentNodeMeta = {
   agentId: string
   agentName: string
   agentVersion: number
+  /**
+   * The value the questions were asked about — `config.source` resolved, else
+   * the incoming input. The step's recorded `input` is the whole upstream
+   * payload, which is not what the provider saw once a `source` narrows it.
+   * Stored as resolved, so a large value stays a blob pointer here.
+   */
+  subject: unknown
 }
 
 export type ExecuteDecisionAgentNodeArgs = {
@@ -71,6 +82,22 @@ export type ExecuteDecisionAgentNodeArgs = {
    * would confidently answer questions about a JSON blob reference.
    */
   rehydrate?: (value: unknown) => Promise<unknown>
+}
+
+/**
+ * Whether a failure of this node aborts the run even under `continueOnError`.
+ * A routing decision has no safe default: a Branch or Switch that swallowed its
+ * failure would route nowhere, and a decision agent that did would hand its
+ * Switch a `null` verdict, which silently takes `else`.
+ */
+export function failureMustAbort(
+  node: WorkflowNode,
+  manifest: readonly WfRunManifestEntry[],
+): boolean {
+  return (
+    isDecisionKind(node.kind) ||
+    (node.kind === 'agent' && isDecisionAgentNode(node, manifest))
+  )
 }
 
 /** Does this agent node point at a decision agent in the frozen manifest? */
@@ -124,8 +151,6 @@ export async function executeDecisionAgentNode(
       reasoning: decisionAgentReasoning(r),
       verdict: r.verdict,
       because: r.because,
-      modelId: r.modelId,
-      usage: r.usage,
     },
     meta: {
       modelId: r.modelId,
@@ -134,6 +159,7 @@ export async function executeDecisionAgentNode(
       agentId,
       agentName: entry.name,
       agentVersion: entry.versionNumber,
+      subject,
     },
   }
 }

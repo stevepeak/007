@@ -21,6 +21,7 @@ import { PublishAgentDialog } from './agent-editor-publish'
 import { DecisionPlaygroundPanel } from './decision-agent-playground'
 import { DecisionQuestionList } from './decision-agent-questions'
 import { DecisionRulesEditor } from './decision-agent-rules'
+import { GuardedIconButton, ruleCount } from './decision-question-types'
 import { useAgentMeta } from './use-agent-editor-state'
 import { useDecisionAgentDraft } from './use-decision-agent-editor-state'
 
@@ -140,7 +141,11 @@ export function DecisionAgentEditorInner({
                   aria-label="Decision model"
                   onChange={(e) => draft.patch({ modelId: e.target.value })}
                 >
-                  <option value="">Pick a decision model…</option>
+                  {/* A prompt, not a choice: `modelId` cannot be blank, so once a
+                      model is picked the placeholder is no longer selectable. */}
+                  <option value="" disabled={config.modelId !== ''}>
+                    Pick a decision model…
+                  </option>
                   {groupByProvider(
                     models.data ?? [],
                     providers.data ?? [],
@@ -329,6 +334,24 @@ function VerdictsEditor({
         : rules,
     })
   }
+  /**
+   * Applied on blur/Enter, not per keystroke: mid-word, the name passes through
+   * blanks and through other verdicts' names, and the rules following it there
+   * would detach (blank) or merge into the other outcome (a match). A finished
+   * name that would do either, while rules return this verdict, is refused.
+   */
+  const commit = (index: number, input: HTMLInputElement) => {
+    const from = verdicts[index] ?? ''
+    const to = input.value.trim()
+    if (to === from) return
+    const returned = rules.some((r) => r.verdict === from)
+    const taken = verdicts.some((v, j) => j !== index && v === to)
+    if (from !== '' && returned && (to === '' || taken)) {
+      input.value = from
+      return
+    }
+    rename(index, to)
+  }
   return (
     <div className="space-y-1.5">
       {verdicts.map((verdict, i) => {
@@ -344,8 +367,16 @@ function VerdictsEditor({
               )}
               aria-label={`Verdict ${i + 1}`}
               placeholder="escalate — name one possible answer"
-              value={verdict}
-              onChange={(e) => rename(i, e.target.value)}
+              defaultValue={verdict}
+              key={verdict}
+              onBlur={(e) => commit(i, e.currentTarget)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur()
+                if (e.key === 'Escape') {
+                  e.currentTarget.value = verdict
+                  e.currentTarget.blur()
+                }
+              }}
             />
             {/* The consequence of the row, stated on the row. An outcome no
                 rule returns is dead weight an eval can never produce, and an
@@ -364,14 +395,17 @@ function VerdictsEditor({
                   ? 'no rule returns this'
                   : `returned by ${returnedBy} ${returnedBy === 1 ? 'rule' : 'rules'}`}
             </span>
-            <button
-              type="button"
-              aria-label={`Remove verdict ${verdict}`}
-              className="text-muted-foreground hover:text-foreground hover:bg-accent shrink-0 rounded p-1"
+            <GuardedIconButton
+              label={`Remove verdict ${verdict}`}
+              blockedReason={
+                returnedBy > 0 && !duplicate
+                  ? `${ruleCount(returnedBy)} return ${verdict} — point them at another verdict first.`
+                  : undefined
+              }
               onClick={() => onChange({ verdicts: verdicts.filter((_, j) => j !== i) })}
             >
               <X className="size-3" />
-            </button>
+            </GuardedIconButton>
           </div>
         )
       })}

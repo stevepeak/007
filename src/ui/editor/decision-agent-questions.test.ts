@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { isDerivedKey, keyFromLabel } from './decision-agent-questions'
+import { isDerivedKey, keyFromLabel, moved } from './decision-agent-questions'
 
 describe('isDerivedKey', () => {
   test('a key minted for a blank choice is still derived, suffix and all', () => {
@@ -19,5 +19,13 @@ describe('isDerivedKey', () => {
     expect(isDerivedKey('billing', 'Payments')).toBe(false)
     expect(isDerivedKey('billing_extra', 'Billing')).toBe(false)
     expect(isDerivedKey('billing_', 'Billing')).toBe(false)
+  })
+})
+
+describe('moved', () => {
+  test('a scale level moves with its key, and stops at either end', () => {
+    expect(moved(['low', 'mid', 'high'], 2, -1)).toEqual(['low', 'high', 'mid'])
+    expect(moved(['low', 'mid', 'high'], 0, -1)).toEqual(['low', 'mid', 'high'])
+    expect(moved(['low', 'mid', 'high'], 2, 1)).toEqual(['low', 'mid', 'high'])
   })
 })
