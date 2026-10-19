@@ -39,6 +39,12 @@ export function useEvalRuns(limit?: number) {
   return useQuery({
     queryKey: keys.evalRuns(limit),
     queryFn: () => client.listEvalRuns({ limit }),
+    // Poll only while some run is still executing, so its row settles live.
+    refetchInterval: (query) => { return query.state.data?.some(
+        (r) => r.status === 'queued' || r.status === 'running',
+      )
+        ? 3000
+        : false },
   })
 }
 

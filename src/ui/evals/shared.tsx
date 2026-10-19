@@ -15,7 +15,7 @@ import type {
 } from '../../server/protocol'
 import { agentColor, agentIcon } from '../agent-appearance'
 import { cn } from '../cn'
-import { formatTimestamp } from '../cost'
+import { formatDurationMs, formatTimestamp } from '../cost'
 import { useAgents } from '../hooks'
 import { RunStatusBadge } from '../runs/run-status'
 import type { WfCrumb } from '../shell'
@@ -191,10 +191,19 @@ export { Tabs, type TabDef } from '../filters'
 // place and can't drift from the rest of the app.
 export { formatTimestamp, RunStatusBadge }
 
-// Shared "test runs" table: When / Pass / Score columns over a list of eval
-// runs. Clicking a row opens its report via `onOpenRun`. The first cell defaults
-// to a timestamp + RunStatusBadge; pass `renderFirstCell` for a richer cell
-// (e.g. the goals list's subtitle line).
+/** True while an eval run's counters are still filling in. */
+export function isEvalRunInFlight(run: { status: string }): boolean {
+  return run.status === 'queued' || run.status === 'running'
+}
+
+// Shared "test runs" table: When / [Agent] / Pass / Score / Duration columns
+// over a list of eval runs. Clicking a row opens its report via `onOpenRun`. The
+// first cell defaults to a timestamp + RunStatusBadge; pass `renderFirstCell`
+// for a richer cell (e.g. the goals list's subtitle line). The Agent column only
+// renders when `renderAgentCell` is given — a goal's own page already names it.
+//
+// Pass, Score and Duration read "—" while the run is in flight: `passed` only
+// counts cells that have settled, so a partial tally would read as failures.
 export function EvalRunsTable({
   runs,
   emptyMessage,
@@ -202,6 +211,7 @@ export function EvalRunsTable({
   isLoading,
   onOpenRun,
   renderFirstCell,
+  renderAgentCell,
 }: {
   runs: WfEvalRunSummary[]
   emptyMessage: string
@@ -209,46 +219,79 @@ export function EvalRunsTable({
   isLoading?: boolean
   onOpenRun: (runId: string, e: MouseEvent) => void
   renderFirstCell?: (run: WfEvalRunSummary) => ReactNode
+  renderAgentCell?: (run: WfEvalRunSummary) => ReactNode
 }) {
   // Takes `isLoading` as a PROP rather than owning a query, so there is no
   // query result here for `QueryState` to sequence — the caller has already
   // reduced its own to a list plus a flag.
   if (isLoading && loadingMessage) return <EmptyState message={loadingMessage} />
   if (runs.length === 0) return <EmptyState message={emptyMessage} />
+  const cols = renderAgentCell
+    ? 'grid-cols-[1fr_auto_auto_4rem_5rem]'
+    : 'grid-cols-[1fr_auto_4rem_5rem]'
   return (
     <div className="overflow-hidden rounded-lg border border-neutral-200">
-      <div className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-neutral-100 bg-neutral-50 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+      <div
+        className={cn(
+          'grid items-center gap-4 border-b border-neutral-100 bg-neutral-50 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-neutral-400',
+          cols,
+        )}
+      >
         <span>When</span>
+        {renderAgentCell ? <span>Agent</span> : null}
         <span className="text-right">Pass</span>
-        <span className="w-24 text-right">Score</span>
+        <span className="text-right">Score</span>
+        <span className="text-right">Duration</span>
       </div>
-      {runs.map((r) => (
-        <button
-          key={r.id}
-          type="button"
-          onClick={(e) => onOpenRun(r.id, e)}
-          className="grid w-full grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-neutral-100 px-4 py-3 text-left last:border-b-0 hover:bg-neutral-50"
-        >
-          {renderFirstCell ? (
-            renderFirstCell(r)
-          ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-neutral-700">
-                {formatTimestamp(r.createdAt)}
-              </span>
-              <RunStatusBadge status={r.status} />
+      {runs.map((r) => {
+        const inFlight = isEvalRunInFlight(r)
+        return (
+          <button
+            key={r.id}
+            type="button"
+            onClick={(e) => onOpenRun(r.id, e)}
+            className={cn(
+              'grid w-full items-center gap-4 border-b border-neutral-100 px-4 py-3 text-left last:border-b-0 hover:bg-neutral-50',
+              cols,
+            )}
+          >
+            {renderFirstCell ? (
+              renderFirstCell(r)
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-neutral-700">
+                  {formatTimestamp(r.createdAt)}
+                </span>
+                <RunStatusBadge status={r.status} />
+              </div>
+            )}
+            {renderAgentCell ? renderAgentCell(r) : null}
+            <div className="text-right">
+              {inFlight ? (
+                <Dash />
+              ) : (
+                <PassRate passed={r.passed} total={r.total} />
+              )}
             </div>
-          )}
-          <div className="text-right">
-            <PassRate passed={r.passed} total={r.total} />
-          </div>
-          <div className="w-24 text-right">
-            <Score value={r.score} />
-          </div>
-        </button>
-      ))}
+            <div className="text-right">
+              {inFlight ? <Dash /> : <Score value={r.score} />}
+            </div>
+            <div className="text-right text-sm tabular-nums text-neutral-700">
+              {inFlight || r.startedAt == null || r.finishedAt == null ? (
+                <Dash />
+              ) : (
+                formatDurationMs(r.finishedAt - r.startedAt)
+              )}
+            </div>
+          </button>
+        )
+      })}
     </div>
   )
+}
+
+function Dash() {
+  return <span className="text-sm text-neutral-400">—</span>
 }
 
 // The goal's target agent, as a breadcrumb crumb sitting right after the Goal

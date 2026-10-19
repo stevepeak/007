@@ -126,7 +126,7 @@ export function EvalsList({ className }: EvalsListProps) {
           query={{ isLoading: runsQuery.isLoading, error: null, data: runs }}
           loading={<EmptyState message="Loading test runs…" />}
         >
-          {(runs) => <RunsTable runs={runs} />}
+          {(runs) => <RunsTable runs={runs} goals={goals} />}
         </QueryState>
       )}
     </div>
@@ -299,27 +299,128 @@ function AgentPill({ agent }: { agent?: WfAgentSummary }) {
 
 // ── Test runs ────────────────────────────────────────────────────────────────
 
-function RunsTable({ runs }: { runs: WfEvalRunSummary[] }) {
+function RunsTable({
+  runs,
+  goals,
+}: {
+  runs: WfEvalRunSummary[]
+  goals: WfEvalSetSummary[]
+}) {
   const { navigate } = useWfNav()
+  const agentsQuery = useAgents()
+  const workflowsQuery = useWorkflows()
+  const [goalFilter, setGoalFilter] = useState('')
+  const [targetFilter, setTargetFilter] = useState('')
+  const goalById = useMemo(
+    () => new Map(goals.map((g) => [g.id, g])),
+    [goals],
+  )
+
+  // A run's targets are joined through its goals' CURRENT target — a goal
+  // re-pointed after the run will report its new agent here.
+  const runGoals = (r: WfEvalRunSummary) => { return r.setIds.flatMap((id) => {
+      const g = goalById.get(id)
+      return g ? [g] : []
+    }) }
+  const runTargetIds = (r: WfEvalRunSummary) => [
+    ...new Set(runGoals(r).map((g) => g.targetId)),
+  ]
+
+  const shown = runs.filter(
+    (r) => { return (!goalFilter || r.setIds.includes(goalFilter)) &&
+      (!targetFilter || runTargetIds(r).includes(targetFilter)) },
+  )
+  const filtered = goalFilter !== '' || targetFilter !== ''
+
   return (
-    <EvalRunsTable
-      runs={runs}
-      emptyMessage="No test runs yet. Run a goal to see results here."
-      onOpenRun={(id) => navigate(`evals/runs/${id}`)}
-      renderFirstCell={(r) => (
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="truncate text-sm font-medium text-neutral-900">
-              {formatTimestamp(r.createdAt)}
-            </span>
-            <RunStatusBadge status={r.status} />
-          </div>
-          <div className="mt-0.5 truncate text-xs text-neutral-500">
-            {r.setIds.length} goal{r.setIds.length === 1 ? '' : 's'} ·{' '}
-            {r.total} sample{r.total === 1 ? '' : 's'}
-          </div>
-        </div>
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <FilterPill
+          label="Goal"
+          value={goalFilter}
+          onChange={setGoalFilter}
+          searchPlaceholder="Search goals…"
+          options={goals.map((g) => ({ value: g.id, label: g.name }))}
+        />
+        <TargetFilter
+          value={targetFilter}
+          onChange={setTargetFilter}
+          agents={agentsQuery.data ?? []}
+          workflows={workflowsQuery.data ?? []}
+        />
+      </div>
+      <EvalRunsTable
+        runs={shown}
+        emptyMessage={
+          filtered
+            ? 'No test runs for this selection.'
+            : 'No test runs yet. Run a goal to see results here.'
+        }
+        onOpenRun={(id) => navigate(`evals/runs/${id}`)}
+        renderFirstCell={(r) => {
+          const names = runGoals(r).map((g) => g.name)
+          return (
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="truncate text-sm font-medium text-neutral-900">
+                  {formatTimestamp(r.createdAt)}
+                </span>
+                <RunStatusBadge status={r.status} />
+              </div>
+              <div
+                className="mt-0.5 truncate text-xs text-neutral-500"
+                title={names.join(', ')}
+              >
+                {names.length === 0
+                  ? `${r.setIds.length} goal${r.setIds.length === 1 ? '' : 's'}`
+                  : names.length === 1
+                    ? names[0]
+                    : `${names[0]} +${names.length - 1}`}{' '}
+                · {r.total} sample{r.total === 1 ? '' : 's'}
+              </div>
+            </div>
+          )
+        }}
+        renderAgentCell={(r) => (
+          <TargetPills
+            targetIds={runTargetIds(r)}
+            agents={agentsQuery.data ?? []}
+            workflows={workflowsQuery.data ?? []}
+          />
+        )}
+      />
+    </div>
+  )
+}
+
+// The distinct targets of a run's goals: the first as a pill, the rest as "+N".
+function TargetPills({
+  targetIds,
+  agents,
+  workflows,
+}: {
+  targetIds: string[]
+  agents: WfAgentSummary[]
+  workflows: WfWorkflowSummary[]
+}) {
+  const [first, ...rest] = targetIds
+  if (!first) return <span className="text-sm text-neutral-400">—</span>
+  const workflow = workflows.find((w) => w.id === first)
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {workflow ? (
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white py-0.5 pl-0.5 pr-2.5">
+          <WorkflowChip />
+          <span className="max-w-[10rem] truncate text-xs font-medium text-neutral-700">
+            {workflow.name}
+          </span>
+        </span>
+      ) : (
+        <AgentPill agent={agents.find((a) => a.id === first)} />
       )}
-    />
+      {rest.length > 0 ? (
+        <span className="text-xs text-neutral-500">+{rest.length}</span>
+      ) : null}
+    </span>
   )
 }
