@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
+import { McpUnauthorizedError } from '../connectors/client'
+import { ConnectorAuthError } from '../connectors/oauth'
 import { errorLogText } from '../engine/error-detail'
 
 import { createWfSdkHandlers } from './handlers'
@@ -101,6 +103,49 @@ describe('dispatcher error reporting', () => {
     const res = await handle(post('listAgents'))
 
     expect(res.status).toBe(404)
+    expect(reports).toHaveLength(0)
+  })
+
+  test('a refused connector credential answers 409 with its message and is NOT reported', async () => {
+    const reports: Report[] = []
+    const message =
+      'Could not refresh the Example connection. Reconnect it from the connectors page.'
+    const handle = createWfSdkHandlers(
+      options({
+        resolveDb: () => {
+          throw new McpUnauthorizedError(message)
+        },
+        onError: (input) => {
+          reports.push(input)
+        },
+      }),
+    )
+
+    const res = await handle(post('listAgents'))
+
+    // The remedy is the user's (reconnect), so the message must reach them —
+    // and not as a 403, which a client reads as its own session expiring.
+    expect(res.status).toBe(409)
+    expect(await res.json<unknown>()).toEqual({ error: message })
+    expect(reports).toHaveLength(0)
+  })
+
+  test('a connector authorization failure answers 409 and is NOT reported', async () => {
+    const reports: Report[] = []
+    const handle = createWfSdkHandlers(
+      options({
+        resolveDb: () => {
+          throw new ConnectorAuthError('The server does not support client registration.')
+        },
+        onError: (input) => {
+          reports.push(input)
+        },
+      }),
+    )
+
+    const res = await handle(post('listAgents'))
+
+    expect(res.status).toBe(409)
     expect(reports).toHaveLength(0)
   })
 

@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { McpUnauthorizedError } from '../connectors/client'
+import { ConnectorAuthError } from '../connectors/oauth'
 import { errorLogText } from '../engine/error-detail'
 import { resolveWfLogger } from '../engine/logger'
 import { errorMessage } from '../engine/run-node'
@@ -231,6 +233,16 @@ export function createWfSdkHandlers<TDeps>(
       // host's error tracker. See `UnauthorizedError`.
       if (err instanceof UnauthorizedError) {
         return json({ error: errorMessage(err) }, 403)
+      }
+      // A remote server refused a connector's credentials or authorization —
+      // the user's remedy is to reconnect, not ours to fix, so it is a 409
+      // carrying that instruction and stays out of the error tracker. Not 403:
+      // a client reads that as its own session being gone.
+      if (
+        err instanceof McpUnauthorizedError ||
+        err instanceof ConnectorAuthError
+      ) {
+        return json({ error: errorMessage(err) }, 409)
       }
       // Surface the failure in the server log — otherwise a 500 from any
       // handler is invisible (the client only sees a generic error string).
