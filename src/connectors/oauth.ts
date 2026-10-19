@@ -432,6 +432,17 @@ export async function resolveAccessToken(input: {
       refreshToken: await decryptSecret(connection.refreshToken, secret),
     })
   } catch (err) {
+    // A concurrent caller may have spent this refresh token first: providers
+    // that rotate refresh tokens reject the second use. If the row moved on
+    // while we were in flight, its token is live — use it, and do not mark a
+    // healthy connection expired.
+    const fresh = await getConnection(db, connector.id, owner)
+    if (fresh && fresh.tokenVersion !== connection.tokenVersion) {
+      return {
+        token: await decryptSecret(fresh.accessToken, secret),
+        tokenType: fresh.tokenType,
+      }
+    }
     await setConnectionStatus(db, {
       connectionId: connection.id,
       status: 'expired',

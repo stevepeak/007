@@ -1,4 +1,8 @@
 import { encodeRunPoint } from '../analytics/points'
+import {
+  loadConnectorCatalog,
+  withConnectorTools,
+} from '../connectors/registry'
 import type { RunContext, WfSdkConfig } from '../engine/config'
 import { errorFeedLine } from '../engine/error-detail'
 import { executeWorkflow, type ResumeStep } from '../engine/executor'
@@ -505,10 +509,25 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
 
     runContext = runContextFor(p, env, { manifest })
 
+    // Connector tools, exactly as the durable backend's `load-connectors` step
+    // adds them: a catalog snapshot with no credential in it, each token
+    // resolved lazily at call time. Off unless the host wired a key.
+    const connectorSecret = config.resolveConnectorSecret?.({ env })
+    const runConfig = connectorSecret
+      ? withConnectorTools<TDeps, WfSdkConfig<TDeps>>(
+          execConfig,
+          await loadConnectorCatalog(db),
+          {
+            resolveDb: () => createWfDb(env.WF_DB),
+            resolveSecret: () => connectorSecret,
+          },
+        )
+      : execConfig
+
     const result = await executeWorkflow({
       graph: version.graph,
       triggerInput: p.triggerInput,
-      config: execConfig,
+      config: runConfig,
       runContext,
       resumeSteps,
       // Seeded raw, and answering to its caller rather than to its trigger's
