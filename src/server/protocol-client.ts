@@ -543,8 +543,15 @@ export interface WfDataClient {
    * Separate from `getEvalRun` because this is polled for the length of a run
    * and that one is a report load — live cost/latency stats per result, snapshot
    * drift, previous-hash lookups. Returns null when the run is missing.
+   *
+   * The plan never changes after creation, so a driver that already holds it
+   * passes `withPlan: false` and gets `plan: null` back instead of re-reading
+   * the largest column on the row every tick.
    */
-  getEvalRunDrive(evalRunId: string): Promise<EvalRunDrive | null>
+  getEvalRunDrive(
+    evalRunId: string,
+    opts?: { withPlan?: boolean },
+  ): Promise<EvalRunDrive | null>
   /**
    * Persist a driver's state and stamp its heartbeat (see `EvalDriveState`).
    *

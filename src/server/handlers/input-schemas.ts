@@ -277,7 +277,10 @@ export const wfInputSchemas = {
   deleteEvalRow: z.object({ rowId: z.string().min(1) }),
   restoreEvalRow: z.object({ rowId: z.string().min(1) }),
   getEvalRun: z.object({ evalRunId: z.string().min(1) }),
-  getEvalRunDrive: z.object({ evalRunId: z.string().min(1) }),
+  getEvalRunDrive: z.object({
+    evalRunId: z.string().min(1),
+    withPlan: z.boolean().optional(),
+  }),
   finalizeEvalRun: z.object({ evalRunId: z.string().min(1) }),
   cancelEvalRun: z.object({ evalRunId: z.string().min(1) }),
   listEvalSets: z.object({ includeArchived: z.boolean().optional() }),

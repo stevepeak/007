@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 
 import type { EvalTools } from '../../engine/eval-schema'
-import type { WfDb } from '../client'
-import { freshDb } from '../db-test-helpers'
+import { createWfDb, type WfDb } from '../client'
+import { freshD1, freshDb } from '../db-test-helpers'
 
 import {
   cancelEvalRun,
@@ -11,6 +11,7 @@ import {
   deleteEvalRow,
   getEvalRow,
   getEvalRun,
+  getEvalRunDrive,
   getEvalRunStatus,
   getEvalSet,
   restoreEvalRow,
@@ -230,5 +231,26 @@ describe('narrow eval run reads', () => {
     expect(
       await updateEvalRun(db, { evalRunId: 'missing', status: 'completed' }),
     ).toBeNull()
+  })
+
+  // Over a D1 binding, not `freshDb`: the read is one `db.batch`, which only
+  // the D1 driver has.
+  test('getEvalRunDrive reads the plan only when asked', async () => {
+    const db = createWfDb(freshD1())
+    const plan = { version: 1, cells: [{ rowId: 'row_1' }] }
+    const evalRunId = await createEvalRun(db, {
+      setIds: [],
+      total: 1,
+      plan,
+    })
+    const full = await getEvalRunDrive(db, evalRunId)
+    expect(full?.run.plan).toEqual(plan)
+    expect(full?.run.status).toBe('queued')
+    expect(full?.cells).toEqual([])
+
+    const narrow = await getEvalRunDrive(db, evalRunId, { withPlan: false })
+    expect(narrow?.run.plan).toBeNull()
+    expect(narrow?.run.status).toBe('queued')
+    expect(await getEvalRunDrive(db, 'missing')).toBeNull()
   })
 })

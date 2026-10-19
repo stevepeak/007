@@ -394,8 +394,8 @@ export function buildEvalHandlers<TDeps>(
     },
 
     getEvalRunDrive: async (c) => {
-      const { evalRunId } = c.params
-      const found = await getEvalRunDrive(c.db, evalRunId)
+      const { evalRunId, withPlan } = c.params
+      const found = await getEvalRunDrive(c.db, evalRunId, { withPlan })
       if (!found) return null
       return {
         evalRunId,

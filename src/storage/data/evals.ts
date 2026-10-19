@@ -449,25 +449,38 @@ export async function createEvalRun(
  *
  * Deliberately narrower than `getEvalRun`, which enriches every result with
  * live cost/latency stats, snapshot drift and previous-hash lookups. This is
- * polled every few seconds for the length of a sweep; it reads one run row and
- * four columns of its results.
+ * polled every few seconds for the length of a sweep, so it reads three run
+ * columns and four result columns in one round trip. The plan is frozen at
+ * creation and is the largest column on the row: a driver reads it once and
+ * passes `withPlan: false` after that, which returns `plan: null`.
  */
-export async function getEvalRunDrive(db: WfDb, evalRunId: string) {
-  const [run] = await db
-    .select()
-    .from(wfEvalRun)
-    .where(eq(wfEvalRun.id, evalRunId))
-    .limit(1)
+export async function getEvalRunDrive(
+  db: WfDb,
+  evalRunId: string,
+  opts: { withPlan?: boolean } = {},
+) {
+  const [runs, cells] = await db.batch([
+    db
+      .select({
+        status: wfEvalRun.status,
+        driveState: wfEvalRun.driveState,
+        plan: opts.withPlan === false ? sql<null>`null` : wfEvalRun.plan,
+      })
+      .from(wfEvalRun)
+      .where(eq(wfEvalRun.id, evalRunId))
+      .limit(1),
+    db
+      .select({
+        rowId: wfEvalResult.rowId,
+        modelId: wfEvalResult.modelId,
+        promptLabel: wfEvalResult.promptLabel,
+        attempt: wfEvalResult.attempt,
+      })
+      .from(wfEvalResult)
+      .where(eq(wfEvalResult.evalRunId, evalRunId)),
+  ])
+  const run = runs[0]
   if (!run) return null
-  const cells = await db
-    .select({
-      rowId: wfEvalResult.rowId,
-      modelId: wfEvalResult.modelId,
-      promptLabel: wfEvalResult.promptLabel,
-      attempt: wfEvalResult.attempt,
-    })
-    .from(wfEvalResult)
-    .where(eq(wfEvalResult.evalRunId, evalRunId))
   return { run, cells }
 }
 

@@ -47,6 +47,16 @@ const EVAL_WAIT_TIMEOUT_MS = 15 * 60_000
 const EVAL_POLL_INTERVAL_MS = 3_000
 
 /**
+ * How often a driver re-stamps its heartbeat on ticks that changed nothing.
+ *
+ * A tick that only re-polls cells still in flight has nothing new to persist,
+ * so it skips the write — except to keep the heartbeat fresh. This has to sit
+ * well inside a host's stale window (the backstop adopts a run whose heartbeat
+ * is older than that), or a driver that is still attached looks abandoned.
+ */
+const EVAL_HEARTBEAT_INTERVAL_MS = 30_000
+
+/**
  * Concurrent runs one eval may have in flight. Each is a full agent call, so
  * this is the rate at which the whole matrix hits the model provider — the
  * knob that decides whether a large sweep is a workload or a denial of service.
@@ -170,7 +180,8 @@ export async function createEvalSweep(
  *
  * Safe to run against a sweep another driver was previously attached to: state
  * is re-read from storage on every tick, so cells already in flight are polled
- * rather than started again.
+ * rather than started again. The plan is the exception — it is frozen at
+ * creation, so it is read once.
  */
 export async function driveEvalRun(
   client: WfDataClient,
@@ -187,10 +198,15 @@ export async function driveEvalRun(
   const pollIntervalMs = opts.pollIntervalMs ?? EVAL_POLL_INTERVAL_MS
   const now = opts.now ?? (() => Date.now())
   const deadline = opts.budgetMs == null ? null : now() + opts.budgetMs
+  let plan: EvalPlan | null = null
+  let lastSavedAt: number | null = null
 
   for (;;) {
-    const drive = await client.getEvalRunDrive(evalRunId)
-    if (!drive) return { done: false }
+    const read = await client.getEvalRunDrive(evalRunId, {
+      withPlan: plan == null,
+    })
+    if (!read) return { done: false }
+    const drive: EvalRunDrive = plan ? { ...read, plan } : read
     // Another driver finished it between our read and this one, or a human
     // cancelled it. Either way there is nothing left to do.
     if (drive.status === 'completed' || drive.status === 'cancelled') {
@@ -203,6 +219,7 @@ export async function driveEvalRun(
         `Eval run ${evalRunId} has no plan, so it cannot be driven. It predates resumable sweeps.`,
       )
     }
+    plan = drive.plan
 
     const result = await tickEvalRun(client, {
       drive,
@@ -213,14 +230,29 @@ export async function driveEvalRun(
     // back in the same write rather than leaving a heartbeat that would make it
     // look attended by a driver that has already gone.
     const handOff = !result.done && deadline != null && now() >= deadline
-    await client.saveEvalRunDrive({
-      evalRunId,
-      driveState: result.state,
-      release: handOff,
-    })
+    // A tick that started nothing and settled nothing leaves the stored state
+    // as it found it; writing it back would only re-stamp the heartbeat, which
+    // is needed once per interval, not once per poll.
+    const at = now()
+    const mustSave =
+      lastSavedAt == null ||
+      handOff ||
+      result.done ||
+      result.started > 0 ||
+      result.settled > 0 ||
+      at - lastSavedAt >= EVAL_HEARTBEAT_INTERVAL_MS ||
+      JSON.stringify(result.state) !== JSON.stringify(drive.driveState)
+    if (mustSave) {
+      await client.saveEvalRunDrive({
+        evalRunId,
+        driveState: result.state,
+        release: handOff,
+      })
+      lastSavedAt = at
+    }
     opts.onProgress?.({
       done: result.settledKeys.length,
-      total: drive.plan.cells.length,
+      total: plan.cells.length,
     })
 
     if (result.done) {

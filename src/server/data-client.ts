@@ -161,7 +161,9 @@ export function createWfDataClient(call: WfDataTransport): WfDataClient {
     listChanges: bind('listChanges'),
     listEvalRuns: bind('listEvalRuns'),
     getEvalRun: (evalRunId) => send('getEvalRun', { evalRunId }),
-    getEvalRunDrive: (evalRunId) => send('getEvalRunDrive', { evalRunId }),
+    getEvalRunDrive: (evalRunId, opts) => {
+      return send('getEvalRunDrive', { evalRunId, withPlan: opts?.withPlan })
+    },
 
     // Feedback.
     submitFeedback: bind('submitFeedback'),

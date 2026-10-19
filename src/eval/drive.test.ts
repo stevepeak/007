@@ -44,17 +44,21 @@ function driveHarness(
   over: Partial<WfDataClient> = {},
 ) {
   const saves: { release?: boolean; state: EvalDriveState }[] = []
+  const reads: { withPlan?: boolean }[] = []
   let state = EMPTY_DRIVE_STATE
   const settledKeys: string[] = []
   const graded: string[] = []
   const client = stubClient({
-    getEvalRunDrive: async (evalRunId: string) => ({
-      evalRunId,
-      status: 'running',
-      plan: plan(cells),
-      driveState: state,
-      settledKeys: [...settledKeys],
-    }),
+    getEvalRunDrive: async (evalRunId: string, o?: { withPlan?: boolean }) => {
+      reads.push({ withPlan: o?.withPlan })
+      return {
+        evalRunId,
+        status: 'running',
+        plan: o?.withPlan === false ? null : plan(cells),
+        driveState: state,
+        settledKeys: [...settledKeys],
+      }
+    },
     saveEvalRunDrive: async (input: {
       driveState: EvalDriveState
       release?: boolean
@@ -81,7 +85,7 @@ function driveHarness(
     },
     ...over,
   })
-  return { client, saves, graded }
+  return { client, saves, graded, reads }
 }
 
 describe('driveEvalRun — handing off', () => {
@@ -162,5 +166,40 @@ describe('driveEvalRun — handing off', () => {
     await expect(driveEvalRun(client, 'er_old')).rejects.toThrow(
       /predates resumable sweeps/,
     )
+  })
+})
+
+describe('driveEvalRun — per-tick storage traffic', () => {
+  test('reads the plan once, then only the mutable state', async () => {
+    const { client, reads } = driveHarness(
+      2,
+      { cellsFinish: true },
+      { finalizeEvalRun: async () => ({}) as never },
+    )
+    await driveEvalRun(client, 'er_1', { pollIntervalMs: 0 })
+    expect(reads.length).toBeGreaterThan(1)
+    expect(reads[0].withPlan).toBe(true)
+    expect(reads.slice(1).every((r) => r.withPlan === false)).toBe(true)
+  })
+
+  // Cells never finish, concurrency 1: after the first tick starts row_0 every
+  // later tick only re-polls it. Time steps 10s per tick, and the 60s budget
+  // ends before the harness plan's 60s cell timeout could settle anything.
+  test('skips the write on idle ticks but keeps the heartbeat fresh', async () => {
+    let t = 0
+    const { client, saves, reads } = driveHarness(4)
+    const out = await driveEvalRun(client, 'er_1', {
+      pollIntervalMs: 0,
+      budgetMs: 60_000,
+      now: () => t,
+      onProgress: () => {
+        t += 10_000
+      },
+    })
+    expect(out.done).toBe(false)
+    // Seven ticks (0s…60s), three writes: the start at 0s, the heartbeat at
+    // 30s, and the hand-off at 60s.
+    expect(reads).toHaveLength(7)
+    expect(saves.map((s) => s.release === true)).toEqual([false, false, true])
   })
 })
