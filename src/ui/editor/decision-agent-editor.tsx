@@ -16,6 +16,7 @@ import { DecisionPlaygroundPanel } from './decision-agent-playground'
 import { DecisionQuestionList } from './decision-agent-questions'
 import { DecisionRulesEditor } from './decision-agent-rules'
 import { GuardedIconButton, ruleCount } from './decision-question-types'
+import { groupModelsByProvider } from './model-grouping'
 import { useAgentMeta } from './use-agent-editor-state'
 import { useDecisionAgentDraft } from './use-decision-agent-editor-state'
 
@@ -119,15 +120,17 @@ export function DecisionAgentEditorInner({
                 <option value="" disabled={config.modelId !== ''}>
                   Pick a decision model…
                 </option>
-                {groupByProvider(
+                {groupModelsByProvider(
                   models.data ?? [],
                   providers.data ?? [],
-                ).map(({ label, kind, items }) => (
-                  <optgroup key={label} label={label}>
-                    {items.map((m) => (
+                ).map(({ provider, models: groupModels }) => (
+                  <optgroup key={provider.id} label={provider.label}>
+                    {groupModels.map((m) => (
                       <option key={m.id} value={m.id}>
                         {m.label}
-                        {kind === 'chat-emulated' ? ' (emulated)' : ''}
+                        {provider.kind === 'chat-emulated'
+                          ? ' (emulated)'
+                          : ''}
                       </option>
                     ))}
                   </optgroup>
@@ -363,33 +366,4 @@ function VerdictsEditor({
       </button>
     </div>
   )
-}
-
-/**
- * Models under their provider headings, with anything whose provider the host
- * no longer declares gathered under "Other" — dropping those silently would
- * leave a saved agent pointing at a model that has vanished from its own
- * picker.
- */
-function groupByProvider(
-  models: readonly { id: string; label: string; providerId?: string }[],
-  providers: readonly { id: string; label: string; kind: string }[],
-): {
-  label: string
-  kind: string
-  items: readonly { id: string; label: string }[]
-}[] {
-  const groups = providers.map((p) => ({
-    label: p.label,
-    kind: p.kind,
-    items: models.filter((m) => m.providerId === p.id),
-  }))
-  const known = new Set(providers.map((p) => p.id))
-  const orphans = models.filter(
-    (m) => m.providerId == null || !known.has(m.providerId),
-  )
-  if (orphans.length > 0) {
-    groups.push({ label: 'Other', kind: 'custom', items: orphans })
-  }
-  return groups.filter((g) => g.items.length > 0)
 }

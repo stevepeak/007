@@ -322,6 +322,81 @@ function pathOptionsOf(
   })
 }
 
+// The path half of a check: a dropdown of the schema's fields when there are
+// any, an inert dropdown naming the missing step when there aren't YET, and a
+// free-form path box otherwise. A stored path the schema doesn't declare (a
+// nested or hand-authored one, or a field since dropped) stays offered as its
+// own "(custom)" option, so switching targets never silently re-points the check.
+export function OutputPathSelect({
+  value,
+  options,
+  onSelect,
+  placeholder,
+  wholeLabel = 'Entire output',
+  pending,
+}: {
+  value: string | undefined
+  options: PathOption[] | null | undefined
+  onSelect: (next: string | undefined) => void
+  placeholder?: string
+  /** What the empty path means, as the first option ("Entire output"). */
+  wholeLabel?: string
+  /**
+   * Why there are no options YET, when that's a step the author hasn't taken
+   * rather than a schema that doesn't exist ("Select a tool first"). Renders as
+   * an inert dropdown, so the field reads as one that will fill in rather than
+   * as a box to type a path into.
+   */
+  pending?: string | null
+}) {
+  const { Input } = useWfComponents()
+  const field = useCommittedField(value ?? '', (p) => {
+    return onSelect(p.trim() || undefined)
+  })
+
+  if (options) {
+    const showsCustom = Boolean(
+      value && !options.some((o) => o.value === value),
+    )
+    return (
+      <select
+        value={value ?? ''}
+        onChange={(e) => onSelect(e.target.value || undefined)}
+        className="h-9 w-full rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none focus:border-neutral-500"
+      >
+        <option value="">{wholeLabel}</option>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+            {o.type ? ` · ${o.type}` : ''}
+          </option>
+        ))}
+        {showsCustom ? <option value={value}>{value} (custom)</option> : null}
+      </select>
+    )
+  }
+  if (pending) {
+    return (
+      <select
+        disabled
+        value=""
+        className="h-9 w-full rounded-md border border-neutral-200 bg-transparent px-2 text-sm text-neutral-400 outline-none"
+      >
+        <option value="">{pending}</option>
+      </select>
+    )
+  }
+  return (
+    <Input
+      value={field.value}
+      placeholder={placeholder}
+      onChange={(e) => field.onChange(e.target.value)}
+      onBlur={field.onBlur}
+      className="font-mono text-xs"
+    />
+  )
+}
+
 // The match/path/value trio shared by the *_match check types. When `pathOptions`
 // is supplied (a known output contract, or a tool's input schema), the path is
 // chosen from a dropdown of the schema's fields — with each field's description
@@ -340,7 +415,7 @@ export function MatchRow({
   pathLabel,
   pathPlaceholder,
   pathOptions,
-  wholeLabel = 'Entire output',
+  wholeLabel,
   pathPending,
   onChange,
 }: {
@@ -352,12 +427,7 @@ export function MatchRow({
   pathOptions?: PathOption[] | null
   /** What the empty path means, as the first option ("Entire output"). */
   wholeLabel?: string
-  /**
-   * Why there are no options YET, when that's a step the author hasn't taken
-   * rather than a schema that doesn't exist ("Select a tool first"). Renders as
-   * an inert dropdown, so the field reads as one that will fill in rather than
-   * as a box to type a path into.
-   */
+  /** See {@link OutputPathSelect}'s `pending`. */
   pathPending?: string | null
   onChange: (patch: {
     path?: string
@@ -366,19 +436,11 @@ export function MatchRow({
   }) => void
 }) {
   const { Input, Label } = useWfComponents()
-  const pathField = useCommittedField(path ?? '', (p) => {
-    return onChange({ path: p || undefined })
-  })
   const valueField = useCommittedField(valueToStr(value), (v) => {
     return onChange({ value: parseValue(v) })
   })
 
   const selectedField = pathOptions?.find((o) => o.value === (path ?? ''))
-  // Preserve a stored path that isn't in the schema (nested/custom) as its own
-  // option so switching targets or hand-authored paths never silently vanish.
-  const showsCustom = Boolean(
-    pathOptions && path && !pathOptions.some((o) => o.value === path),
-  )
 
   const valueOptions = selectedField?.values
   // A field with a closed set of values is compared ONE way — `equals` for a
@@ -414,40 +476,14 @@ export function MatchRow({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="space-y-1">
           <Label>{pathLabel}</Label>
-          {pathOptions ? (
-            <select
-              value={path ?? ''}
-              onChange={(e) => selectPath(e.target.value || undefined)}
-              className="h-9 w-full rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none focus:border-neutral-500"
-            >
-              <option value="">{wholeLabel}</option>
-              {pathOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                  {o.type ? ` · ${o.type}` : ''}
-                </option>
-              ))}
-              {showsCustom ? (
-                <option value={path}>{path} (custom)</option>
-              ) : null}
-            </select>
-          ) : pathPending ? (
-            <select
-              disabled
-              value=""
-              className="h-9 w-full rounded-md border border-neutral-200 bg-transparent px-2 text-sm text-neutral-400 outline-none"
-            >
-              <option value="">{pathPending}</option>
-            </select>
-          ) : (
-            <Input
-              value={pathField.value}
-              placeholder={pathPlaceholder}
-              onChange={(e) => pathField.onChange(e.target.value)}
-              onBlur={pathField.onBlur}
-              className="font-mono text-xs"
-            />
-          )}
+          <OutputPathSelect
+            value={path}
+            options={pathOptions}
+            onSelect={selectPath}
+            placeholder={pathPlaceholder}
+            wholeLabel={wholeLabel}
+            pending={pathPending}
+          />
         </div>
         <div className="space-y-1">
           <Label>Match</Label>

@@ -7,7 +7,7 @@ import { useDecisionModels } from '../hooks-models'
 import { useCommittedField } from '../use-committed-field'
 
 import { FieldHelp } from './eval-check-config-judge'
-import { schemaPathOptions } from './fields'
+import { OutputPathSelect, schemaPathOptions } from './fields'
 
 // ── Calibrated (decision) judge config ───────────────────────────────────────
 //
@@ -34,9 +34,6 @@ export function DecisionJudgeConfig({
   const rubricField = useCommittedField(check.rubric, (rubric) => {
     return persist({ ...check, rubric })
   })
-  const pathField = useCommittedField(check.path ?? '', (path) => {
-    return persist({ ...check, path: path.trim() || undefined })
-  })
 
   // Keep a decider selected, the same way the LLM judge keeps a model: the check
   // cannot grade without one, so seed the first as soon as the list loads.
@@ -49,11 +46,6 @@ export function DecisionJudgeConfig({
 
   const chosen = models.data?.find((m) => m.id === check.modelId)
   const pathOptions = schemaPathOptions(outputSchema)
-  const showsCustom = Boolean(
-    pathOptions &&
-      check.path &&
-      !pathOptions.some((o) => o.value === check.path),
-  )
   const selectedField = pathOptions?.find((o) => o.value === (check.path ?? ''))
 
   if (!models.isLoading && (models.data ?? []).length === 0) {
@@ -144,34 +136,12 @@ export function DecisionJudgeConfig({
               </p>
             </FieldHelp>
           </div>
-          {pathOptions ? (
-            <select
-              value={check.path ?? ''}
-              onChange={(e) => {
-                return persist({ ...check, path: e.target.value || undefined })
-              }}
-              className="h-9 w-full rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none focus:border-neutral-500"
-            >
-              <option value="">Entire output</option>
-              {pathOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                  {o.type ? ` · ${o.type}` : ''}
-                </option>
-              ))}
-              {showsCustom ? (
-                <option value={check.path}>{check.path} (custom)</option>
-              ) : null}
-            </select>
-          ) : (
-            <Input
-              value={pathField.value}
-              placeholder="blank = whole output"
-              onChange={(e) => pathField.onChange(e.target.value)}
-              onBlur={pathField.onBlur}
-              className="font-mono text-xs"
-            />
-          )}
+          <OutputPathSelect
+            value={check.path}
+            options={pathOptions}
+            onSelect={(path) => persist({ ...check, path })}
+            placeholder="blank = whole output"
+          />
           {selectedField?.description ? (
             <p className="text-xs text-neutral-400">
               {selectedField.description}

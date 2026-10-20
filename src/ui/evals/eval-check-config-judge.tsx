@@ -11,7 +11,7 @@ import { Modal } from '../modal'
 import { unmetRequirements } from '../../engine/model-capabilities'
 import { useCommittedField } from '../use-committed-field'
 
-import { schemaPathOptions } from './fields'
+import { OutputPathSelect, schemaPathOptions } from './fields'
 
 // A judge grades by emitting a JSON verdict (`generateObject` in eval/grade),
 // so a model that can't do structured output can't be a judge at all. Rather
@@ -44,14 +44,9 @@ export function JudgeConfig({
   /** The target agent's output contract — the source of the path options. */
   outputSchema?: JsonSchema | null
 }) {
-  const { Input, Label, Textarea } = useWfComponents()
+  const { Label, Textarea } = useWfComponents()
   const rubricField = useCommittedField(check.rubric, (rubric) => {
     return persist({ ...check, rubric })
-  })
-  // Only reached for a workflow target, whose output has no single declared
-  // shape to offer — an agent target picks from a dropdown instead.
-  const pathField = useCommittedField(check.path ?? '', (path) => {
-    return persist({ ...check, path: path.trim() || undefined })
   })
 
   // The judge model is required, so keep one selected: as soon as the model list
@@ -66,14 +61,6 @@ export function JudgeConfig({
   }, [check, models.data, persist])
 
   const pathOptions = schemaPathOptions(outputSchema)
-  // Preserve a stored path the schema doesn't declare (a nested path, or a
-  // field the agent has since dropped) as its own option, so switching targets
-  // never silently repoints the judge at the whole output.
-  const showsCustom = Boolean(
-    pathOptions &&
-    check.path &&
-    !pathOptions.some((o) => o.value === check.path),
-  )
   const selectedField = pathOptions?.find((o) => o.value === (check.path ?? ''))
 
   return (
@@ -116,34 +103,14 @@ export function JudgeConfig({
               </p>
             </FieldHelp>
           </div>
-          {pathOptions ? (
-            <select
-              value={check.path ?? ''}
-              onChange={(e) => {
-                return persist({ ...check, path: e.target.value || undefined })
-              }}
-              className="h-9 w-full rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none focus:border-neutral-500"
-            >
-              <option value="">Entire output</option>
-              {pathOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                  {o.type ? ` · ${o.type}` : ''}
-                </option>
-              ))}
-              {showsCustom ? (
-                <option value={check.path}>{check.path} (custom)</option>
-              ) : null}
-            </select>
-          ) : (
-            <Input
-              value={pathField.value}
-              placeholder="blank = whole output — e.g. docMeta.parties"
-              onChange={(e) => pathField.onChange(e.target.value)}
-              onBlur={pathField.onBlur}
-              className="font-mono text-xs"
-            />
-          )}
+          {/* A workflow target has no single declared output shape, so it
+              gets the free-form path box instead of the dropdown. */}
+          <OutputPathSelect
+            value={check.path}
+            options={pathOptions}
+            onSelect={(path) => persist({ ...check, path })}
+            placeholder="blank = whole output — e.g. docMeta.parties"
+          />
           {selectedField?.description ? (
             <p className="text-xs text-neutral-400">
               {selectedField.description}
