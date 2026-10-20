@@ -8,13 +8,13 @@ export const fmt = (n: number) => n.toLocaleString('en-US')
 
 /**
  * Headline token counts, read at a glance: 2000000 → "2 Million", 131072 →
- * "131K". Used where the magnitude is the message and the digits are noise.
+ * "131k". Used where the magnitude is the message and the digits are noise.
  */
 export function humanTokens(n: number): string {
   const round = (x: number) => (Math.round(x * 10) / 10).toString()
   if (n >= 1_000_000_000) return `${round(n / 1_000_000_000)} Billion`
   if (n >= 1_000_000) return `${round(n / 1_000_000)} Million`
-  if (n >= 1_000) return `${Math.round(n / 1_000)}K`
+  if (n >= 1_000) return `${Math.round(n / 1_000)}k`
   return fmt(n)
 }
 

@@ -10,6 +10,7 @@ import {
   unmetRequirements,
   unmetRequirementsReason,
 } from '../../engine/model-capabilities'
+import { PricePerMTok } from '../models-list-shared'
 import { Popover } from '../popover'
 
 import { groupModelsByProvider } from './model-grouping'
@@ -88,8 +89,7 @@ export function ModelSelect({
             <div className="mt-1 flex items-center gap-3 px-1 text-xs tabular-nums text-neutral-400">
               {selected.costPerMTok != null ? (
                 <span>
-                  ${selected.costPerMTok.toFixed(2)}
-                  <span className="text-neutral-300">/M</span>
+                  <PricePerMTok value={selected.costPerMTok} />
                 </span>
               ) : null}
               {selected.tokensPerSec != null ? (
@@ -195,8 +195,7 @@ function ModelOptionRow({
         <>
           {model.costPerMTok != null ? (
             <span className="shrink-0 text-xs tabular-nums text-neutral-400">
-              ${model.costPerMTok.toFixed(2)}
-              <span className="text-neutral-300">/M</span>
+              <PricePerMTok value={model.costPerMTok} />
             </span>
           ) : null}
           {model.tokensPerSec != null ? (

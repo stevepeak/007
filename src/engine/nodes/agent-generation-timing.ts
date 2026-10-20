@@ -1,5 +1,6 @@
 import { interpolateUserText } from '../prompt-variables'
 import type { StreamSink } from '../stream-sink'
+import { formatElapsedMs } from '../text'
 
 import type {
   AgentToolCallTiming,
@@ -107,7 +108,7 @@ export function createTurnClock(args: TurnClockArgs) {
       void sink?.log?.({
         ts: finishedAt,
         level: 'tool',
-        message: `${toolName} ${failed ? 'failed after' : 'finished in'} ${formatSeconds(durationMs)}`,
+        message: `${toolName} ${failed ? 'failed after' : 'finished in'} ${formatElapsedMs(durationMs)}`,
         meta: {
           tool: toolName,
           toolCallId,
@@ -237,8 +238,4 @@ export function turnTiming(args: {
     out.toolMs = last - first
   }
   return out
-}
-
-function formatSeconds(ms: number): string {
-  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`
 }

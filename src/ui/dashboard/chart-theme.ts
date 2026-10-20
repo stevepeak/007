@@ -111,13 +111,6 @@ export function formatBucketLong(
   })
 }
 
-/** Compact whole-number count for axis ticks: `948` / `12.3k` / `1.2M`. */
-export function formatCount(v: number): string {
-  if (v < 1000) return String(Math.round(v))
-  if (v < 1_000_000) return `${(v / 1000).toFixed(v < 10_000 ? 1 : 0)}k`
-  return `${(v / 1_000_000).toFixed(1)}M`
-}
-
 /** Shared axis styling — hairline, one step off surface, deliberately recessive. */
 export const axisProps = {
   stroke: CHROME.axis,

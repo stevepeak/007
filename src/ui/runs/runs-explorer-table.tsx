@@ -3,15 +3,11 @@ import { Fragment, useState } from 'react'
 
 import { firstLine } from '../../engine/text'
 import type { WfRunListRow, WfRunSummary } from '../../server/protocol'
-import {
-  formatDuration,
-  formatDurationMs,
-  formatTimestamp,
-  formatUsd,
-} from '../cost'
+import { formatDuration, formatTimestamp, formatUsd } from '../cost'
 import { useChildRuns } from '../hooks'
 import { useWfNav } from '../nav'
 
+import { runCostTitle } from './run-cost'
 import { RunStatusBadge } from './run-status'
 
 // The runs table itself. Each row opens that run's full-page viewer.
@@ -221,27 +217,7 @@ function RunCost({
   const tree = run.tree
   const shown = tree?.costUsd ?? run.costUsd
   if (shown == null) return <span className="text-neutral-300">—</span>
-  const tokens = tree?.totalTokens ?? run.totalTokens
-  const title = [
-    tokens != null ? `${tokens.toLocaleString()} tokens` : null,
-    tree ? `${tree.runCount} runs in this tree` : null,
-    tree?.computeMs != null
-      ? `${formatDurationMs(tree.computeMs)} of compute, run concurrently`
-      : null,
-    tree
-      ? `This run itself: ${run.costUsd != null ? formatUsd(run.costUsd) : 'no priced agent calls'}`
-      : null,
-    // A tree with runs still going is a floor, not a total. Said in words as
-    // well as marked with the `+` below, since a bare `+` is easy to miss.
-    tree && tree.pending > 0
-      ? `${tree.pending} still running — this is the total so far`
-      : null,
-    !tree && hasChildren
-      ? "This run's own cost — its child runs are listed separately, each with theirs."
-      : null,
-  ]
-    .filter(Boolean)
-    .join(' · ')
+  const title = runCostTitle({ run, where: 'row', hasChildren })
   return (
     <span title={title || undefined}>
       {formatUsd(shown)}

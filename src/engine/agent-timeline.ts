@@ -2,6 +2,7 @@ import type {
   AgentNodeMeta,
   AgentTurnTiming,
 } from './nodes/agent-generation-types'
+import { formatElapsedMs } from './text'
 
 // Where an agent step's time went, derived from the timing its turns recorded.
 //
@@ -203,13 +204,9 @@ export function describeSlowest(slowest: TimelineSlowest): string {
   const pct = Math.round(slowest.share * 100)
   const tool =
     slowest.kind === 'tools' && slowest.toolName
-      ? ` (slowest call: ${slowest.toolName}, ${formatMs(slowest.toolMs ?? 0)})`
+      ? ` (slowest call: ${slowest.toolName}, ${formatElapsedMs(slowest.toolMs ?? 0)})`
       : ''
   return `${pct}% of this step was ${SEGMENT_PHRASE[slowest.kind]}${tool} on turn ${slowest.turnIndex + 1}`
-}
-
-function formatMs(ms: number): string {
-  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`
 }
 
 /** One span a trace exporter should emit, with absolute epoch-ms bounds. */

@@ -1,7 +1,7 @@
 import type { WfDashboardResult } from '../../server/protocol'
+import { formatCount } from '../cost'
 
 import { ChartCard, ChartEmpty, StackedBarChart } from './chart-parts'
-import { formatCount } from './chart-theme'
 
 // Cloudflare Workflows bills per STEP, and a graph's step count is not
 // proportional to its size: every node costs enter/run/record, an iteration

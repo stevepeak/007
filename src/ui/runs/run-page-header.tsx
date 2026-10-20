@@ -19,7 +19,6 @@ import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import {
   formatDuration,
-  formatDurationMs,
   formatTimestamp,
   formatTokens,
   formatUsd,
@@ -28,6 +27,7 @@ import { MessageFeedback } from '../message-feedback'
 import { WfLink } from '../nav'
 import { SentryIcon } from '../sentry-icon'
 
+import { runCostTitle } from './run-cost'
 import { runStatusClass, runStatusDotClass } from './run-status'
 
 // The run viewer's header strip: where it came from, what it cost, how it
@@ -401,23 +401,7 @@ function RunCostStat({ run }: { run: WfRunSummary }) {
   const cost = tree?.costUsd ?? run.costUsd
   const tokens = tree?.totalTokens ?? run.totalTokens
   if (cost == null) return null
-  const title = [
-    tokens != null ? `${tokens.toLocaleString()} tokens` : null,
-    tree
-      ? `Across ${tree.runCount} runs, including everything this one spawned`
-      : null,
-    tree?.computeMs != null
-      ? `${formatDurationMs(tree.computeMs)} of compute, run concurrently`
-      : null,
-    tree
-      ? `This run itself: ${run.costUsd != null ? formatUsd(run.costUsd) : 'no priced agent calls'}`
-      : null,
-    tree && tree.pending > 0
-      ? `${tree.pending} still running — this is the total so far`
-      : null,
-  ]
-    .filter(Boolean)
-    .join(' · ')
+  const title = runCostTitle({ run, where: 'header' })
   return (
     <span
       className="text-xs font-medium text-neutral-600 tabular-nums"

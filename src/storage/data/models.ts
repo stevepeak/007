@@ -79,6 +79,8 @@ function rowToModelOption(r: WfModelRow): ModelOption {
     label: r.label,
     providerId: r.providerId,
     costPerMTok: r.costPerMTok ?? undefined,
+    promptPricePerMTok: r.promptPricePerMTok ?? undefined,
+    completionPricePerMTok: r.completionPricePerMTok ?? undefined,
     tokensPerSec: r.tokensPerSec ?? undefined,
     contextLength: r.contextLength ?? undefined,
     capabilities: rowCapabilities(r),

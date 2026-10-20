@@ -2,6 +2,7 @@ import { Check, Minus, Plus } from 'lucide-react'
 
 import type { ModelOption } from '../../engine/config'
 import { cn } from '../cn'
+import { PricePerMTok } from '../models-list-shared'
 
 import { BrandMark, inferModelBrand } from './shared'
 
@@ -79,10 +80,7 @@ export function ModelMatrixRow({
             {/* cost */}
             <span className="w-16 shrink-0 text-right text-xs tabular-nums text-neutral-400">
               {model.costPerMTok != null ? (
-                <>
-                  ${model.costPerMTok.toFixed(2)}
-                  <span className="text-neutral-300">/M</span>
-                </>
+                <PricePerMTok value={model.costPerMTok} />
               ) : (
                 <span className="text-neutral-300">—</span>
               )}

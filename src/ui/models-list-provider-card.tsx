@@ -21,6 +21,7 @@ import {
   formatAge,
   formatContext,
   NO_AGENTS,
+  PricePerMTok,
   type UsageMap,
 } from './models-list-shared'
 import { WfLink } from './nav'
@@ -186,10 +187,7 @@ function ModelRow({
 
       <span className="w-20 shrink-0 text-right text-xs tabular-nums text-neutral-500">
         {model.costPerMTok != null ? (
-          <>
-            ${model.costPerMTok.toFixed(2)}
-            <span className="text-neutral-300">/M</span>
-          </>
+          <PricePerMTok value={model.costPerMTok} />
         ) : (
           <span className="text-neutral-300">—</span>
         )}

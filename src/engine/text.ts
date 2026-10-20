@@ -100,3 +100,12 @@ export function toText(
   // eslint-disable-next-line @typescript-eslint/no-base-to-string -- primitives only by here
   return String(value)
 }
+
+/**
+ * A short elapsed span for engine-written progress copy: `820ms` below a
+ * second, then seconds with one decimal (`3.4s`, `75.0s`). Coarser than the
+ * UI's `formatDurationMs`, which rolls over into whole seconds and minutes.
+ */
+export function formatElapsedMs(ms: number): string {
+  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`
+}

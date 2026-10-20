@@ -6,7 +6,7 @@ import type { WfWorkflowAgentRef } from '../server/protocol'
 import { agentColor, agentIcon } from './agent-appearance'
 import { cn } from './cn'
 import { useWfComponents } from './context'
-import { formatRelative, formatTimestamp, formatTokens } from './cost'
+import { formatCount, formatRelative, formatTimestamp } from './cost'
 import { useWorkflows } from './hooks'
 import { useWfNav, WfLink } from './nav'
 import { NewWorkflowDialog } from './new-workflow-dialog'
@@ -121,7 +121,7 @@ export function WorkflowsList({ className }: WorkflowsListProps) {
                   onClick={(e) => e.stopPropagation()}
                   className="flex items-center gap-1 rounded transition hover:text-neutral-700 hover:underline"
                 >
-                  <Play className="size-3.5" /> {formatTokens(w.runCount)}{' '}
+                  <Play className="size-3.5" /> {formatCount(w.runCount)}{' '}
                   {w.runCount === 1 ? 'run' : 'runs'}
                 </WfLink>
               </Tooltip>

@@ -11,6 +11,7 @@ import {
 } from 'recharts'
 
 import type { WfDashboardResult } from '../../server/protocol'
+import { formatCount } from '../cost'
 
 import {
   ChartCard,
@@ -24,7 +25,6 @@ import {
   assignSeriesColors,
   axisProps,
   formatBucket,
-  formatCount,
   gridProps,
 } from './chart-theme'
 

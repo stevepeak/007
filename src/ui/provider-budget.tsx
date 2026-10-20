@@ -15,7 +15,7 @@ import { Tooltip } from './tooltip'
 /**
  * USD, always two decimals — this is money, so `$5` reads as unfinished.
  *
- * Deliberately NOT `cost.ts`'s `formatBudgetUsd`, which scales precision with
+ * Deliberately NOT `cost.ts`'s `formatUsd`, which scales precision with
  * magnitude (`$0.00042`) because it renders per-node run costs. A budget is a
  * cap the user typed; it should read back the way they typed it.
  */

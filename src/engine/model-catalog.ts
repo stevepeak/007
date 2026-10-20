@@ -78,6 +78,10 @@ export type ModelOption = {
   providerId?: string
   /** Blended cost per 1M tokens, USD. Omit when the provider doesn't report it. */
   costPerMTok?: number
+  /** Prompt-side price, USD per 1M tokens. */
+  promptPricePerMTok?: number
+  /** Completion-side price, USD per 1M tokens. */
+  completionPricePerMTok?: number
   /** Throughput, tokens/second. Omit when the provider doesn't report it. */
   tokensPerSec?: number
   /**
@@ -138,10 +142,6 @@ export type ModelCatalogEntry = ModelOption & {
   vendor?: string
   /** Whether the platform has enabled this model for use. */
   enabled: boolean
-  /** Prompt-side price, USD per 1M tokens. */
-  promptPricePerMTok?: number
-  /** Completion-side price, USD per 1M tokens. */
-  completionPricePerMTok?: number
   /** Max context window, tokens. */
   contextLength?: number
   /** Model release date, epoch ms (OpenRouter `created`). Omit if unreported. */

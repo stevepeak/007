@@ -14,6 +14,7 @@ import {
 } from 'recharts'
 
 import type { WfDashboardResult } from '../../server/protocol'
+import { formatCount } from '../cost'
 import { WfLink } from '../nav'
 
 import {
@@ -28,7 +29,6 @@ import {
   STATUS,
   axisProps,
   formatBucket,
-  formatCount,
   gridProps,
 } from './chart-theme'
 

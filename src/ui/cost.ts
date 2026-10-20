@@ -11,12 +11,16 @@ export function formatUsd(v: number | null | undefined): string {
   return `$${v.toFixed(2)}`
 }
 
-/** Compact token count, e.g. `948` / `12.3k` / `1.2M`. */
-export function formatTokens(v: number | null | undefined): string {
-  if (v == null) return '—'
-  if (v < 1000) return String(v)
+/** Compact whole-number count, e.g. `948` / `12.3k` / `1.2M` (axis ticks, run counts). */
+export function formatCount(v: number): string {
+  if (v < 1000) return String(Math.round(v))
   if (v < 1_000_000) return `${(v / 1000).toFixed(v < 10_000 ? 1 : 0)}k`
   return `${(v / 1_000_000).toFixed(1)}M`
+}
+
+/** Compact token count as {@link formatCount}, or "—" when unknown. */
+export function formatTokens(v: number | null | undefined): string {
+  return v == null ? '—' : formatCount(v)
 }
 
 /** Absolute timestamp as `Mar 5, 09:05 AM` (locale-formatted, 2-digit hour). */

@@ -11,6 +11,8 @@ import {
 
 import type { AgentUsageRef, ModelCapabilities } from '../server/protocol'
 
+import { formatRelative } from './cost'
+
 export type UsageMap = Record<string, AgentUsageRef[]>
 export const NO_AGENTS: AgentUsageRef[] = []
 
@@ -60,6 +62,16 @@ export const AGE_MAX_DAYS: Record<Exclude<AgeFilter, 'any' | 'older'>, number> =
 
 export const DAY_MS = 86_400_000
 
+/** A model's blended price per 1M tokens, e.g. `$3.00/M` (unit muted). */
+export function PricePerMTok({ value }: { value: number }) {
+  return (
+    <>
+      ${value.toFixed(2)}
+      <span className="text-neutral-300">/M</span>
+    </>
+  )
+}
+
 /** Compact context-window label, e.g. 200000 → "200k", 1048576 → "1M". */
 export function formatContext(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`
@@ -67,11 +79,11 @@ export function formatContext(n: number): string {
   return String(n)
 }
 
-/** Compact relative age from an epoch-ms release date, e.g. "5d", "3mo", "2y". */
+/**
+ * Compact relative age from an epoch-ms release date, e.g. "5d", "3mo", "2y" —
+ * {@link formatRelative}, except a release is dated by the day, so under a day
+ * reads "today" rather than hours.
+ */
 export function formatAge(releasedAt: number): string {
-  const days = Math.max(0, (Date.now() - releasedAt) / DAY_MS)
-  if (days < 1) return 'today'
-  if (days < 30) return `${Math.round(days)}d`
-  if (days < 365) return `${Math.round(days / 30)}mo`
-  return `${(days / 365).toFixed(1)}y`
+  return Date.now() - releasedAt < DAY_MS ? 'today' : formatRelative(releasedAt)
 }

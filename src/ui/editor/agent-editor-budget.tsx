@@ -211,6 +211,9 @@ export function TokenBudgetField({
   const { Checkbox } = useWfComponents()
   const on = value != null && !disabledReason
   const budget = value ?? suggestedTokens ?? 100_000
+  // A projection of TOTAL tokens with no prompt/completion split to price, so it
+  // uses the blended rate — unlike a finished call, which `tokenCostUsd` prices
+  // per side.
   const cost = costPerMTok != null ? (budget / 1_000_000) * costPerMTok : null
   // What this agent can cost with nothing stopping it. Shown while the budget is
   // OFF, which is the state where the number is a risk rather than a footnote.
@@ -326,7 +329,7 @@ function BudgetDetail({
     <div className="mt-3 space-y-4 rounded-md bg-neutral-50 p-3">
       {/* What the author is budgeting AGAINST, stated before the input — a
                   budget of "500,000" means nothing until you know whether the model
-                  holds 128K or 2 Million. */}
+                  holds 128k or 2 Million. */}
       <div className="space-y-1.5 border-b border-neutral-200 pb-3">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <span className="text-xs text-neutral-500">
@@ -347,7 +350,7 @@ function BudgetDetail({
             )}
           </span>
         </div>
-        {/* The conversion the whole field depends on. Without it "131K per
+        {/* The conversion the whole field depends on. Without it "131k per
                     turn" and a budget of "328,000" look like they contradict. */}
         {contextLength != null ? (
           <p className="text-xs text-neutral-400">

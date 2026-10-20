@@ -6,12 +6,12 @@ describe('humanTokens', () => {
   test('reads magnitudes the way the field states them', () => {
     expect(humanTokens(2_000_000)).toBe('2 Million')
     expect(humanTokens(1_500_000)).toBe('1.5 Million')
-    expect(humanTokens(131_072)).toBe('131K')
-    expect(humanTokens(1_000)).toBe('1K')
+    expect(humanTokens(131_072)).toBe('131k')
+    expect(humanTokens(1_000)).toBe('1k')
     expect(humanTokens(4_000_000_000)).toBe('4 Billion')
   })
 
-  test('below 1K it stays exact — no misleading rounding to 0K', () => {
+  test('below 1k it stays exact — no misleading rounding to 0k', () => {
     expect(humanTokens(999)).toBe('999')
     expect(humanTokens(0)).toBe('0')
   })

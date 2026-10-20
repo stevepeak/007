@@ -14,6 +14,7 @@ import {
 import { useState } from 'react'
 
 import type { AgentConfig } from '../../engine'
+import { tokenCostUsd } from '../../engine/cost'
 import { truncate } from '../../engine/text'
 import type {
   AgentPreviewResult,
@@ -440,7 +441,7 @@ function asVerdict(text: string): { label: string; truthy: boolean } | null {
     : null
 }
 
-// Blended-price cost of a run, USD. Tiny for a single preview, so keep enough
+// Cost of one preview run, USD. Tiny for a single preview, so keep enough
 // precision to be non-zero — 4 decimals under a dollar, a floor below that.
 function formatCost(usd: number): string {
   if (usd <= 0) return '$0'
@@ -487,9 +488,18 @@ function PlaygroundResult({
   )
   const totalTokens = meta.totalUsage.inputTokens + meta.totalUsage.outputTokens
 
-  const costPerMTok = models?.find((m) => m.id === meta.model)?.costPerMTok
-  const cost =
-    costPerMTok != null ? (totalTokens / 1_000_000) * costPerMTok : null
+  // Priced exactly as the run viewer prices a step: prompt and completion
+  // tokens at their own rates, the blended rate only when the split is unknown.
+  const model = models?.find((m) => m.id === meta.model)
+  const cost = tokenCostUsd(
+    meta.totalUsage.inputTokens,
+    meta.totalUsage.outputTokens,
+    model && {
+      promptPerMTok: model.promptPricePerMTok,
+      completionPerMTok: model.completionPricePerMTok,
+      blendedPerMTok: model.costPerMTok,
+    },
+  )
 
   return (
     <div className="space-y-2">
