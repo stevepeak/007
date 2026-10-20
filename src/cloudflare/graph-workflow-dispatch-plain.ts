@@ -6,6 +6,7 @@ import {
   errorStored,
 } from '../engine/error-detail'
 import { modelBudgetFor } from '../engine/model-budget'
+import { bindModelFactory } from '../engine/model-factory'
 import { nodeSpanLabel } from '../engine/node-label'
 import { emitNodeStartProgress } from '../engine/node-progress'
 import { isFatalAgentError } from '../engine/nodes/agent-generation'
@@ -177,19 +178,10 @@ export async function dispatchPlain<TDeps, E extends GraphWorkflowEnv>(
           return runNode(
             { type: 'execute', node, input },
             {
-              // Bridge the per-call reasoning intent through to the host.
-              // Dropping `opts` here made `ModelFactory`'s contract a lie on the
-              // production path — nothing passes an intent today (so this stays
-              // undefined and the provider default wins), but a future caller
-              // must not silently have it ignored. There is no run-level
-              // reasoning on this path to fall back to: `start-run.ts` never
-              // sets one.
-              getModel: (modelId, opts) => {
-                return config.getModel(modelId, {
-                  ...rc,
-                  reasoning: opts?.reasoning,
-                })
-              },
+              getModel: bindModelFactory({
+                getModel: config.getModel,
+                runContext: rc,
+              }),
               getDecider: config.getDecider
                 ? (modelId) => config.getDecider!(modelId, rc)
                 : undefined,

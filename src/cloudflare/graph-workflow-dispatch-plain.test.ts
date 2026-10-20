@@ -1,9 +1,12 @@
+import { MockLanguageModelV3 } from 'ai/test'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import type { WorkflowStep } from 'cloudflare:workers'
 import { asc } from 'drizzle-orm'
 
-import type { WfSdkConfig } from '../engine/config'
-import type { TextNode } from '../engine/graph'
+import { makeAgentConfig } from '../engine/agent-test-helpers'
+import type { RunContext, WfSdkConfig } from '../engine/config'
+import type { AgentNode, TextNode } from '../engine/graph'
+import { mockFinish, mockUsage } from '../engine/model-test-helpers'
 import type { ExecutableNode, Scheduler } from '../engine/scheduler'
 import type { RunLogEntry } from '../engine/stream-sink'
 import { createWfDb, type WfDb } from '../storage/client'
@@ -315,6 +318,58 @@ describe('dispatchPlain — a failing node', () => {
       dispatchPlain(ctx, BROKEN as ExecutableNode, null, 3, bodyLogs, () => {}),
     ).rejects.toThrow()
     expect(bodyLogs.map((e) => e.level)).toEqual(['warn'])
+  })
+})
+
+describe('dispatchPlain — an agent node', () => {
+  // The durable `getModel` once forwarded only `reasoning`, so on this engine
+  // web search was always off no matter what the agent said.
+  test("forwards the agent's web search setting to the host's getModel", async () => {
+    const seen: RunContext[] = []
+    ctx.config.getModel = (_modelId, runContext) => {
+      seen.push(runContext)
+      return new MockLanguageModelV3({
+        doGenerate: async () => ({
+          content: [{ type: 'text' as const, text: 'Answer.' }],
+          finishReason: mockFinish('stop'),
+          usage: mockUsage(1, 1),
+          warnings: [],
+        }),
+      })
+    }
+    ctx.manifest = [
+      {
+        kind: 'agent',
+        id: 'bot',
+        pinnedVersion: null,
+        versionId: 'v1',
+        versionNumber: 1,
+        name: 'Bot',
+        config: makeAgentConfig({
+          modelId: 'mock',
+          maxTurns: 1,
+          webSearch: 'on',
+          webCitations: true,
+        }),
+      },
+    ]
+    const agent: AgentNode = {
+      id: 'n1',
+      kind: 'agent',
+      label: 'Bot',
+      position: { x: 0, y: 0 },
+      informUser: { mode: 'off' },
+      config: { agentId: 'bot', version: null, inputs: {} },
+    }
+
+    const { captured } = await run(agent)
+
+    expect(captured).toBeNull()
+    expect(seen.length).toBeGreaterThan(0)
+    for (const rc of seen) {
+      expect(rc.webSearch).toBe('on')
+      expect(rc.webCitations).toBe(true)
+    }
   })
 })
 

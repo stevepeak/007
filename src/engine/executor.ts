@@ -4,6 +4,7 @@ import { isDecisionKind } from './graph'
 import { resolveAnswerNodeIds } from './graph-engine'
 import { resolveWfLogger } from './logger'
 import type { ModelBudget } from './model-budget'
+import { bindModelFactory } from './model-factory'
 import { emitNodeStartProgress } from './node-progress'
 import { settleOf, type NodeSettlement } from './node-settlement'
 import { failureMustAbort } from './nodes/decision-agent'
@@ -316,16 +317,10 @@ export async function executeWorkflow<TDeps>(
         return runNode(
           { type: 'execute', node, input },
           {
-            getModel: (modelId, opts) => {
-              return config.getModel(modelId, {
-                ...runContext,
-                reasoning: opts?.reasoning ?? runContext.reasoning,
-                // Web search is per-AGENT, never run-wide: only an agent node
-                // that passes its own setting turns it on for its calls.
-                webSearch: opts?.webSearch,
-                webCitations: opts?.webCitations,
-              })
-            },
+            getModel: bindModelFactory({
+              getModel: config.getModel,
+              runContext,
+            }),
             // Decision agents only. Bound the same way as `getModel` — the host
             // sees the run context so it can read a live binding — and left
             // undefined when the host wired no decision provider, which is what

@@ -6,6 +6,7 @@ import {
 } from '../connectors/registry'
 import type { RunContext, WfSdkConfig } from '../engine/config'
 import type { AgentConfig, AgentNode } from '../engine/graph'
+import { bindModelFactory } from '../engine/model-factory'
 import { executeAgentNode } from '../engine/nodes/agent'
 import { createMemorySink } from '../engine/stream-sink'
 import type { WfDb } from '../storage/client'
@@ -173,16 +174,10 @@ export async function executeAgentPreview<TDeps>(opts: {
 
   const result = await executeAgentNode<unknown>({
     node,
-    // The agent's own intent wins; the playground default only fills the gap.
-    // Same precedence as `executor.ts`, so a preview and a real run resolve
-    // reasoning identically — which is the only way the playground can be
-    // trusted to predict production latency.
-    getModel: (modelId, opts) => {
-      return wfConfig.getModel(modelId, {
-        ...runContext,
-        reasoning: opts?.reasoning ?? runContext.reasoning,
-      })
-    },
+    // The same binder a real run uses, so a preview resolves reasoning and web
+    // search identically — the only way the playground can be trusted to
+    // predict production.
+    getModel: bindModelFactory({ getModel: wfConfig.getModel, runContext }),
     toolRegistry,
     referenceKinds: wfConfig.referenceKinds ?? [],
     // Every entry closes over what it needs (the simulator model, or the real

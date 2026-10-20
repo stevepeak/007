@@ -3,6 +3,7 @@ import { NonRetryableError } from 'cloudflare:workflows'
 import type { IterationNode } from '../engine/graph'
 import { iterationItemTitle } from '../engine/item-title'
 import { modelBudgetFor } from '../engine/model-budget'
+import { bindModelFactory } from '../engine/model-factory'
 import {
   executeSubgraph,
   IterationTooManyItemsError,
@@ -131,12 +132,10 @@ async function runItemInline<TDeps, E extends GraphWorkflowEnv>(
         node.config.subgraph,
         item,
         {
-          getModel: (modelId, opts) => {
-            return config.getModel(modelId, {
-              ...rc,
-              reasoning: opts?.reasoning,
-            })
-          },
+          getModel: bindModelFactory({
+            getModel: config.getModel,
+            runContext: rc,
+          }),
           getDecider: config.getDecider
             ? (modelId) => config.getDecider!(modelId, rc)
             : undefined,
