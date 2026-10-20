@@ -210,6 +210,53 @@ describe('import/export round-trip', () => {
   })
 })
 
+// An import is held to the UI's archive guard: an agent a live workflow still
+// uses cannot be archived, unless the same bundle archives that workflow too.
+describe('archiving an agent through a spec import', () => {
+  let db: WfDb
+  beforeEach(async () => {
+    db = freshDb()
+    await importBundle(db, sampleBundle())
+  })
+
+  const archived = (opts: { workflowToo: boolean }): SpecBundle => {
+    const b = sampleBundle()
+    return {
+      ...b,
+      agents: b.agents.map((a) => ({ ...a, archived: true })),
+      workflows: opts.workflowToo
+        ? b.workflows.map((w) => ({ ...w, archived: true }))
+        : b.workflows,
+    }
+  }
+
+  test('is refused while a live workflow still uses it', async () => {
+    await expect(importBundle(db, archived({ workflowToo: false }))).rejects.toThrow(
+      "Agent 'greeter': Cannot archive",
+    )
+    const out = await exportBundle(db)
+    expect(out.agents[0].archived).toBeUndefined()
+  })
+
+  test('succeeds when the bundle archives the workflow too', async () => {
+    await importBundle(db, archived({ workflowToo: true }))
+    const out = await exportBundle(db)
+    expect(out.agents[0].archived).toBe(true)
+  })
+
+  test('prune archives the workflow before the agent it used', async () => {
+    const report = await importBundle(
+      db,
+      { ...sampleBundle(), agents: [], workflows: [], evals: [] },
+      { prune: true },
+    )
+    expect(report.changes.filter((c) => c.action === 'archive').map((c) => c.kind)).toEqual([
+      'workflow',
+      'agent',
+    ])
+  })
+})
+
 // ── decision agents (ART-238) ────────────────────────────────────────────────
 
 describe('spec round trip for a decision agent', () => {

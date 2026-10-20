@@ -26,6 +26,7 @@ import {
 } from '../../engine/eval-schema'
 import type { WfDb } from '../client'
 import {
+  archiveAgent,
   assignWorkflow,
   createAgent,
   createEvalSet,
@@ -83,7 +84,12 @@ export async function importBundle(
   const changes: EntityChange[] = []
   const note = opts.changeNote ?? 'spec import'
 
-  const agentIdBySlug = await reconcileAgents(db, bundle, opts, changes)
+  const { idBySlug: agentIdBySlug, toArchive } = await reconcileAgents(
+    db,
+    bundle,
+    opts,
+    changes,
+  )
   const workflowIdBySlug = await reconcileWorkflows(
     db,
     bundle,
@@ -102,6 +108,11 @@ export async function importBundle(
 
   if (opts.prune) {
     await pruneMissing(db, bundle, opts, changes)
+  }
+  // Last, once every workflow graph in the bundle is in place: an agent the
+  // bundle archives may only lose a reference the bundle itself removes.
+  if (!opts.dryRun) {
+    for (const agent of toArchive) await archiveAgentFromSpec(db, agent)
   }
 
   const clean = changes.every((c) => c.action === 'unchanged')
@@ -216,7 +227,26 @@ async function archiveAbsent(
   for (const r of rows) {
     if (!r.slug || r.archived || bundleSlugs.has(r.slug) || skip(r)) continue
     changes.push({ kind, slug: r.slug, action: 'archive' })
-    if (!opts.dryRun) await markArchived(db, table, r.id)
+    if (opts.dryRun) continue
+    if (kind === 'agent') await archiveAgentFromSpec(db, { id: r.id, slug: r.slug })
+    else await markArchived(db, table, r.id)
+  }
+}
+
+/**
+ * Archive an agent through `archiveAgent`, so an import is held to the same
+ * "still used by a workflow" guard as the UI. The refusal names the slug.
+ */
+async function archiveAgentFromSpec(
+  db: WfDb,
+  agent: { id: string; slug: string },
+): Promise<void> {
+  try {
+    await archiveAgent(db, { agentId: agent.id })
+  } catch (err) {
+    throw new Error(`Agent '${agent.slug}': ${(err as Error).message}`, {
+      cause: err,
+    })
   }
 }
 
@@ -227,9 +257,14 @@ async function reconcileAgents(
   bundle: SpecBundle,
   opts: ImportOptions,
   changes: EntityChange[],
-): Promise<Map<string, string>> {
+): Promise<{
+  idBySlug: Map<string, string>
+  /** Agents to archive once workflows are reconciled — see `importBundle`. */
+  toArchive: { id: string; slug: string }[]
+}> {
   const existing = bySlug(await db.select().from(wfAgent))
   const idBySlug = new Map<string, string>()
+  const toArchive: { id: string; slug: string }[] = []
 
   for (const spec of bundle.agents) {
     const row = existing.get(spec.slug)
@@ -254,7 +289,7 @@ async function reconcileAgents(
         kind: spec.agentKind,
         config,
       })
-      if (spec.archived) await markArchived(db, wfAgent, agentId)
+      if (spec.archived) toArchive.push({ id: agentId, slug: spec.slug })
       idBySlug.set(spec.slug, agentId)
       continue
     }
@@ -283,6 +318,9 @@ async function reconcileAgents(
     changes.push({ kind: 'agent', slug: spec.slug, action: 'update' })
     if (opts.dryRun) continue
     if (metaChanged) {
+      // Un-archiving is immediate; archiving waits for `toArchive`.
+      const archiving = !!spec.archived && !row.archived
+      if (archiving) toArchive.push({ id: row.id, slug: spec.slug })
       await db
         .update(wfAgent)
         .set({
@@ -290,7 +328,7 @@ async function reconcileAgents(
           description: spec.description ?? null,
           icon: spec.icon ?? null,
           color: spec.color ?? null,
-          archived: !!spec.archived,
+          archived: archiving ? row.archived : !!spec.archived,
           updatedAt: new Date(),
         })
         .where(eq(wfAgent.id, row.id))
@@ -304,7 +342,7 @@ async function reconcileAgents(
       })
     }
   }
-  return idBySlug
+  return { idBySlug, toArchive }
 }
 
 function agentMetaChanged(
@@ -586,7 +624,8 @@ async function pruneMissing(
   const bundleAgents = new Set(bundle.agents.map((a) => a.slug))
   const bundleWorkflows = new Set(bundle.workflows.map((w) => w.slug))
 
-  await archiveAbsent(db, wfAgent, 'agent', bundleAgents, opts, changes)
+  // Workflows first: archiving one releases the agents it used, which the
+  // agent pass is then allowed to archive.
   // Hidden workflows are eval-wrapper machinery, never authored content — exempt.
   await archiveAbsent(
     db,
@@ -597,4 +636,5 @@ async function pruneMissing(
     changes,
     (w) => !!w.hidden,
   )
+  await archiveAbsent(db, wfAgent, 'agent', bundleAgents, opts, changes)
 }
