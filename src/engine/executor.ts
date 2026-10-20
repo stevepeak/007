@@ -17,7 +17,7 @@ import {
   type ReportResult,
 } from './scheduler'
 import type { RunLogEntry, StreamSink } from './stream-sink'
-import { enforceOutputContract, resolveTriggerInput } from './trigger-registry'
+import { enforceOutputContract, runTriggerInput } from './trigger-registry'
 
 export type ExecuteWorkflowDeps<TDeps> = {
   /** Raw graph JSON from a workflow_version row. Validated here. */
@@ -227,44 +227,33 @@ export async function executeWorkflow<TDeps>(
     )
   }
 
-  const validatedTriggerInput = deps.spawned
-    ? deps.triggerInput
-    : resolveTriggerInput(
-        config.triggers,
-        trigger.config.triggerKind,
-        deps.triggerInput,
-      )
+  const validatedTriggerInput = runTriggerInput({
+    triggers: config.triggers,
+    triggerKind: trigger.config.triggerKind,
+    triggerInput: deps.triggerInput,
+    spawned: deps.spawned ?? false,
+  })
 
   const toolDeps = await config.buildRunDeps(runContext)
 
-  let sequence = 0
-
   // Record the trigger as a step + seed its output. The trigger "executes"
   // instantly — its output is the validated triggerInput.
-  await recorder.record({
-    nodeId: trigger.id,
-    nodeKind: 'trigger',
-    sequence: sequence++,
-    input: validatedTriggerInput,
-    status: 'completed',
-    output: validatedTriggerInput,
-  })
+  await recorder.record(
+    stepRowFor({
+      node: trigger,
+      sequence: 0,
+      input: validatedTriggerInput,
+      outcome: { ok: true, result: { recordedOutput: validatedTriggerInput } },
+    }),
+  )
   scheduler.seedTrigger(validatedTriggerInput)
 
-  // Resume: report the interrupted run's completed steps as done, seeding each
-  // with its recorded output — for a decision node (branch/switch) that is its
-  // `{ result, reasoning }`, exactly what a live run reports, so downstream
-  // `ref`s resolve as they did the first time. `branchResult` replays routing.
-  // Sequence numbering continues past what was already recorded, so a re-run
-  // node lands after the steps it followed rather than overwriting their order.
-  for (const s of deps.resumeSteps ?? []) {
-    const decision = s.branchResult as { result?: string } | null | undefined
-    scheduler.report(s.nodeId, {
-      output: s.output,
-      branchResult: decision?.result,
-    })
-    sequence = Math.max(sequence, s.sequence + 1)
-  }
+  // Resume: the interrupted run's completed steps are reported done in place
+  // (see `Scheduler.seedResume`); numbering continues past them.
+  let sequence = Math.max(
+    1,
+    scheduler.seedResume({ steps: deps.resumeSteps ?? [] }),
+  )
 
   // Execute one node inline, record its outcome, and return what the scheduler
   // needs. A failed node records its failed step and rethrows. Mirrors the

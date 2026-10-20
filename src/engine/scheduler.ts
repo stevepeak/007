@@ -182,6 +182,35 @@ export class Scheduler {
   }
 
   /**
+   * Resume: mark an interrupted run's completed steps done, each with its
+   * recorded output — for a decision node (branch/switch) that is its
+   * `{ result, reasoning }`, exactly what a live run reports, so downstream
+   * `ref`s resolve as they did the first time. `branchResult` replays routing.
+   *
+   * Returns the sequence after the last one replayed, so a re-run node lands
+   * after the steps it followed rather than overwriting their order.
+   */
+  seedResume(args: {
+    steps: readonly {
+      nodeId: string
+      sequence: number
+      output: unknown
+      branchResult?: unknown
+    }[]
+  }): number {
+    let next = 0
+    for (const s of args.steps) {
+      const decision = s.branchResult as { result?: string } | null | undefined
+      this.report(s.nodeId, {
+        output: s.output,
+        branchResult: decision?.result,
+      })
+      next = Math.max(next, s.sequence + 1)
+    }
+    return next
+  }
+
+  /**
    * The node-output cache, used by tool arg ref resolution. Returned as the
    * live map (engine-internal); callers read from it and must not mutate it.
    * A {@link NodeOutputs} rather than a bare Map — it also carries the graph's

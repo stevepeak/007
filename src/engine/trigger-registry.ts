@@ -74,6 +74,23 @@ export type RunIdentity = {
 export type TriggerRegistry = Record<string, TriggerEntry>
 
 /**
+ * The input a run's trigger starts with. A spawned callee is seeded raw: the
+ * inline path it replaces validates nothing (the caller's `buildTriggerInput`
+ * output is handed straight to the subgraph's identity trigger), so validating
+ * here would make being called change whether a workflow runs at all.
+ */
+export function runTriggerInput(args: {
+  triggers: TriggerRegistry
+  triggerKind: string
+  triggerInput: unknown
+  spawned: boolean
+}): unknown {
+  return args.spawned
+    ? args.triggerInput
+    : resolveTriggerInput(args.triggers, args.triggerKind, args.triggerInput)
+}
+
+/**
  * Validate/normalize a run's `triggerInput` for the given trigger kind:
  *   • event    → parsed against the registered event's `inputSchema` (throws if
  *                the kind isn't registered).

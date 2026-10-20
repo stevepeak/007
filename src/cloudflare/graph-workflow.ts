@@ -20,10 +20,10 @@ import { resolveWfLogger } from '../engine/logger'
 import { settleOf, type NodeSettlement } from '../engine/node-settlement'
 import { iterationSubgraphOf } from '../engine/nodes/iteration'
 import { errorMessage } from '../engine/run-node'
-import type { RecordStepArgs } from '../engine/run-recorder'
+import { stepRowFor, type RecordStepArgs } from '../engine/run-recorder'
 import { Scheduler, WorkflowStalledError } from '../engine/scheduler'
 import type { StreamSink } from '../engine/stream-sink'
-import { resolveTriggerInput } from '../engine/trigger-registry'
+import { runTriggerInput } from '../engine/trigger-registry'
 import { createWfDb } from '../storage/client'
 import {
   failRun,
@@ -378,17 +378,12 @@ export function makeGraphWorkflow<
 
       const scheduler = new Scheduler(graphJson, config.limits?.nodeBudget)
       const trigger = scheduler.trigger
-      // A spawned callee is seeded raw: the inline path it replaces validates
-      // nothing (the caller's `buildTriggerInput` output is handed straight to
-      // the subgraph's identity trigger), so validating here would make flipping
-      // being called change whether a workflow runs at all.
-      const validatedTriggerInput = p.subRun
-        ? p.triggerInput
-        : resolveTriggerInput(
-            config.triggers,
-            trigger.config.triggerKind,
-            p.triggerInput,
-          )
+      const validatedTriggerInput = runTriggerInput({
+        triggers: config.triggers,
+        triggerKind: trigger.config.triggerKind,
+        triggerInput: p.triggerInput,
+        spawned: Boolean(p.subRun),
+      })
 
       // MCP connector tools join the registry for the length of this run.
       //
@@ -446,14 +441,17 @@ export function makeGraphWorkflow<
       let sequence = 0
       const triggerSeq = sequence++
       await stepDo(step, `step:${trigger.id}`, () => {
-        return recordOne({
-          nodeId: trigger.id,
-          nodeKind: 'trigger',
-          sequence: triggerSeq,
-          input: validatedTriggerInput,
-          status: 'completed',
-          output: validatedTriggerInput,
-        })
+        return recordOne(
+          stepRowFor({
+            node: trigger,
+            sequence: triggerSeq,
+            input: validatedTriggerInput,
+            outcome: {
+              ok: true,
+              result: { recordedOutput: validatedTriggerInput },
+            },
+          }),
+        )
       })
       scheduler.seedTrigger(validatedTriggerInput)
 
@@ -470,12 +468,6 @@ export function makeGraphWorkflow<
         })
         for (const s of prior) {
           const seedSeq = sequence++
-          const branchResult = s.branchResult as {
-            result: string
-            reasoning: string
-          } | null
-          // A decision node (branch/switch) outputs its `{ result, reasoning }`
-          // like a live run does; `branchResult` replays its routing.
           await stepDo(step, `seed:${s.nodeId}`, () => {
             return recordOne({
               nodeId: s.nodeId,
@@ -485,14 +477,11 @@ export function makeGraphWorkflow<
               status: 'completed',
               output: s.output,
               meta: s.meta,
-              branchResult,
+              branchResult: s.branchResult as RecordStepArgs['branchResult'],
             })
           })
-          scheduler.report(s.nodeId, {
-            output: s.output,
-            branchResult: branchResult?.result,
-          })
         }
+        scheduler.seedResume({ steps: prior })
       }
 
       // The delivered answer, once an Output (or a fizzled arm) settles it.
