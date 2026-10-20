@@ -10,7 +10,6 @@ import type {
 import type { WfMcpTool } from './tools'
 import {
   applyPatchOp,
-  graphDelta,
   workflowReadTools,
   workflowWriteTools,
 } from './tools-workflows'
@@ -181,23 +180,6 @@ describe('applyPatchOp', () => {
     applyPatchOp(g, { op: 'remove_edge', edgeId: 'e1' })
     applyPatchOp(g, { op: 'remove_edge', source: 't', target: 'o' })
     expect(g.edges.map((e) => e.id)).toEqual(['e2'])
-  })
-})
-
-describe('graphDelta', () => {
-  test('ignores a node that only moved', () => {
-    const moved: WorkflowGraph = {
-      ...published,
-      nodes: published.nodes.map((n) => ({ ...n, position: { x: 9, y: 9 } })),
-    }
-    const d = graphDelta(published, moved)
-    expect(d).toEqual({
-      nodesAdded: [],
-      nodesRemoved: [],
-      nodesChanged: [],
-      edgesAdded: 0,
-      edgesRemoved: 0,
-    })
   })
 })
 

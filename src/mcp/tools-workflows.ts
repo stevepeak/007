@@ -11,6 +11,7 @@ import {
   type WorkflowNode,
 } from '../engine/graph'
 import { buildStarterGraph, type NewWorkflowTrigger } from '../engine/graph-builders'
+import { graphDelta, isEmptyGraphDelta } from '../engine/graph-delta'
 import type { GraphIssue } from '../engine/graph-issues'
 // Imported from the module rather than the `./graph` barrel on purpose: the seed
 // table sits ABOVE graph-schema (it needs `buildIterationSubgraph`), which is why
@@ -535,57 +536,6 @@ function describeBinding(b: ArgBinding): string {
 // Receipts
 // ---------------------------------------------------------------------------
 
-/**
- * What differs between two graphs, by id. Positions are ignored — a node that
- * only moved did not change what runs. Same purpose as `changedKeys` for agents:
- * a write that dropped something must say so in the reply, not in a run later.
- */
-export function graphDelta(
-  before: WorkflowGraph | null | undefined,
-  after: WorkflowGraph,
-): {
-  nodesAdded: string[]
-  nodesRemoved: string[]
-  nodesChanged: string[]
-  edgesAdded: number
-  edgesRemoved: number
-} {
-  const flat = (n: WorkflowNode) => {
-    return JSON.stringify({
-      kind: n.kind,
-      label: n.label,
-      config: n.config,
-      informUser: n.informUser,
-    })
-  }
-  const a = new Map((before?.nodes ?? []).map((n) => [n.id, flat(n)]))
-  const b = new Map(after.nodes.map((n) => [n.id, flat(n)]))
-  const name = (id: string) => {
-    const n = after.nodes.find((x) => x.id === id) ?? before?.nodes.find((x) => x.id === id)
-    return n ? `${n.label} (${id})` : id
-  }
-  const edgeKey = (e: WorkflowEdge) => `${e.source}>${e.target}>${e.condition ?? ''}`
-  const ea = new Set((before?.edges ?? []).map(edgeKey))
-  const eb = new Set(after.edges.map(edgeKey))
-  return {
-    nodesAdded: [...b.keys()].filter((id) => !a.has(id)).map(name),
-    nodesRemoved: [...a.keys()].filter((id) => !b.has(id)).map(name),
-    nodesChanged: [...b.keys()].filter((id) => a.has(id) && a.get(id) !== b.get(id)).map(name),
-    edgesAdded: [...eb].filter((k) => !ea.has(k)).length,
-    edgesRemoved: [...ea].filter((k) => !eb.has(k)).length,
-  }
-}
-
-function isEmptyDelta(d: ReturnType<typeof graphDelta>): boolean {
-  return (
-    d.nodesAdded.length === 0 &&
-    d.nodesRemoved.length === 0 &&
-    d.nodesChanged.length === 0 &&
-    d.edgesAdded === 0 &&
-    d.edgesRemoved === 0
-  )
-}
-
 function clipValidation(v: WfGraphValidation) {
   return {
     source: v.source,
@@ -635,7 +585,7 @@ async function saveDraft(
   await client.updateDraft({ workflowId, graph })
   const validation = await client.validateGraph({ graph })
   const published = detail.currentVersion
-  const delta = graphDelta(published?.graph, graph)
+  const delta = graphDelta({ before: published?.graph, after: graph })
   return {
     ok: true,
     workflowId,
@@ -681,7 +631,9 @@ export function workflowReadTools(): WfMcpTool[] {
           // A draft row sits beside nearly every workflow; only a draft that
           // DIFFERS from what is live is an edit in flight.
           unpublishedDraft: detail.draft
-            ? !isEmptyDelta(graphDelta(detail.currentVersion?.graph, detail.draft.graph))
+            ? !isEmptyGraphDelta(
+                graphDelta({ before: detail.currentVersion?.graph, after: detail.draft.graph }),
+              )
             : false,
           versions: [...versions]
             .sort((a, b) => b.versionNumber - a.versionNumber)
@@ -1018,10 +970,10 @@ export function workflowWriteTools(): WfMcpTool[] {
         // else's unpublished work, which a later publish_workflow would ship
         // along with these ops. Named here so the caller knows what it is
         // standing on.
-        const inherited = graphDelta(detail.currentVersion?.graph, base.graph)
+        const inherited = graphDelta({ before: detail.currentVersion?.graph, after: base.graph })
         return {
           startedFrom: base.from,
-          ...(isEmptyDelta(inherited)
+          ...(isEmptyGraphDelta(inherited)
             ? {}
             : {
                 inheritedUnpublishedEdits: inherited,
@@ -1156,8 +1108,8 @@ export function workflowWriteTools(): WfMcpTool[] {
           }
         }
         const graph = detail.draft.graph
-        const delta = graphDelta(live?.graph, graph)
-        if (live && isEmptyDelta(delta)) {
+        const delta = graphDelta({ before: live?.graph, after: graph })
+        if (live && isEmptyGraphDelta(delta)) {
           return { error: `Refused: the draft is identical to v${live.versionNumber}; publishing would create an empty version.` }
         }
         const validation = await client.validateGraph({ graph })
@@ -1213,13 +1165,13 @@ export function workflowWriteTools(): WfMcpTool[] {
         const workflowId = reqString(args.workflowId, 'workflowId')
         const detail = await requireWorkflow(client, workflowId)
         if (!detail.draft) return { ok: true, workflowId, note: 'There was no draft to discard.' }
-        const lost = graphDelta(detail.currentVersion?.graph, detail.draft.graph)
+        const lost = graphDelta({ before: detail.currentVersion?.graph, after: detail.draft.graph })
         await client.discardDraft({ workflowId })
         return {
           ok: true,
           workflowId,
           discarded: lost,
-          note: isEmptyDelta(lost)
+          note: isEmptyGraphDelta(lost)
             ? 'The draft matched the published version; nothing of substance was lost.'
             : `The draft differed from v${detail.currentVersion?.versionNumber ?? '—'} as listed above; those edits are gone.`,
         }

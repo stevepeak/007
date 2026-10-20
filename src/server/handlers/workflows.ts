@@ -15,6 +15,7 @@ import {
   type WorkflowGraph,
 } from '../../engine'
 import { decisionAgentConfigSchema } from '../../engine/decision-agent-schema'
+import { graphDelta, isEmptyGraphDelta } from '../../engine/graph-delta'
 import {
   createWorkflow,
   discardDraft,
@@ -348,7 +349,8 @@ export function buildWorkflowHandlers<TDeps>(
           : null
         if (
           draftGraph &&
-          (!liveGraph || JSON.stringify(draftGraph) !== JSON.stringify(liveGraph))
+          (!liveGraph ||
+            !isEmptyGraphDelta(graphDelta({ before: liveGraph, after: draftGraph })))
         ) {
           graph = draftGraph
           source = 'draft'
