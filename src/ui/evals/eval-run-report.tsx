@@ -1,6 +1,7 @@
 import { Target } from 'lucide-react'
 import { useState } from 'react'
 
+import { EmptyState } from '../empty-state'
 import { useEvalRun } from '../hooks'
 import { QueryState } from '../query-state'
 import { WfShell } from '../shell'
@@ -9,7 +10,6 @@ import { DriftBanner } from './run-report/drift-banner'
 import { MatrixSummary } from './run-report/matrix-summary'
 import { ResultsTable } from './run-report/results-table'
 import { RunHeader } from './run-report/run-summary'
-import { EmptyState } from './shared'
 
 // The eval run report (route: evals/runs/<evalRunId>). Real-data screen over
 // `useEvalRun`, composed from three sections (all in ./run-report): a compact

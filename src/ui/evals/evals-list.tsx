@@ -15,6 +15,7 @@ import type {
 import { agentColor, agentIcon } from '../agent-appearance'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
+import { EmptyState } from '../empty-state'
 import { FilterPill } from '../filters'
 import { useAgents, useEvalRuns, useEvalSets, useWorkflows } from '../hooks'
 import { useWfNav } from '../nav'
@@ -24,7 +25,6 @@ import { EvalsHelpDialog } from './evals-help-dialog'
 import { NewGoalDialog } from './new-goal-dialog'
 import { RunConfigDialog } from './run-config-dialog'
 import {
-  EmptyState,
   EvalRunsTable,
   formatTimestamp,
   RunStatusBadge,

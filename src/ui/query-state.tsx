@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 
+import { cn } from './cn'
+
 // The loading → error → empty → content ladder that every data-backed 007
 // surface hand-rolls the same way. This sequences the states off a react-query
 // result; each site keeps control of the copy by passing rendered nodes, and
@@ -65,6 +67,74 @@ export function QueryState<T>({
   if (query.error) return error(query.error as Error)
   if (data == null || (isEmpty?.(data) ?? false)) return empty ?? null
   return children ? children(data) : null
+}
+
+export type PageQueryStateProps<T> = Pick<
+  QueryStateProps<T>,
+  'query' | 'isEmpty' | 'error' | 'children'
+> & {
+  /** Merged onto every state block, so it sizes like the page it stands in for. */
+  className?: string
+  /** Inset of the state blocks. Editors sit in `p-4` chrome, full pages in `p-6`. */
+  padding?: 'p-4' | 'p-6'
+  /** The loading line. Defaults to `Loading…`. */
+  loadingText?: ReactNode
+  /** The missing / `isEmpty` line. */
+  emptyText: ReactNode
+}
+
+/**
+ * `QueryState` for a component that owns a whole page or editor: loading, error
+ * and empty all render as one padded line in place of the content.
+ */
+export function PageQueryState<T>({
+  className,
+  padding = 'p-4',
+  loadingText = 'Loading…',
+  emptyText,
+  error,
+  ...rest
+}: PageQueryStateProps<T>): ReactNode {
+  const muted = cn(padding, 'text-sm text-neutral-500', className)
+  return (
+    <QueryState
+      {...rest}
+      loading={<div className={muted}>{loadingText}</div>}
+      error={
+        error ??
+        ((e) => (
+          <div className={cn(padding, 'text-sm text-red-600', className)}>
+            {e.message}
+          </div>
+        ))
+      }
+      empty={<div className={muted}>{emptyText}</div>}
+    />
+  )
+}
+
+/**
+ * `QueryState` for a list page, whose grid renders as a sibling: it shows only
+ * the loading, error and empty states, and nothing once the data is in. A list
+ * that fails to load is almost always a lost session, so the error says so.
+ */
+export function ListQueryState<T>({
+  query,
+  isEmpty,
+  empty,
+}: Pick<QueryStateProps<T>, 'query' | 'isEmpty' | 'empty'>): ReactNode {
+  return (
+    <QueryState
+      query={query}
+      error={(error) => (
+        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error.message} — are you signed in?
+        </div>
+      )}
+      isEmpty={isEmpty}
+      empty={empty}
+    />
+  )
 }
 
 /**

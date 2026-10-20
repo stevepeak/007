@@ -1,5 +1,5 @@
 import type { WfChangeListInput } from '../../server/protocol'
-import { EmptyState } from '../evals/shared'
+import { EmptyState } from '../empty-state'
 import { useChanges } from '../hooks'
 import { QueryState } from '../query-state'
 

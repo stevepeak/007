@@ -7,7 +7,7 @@ import { AGENT_ICONS, DEFAULT_AGENT_COLOR } from '../agent-appearance'
 import { cn } from '../cn'
 import { Tabs } from '../filters'
 import { useAgent } from '../hooks'
-import { QueryState } from '../query-state'
+import { PageQueryState } from '../query-state'
 
 import { AgentCallInspect } from './agent-editor-call-inspect'
 import { AgentCallMetrics, AgentCallsList, callKey } from './agent-editor-calls'
@@ -43,24 +43,11 @@ export function AgentEditor({
   const query = useAgent(agentId)
 
   return (
-    <QueryState
+    <PageQueryState
       query={query}
-      loading={
-        <div className={cn('p-4 text-sm text-neutral-500', className)}>
-          Loading…
-        </div>
-      }
-      error={(error) => (
-        <div className={cn('p-4 text-sm text-red-600', className)}>
-          {error.message}
-        </div>
-      )}
+      className={className}
       isEmpty={(data) => !(data?.draft?.config ?? data?.currentVersion?.config)}
-      empty={
-        <div className={cn('p-4 text-sm text-neutral-500', className)}>
-          Agent has no configuration yet.
-        </div>
-      }
+      emptyText="Agent has no configuration yet."
     >
       {(data) => {
         const initialConfig = data.draft?.config ?? data.currentVersion?.config
@@ -93,7 +80,7 @@ export function AgentEditor({
           />
         )
       }}
-    </QueryState>
+    </PageQueryState>
   )
 }
 

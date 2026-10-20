@@ -3,6 +3,7 @@ import { useState } from 'react'
 
 import { ArchiveButton } from '../archive-button'
 import { useWfComponents } from '../context'
+import { EmptyState } from '../empty-state'
 import { useWfNav } from '../nav'
 import { QueryState } from '../query-state'
 import { SaveStateBadge } from '../save-state-badge'
@@ -12,7 +13,7 @@ import { sectionCrumb } from '../wf-crumbs'
 import { RunsForSample } from './eval-sample-checks'
 import { SampleConfigSteps } from './eval-sample-steps'
 import { RunConfigDialog } from './run-config-dialog'
-import { EmptyState, Tabs, useTargetAgentCrumb } from './shared'
+import { Tabs, useTargetAgentCrumb } from './shared'
 import { useEvalSampleDraft } from './use-eval-sample-draft'
 
 // The Sample view (route: evals/<setId>/samples/<sampleId>). A Sample IS a

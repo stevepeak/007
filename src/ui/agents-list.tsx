@@ -4,6 +4,7 @@ import { type ReactNode, useMemo, useState } from 'react'
 import { starterDecisionAgentConfig, type WfAgentKind } from '../engine'
 
 import { agentColor, agentIcon, DEFAULT_AGENT_COLOR } from './agent-appearance'
+import { AssetCard } from './asset-card'
 import { cn } from './cn'
 import { useWfComponents } from './context'
 import { FilterPill } from './filters'
@@ -15,7 +16,7 @@ import {
 import { useDecisionModels } from './hooks-models'
 import { Modal } from './modal'
 import { useWfNav } from './nav'
-import { QueryState } from './query-state'
+import { ListQueryState } from './query-state'
 
 // The reusable agents (wf_agent via the injected data client), shown as
 // cards so richer metadata (last run, referencing workflows…) can layer in.
@@ -173,13 +174,8 @@ export function AgentsList({ className }: AgentsListProps) {
         </div>
       ) : null}
 
-      <QueryState
+      <ListQueryState
         query={{ isLoading, error, data }}
-        error={(error) => (
-          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            {error.message} — are you signed in?
-          </div>
-        )}
         isEmpty={(data) => data?.length === 0}
         empty={
           <div className="text-sm text-neutral-500">
@@ -263,13 +259,10 @@ export function AgentsList({ className }: AgentsListProps) {
           const model = modelLabel(a.modelId)
           const isDecision = a.kind === 'decision'
           return (
-            <button
+            <AssetCard
               key={a.id}
-              type="button"
               onClick={() => navigate(`agents/${a.id}/edit`)}
-              className="group flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-white p-4 text-left transition duration-200 hover:border-neutral-300 hover:shadow-md"
-            >
-              <div className="flex w-full items-center gap-3">
+              avatar={
                 <span
                   className={cn(
                     'flex size-10 shrink-0 items-center justify-center rounded-lg',
@@ -278,56 +271,46 @@ export function AgentsList({ className }: AgentsListProps) {
                 >
                   <Icon className="size-5" />
                 </span>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  {/* The kind is on the card because almost everything else
-                      on it means something different per kind — and because
-                      a decision agent cannot be wired into a workflow, which
-                      is the first thing someone browsing this list wants to
-                      do. */}
-                  <span
-                    className="text-xs text-neutral-500"
-                    title={
-                      isDecision
-                        ? 'A decision agent: questions judged by a decision model, rolled up to one verdict'
-                        : 'A generation agent: a prompt, tools and an answer — what a workflow agent node calls'
+              }
+              // The kind is on the card because almost everything else on it
+              // means something different per kind — and because a decision
+              // agent cannot be wired into a workflow, which is the first thing
+              // someone browsing this list wants to do.
+              eyebrow={isDecision ? 'Decision' : 'Generation'}
+              eyebrowTitle={
+                isDecision
+                  ? 'A decision agent: questions judged by a decision model, rolled up to one verdict'
+                  : 'A generation agent: a prompt, tools and an answer — what a workflow agent node calls'
+              }
+              title={a.name}
+              description={a.description}
+              footer={
+                <>
+                  <Stat
+                    label="Model"
+                    value={model ?? '—'}
+                    title={model ? `Model: ${model}` : undefined}
+                  />
+                  <Stat
+                    label="Workflows"
+                    value={
+                      a.workflows.length > 0
+                        ? String(a.workflows.length)
+                        : isDecision
+                          ? 'None yet'
+                          : 'Unused'
                     }
-                  >
-                    {isDecision ? 'Decision' : 'Generation'}
-                  </span>
-                  <span className="truncate text-base font-medium text-neutral-900">
-                    {a.name}
-                  </span>
-                </span>
-              </div>
-              <p className="line-clamp-2 min-h-[2.5rem] text-sm text-neutral-500">
-                {a.description || 'No description yet.'}
-              </p>
-
-              <div className="grid w-full grid-cols-2 gap-4 border-t border-neutral-100 pt-3">
-                <Stat
-                  label="Model"
-                  value={model ?? '—'}
-                  title={model ? `Model: ${model}` : undefined}
-                />
-                <Stat
-                  label="Workflows"
-                  value={
-                    a.workflows.length > 0
-                      ? String(a.workflows.length)
-                      : isDecision
-                        ? 'None yet'
-                        : 'Unused'
-                  }
-                  title={
-                    a.workflows.length > 0
-                      ? `Used in: ${a.workflows.map((w) => w.name).join(', ')}`
-                      : isDecision
-                        ? 'Run this from a workflow by adding an Agent node and pointing it at this agent — it outputs one verdict a Switch can route on.'
-                        : 'Not used in any workflow'
-                  }
-                />
-              </div>
-            </button>
+                    title={
+                      a.workflows.length > 0
+                        ? `Used in: ${a.workflows.map((w) => w.name).join(', ')}`
+                        : isDecision
+                          ? 'Run this from a workflow by adding an Agent node and pointing it at this agent — it outputs one verdict a Switch can route on.'
+                          : 'Not used in any workflow'
+                    }
+                  />
+                </>
+              }
+            />
           )
         })}
       </div>

@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import type { ModelCapabilities, ModelCatalogEntry } from '../server/protocol'
 
 import { cn } from './cn'
-import { EmptyState } from './evals/shared'
+import { EmptyState } from './empty-state'
 import { FilterPill, FilterPillMulti } from './filters'
 import { useModelCatalog, useProviderBudgets } from './hooks'
 import { ProviderCard } from './models-list-provider-card'
@@ -18,7 +18,7 @@ import {
   type ChosenFilter,
   type KindFilter,
 } from './models-list-shared'
-import { QueryState } from './query-state'
+import { ListQueryState } from './query-state'
 import { usePickedAt } from './use-now'
 
 // The Models admin page (hub → Models). Staff see each wired-up provider, refresh
@@ -125,13 +125,8 @@ export function ModelsList({ className }: ModelsListProps) {
         </a>
       </div>
 
-      <QueryState
+      <ListQueryState
         query={{ isLoading, error, data }}
-        error={(error) => (
-          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            {error.message} — are you signed in?
-          </div>
-        )}
         isEmpty={(data) => data?.providers.length === 0}
         empty={
           <EmptyState message="No model providers are wired up by the host." />

@@ -8,6 +8,7 @@ import { AgentSelect, type AgentSelectValue } from '../agent-select'
 import { ArchiveButton } from '../archive-button'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
+import { EmptyState } from '../empty-state'
 import {
   useAgents,
   useEvalRuns,
@@ -25,7 +26,7 @@ import { sectionCrumb } from '../wf-crumbs'
 
 import { describeGoalChange, type GoalDraft } from './describe-sample-change'
 import { RunConfigDialog } from './run-config-dialog'
-import { EmptyState, EvalRunsTable, Tabs } from './shared'
+import { EvalRunsTable, Tabs } from './shared'
 
 // The Goal detail page (route: evals/<setId>). A goal is a wf_eval_set: its
 // name + description are editable in place, its TARGET (the agent its samples

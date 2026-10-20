@@ -10,7 +10,7 @@ import { formatRelative, formatTimestamp, formatTokens } from './cost'
 import { useWorkflows } from './hooks'
 import { useWfNav, WfLink } from './nav'
 import { NewWorkflowDialog } from './new-workflow-dialog'
-import { QueryState } from './query-state'
+import { ListQueryState } from './query-state'
 import { Tooltip } from './tooltip'
 import { useModifierHold } from './use-modifier-hold'
 
@@ -56,13 +56,8 @@ export function WorkflowsList({ className }: WorkflowsListProps) {
         }}
       />
 
-      <QueryState
+      <ListQueryState
         query={{ isLoading, error, data }}
-        error={(error) => (
-          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            {error.message} — are you signed in?
-          </div>
-        )}
         isEmpty={(workflows) => workflows?.length === 0}
         empty={
           <div className="text-sm text-neutral-500">

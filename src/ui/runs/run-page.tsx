@@ -3,12 +3,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { iterationItemLabel } from '../../engine/item-title'
 import type { RetryRunMode } from '../../server/protocol'
-import { cn } from '../cn'
 import { WorkflowCanvas } from '../editor/workflow-canvas'
 import { useChildRuns, useRetryRun, useRun } from '../hooks'
 import { useFeedbackForSubjects } from '../hooks-feedback'
 import { useWfNav } from '../nav'
-import { QueryState } from '../query-state'
+import { PageQueryState } from '../query-state'
 import { WfShell } from '../shell'
 import { useTickingNow } from '../use-now'
 
@@ -196,23 +195,12 @@ export function RunPage({
   )
 
   return (
-    <QueryState
+    <PageQueryState
       query={{ isLoading, error, data }}
-      loading={
-        <div className={cn('p-6 text-sm text-neutral-500', className)}>
-          Loading run…
-        </div>
-      }
-      error={(error) => (
-        <div className={cn('p-6 text-sm text-red-600', className)}>
-          {error.message}
-        </div>
-      )}
-      empty={
-        <div className={cn('p-6 text-sm text-neutral-500', className)}>
-          Run not found.
-        </div>
-      }
+      className={className}
+      padding="p-6"
+      loadingText="Loading run…"
+      emptyText="Run not found."
     >
       {(data) => {
         const { run } = data
@@ -345,6 +333,6 @@ export function RunPage({
           </WfShell>
         )
       }}
-    </QueryState>
+    </PageQueryState>
   )
 }

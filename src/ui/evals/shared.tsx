@@ -16,6 +16,7 @@ import type {
 import { agentColor, agentIcon } from '../agent-appearance'
 import { cn } from '../cn'
 import { formatDurationMs, formatTimestamp } from '../cost'
+import { EmptyState } from '../empty-state'
 import { useAgents } from '../hooks'
 import { RunStatusBadge } from '../runs/run-status'
 import type { WfCrumb } from '../shell'
@@ -171,14 +172,6 @@ export function CapabilityBadges({
         </Tooltip>
       ))}
     </span>
-  )
-}
-
-export function EmptyState({ message }: { message: string }) {
-  return (
-    <div className="rounded-lg border border-dashed border-neutral-200 p-8 text-center text-sm text-neutral-500">
-      {message}
-    </div>
   )
 }
 

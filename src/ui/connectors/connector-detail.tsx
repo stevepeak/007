@@ -5,7 +5,7 @@ import type { ConnectorToolInfo } from '../../server/protocol'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { DataView } from '../data-view'
-import { EmptyState } from '../evals/shared'
+import { EmptyState } from '../empty-state'
 import { Tabs } from '../filters'
 import {
   useConnector,

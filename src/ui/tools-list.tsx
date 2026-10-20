@@ -1,9 +1,9 @@
 import type { ToolOption } from '../server/protocol'
 
+import { AssetCard } from './asset-card'
 import { cn } from './cn'
 import { useTools } from './hooks'
-import { WfLink } from './nav'
-import { QueryState } from './query-state'
+import { ListQueryState } from './query-state'
 import { ToolAvatar } from './tool-appearance'
 
 // The tools registered in the host's `toolRegistry` (via the injected data
@@ -51,13 +51,8 @@ export function ToolsList({ className }: ToolsListProps) {
         called during a run.
       </div>
 
-      <QueryState
+      <ListQueryState
         query={{ isLoading, error, data }}
-        error={(error) => (
-          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            {error.message} — are you signed in?
-          </div>
-        )}
         isEmpty={(data) => data?.length === 0}
         empty={
           <div className="text-sm text-neutral-500">
@@ -104,21 +99,13 @@ function ToolGroup({
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {tools.map((t) => (
-          <WfLink
+          <AssetCard
             key={t.id}
             to={`tools/${t.id}`}
-            className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-white p-4 text-left transition-colors hover:border-neutral-300 hover:bg-neutral-50"
-          >
-            <div className="flex w-full items-center gap-3">
-              <ToolAvatar tool={t} size="lg" />
-              <span className="min-w-0 flex-1 truncate text-base font-medium text-neutral-900">
-                {t.name}
-              </span>
-            </div>
-            <p className="line-clamp-2 min-h-[2.5rem] text-sm text-neutral-500">
-              {t.description || 'No description yet.'}
-            </p>
-          </WfLink>
+            avatar={<ToolAvatar tool={t} size="lg" />}
+            title={t.name}
+            description={t.description}
+          />
         ))}
       </div>
     </section>

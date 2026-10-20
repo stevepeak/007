@@ -4,7 +4,7 @@ import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { DataView } from '../data-view'
 import { useRun } from '../hooks'
-import { QueryState } from '../query-state'
+import { PageQueryState } from '../query-state'
 
 import { runStatusClass } from './run-status'
 
@@ -114,23 +114,11 @@ export function RunViewer({ runId, className }: RunViewerProps) {
   const query = useRun(runId)
 
   return (
-    <QueryState
+    <PageQueryState
       query={query}
-      loading={
-        <div className={cn('p-4 text-sm text-neutral-500', className)}>
-          Loading run…
-        </div>
-      }
-      error={(error) => (
-        <div className={cn('p-4 text-sm text-red-600', className)}>
-          {error.message}
-        </div>
-      )}
-      empty={
-        <div className={cn('p-4 text-sm text-neutral-500', className)}>
-          Run not found.
-        </div>
-      }
+      className={className}
+      loadingText="Loading run…"
+      emptyText="Run not found."
     >
       {(data) => (
         <div className={cn('space-y-3', className)}>
@@ -164,6 +152,6 @@ export function RunViewer({ runId, className }: RunViewerProps) {
           </div>
         </div>
       )}
-    </QueryState>
+    </PageQueryState>
   )
 }

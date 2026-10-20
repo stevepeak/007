@@ -1,6 +1,5 @@
-import { cn } from '../cn'
 import { useWorkflow } from '../hooks'
-import { QueryState } from '../query-state'
+import { PageQueryState } from '../query-state'
 
 import { EditorInner } from './workflow-editor-inner'
 
@@ -27,24 +26,11 @@ export function WorkflowEditor({
   const query = useWorkflow(workflowId)
 
   return (
-    <QueryState
+    <PageQueryState
       query={query}
-      loading={
-        <div className={cn('p-4 text-sm text-neutral-500', className)}>
-          Loading…
-        </div>
-      }
-      error={(error) => (
-        <div className={cn('p-4 text-sm text-red-600', className)}>
-          {error.message}
-        </div>
-      )}
+      className={className}
       isEmpty={(data) => !(data?.draft?.graph ?? data?.currentVersion?.graph)}
-      empty={
-        <div className={cn('p-4 text-sm text-neutral-500', className)}>
-          Workflow has no graph yet.
-        </div>
-      }
+      emptyText="Workflow has no graph yet."
     >
       {(data) => {
         const initialGraph = data.draft?.graph ?? data.currentVersion?.graph
@@ -62,6 +48,6 @@ export function WorkflowEditor({
           />
         ) : null
       }}
-    </QueryState>
+    </PageQueryState>
   )
 }

@@ -19,7 +19,7 @@ import {
   useTools,
 } from './hooks'
 import { useWfNav } from './nav'
-import { QueryState } from './query-state'
+import { PageQueryState, QueryState } from './query-state'
 import { runStatusClass } from './runs/run-status'
 import { ToolAvatar } from './tool-appearance'
 import { ContextField } from './tool-context-field'
@@ -45,9 +45,9 @@ export function ToolDetail({ toolId, className }: ToolDetailProps) {
   const tool = tools?.find((t) => t.id === toolId)
 
   return (
-    <QueryState
+    <PageQueryState
       query={{ isLoading, error, data: tool }}
-      loading={<div className="p-6 text-sm text-neutral-500">Loading…</div>}
+      padding="p-6"
       error={(error) => (
         <div className="p-6">
           <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -55,11 +55,11 @@ export function ToolDetail({ toolId, className }: ToolDetailProps) {
           </div>
         </div>
       )}
-      empty={
-        <div className="p-6 text-sm text-neutral-500">
+      emptyText={
+        <>
           Tool <span className="font-mono text-neutral-700">{toolId}</span> is
           not registered.
-        </div>
+        </>
       }
     >
       {(tool) => (
@@ -69,7 +69,7 @@ export function ToolDetail({ toolId, className }: ToolDetailProps) {
           <RecentCalls toolId={tool.id} />
         </div>
       )}
-    </QueryState>
+    </PageQueryState>
   )
 }
 
