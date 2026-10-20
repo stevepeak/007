@@ -1,3 +1,5 @@
+import type { Tool } from 'ai'
+
 import type { ModelFactory, RunFlags } from '../config'
 import {
   agentFromManifest,
@@ -15,6 +17,7 @@ import {
   runAgentGeneration,
   stepAgentVersion,
   type AgentNodeResult,
+  type RunAgentGenerationArgs,
 } from './agent-generation'
 import {
   buildAgentMessages,
@@ -135,24 +138,117 @@ function resolveAgentConfig(
   }
 }
 
+
+/**
+ * Run one agent config to an answer — the part a primary agent node and a
+ * spawned sub-agent share: model, registry tools, status labels, system prompt
+ * with references, the generation loop and the reference check. What differs
+ * is the caller's: which model and prompt (an eval may override them), the
+ * messages, the display intent, and any tools it adds (delegation, the stop
+ * signal).
+ */
+export async function runAgentConfig<TDeps>(args: {
+  config: AgentConfig
+  modelId: string
+  reasoning: boolean | undefined
+  promptTemplate: string
+  vars: Record<string, string | undefined>
+  messages: RunAgentGenerationArgs['messages']
+  contextLength: number | undefined
+  stream: { reasoning: boolean; toolCalls: boolean }
+  /** Names the agent in errors, e.g. `Agent <nodeId>`. */
+  label: string
+  /** Added to the registry tools; a name already registered is an error. */
+  extraTools?: Record<string, Tool>
+  ctx: RunFlags & {
+    getModel: ModelFactory
+    toolRegistry: ToolRegistry<TDeps>
+    referenceKinds: readonly ReferenceKind[]
+    toolDeps: TDeps
+    sink?: StreamSink
+    modelBudget?: ModelBudget
+  }
+}): Promise<AgentNodeResult> {
+  const { config, ctx } = args
+  // Whether the model reasons at all is the AGENT's setting, passed explicitly
+  // rather than left undefined: undefined means "take the provider default",
+  // which on some providers is thinking ON. Provider-side web search is the
+  // agent's own setting too — an eval has no business turning on a network
+  // path the agent's author left off.
+  const model = ctx.getModel(args.modelId, {
+    reasoning: args.reasoning,
+    webSearch: config.webSearch,
+    webCitations: config.webCitations,
+  })
+  // Synthesis eval: an empty tool set forces the model to answer from its seeded
+  // history alone. Otherwise resolve the agent's real tools (neutralized under
+  // simulate).
+  const tools = ctx.freezeTools
+    ? {}
+    : buildAgentToolSet(ctx.toolRegistry, config.toolIds, ctx.toolDeps, {
+        simulate: ctx.simulate,
+        fixtures: ctx.fixtures,
+        liveReads: ctx.liveReads,
+        toolModes: ctx.toolModes,
+      })
+  for (const name of Object.keys(args.extraTools ?? {})) {
+    if (Object.hasOwn(tools, name)) {
+      throw new Error(
+        `${args.label}: tool '${name}' collides with a registered tool. Rename the sub-agent target's tool name.`,
+      )
+    }
+  }
+  // Human-readable status templates, keyed by tool id (the ToolSet's own key, so
+  // it matches `toolName` at call time). Only tools that declare a `statusLabel`
+  // appear here; the emission is further gated on `stream.toolCalls`.
+  const toolStatusLabels: Record<string, string> = {}
+  for (const id of config.toolIds) {
+    const label = ctx.toolRegistry.get(id)?.statusLabel
+    if (label) toolStatusLabels[id] = label
+  }
+  const authorPrompt = substitutePromptVariables(args.promptTemplate, args.vars)
+  // Inline references: the grammar and each opted-in kind's guidance go AFTER
+  // the author's prompt, so an author never writes link syntax by hand.
+  const kinds = enabledReferenceKinds(config, ctx.referenceKinds, args.label)
+  const generated = await runAgentGeneration({
+    model,
+    modelId: args.modelId,
+    output: config.output,
+    maxTurns: config.maxTurns,
+    requireToolFirstTurn: config.requireToolFirstTurn,
+    // Each agent run gets its OWN tool-token budget — a primary that fans out
+    // to five sub-agents can spend roughly five; its `maxSpawns` is the guard.
+    toolTokenBudget: config.toolTokenBudget,
+    contextLength: args.contextLength,
+    answerReservePercent: config.answerReservePercent,
+    streamReasoning: args.stream.reasoning,
+    streamToolCalls: args.stream.toolCalls,
+    systemPrompt: withReferencePrompt(authorPrompt, kinds),
+    messages: args.messages,
+    tools: { ...tools, ...args.extraTools },
+    toolStatusLabels,
+    sink: ctx.sink,
+    budget: ctx.modelBudget,
+  })
+  // What an agent hands back is what a reader (or its parent) may re-cite, so
+  // it must already be clean.
+  return await finalizeReferences({
+    result: generated,
+    kinds,
+    authorPrompt,
+    sink: ctx.sink,
+  })
+}
 export async function executeAgentNode<TDeps>(
   deps: ExecuteAgentNodeArgs<TDeps>,
 ): Promise<AgentNodeResult> {
   const {
     node,
-    getModel,
-    toolRegistry,
     referenceKinds = [],
-    toolDeps,
-    sink,
     promptVariables,
     nodeOutputs,
     manifest,
     rehydrate,
-    simulate,
-    fixtures,
-    liveReads,
-    toolModes,
     freezeTools,
     agentOverride,
     subAgentCtx,
@@ -184,58 +280,16 @@ export async function executeAgentNode<TDeps>(
   // the model's reasoning reaches the dev feed and the post-answer reveal
   // regardless of this toggle (see the always-on `thinking` level in
   // `agent-generation.ts`) — when there is any to show.
-  // Whether the model reasons at all is the AGENT's setting, per its config —
-  // and it is passed explicitly rather than left undefined. Undefined means "no
-  // intent, take the provider default", which for Venice is thinking ON; that
-  // implicit default is what made a structural-extraction agent spend two
-  // minutes per document in a `<think>` pass nobody asked for.
-  const model = getModel(modelId, {
-    reasoning: agentOverride?.reasoning ?? config.reasoning,
-    // Provider-side web search is the agent's own setting too. No override:
-    // an eval has no business turning on a network path the agent's author
-    // left off.
-    webSearch: config.webSearch,
-    webCitations: config.webCitations,
-  })
-  // Synthesis eval: an empty tool set forces the model to answer from its seeded
-  // history alone. Otherwise resolve the agent's real tools (neutralized under
-  // simulate). freezeTools also suppresses delegation-tool synthesis below.
-  const tools = freezeTools
-    ? {}
-    : buildAgentToolSet(toolRegistry, config.toolIds, toolDeps, {
-        simulate,
-        fixtures,
-        liveReads,
-        toolModes,
-      })
-  // Human-readable status templates, keyed by tool id (the ToolSet's own key, so
-  // it matches `toolName` at call time). Only tools that declare a `statusLabel`
-  // appear here; the emission is further gated on `streamToolCalls` downstream.
-  const toolStatusLabels: Record<string, string> = {}
-  for (const id of config.toolIds) {
-    const label = toolRegistry.get(id)?.statusLabel
-    if (label) toolStatusLabels[id] = label
-  }
+
   // Node-level bound inputs override the run-level promptVariables.
   const vars = {
     ...promptVariables,
     ...(await resolveNodeInputs(node, nodeOutputs, rehydrate)),
   }
-  const authorPrompt = substitutePromptVariables(promptTemplate, vars)
-  // Inline references: the grammar and each opted-in kind's guidance go AFTER
-  // the author's prompt, so an author never writes link syntax by hand.
-  const kinds = enabledReferenceKinds(config, referenceKinds, `Agent ${node.id}`)
-  const systemPrompt = withReferencePrompt(authorPrompt, kinds)
   // The agent's messages, built ONLY from what the author declared. An incoming
   // edge means sequencing and a source for `ref` bindings — never content. It is
   // deliberately not consulted here: `input` reaches the model only where a
   // binding names it, so nothing arrives that the prompts didn't ask for.
-  //
-  // This replaced `history = linked ?? unlinkedMessages(input)`, whose fallback
-  // JSON-stringified the whole upstream output into an unlabeled user turn. That
-  // sent data no prompt referenced, keyed multi-parent joins by internal node id,
-  // skipped the blob rehydration that bindings get, and duplicated every payload
-  // the system prompt already interpolated.
   const messages = await buildAgentMessages({
     inputKind: config.inputKind,
     userPrompt: substitutePromptVariables(config.userPrompt, vars),
@@ -244,56 +298,35 @@ export async function executeAgentNode<TDeps>(
     rehydrate,
   })
 
-  // Delegation: when this agent whitelists sub-agents/workflows, merge the
-  // synthesized spawn/await tools into its tool set. A synthesized name that
-  // collides with a registered tool is an author error surfaced loudly here.
-  let effectiveTools = tools
-  if (
+  // Delegation: when this agent whitelists sub-agents/workflows, add the
+  // synthesized spawn/await tools. freezeTools suppresses them along with the
+  // registry tools.
+  const delegation =
     !freezeTools &&
     subAgentCtx &&
     (config.subAgents?.targets.length ?? 0) > 0
-  ) {
-    // Sub-agents inherit THIS node's display intent — they have no `informUser`
-    // of their own. The executor builds the context without these (it can't know
-    // them); the node that owns the `informUser` field fills them in.
-    const delegation = synthesizeDelegationTools(config.subAgents, {
-      ...subAgentCtx,
-      streamReasoning,
-      streamToolCalls,
-    })
-    for (const name of Object.keys(delegation)) {
-      if (Object.hasOwn(tools, name)) {
-        throw new Error(
-          `Agent ${node.id}: delegation tool '${name}' collides with a registered tool. Rename the sub-agent target's tool name.`,
-        )
-      }
-    }
-    effectiveTools = { ...tools, ...delegation }
-  }
+      ? // Sub-agents inherit THIS node's display intent — they have no
+        // `informUser` of their own. The executor builds the context without
+        // these (it can't know them); the node that owns the field fills them in.
+        synthesizeDelegationTools(config.subAgents, {
+          ...subAgentCtx,
+          streamReasoning,
+          streamToolCalls,
+        })
+      : undefined
 
-  const generated = await runAgentGeneration({
-    model,
+  const result = await runAgentConfig({
+    config,
     modelId,
-    output: config.output,
-    maxTurns: config.maxTurns,
-    requireToolFirstTurn: config.requireToolFirstTurn,
-    toolTokenBudget: config.toolTokenBudget,
-    contextLength,
-    answerReservePercent: config.answerReservePercent,
-    streamReasoning,
-    streamToolCalls,
-    systemPrompt,
+    reasoning: agentOverride?.reasoning ?? config.reasoning,
+    promptTemplate,
+    vars,
     messages,
-    tools: effectiveTools,
-    toolStatusLabels,
-    sink,
-    budget: deps.modelBudget,
-  })
-  const result = await finalizeReferences({
-    result: generated,
-    kinds,
-    authorPrompt,
-    sink,
+    contextLength,
+    stream: { reasoning: streamReasoning, toolCalls: streamToolCalls },
+    label: `Agent ${node.id}`,
+    extraTools: delegation,
+    ctx: { ...deps, referenceKinds },
   })
   // Stamp WHICH agent this was onto the recorded meta. Generation only knows a
   // prompt and a model; without this, a step can only be traced back to an agent

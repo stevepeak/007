@@ -5,7 +5,6 @@ import {
   inferPromptVariables,
   type SubAgentsConfig,
   type SubAgentTarget,
-  substitutePromptVariables,
   workflowFromManifest,
 } from '../graph'
 import type { RunNodeContext } from '../run-node'
@@ -14,14 +13,8 @@ import {
   type RecordStepArgs,
   type StepOutcome,
 } from '../run-recorder'
-import { buildAgentToolSet } from '../tool-registry'
 
-import { coerceToMessages, runAgentGeneration } from './agent'
-import {
-  enabledReferenceKinds,
-  finalizeReferences,
-  withReferencePrompt,
-} from './agent-references'
+import { coerceToMessages, runAgentConfig } from './agent'
 import { executeSubgraph } from './iteration'
 import {
   type RunSubAgent,
@@ -114,37 +107,13 @@ async function runAgentTarget<TDeps>(
     )
   }
   const config = entry.config
-  // No reasoning intent, matching the primary agent node: nothing forces the
-  // model's thinking off, so the provider default (on) always wins. Whether that
-  // thinking is SHOWN is the separate, display-only `streamReasoning` below.
-  // Same contract as the primary node: the sub-agent's OWN config decides
-  // whether it reasons. It inherits the parent's display choice, never its
-  // thinking budget.
-  const model = ctx.getModel(config.modelId, {
-    reasoning: config.reasoning,
-    webSearch: config.webSearch,
-    webCitations: config.webCitations,
-  })
-
-  // The sub-agent's own registry tools, plus the injected stop signal. A sub-
-  // agent does NOT itself get delegation tools (spawning is one level deep per
-  // primary step) — `buildAgentToolSet` only resolves the registry.
-  const tools = buildAgentToolSet(ctx.toolRegistry, config.toolIds, ctx.toolDeps, {
-    simulate: ctx.simulate,
-    fixtures: ctx.fixtures,
-    liveReads: ctx.liveReads,
-    toolModes: ctx.toolModes,
-  })
-  const toolStatusLabels: Record<string, string> = {}
-  for (const id of config.toolIds) {
-    const label = ctx.toolRegistry.get(id)?.statusLabel
-    if (label) toolStatusLabels[id] = label
-  }
   let stopSignalled = false
   let reason: string | undefined
-  const toolSet: Record<string, Tool> = { ...tools }
+  // A sub-agent does NOT itself get delegation tools (spawning is one level
+  // deep per primary step) — only its registry tools, plus the stop signal.
+  const extraTools: Record<string, Tool> = {}
   if (allowStopSignal && config.output.kind === 'text') {
-    toolSet[SIGNAL_STOP_TOOL_NAME] = tool({
+    extraTools[SIGNAL_STOP_TOOL_NAME] = tool({
       description: signalStopDescription(),
       inputSchema: signalStopInputSchema(),
       execute: (args) => {
@@ -157,56 +126,29 @@ async function runAgentTarget<TDeps>(
   }
 
   const { message, vars: spawnVars } = agentSpawnInput(input)
-  const vars = { ...ctx.promptVariables, ...spawnVars }
-  const authorPrompt = substitutePromptVariables(config.prompt, vars)
-  const kinds = enabledReferenceKinds(
-    config,
-    ctx.referenceKinds,
-    `Sub-agent ${target.id}`,
-  )
-  const systemPrompt = withReferencePrompt(authorPrompt, kinds)
-  const messages = coerceToMessages(message)
 
   // Bracket the sub-agent generation so the child step's Speed reflects real
   // work. Runs inline within the primary node's step, so wall-clock is exact.
   const startedAt = new Date()
-  const generated = await runAgentGeneration({
-    model,
+  const result = await runAgentConfig({
+    config,
+    // The sub-agent's OWN config decides its model and whether it reasons; it
+    // inherits the parent's display choice, never its thinking budget.
     modelId: config.modelId,
-    output: config.output,
-    maxTurns: config.maxTurns,
-    // A sub-agent carries its OWN config here (unlike the display-intent fields
-    // below, which it inherits from the primary node), so its author's choice
-    // applies to its own loop.
-    requireToolFirstTurn: config.requireToolFirstTurn,
-    // Each sub-agent gets its OWN budget, not a share of the primary's. A
-    // primary that fans out to five researchers can therefore spend roughly five
-    // budgets — the guard against that is the primary's `maxSpawns`, not this.
-    toolTokenBudget: config.toolTokenBudget,
-    // A sub-agent runs its own conversation against its own model, so it guards
-    // against ITS window, taken from its own frozen manifest entry.
+    reasoning: config.reasoning,
+    promptTemplate: config.prompt,
+    vars: { ...ctx.promptVariables, ...spawnVars },
+    messages: coerceToMessages(message),
+    // It runs its own conversation against its own model, so it guards against
+    // ITS window, taken from its own frozen manifest entry.
     contextLength: entry.contextLength,
-    answerReservePercent: config.answerReservePercent,
     // Inherited from the primary node's `informUser` — see {@link SubAgentCtx}.
-    streamReasoning: sub.streamReasoning,
-    streamToolCalls: sub.streamToolCalls,
-    systemPrompt,
-    messages,
-    tools: toolSet,
-    toolStatusLabels,
-    sink: ctx.sink,
-    // A sub-agent runs inline inside the primary node's step, so it shares that
-    // node's budget rather than getting one of its own.
-    budget: ctx.modelBudget,
-  })
-
-  // Same check as the primary agent node — what the sub-agent hands back is
-  // what its parent may re-cite, so it must already be clean.
-  const result = await finalizeReferences({
-    result: generated,
-    kinds,
-    authorPrompt,
-    sink: ctx.sink,
+    stream: { reasoning: sub.streamReasoning, toolCalls: sub.streamToolCalls },
+    label: `Sub-agent ${target.id}`,
+    extraTools,
+    // Runs inline inside the primary node's step, so it shares that node's
+    // model budget. Never frozen: freezeTools suppresses delegation entirely.
+    ctx: { ...ctx, freezeTools: false },
   })
 
   // Fallback stop channel for object/boolean sub-agents, which don't get the
