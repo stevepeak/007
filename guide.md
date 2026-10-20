@@ -1198,6 +1198,31 @@ runToolPreview: async ({ toolId, args, context }) => {
 },
 ```
 
+**Calling an agent from app code → `runAgent`.** When your own code (a save
+path, a request handler, a tool) needs ONE published agent's answer and will
+wait for it, call `runAgent` from `@stevepeak/007/server`. It resolves the agent
+by **slug**, runs it in-process on whichever Worker calls it (it needs only the
+SDK's D1, your `wfConfig` and `env` — no Durable Object, no Workflows binding),
+and records it as a real `manual` run, so the call shows up in the agent's
+Recent calls, the run viewer and `draft_sample_from_run`. Unlike the playground,
+nothing is simulated: tools run for real.
+
+```ts
+const { output, workflowRunId } = await runAgent({
+  db: createWfDb(env.WF_DB), wfConfig, env,
+  slug: 'estimate-ingredient-quantities',
+  promptVariables: { lines: JSON.stringify(lines) },
+  correlationId: orgId,
+  hostContext: { caller: 'recipes.upsert' }, // tells direct callers apart
+  timeoutMs: 10_000,                          // default; the run is failed past it
+})
+```
+
+It throws on an unknown slug, an agent with no published version, a failed
+model call and the timeout — treat any of them as "no answer" if the agent is
+optional to your caller. The run is the agent's hidden eval wrapper, so it
+floats to the latest published version unless that wrapper is pinned.
+
 > ⚠️ **In-process previews require the web Worker to hold the tools' runtime
 > bindings.** `runToolPreview` runs `buildRunDeps(runContext)` and the tool's real
 > `execute` **inside the web Worker**, not the workflows Worker — so the web

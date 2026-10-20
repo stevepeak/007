@@ -14,6 +14,12 @@ export {
   type HttpWfDataClientOptions,
 } from './http-client'
 export { executeAgentPreview } from './run-agent-preview'
+// Call one published agent from app code, recorded as a real run.
+export {
+  runAgent,
+  RUN_AGENT_TIMEOUT_MS,
+  type RunAgentResult,
+} from './run-agent'
 export { executeToolPreview } from './run-tool-preview'
 // The MCP tool catalog as documentation. Re-exported from `/server` rather
 // than given a subpath of its own because the only caller is a server route

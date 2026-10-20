@@ -1,4 +1,4 @@
-import { desc, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 
 import { toAgentKind, type WfAgentKind } from '../../engine/agent-kind'
 import {
@@ -210,6 +210,23 @@ export function agentVersionByNumber(
 /** Cheap existence check (see `workflowExists`) — one indexed `SELECT id`. */
 export function agentExists(db: WfDb, agentId: string): Promise<boolean> {
   return agentVersions.exists(db, agentId)
+}
+
+/**
+ * The id of the live (not archived) agent with this slug, or null. The slug is
+ * how host code names an agent — ids are random per database, slugs are the
+ * cross-environment identity `wf-spec` syncs on (see `wfAgent.slug`).
+ */
+export async function agentIdBySlug(
+  db: WfDb,
+  slug: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ id: wfAgent.id })
+    .from(wfAgent)
+    .where(and(eq(wfAgent.slug, slug), eq(wfAgent.archived, false)))
+    .limit(1)
+  return row?.id ?? null
 }
 
 /** The editor's load shape: the agent, its draft (if any), latest version. */

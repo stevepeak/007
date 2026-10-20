@@ -15,6 +15,18 @@ without you and is still probably wrong to skip.
 
 ---
 
+## 2026-10-20 — `runAgent`: call one published agent from app code
+
+`@stevepeak/007/server` exports `runAgent({ db, wfConfig, env, slug,
+promptVariables, … })`. It runs one published agent in-process, awaits its
+output, and records the call as a real `manual` run on the agent's wrapper
+workflow — visible in Recent calls and the run viewer, unlike
+`executeAgentPreview`. See guide.md, "Calling an agent from app code".
+
+**Action:** none. Additive.
+
+---
+
 ## 2026-10-19 — `run_tool`: execute one tool over the MCP
 
 The MCP write surface gains `run_tool`, which executes one catalog tool **for
