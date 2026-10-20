@@ -697,10 +697,20 @@ export type RowOutcome = {
   score: number | null
 }
 
+/**
+ * A run's headline counts. `failed` is every row that did NOT pass — failed AND
+ * errored — because it pairs with `passed` to make `total`: it is what
+ * `wf_eval_run.failed` stores and what pass rate is the complement of. An
+ * errored row produced no verdict, which for "did the agent pass?" is a miss.
+ * `errored` is the subset that never reached a verdict, kept so a report can
+ * tell an outage from a regression without re-reading the results.
+ */
 export type Rollup = {
   total: number
   passed: number
+  /** Not passed: failed + errored. */
   failed: number
+  /** The part of `failed` with no verdict at all. */
   errored: number
   passRate: number
   /** Mean over rows that HAVE a score (judge-bearing); null when none do. */

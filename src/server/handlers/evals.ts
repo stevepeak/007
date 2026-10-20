@@ -24,6 +24,7 @@ import {
   parseEvalDriveState,
   parseEvalPlan,
 } from '../../eval/plan'
+import type { WfDb } from '../../storage/client'
 import {
   agentVersionByNumber,
   buildEvalSnapshot,
@@ -56,9 +57,10 @@ import {
   updateEvalSet,
   upsertEvalRow,
 } from '../../storage/data'
-import type { WfChangeRecord } from '../../storage/data'
+import type { RunStats, WfChangeRecord } from '../../storage/data'
 import type {
   WfEvalDriftChange,
+  WfEvalResultDTO,
   WfEvalRowDTO,
   WfEvalRunDrift,
 } from '../protocol'
@@ -83,6 +85,51 @@ import {
 // error pages; the report shows this inline, and the full detail already lives
 // in `wf_run_step.error` reachable via `wfRunId`.
 const MAX_RECORDED_ERROR_CHARS = 2000
+
+type EvalResultInput = Parameters<typeof insertEvalResult>[1]
+
+/**
+ * Persist one cell's result and answer with its DTO — the tail every writer
+ * shares (graded run, decision cell, recorded failure).
+ *
+ * The Sample + Goal snapshot is frozen here so the report reproduces the row
+ * exactly after the definitions change, and names it rather than rendering a
+ * raw UUID. The concrete agent version that ran stays reachable via wfRunId →
+ * wf_run.manifest, so it isn't duplicated in the snapshot. The error cap is a
+ * storage concern, applied here once. The DTO goes through the same mapper
+ * `getEvalRun` uses; `createdAt` is a best-effort now (the row isn't re-read).
+ */
+async function writeEvalResult(args: {
+  db: WfDb
+  found: NonNullable<Awaited<ReturnType<typeof getEvalRow>>>
+  result: Omit<
+    EvalResultInput,
+    'snapshot' | 'snapshotHash' | 'score' | 'checkResults'
+  > & {
+    score: number | null
+    checkResults: NonNullable<EvalResultInput['checkResults']>
+  }
+  /** The cell's cost, from the run it linked or from the record itself. */
+  runStats: (record: EvalResultInput) => Promise<RunStats | null | undefined>
+}): Promise<WfEvalResultDTO> {
+  const snapshot = buildEvalSnapshot(args.found.row, args.found.set)
+  const record = {
+    ...args.result,
+    error: args.result.error?.slice(0, MAX_RECORDED_ERROR_CHARS) ?? null,
+    snapshot,
+    snapshotHash: await hashEvalSnapshot(snapshot),
+  }
+  const resultId = await insertEvalResult(args.db, record)
+  return evalResultDTO(
+    {
+      ...record,
+      wfRunId: record.wfRunId ?? null,
+      id: resultId,
+      createdAt: new Date(),
+    },
+    await args.runStats(record),
+  )
+}
 
 // Project recorded steps onto the shape a grader reads. The "top-level only"
 // rule — checks address the workflow's own nodes, never an iteration's per-item
@@ -627,8 +674,7 @@ export function buildEvalHandlers<TDeps>(
         config,
         state,
         variables,
-        getDecider: (modelId) =>
-          getDecider(modelId, { triggerKind: 'eval', env }),
+        getDecider: (modelId) => { return getDecider(modelId, { triggerKind: 'eval', env }) },
       })
 
       // Graded off the SAME `{ verdict, because, answers }` object the
@@ -642,9 +688,10 @@ export function buildEvalHandlers<TDeps>(
         ...(await graderSeams({ opts, env, judgeModelId: p.judgeModelId })),
       })
 
-      const snapshot = buildEvalSnapshot(row, set)
-      const snapshotHash = await hashEvalSnapshot(snapshot)
-      const record = {
+      return await writeEvalResult({
+        db: c.db,
+        found,
+        result: {
         evalRunId,
         rowId,
         // No run to link. The report renders the cell from `snapshot` +
@@ -654,12 +701,8 @@ export function buildEvalHandlers<TDeps>(
         status: graded.status,
         score: graded.score,
         checkResults: graded.checkResults,
-        error: graded.error?.slice(0, MAX_RECORDED_ERROR_CHARS) ?? null,
-        snapshot,
-        snapshotHash,
+        error: graded.error,
         modelId: p.modelId,
-        promptLabel: undefined,
-        promptBody: undefined,
         attempt: p.attempt,
         // The echoed id, not the one we asked with — a `-latest` alias floats, and
         // this is the only place a report can see that it moved.
@@ -670,15 +713,12 @@ export function buildEvalHandlers<TDeps>(
         // one request is still one cell and must report one bill.
         inputTokens: result.usage?.inputTokens ?? null,
         outputTokens: result.usage?.outputTokens ?? null,
-      }
-      const resultId = await insertEvalResult(c.db, record)
-      return evalResultDTO(
-        { ...record, id: resultId, createdAt: new Date() },
+        },
         // No run to load stats from — assembled from the usage just recorded, so
         // the cell reports its cost on the response that creates it rather than
         // only once the report is re-read.
-        runlessCellStats(record, await loadModelPriceMap(c.db)),
-      )
+        runStats: async (record) => { return runlessCellStats(record, await loadModelPriceMap(c.db)) },
+      })
     },
 
     gradeEvalResult: async (c) => {
@@ -712,15 +752,10 @@ export function buildEvalHandlers<TDeps>(
             : undefined,
         ),
       })
-      // Freeze the Sample + Goal target this result was graded against, so
-      // the report reproduces it exactly even after the definitions change.
-      // The concrete agent version that ran stays reachable via wfRunId →
-      // wf_run.manifest, so it isn't duplicated in the snapshot.
-      const snapshot = buildEvalSnapshot(found.row, found.set)
-      const snapshotHash = await hashEvalSnapshot(snapshot)
-      // Build the persisted columns once, then reuse them for the returned DTO so
-      // the two can't drift when a column is added.
-      const record = {
+      return await writeEvalResult({
+        db: c.db,
+        found,
+        result: {
         evalRunId,
         rowId,
         wfRunId,
@@ -731,24 +766,15 @@ export function buildEvalHandlers<TDeps>(
         // tree, or a judge that threw. Same column `recordEvalFailure` writes
         // and the report already renders, so an errored GRADED cell stops
         // showing up as a red row above an empty banner. Capped identically to
-        // that path: the cap is a storage concern, not a grading one.
-        error: graded.error?.slice(0, MAX_RECORDED_ERROR_CHARS) ?? null,
-        snapshot,
-        snapshotHash,
+        // that path.
+        error: graded.error,
         modelId: cell.modelId,
         promptLabel: cell.promptLabel,
         promptBody: cell.promptBody,
         attempt: cell.attempt,
-      }
-      const resultId = await insertEvalResult(c.db, record)
-      // Reuse the shared mapper so this result's shape can't drift from the one
-      // `getEvalRun` returns. `createdAt` is the response's best-effort now (the
-      // row isn't re-read); the mapper takes a Date and emits epoch ms.
-      const stats = await loadRunStats(c.db, [wfRunId])
-      return evalResultDTO(
-        { ...record, id: resultId, createdAt: new Date() },
-        stats.get(wfRunId),
-      )
+        },
+        runStats: async () => (await loadRunStats(c.db, [wfRunId])).get(wfRunId),
+      })
     },
 
     recordEvalFailure: async (c) => {
@@ -758,34 +784,27 @@ export function buildEvalHandlers<TDeps>(
       if (!found) {
         throw new NotFoundError('Eval sample not found.')
       }
-      // Freeze the same Sample + Goal snapshot the graded path does. Without it
-      // the report has nothing to name the row by and renders a raw UUID — the
-      // failure would be recorded but still unreadable.
-      const snapshot = buildEvalSnapshot(found.row, found.set)
-      const snapshotHash = await hashEvalSnapshot(snapshot)
-      const record = {
-        evalRunId,
-        rowId,
-        wfRunId: p.wfRunId ?? null,
-        status: 'error' as const,
-        score: null,
-        checkResults: [],
-        error: error.slice(0, MAX_RECORDED_ERROR_CHARS),
-        snapshot,
-        snapshotHash,
-        modelId: p.modelId,
-        promptLabel: p.promptLabel,
-        promptBody: p.promptBody,
-        attempt: p.attempt,
-      }
-      const resultId = await insertEvalResult(c.db, record)
-      // A run that failed AFTER burning tokens still cost real money — surface
-      // that in the report rather than showing the cell as free.
-      const stats = p.wfRunId ? await loadRunStats(c.db, [p.wfRunId]) : null
-      return evalResultDTO(
-        { ...record, id: resultId, createdAt: new Date() },
-        p.wfRunId ? stats?.get(p.wfRunId) : null,
-      )
+      const wfRunId = p.wfRunId ?? null
+      return await writeEvalResult({
+        db: c.db,
+        found,
+        result: {
+          evalRunId,
+          rowId,
+          wfRunId,
+          status: 'error',
+          score: null,
+          checkResults: [],
+          error,
+          modelId: p.modelId,
+          promptLabel: p.promptLabel,
+          promptBody: p.promptBody,
+          attempt: p.attempt,
+        },
+        // A run that failed AFTER burning tokens still cost real money — surface
+        // that in the report rather than showing the cell as free.
+        runStats: async () => { return wfRunId ? (await loadRunStats(c.db, [wfRunId])).get(wfRunId) : null },
+      })
     },
 
     finalizeEvalRun: async (c) => {

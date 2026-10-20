@@ -541,6 +541,7 @@ describe('rollup', () => {
     ])
     expect(out.total).toBe(4)
     expect(out.passed).toBe(2)
+    // `failed` is "not passed": the errored row counts, and `errored` names it.
     expect(out.failed).toBe(2)
     expect(out.errored).toBe(1)
     expect(out.passRate).toBe(0.5)
