@@ -81,16 +81,14 @@ export function AgentsList({ className }: AgentsListProps) {
   }, [data])
 
   const visible = useMemo(
-    () =>
-      (data ?? []).filter(
-        (a) =>
-          (!kindFilter || a.kind === kindFilter) &&
+    () => { return (data ?? []).filter(
+        (a) => { return (!kindFilter || a.kind === kindFilter) &&
           (!modelFilter || a.modelId === modelFilter) &&
           (!workflowFilter ||
             (workflowFilter === NO_WORKFLOW
               ? a.workflows.length === 0
-              : a.workflows.some((w) => w.id === workflowFilter))),
-      ),
+              : a.workflows.some((w) => w.id === workflowFilter))) },
+      ) },
     [data, kindFilter, modelFilter, workflowFilter],
   )
 
@@ -160,12 +158,20 @@ export function AgentsList({ className }: AgentsListProps) {
           size="sm"
           className="shrink-0 whitespace-nowrap"
           onClick={() => setChoosingKind(true)}
-          disabled={create.isPending}
+          // The starter config names the first catalog model, and create checks
+          // it against the catalog — so wait for the catalogs to load.
+          disabled={create.isPending || models.isLoading || deciders.isLoading}
         >
           <Plus className="size-4" />
           {create.isPending ? 'Creating…' : 'New agent'}
         </Button>
       </div>
+
+      {create.error ? (
+        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm whitespace-pre-line text-red-700">
+          {create.error.message}
+        </div>
+      ) : null}
 
       <QueryState
         query={{ isLoading, error, data }}
@@ -223,9 +229,9 @@ export function AgentsList({ className }: AgentsListProps) {
             label="Model"
             value={modelFilter}
             onChange={setModelFilter}
-            options={[
-              ...modelOptions.map((m) => ({ value: m.id, label: m.label })),
-            ]}
+            options={
+              modelOptions.map((m) => ({ value: m.id, label: m.label }))
+            }
           />
           <FilterPill
             label="Workflow"

@@ -41,8 +41,21 @@ describe('agent handlers — kind', () => {
     db = freshDb()
   })
 
+  // Create and publish check the config against the live catalogs, so the
+  // ids these tests use have to be in them.
   const handlers = (over: Parameters<typeof testHandlerOptions>[0] = {}) => {
-    return buildAgentHandlers(testHandlerOptions(over))
+    return buildAgentHandlers(
+      testHandlerOptions({
+        ...over,
+        config: {
+          listModels: async () => [{ id: 'm', label: 'M' }],
+          listDecisionModels: async () => [
+            { id: 'venice:jev-latest', label: 'Jev' },
+          ],
+          ...over.config,
+        },
+      }),
+    )
   }
 
   async function createDecisionAgent(over: Partial<DecisionAgentConfig> = {}) {
@@ -55,6 +68,35 @@ describe('agent handlers — kind', () => {
       }),
     )
   }
+
+  // Create publishes v1, so it is held to the catalog checks — but not to
+  // matrix completeness: the starter leaves its question prompt to the author.
+  test('create refuses a model the catalog does not offer', async () => {
+    await expect(
+      handlers().createAgent(
+        testHandlerCtx(db, {
+          name: 'Greeter',
+          config: makeAgentConfig({ modelId: 'made-up', prompt: 'Hi.' }),
+        }),
+      ),
+    ).rejects.toThrow(/No enabled model has the id "made-up"/)
+  })
+
+  test('the incomplete decision starter creates, but does not publish', async () => {
+    const h = handlers()
+    const starter = starterDecisionAgentConfig('venice:jev-latest')
+    const { agentId } = await h.createAgent(
+      testHandlerCtx(db, { name: 'Triage', kind: 'decision', config: starter }),
+    )
+    await expect(
+      h.publishAgent(
+        testHandlerCtx(db, {
+          agentId,
+          config: { ...starter, verdicts: ['review', 'proceed', 'hold'] },
+        }),
+      ),
+    ).rejects.toThrow(/would not run[\s\S]*has no prompt/)
+  })
 
   test('an agent created with no kind is a generation agent', async () => {
     const h = handlers()

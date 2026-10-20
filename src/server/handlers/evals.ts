@@ -1,4 +1,5 @@
 import { changedEvalRowFields, changedEvalSetFields } from '../../engine'
+import { decisionIssuesMessage } from '../../engine/agent-config-check'
 import { toAgentKind } from '../../engine/agent-kind'
 import { runDecisionAgent } from '../../engine/decision-agent'
 import {
@@ -663,9 +664,7 @@ export function buildEvalHandlers<TDeps>(
       // rules never reached. Thrown, so the tick records the cell as failed.
       const issues = decisionAgentConfigIssues(config)
       if (issues.length > 0) {
-        throw new BadRequestError(
-          `This decision agent would not run:\n${issues.map((i) => `- ${i}`).join('\n')}`,
-        )
+        throw new BadRequestError(decisionIssuesMessage(issues))
       }
 
       const { state, variables } = decisionInvocation(row.input)

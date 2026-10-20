@@ -4,6 +4,7 @@ import type {
   ModelProviderStatus,
   ProviderBudget,
 } from '../../engine/config'
+import type { DecisionModelOption } from '../../engine/decision'
 import { errorMessage } from '../../engine/error-message'
 import { toJsonSchema } from '../../engine/to-json-schema'
 import { describeTriggerEvents } from '../../engine/trigger-registry'
@@ -19,7 +20,11 @@ import {
   touchModelProvider,
   upsertModels,
 } from '../../storage/data'
-import type { JsonSchema, WfToolInvocation } from '../protocol'
+import type {
+  JsonSchema,
+  ModelOption,
+  WfToolInvocation,
+} from '../protocol'
 
 import {
   toEpoch,
@@ -38,6 +43,70 @@ async function hostProviderIds<TDeps>(
 ): Promise<Set<string>> {
   const host = await config.listProviders({ env: await c.env() })
   return new Set(host.map((p) => p.id))
+}
+
+/**
+ * The enabled chat models a picker offers — and the catalog a config is
+ * checked against. Shared by `listModels` and the agent handlers' gates.
+ */
+export async function enabledModels<TDeps>(args: {
+  opts: CreateWfSdkHandlersOptions<TDeps>
+  c: HandlerCtx
+}): Promise<ModelOption[]> {
+  const { opts, c } = args
+  try {
+    const providers = await listModelProviders(c.db)
+    if (providers.length === 0) {
+      // No cached catalog yet — fall back to the host's static list.
+      return await opts.config.listModels({ env: await c.env() })
+    }
+    // Show only enabled models from providers the host STILL declares. A
+    // provider cached from a past refresh but no longer wired up (e.g.
+    // OpenRouter on a Venice-only host) is dropped, along with its models.
+    // An empty result honors the user's curation (all models disabled).
+    const allowed = await hostProviderIds(opts.config, c)
+    const enabled = await listEnabledModels(c.db)
+    return enabled.filter(
+      (m) => m.providerId != null && allowed.has(m.providerId),
+    )
+  } catch (err) {
+    // A persistent host-provider misconfig would otherwise be invisible
+    // here — log before falling back to the raw host list.
+    c.logger.error('[wf] listModels: host provider lookup failed', err)
+    return await opts.config.listModels({ env: await c.env() })
+  }
+}
+
+/** The decision models a picker offers; see {@link enabledModels}. */
+export async function enabledDecisionModels<TDeps>(args: {
+  opts: CreateWfSdkHandlersOptions<TDeps>
+  c: HandlerCtx
+}): Promise<DecisionModelOption[]> {
+  const { opts, c } = args
+  if (!opts.config.listDecisionModels) return []
+  const declared = await opts.config.listDecisionModels({
+    env: await c.env(),
+  })
+  let facts: Awaited<ReturnType<typeof listEnabledDecisionModelFacts>>
+  try {
+    facts = await listEnabledDecisionModelFacts(c.db)
+  } catch (err) {
+    // The catalog is an enrichment, never a gate — a failed read must not
+    // take the Decision pickers down with it.
+    c.logger.error('[wf] listDecisionModels: catalog read failed', err)
+    return declared
+  }
+  if (facts.length === 0) return declared
+  const byId = new Map(facts.map((f) => [f.id, f]))
+  return declared.map((m) => {
+    const fact = byId.get(m.id)
+    if (!fact) return m
+    return {
+      ...m,
+      label: fact.label,
+      contextLength: fact.contextLength ?? m.contextLength,
+    }
+  })
 }
 
 export function buildModelHandlers<TDeps>(
@@ -89,29 +158,7 @@ export function buildModelHandlers<TDeps>(
     // provider rows yet) or if the tables are missing, fall back to the host's
     // static list so pickers keep working. Once the catalog is populated we
     // honor the user's curation — even an empty selection.
-    listModels: async (c) => {
-      try {
-        const providers = await listModelProviders(c.db)
-        if (providers.length === 0) {
-          // No cached catalog yet — fall back to the host's static list.
-          return await opts.config.listModels({ env: await c.env() })
-        }
-        // Show only enabled models from providers the host STILL declares. A
-        // provider cached from a past refresh but no longer wired up (e.g.
-        // OpenRouter on a Venice-only host) is dropped, along with its models.
-        // An empty result honors the user's curation (all models disabled).
-        const allowed = await hostProviderIds(opts.config, c)
-        const enabled = await listEnabledModels(c.db)
-        return enabled.filter(
-          (m) => m.providerId != null && allowed.has(m.providerId),
-        )
-      } catch (err) {
-        // A persistent host-provider misconfig would otherwise be invisible
-        // here — log before falling back to the raw host list.
-        c.logger.error('[wf] listModels: host provider lookup failed', err)
-        return await opts.config.listModels({ env: await c.env() })
-      }
-    },
+    listModels: (c) => enabledModels({ opts, c }),
 
     // The host DECLARES which deciders its `getDecider` can resolve; the catalog
     // knows what they currently cost and how big their window is. Both are needed
@@ -130,32 +177,7 @@ export function buildModelHandlers<TDeps>(
     // or for a host that catalogues no decision models, the host list passes
     // through untouched, which is exactly how this behaved before the catalog
     // learned about them.
-    listDecisionModels: async (c) => {
-      if (!opts.config.listDecisionModels) return []
-      const declared = await opts.config.listDecisionModels({
-        env: await c.env(),
-      })
-      let facts: Awaited<ReturnType<typeof listEnabledDecisionModelFacts>>
-      try {
-        facts = await listEnabledDecisionModelFacts(c.db)
-      } catch (err) {
-        // The catalog is an enrichment, never a gate — a failed read must not
-        // take the Decision pickers down with it.
-        c.logger.error('[wf] listDecisionModels: catalog read failed', err)
-        return declared
-      }
-      if (facts.length === 0) return declared
-      const byId = new Map(facts.map((f) => [f.id, f]))
-      return declared.map((m) => {
-        const fact = byId.get(m.id)
-        if (!fact) return m
-        return {
-          ...m,
-          label: fact.label,
-          contextLength: fact.contextLength ?? m.contextLength,
-        }
-      })
-    },
+    listDecisionModels: (c) => enabledDecisionModels({ opts, c }),
 
     listDecisionProviders: async (c) => {
       if (!opts.config.listDecisionProviders) return []

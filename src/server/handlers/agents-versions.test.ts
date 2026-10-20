@@ -47,12 +47,20 @@ function options(
   over: Parameters<typeof testHandlerOptions>[0] = {},
 ): CreateWfSdkHandlersOptions<unknown> {
   return testHandlerOptions({
-    // No model on offer → computeAgentChangeSummary falls to the heuristic,
-    // which is what keeps this test free of any network call.
+    // No model the summarizer can reach → computeAgentChangeSummary falls to
+    // the heuristic, which keeps this test free of any network call. The ids
+    // are in the catalog because publish checks the config against it.
     waitUntil: (p: Promise<unknown>) => {
       pending.push(p)
     },
     ...over,
+    config: {
+      listModels: async () => [
+        { id: 'test-model', label: 'Test' },
+        { id: 'other-model', label: 'Other' },
+      ],
+      ...over.config,
+    },
   })
 }
 

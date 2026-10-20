@@ -1,5 +1,9 @@
 import { loadConnectorCatalog } from '../../connectors/registry'
 import { changedEntityMetaFields, changedFields } from '../../engine'
+import {
+  checkAgentConfig,
+  decisionIssuesMessage,
+} from '../../engine/agent-config-check'
 import { toAgentKind, type WfAgentKind } from '../../engine/agent-kind'
 import { isConnectorToolId } from '../../engine/connector-tool-id'
 import { runDecisionAgent } from '../../engine/decision-agent'
@@ -7,6 +11,7 @@ import {
   decisionAgentConfigIssues,
   decisionAgentConfigSchema,
   decisionAgentInputVariables,
+  type AnyAgentConfig,
 } from '../../engine/decision-agent-schema'
 import {
   agentConfigSchema,
@@ -42,6 +47,7 @@ import type {
 } from '../protocol'
 
 import { computeAgentChangeSummary } from './change-summary'
+import { enabledDecisionModels, enabledModels } from './models'
 import {
   BadRequestError,
   NotFoundError,
@@ -53,6 +59,7 @@ import {
   requireHook,
   toEpoch,
   type CreateWfSdkHandlersOptions,
+  type HandlerCtx,
   type WfHandlers,
 } from './shared'
 
@@ -182,6 +189,37 @@ export function buildAgentHandlers<TDeps>(
   | 'runDecisionPreview'
   | 'runToolPreview'
 > {
+  // The run-readiness gate create and publish share with MCP: the config
+  // against the live model, decision-model and tool catalogs. `matrix: false`
+  // keeps a decision agent's completeness out of it — a created starter is
+  // deliberately incomplete (its question prompt is the author's to write).
+  const assertRunnable = async (args: {
+    c: HandlerCtx
+    kind: WfAgentKind
+    config: AnyAgentConfig
+    matrix: boolean
+  }): Promise<void> => {
+    const { c, kind, config } = args
+    const generation = kind === 'generation' ? (config as AgentConfig) : null
+    const issues = checkAgentConfig({
+      kind,
+      config,
+      models: generation ? await enabledModels({ opts, c }) : [],
+      decisionModels:
+        kind === 'decision' ? await enabledDecisionModels({ opts, c }) : [],
+      toolIds: new Set(
+        generation && generation.toolIds.length > 0
+          ? [
+              ...opts.config.toolRegistry.keys(),
+              ...(await loadConnectorCatalog(c.db)).map((e) => e.id),
+            ]
+          : [],
+      ),
+      matrix: args.matrix,
+    })
+    if (issues.length > 0) throw new BadRequestError(issues.join('\n'))
+  }
+
   return {
     listAgents: async (c) => {
       const rows = await listAgents(c.db)
@@ -237,6 +275,9 @@ export function buildAgentHandlers<TDeps>(
       // it, so the config is checked against the schema this choice names and
       // every later write is checked against the stored value.
       const kind = toAgentKind(p.kind)
+      const config = parseConfigOfKind(kind, p.config)
+      // Create publishes v1, so it is held to the catalog half of the gate.
+      await assertRunnable({ c, kind, config, matrix: false })
       return await createAgent(c.db, {
         name: p.name,
         kind,
@@ -244,7 +285,7 @@ export function buildAgentHandlers<TDeps>(
         icon: p.icon,
         color: p.color,
         createdBy: c.ctx.userId,
-        config: parseConfigOfKind(kind, p.config),
+        config,
       })
     },
 
@@ -298,16 +339,7 @@ export function buildAgentHandlers<TDeps>(
       // a published one must be complete, because a rule that cannot hold
       // (wrong op for its question type, unknown choice key, `is` with no side)
       // evaluates false at run time and silently falls through to the fallback.
-      if (kind === 'decision') {
-        const issues = decisionAgentConfigIssues(
-          parseDecisionAgentConfig(p.config),
-        )
-        if (issues.length > 0) {
-          throw new BadRequestError(
-            `This decision agent would not run:\n${issues.map((i) => `- ${i}`).join('\n')}`,
-          )
-        }
-      }
+      await assertRunnable({ c, kind, config, matrix: true })
       // The AI change summary and the field-level diff are both written
       // against `AgentConfig`'s field names, so they only apply to a
       // generation agent. A decision agent publishes with the change LOG
@@ -567,9 +599,7 @@ export function buildAgentHandlers<TDeps>(
       // verdict the rules never actually reached.
       const issues = decisionAgentConfigIssues(config)
       if (issues.length > 0) {
-        throw new BadRequestError(
-          `This decision agent would not run:\n${issues.map((i) => `- ${i}`).join('\n')}`,
-        )
+        throw new BadRequestError(decisionIssuesMessage(issues))
       }
       const env = await c.env()
       return await runDecisionAgent({

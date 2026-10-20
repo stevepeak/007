@@ -275,7 +275,7 @@ export function supportsQuestionType(
 /** Question types in `questions` that `model` is known to lack, for gating. */
 export function unsupportedQuestionTypes(
   model: DecisionModelOption,
-  questions: readonly DecisionQuestion[],
+  questions: readonly Pick<DecisionQuestion, 'type'>[],
 ): DecisionQuestionType[] {
   const needed = new Set(questions.map((q) => q.type))
   return [...needed].filter((t) => !supportsQuestionType(model, t))
@@ -402,8 +402,7 @@ export function resolveVerdict(
 
   if (question.type === 'category' && answer.type === 'category') {
     const distribution = alignToChoices(question.options, answer.distribution)
-    const top = distribution.reduce((best, entry) =>
-      entry.probability > best.probability ? entry : best,
+    const top = distribution.reduce((best, entry) => { return entry.probability > best.probability ? entry : best },
     )
     return {
       id: question.id,

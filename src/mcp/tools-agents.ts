@@ -1,10 +1,9 @@
 import { z } from 'zod'
 
 import {
-  unsupportedQuestionTypes,
-  type DecisionModelOption,
-} from '../engine/decision'
-import { decisionAgentQuestions } from '../engine/decision-agent'
+  checkAgentConfig,
+  decisionIssuesMessage,
+} from '../engine/agent-config-check'
 import {
   decisionAgentConfigIssues,
   decisionAgentConfigSchema,
@@ -12,12 +11,7 @@ import {
 import {
   agentConfigSchema,
   agentInputVariables,
-  agentModelRequirements,
 } from '../engine/graph'
-import {
-  REQUIREMENT_REASON,
-  unmetRequirements,
-} from '../engine/model-capabilities'
 import { stableEqual } from '../engine/stable-stringify'
 import type {
   AgentConfig,
@@ -25,8 +19,6 @@ import type {
   AnyAgentConfig,
   AgentPreviewResult,
   DecisionAgentConfig,
-  ModelOption,
-  ToolOption,
   WfDataClient,
 } from '../server/protocol'
 
@@ -242,21 +234,6 @@ export function asGenerationDetail(detail: {
 }
 
 /**
- * Ids a refusal will name before it stops counting. The enabled catalog is small
- * but not fixed, and a hundred ids buries the sentence that says what to do.
- */
-const MAX_NAMED_MODELS = 20
-
-/** Ids in an error, capped and countable — a list to pick the right one from. */
-function nameIds(ids: string[]): string {
-  const shown = ids.slice(0, MAX_NAMED_MODELS)
-  const rest = ids.length - shown.length
-  return rest > 0
-    ? `${shown.join(', ')} (+${rest} more — call list_models)`
-    : shown.join(', ')
-}
-
-/**
  * The config an agent will be CREATED with, or the reason it cannot be.
  *
  * Three things are checked here that the schema cannot, and all three are the
@@ -300,45 +277,23 @@ export async function preflightAgentConfig(
     return { error: `The config is not valid:\n${issues}` }
   }
   const config = parsed.data
-
-  const models: ModelOption[] = await client.listModels()
-  const model = models.find((m) => m.id === config.modelId)
-  if (!model) {
+  const issues = checkAgentConfig({
+    kind: 'generation',
+    config,
+    models: await client.listModels(),
+    decisionModels: [],
+    toolIds: new Set(
+      config.toolIds.length > 0
+        ? (await client.listTools()).map((t) => t.id)
+        : [],
+    ),
+    matrix: true,
+  })
+  if (issues.length > 0) {
     return {
-      error: `No enabled model has the id "${config.modelId}". Ids are composite \`provider:model\` and must be passed verbatim from list_models — the provider-native half alone will 404. Enabled: ${nameIds(
-        models.map((m) => m.id),
-      )}`,
+      error: `${issues.join('\n')}\nModel ids come from list_models, tool ids from get_tool_catalog.`,
     }
   }
-
-  if (config.toolIds.length > 0) {
-    const catalog: ToolOption[] = await client.listTools()
-    const known = new Set(catalog.map((t) => t.id))
-    const unknown = config.toolIds.filter((id) => !known.has(id))
-    if (unknown.length > 0) {
-      return {
-        error: `These tool ids are not in the catalog: ${unknown.join(
-          ', ',
-        )}. An agent can only be given a registered tool — call get_tool_catalog for the ids.`,
-      }
-    }
-  }
-
-  const requirements = agentModelRequirements(config)
-  const unmet = unmetRequirements(model, requirements)
-  if (unmet.length > 0) {
-    const capable = models
-      .filter((m) => unmetRequirements(m, requirements).length === 0)
-      .map((m) => m.id)
-    return {
-      error: `Model "${model.id}" cannot run this agent: ${unmet
-        .map((k) => REQUIREMENT_REASON[k])
-        .join(', ')}. The config needs ${Object.keys(requirements)
-        .filter((k) => requirements[k as keyof typeof requirements] === true)
-        .join(', ')}. Models that can: ${nameIds(capable)}`,
-    }
-  }
-
   return { config }
 }
 
@@ -375,36 +330,15 @@ export async function preflightDecisionAgentConfig(
     return { error: `The config is not valid:\n${issues}` }
   }
   const config = parsed.data
-
-  const issues = decisionAgentConfigIssues(config)
-  if (issues.length > 0) {
-    return {
-      error: `This decision agent would not run:\n${issues.map((i) => `- ${i}`).join('\n')}`,
-    }
-  }
-
-  const models: DecisionModelOption[] = await client.listDecisionModels()
-  if (models.length === 0) {
-    return {
-      error:
-        'No decision provider is wired on this host (WfSdkConfig.listDecisionModels / getDecider), so a decision agent cannot run here.',
-    }
-  }
-  const model = models.find((m) => m.id === config.modelId)
-  if (!model) {
-    return {
-      error: `No decision model has the id "${config.modelId}". Ids are composite \`provider:model\` and come from list_decision_models verbatim. Available: ${nameIds(models.map((m) => m.id))}`,
-    }
-  }
-  const unsupported = unsupportedQuestionTypes(
-    model,
-    decisionAgentQuestions(config),
-  )
-  if (unsupported.length > 0) {
-    return {
-      error: `Decision model "${model.id}" cannot answer ${unsupported.join(', ')} questions. Change those questions' types, or pick a model that answers them.`,
-    }
-  }
+  const issues = checkAgentConfig({
+    kind: 'decision',
+    config,
+    models: [],
+    decisionModels: await client.listDecisionModels(),
+    toolIds: new Set(),
+    matrix: true,
+  })
+  if (issues.length > 0) return { error: issues.join('\n') }
   return { config }
 }
 
@@ -934,9 +868,7 @@ export function agentWriteTools(): WfMcpTool[] {
 
         const issues = decisionAgentConfigIssues(chosen.config)
         if (issues.length > 0) {
-          return {
-            error: `This decision agent would not run:\n${issues.map((i) => `- ${i}`).join('\n')}`,
-          }
+          return { error: decisionIssuesMessage(issues) }
         }
 
         const result = await client.runDecisionPreview({
