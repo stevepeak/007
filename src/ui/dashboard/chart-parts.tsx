@@ -1,10 +1,30 @@
-import type { ReactNode } from 'react'
-import type { BarShapeProps, TooltipContentProps } from 'recharts'
+import { useMemo, type ReactNode } from 'react'
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+  type BarShapeProps,
+  type TooltipContentProps,
+} from 'recharts'
 
-import type { WfDashboardBucket } from '../../server/protocol'
+import type {
+  WfDashboardBucket,
+  WfDashboardSeries,
+} from '../../server/protocol'
 import { cn } from '../cn'
 
-import { CHROME, formatBucketLong } from './chart-theme'
+import {
+  CHROME,
+  assignSeriesColors,
+  axisProps,
+  formatBucket,
+  formatBucketLong,
+  gridProps,
+} from './chart-theme'
 
 // The pieces every dashboard panel is built from — card chrome, the legend, the
 // hover readout, and the empty state. Kept together so the four panels can't
@@ -220,6 +240,123 @@ export function StackedBarShape({
     ? `M${x},${top + h} L${x},${top + r} Q${x},${top} ${x + r},${top} L${x + width - r},${top} Q${x + width},${top} ${x + width},${top + r} L${x + width},${top + h} Z`
     : `M${x},${top} h${width} v${h} h${-width} Z`
   return <path d={path} fill={fill} />
+}
+
+type StackedRow = Record<string, number | string> & {
+  bucket: number
+  __top: string
+}
+
+/**
+ * Series stacked per bucket, with the legend under it — the plot both the cost
+ * and steps panels draw. `format` renders a value in the legend and the hover
+ * readout; `yTick` renders the y-axis labels.
+ */
+export function StackedBarChart({
+  buckets,
+  bucket,
+  series,
+  format,
+  yTick,
+}: {
+  buckets: number[]
+  bucket: WfDashboardBucket
+  series: WfDashboardSeries[]
+  format: (v: number) => string
+  yTick: (v: number) => string
+}) {
+  const colors = useMemo(
+    () => assignSeriesColors(series.map((s) => s.key)),
+    [series],
+  )
+
+  const rows = useMemo<StackedRow[]>(() => {
+    return buckets.map((b, i) => {
+      const row = { bucket: b, __top: '' } as StackedRow
+      // Track the highest non-zero segment so only the stack's data-end gets
+      // the rounded cap — a rounded corner mid-stack reads as a gap.
+      for (const s of series) {
+        const v = s.points[i] ?? 0
+        row[s.key] = v
+        if (v > 0) row.__top = s.key
+      }
+      return row
+    })
+  }, [buckets, series])
+
+  const legend: LegendItem[] = series.map((s) => ({
+    key: s.key,
+    label: s.label,
+    color: colors.get(s.key) ?? '#000',
+    value: format(s.total),
+  }))
+
+  return (
+    <>
+      <ResponsiveContainer width="100%" height={200}>
+        <BarChart
+          data={rows}
+          margin={{ top: 4, right: 8, bottom: 0, left: -16 }}
+        >
+          <CartesianGrid {...gridProps} />
+          <XAxis
+            dataKey="bucket"
+            {...axisProps}
+            tickFormatter={(v: number) => formatBucket(v, bucket)}
+            minTickGap={24}
+          />
+          <YAxis {...axisProps} width={44} tickFormatter={yTick} />
+          <Tooltip
+            cursor={{ fill: 'rgba(11,11,11,0.04)' }}
+            content={(props: TooltipContentProps) => {
+              if (!props.active || !props.payload?.length) return null
+              const byKey = tooltipValues(props.payload)
+              const shown = series.filter((s) => (byKey.get(s.key) ?? 0) > 0)
+              if (shown.length === 0) return null
+              return (
+                <ChartTooltip
+                  bucketMs={Number(props.label)}
+                  bucket={bucket}
+                  rows={shown.map((s) => ({
+                    key: s.key,
+                    label: s.label,
+                    color: colors.get(s.key) ?? '#000',
+                    value: format(byKey.get(s.key) ?? 0),
+                  }))}
+                  total={format(
+                    shown.reduce((sum, s) => sum + (byKey.get(s.key) ?? 0), 0),
+                  )}
+                />
+              )
+            }}
+          />
+          {series.map((s) => (
+            <Bar
+              key={s.key}
+              dataKey={s.key}
+              name={s.label}
+              stackId="stack"
+              fill={colors.get(s.key) ?? '#000'}
+              maxBarSize={24}
+              isAnimationActive={false}
+              // Custom shape rather than `radius`: it inserts the 2px surface
+              // gap between segments (white doing the separating, not a
+              // stroke) and caps only the stack's top.
+              shape={(props: BarShapeProps) => (
+                <StackedBarShape
+                  {...props}
+                  rounded={
+                    (props.payload as StackedRow | undefined)?.__top === s.key
+                  }
+                />
+              )}
+            />
+          ))}
+        </BarChart>
+      </ResponsiveContainer>
+      <ChartLegend items={legend} />
+    </>
+  )
 }
 
 /** A bare trend line for stat tiles — no axes, no hover, just the shape. */
