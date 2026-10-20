@@ -1,9 +1,6 @@
-import { discoverCatalog, McpUnauthorizedError } from '../../connectors/client'
-import {
-  beginAuthorization,
-  resolveAccessToken,
-  saveBearerToken,
-} from '../../connectors/oauth'
+import { discoverCatalog } from '../../connectors/client'
+import { beginAuthorization, saveBearerToken } from '../../connectors/oauth'
+import { withConnectorAuth } from '../../connectors/session'
 import { assertConnectorUrl } from '../../connectors/url'
 import type { JsonSchema } from '../../engine/agent-output'
 import {
@@ -18,7 +15,6 @@ import {
   listConnectors,
   listConnections,
   listConnectorTools,
-  setConnectionStatus,
   setConnectorEnabled,
   setConnectorToolEnabled,
   setConnectorToolSideEffect,
@@ -324,49 +320,19 @@ export function buildConnectorHandlers<TDeps>(
 
       // A server may expose its catalog unauthenticated, so a missing
       // credential is not fatal here — try, and let the server object.
-      const credential = await resolveAccessToken({ db: c.db, connector, secret })
-      let catalog: Awaited<ReturnType<typeof discoverCatalog>>
-      try {
-        catalog = await discoverCatalog({
-          url: connector.url,
-          transport: connector.transport,
-          auth: credential
-            ? { kind: 'bearer', token: credential.token }
-            : { kind: 'none' },
-        })
-      } catch (err) {
-        // A stored token the server no longer honours — most often one minted
-        // with the wrong (or no) scopes, which `resolveAccessToken` cannot
-        // detect because it never expires. Flip the connection so the page
-        // offers Reconnect; otherwise it reads "connected" beside a 401 forever.
-        if (err instanceof McpUnauthorizedError && credential) {
-          const connection = await getConnection(c.db, connectorId)
-          if (connection) {
-            await setConnectionStatus(c.db, {
-              connectionId: connection.id,
-              status: 'expired',
-              error: err.message,
-            })
-          }
-        }
-        throw err
-      }
-      const { tools, iconUrl } = catalog
-
-      // The reverse transition. A 401 above marks the connection `expired`,
-      // and a token the server honours again — a server-side hiccup, or a
-      // client bug fixed since — must clear it, or the page keeps offering
-      // Reconnect beside a catalog that just refreshed fine.
-      if (credential) {
-        const connection = await getConnection(c.db, connectorId)
-        if (connection && connection.status === 'expired') {
-          await setConnectionStatus(c.db, {
-            connectionId: connection.id,
-            status: 'connected',
-            error: null,
+      const { tools, iconUrl } = await withConnectorAuth({
+        db: c.db,
+        connector,
+        secret,
+        requireCredential: false,
+        run: (auth) => {
+          return discoverCatalog({
+            url: connector.url,
+            transport: connector.transport,
+            auth,
           })
-        }
-      }
+        },
+      })
 
       const result = await upsertConnectorTools(c.db, connectorId, tools)
       const refreshedAt = new Date()

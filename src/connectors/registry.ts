@@ -7,14 +7,10 @@ import type {
   ToolRegistryEntry,
 } from '../engine/tool-registry'
 import type { WfDb } from '../storage/client'
-import {
-  getConnection,
-  listEnabledConnectorTools,
-  setConnectionStatus,
-} from '../storage/data/connectors'
+import { listEnabledConnectorTools } from '../storage/data/connectors'
 
-import { callRemoteTool, McpUnauthorizedError, type McpTarget } from './client'
-import { resolveAccessToken } from './oauth'
+import { callRemoteTool, type McpTarget } from './client'
+import { withConnectorAuth } from './session'
 
 // Connector tools, as the engine already understands tools.
 //
@@ -151,45 +147,24 @@ function toRegistryEntry<TDeps>(
       url: entry.connectorUrl,
     }
 
-    const credential = await resolveAccessToken({
+    return await withConnectorAuth({
       db,
       // `resolveAccessToken` reads only these three fields off the row.
       connector: connector as Parameters<
-        typeof resolveAccessToken
+        typeof withConnectorAuth
       >[0]['connector'],
       secret,
-    })
-    if (!credential) {
-      throw new McpUnauthorizedError(
-        `${entry.connectorLabel} is not connected. Connect it from the connectors page.`,
-      )
-    }
-
-    const target: McpTarget = {
-      url: entry.connectorUrl,
-      transport: entry.transport,
-      auth: { kind: 'bearer', token: credential.token },
-      timeoutMs: runtime.timeoutMs,
-    }
-
-    try {
-      return await callRemoteTool(target, entry.toolName, args)
-    } catch (err) {
-      // A 401 here is the credential going bad mid-life (revoked upstream, or
-      // an expiry the server never told us about). Record it so the connectors
-      // page offers Reconnect, instead of every run failing anonymously.
-      if (err instanceof McpUnauthorizedError) {
-        const connection = await getConnection(db, entry.connectorId)
-        if (connection) {
-          await setConnectionStatus(db, {
-            connectionId: connection.id,
-            status: 'expired',
-            error: err.message,
-          })
+      requireCredential: true,
+      run: (auth) => {
+        const target: McpTarget = {
+          url: entry.connectorUrl,
+          transport: entry.transport,
+          auth,
+          timeoutMs: runtime.timeoutMs,
         }
-      }
-      throw err
-    }
+        return callRemoteTool(target, entry.toolName, args)
+      },
+    })
   }
 
   return {
