@@ -193,10 +193,33 @@ export function useNodeRenderer<K extends EditorNodeData['kind']>(
 export const NOT_RUN_STATUS = 'not-run'
 
 /** Dimming for a node the run never reached, and for one it skipped. */
-export function notRunClass(status: string | undefined): string | false {
+function notRunClass(status: string | undefined): string | false {
   return (
     (status === NOT_RUN_STATUS && 'opacity-40 saturate-0') ||
     (status === 'skipped' && 'opacity-60')
+  )
+}
+
+/**
+ * The border + ring of a node frame for its validity and run status. A failed
+ * run step reads as red (same treatment as an author-time issue); a running one
+ * glows blue; a skipped or never-reached one dims. Completed keeps the kind
+ * accent and relies on the green corner dot.
+ */
+export function nodeStatusFrameClass(args: {
+  invalid?: boolean
+  status: string | undefined
+  /** The kind's `border-l-<colour>` accent from `KIND_STYLE`. */
+  accent: string
+}): string {
+  const { invalid, status, accent } = args
+  return cn(
+    invalid || status === 'failed'
+      ? 'border-rose-300 border-l-rose-500 ring-1 ring-rose-300'
+      : status === 'running'
+        ? 'border-blue-300 border-l-blue-500 ring-1 ring-blue-200 wf-node-glow'
+        : accent,
+    notRunClass(status),
   )
 }
 
@@ -300,21 +323,11 @@ export function NodeCard({
 }) {
   const style = KIND_STYLE[kind]
   const Icon = style.icon
-  // A failed run step reads as red (same treatment as an author-time issue); a
-  // running step glows blue; a skipped one dims. Completed keeps the kind accent
-  // and relies on the green corner dot.
-  const failed = status === 'failed'
-  const running = status === 'running'
   return (
     <div
       className={cn(
         'bg-card relative rounded-md border border-l-4 shadow-sm transition-colors',
-        invalid || failed
-          ? 'border-rose-300 border-l-rose-500 ring-1 ring-rose-300'
-          : running
-            ? 'border-blue-300 border-l-blue-500 ring-1 ring-blue-200 wf-node-glow'
-            : style.accent,
-        notRunClass(status),
+        nodeStatusFrameClass({ invalid, status, accent: style.accent }),
         selected && 'ring-ring ring-2 ring-offset-1',
         highlighted &&
           !selected &&
@@ -384,19 +397,12 @@ export function NodePill({
 }) {
   const style = KIND_STYLE[kind]
   const Icon = style.icon
-  const failed = status === 'failed'
-  const running = status === 'running'
   return (
     <div
       title={subtitle}
       className={cn(
         'bg-card relative inline-flex items-center gap-1.5 rounded-full border border-l-4 px-2.5 py-1 shadow-sm transition-colors',
-        invalid || failed
-          ? 'border-rose-300 border-l-rose-500 ring-1 ring-rose-300'
-          : running
-            ? 'border-blue-300 border-l-blue-500 ring-1 ring-blue-200 wf-node-glow'
-            : style.accent,
-        notRunClass(status),
+        nodeStatusFrameClass({ invalid, status, accent: style.accent }),
         selected && 'ring-ring ring-2 ring-offset-1',
         highlighted &&
           !selected &&

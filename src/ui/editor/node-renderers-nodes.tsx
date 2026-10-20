@@ -23,7 +23,7 @@ import {
   defineNode,
   KIND_STYLE,
   NodeCard,
-  notRunClass,
+  nodeStatusFrameClass,
   RunStatusDot,
   useNodeRenderer,
   useRunAgentVersions,
@@ -340,12 +340,7 @@ export function IterationNodeRenderer(props: NodeProps) {
       <div
         className={cn(
           'relative flex h-full w-full flex-col rounded-lg border border-l-4 bg-fuchsia-50/40 shadow-sm',
-          invalid || status === 'failed'
-            ? 'border-rose-300 border-l-rose-500 ring-1 ring-rose-300'
-            : status === 'running'
-              ? 'border-blue-300 border-l-blue-500 ring-1 ring-blue-200'
-              : style.accent,
-          notRunClass(status),
+          nodeStatusFrameClass({ invalid, status, accent: style.accent }),
           props.selected && 'ring-ring ring-2 ring-offset-1',
         )}
       >

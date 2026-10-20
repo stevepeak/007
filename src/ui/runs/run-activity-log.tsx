@@ -1,17 +1,13 @@
 import {
   AlertTriangle,
   Brain,
-  Check,
   ChevronDown,
   ChevronRight,
   Circle,
-  CircleDashed,
   Info,
-  Minus,
   Radio,
   SquareArrowOutUpRight,
   Wrench,
-  X,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -30,10 +26,13 @@ import { WfLink } from '../nav'
 import {
   buildActivityTree,
   flattenTree,
-  type ActivityStatus,
   type FlatRow,
 } from './run-activity-tree'
-import { runStatusDotClass } from './run-status'
+import {
+  RUN_STATUS_STYLE,
+  RunStatusGlyph,
+  runStatusDotClass,
+} from './run-status'
 
 // The run viewer's run-wide progress feed — the "Activity" tab of the dock. A
 // living, tree-shaped view of the run: every workflow node is a row (spinner
@@ -86,19 +85,6 @@ function stateLabel(row: {
   return `Workflow done in ${took}. ${still}`
 }
 
-// Text tone for a run lifecycle marker, keyed by the run status it marks.
-// `done` is deliberately its own colour: the answer is out but the run has not
-// settled, and reading it as "finished" is exactly the confusion these rows
-// exist to clear up.
-const STATE_TONE: Record<string, string> = {
-  queued: 'text-amber-600',
-  running: 'text-blue-600',
-  done: 'text-emerald-600',
-  completed: 'text-emerald-700',
-  failed: 'text-rose-600',
-  cancelled: 'text-neutral-500',
-}
-
 // Type icon + colour + label for a node row, reusing the editor's per-kind
 // palette (`KIND_STYLE`). Its accent is a `border-l-<colour>` class, which we
 // retone to a `text-<colour>` for the icon. Unknown kinds fall back to a
@@ -120,23 +106,6 @@ function kindPresentation(kind: string): {
       label: s.label,
     }
   return { Icon: Circle, tone: 'text-neutral-400', label: kind }
-}
-
-// Status glyph for a node row: a spinning ring while running, ✓/✕ on finish, a
-// muted dash for skipped, and a faint hollow ring for not-yet-run nodes.
-function StatusGlyph({ status }: { status: ActivityStatus }) {
-  switch (status) {
-    case 'running':
-      return <CircleDashed className="size-3 shrink-0 animate-spin text-blue-500" />
-    case 'completed':
-      return <Check className="size-3 shrink-0 text-emerald-500" />
-    case 'failed':
-      return <X className="size-3 shrink-0 text-rose-500" />
-    case 'skipped':
-      return <Minus className="size-3 shrink-0 text-neutral-300" />
-    default:
-      return <CircleDashed className="size-3 shrink-0 text-neutral-300" />
-  }
 }
 
 export type RunActivityLogProps = {
@@ -338,7 +307,7 @@ function ActivityRowView({
         <span
           className={cn(
             'shrink-0 font-medium',
-            STATE_TONE[row.status] ?? 'text-neutral-500',
+            RUN_STATUS_STYLE[row.status]?.text ?? 'text-neutral-500',
           )}
         >
           {stateLabel(row)}
@@ -446,7 +415,7 @@ function ActivityRowView({
       title={row.error ?? undefined}
     >
       {caret}
-      <StatusGlyph status={row.status} />
+      <RunStatusGlyph status={row.status} />
       {(() => {
         const k = kindPresentation(row.nodeKind)
         const pending = row.status === 'pending'

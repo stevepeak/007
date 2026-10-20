@@ -31,6 +31,7 @@ import { AgentWaterfall } from './agent-waterfall'
 import { type IterationMeta, readIterationMeta } from './run-activity-tree'
 import { runLogSections } from './run-log-sections'
 import { toolCallDurationLabel, turnDurationLabel } from './run-log-timing'
+import { RUN_STATUS_STYLE } from './run-status'
 
 // The Logs view renders a step's execution as an AI-style vertical timeline:
 //   Input → thinking → tool call → … → Output.
@@ -682,11 +683,8 @@ function IterationTrace({ meta }: { meta: IterationMeta }) {
             title={i.error ? `#${i.index}: ${i.error}` : `#${i.index}`}
             className={cn(
               'inline-flex size-5 items-center justify-center rounded text-[10px] font-medium',
-              i.status === 'completed'
-                ? 'bg-green-100 text-green-700'
-                : i.status === 'failed'
-                  ? 'bg-red-100 text-red-700'
-                  : 'bg-neutral-100 text-neutral-500',
+              RUN_STATUS_STYLE[i.status]?.chip ??
+                'bg-neutral-100 text-neutral-500',
             )}
           >
             {i.index}
