@@ -43,6 +43,7 @@ import {
   NotFoundError,
   BadRequestError,
   parseGraph,
+  recordedUpdate,
   requireExists,
   toEpoch,
   type CreateWfSdkHandlersOptions,
@@ -321,23 +322,23 @@ export function buildWorkflowHandlers<TDeps>(
       const { workflowId } = p
       await requireExists(c.db, workflowId)
       // Metadata is unversioned — a rename leaves no trace anywhere else.
-      const before = (await getWorkflow(c.db, workflowId))?.workflow ?? null
-      await updateWorkflow(c.db, {
-        workflowId,
-        name: p.name,
-        description: p.description,
-        archived: p.archived,
-      })
-      const after = (await getWorkflow(c.db, workflowId))?.workflow ?? null
-      await c.change({
+      await recordedUpdate({
+        c,
         entityKind: 'workflow',
         entityId: workflowId,
         action: p.archived === true ? 'archive' : 'update',
-        fields:
-          before && after ? changedEntityMetaFields(before, after) : Object.keys(p),
-        before,
-        after,
-        note: after?.name ?? null,
+        load: async () => (await getWorkflow(c.db, workflowId))?.workflow ?? null,
+        write: () => {
+          return updateWorkflow(c.db, {
+            workflowId,
+            name: p.name,
+            description: p.description,
+            archived: p.archived,
+          })
+        },
+        diff: changedEntityMetaFields,
+        fallbackFields: Object.keys(p),
+        note: (w) => w.name,
       })
       return { ok: true }
     },

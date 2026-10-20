@@ -281,6 +281,40 @@ export type HandlerCtx<K extends keyof WfDataClient = keyof WfDataClient> = {
   logger: WfLogger
 }
 
+/**
+ * An update to unversioned metadata, recorded in the change log: read the
+ * before-image, write, read the after-image, and log the fields that moved.
+ * The before-image is read first because once the write lands it exists
+ * nowhere except the change row.
+ */
+export async function recordedUpdate<T>(args: {
+  c: Pick<HandlerCtx, 'change'>
+  entityKind: Parameters<HandlerCtx['change']>[0]['entityKind']
+  entityId: string
+  action: Parameters<HandlerCtx['change']>[0]['action']
+  load: () => Promise<T | null>
+  write: () => Promise<void>
+  diff: (before: T, after: T) => string[]
+  /** Fields to log when either image is missing. */
+  fallbackFields: string[]
+  note: (row: T) => string | null
+}): Promise<{ before: T | null; after: T | null }> {
+  const before = await args.load()
+  await args.write()
+  const after = await args.load()
+  await args.c.change({
+    entityKind: args.entityKind,
+    entityId: args.entityId,
+    action: args.action,
+    fields:
+      before && after ? args.diff(before, after) : args.fallbackFields,
+    before,
+    after,
+    note: after ? args.note(after) : before ? args.note(before) : null,
+  })
+  return { before, after }
+}
+
 // A handler may be sync or async — the dispatcher always awaits its result
 // (`await` on a non-promise is a no-op), so this covers both.
 export type MaybePromise<T> = T | Promise<T>

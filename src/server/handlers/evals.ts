@@ -77,6 +77,7 @@ import {
   BadRequestError,
   NotFoundError,
   parseDecisionAgentConfig,
+  recordedUpdate,
   requireHook,
   type CreateWfSdkHandlersOptions,
   type HandlerCtx,
@@ -354,38 +355,38 @@ export function buildEvalHandlers<TDeps>(
     updateEvalSet: async (c) => {
       const p = c.params
       const { setId } = p
-      // Read first: a Goal has no version history, so this before-image is the
-      // only record of what it used to say.
-      const existing = await getEvalSet(c.db, setId)
-      if (existing && (p.targetKind || p.targetId)) {
-        await requireEvalTarget(c.db, {
-          kind: p.targetKind ?? existing.set.targetKind,
-          id: p.targetId ?? existing.set.targetId,
-        })
+      if (p.targetKind || p.targetId) {
+        const existing = await getEvalSet(c.db, setId)
+        if (existing) {
+          await requireEvalTarget(c.db, {
+            kind: p.targetKind ?? existing.set.targetKind,
+            id: p.targetId ?? existing.set.targetId,
+          })
+        }
       }
-      await updateEvalSet(c.db, {
-        setId,
-        name: p.name,
-        description: p.description,
-        targetKind: p.targetKind,
-        targetId: p.targetId,
-        targetVersion: p.targetVersion,
-        triggerKind: p.triggerKind,
-        archived: p.archived,
-      })
-      const before = existing?.set ?? null
-      const after = (await getEvalSet(c.db, setId))?.set ?? null
-      await c.change({
+      // A Goal has no version history, so the change row's before-image is the
+      // only record of what it used to say.
+      await recordedUpdate({
+        c,
         entityKind: 'eval_set',
         entityId: setId,
         action: p.archived === true ? 'archive' : 'update',
-        fields:
-          before && after
-            ? changedEvalSetFields(before, after)
-            : Object.keys(p),
-        before,
-        after,
-        note: after?.name ?? before?.name ?? null,
+        load: async () => (await getEvalSet(c.db, setId))?.set ?? null,
+        write: () => {
+          return updateEvalSet(c.db, {
+            setId,
+            name: p.name,
+            description: p.description,
+            targetKind: p.targetKind,
+            targetId: p.targetId,
+            targetVersion: p.targetVersion,
+            triggerKind: p.triggerKind,
+            archived: p.archived,
+          })
+        },
+        diff: changedEvalSetFields,
+        fallbackFields: Object.keys(p),
+        note: (s) => s.name,
       })
       return { ok: true }
     },

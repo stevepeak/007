@@ -55,6 +55,7 @@ import {
   parseConfigOfKind,
   parseDecisionAgentConfig,
   parseStringRecord,
+  recordedUpdate,
   requireAgentExists,
   requireHook,
   toEpoch,
@@ -459,28 +460,25 @@ export function buildAgentHandlers<TDeps>(
       const p = c.params
       const { agentId } = p
       await requireAgentExists(c.db, agentId)
-      // Metadata is unversioned — a rename leaves no trace anywhere else, so
-      // read the before-image while it still exists.
-      const before = (await getAgent(c.db, agentId))?.agent ?? null
-      await updateAgentMeta(c.db, {
-        agentId,
-        name: p.name,
-        description: p.description,
-        icon: p.icon,
-        color: p.color,
-      })
-      const after = (await getAgent(c.db, agentId))?.agent ?? null
-      await c.change({
+      // Metadata is unversioned — a rename leaves no trace anywhere else.
+      await recordedUpdate({
+        c,
         entityKind: 'agent',
         entityId: agentId,
         action: 'update',
-        fields:
-          before && after
-            ? changedEntityMetaFields(before, after)
-            : Object.keys(p),
-        before,
-        after,
-        note: after?.name ?? null,
+        load: async () => (await getAgent(c.db, agentId))?.agent ?? null,
+        write: () => {
+          return updateAgentMeta(c.db, {
+            agentId,
+            name: p.name,
+            description: p.description,
+            icon: p.icon,
+            color: p.color,
+          })
+        },
+        diff: changedEntityMetaFields,
+        fallbackFields: Object.keys(p),
+        note: (a) => a.name,
       })
       return { ok: true }
     },
