@@ -12,9 +12,9 @@ import {
   type SwitchNode,
   type TransformOutputShape,
 } from '../../engine'
+import { toText } from '../../engine/text'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
-import { toText } from '../to-text'
 
 import { BranchOperatorSelect } from './branch-operator-select'
 import { DataRefField, IterationListField } from './node-data-panel'

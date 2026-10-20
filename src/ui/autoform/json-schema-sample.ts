@@ -1,6 +1,5 @@
+import { asRecord, isRecord } from '../../engine/guards'
 import type { JsonSchema } from '../../server/protocol'
-
-import { asObject, isPlainObject } from './json-schema-helpers'
 
 // --- Sample stub generation (mock-output authoring) --------------------------
 //
@@ -13,11 +12,11 @@ import { asObject, isPlainObject } from './json-schema-helpers'
 function firstBranch(list: unknown): unknown {
   if (!Array.isArray(list)) return undefined
   // Prefer a non-null branch so `T | null` samples as a T.
-  return list.find((b) => asObject(b)?.type !== 'null') ?? list[0]
+  return list.find((b) => asRecord(b)?.type !== 'null') ?? list[0]
 }
 
 function sampleForProp(raw: unknown): unknown {
-  const p = asObject(raw) ?? {}
+  const p = asRecord(raw) ?? {}
 
   // An author-facing example/default is the best possible stub.
   if (p.default !== undefined) return p.default
@@ -46,7 +45,7 @@ function sampleForProp(raw: unknown): unknown {
     if (p.format === 'url' || p.format === 'uri') return '<url>'
     return '<string>'
   }
-  if (t === 'object' && asObject(p.properties)) return sampleForObject(p)
+  if (t === 'object' && isRecord(p.properties)) return sampleForObject(p)
   if (t === 'array' && p.items !== undefined) return [sampleForProp(p.items)]
 
   // Untyped / unmodelable → a generic blank.
@@ -56,7 +55,7 @@ function sampleForProp(raw: unknown): unknown {
 function sampleForObject(
   schema: Record<string, unknown>,
 ): Record<string, unknown> {
-  const props = asObject(schema.properties) ?? {}
+  const props = asRecord(schema.properties) ?? {}
   const out: Record<string, unknown> = {}
   for (const [name, raw] of Object.entries(props)) out[name] = sampleForProp(raw)
   return out
@@ -67,8 +66,8 @@ function sampleForObject(
 export function sampleFromSchema(
   schema: JsonSchema | undefined,
 ): Record<string, unknown> | undefined {
-  const obj = asObject(schema)
+  const obj = asRecord(schema)
   if (!obj) return undefined
   const sample = sampleForProp(obj)
-  return isPlainObject(sample) ? sample : undefined
+  return isRecord(sample) ? sample : undefined
 }

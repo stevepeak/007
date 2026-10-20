@@ -10,6 +10,7 @@ import {
 import { errorMessage } from '../../engine/error-message'
 import type { DecisionPreviewResult } from '../../server/protocol'
 import { cn } from '../cn'
+import { parseLooseJson } from '../code/json'
 import { useWfClient, useWfComponents } from '../context'
 
 // The decision playground: one state in, one verdict out.
@@ -195,11 +196,5 @@ function DecisionResult({ result }: { result: DecisionPreviewResult }) {
  * sent as that value; anything else is the string itself.
  */
 function parseSubject(text: string): unknown {
-  const trimmed = text.trim()
-  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return text
-  try {
-    return JSON.parse(trimmed) as unknown
-  } catch {
-    return text
-  }
+  return parseLooseJson({ text, structuredOnly: true })
 }

@@ -7,9 +7,9 @@ import type {
   WorkflowGraph,
   WorkflowNode,
 } from '../../engine'
+import { toText } from '../../engine/text'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
-import { toText } from '../to-text'
 import { Tooltip } from '../tooltip'
 
 import { BindingSourceNode, pickableSources } from './node-data-panel-picker'
@@ -206,7 +206,7 @@ function describeBinding(
   if (!binding) return 'Not mapped'
   if (binding.kind === 'literal') {
     const v = binding.value
-    return `Literal: ${typeof v === 'string' ? v : JSON.stringify(v)}`
+    return `Literal: ${toText(v, { nullText: 'null' })}`
   }
   const src = accessible.find((n) => n.nodeId === binding.nodeId)
   const label = src?.label ?? binding.nodeId

@@ -3,16 +3,13 @@ import { AutoForm } from '@autoform/react/react-hook-form'
 import type { KeyboardEvent, ReactNode } from 'react'
 import { useMemo, useState } from 'react'
 
+import { isRecord } from '../../engine/guards'
+import { toText } from '../../engine/text'
 import type { JsonSchema } from '../../server/protocol'
 import { useWfComponents } from '../context'
-import { toText } from '../to-text'
 
 import { wfFormComponents, wfUiComponents } from './components'
-import {
-  coerceValues,
-  isPlainObject,
-  JsonSchemaProvider,
-} from './json-schema-provider'
+import { coerceValues, JsonSchemaProvider } from './json-schema-provider'
 
 // Reshape a typed object (e.g. a saved fixture) into the control values AutoForm
 // expects: a `json` field's control holds a *string*, so any object/array landing
@@ -148,7 +145,7 @@ export function WfAutoForm({
     }
     try {
       const parsed: unknown = JSON.parse(trimmed)
-      if (!isPlainObject(parsed)) {
+      if (!isRecord(parsed)) {
         throw new Error('Arguments must be a JSON object.')
       }
       setError(null)

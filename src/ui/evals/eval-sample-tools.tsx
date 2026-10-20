@@ -1,6 +1,7 @@
 import { ChevronDown, Radio, Wrench } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
+import { asRecord } from '../../engine/guards'
 import { truncate } from '../../engine/text'
 import type {
   AgentConfig,
@@ -273,12 +274,6 @@ function ToolRow({
       ) : null}
     </div>
   )
-}
-
-function asRecord(v: unknown): Record<string, unknown> | undefined {
-  return v && typeof v === 'object' && !Array.isArray(v)
-    ? (v as Record<string, unknown>)
-    : undefined
 }
 
 /** The one line under a tool's name: what it will actually return. */

@@ -50,3 +50,33 @@ export function formatJson(text: string): string | null {
     return null
   }
 }
+
+/**
+ * Text an author typed, as a value: JSON when it parses, else the raw text, so
+ * a mid-edit document or deliberate plain text is kept rather than dropped.
+ *
+ * - `structuredOnly`: only text starting with `{` or `[` is parsed, so a typed
+ *   `42` or `true` stays the string it is.
+ * - `empty`: what blank text yields — the raw text itself (default), `''`, or
+ *   `undefined`.
+ */
+export function parseLooseJson(args: {
+  text: string
+  structuredOnly?: boolean
+  empty?: 'text' | 'string' | 'undefined'
+}): unknown {
+  const { text, structuredOnly = false, empty = 'text' } = args
+  const trimmed = text.trim()
+  if (!trimmed) {
+    if (empty === 'string') return ''
+    if (empty === 'undefined') return undefined
+    return text
+  }
+  if (structuredOnly && !trimmed.startsWith('{') && !trimmed.startsWith('['))
+    return text
+  try {
+    return JSON.parse(trimmed) as unknown
+  } catch {
+    return text
+  }
+}

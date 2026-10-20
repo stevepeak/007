@@ -1,6 +1,5 @@
-import { truncate } from '../../engine/text'
+import { toText, truncate } from '../../engine/text'
 import { isJudgeCheck, type EvalCheck, type EvalMatch } from '../../server/protocol'
-import { toText } from '../to-text'
 
 // How a Check gets its name.
 //

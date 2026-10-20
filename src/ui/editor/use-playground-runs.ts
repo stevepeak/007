@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 
 import { agentInputVariables, type AgentConfig } from '../../engine'
 import { errorMessage } from '../../engine/error-message'
+import { toText } from '../../engine/text'
 import type {
   AgentPreviewMessage,
   AgentPreviewResult,
@@ -9,7 +10,6 @@ import type {
   ToolOption,
 } from '../../server/protocol'
 import { useRunAgentPreview, useToolContextFields, useTools } from '../hooks'
-import { toText } from '../to-text'
 
 import {
   contextFieldsFor,

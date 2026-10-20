@@ -1,4 +1,5 @@
 import type { EvalSampleInput } from '../../server/protocol'
+import { parseLooseJson } from '../code/json'
 import { useWfComponents } from '../context'
 import { useCommittedField } from '../use-committed-field'
 
@@ -115,12 +116,5 @@ function stateText(value: unknown): string {
  * and one who wants structure has written braces.
  */
 function readState(text: string): unknown {
-  const trimmed = text.trim()
-  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return text
-  try {
-    return JSON.parse(trimmed) as unknown
-  } catch {
-    // Mid-edit JSON — keep the raw text so the caret doesn't jump.
-    return text
-  }
+  return parseLooseJson({ text, structuredOnly: true })
 }

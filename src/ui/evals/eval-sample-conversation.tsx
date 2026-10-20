@@ -1,9 +1,10 @@
 import { AlertTriangle, MessagesSquare, Plus, Wrench, X } from 'lucide-react'
 import { useState } from 'react'
 
+import { toText } from '../../engine/text'
 import type { SeededMessage, SeededToolCall } from '../../server/protocol'
 import { CodeEditor } from '../code/code-editor'
-import { parseJson } from '../code/json'
+import { parseJson, parseLooseJson } from '../code/json'
 import { useWfComponents } from '../context'
 import { useCommittedField } from '../use-committed-field'
 
@@ -256,17 +257,13 @@ function JsonField({
   onCommit: () => void
 }) {
   const [focused, setFocused] = useState(false)
-  const text =
-    value === undefined
-      ? ''
-      : typeof value === 'string'
-        ? value
-        : safeStringify(value)
-  // `parseLoose` stores unparseable text verbatim, so a string here is either a
-  // half-typed document or a result the author meant as plain text. Both are
-  // kept — but say which one landed, so nobody discovers a stray trailing comma
-  // by reading the transcript the model was actually given. Only once the field
-  // is blurred: while typing, every keystroke is legitimately mid-JSON.
+  const text = toText(value, { indent: 2, nullText: 'null' })
+  // `parseLooseJson` stores unparseable text verbatim, so a string here is
+  // either a half-typed document or a result the author meant as plain text.
+  // Both are kept — but say which one landed, so nobody discovers a stray
+  // trailing comma by reading the transcript the model was actually given. Only
+  // once the field is blurred: while typing, every keystroke is legitimately
+  // mid-JSON.
   const staysText = !focused && typeof value === 'string' && value.trim() !== ''
   const parsed = staysText ? parseJson(text) : null
   const parseError = parsed && !parsed.ok ? parsed.error : null
@@ -286,7 +283,9 @@ function JsonField({
           }
           rows={2}
           onFocus={() => setFocused(true)}
-          onChange={(next) => onChange(parseLoose(next))}
+          onChange={(next) => {
+            onChange(parseLooseJson({ text: next, empty: 'undefined' }))
+          }}
           onBlur={() => {
             setFocused(false)
             onCommit()
@@ -300,25 +299,4 @@ function JsonField({
       </div>
     </div>
   )
-}
-
-// Parse JSON, but never throw: empty → undefined, invalid → the raw string.
-// Keeps a mid-edit value intact and lets an author paste plain text as a result
-// — `JsonField` flags which of the two happened once the field is blurred.
-function parseLoose(text: string): unknown {
-  const trimmed = text.trim()
-  if (!trimmed) return undefined
-  try {
-    return JSON.parse(trimmed)
-  } catch {
-    return text
-  }
-}
-
-function safeStringify(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch {
-    return String(value)
-  }
 }

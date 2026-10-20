@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { formatJson, parseJson } from './json'
+import { formatJson, parseJson, parseLooseJson } from './json'
 
 // The error text is what stands between an author and a fixture that silently
 // isn't what they typed, so it's worth pinning: the engine's decoration is
@@ -37,5 +37,24 @@ describe('formatJson', () => {
 
   test('leaves what does not parse to the caller', () => {
     expect(formatJson('{"a":')).toBeNull()
+  })
+})
+
+describe('parseLooseJson', () => {
+  test('parses JSON, keeps anything else as the raw text', () => {
+    expect(parseLooseJson({ text: ' {"a":1} ' })).toEqual({ a: 1 })
+    expect(parseLooseJson({ text: '42' })).toBe(42)
+    expect(parseLooseJson({ text: '{"a":' })).toBe('{"a":')
+  })
+
+  test('structuredOnly leaves scalars as strings', () => {
+    expect(parseLooseJson({ text: '42', structuredOnly: true })).toBe('42')
+    expect(parseLooseJson({ text: '[1]', structuredOnly: true })).toEqual([1])
+  })
+
+  test('empty picks what blank text yields', () => {
+    expect(parseLooseJson({ text: '  ' })).toBe('  ')
+    expect(parseLooseJson({ text: '  ', empty: 'string' })).toBe('')
+    expect(parseLooseJson({ text: '  ', empty: 'undefined' })).toBeUndefined()
   })
 })

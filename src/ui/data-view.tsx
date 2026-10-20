@@ -1,10 +1,12 @@
 import { Check, Copy } from 'lucide-react'
 import { useState } from 'react'
 
+import { isRecord } from '../engine/guards'
+import { toText } from '../engine/text'
+
 import { cn } from './cn'
 import { highlightCode } from './code/highlight'
 import { NoteMarkdown } from './editor/note-markdown'
-import { toText } from './to-text'
 
 // A small, dependency-free viewer for a step's Input / Logs / Output value. Two
 // display "tags":
@@ -37,10 +39,6 @@ function isSmallValue(v: unknown): boolean {
   return false
 }
 
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return !!v && typeof v === 'object' && !Array.isArray(v)
-}
-
 // A first-level string that is long/multiline renders as a full TextBlock — this
 // is what counts as a "representative text body". Used both to pick which fields
 // expand below the pills and to decide whether Text mode is worth defaulting to.
@@ -53,7 +51,7 @@ function isTextBody(v: unknown): boolean {
 // Objects that are only scalars/lists (pills) have no text body → prefer JSON.
 function hasTextBody(v: unknown): boolean {
   if (typeof v === 'string') return v.trim().length > 0
-  if (isPlainObject(v)) return Object.values(v).some(isTextBody)
+  if (isRecord(v)) return Object.values(v).some(isTextBody)
   return false
 }
 
@@ -64,7 +62,7 @@ function Pill({ label, value }: { label: string; value: unknown }) {
         {label}
       </span>
       <span className="truncate border-l border-neutral-200 bg-white px-2 py-0.5 font-mono text-neutral-700">
-        {value === null ? 'null' : toText(value)}
+        {toText(value, { nullText: 'null' })}
       </span>
     </span>
   )
@@ -108,7 +106,7 @@ function TextView({ value }: { value: unknown }) {
   // A plain object: small first-level values become [key | value] pills at the
   // top; longer string values render as full text blocks below. Nested objects
   // and arrays aren't pilled — they belong to the JSON view.
-  if (isPlainObject(value)) {
+  if (isRecord(value)) {
     const entries = Object.entries(value)
     const pills = entries.filter(([, v]) => isSmallValue(v))
     // Array-valued keys collapse to a count pill (e.g. { memories: [...] } →

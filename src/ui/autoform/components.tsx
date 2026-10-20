@@ -11,9 +11,9 @@ import { Plus, X } from 'lucide-react'
 import type { ComponentProps, ReactNode } from 'react'
 import { useController } from 'react-hook-form'
 
+import { toText } from '../../engine/text'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
-import { toText } from '../to-text'
 
 // AutoForm is headless: it walks the parsed schema and defers every piece of
 // rendering to the components handed in here. We map that contract onto the

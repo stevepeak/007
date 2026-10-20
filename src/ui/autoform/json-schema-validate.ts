@@ -1,8 +1,7 @@
 import { z } from 'zod'
 
+import { asRecord, isRecord } from '../../engine/guards'
 import type { JsonSchema } from '../../server/protocol'
-
-import { asObject } from './json-schema-helpers'
 
 // --- JSON Schema → Zod (for client-side validation) --------------------------
 //
@@ -51,7 +50,7 @@ function zodForProp(
   required: boolean,
   label: string,
 ): z.ZodType {
-  const p = asObject(raw) ?? {}
+  const p = asRecord(raw) ?? {}
 
   // enum → validated against the string form the <select> stores.
   if (Array.isArray(p.enum)) {
@@ -105,7 +104,7 @@ function zodForProp(
       }
     }
     base = applyStringFormat(s, p.format, label)
-  } else if (rawType === 'object' && asObject(p.properties)) {
+  } else if (rawType === 'object' && isRecord(p.properties)) {
     base = zodForObject(p)
   } else if (rawType === 'array' && p.items !== undefined) {
     // Array items are optional so a blank new row doesn't block submit —
@@ -146,13 +145,13 @@ function applyStringFormat(
 }
 
 function zodForObject(schema: Record<string, unknown>): z.ZodType {
-  const props = asObject(schema.properties) ?? {}
+  const props = asRecord(schema.properties) ?? {}
   const required = new Set(
     Array.isArray(schema.required) ? (schema.required as string[]) : [],
   )
   const shape: Record<string, z.ZodType> = {}
   for (const [name, raw] of Object.entries(props)) {
-    const prop = asObject(raw) ?? {}
+    const prop = asRecord(raw) ?? {}
     shape[name] = zodForProp(raw, required.has(name), labelFor(name, prop))
   }
   return z.object(shape)
@@ -170,7 +169,7 @@ function isValidJson(v: string): boolean {
 
 // Compile the root schema, falling back to a permissive object if anything in
 // the JSON Schema is shaped in a way we don't model (so the form never breaks).
-export function buildZodSchema(schema: Record<string, unknown> | null): z.ZodType {
+export function buildZodSchema(schema: Record<string, unknown> | undefined): z.ZodType {
   if (!schema) return z.looseObject({})
   try {
     return zodForObject(schema)
@@ -187,7 +186,7 @@ export function validateAgainstSchema(
   schema: JsonSchema | undefined,
   value: unknown,
 ): { ok: boolean; errors: string[] } {
-  const obj = asObject(schema)
+  const obj = asRecord(schema)
   if (!obj) return { ok: true, errors: [] }
   const result = buildZodSchema(obj).safeParse(value)
   if (result.success) return { ok: true, errors: [] }

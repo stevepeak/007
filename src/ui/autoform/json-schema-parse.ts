@@ -1,6 +1,8 @@
 import type { FieldConfig, ParsedField } from '@autoform/core'
 
-import { asObject, type FieldKind } from './json-schema-helpers'
+import { asRecord, isRecord } from '../../engine/guards'
+
+import type { FieldKind } from './json-schema-helpers'
 
 // Convert one JSON Schema property into an AutoForm ParsedField. `order`
 // preserves the schema's property order through AutoForm's stable sort.
@@ -10,7 +12,7 @@ export function parseField(
   required: boolean,
   order: number,
 ): ParsedField {
-  const p = asObject(raw) ?? {}
+  const p = asRecord(raw) ?? {}
   const title = typeof p.title === 'string' ? p.title : undefined
   const description =
     typeof p.description === 'string' ? p.description : undefined
@@ -37,7 +39,7 @@ export function parseField(
 
   if (t === 'integer' || t === 'number') {
     fieldConfig.inputProps = {
-      ...(asObject(fieldConfig.inputProps) ?? {}),
+      ...(asRecord(fieldConfig.inputProps) ?? {}),
       inputMode: 'decimal',
       step: t === 'integer' ? 1 : 'any',
     }
@@ -54,7 +56,7 @@ export function parseField(
     }
   }
 
-  if (t === 'object' && asObject(p.properties)) {
+  if (t === 'object' && isRecord(p.properties)) {
     return {
       ...base,
       type: 'object' satisfies FieldKind,
@@ -76,7 +78,7 @@ export function parseField(
 
 // Parse the `properties` of an object schema into an ordered field list.
 export function parseFields(schema: Record<string, unknown>): ParsedField[] {
-  const props = asObject(schema.properties)
+  const props = asRecord(schema.properties)
   if (!props) return []
   const required = new Set(
     Array.isArray(schema.required) ? (schema.required as string[]) : [],

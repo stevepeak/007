@@ -6,6 +6,7 @@ import {
 import type { AgentNode, WorkflowGraph, WorkflowNode } from './graph'
 import { nodeRefs } from './graph-bindings'
 import type { GraphIssue } from './graph-issues'
+import { toText } from './text'
 
 // Decision-agent wiring — what a node that runs a decision agent promises the
 // rest of the graph, checked against the agent it points at.
@@ -66,7 +67,7 @@ const ANSWER_FIELDS: Record<DecisionQuestionType, readonly string[]> = {
 }
 
 function display(value: unknown): string {
-  return typeof value === 'string' ? value : JSON.stringify(value)
+  return toText(value, { nullText: 'null' })
 }
 
 function* allNodes(nodes: WorkflowNode[]): Generator<WorkflowNode> {

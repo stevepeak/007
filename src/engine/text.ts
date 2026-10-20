@@ -1,5 +1,7 @@
-// Pure string helpers for bounded, human-readable previews. Engine-level so
-// every layer (ui, mcp, eval) shares one truncation convention.
+// Pure helpers that turn values into bounded, human-readable text. Engine-level
+// so every layer (ui, mcp, eval) shares one convention.
+
+import { isRecord } from './guards'
 
 /**
  * Shorten `text` to `max` characters.
@@ -25,10 +27,6 @@ export function truncate(args: {
   return `${text.slice(0, max - 1).trimEnd()}…`
 }
 
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
 /**
  * Pull the most human-relevant text out of a routed input / response payload,
  * WITHOUT truncating. Handles chat triggers (`{messages: [...]}` — the last
@@ -41,7 +39,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 export function previewText(value: unknown): string {
   if (value == null) return ''
   if (typeof value === 'string') return value
-  if (isPlainRecord(value)) {
+  if (isRecord(value)) {
     if (typeof value.text === 'string') return value.text
     const messages = value.messages
     if (Array.isArray(messages) && messages.length > 0) {
@@ -72,4 +70,33 @@ export function firstLine(text: string, max = 100): string {
 /** `previewText` extraction collapsed to a single truncated line. */
 export function previewLine(value: unknown, max = 100): string {
   return firstLine(previewText(value), max)
+}
+
+/**
+ * Best-effort text for a value whose shape isn't known statically: a string as
+ * itself, an object as JSON (`indent` spaces, compact by default), any other
+ * primitive via `String`. Never throws and never returns `undefined`.
+ *
+ * `String(v)` alone renders an object as the useless `"[object Object]"`, and
+ * `JSON.stringify(v)` alone returns `undefined` for `undefined` and throws on a
+ * cycle or a BigInt. `undefined` is `''`; `null` is `nullText` (default `''`;
+ * pass `'null'` where the reader expects JSON). An unserialisable object falls
+ * back to its `Object.prototype.toString` tag.
+ */
+export function toText(
+  value: unknown,
+  args: { indent?: number; nullText?: string } = {},
+): string {
+  if (value === undefined) return ''
+  if (value === null) return args.nullText ?? ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value, null, args.indent) ?? ''
+    } catch {
+      return Object.prototype.toString.call(value)
+    }
+  }
+  // eslint-disable-next-line @typescript-eslint/no-base-to-string -- primitives only by here
+  return String(value)
 }

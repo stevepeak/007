@@ -13,6 +13,7 @@ import {
   type RecordStepArgs,
   type StepOutcome,
 } from '../run-recorder'
+import { toText } from '../text'
 
 import { coerceToMessages, runAgentConfig } from './agent'
 import { executeSubgraph } from './iteration'
@@ -85,7 +86,7 @@ function agentSpawnInput(input: unknown): {
   const vars: Record<string, string> = {}
   for (const [k, v] of Object.entries(obj)) {
     if (k !== 'message' && v != null) {
-      vars[k] = typeof v === 'string' ? v : JSON.stringify(v)
+      vars[k] = toText(v)
     }
   }
   return { message, vars }

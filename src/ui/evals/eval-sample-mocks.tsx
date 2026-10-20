@@ -1,9 +1,9 @@
 import { Check, Undo2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
+import { isRecord } from '../../engine/guards'
 import type { ToolOption } from '../../server/protocol'
 import {
-  isPlainObject,
   sampleFromSchema,
   validateAgainstSchema,
 } from '../autoform/json-schema-provider'
@@ -63,7 +63,7 @@ export function MockOutputEditor({
         warnings: [],
       }
     }
-    if (!isPlainObject(parsed.value)) {
+    if (!isRecord(parsed.value)) {
       return {
         object: null,
         jsonError: 'Output must be a JSON object.',

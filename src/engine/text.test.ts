@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { firstLine, truncate } from './text'
+import { firstLine, toText, truncate } from './text'
 
 describe('truncate', () => {
   test('returns text that fits unchanged', () => {
@@ -26,5 +26,28 @@ describe('truncate', () => {
 describe('firstLine', () => {
   test('takes the first non-empty trimmed line, truncated', () => {
     expect(firstLine('\n  hello world  \nnext', 8)).toBe('hello w…')
+  })
+})
+
+describe('toText', () => {
+  test('matches JSON.stringify for JSON values', () => {
+    expect(toText('hi')).toBe('hi')
+    expect(toText(42)).toBe('42')
+    expect(toText(true)).toBe('true')
+    expect(toText({ a: [1] })).toBe('{"a":[1]}')
+    expect(toText({ a: 1 }, { indent: 2 })).toBe('{\n  "a": 1\n}')
+  })
+
+  test('null is nullText, undefined is empty', () => {
+    expect(toText(null)).toBe('')
+    expect(toText(null, { nullText: 'null' })).toBe('null')
+    expect(toText(undefined, { nullText: 'null' })).toBe('')
+  })
+
+  test('never throws on what JSON.stringify rejects', () => {
+    const cyclic: Record<string, unknown> = {}
+    cyclic.self = cyclic
+    expect(toText(cyclic)).toBe('[object Object]')
+    expect(toText(10n)).toBe('10')
   })
 })

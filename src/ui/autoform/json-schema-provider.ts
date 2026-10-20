@@ -7,14 +7,14 @@ import type {
 } from '@autoform/core'
 import type { z } from 'zod'
 
+import { asRecord } from '../../engine/guards'
+import { toText } from '../../engine/text'
 import type { JsonSchema } from '../../server/protocol'
-import { toText } from '../to-text'
 
-import { asObject, type FieldKind } from './json-schema-helpers'
+import type { FieldKind } from './json-schema-helpers'
 import { defaultsFor, parseFields } from './json-schema-parse'
 import { buildZodSchema } from './json-schema-validate'
 
-export { isPlainObject } from './json-schema-helpers'
 export { sampleFromSchema } from './json-schema-sample'
 export { validateAgainstSchema } from './json-schema-validate'
 
@@ -44,7 +44,7 @@ export class JsonSchemaProvider implements SchemaProvider {
   private readonly zodSchema: z.ZodType
 
   constructor(schema: JsonSchema | undefined) {
-    const obj = asObject(schema)
+    const obj = asRecord(schema)
     this.fields = obj ? parseFields(obj) : []
     this.zodSchema = buildZodSchema(obj)
   }
@@ -113,7 +113,7 @@ function coerceObject(
   values: unknown,
   fields: ParsedField[],
 ): Record<string, unknown> {
-  const src = asObject(values) ?? {}
+  const src = asRecord(values) ?? {}
   const out: Record<string, unknown> = {}
   for (const f of fields) {
     const c = coerceField(src[f.key], f)

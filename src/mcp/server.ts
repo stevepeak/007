@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 
 import { errorMessage } from '../engine/error-message'
+import { toText } from '../engine/text'
 import type { WfDataClient } from '../server/protocol'
 
 import { allTools, selectTools } from './catalog'
@@ -36,8 +37,7 @@ function toContent(value: unknown): {
 } {
   // A string is already prose (`get_docs` answers in Markdown). Stringifying it
   // would hand the model one escaped line of `\n`s instead of the page.
-  const text =
-    typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+  const text = toText(value, { indent: 2, nullText: 'null' })
   return { content: [{ type: 'text', text }] }
 }
 

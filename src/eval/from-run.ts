@@ -7,8 +7,9 @@ import type {
   SeededMessage,
 } from '../engine/eval-schema'
 import type { AgentNode, ArgBinding, WorkflowGraph } from '../engine/graph'
+import { isRecord } from '../engine/guards'
 import type { AgentNodeMeta } from '../engine/nodes/agent'
-import { truncate } from '../engine/text'
+import { truncate, toText } from '../engine/text'
 import { allNodes } from '../storage/data/authoring-graph'
 
 // Turning a real run into an eval Sample.
@@ -158,12 +159,12 @@ export function recoverTaskVariables(
     const binding = inputs[v]
     let value = binding ? resolveBinding(binding) : undefined
     if (value === undefined) value = flatField(step.input, v)
-    if (value !== undefined && value !== null) variables[v] = asText(value)
+    if (value !== undefined && value !== null) variables[v] = toText(value)
   }
 
-  if (inputVariables.length === 0 && isPlainRecord(step.input)) {
+  if (inputVariables.length === 0 && isRecord(step.input)) {
     for (const [k, value] of Object.entries(step.input)) {
-      if (value !== undefined && value !== null) variables[k] = asText(value)
+      if (value !== undefined && value !== null) variables[k] = toText(value)
     }
   }
 
@@ -191,16 +192,8 @@ function outputForNode(
     ?.output
 }
 
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
 function flatField(input: unknown, key: string): unknown {
-  return isPlainRecord(input) ? input[key] : undefined
-}
-
-function asText(value: unknown): string {
-  return typeof value === 'string' ? value : JSON.stringify(value)
+  return isRecord(input) ? input[key] : undefined
 }
 
 /**

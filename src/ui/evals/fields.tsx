@@ -1,14 +1,15 @@
 import { ChevronDown } from 'lucide-react'
 
 import type { JsonSchema } from '../../engine'
+import { toText } from '../../engine/text'
 import { evalMatchSchema, type EvalMatch } from '../../server/protocol'
 import { cn } from '../cn'
+import { parseLooseJson } from '../code/json'
 import { useWfComponents } from '../context'
 import { unwrapNullable } from '../editor/node-io'
 import { useTools } from '../hooks'
 import { Popover } from '../popover'
 import { QueryState } from '../query-state'
-import { toText } from '../to-text'
 import { ToolAvatar } from '../tool-appearance'
 import { useCommittedField } from '../use-committed-field'
 
@@ -16,19 +17,7 @@ const MATCH_OPTIONS = evalMatchSchema.options
 
 /** Render a stored check value back into an editable string. */
 function valueToStr(v: unknown): string {
-  if (typeof v === 'string') return v
-  if (v === undefined) return ''
-  return JSON.stringify(v)
-}
-/** Parse an entered value: JSON when it parses (numbers/booleans/objects), else raw string. */
-function parseValue(s: string): unknown {
-  const t = s.trim()
-  if (t === '') return ''
-  try {
-    return JSON.parse(t)
-  } catch {
-    return s
-  }
+  return toText(v, { nullText: 'null' })
 }
 
 // ── Field primitives ─────────────────────────────────────────────────────────
@@ -437,7 +426,7 @@ export function MatchRow({
 }) {
   const { Input, Label } = useWfComponents()
   const valueField = useCommittedField(valueToStr(value), (v) => {
-    return onChange({ value: parseValue(v) })
+    return onChange({ value: parseLooseJson({ text: v, empty: 'string' }) })
   })
 
   const selectedField = pathOptions?.find((o) => o.value === (path ?? ''))

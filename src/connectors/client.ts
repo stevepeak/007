@@ -9,6 +9,7 @@ import type { Implementation } from '@modelcontextprotocol/sdk/types.js'
 import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/cfworker-provider.js'
 
 import { schemaHash } from '../engine/connector-tool-id'
+import { toText } from '../engine/text'
 import type { DiscoveredTool } from '../storage/data/connectors'
 
 // The MCP client, as this SDK is allowed to construct one.
@@ -278,9 +279,7 @@ async function callTool(args: {
   }
   if (result.isError) {
     const message = normalizeToolResult({ content: result.content })
-    throw new McpToolCallError(
-      typeof message === 'string' ? message : JSON.stringify(message),
-    )
+    throw new McpToolCallError(toText(message, { nullText: 'null' }))
   }
   return normalizeToolResult(result)
 }

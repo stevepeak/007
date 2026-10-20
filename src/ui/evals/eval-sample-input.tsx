@@ -1,5 +1,7 @@
 import { Plus, X } from 'lucide-react'
 
+import { isRecord } from '../../engine/guards'
+import { toText } from '../../engine/text'
 import type { EvalSampleInput } from '../../server/protocol'
 import { useWfComponents } from '../context'
 import { useAgents } from '../hooks'
@@ -198,7 +200,7 @@ function TriggerPayloadEditor({
     (payload) => onChange({ ...value, payload }),
     JSON.stringify,
   )
-  const text = safeStringify(field.value)
+  const text = toText(field.value, { indent: 2 })
   return (
     <div className="space-y-2">
       <p className="px-1 text-xs text-neutral-400">
@@ -210,8 +212,7 @@ function TriggerPayloadEditor({
         onChange={(e) => {
           try {
             const parsed: unknown = JSON.parse(e.target.value)
-            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
-              field.onChange(parsed as Record<string, unknown>)
+            if (isRecord(parsed)) field.onChange(parsed)
           } catch {
             // Mid-edit JSON: keep the last valid object rather than dropping the
             // payload. The textarea reflects the parsed value on blur.
@@ -224,12 +225,4 @@ function TriggerPayloadEditor({
       />
     </div>
   )
-}
-
-function safeStringify(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch {
-    return '{}'
-  }
 }
