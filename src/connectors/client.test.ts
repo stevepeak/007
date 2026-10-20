@@ -6,8 +6,10 @@ import { describe, expect, test } from 'bun:test'
 import {
   authHeaders,
   deriveSideEffect,
+  McpTransportError,
   normalizeToolResult,
   pickServerIcon,
+  withMcpSession,
 } from './client'
 
 const SRC_DIR = fileURLToPath(new URL('..', import.meta.url))
@@ -205,5 +207,33 @@ describe('authHeaders', () => {
     })
     expect(authHeaders({ kind: 'none' })).toEqual({})
     expect(authHeaders(undefined)).toEqual({})
+  })
+})
+
+// `timeoutMs` bounds the whole session. A server that accepts the connection
+// and never answers must be cut off, not hold the caller until the platform
+// kills the request.
+describe('session timeout', () => {
+  test('a server that never answers is cut off at timeoutMs', async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch: () => new Promise<Response>(() => {}),
+    })
+    try {
+      const started = Date.now()
+      const err = await withMcpSession(
+        {
+          url: `http://localhost:${server.port}/mcp`,
+          transport: 'http',
+          timeoutMs: 200,
+        },
+        async (session) => await session.listTools(),
+      ).catch((e: unknown) => e)
+      expect(err).toBeInstanceOf(McpTransportError)
+      expect((err as Error).message).toContain('200ms')
+      expect(Date.now() - started).toBeLessThan(5_000)
+    } finally {
+      await server.stop(true)
+    }
   })
 })

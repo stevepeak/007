@@ -4,6 +4,7 @@ import {
   StreamableHTTPClientTransport,
   StreamableHTTPError,
 } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js'
 import type { Implementation } from '@modelcontextprotocol/sdk/types.js'
 import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/cfworker-provider.js'
 
@@ -99,6 +100,7 @@ export function authHeaders(auth: McpAuth | undefined): Record<string, string> {
  * so this is the path every expired credential takes.
  */
 function toConnectorError(err: unknown): Error {
+  if (err instanceof McpTransportError) return err
   if (err instanceof StreamableHTTPError) {
     if (err.code === 401 || err.code === 403) {
       return new McpUnauthorizedError(
@@ -154,15 +156,23 @@ export async function withMcpSession<T>(
       ? new SSEClientTransport(url, { requestInit: { headers } })
       : new StreamableHTTPClientTransport(url, { requestInit: { headers } })
 
+  // One budget for the whole session. The signal goes on each REQUEST, not on
+  // the transport's `requestInit`: the transports overwrite `requestInit.signal`
+  // with their own, so a signal there never fires.
   const timeoutMs = target.timeoutMs ?? 30_000
   const abort = new AbortController()
-  const timer = setTimeout(() => abort.abort(), timeoutMs)
+  const timer = setTimeout(() => {
+    abort.abort(
+      new McpTransportError(`The MCP server did not answer within ${timeoutMs}ms.`),
+    )
+  }, timeoutMs)
+  const options = { signal: abort.signal }
 
   try {
-    await client.connect(transport)
+    await client.connect(transport, options)
     const session: McpSession = {
-      listTools: () => listTools(client),
-      callTool: (name, args) => callTool(client, name, args),
+      listTools: () => listTools({ client, options }),
+      callTool: (name, args) => callTool({ client, name, args, options }),
       serverInfo: () => client.getServerVersion(),
     }
     return await fn(session)
@@ -196,8 +206,11 @@ export function deriveSideEffect(annotations: unknown): 'read' | 'write' {
   return hint === true ? 'read' : 'write'
 }
 
-async function listTools(client: Client): Promise<DiscoveredTool[]> {
-  const { tools } = await client.listTools()
+async function listTools(args: {
+  client: Client
+  options: RequestOptions
+}): Promise<DiscoveredTool[]> {
+  const { tools } = await args.client.listTools(undefined, args.options)
   return await Promise.all(
     tools.map(async (t) => ({
       name: t.name,
@@ -248,12 +261,17 @@ export function normalizeToolResult(result: {
   }
 }
 
-async function callTool(
-  client: Client,
-  name: string,
-  args: Record<string, unknown>,
-): Promise<unknown> {
-  const result = (await client.callTool({ name, arguments: args })) as {
+async function callTool(args: {
+  client: Client
+  name: string
+  args: Record<string, unknown>
+  options: RequestOptions
+}): Promise<unknown> {
+  const result = (await args.client.callTool(
+    { name: args.name, arguments: args.args },
+    undefined,
+    args.options,
+  )) as {
     content?: unknown
     structuredContent?: unknown
     isError?: boolean
