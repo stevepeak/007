@@ -84,6 +84,12 @@ export type WorkflowEditorStateOptions = {
   initialGraph: WorkflowGraph
   initialName: string
   initialDescription: string
+  /**
+   * The live version number this editor loaded (0 if never published). Sent
+   * with every publish so one based on a version someone has since replaced is
+   * refused instead of silently overwriting theirs.
+   */
+  initialBaseVersionNumber: number
   onPublished?: (result: { versionId: string; versionNumber: number }) => void
 }
 
@@ -92,6 +98,7 @@ export function useWorkflowEditorState({
   initialGraph,
   initialName,
   initialDescription,
+  initialBaseVersionNumber,
   onPublished,
 }: WorkflowEditorStateOptions) {
   const client = useWfClient()
@@ -105,6 +112,9 @@ export function useWorkflowEditorState({
   const [showHistory, setShowHistory] = useState(false)
   const [showPublish, setShowPublish] = useState(false)
   const canvas = useCanvasHandles()
+  // Advanced only by this editor's own publishes: a refetch that shows someone
+  // else's newer version must not quietly become the base.
+  const baseVersionRef = useRef(initialBaseVersionNumber)
 
   const update = useUpdateWorkflow()
 
@@ -228,9 +238,11 @@ export function useWorkflowEditorState({
           // If the dialog already has the AI summary, store it with the version;
           // otherwise the server generates it in the background after publish.
           aiSummary: input.aiSummary ?? undefined,
+          baseVersionNumber: baseVersionRef.current,
         },
         {
           onSuccess: (result) => {
+            baseVersionRef.current = result.versionNumber
             history.markSaved()
             setShowPublish(false)
             onPublished?.(result)

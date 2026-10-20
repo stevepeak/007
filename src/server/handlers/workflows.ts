@@ -117,6 +117,37 @@ export function buildWorkflowHandlers<TDeps>(
     return all
   }
 
+  // Everything the Issues panel and `validateGraph` report for one graph —
+  // also the publish gate, so a graph with errors can't go live from either
+  // the editor or MCP.
+  const lintGraph = async (
+    db: HandlerCtx['db'],
+    graph: WorkflowGraph,
+  ): Promise<GraphIssue[]> => {
+    const issues: GraphIssue[] = collectGraphIssues(graph)
+    // The strict runtime gate, second: `collectGraphIssues` mirrors its
+    // structural checks but is allowed to diverge (it guides, the schema
+    // rejects), so anything the Scheduler would refuse is listed in its own
+    // words too. A duplicate line beats a graph that lints clean and cannot
+    // run.
+    const strict = workflowGraphSchema.safeParse(graph)
+    if (!strict.success) {
+      for (const i of strict.error.issues) {
+        issues.push({ severity: 'error', message: `Runtime check: ${i.message}` })
+      }
+    }
+    issues.push(...collectToolArgIssues(graph, await toolInputs(db)))
+    // The agent-pointer counterpart: a dangling `agentId` or a pin on a
+    // version that was never published fails in `resolveRunManifest`, before
+    // the run records a single step — so it has to be caught here rather than
+    // by the first trigger that reaches it.
+    issues.push(...collectAgentRefIssues(graph, await listAgentRefs(db)))
+    issues.push(
+      ...collectDecisionWiringIssues(graph, await decisionWiringIndex(db)),
+    )
+    return issues
+  }
+
   return {
     listWorkflows: async (c) => {
       const rows = await listWorkflowsWithStats(c.db)
@@ -192,9 +223,32 @@ export function buildWorkflowHandlers<TDeps>(
       const previousGraph = owner.currentVersion
         ? parseStoredGraph(owner.currentVersion.graph)
         : null
+      // The publish gates, here rather than in each caller so the editor and
+      // MCP refuse the same things. The base-version check runs in storage,
+      // against the version the write actually lands on.
+      if (
+        previousGraph &&
+        isEmptyGraphDelta(graphDelta({ before: previousGraph, after: graph }))
+      ) {
+        throw new BadRequestError(
+          `This is identical to v${owner.currentVersion!.versionNumber}; publishing would create an empty version.`,
+        )
+      }
+      const errors = (await lintGraph(c.db, graph)).filter(
+        (i) => i.severity === 'error',
+      )
+      if (errors.length > 0) {
+        throw new BadRequestError(
+          `This workflow has ${errors.length} error${errors.length === 1 ? '' : 's'} — each one is a run that fails at that node. Fix ${errors.length === 1 ? 'it' : 'them'} before publishing:\n${errors
+            .slice(0, 5)
+            .map((i) => `- ${i.nodeLabel ? `${i.nodeLabel}: ` : ''}${i.message}`)
+            .join('\n')}`,
+        )
+      }
       const out = await saveVersion(c.db, {
         workflowId,
         graph,
+        expectedVersionNumber: p.baseVersionNumber,
         changeNote: p.changeNote,
         aiSummaryShort: p.aiSummary?.short,
         aiSummaryLong: p.aiSummary?.long,
@@ -367,27 +421,7 @@ export function buildWorkflowHandlers<TDeps>(
         )
       }
 
-      const issues: GraphIssue[] = collectGraphIssues(graph)
-      // The strict runtime gate, second: `collectGraphIssues` mirrors its
-      // structural checks but is allowed to diverge (it guides, the schema
-      // rejects), so anything the Scheduler would refuse is listed in its own
-      // words too. A duplicate line beats a graph that lints clean and cannot
-      // run.
-      const strict = workflowGraphSchema.safeParse(graph)
-      if (!strict.success) {
-        for (const i of strict.error.issues) {
-          issues.push({ severity: 'error', message: `Runtime check: ${i.message}` })
-        }
-      }
-      issues.push(...collectToolArgIssues(graph, await toolInputs(c.db)))
-      // The agent-pointer counterpart: a dangling `agentId` or a pin on a
-      // version that was never published fails in `resolveRunManifest`, before
-      // the run records a single step — so it has to be caught here rather than
-      // by the first trigger that reaches it.
-      issues.push(...collectAgentRefIssues(graph, await listAgentRefs(c.db)))
-      issues.push(
-        ...collectDecisionWiringIssues(graph, await decisionWiringIndex(c.db)),
-      )
+      const issues = await lintGraph(c.db, graph)
 
       return {
         source,

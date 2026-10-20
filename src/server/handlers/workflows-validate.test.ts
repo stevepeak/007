@@ -4,7 +4,11 @@ import { z } from 'zod'
 import type { WorkflowGraph, WorkflowNode } from '../../engine/graph'
 import type { ToolRegistry } from '../../engine/tool-registry'
 import type { WfDb } from '../../storage/client'
-import { createWorkflow, updateDraft } from '../../storage/data'
+import {
+  createWorkflow,
+  StaleBaseError,
+  updateDraft,
+} from '../../storage/data'
 import { freshDb } from '../../storage/db-test-helpers'
 
 import { testHandlerCtx, testHandlerOptions } from './handler-test-helpers'
@@ -163,5 +167,67 @@ describe('validateGraph handler', () => {
       true,
     )
     expect(r.errors).toBeGreaterThan(0)
+  })
+})
+
+// The publish gates live in the handler, so the editor and MCP refuse the same
+// things: an empty version, a graph with lint errors, a stale base.
+describe('saveVersion publish gates', () => {
+  let db: WfDb
+  beforeEach(() => {
+    db = freshDb()
+  })
+  const changed = {
+    ...v27Args,
+    internalNote: { kind: 'literal', value: 'Escalated by the gate test' },
+  }
+
+  async function seeded() {
+    const handlers = buildWorkflowHandlers(options())
+    const { workflowId } = await createWorkflow(db, {
+      name: 'Legal chat',
+      createdBy: 'tester',
+      graph: graphWith(v27Args),
+    })
+    return { handlers, workflowId }
+  }
+
+  test('refuses a graph identical to the live version', async () => {
+    const { handlers, workflowId } = await seeded()
+    await expect(
+      handlers.saveVersion(
+        testHandlerCtx(db, { workflowId, graph: graphWith(v27Args) }),
+      ),
+    ).rejects.toThrow(/identical to v1/)
+  })
+
+  test('refuses a graph with lint errors', async () => {
+    const { handlers, workflowId } = await seeded()
+    await expect(
+      handlers.saveVersion(
+        testHandlerCtx(db, { workflowId, graph: graphWith(v25Args) }),
+      ),
+    ).rejects.toThrow(/3 errors/)
+  })
+
+  test('a stale base is refused; the live one publishes', async () => {
+    const { handlers, workflowId } = await seeded()
+    await expect(
+      handlers.saveVersion(
+        testHandlerCtx(db, {
+          workflowId,
+          graph: graphWith(changed),
+          baseVersionNumber: 0,
+        }),
+      ),
+    ).rejects.toThrow(StaleBaseError)
+    const out = await handlers.saveVersion(
+      testHandlerCtx(db, {
+        workflowId,
+        graph: graphWith(changed),
+        baseVersionNumber: 1,
+      }),
+    )
+    expect(out.versionNumber).toBe(2)
   })
 })

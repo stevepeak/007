@@ -23,6 +23,7 @@ export function EditorInner({
   initialName,
   initialDescription,
   initialArchived,
+  initialBaseVersionNumber,
   className,
   onPublished,
   onArchived,
@@ -32,6 +33,7 @@ export function EditorInner({
   initialName: string
   initialDescription: string
   initialArchived: boolean
+  initialBaseVersionNumber: number
   className?: string
   onPublished?: (result: { versionId: string; versionNumber: number }) => void
   onArchived?: () => void
@@ -41,6 +43,7 @@ export function EditorInner({
     initialGraph,
     initialName,
     initialDescription,
+    initialBaseVersionNumber,
     onPublished,
   })
   const { selection } = state

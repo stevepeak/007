@@ -14,6 +14,8 @@ import {
   agentModelRequirements,
   type AgentConfig,
 } from '../../engine/graph'
+import { stableEqual } from '../../engine/stable-stringify'
+import type { WfDb } from '../../storage/client'
 import {
   archiveAgent,
   countWorkflowsReferencingAgent,
@@ -32,7 +34,6 @@ import {
   updateAgentDraft,
   updateAgentMeta,
 } from '../../storage/data'
-import type { WfDb } from '../../storage/client'
 import type {
   AgentPreviewMessage,
   WfAgentDetail,
@@ -283,6 +284,16 @@ export function buildAgentHandlers<TDeps>(
       }
       const kind = toAgentKind(owner.agent.kind)
       const config = parseConfigOfKind(kind, p.config)
+      // Same publish gate as a workflow's: an unchanged config would be an
+      // empty version. The base-version check runs in storage.
+      if (
+        owner.currentVersion &&
+        stableEqual(parseConfigOfKind(kind, owner.currentVersion.config), config)
+      ) {
+        throw new BadRequestError(
+          `This is identical to v${owner.currentVersion.versionNumber}; publishing would create an empty version.`,
+        )
+      }
       // The schema accepts a half-written decision matrix so drafts can save;
       // a published one must be complete, because a rule that cannot hold
       // (wrong op for its question type, unknown choice key, `is` with no side)
@@ -310,6 +321,7 @@ export function buildAgentHandlers<TDeps>(
       const out = await publishAgent(c.db, {
         agentId,
         config,
+        expectedVersionNumber: p.baseVersionNumber,
         changeNote: p.changeNote,
         aiSummaryShort: p.aiSummary?.short,
         aiSummaryLong: p.aiSummary?.long,
@@ -564,8 +576,7 @@ export function buildAgentHandlers<TDeps>(
         config,
         state: p.state,
         variables: parseStringRecord(p.variables),
-        getDecider: (modelId) =>
-          getDecider(modelId, { triggerKind: 'preview', env }),
+        getDecider: (modelId) => { return getDecider(modelId, { triggerKind: 'preview', env }) },
       })
     },
 

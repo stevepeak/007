@@ -5,8 +5,13 @@ import { ConnectorAuthError } from '../connectors/oauth'
 import { errorLogText } from '../engine/error-detail'
 import { resolveWfLogger } from '../engine/logger'
 import { errorMessage } from '../engine/run-node'
-import { recordChange, type DashboardAnalytics } from '../storage/data'
+import {
+  recordChange,
+  StaleBaseError,
+  type DashboardAnalytics,
+} from '../storage/data'
 
+import { createWfDataClient } from './data-client'
 import { buildAgentHandlers } from './handlers/agents'
 import { buildChangeHandlers } from './handlers/changes'
 import { buildConnectorHandlers } from './handlers/connectors'
@@ -28,7 +33,6 @@ import {
   type WfServerContext,
 } from './handlers/shared'
 import { buildWorkflowHandlers } from './handlers/workflows'
-import { createWfDataClient } from './data-client'
 import type { WfDataClient } from './protocol'
 
 export type {
@@ -242,6 +246,11 @@ export function createWfSdkHandlers<TDeps>(
         err instanceof McpUnauthorizedError ||
         err instanceof ConnectorAuthError
       ) {
+        return json({ error: errorMessage(err) }, 409)
+      }
+      // A publish based on a version that is no longer live — the caller's
+      // remedy is to reload, not a fault to report.
+      if (err instanceof StaleBaseError) {
         return json({ error: errorMessage(err) }, 409)
       }
       // Surface the failure in the server log — otherwise a 500 from any

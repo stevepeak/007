@@ -261,6 +261,7 @@ export function agentPublishTools(): WfMcpTool[] {
           config: detail.draft.config,
           changeNote,
           aiSummary,
+          baseVersionNumber: base,
         })
         return {
           ok: true,

@@ -80,6 +80,7 @@ export function AgentEditor({
           initialColor: data.agent.color || DEFAULT_AGENT_COLOR,
           className,
           onPublished,
+          initialBaseVersionNumber: data.currentVersion?.versionNumber ?? 0,
         }
         // The entity's `kind` picks the editor, and the cast beside it is the
         // narrowing TypeScript can't make: `config` is the union of both
@@ -112,6 +113,7 @@ const EDITOR_TABS = [
 function AgentEditorInner({
   agentId,
   initialConfig,
+  initialBaseVersionNumber,
   initialName,
   initialDescription,
   initialIcon,
@@ -121,6 +123,7 @@ function AgentEditorInner({
 }: {
   agentId: string
   initialConfig: AgentConfig
+  initialBaseVersionNumber: number
   initialName: string
   initialDescription: string
   initialIcon: string
@@ -139,7 +142,12 @@ function AgentEditorInner({
     initialIcon,
     initialColor,
   })
-  const draft = useAgentDraft({ agentId, initialConfig, onPublished })
+  const draft = useAgentDraft({
+    agentId,
+    initialConfig,
+    initialBaseVersionNumber,
+    onPublished,
+  })
 
   // Which half of the page you're on: authoring the agent (config + playground)
   // or inspecting what it has actually been doing.

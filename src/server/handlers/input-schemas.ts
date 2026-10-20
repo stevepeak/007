@@ -157,6 +157,8 @@ export const wfInputSchemas = {
     graph: PASSED_THROUGH,
     changeNote: z.string().optional(),
     aiSummary: AI_SUMMARY.optional(),
+    /** The live version the caller based this on (0 if never published). */
+    baseVersionNumber: z.number().int().min(0).optional(),
   }),
   summarizeChanges: z.object({
     workflowId: z.string().min(1),
@@ -247,6 +249,8 @@ export const wfInputSchemas = {
     config: PASSED_THROUGH,
     changeNote: z.string().optional(),
     aiSummary: AI_SUMMARY.optional(),
+    /** The live version the caller based this on (0 if never published). */
+    baseVersionNumber: z.number().int().min(0).optional(),
   }),
   summarizeAgentChanges: z.object({
     agentId: z.string().min(1),

@@ -6,6 +6,7 @@ import {
   createAgent,
   listAgentVersions,
   listChanges,
+  StaleBaseError,
 } from '../../storage/data'
 import { freshDb } from '../../storage/db-test-helpers'
 
@@ -83,6 +84,22 @@ describe('agent publish handler', () => {
     expect(latest.changeNote).toBe('more turns')
     expect(latest.aiSummaryShort).toBe('Raise the turn limit')
     expect(latest.aiSummaryLong).toBe('- 5 → 9')
+  })
+
+  test('refuses a config identical to the live version, and a stale base', async () => {
+    const handlers = buildAgentHandlers(options())
+    await expect(
+      handlers.publishAgent(testHandlerCtx(db, { agentId, config: config() })),
+    ).rejects.toThrow(/identical to v1/)
+    await expect(
+      handlers.publishAgent(
+        testHandlerCtx(db, {
+          agentId,
+          config: config({ maxTurns: 9 }),
+          baseVersionNumber: 0,
+        }),
+      ),
+    ).rejects.toThrow(StaleBaseError)
   })
 
   // The change log has to be written by the HANDLER, not just by `recordChange`

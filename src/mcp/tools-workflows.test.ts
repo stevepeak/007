@@ -344,6 +344,7 @@ describe('publish_workflow', () => {
         workflowId: 'w1',
         graph: draftGraph,
         changeNote: 'ART-146: lock as a real boolean',
+        baseVersionNumber: 28,
         // Generated inline and handed to `saveVersion`. Left to the server's
         // async fallback it needs the host to have wired a background task, and
         // on a host that hasn't, `aiSummaryShort` stays null forever — so an

@@ -69,6 +69,28 @@ export interface PublishInput<Payload> {
   changeNote?: string | null
   /** Extra version columns to persist (e.g. AI summary). */
   versionExtra?: Record<string, unknown>
+  /**
+   * The live version number the caller based this publish on (0 if never
+   * published). When set, a publish on top of anything else throws
+   * {@link StaleBaseError} instead of silently replacing someone's newer work.
+   */
+  expectedVersionNumber?: number
+}
+
+/**
+ * A publish whose base is no longer live: someone published since the caller
+ * read the entity. The dispatcher answers 409.
+ */
+export class StaleBaseError extends Error {
+  constructor(
+    readonly live: number,
+    readonly expected: number,
+  ) {
+    super(
+      `v${live} is live but this was based on v${expected} — someone published since you loaded it. Reload, check your changes still make sense on top of v${live}, and publish again.`,
+    )
+    this.name = 'StaleBaseError'
+  }
 }
 
 export interface VersionedEntity<
@@ -292,20 +314,37 @@ export function createVersionedEntity<
 
     async publish(db, input) {
       const prev = await latest(db, input.ownerId)
-      const versionNumber = (prev?.versionNumber ?? 0) + 1
+      const liveNumber = prev?.versionNumber ?? 0
+      const expected = input.expectedVersionNumber
+      if (expected !== undefined && expected !== liveNumber) {
+        throw new StaleBaseError(liveNumber, expected)
+      }
+      const versionNumber = liveNumber + 1
       const versionId = crypto.randomUUID()
       const who = input.publishedBy ?? null
-      await db.insert(cfg.versionTable).values({
-        ...versionValues(
-          input.ownerId,
-          versionNumber,
-          input.payload,
-          who,
-          input.versionExtra,
-        ),
-        id: versionId,
-        changeNote: input.changeNote ?? null,
-      } as VInsert)
+      try {
+        await db.insert(cfg.versionTable).values({
+          ...versionValues(
+            input.ownerId,
+            versionNumber,
+            input.payload,
+            who,
+            input.versionExtra,
+          ),
+          id: versionId,
+          changeNote: input.changeNote ?? null,
+        } as VInsert)
+      } catch (err) {
+        // The read above and this write are not one transaction. A concurrent
+        // publish that took `versionNumber` first trips the unique
+        // `(ownerId, versionNumber)` index — which, for a caller that named its
+        // base, is exactly a stale base.
+        if (expected !== undefined) {
+          const now = (await latest(db, input.ownerId))?.versionNumber ?? 0
+          if (now !== liveNumber) throw new StaleBaseError(now, expected)
+        }
+        throw err
+      }
       // Keep the draft in sync with the freshly published version.
       await db
         .update(cfg.draftTable)

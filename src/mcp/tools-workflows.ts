@@ -1139,6 +1139,9 @@ export function workflowWriteTools(): WfMcpTool[] {
           graph,
           changeNote,
           aiSummary,
+          // Re-checked by the write itself, so a publish that lands between
+          // the check above and here is still refused.
+          baseVersionNumber: base,
         })
         return {
           ok: true,

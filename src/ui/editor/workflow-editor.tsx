@@ -55,6 +55,7 @@ export function WorkflowEditor({
             initialName={data.workflow.name}
             initialDescription={data.workflow.description ?? ''}
             initialArchived={data.workflow.archived}
+            initialBaseVersionNumber={data.currentVersion?.versionNumber ?? 0}
             className={className}
             onPublished={onPublished}
             onArchived={onArchived}

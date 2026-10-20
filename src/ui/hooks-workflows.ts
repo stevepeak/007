@@ -61,6 +61,7 @@ export function useSaveVersion() {
       graph: WorkflowGraph
       changeNote?: string
       aiSummary?: { short: string; long: string }
+      baseVersionNumber?: number
     }) => client.saveVersion(input),
     onSuccess: (_r, input) => {
       void qc.invalidateQueries({ queryKey: keys.workflow(input.workflowId) })

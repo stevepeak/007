@@ -1,3 +1,4 @@
+import type { WfAgentKind } from '../engine/agent-kind'
 import type {
   DecisionModelOption,
   DecisionProvider,
@@ -6,9 +7,8 @@ import type {
   ModelProvider,
   ProviderBudget,
 } from '../engine/config'
-import type { CheckTree, EvalSampleInput, EvalTools } from '../engine/eval-schema'
-import type { WfAgentKind } from '../engine/agent-kind'
 import type { AnyAgentConfig } from '../engine/decision-agent-schema'
+import type { CheckTree, EvalSampleInput, EvalTools } from '../engine/eval-schema'
 import type { WorkflowGraph } from '../engine/graph'
 import type { TriggerEventOption } from '../engine/trigger-registry'
 import type { EvalDriveState, EvalPlan } from '../eval/plan'
@@ -247,6 +247,11 @@ export interface WfDataClient {
      * omitted, the server generates one asynchronously after publishing.
      */
     aiSummary?: WfChangeSummary
+    /**
+     * The live version number the edit was based on (0 if never published).
+     * A publish on top of a newer one is refused with a 409.
+     */
+    baseVersionNumber?: number
   }): Promise<{ versionId: string; versionNumber: number }>
   /** AI-summarize the changes since the latest published version (publish dialog). */
   summarizeChanges(input: {
@@ -403,6 +408,8 @@ export interface WfDataClient {
     changeNote?: string
     /** Ridden along when the publish dialog's summary landed in time. */
     aiSummary?: WfChangeSummary
+    /** The live version the edit was based on; see `saveVersion`. */
+    baseVersionNumber?: number
   }): Promise<{ versionId: string; versionNumber: number }>
   /** AI-summarize the changes since the latest published version (publish dialog). */
   summarizeAgentChanges(input: {

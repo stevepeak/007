@@ -291,9 +291,12 @@ export async function saveVersion(
     aiSummaryShort?: string
     aiSummaryLong?: string
     publishedBy?: string
+    /** The live version the caller based this on; see `StaleBaseError`. */
+    expectedVersionNumber?: number
   },
 ) {
   return await workflowVersions.publish(db, {
+    expectedVersionNumber: input.expectedVersionNumber,
     ownerId: input.workflowId,
     // Publishing is the one moment a graph is frozen into something that will
     // run unattended, so it is where an iteration written before fan-out limits

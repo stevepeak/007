@@ -94,6 +94,7 @@ export function usePublishAgent() {
       config: AnyAgentConfig
       changeNote?: string
       aiSummary?: WfChangeSummary
+      baseVersionNumber?: number
     }) => client.publishAgent(input),
     onSuccess: (_r, input) => {
       void qc.invalidateQueries({ queryKey: keys.agent(input.agentId) })

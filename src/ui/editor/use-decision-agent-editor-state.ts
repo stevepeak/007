@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type { DecisionAgentConfig } from '../../engine'
 import { useWfClient } from '../context'
@@ -44,16 +44,26 @@ function coalesceDecisionEdit(
 export function useDecisionAgentDraft({
   agentId,
   initialConfig,
+  initialBaseVersionNumber,
   onPublished,
 }: {
   agentId: string
   initialConfig: DecisionAgentConfig
+  /**
+   * The live version number this editor loaded (0 if never published). Sent
+   * with every publish so one based on a version someone has since replaced is
+   * refused instead of silently overwriting theirs.
+   */
+  initialBaseVersionNumber: number
   onPublished?: (result: { versionId: string; versionNumber: number }) => void
 }) {
   const client = useWfClient()
   const saveDraft = useSaveAgentDraft()
   const publish = usePublishAgent()
   const versions = useAgentVersions(agentId)
+  // Advanced only by this editor's own publishes: a refetch that shows someone
+  // else's newer version must not quietly become the base.
+  const baseVersionRef = useRef(initialBaseVersionNumber)
 
   const [showPublish, setShowPublish] = useState(false)
   const [showVersions, setShowVersions] = useState(false)
@@ -96,9 +106,15 @@ export function useDecisionAgentDraft({
 
   function onPublish({ changeNote }: { changeNote: string }) {
     publish.mutate(
-      { agentId, config, changeNote: changeNote.trim() || undefined },
+      {
+        agentId,
+        config,
+        changeNote: changeNote.trim() || undefined,
+        baseVersionNumber: baseVersionRef.current,
+      },
       {
         onSuccess: (result) => {
+          baseVersionRef.current = result.versionNumber
           history.markSaved()
           setShowPublish(false)
           setJustPublished(result.versionNumber)

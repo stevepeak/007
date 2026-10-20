@@ -149,6 +149,7 @@ describe('publish_agent — publishing', () => {
         config: draft,
         changeNote: 'Cite sources',
         aiSummary: { short: 'cites sources', long: '' },
+        baseVersionNumber: 3,
       },
     ])
   })

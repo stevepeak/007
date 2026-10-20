@@ -262,9 +262,12 @@ export async function publishAgent(
     aiSummaryShort?: string
     aiSummaryLong?: string
     publishedBy?: string
+    /** The live version the caller based this on; see `StaleBaseError`. */
+    expectedVersionNumber?: number
   },
 ) {
   return await agentVersions.publish(db, {
+    expectedVersionNumber: input.expectedVersionNumber,
     ownerId: input.agentId,
     payload: input.config,
     publishedBy: input.publishedBy,

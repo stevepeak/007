@@ -42,6 +42,7 @@ import { useDecisionAgentDraft } from './use-decision-agent-editor-state'
 export function DecisionAgentEditorInner({
   agentId,
   initialConfig,
+  initialBaseVersionNumber,
   initialName,
   initialDescription,
   initialIcon,
@@ -51,6 +52,7 @@ export function DecisionAgentEditorInner({
 }: {
   agentId: string
   initialConfig: DecisionAgentConfig
+  initialBaseVersionNumber: number
   initialName: string
   initialDescription: string
   initialIcon: string
@@ -67,7 +69,12 @@ export function DecisionAgentEditorInner({
     initialIcon: initialIcon || AGENT_ICONS[0].name,
     initialColor: initialColor || DEFAULT_AGENT_COLOR,
   })
-  const draft = useDecisionAgentDraft({ agentId, initialConfig, onPublished })
+  const draft = useDecisionAgentDraft({
+    agentId,
+    initialConfig,
+    initialBaseVersionNumber,
+    onPublished,
+  })
   const [showArchive, setShowArchive] = useState(false)
 
   const models = useDecisionModels()
