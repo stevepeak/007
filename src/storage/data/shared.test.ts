@@ -87,4 +87,10 @@ describe('clampLimit', () => {
     expect(clampLimit(999, { fallback: 50, max: 200 })).toBe(200)
     expect(clampLimit(undefined, { fallback: 50, max: 200 })).toBe(50)
   })
+
+  test('a fraction becomes a whole page size, and NaN the fallback', () => {
+    expect(clampLimit(2.5, { fallback: 50, max: 200 })).toBe(2)
+    expect(clampLimit(NaN, { fallback: 50, max: 200 })).toBe(50)
+    expect(clampLimit(Infinity, { fallback: 50, max: 200 })).toBe(50)
+  })
 })

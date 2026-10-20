@@ -28,7 +28,7 @@ import type {
 } from '../server/protocol'
 
 import { clip } from './clip'
-import { optString, reqString, type WfMcpTool } from './tools'
+import { boundedLimit, optString, reqString, type WfMcpTool } from './tools'
 import { draftOrPublished } from './tools-agents'
 
 // Running a Goal and reading its report — the half of the loop that makes the
@@ -318,10 +318,7 @@ export function evalRunReadTools(): WfMcpTool[] {
       },
       readOnly: true,
       run: async (client, args) => {
-        const limit =
-          typeof args.limit === 'number' && Number.isFinite(args.limit)
-            ? Math.min(Math.max(Math.floor(args.limit), 1), 100)
-            : 20
+        const limit = boundedLimit(args.limit, 20, 100)
         const runs = await client.listEvalRuns({ limit })
         // A run stores only `setIds`; naming the goals is the difference between
         // a readable history and a list of uuids.

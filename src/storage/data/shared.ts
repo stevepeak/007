@@ -17,16 +17,20 @@ export function pickDefined<T extends object, K extends keyof T>(
 }
 
 /**
- * Clamp a caller-supplied page size into `[1, max]`, falling back to `fallback`
- * when it's omitted. The paged `list*` reads all share this so their floor (1)
- * and per-query ceilings stay consistent and greppable instead of each inlining
- * its own `Math.min(Math.max(…))`.
+ * Clamp a caller-supplied page size to an integer in `[1, max]`, falling back to
+ * `fallback` when it's omitted or not a finite number. The paged `list*` reads
+ * all share this so their floor (1) and per-query ceilings stay consistent and
+ * greppable instead of each inlining its own `Math.min(Math.max(…))`. The
+ * handler schemas accept any number, so `2.5` and `NaN` must land here as a
+ * whole page size rather than reach `.limit()`.
  */
 export function clampLimit(
   limit: number | undefined,
   opts: { fallback: number; max: number },
 ): number {
-  return Math.min(Math.max(limit ?? opts.fallback, 1), opts.max)
+  const n =
+    limit != null && Number.isFinite(limit) ? Math.floor(limit) : opts.fallback
+  return Math.min(Math.max(n, 1), opts.max)
 }
 
 /**

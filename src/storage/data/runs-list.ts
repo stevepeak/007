@@ -145,7 +145,10 @@ export async function listRuns(db: WfDb, input: ListRunsFilter) {
 
   const where = and(...conds)
   const limit = clampLimit(input.limit, { fallback: 50, max: RUN_PAGE_MAX })
-  const offset = Math.max(input.offset ?? 0, 0)
+  const offset =
+    input.offset != null && Number.isFinite(input.offset)
+      ? Math.max(Math.floor(input.offset), 0)
+      : 0
 
   const rows = await db
     .select({
