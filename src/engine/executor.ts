@@ -1,6 +1,5 @@
 import type { RunContext, WfSdkConfig } from './config'
 import { errorFeedLine, errorStored } from './error-detail'
-import { isDecisionKind } from './graph'
 import { resolveAnswerNodeIds } from './graph-engine'
 import { resolveWfLogger } from './logger'
 import type { ModelBudget } from './model-budget'
@@ -259,15 +258,16 @@ export async function executeWorkflow<TDeps>(
   })
   scheduler.seedTrigger(validatedTriggerInput)
 
-  // Resume: report the interrupted run's completed steps as done. A decision
-  // node (branch/switch) RECORDS its {result, reasoning} but passes its INPUT
-  // through, so downstream `ref`s resolve exactly as they did the first time.
+  // Resume: report the interrupted run's completed steps as done, seeding each
+  // with its recorded output — for a decision node (branch/switch) that is its
+  // `{ result, reasoning }`, exactly what a live run reports, so downstream
+  // `ref`s resolve as they did the first time. `branchResult` replays routing.
   // Sequence numbering continues past what was already recorded, so a re-run
   // node lands after the steps it followed rather than overwriting their order.
   for (const s of deps.resumeSteps ?? []) {
     const decision = s.branchResult as { result?: string } | null | undefined
     scheduler.report(s.nodeId, {
-      output: isDecisionKind(s.nodeKind) ? s.input : s.output,
+      output: s.output,
       branchResult: decision?.result,
     })
     sequence = Math.max(sequence, s.sequence + 1)

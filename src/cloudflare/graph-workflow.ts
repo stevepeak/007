@@ -10,7 +10,6 @@ import {
 } from '../connectors/registry'
 import type { WfSdkConfig } from '../engine/config'
 import {
-  isDecisionKind,
   workflowGraphSchema,
   type AgentOverride,
   type NodeExecution,
@@ -495,11 +494,8 @@ export function makeGraphWorkflow<
             result: string
             reasoning: string
           } | null
-          // A decision node (branch/switch) RECORDS its {result, reasoning}
-          // but passes its INPUT through to downstream nodes. Re-record the
-          // decision for the trace, but seed the scheduler with the passthrough
-          // input so downstream `ref`s resolve exactly as they did originally.
-          const isDecision = isDecisionKind(s.nodeKind)
+          // A decision node (branch/switch) outputs its `{ result, reasoning }`
+          // like a live run does; `branchResult` replays its routing.
           await stepDo(step, `seed:${s.nodeId}`, () => {
             return recordOne({
               nodeId: s.nodeId,
@@ -513,7 +509,7 @@ export function makeGraphWorkflow<
             })
           })
           scheduler.report(s.nodeId, {
-            output: isDecision ? s.input : s.output,
+            output: s.output,
             branchResult: branchResult?.result,
           })
         }
