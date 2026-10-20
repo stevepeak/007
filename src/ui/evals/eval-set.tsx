@@ -11,7 +11,6 @@ import { useWfComponents } from '../context'
 import { EmptyState } from '../empty-state'
 import {
   useAgents,
-  useEvalRuns,
   useEvalSet,
   useUpdateEvalSet,
   useUpsertEvalRow,
@@ -26,7 +25,7 @@ import { sectionCrumb } from '../wf-crumbs'
 
 import { describeGoalChange, type GoalDraft } from './describe-sample-change'
 import { RunConfigDialog } from './run-config-dialog'
-import { EvalRunsTable, Tabs } from './shared'
+import { GoalRunsTable, Tabs } from './shared'
 
 // The Goal detail page (route: evals/<setId>). A goal is a wf_eval_set: its
 // name + description are editable in place, its TARGET (the agent its samples
@@ -229,7 +228,10 @@ export function EvalSet({ setId, className }: EvalSetProps) {
               {tab === 'samples' ? (
                 <SamplesTable setId={setId} rows={rows} />
               ) : tab === 'runs' ? (
-                <RunsForSet setId={setId} />
+                <GoalRunsTable
+                  setId={setId}
+                  emptyMessage="No test runs yet. Run this goal to see results here."
+                />
               ) : (
                 // Filtered by PARENT, so the goal's history includes edits to
                 // its samples — which is where the grading criteria live, and so
@@ -431,24 +433,5 @@ function SamplesTable({
         </button>
       ))}
     </div>
-  )
-}
-
-// Test runs that included this set. Filtered from the global run history (there
-// is no per-set run table — a run spans one or more sets by `setIds`).
-function RunsForSet({ setId }: { setId: string }) {
-  const open = useOpenAsset()
-  const runsQuery = useEvalRuns()
-  const runs = (runsQuery.data ?? []).filter((r) => r.setIds.includes(setId))
-  return (
-    <EvalRunsTable
-      runs={runs}
-      isLoading={runsQuery.isLoading}
-      loadingMessage="Loading test runs…"
-      emptyMessage="No test runs yet. Run this goal to see results here."
-      onOpenRun={(id, e) => {
-        return open(`evals/runs/${id}`, { newTab: e.metaKey || e.ctrlKey })
-      }}
-    />
   )
 }

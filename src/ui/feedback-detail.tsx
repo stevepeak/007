@@ -1,17 +1,10 @@
-import {
-  Check,
-  ExternalLink,
-  Loader2,
-  ThumbsDown,
-  ThumbsUp,
-  Workflow,
-} from 'lucide-react'
+import { Check, ExternalLink, Loader2, Workflow } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import type { WfFeedbackRow } from '../server/protocol'
 
 import { useWfComponents } from './context'
-import { formatTimestamp } from './cost'
+import { FeedbackByline, RatingIcon } from './feedback-byline'
 import {
   useFeedbackForSubjects,
   useSetFeedbackInternalNote,
@@ -51,39 +44,23 @@ function FeedbackDetailBody({ row }: { row: WfFeedbackRow }) {
     <div className="mx-auto max-w-3xl space-y-5 p-6">
       <div className="flex items-start gap-3">
         <div className="pt-1">
-          {row.rating === 'up' ? (
-            <ThumbsUp className="h-5 w-5 fill-current text-emerald-600" />
-          ) : (
-            <ThumbsDown className="h-5 w-5 fill-current text-rose-600" />
-          )}
+          <RatingIcon rating={row.rating} size="md" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-            <span className="font-medium text-neutral-900">
-              {row.raterLabel || 'Unknown user'}
-            </span>
-            {row.correlationLabel ? (
-              <>
-                <span className="text-neutral-400">@</span>
-                <span className="font-medium text-neutral-600">
-                  {row.correlationLabel}
-                </span>
-              </>
-            ) : null}
-            <span className="text-neutral-300">·</span>
-            <span className="text-xs text-neutral-500">
-              {formatTimestamp(row.createdAt)}
-            </span>
-            <Badge className="gap-1.5 whitespace-nowrap font-normal">
-              {acknowledged ? null : (
-                <span
-                  className="size-1.5 rounded-full bg-amber-500"
-                  aria-hidden
-                />
-              )}
-              {acknowledged ? 'Acknowledged' : 'Unacknowledged'}
-            </Badge>
-          </div>
+          <FeedbackByline
+            row={row}
+            trailing={
+              <Badge className="gap-1.5 whitespace-nowrap font-normal">
+                {acknowledged ? null : (
+                  <span
+                    className="size-1.5 rounded-full bg-amber-500"
+                    aria-hidden
+                  />
+                )}
+                {acknowledged ? 'Acknowledged' : 'Unacknowledged'}
+              </Badge>
+            }
+          />
         </div>
       </div>
 

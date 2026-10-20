@@ -1,10 +1,4 @@
-import {
-  Handle,
-  NodeResizer,
-  Position,
-  useReactFlow,
-  type NodeProps,
-} from '@xyflow/react'
+import { Handle, Position, type NodeProps } from '@xyflow/react'
 import { AlertTriangle, StickyNote } from 'lucide-react'
 
 import {
@@ -24,6 +18,7 @@ import {
   KIND_STYLE,
   NodeCard,
   nodeStatusFrameClass,
+  PersistedNodeResizer,
   RunStatusDot,
   useNodeRenderer,
   useRunAgentVersions,
@@ -304,37 +299,17 @@ export function SwitchNodeRenderer(props: NodeProps) {
 // inner `Item`/`Result` bookend child nodes carry data across the boundary.
 export function IterationNodeRenderer(props: NodeProps) {
   const r = useNodeRenderer(props, 'iteration')
-  const { setNodes } = useReactFlow()
   if (!r) return null
   const { data, invalid, status } = r
   const style = KIND_STYLE.iteration
   const Icon = style.icon
   return (
     <>
-      <NodeResizer
-        isVisible={props.selected}
+      <PersistedNodeResizer
+        id={props.id}
+        selected={props.selected}
         minWidth={320}
         minHeight={160}
-        onResizeEnd={(_evt, params) => {
-          return setNodes((ns) => {
-            return ns.map((n) => {
-              return n.id === props.id
-                ? {
-                    ...n,
-                    data: {
-                      ...n.data,
-                      config: {
-                        ...((n.data as { config: Record<string, unknown> })
-                          .config ?? {}),
-                        width: params.width,
-                        height: params.height,
-                      },
-                    },
-                  }
-                : n
-            })
-          })
-        }}
       />
       <Handle type="target" position={Position.Left} />
       <div
@@ -382,37 +357,17 @@ export function IterationNodeRenderer(props: NodeProps) {
 // the engine never executes it. Purely a place to jot notes on the canvas.
 export function NoteNodeRenderer(props: NodeProps) {
   const r = useNodeRenderer(props, 'note')
-  const { setNodes } = useReactFlow()
   if (!r) return null
   // A note is never executed, so its invalid/status are inert — it only needs
   // the narrowed data.
   const { data } = r
   return (
     <>
-      <NodeResizer
-        isVisible={props.selected}
+      <PersistedNodeResizer
+        id={props.id}
+        selected={props.selected}
         minWidth={160}
         minHeight={100}
-        onResizeEnd={(_evt, params) => {
-          return setNodes((ns) => {
-            return ns.map((n) => {
-              return n.id === props.id
-                ? {
-                    ...n,
-                    data: {
-                      ...n.data,
-                      config: {
-                        ...((n.data as { config: Record<string, unknown> })
-                          .config ?? {}),
-                        width: params.width,
-                        height: params.height,
-                      },
-                    },
-                  }
-                : n
-            })
-          })
-        }}
       />
       <div
         className={cn(

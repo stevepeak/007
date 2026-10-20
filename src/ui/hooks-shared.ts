@@ -81,16 +81,38 @@ export const keys = {
   },
 }
 
+// A version published before its AI summary was ready gets one generated in the
+// background — poll briefly so it shows up without a manual refresh. Bounded to
+// recently-published versions so we never poll forever over old rows that will
+// never get one (pre-feature versions, or a failed gen).
+export function pendingAiSummaryInterval(
+  rows:
+    | readonly { aiSummaryShort: string | null; publishedAt: number | null }[]
+    | undefined,
+): number | false {
+  if (!rows) return false
+  const pending = rows.some((v) => {
+    return (
+      !v.aiSummaryShort &&
+      v.publishedAt != null &&
+      Date.now() - v.publishedAt < 90_000
+    )
+  })
+  return pending ? 3000 : false
+}
+
 // Collapses the shared mutation ceremony: grab the injected client + query
 // client, run `mutationFn`, then on success invalidate the query keys returned
 // by `invalidate`. The returned promise is awaited (via onSuccess) so the
 // mutation stays pending until the refetch settles — matching the hand-written
-// `return qc.invalidateQueries(...)` shape it replaces. Mutations that instead
-// fire-and-forget (`void qc.invalidateQueries`) or run extra side effects are
-// left hand-written.
+// `return qc.invalidateQueries(...)` shape it replaces. `awaitInvalidation:
+// false` fires the invalidations and settles at once instead, for callers that
+// shouldn't wait on the refetch. Mutations that run extra side effects are left
+// hand-written.
 export function useWfMutation<TInput, TOut>(
   mutationFn: (client: WfDataClient, input: TInput) => Promise<TOut>,
   invalidate?: (input: TInput) => QueryKey[],
+  options?: { awaitInvalidation?: boolean },
 ) {
   const client = useWfClient()
   const qc = useQueryClient()
@@ -99,6 +121,12 @@ export function useWfMutation<TInput, TOut>(
     onSuccess: (_r, input) => {
       const queryKeys = invalidate?.(input)
       if (!queryKeys) return
+      if (options?.awaitInvalidation === false) {
+        for (const queryKey of queryKeys) {
+          void qc.invalidateQueries({ queryKey })
+        }
+        return
+      }
       return Promise.all(
         queryKeys.map((queryKey) => qc.invalidateQueries({ queryKey })),
       )

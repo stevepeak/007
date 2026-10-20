@@ -17,6 +17,11 @@ import { keys, useWfMutation } from './hooks-shared'
 
 // --- Evals -----------------------------------------------------------------
 
+/** True while an eval run's counters are still filling in. */
+export function isEvalRunInFlight(run: { status: string }): boolean {
+  return run.status === 'queued' || run.status === 'running'
+}
+
 export function useEvalSets(includeArchived?: boolean) {
   const client = useWfClient()
   return useQuery({
@@ -40,11 +45,9 @@ export function useEvalRuns(limit?: number) {
     queryKey: keys.evalRuns(limit),
     queryFn: () => client.listEvalRuns({ limit }),
     // Poll only while some run is still executing, so its row settles live.
-    refetchInterval: (query) => { return query.state.data?.some(
-        (r) => r.status === 'queued' || r.status === 'running',
-      )
-        ? 3000
-        : false },
+    refetchInterval: (query) => {
+      return query.state.data?.some(isEvalRunInFlight) ? 3000 : false
+    },
   })
 }
 
@@ -56,8 +59,8 @@ export function useEvalRun(evalRunId: string | null) {
     queryFn: () => client.getEvalRun(evalRunId as string),
     enabled: !!evalRunId,
     refetchInterval: (query) => {
-      const status = query.state.data?.run.status
-      return status === 'queued' || status === 'running' ? 2000 : false
+      const run = query.state.data?.run
+      return run && isEvalRunInFlight(run) ? 2000 : false
     },
   })
 }

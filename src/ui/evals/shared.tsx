@@ -17,7 +17,8 @@ import { agentColor, agentIcon } from '../agent-appearance'
 import { cn } from '../cn'
 import { formatDurationMs, formatTimestamp } from '../cost'
 import { EmptyState } from '../empty-state'
-import { useAgents } from '../hooks'
+import { isEvalRunInFlight, useAgents, useEvalRuns } from '../hooks'
+import { useOpenAsset } from '../nav'
 import { RunStatusBadge } from '../runs/run-status'
 import type { WfCrumb } from '../shell'
 import { Tooltip } from '../tooltip'
@@ -184,11 +185,6 @@ export { Tabs, type TabDef } from '../filters'
 // place and can't drift from the rest of the app.
 export { formatTimestamp, RunStatusBadge }
 
-/** True while an eval run's counters are still filling in. */
-export function isEvalRunInFlight(run: { status: string }): boolean {
-  return run.status === 'queued' || run.status === 'running'
-}
-
 // Shared "test runs" table: When / [Agent] / Pass / Score / Duration columns
 // over a list of eval runs. Clicking a row opens its report via `onOpenRun`. The
 // first cell defaults to a timestamp + RunStatusBadge; pass `renderFirstCell`
@@ -280,6 +276,32 @@ export function EvalRunsTable({
         )
       })}
     </div>
+  )
+}
+
+// The runs of one goal (eval set). A run spans one or more sets by `setIds` —
+// there is no per-set run table — so these are filtered from the global
+// history. Clicking a row opens the full run report.
+export function GoalRunsTable({
+  setId,
+  emptyMessage,
+}: {
+  setId: string
+  emptyMessage: string
+}) {
+  const open = useOpenAsset()
+  const runsQuery = useEvalRuns()
+  const runs = (runsQuery.data ?? []).filter((r) => r.setIds.includes(setId))
+  return (
+    <EvalRunsTable
+      runs={runs}
+      isLoading={runsQuery.isLoading}
+      loadingMessage="Loading test runs…"
+      emptyMessage={emptyMessage}
+      onOpenRun={(id, e) => {
+        return open(`evals/runs/${id}`, { newTab: e.metaKey || e.ctrlKey })
+      }}
+    />
   )
 }
 

@@ -1,4 +1,10 @@
-import { Handle, Position, type NodeProps } from '@xyflow/react'
+import {
+  Handle,
+  NodeResizer,
+  Position,
+  useReactFlow,
+  type NodeProps,
+} from '@xyflow/react'
 import {
   AlertTriangle,
   Flag,
@@ -419,6 +425,50 @@ export function NodePill({
         />
       ) : null}
     </div>
+  )
+}
+
+// The resize handle for the canvas-sized nodes (Iteration, Note). The box's
+// size lives in `config.width`/`config.height`, so the end of a drag writes it
+// back into the node's config, where save picks it up.
+export function PersistedNodeResizer({
+  id,
+  selected,
+  minWidth,
+  minHeight,
+}: {
+  id: string
+  selected: boolean | undefined
+  minWidth: number
+  minHeight: number
+}) {
+  const { setNodes } = useReactFlow()
+  return (
+    <NodeResizer
+      isVisible={selected}
+      minWidth={minWidth}
+      minHeight={minHeight}
+      onResizeEnd={(_evt, params) => {
+        return setNodes((ns) => {
+          return ns.map((n) => {
+            return n.id === id
+              ? {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    config: {
+                      ...((n.data as { config: Record<string, unknown> })
+                        .config ?? {}),
+                      width: params.width,
+                      height: params.height,
+                    },
+                  },
+                }
+              : n
+          })
+        })
+      }}
+    />
   )
 }
 

@@ -10,10 +10,9 @@ import { SaveStateBadge } from '../save-state-badge'
 import { WfShell } from '../shell'
 import { sectionCrumb } from '../wf-crumbs'
 
-import { RunsForSample } from './eval-sample-checks'
 import { SampleConfigSteps } from './eval-sample-steps'
 import { RunConfigDialog } from './run-config-dialog'
-import { Tabs, useTargetAgentCrumb } from './shared'
+import { GoalRunsTable, Tabs, useTargetAgentCrumb } from './shared'
 import { useEvalSampleDraft } from './use-eval-sample-draft'
 
 // The Sample view (route: evals/<setId>/samples/<sampleId>). A Sample IS a
@@ -193,7 +192,10 @@ export function EvalSample({
               {tab === 'config' ? (
                 <SampleConfigSteps state={state} draft={draft} />
               ) : (
-                <RunsForSample setId={setId} />
+                <GoalRunsTable
+                  setId={setId}
+                  emptyMessage="No test runs yet. Run the goal to see results here."
+                />
               )}
             </>
           )}

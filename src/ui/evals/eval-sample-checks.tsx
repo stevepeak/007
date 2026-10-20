@@ -16,8 +16,6 @@ import type {
 import { ArchiveButton } from '../archive-button'
 import { cn } from '../cn'
 import { Segmented, type SegmentedOption } from '../filters'
-import { useEvalRuns } from '../hooks'
-import { useOpenAsset } from '../nav'
 
 import { describeCheck } from './check-naming'
 import { CheckConfigBody } from './eval-check-config'
@@ -26,7 +24,6 @@ import {
   familyOf,
   type CheckFamily,
 } from './eval-check-config-shared'
-import { EvalRunsTable } from './shared'
 
 // A sample's Checks, rendered as a checklist of collapsible rows rather than as
 // links out to a page each.
@@ -242,23 +239,3 @@ const FAMILIES: SegmentedOption<CheckFamily>[] = [
     activeClass: 'bg-amber-100 text-amber-700',
   },
 ]
-
-// Test runs that included this sample. A run spans a whole set (goal) by
-// `setIds` — there is no per-sample run table — so these are the goal's runs,
-// filtered from the global history. Clicking one opens the full run report.
-export function RunsForSample({ setId }: { setId: string }) {
-  const open = useOpenAsset()
-  const runsQuery = useEvalRuns()
-  const runs = (runsQuery.data ?? []).filter((r) => r.setIds.includes(setId))
-  return (
-    <EvalRunsTable
-      runs={runs}
-      isLoading={runsQuery.isLoading}
-      loadingMessage="Loading test runs…"
-      emptyMessage="No test runs yet. Run the goal to see results here."
-      onOpenRun={(id, e) => {
-        return open(`evals/runs/${id}`, { newTab: e.metaKey || e.ctrlKey })
-      }}
-    />
-  )
-}

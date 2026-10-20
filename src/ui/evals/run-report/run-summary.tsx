@@ -9,7 +9,7 @@ import type {
 import { agentColor, agentIcon } from '../../agent-appearance'
 import { cn } from '../../cn'
 import { formatDurationMs, formatUsd } from '../../cost'
-import { useAgents, useWorkflow } from '../../hooks'
+import { isEvalRunInFlight, useAgents, useWorkflow } from '../../hooks'
 import { WfLink } from '../../nav'
 import { pendingLabel } from '../../query-state'
 import { formatTimestamp, PassRate, Score } from '../shared'
@@ -26,7 +26,7 @@ export function RunHeader({
   run: WfEvalRunSummary
   results: WfEvalResultDTO[]
 }) {
-  const running = run.status === 'queued' || run.status === 'running'
+  const running = isEvalRunInFlight(run)
   const agent = agentCallTotals(results)
   // While the matrix is still fanning out, `run.passed`/`run.score` are 0 (they
   // only roll up in `finalizeEvalRun`), so derive live figures from the results

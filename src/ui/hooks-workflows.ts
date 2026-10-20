@@ -1,9 +1,13 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 
 import type { WorkflowGraph } from '../engine/graph'
 
 import { useWfClient } from './context'
-import { keys, useWfMutation } from './hooks-shared'
+import {
+  keys,
+  pendingAiSummaryInterval,
+  useWfMutation,
+} from './hooks-shared'
 
 export function useTriggerEvents() {
   const client = useWfClient()
@@ -53,21 +57,23 @@ export function useSaveDraft() {
 }
 
 export function useSaveVersion() {
-  const client = useWfClient()
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (input: {
-      workflowId: string
-      graph: WorkflowGraph
-      changeNote?: string
-      aiSummary?: { short: string; long: string }
-      baseVersionNumber?: number
-    }) => client.saveVersion(input),
-    onSuccess: (_r, input) => {
-      void qc.invalidateQueries({ queryKey: keys.workflow(input.workflowId) })
-      void qc.invalidateQueries({ queryKey: keys.versions(input.workflowId) })
-    },
-  })
+  return useWfMutation(
+    (
+      client,
+      input: {
+        workflowId: string
+        graph: WorkflowGraph
+        changeNote?: string
+        aiSummary?: { short: string; long: string }
+        baseVersionNumber?: number
+      },
+    ) => client.saveVersion(input),
+    (input) => [
+      keys.workflow(input.workflowId),
+      keys.versions(input.workflowId),
+    ],
+    { awaitInvalidation: false },
+  )
 }
 
 export function useSummarizeChanges() {
@@ -84,38 +90,22 @@ export function useVersions(workflowId: string) {
   return useQuery({
     queryKey: keys.versions(workflowId),
     queryFn: () => client.listVersions(workflowId),
-    // A version published before its AI summary was ready gets one generated in
-    // the background — poll briefly so it shows up without a manual refresh.
-    // Bounded to recently-published versions so we never poll forever over old
-    // rows that will never get one (pre-feature versions, or a failed gen).
-    refetchInterval: (query) => {
-      const rows = query.state.data
-      if (!rows) return false
-      const pending = rows.some((v) => {
-        return (
-          !v.aiSummaryShort &&
-          v.publishedAt != null &&
-          Date.now() - v.publishedAt < 90_000
-        )
-      })
-      return pending ? 3000 : false
-    },
+    refetchInterval: (query) => pendingAiSummaryInterval(query.state.data),
   })
 }
 
 export function useUpdateWorkflow() {
-  const client = useWfClient()
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (input: {
-      workflowId: string
-      name?: string
-      description?: string | null
-      archived?: boolean
-    }) => client.updateWorkflow(input),
-    onSuccess: (_r, input) => {
-      void qc.invalidateQueries({ queryKey: keys.workflow(input.workflowId) })
-      void qc.invalidateQueries({ queryKey: keys.workflows })
-    },
-  })
+  return useWfMutation(
+    (
+      client,
+      input: {
+        workflowId: string
+        name?: string
+        description?: string | null
+        archived?: boolean
+      },
+    ) => client.updateWorkflow(input),
+    (input) => [keys.workflow(input.workflowId), keys.workflows],
+    { awaitInvalidation: false },
+  )
 }

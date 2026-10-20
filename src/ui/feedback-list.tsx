@@ -13,6 +13,11 @@ import type { WfFeedbackRow } from '../server/protocol'
 import { cn } from './cn'
 import { useWfComponents } from './context'
 import { formatTimestamp } from './cost'
+import {
+  FeedbackByline,
+  RatingIcon,
+  UNKNOWN_RATER_LABEL,
+} from './feedback-byline'
 import { FilterPillMulti, Segmented } from './filters'
 import { useFeedback, useSetFeedbackAck } from './hooks-feedback'
 import { useWfNav } from './nav'
@@ -61,10 +66,6 @@ const RATING_OPTIONS = [
   },
 ]
 
-function raterLabel(row: WfFeedbackRow): string {
-  return row.raterLabel || 'Unknown user'
-}
-
 export type FeedbackListProps = { className?: string }
 
 export function FeedbackList({ className }: FeedbackListProps) {
@@ -92,7 +93,7 @@ export function FeedbackList({ className }: FeedbackListProps) {
   const raterOptions = useMemo(() => {
     return (query.data?.raters ?? []).map((r) => ({
       value: r.id,
-      label: r.label || 'Unknown user',
+      label: r.label || UNKNOWN_RATER_LABEL,
     }))
   }, [query.data?.raters])
 
@@ -239,31 +240,11 @@ function FeedbackItem({ row }: { row: WfFeedbackRow }) {
   return (
     <div className="flex items-start gap-3 px-4 py-3">
       <div className="pt-0.5">
-        {row.rating === 'up' ? (
-          <ThumbsUp className="h-4 w-4 fill-current text-emerald-600" />
-        ) : (
-          <ThumbsDown className="h-4 w-4 fill-current text-rose-600" />
-        )}
+        <RatingIcon rating={row.rating} />
       </div>
 
       <div className="min-w-0 flex-1 space-y-1">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-          <span className="font-medium text-neutral-900">
-            {raterLabel(row)}
-          </span>
-          {row.correlationLabel ? (
-            <>
-              <span className="text-neutral-400">@</span>
-              <span className="font-medium text-neutral-600">
-                {row.correlationLabel}
-              </span>
-            </>
-          ) : null}
-          <span className="text-neutral-300">·</span>
-          <span className="text-xs text-neutral-500">
-            {formatTimestamp(row.createdAt)}
-          </span>
-        </div>
+        <FeedbackByline row={row} />
 
         {row.note ? (
           <p className="text-sm text-neutral-900">“{row.note}”</p>
@@ -378,18 +359,13 @@ function groupRows(rows: WfFeedbackRow[], groupBy: GroupBy): Group[] {
     if (groupBy === 'sentiment') {
       key = row.rating
       label = row.rating === 'up' ? 'Thumbs up' : 'Thumbs down'
-      icon =
-        row.rating === 'up' ? (
-          <ThumbsUp className="h-4 w-4 fill-current text-emerald-600" />
-        ) : (
-          <ThumbsDown className="h-4 w-4 fill-current text-rose-600" />
-        )
+      icon = <RatingIcon rating={row.rating} />
     } else if (groupBy === 'client') {
       key = row.correlationId ?? '__none__'
       label = row.correlationLabel ?? 'No client'
     } else {
       key = row.raterUserId ?? '__unknown__'
-      label = raterLabel(row)
+      label = row.raterLabel || UNKNOWN_RATER_LABEL
     }
 
     const existing = map.get(key)
