@@ -8,11 +8,10 @@ import {
   loadConnectorCatalog,
   withConnectorTools,
 } from '../connectors/registry'
-import type { WfSdkConfig } from '../engine/config'
+import type { RunFlags, WfSdkConfig } from '../engine/config'
 import { errorFeedLine } from '../engine/error-detail'
 import {
   workflowGraphSchema,
-  type AgentOverride,
   type NodeExecution,
   type WfNodeKind,
   type WfRunManifestEntry,
@@ -105,7 +104,7 @@ export interface GraphWorkflowEnv extends ReleaseBindings {
 }
 
 // Serializable run context carried in the workflow params (no live `env`).
-export type GraphRunContextInput = {
+export type GraphRunContextInput = RunFlags & {
   subjectId?: string
   correlationId?: string
   /** The host principal this run acts for; opaque, see `RunContext.actorId`. */
@@ -118,8 +117,6 @@ export type GraphRunContextInput = {
   hostContext?: Record<string, string>
   triggerKind: string
   promptVariables?: Record<string, string | undefined>
-  /** Eval signal — under simulate, side-effecting tools are neutralized. */
-  simulate?: boolean
   /**
    * Mirrors `wf_run.is_eval`, carried into the run so telemetry can partition on
    * it. Every dashboard query filters `is_eval = false`; without this the
@@ -128,24 +125,6 @@ export type GraphRunContextInput = {
    * `simulate` / `freezeTools` are the signals that change behavior.
    */
   isEval?: boolean
-  /** Canned tool outputs consumed under `simulate`, keyed by tool id. */
-  fixtures?: Record<string, unknown>
-  /**
-   * Eval integration signal — read tools execute for real instead of returning
-   * a fixture; write tools stay neutralized. See RunContext.
-   */
-  liveReads?: boolean
-  /**
-   * Per-tool override of {@link liveReads}, keyed by tool id. A Sample settles
-   * mocked-vs-live ONE TOOL AT A TIME — pin the search result and let the memory
-   * lookup hit real data — so this names the tools it has an opinion about and
-   * `liveReads` covers the rest.
-   */
-  toolModes?: Record<string, 'mocked' | 'live'>
-  /** Eval synthesis signal — run every agent node with an empty tool set. See RunContext. */
-  freezeTools?: boolean
-  /** Eval matrix override — swaps an agent node's modelId/prompt. See RunContext. */
-  agentOverride?: AgentOverride
   /**
    * Run-scoped step policy, tightening only. Caps what this run may spend
    * without editing anybody's published graph. See `RunContext`.

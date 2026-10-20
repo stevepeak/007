@@ -6,11 +6,9 @@ import {
   errorStored,
 } from '../engine/error-detail'
 import { modelBudgetFor } from '../engine/model-budget'
-import { bindModelFactory } from '../engine/model-factory'
-import { nodeSpanLabel } from '../engine/node-label'
 import { emitNodeStartProgress } from '../engine/node-progress'
 import { isFatalAgentError } from '../engine/nodes/agent-generation'
-import { runNode } from '../engine/run-node'
+import { buildRunNodeContext, runNode } from '../engine/run-node'
 import type { ExecutableNode } from '../engine/scheduler'
 import type { RunLogEntry, StreamSink } from '../engine/stream-sink'
 import { createWfDb } from '../storage/client'
@@ -34,7 +32,7 @@ import {
 } from './graph-workflow-dispatch-step-opts'
 import { createTelemeteredRecorder } from './graph-workflow-telemetry'
 import { runContextFor } from './run-context'
-import { withNodeSpan } from './tracing'
+import { nodeSpanInfo, withNodeSpan } from './tracing'
 
 // The ordinary node: one `run:` step, one `runNode` call inside it.
 //
@@ -124,7 +122,7 @@ export async function dispatchPlain<TDeps, E extends GraphWorkflowEnv>(
   bodyLogs: RunLogEntry[],
   onFailure: (captured: CapturedFailure | null) => void,
 ): Promise<RunStepResult> {
-  const { step, env, config, p, manifest, scheduler, traceId } = ctx
+  const { step, env, config, p, manifest, scheduler } = ctx
   return await stepDo(step, `run:${node.id}`, stepOptsFor(node), async () => {
     const rc = runContextFor(p, env)
     const toolDeps = await config.buildRunDeps(rc)
@@ -163,43 +161,18 @@ export async function dispatchPlain<TDeps, E extends GraphWorkflowEnv>(
     const execStartedAt = new Date()
     const r = await runNodeBody(nodeSink, onFailure, () => {
       return withNodeSpan(
-        {
-          traceId,
-          runId: p.workflowRunId,
-          nodeId: node.id,
-          nodeKind: node.kind,
-          sequence: seq,
-          label: nodeSpanLabel(node, manifest),
-          actorId: p.runContext.actorId,
-          subjectId: p.runContext.subjectId,
-          correlationId: p.runContext.correlationId,
-        },
+        nodeSpanInfo({ node, sequence: seq, params: p, manifest }),
         () => {
           return runNode(
             { type: 'execute', node, input },
-            {
-              getModel: bindModelFactory({
-                getModel: config.getModel,
-                runContext: rc,
-              }),
-              getDecider: config.getDecider
-                ? (modelId) => config.getDecider!(modelId, rc)
-                : undefined,
-              toolRegistry: config.toolRegistry,
-              referenceKinds: config.referenceKinds ?? [],
+            buildRunNodeContext({
+              config,
+              runContext: rc,
               toolDeps,
-              modelBudget,
               nodeOutputs: scheduler.getOutputs(),
-              promptVariables: p.runContext.promptVariables,
               manifest,
               sink: nodeSink,
-              resolveBlobRef: config.resolveBlobRef,
-              simulate: p.runContext.simulate,
-              fixtures: p.runContext.fixtures,
-              liveReads: p.runContext.liveReads,
-              toolModes: p.runContext.toolModes,
-              freezeTools: p.runContext.freezeTools,
-              agentOverride: p.runContext.agentOverride,
+              modelBudget,
               // Delegation: an agent node may spawn sub-agents/workflows inline
               // and record each as a child step. Built inside this `run:` closure
               // (a D1 binding can't cross a step boundary); the whole closure
@@ -216,7 +189,7 @@ export async function dispatchPlain<TDeps, E extends GraphWorkflowEnv>(
                       logger: ctx.logger,
                     })
                   : undefined,
-            },
+            }),
           )
         },
       )

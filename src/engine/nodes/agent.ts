@@ -1,9 +1,8 @@
-import type { ModelFactory } from '../config'
+import type { ModelFactory, RunFlags } from '../config'
 import {
   agentFromManifest,
   type AgentConfig,
   type AgentNode,
-  type AgentOverride,
   substitutePromptVariables,
   type WfRunManifestEntry,
 } from '../graph'
@@ -40,7 +39,7 @@ export type {
   RunAgentGenerationArgs,
 } from './agent-generation'
 
-export type ExecuteAgentNodeArgs<TDeps> = {
+export type ExecuteAgentNodeArgs<TDeps> = RunFlags & {
   node: AgentNode
   // NOTE: the node's incoming `input` is deliberately absent. An agent reads only
   // what its prompts declare and its bindings resolve, so handing the payload to
@@ -79,34 +78,6 @@ export type ExecuteAgentNodeArgs<TDeps> = {
    */
   rehydrate?: (value: unknown) => Promise<unknown>
 
-  /** Eval signal — under simulate, side-effecting tools are neutralized. */
-  simulate?: boolean
-  /** Canned tool outputs consumed under `simulate`. */
-  fixtures?: Record<string, unknown>
-  /** Eval integration signal — read tools run live. See RunContext.liveReads. */
-  liveReads?: boolean
-  /**
-   * Per-tool override of `liveReads`, keyed by tool id — an eval Sample settles
-   * mocked-vs-live one tool at a time. See RunContext.
-   */
-  toolModes?: Record<string, 'mocked' | 'live'>
-  /**
-   * Eval synthesis signal — run with an EMPTY tool set (no registry tools, no
-   * delegation tools), forcing the model to answer from its seeded message
-   * history. Grades the final response in isolation. See RunContext.freezeTools.
-   */
-  freezeTools?: boolean
-  /**
-   * Eval override. `config` REPLACES the whole agent config the manifest froze
-   * (how a goal is run against an author's unsaved draft); `modelId` swaps the
-   * model this node runs on and `prompt` REPLACES the system-prompt template
-   * (still `${var}`-interpolated against the run's promptVariables), both
-   * layered on top of whichever config won. Any field omitted → the agent's
-   * saved value. The override is not persisted to `wf_run.manifest`; only the
-   * effective model is reflected in `AgentNodeMeta.model` so cost prices against
-   * the model used.
-   */
-  agentOverride?: AgentOverride
   /**
    * Time budget for this node's model work (see `../model-budget`). Bounds the
    * agent loop from inside the step so an overrun is catchable. Omitted →

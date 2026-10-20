@@ -1,11 +1,16 @@
 import { rehydrateBlobRefs } from './blob-ref'
-import type {
-  BlobRefResolver,
-  DeciderFactory,
-  ModelFactory,
+import {
+  runFlagsOf,
+  type BlobRefResolver,
+  type DeciderFactory,
+  type ModelFactory,
+  type RunContext,
+  type RunFlags,
+  type WfSdkConfig,
 } from './config'
-import type { AgentOverride, WfRunManifestEntry } from './graph'
+import type { WfRunManifestEntry } from './graph'
 import type { ModelBudget } from './model-budget'
+import { bindModelFactory } from './model-factory'
 import { executeAgentNode } from './nodes/agent'
 import { executeAggregateNode } from './nodes/aggregate'
 import { executeBranchNode } from './nodes/branch'
@@ -54,7 +59,7 @@ export type NodeRunResult = {
   branchReasoning?: string
 }
 
-export type RunNodeContext<TDeps> = {
+export type RunNodeContext<TDeps> = RunFlags & {
   getModel: ModelFactory
   /**
    * Resolves a decision agent's `modelId` to a decider (from
@@ -85,21 +90,6 @@ export type RunNodeContext<TDeps> = {
    * their real value before the node runs. Omitted → refs pass through as-is.
    */
   resolveBlobRef?: BlobRefResolver<TDeps>
-  /** Eval signal — under simulate, side-effecting tools are neutralized. */
-  simulate?: boolean
-  /** Canned tool outputs consumed under `simulate`, keyed by tool id. */
-  fixtures?: Record<string, unknown>
-  /** Eval integration signal — read tools run live. See RunContext. */
-  liveReads?: boolean
-  /**
-   * Per-tool override of `liveReads`, keyed by tool id — an eval Sample settles
-   * mocked-vs-live one tool at a time. See RunContext.
-   */
-  toolModes?: Record<string, 'mocked' | 'live'>
-  /** Eval synthesis signal — run agent nodes with an empty tool set. See RunContext. */
-  freezeTools?: boolean
-  /** Eval matrix override — swaps an agent node's modelId/prompt. See RunContext. */
-  agentOverride?: AgentOverride
   /**
    * Time budget for this node's model work, derived by the backend from the
    * node's durable step timeout. Bounds the whole agent loop, each model
@@ -126,6 +116,52 @@ export type RunNodeContext<TDeps> = {
    * graph inline as a subgraph instead — see `executeWorkflowNode`.
    */
   runChildWorkflow?: ChildWorkflowRunner
+}
+
+/**
+ * The one {@link RunNodeContext} every backend hands `runNode` — the inline
+ * executor, the durable `run:` step and each durable iteration item. What is
+ * derived from the host config and the run context (model/decider binding,
+ * registries, run flags) is built here; only what the backend owns per call
+ * (deps, outputs, sink, budget, recorder, spawner) is passed in.
+ *
+ * `manifest` defaults to the run context's; the durable backend resolves it
+ * after building its context, so it passes it separately.
+ */
+export function buildRunNodeContext<TDeps>(args: {
+  config: WfSdkConfig<TDeps>
+  runContext: RunContext
+  toolDeps: TDeps
+  nodeOutputs: Map<string, unknown>
+  manifest?: WfRunManifestEntry[]
+  sink?: StreamSink
+  modelBudget?: ModelBudget
+  subStepRecorder?: RunRecorder
+  runChildWorkflow?: ChildWorkflowRunner
+}): RunNodeContext<TDeps> {
+  const { config, runContext } = args
+  const getDecider = config.getDecider
+  return {
+    getModel: bindModelFactory({ getModel: config.getModel, runContext }),
+    // Bound the same way as `getModel`, and left undefined when the host wired
+    // no decision provider — which is what makes a decision agent cleanly
+    // unrunnable rather than half-present.
+    getDecider: getDecider
+      ? (modelId) => getDecider(modelId, runContext)
+      : undefined,
+    toolRegistry: config.toolRegistry,
+    referenceKinds: config.referenceKinds ?? [],
+    toolDeps: args.toolDeps,
+    nodeOutputs: args.nodeOutputs,
+    promptVariables: runContext.promptVariables,
+    manifest: args.manifest ?? runContext.manifest,
+    sink: args.sink,
+    resolveBlobRef: config.resolveBlobRef,
+    ...runFlagsOf({ runContext }),
+    modelBudget: args.modelBudget,
+    subStepRecorder: args.subStepRecorder,
+    runChildWorkflow: args.runChildWorkflow,
+  }
 }
 
 export async function runNode<TDeps>(
@@ -189,12 +225,7 @@ export async function runNode<TDeps>(
         nodeOutputs: ctx.nodeOutputs,
         manifest: ctx.manifest ?? [],
         rehydrate,
-        simulate: ctx.simulate,
-        fixtures: ctx.fixtures,
-        liveReads: ctx.liveReads,
-        toolModes: ctx.toolModes,
-        freezeTools: ctx.freezeTools,
-        agentOverride: ctx.agentOverride,
+        ...runFlagsOf({ runContext: ctx }),
         modelBudget: ctx.modelBudget,
         // Delegation: give the node this run's full context + its own id so it
         // can synthesize spawn/await tools that launch whitelisted sub-agents

@@ -2,6 +2,11 @@ import * as Sentry from '@sentry/cloudflare'
 
 import { agentTimingSpans, type TimingSpan } from '../engine/agent-timeline'
 import { apiErrorDetail } from '../engine/error-detail'
+import type { WfRunManifestEntry } from '../engine/graph'
+import { nodeSpanLabel } from '../engine/node-label'
+import type { ExecutableNode } from '../engine/scheduler'
+
+import type { GraphWorkflowParams } from './graph-workflow'
 
 // Per-node Sentry tracing for the durable backend. Worker-only (imports
 // `@sentry/cloudflare`), so it lives beside `graph-workflow.ts` in the
@@ -56,6 +61,30 @@ export type NodeSpanInfo = {
    * absent.
    */
   label?: string
+}
+
+/**
+ * The span info for one node of one run — the same on both engines, so the run
+ * viewer's trace link shows the same tree whichever ran it.
+ */
+export function nodeSpanInfo(args: {
+  node: ExecutableNode
+  sequence: number
+  params: Pick<GraphWorkflowParams, 'workflowRunId' | 'runContext'>
+  manifest: readonly WfRunManifestEntry[]
+}): NodeSpanInfo {
+  const { node, params } = args
+  return {
+    traceId: params.runContext.traceId,
+    runId: params.workflowRunId,
+    nodeId: node.id,
+    nodeKind: node.kind,
+    sequence: args.sequence,
+    label: nodeSpanLabel(node, args.manifest),
+    actorId: params.runContext.actorId,
+    subjectId: params.runContext.subjectId,
+    correlationId: params.runContext.correlationId,
+  }
 }
 
 /**

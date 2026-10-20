@@ -1,3 +1,4 @@
+import { runFlagsOf } from '../engine/config'
 import { resolveGraphEngine } from '../engine/graph-engine'
 import type {
   StartGraphRunInput,
@@ -87,13 +88,8 @@ export async function startGraphRun(
       hostContext: input.hostContext,
       triggerKind: input.triggerKind,
       promptVariables: input.promptVariables,
-      simulate: input.simulate,
       isEval: input.isEval,
-      fixtures: input.fixtures,
-      liveReads: input.liveReads,
-      toolModes: input.toolModes,
-      freezeTools: input.freezeTools,
-      agentOverride: input.agentOverride,
+      ...runFlagsOf({ runContext: input }),
       executionOverride: input.executionOverride,
       traceId,
     },

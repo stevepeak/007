@@ -9,7 +9,6 @@ import { executeWorkflow, type ResumeStep } from '../engine/executor'
 import type { WfRunManifestEntry } from '../engine/graph'
 import { resolveWfLogger, type WfLogger } from '../engine/logger'
 import { modelBudgetFor } from '../engine/model-budget'
-import { nodeSpanLabel } from '../engine/node-label'
 import { resolveNodeTimeoutMs } from '../engine/node-timeout'
 import type { ChildWorkflowRunner } from '../engine/nodes/workflow'
 import { errorMessage } from '../engine/run-node'
@@ -51,7 +50,7 @@ import {
 } from './graph-workflow-telemetry'
 import { runContextFor } from './run-context'
 import { createRunCounters } from './step-counter'
-import { flushTraces, withNodeSpan } from './tracing'
+import { flushTraces, nodeSpanInfo, withNodeSpan } from './tracing'
 
 // The INLINE backend — the peer of `graph-workflow.ts`.
 //
@@ -584,17 +583,7 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
       wrapNode: async (node, sequence, run) => {
         try {
           return await withNodeSpan(
-            {
-              traceId: p.runContext.traceId,
-              runId: p.workflowRunId,
-              nodeId: node.id,
-              nodeKind: node.kind,
-              sequence,
-              label: nodeSpanLabel(node, manifest),
-              actorId: p.runContext.actorId,
-              subjectId: p.runContext.subjectId,
-              correlationId: p.runContext.correlationId,
-            },
+            nodeSpanInfo({ node, sequence, params: p, manifest }),
             run,
           )
         } finally {

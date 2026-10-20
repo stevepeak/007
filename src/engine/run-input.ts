@@ -1,8 +1,5 @@
-import type {
-  AgentOverride,
-  NodeExecution,
-  WfEngine,
-} from './graph-schema'
+import type { RunFlags } from './config'
+import type { NodeExecution, WfEngine } from './graph-schema'
 
 // What it takes to START a run, and what starting one gives back.
 //
@@ -15,7 +12,7 @@ import type {
 // `./cloudflare` and re-exports these, so `@stevepeak/007/cloudflare` remains a
 // complete import surface for a Worker.
 
-export type StartGraphRunInput = {
+export type StartGraphRunInput = RunFlags & {
   workflowVersionId: string
   triggerKind: string
   triggerInput: unknown
@@ -47,39 +44,8 @@ export type StartGraphRunInput = {
    */
   hostContext?: Record<string, string>
   promptVariables?: Record<string, string | undefined>
-  /**
-   * Eval signal — execute the real graph and write a real trace, but neutralize
-   * side-effecting tools (write tools no-op, read tools return their `fixtures`
-   * entry). Off for normal runs.
-   */
-  simulate?: boolean
-  /** Canned tool outputs consumed under `simulate`, keyed by tool id. */
-  fixtures?: Record<string, unknown>
-  /**
-   * Eval integration signal — read tools execute for real instead of returning
-   * a fixture; writes stay neutralized. See RunContext.
-   */
-  liveReads?: boolean
-  /**
-   * Per-tool override of {@link liveReads}, keyed by tool id. A Sample settles
-   * mocked-vs-live ONE TOOL AT A TIME — pin the search result and let the memory
-   * lookup hit real data — so this names the tools it has an opinion about and
-   * `liveReads` covers the rest.
-   */
-  toolModes?: Record<string, 'mocked' | 'live'>
-  /**
-   * Eval synthesis signal — run every agent node with an empty tool set so the
-   * model answers from its seeded message history alone. See RunContext.
-   */
-  freezeTools?: boolean
   /** Marks the produced `wf_run` as eval-owned (hidden from the Runs explorer). */
   isEval?: boolean
-  /**
-   * Eval override — swaps the whole agent config (an unsaved draft), and/or the
-   * modelId and system prompt (the matrix axes), on every agent node for this
-   * run (the eval wrapper's single agent). See RunContext.
-   */
-  agentOverride?: AgentOverride
   /**
    * Run-scoped step policy layered onto every node's own, TIGHTENING only.
    * Bounds what this one run may spend without touching the published graph —

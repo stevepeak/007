@@ -3,13 +3,13 @@ import { NonRetryableError } from 'cloudflare:workflows'
 import type { IterationNode } from '../engine/graph'
 import { iterationItemTitle } from '../engine/item-title'
 import { modelBudgetFor } from '../engine/model-budget'
-import { bindModelFactory } from '../engine/model-factory'
 import {
   executeSubgraph,
   IterationTooManyItemsError,
   resolveIterationList,
   runIteration,
 } from '../engine/nodes/iteration'
+import { buildRunNodeContext } from '../engine/run-node'
 import { withoutUserProgress, type StreamSink } from '../engine/stream-sink'
 import { createWfDb } from '../storage/client'
 import { createRun } from '../storage/data'
@@ -131,31 +131,16 @@ async function runItemInline<TDeps, E extends GraphWorkflowEnv>(
       const itemResult = await executeSubgraph(
         node.config.subgraph,
         item,
-        {
-          getModel: bindModelFactory({
-            getModel: config.getModel,
-            runContext: rc,
-          }),
-          getDecider: config.getDecider
-            ? (modelId) => config.getDecider!(modelId, rc)
-            : undefined,
-          toolRegistry: config.toolRegistry,
-          referenceKinds: config.referenceKinds ?? [],
+        buildRunNodeContext({
+          config,
+          runContext: rc,
           toolDeps,
-          modelBudget: modelBudgetFor(resolveStepTimeoutMs(node)),
           // Overridden per item inside executeSubgraph.
           nodeOutputs: new Map(),
-          promptVariables: p.runContext.promptVariables,
           manifest,
           sink: itemSink,
-          resolveBlobRef: config.resolveBlobRef,
-          simulate: p.runContext.simulate,
-          fixtures: p.runContext.fixtures,
-          liveReads: p.runContext.liveReads,
-          toolModes: p.runContext.toolModes,
-          freezeTools: p.runContext.freezeTools,
-          agentOverride: p.runContext.agentOverride,
-        },
+          modelBudget: modelBudgetFor(resolveStepTimeoutMs(node)),
+        }),
         // Record each inner node once per item. The recorder is
         // built inside this `iter:` step.do closure (a D1 binding
         // can't cross a step boundary); the whole closure replays

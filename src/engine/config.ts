@@ -289,6 +289,28 @@ export type RunContext = {
 }
 
 /**
+ * The eval/run signals that change what a node DOES. Declared once here and
+ * picked everywhere they travel (the durable params, the node context), so a
+ * new flag reaches every backend or fails typecheck.
+ */
+export type RunFlags = Pick<
+  RunContext,
+  | 'simulate'
+  | 'fixtures'
+  | 'liveReads'
+  | 'toolModes'
+  | 'freezeTools'
+  | 'agentOverride'
+>
+
+/** The {@link RunFlags} of a run context (or anything shaped like one). */
+export function runFlagsOf(args: { runContext: RunFlags }): RunFlags {
+  const { simulate, fixtures, liveReads, toolModes, freezeTools, agentOverride } =
+    args.runContext
+  return { simulate, fixtures, liveReads, toolModes, freezeTools, agentOverride }
+}
+
+/**
  * Node-facing decider factory — resolves a decision `modelId` to a
  * {@link Decider}, with the run context already bound in. The exact shape of
  * {@link ModelFactory}, for the other kind of provider.

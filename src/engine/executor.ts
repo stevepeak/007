@@ -3,13 +3,12 @@ import { errorFeedLine, errorStored } from './error-detail'
 import { resolveAnswerNodeIds } from './graph-engine'
 import { resolveWfLogger } from './logger'
 import type { ModelBudget } from './model-budget'
-import { bindModelFactory } from './model-factory'
 import { emitNodeStartProgress } from './node-progress'
 import { settleOf, type NodeSettlement } from './node-settlement'
 import { failureMustAbort } from './nodes/decision-agent'
 import type { ChildWorkflowRunner } from './nodes/workflow'
 import { endEntryOf, startEntryOf } from './run-log-entries'
-import { errorMessage, runNode } from './run-node'
+import { buildRunNodeContext, errorMessage, runNode } from './run-node'
 import { recordedBranchResult, type RunRecorder } from './run-recorder'
 import {
   Scheduler,
@@ -316,33 +315,12 @@ export async function executeWorkflow<TDeps>(
       const execute = () => {
         return runNode(
           { type: 'execute', node, input },
-          {
-            getModel: bindModelFactory({
-              getModel: config.getModel,
-              runContext,
-            }),
-            // Decision agents only. Bound the same way as `getModel` — the host
-            // sees the run context so it can read a live binding — and left
-            // undefined when the host wired no decision provider, which is what
-            // makes a decision agent cleanly unrunnable rather than half-present.
-            getDecider: config.getDecider
-              ? (modelId) => config.getDecider!(modelId, runContext)
-              : undefined,
-            toolRegistry: config.toolRegistry,
-            referenceKinds: config.referenceKinds ?? [],
+          buildRunNodeContext({
+            config,
+            runContext,
             toolDeps,
             nodeOutputs: scheduler.getOutputs(),
-            promptVariables: runContext.promptVariables,
-            manifest: runContext.manifest,
             sink: nodeSink,
-            resolveBlobRef: config.resolveBlobRef,
-
-            simulate: runContext.simulate,
-            fixtures: runContext.fixtures,
-            liveReads: runContext.liveReads,
-            toolModes: runContext.toolModes,
-            freezeTools: runContext.freezeTools,
-            agentOverride: runContext.agentOverride,
             // Supplied by callers that run unattended — the inline engine derives
             // it from the node's declared timeout, the same number the durable
             // backend gives `step.do`. Absent for evals/tests/the playground,
@@ -354,7 +332,7 @@ export async function executeWorkflow<TDeps>(
             // Threaded through unchanged, so a workflow node nested in an
             // iteration item spawns its callee exactly like a top-level one.
             runChildWorkflow: deps.runChildWorkflow,
-          },
+          }),
         )
       }
       const result = deps.wrapNode
