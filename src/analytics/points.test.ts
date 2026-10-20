@@ -156,6 +156,42 @@ describe('encodeStepPoint', () => {
     expect(point.doubles[8]).toBe(1) // double9 priced
   })
 
+  test('a decision agent step contributes its model, tokens and cost', () => {
+    const prices: ModelPriceMap = new Map([
+      ['venice:llama-3.3-70b', { promptPerMTok: 0.7, completionPerMTok: 2.8 }],
+    ])
+    const point = encodeStepPoint(
+      DIMS,
+      {
+        nodeId: 'node-d',
+        nodeKind: 'agent',
+        status: 'completed',
+        sequence: 1,
+        meta: {
+          modelId: 'venice:llama-3.3-70b',
+          agentId: 'agent-8',
+          questionIds: ['q1'],
+          usage: { inputTokens: 1_000, outputTokens: 250 },
+        },
+      },
+      prices,
+    )
+    const agent = encodeStepPoint(
+      DIMS,
+      {
+        nodeId: 'node-d',
+        nodeKind: 'agent',
+        status: 'completed',
+        sequence: 1,
+        meta: { ...AGENT_META, agentId: 'agent-8', steps: [] },
+      },
+      prices,
+    )
+    // Same model, tokens, agent and cost as the generation step; no turns.
+    expect(point.blobs).toEqual(agent.blobs)
+    expect(point.doubles).toEqual(agent.doubles)
+  })
+
   test('an unpriced model reports priced = 0, not a misleading $0', () => {
     const point = encodeStepPoint(
       DIMS,

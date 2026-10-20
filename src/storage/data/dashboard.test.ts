@@ -282,6 +282,26 @@ describe('loadDashboard', () => {
     expect(d.cost.series[0]?.points.at(-1)).toBeCloseTo(3, 6)
   })
 
+  test('counts a decision agent step, which records modelId + usage', async () => {
+    await addRun(db, 'run-a', { createdAt: new Date(NOW) })
+    await db.insert(wfRunStep).values({
+      runId: 'run-a',
+      nodeId: 'node-decide',
+      nodeKind: 'agent',
+      sequence: 1,
+      status: 'completed',
+      meta: {
+        modelId: PRICED,
+        questionIds: ['q1'],
+        usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+      },
+    })
+
+    const d = await loadDashboard(db, { since: NOW - 3 * DAY }, NOW)
+    expect(d.cost.totalTokens).toBe(2_000_000)
+    expect(d.cost.totalUsd).toBeCloseTo(3, 6)
+  })
+
   test('ignores non-agent steps, which carry no usage', async () => {
     await addRun(db, 'run-a', { createdAt: new Date(NOW) })
     await db.insert(wfRunStep).values({

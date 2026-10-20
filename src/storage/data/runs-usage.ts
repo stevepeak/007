@@ -61,13 +61,13 @@ function agentStepCondition(): SQL {
  * writes the COMPOSITE catalog id to `modelId`. Both resolve, because the price
  * map is keyed by each.
  */
-const modelExpr = sql<
+export const modelExpr = sql<
   string | null
 >`coalesce(json_extract(${wfRunStep.meta}, '$.model'), json_extract(${wfRunStep.meta}, '$.modelId'))`
 
 /** `coalesce` to 0 mirrors `agentUsage`'s `?? 0` for a usage field never written. */
-const inputTokensExpr = sql<number>`sum(coalesce(json_extract(${wfRunStep.meta}, '$.totalUsage.inputTokens'), json_extract(${wfRunStep.meta}, '$.usage.inputTokens'), 0))`
-const outputTokensExpr = sql<number>`sum(coalesce(json_extract(${wfRunStep.meta}, '$.totalUsage.outputTokens'), json_extract(${wfRunStep.meta}, '$.usage.outputTokens'), 0))`
+export const inputTokensExpr = sql<number>`sum(coalesce(json_extract(${wfRunStep.meta}, '$.totalUsage.inputTokens'), json_extract(${wfRunStep.meta}, '$.usage.inputTokens'), 0))`
+export const outputTokensExpr = sql<number>`sum(coalesce(json_extract(${wfRunStep.meta}, '$.totalUsage.outputTokens'), json_extract(${wfRunStep.meta}, '$.usage.outputTokens'), 0))`
 
 /**
  * Summed agent-call wall clock, in MILLISECONDS.

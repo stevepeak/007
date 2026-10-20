@@ -1,4 +1,9 @@
-import { asAgentMeta, tokenCostUsd, type ModelPriceMap } from '../engine/cost'
+import {
+  agentUsage,
+  asAgentMeta,
+  tokenCostUsd,
+  type ModelPriceMap,
+} from '../engine/cost'
 import type { WfNodeKind } from '../engine/graph'
 import type { WfRunStepStatus } from '../engine/run-recorder'
 import type { TelemetryPoint } from '../engine/telemetry'
@@ -150,6 +155,13 @@ function toolIdOf(meta: unknown): string {
   return typeof id === 'string' ? id : ''
 }
 
+/** The `agentId` an agent step records — generation and decision alike. */
+function agentIdOf(meta: unknown): string {
+  if (!meta || typeof meta !== 'object') return ''
+  const id = (meta as { agentId?: unknown }).agentId
+  return typeof id === 'string' ? id : ''
+}
+
 /**
  * The LLM-shaped numbers a step contributes, all zero for a non-agent step.
  * `priced` distinguishes "cost $0" from "this model has no catalog price" —
@@ -182,29 +194,31 @@ function agentDoubles(
     stoppedOnTokenBudget: 0,
     stoppedOnContextLimit: 0,
   }
+  // Model and tokens come from `agentUsage`, which reads both the generation
+  // and the decision shape; turns and tool calls exist only on a generation.
+  const usage = agentUsage(meta)
+  if (!usage) return empty
   const agent = asAgentMeta(meta)
-  if (!agent) return empty
 
-  const inputTokens = agent.totalUsage?.inputTokens ?? 0
-  const outputTokens = agent.totalUsage?.outputTokens ?? 0
+  const { inputTokens, outputTokens } = usage
   const cost = prices
-    ? tokenCostUsd(inputTokens, outputTokens, prices.get(agent.model))
+    ? tokenCostUsd(inputTokens, outputTokens, prices.get(usage.model))
     : null
   return {
-    modelId: agent.model ?? '',
-    agentId: agent.agentId ?? '',
+    modelId: usage.model,
+    agentId: agentIdOf(meta),
     inputTokens,
     outputTokens,
     // Integer micros, so SQL sums stay exact and the API console stays readable.
     costUsdMicros: cost == null ? 0 : Math.round(cost * 1_000_000),
     priced: cost == null ? 0 : 1,
-    turns: agent.steps?.length ?? 0,
-    toolCalls: (agent.steps ?? []).reduce(
+    turns: agent?.steps?.length ?? 0,
+    toolCalls: (agent?.steps ?? []).reduce(
       (n, s) => n + (s.toolCalls?.length ?? 0),
       0,
     ),
-    stoppedOnTokenBudget: agent.stoppedOnTokenBudget ? 1 : 0,
-    stoppedOnContextLimit: agent.stoppedOnContextLimit ? 1 : 0,
+    stoppedOnTokenBudget: agent?.stoppedOnTokenBudget ? 1 : 0,
+    stoppedOnContextLimit: agent?.stoppedOnContextLimit ? 1 : 0,
   }
 }
 

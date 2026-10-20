@@ -23,6 +23,7 @@ import {
 
 import { loadModelPriceMap } from './runs-cost'
 import { listRuns } from './runs-list'
+import { inputTokensExpr, modelExpr, outputTokensExpr } from './runs-usage'
 import { selectChunked } from './shared'
 
 // ---------------------------------------------------------------------------
@@ -571,21 +572,22 @@ export async function loadDashboard(
       .groupBy(wfWorkflowVersion.workflowId, wfWorkflow.name, runBucket)
   }
 
-  // Only agent steps carry usage; the filter through `wf_run` is what keeps
-  // this off a full step-table scan. `json_extract` still has to parse each
+  // Only agent steps carry usage — generation and decision agents both, under
+  // the key names `runs-usage.ts` reads; the filter through `wf_run` is what
+  // keeps this off a full step-table scan. `json_extract` still has to parse each
   // step's whole `meta` blob, tool inputs and outputs included.
   const d1Spend = () => {
     return db
       .select({
         ordinal: runBucket,
-        model: sql<string | null>`json_extract(${wfRunStep.meta}, '$.model')`,
-        inputTokens: sql<number>`sum(coalesce(json_extract(${wfRunStep.meta}, '$.totalUsage.inputTokens'), 0))`,
-        outputTokens: sql<number>`sum(coalesce(json_extract(${wfRunStep.meta}, '$.totalUsage.outputTokens'), 0))`,
+        model: modelExpr,
+        inputTokens: inputTokensExpr,
+        outputTokens: outputTokensExpr,
       })
       .from(wfRunStep)
       .innerJoin(wfRun, eq(wfRunStep.runId, wfRun.id))
       .where(and(eq(wfRunStep.nodeKind, 'agent'), inWindow))
-      .groupBy(runBucket, sql`json_extract(${wfRunStep.meta}, '$.model')`)
+      .groupBy(runBucket, modelExpr)
   }
 
   const [inFlightRows, queueRows, trendRows] = await Promise.all([
