@@ -33,7 +33,7 @@ function toBase64Url(bytes: Uint8Array): string {
 
 // Annotated over `ArrayBuffer` rather than the default `ArrayBufferLike`, which
 // no longer satisfies WebCrypto's `BufferSource`.
-function fromBase64Url(value: string): Uint8Array<ArrayBuffer> {
+export function fromBase64Url(value: string): Uint8Array<ArrayBuffer> {
   const padded = value.replaceAll('-', '+').replaceAll('_', '/')
   const binary = atob(padded.padEnd(Math.ceil(padded.length / 4) * 4, '='))
   const bytes = new Uint8Array(binary.length)

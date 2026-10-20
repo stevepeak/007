@@ -18,6 +18,7 @@ import {
   consumeOauthState,
   createOauthState,
   getConnection,
+  getConnector,
   getConnectorClient,
   saveConnection,
   saveConnectorClient,
@@ -30,7 +31,7 @@ import {
 } from '../storage/data/connectors'
 
 import { McpUnauthorizedError } from './client'
-import { decryptSecret, encryptSecret } from './crypto'
+import { decryptSecret, encryptSecret, fromBase64Url } from './crypto'
 
 // The OAuth half of a connector: discovery, registration, the authorization
 // round trip, and keeping the resulting token alive.
@@ -113,6 +114,19 @@ export async function discoverConnectorAuth(
   }
 }
 
+/** A stored client registration as the SDK's grant helpers take it. */
+async function clientInformation(args: {
+  client: { clientId: string; clientSecret: string | null }
+  secret: string
+}): Promise<{ client_id: string; client_secret: string | undefined }> {
+  return {
+    client_id: args.client.clientId,
+    client_secret: args.client.clientSecret
+      ? await decryptSecret(args.client.clientSecret, args.secret)
+      : undefined,
+  }
+}
+
 /**
  * The OAuth client for a connector, registering one if we don't have it yet.
  *
@@ -134,10 +148,7 @@ async function ensureClient(
     (!existing.issuer || existing.issuer === discovery.authorizationServerUrl)
   ) {
     return {
-      client_id: existing.clientId,
-      client_secret: existing.clientSecret
-        ? await decryptSecret(existing.clientSecret, secret)
-        : undefined,
+      ...(await clientInformation({ client: existing, secret })),
       redirect_uris: [existing.redirectUri],
     }
   }
@@ -225,9 +236,11 @@ export async function beginAuthorization(input: {
     connectorId: connector.id,
     codeVerifier: await encryptSecret(codeVerifier, secret),
     redirectUri,
+    // The same default the SDK's grant helpers use without metadata: `/token`
+    // at the issuer's origin, replacing any path.
     tokenEndpoint:
       discovery.metadata?.token_endpoint ??
-      `${discovery.authorizationServerUrl.replace(/\/$/, '')}/token`,
+      new URL('/token', discovery.authorizationServerUrl).href,
     issuer: discovery.authorizationServerUrl,
     scopes: connector.scopes ?? null,
     returnTo: input.returnTo ?? null,
@@ -253,7 +266,8 @@ function accountLabelFrom(tokens: OAuthTokens): string | null {
   const payload = idToken.split('.')[1]
   if (!payload) return null
   try {
-    const json = atob(payload.replaceAll('-', '+').replaceAll('_', '/'))
+    // UTF-8, not `atob`'s Latin-1: a non-ASCII name must survive.
+    const json = new TextDecoder().decode(fromBase64Url(payload))
     const claims = JSON.parse(json) as {
       email?: string
       name?: string
@@ -299,21 +313,24 @@ export async function completeAuthorization(input: {
     )
   }
 
+  // RFC 8707: the token request names the same resource the authorization
+  // request did, so the token is bound to this server.
+  const connector = await getConnector(db, attempt.connectorId)
+  const resource = connector
+    ? (await discoverConnectorAuth(connector.url)).resource
+    : undefined
+
   let tokens: OAuthTokens
   try {
     tokens = await exchangeAuthorization(attempt.issuer ?? '', {
       metadata: { token_endpoint: attempt.tokenEndpoint } as
         | AuthorizationServerMetadata
         | undefined,
-      clientInformation: {
-        client_id: client.clientId,
-        client_secret: client.clientSecret
-          ? await decryptSecret(client.clientSecret, secret)
-          : undefined,
-      },
+      clientInformation: await clientInformation({ client, secret }),
       authorizationCode: input.code,
       codeVerifier: await decryptSecret(attempt.codeVerifier, secret),
       redirectUri: attempt.redirectUri,
+      resource,
     })
   } catch (err) {
     throw new ConnectorAuthError(
@@ -420,16 +437,23 @@ export async function resolveAccessToken(input: {
     )
   }
 
+  // Discovered again rather than stored: the refresh must hit the same
+  // `token_endpoint` and name the same resource as the exchange did, and
+  // without metadata the SDK falls back to `/token` at the issuer's origin.
+  // Discovery failing leaves exactly that fallback.
+  const discovery = await discoverConnectorAuth(connector.url)
+  const issuer = client.issuer ?? discovery.authorizationServerUrl
+
   let tokens: OAuthTokens
   try {
-    tokens = await refreshAuthorization(client.issuer ?? connector.url, {
-      clientInformation: {
-        client_id: client.clientId,
-        client_secret: client.clientSecret
-          ? await decryptSecret(client.clientSecret, secret)
+    tokens = await refreshAuthorization(issuer, {
+      metadata:
+        discovery.authorizationServerUrl === issuer
+          ? discovery.metadata
           : undefined,
-      },
+      clientInformation: await clientInformation({ client, secret }),
       refreshToken: await decryptSecret(connection.refreshToken, secret),
+      resource: discovery.resource,
     })
   } catch (err) {
     // A concurrent caller may have spent this refresh token first: providers
