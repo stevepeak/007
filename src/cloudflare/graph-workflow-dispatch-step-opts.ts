@@ -16,7 +16,7 @@ import {
 //
 // This is now a BACKSTOP, not the primary bound. An agent node enforces its own
 // budget in-process (see `engine/model-budget.ts`), derived from this value
-// minus `STEP_TIMEOUT_SLACK_MS`, so an overrun surfaces as a catchable, logged
+// minus a slack of at most `STEP_TIMEOUT_SLACK_MS`, so an overrun surfaces as a catchable, logged
 // error instead of the runtime killing the closure from outside — which
 // produced no catch, no log line, and a silent restart from turn 1.
 //

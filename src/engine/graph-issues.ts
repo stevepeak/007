@@ -8,6 +8,7 @@ import {
   type WorkflowNode,
 } from './graph'
 import { nodeRefs } from './graph-bindings'
+import { nodeKindDescriptor } from './graph-kinds'
 import {
   duplicateNodeIdsDeep,
   graphShapeFacts,
@@ -16,6 +17,7 @@ import {
 } from './graph-rules'
 import { analyzeJoinTopology } from './graph-topology'
 import { ancestorIds } from './graph-traverse'
+import { modelBudgetFor } from './model-budget'
 
 // Author-time graph diagnostics. Where `workflowGraphSchema`'s superRefine is
 // the strict *runtime* gate (a failing graph can't run), this collects the same
@@ -286,6 +288,38 @@ function iterationMaxItemsIssue(node: WorkflowNode): GraphIssue | null {
   return null
 }
 
+/**
+ * At or under this, an AI-kind node's declared timeout leaves an agent only a
+ * couple of minutes of model work — tight enough that a slow first turn plus one
+ * tool call can exhaust it.
+ */
+const SHORT_AI_TIMEOUT_MS = 210_000
+
+/**
+ * Flag an agent or container node whose declared `execution.timeoutMs` is short
+ * enough that the in-process budget derived from it is easy to blow through.
+ * The budget is less than the timeout (see `modelBudgetFor`), so the author is
+ * told the number that actually bounds the work. Only a warning: a short
+ * timeout can be deliberate.
+ */
+function shortAiTimeoutIssue(node: WorkflowNode): GraphIssue | null {
+  const timeoutMs = node.execution?.timeoutMs
+  if (
+    timeoutMs === undefined ||
+    timeoutMs > SHORT_AI_TIMEOUT_MS ||
+    nodeKindDescriptor(node.kind)?.timeout !== 'ai'
+  ) {
+    return null
+  }
+  const budgetS = Math.round(modelBudgetFor(timeoutMs).totalMs / 1000)
+  return {
+    nodeId: node.id,
+    nodeLabel: node.label,
+    severity: 'warning',
+    message: `Timeout of ${Math.round(timeoutMs / 1000)}s leaves about ${budgetS}s of model work — the rest is reserved for recording a failure. A slow turn plus a tool call can overrun that, and an overrun is not retried. Consider raising the timeout.`,
+  }
+}
+
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
@@ -374,6 +408,9 @@ function collectLevelIssues(graph: WorkflowGraph): GraphIssue[] {
     // error, because the answer isn't a judgement call (see below).
     const bound = iterationMaxItemsIssue(node)
     if (bound) issues.push(bound)
+
+    const timeout = shortAiTimeoutIssue(node)
+    if (timeout) issues.push(timeout)
 
     // Connectivity. A Note is a portless canvas annotation — it is meant to be
     // unconnected, so it's exempt from both connectivity checks.

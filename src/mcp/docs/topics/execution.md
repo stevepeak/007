@@ -84,7 +84,7 @@ Every node accepts an optional `execution` object. Omitted fields fall back to t
 | Field | Meaning |
 | ----- | ------- |
 | `continueOnError` | If the node still fails after its retries, record the failure and continue with output `null`. Downstream refs resolve to `null` and its edges count as completed. **Ignored on branch and switch**, because a routing decision has no safe default. |
-| `timeoutMs` | Wall-clock budget for ONE attempt. |
+| `timeoutMs` | Wall-clock budget for ONE attempt. On AI kinds the agent's in-process budget is smaller (see [[limits]]); `validate_workflow_graph` warns at 210 s or less. |
 | `background` | Demote out of the answer-critical set (see above). |
 | `retries` | `{ limit, delayMs?, backoff? }`. `limit` is 0–10 retries *after* the first attempt. `backoff` is `constant`, `linear` or `exponential`. |
 

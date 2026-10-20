@@ -30,9 +30,17 @@ describe('modelBudgetFor', () => {
   // Cloudflare's external kill — the silent one — would win again.
   test('a node with a short execution.timeoutMs gets sub-budgets under its total', () => {
     const b = modelBudgetFor(45_000)
-    expect(b.totalMs).toBe(MIN_TOTAL_MS)
+    expect(b.totalMs).toBeLessThan(45_000)
     expect(b.stepMs).toBeLessThanOrEqual(b.totalMs)
     expect(b.toolMs).toBeLessThanOrEqual(b.totalMs)
+  })
+
+  // A flat 3-minute slack turned a declared 3-minute timeout into the 30s
+  // floor; the slack scales down so the author keeps most of what they declared.
+  test('a short timeout keeps most of its time rather than collapsing to the floor', () => {
+    expect(modelBudgetFor(3 * 60_000).totalMs).toBe(135_000)
+    expect(modelBudgetFor(60_000).totalMs).toBe(45_000)
+    expect(modelBudgetFor(10_000).totalMs).toBe(MIN_TOTAL_MS)
   })
 
   test('never returns a zero or negative budget', () => {

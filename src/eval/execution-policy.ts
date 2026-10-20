@@ -6,12 +6,9 @@ import type { NodeExecution } from '../engine/graph'
 // their production graph and not of our harness.
 
 /**
- * `timeoutMs: 7 min` derives (via `modelBudgetFor`, minus
- * `STEP_TIMEOUT_SLACK_MS`) a 4-minute in-process budget — comfortably above a
- * legitimate multi-turn eval cell, and far tighter than the 20-minute AI
- * default it would otherwise inherit. 7 is the practical floor: the slack is 3
- * minutes, so 5 would leave a 2-minute budget with no headroom for a
- * tool-calling sample.
+ * `timeoutMs: 7 min` derives (via `modelBudgetFor`) a ~5-minute in-process
+ * budget — comfortably above a legitimate multi-turn eval cell, and far tighter
+ * than the 20-minute AI default it would otherwise inherit.
  *
  * Timeout only, no `retries`: agent-eval wrappers run on the INLINE engine
  * (`buildAgentWrapperGraph`), which has no `step.do` and therefore no step

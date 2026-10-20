@@ -27,9 +27,8 @@ export const DEFAULT_NODE_TIMEOUT_MS = 60_000
  *
  * Marking a container `'default'` in the registry is not a smaller budget, it is
  * a broken one: the container's timeout is what the item subgraph's model budget
- * derives from, and 60s minus `STEP_TIMEOUT_SLACK_MS` floors at `MIN_TOTAL_MS`,
- * so every agent inside every iteration would silently run under a 30-second cap
- * while its enclosing step was allowed 20 minutes.
+ * derives from, so every agent inside every iteration would silently run under
+ * a 45-second cap while its enclosing step was allowed 20 minutes.
  */
 export function defaultNodeTimeoutMs(kind: string): number {
   return nodeKindDescriptor(kind)?.timeout === 'ai'

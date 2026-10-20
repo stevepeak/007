@@ -14,14 +14,24 @@
 // The budget is DERIVED from the node's resolved step timeout rather than
 // hard-coded, because any node may override that timeout via
 // `execution.timeoutMs`. A node pinned to 60s against a hard-coded 12-minute
-// budget would put us straight back to invisible external kills.
+// budget would put us straight back to invisible external kills. The slack
+// scales down with the timeout for the same reason in reverse: a fixed margin
+// would eat a short timeout whole.
 
 /**
- * Margin between the in-process total budget and the durable step timeout.
- * Wide enough to cover recording the failure and writing the node's feed after
- * the abort fires — that trailing work still happens inside the step.
+ * Ceiling on the margin between the in-process total budget and the durable
+ * step timeout. Wide enough to cover recording the failure and writing the
+ * node's feed after the abort fires — that trailing work still happens inside
+ * the step.
  */
 export const STEP_TIMEOUT_SLACK_MS = 3 * 60_000
+
+/**
+ * The slack is at most this fraction of the step timeout, so a short
+ * `execution.timeoutMs` keeps most of its time. A flat 3-minute slack would
+ * turn a declared 3-minute timeout into the 30s floor.
+ */
+export const STEP_TIMEOUT_SLACK_FRACTION = 1 / 4
 
 /**
  * Ceiling for a single model round-trip. Observed latency is wildly variable —
@@ -76,7 +86,11 @@ export type ModelBudget = {
  * total must not hand out sub-budgets larger than itself.
  */
 export function modelBudgetFor(stepTimeoutMs: number): ModelBudget {
-  const totalMs = Math.max(stepTimeoutMs - STEP_TIMEOUT_SLACK_MS, MIN_TOTAL_MS)
+  const slackMs = Math.min(
+    STEP_TIMEOUT_SLACK_MS,
+    Math.floor(stepTimeoutMs * STEP_TIMEOUT_SLACK_FRACTION),
+  )
+  const totalMs = Math.max(stepTimeoutMs - slackMs, MIN_TOTAL_MS)
   return {
     totalMs,
     stepMs: Math.min(totalMs, MAX_ROUND_TRIP_MS),

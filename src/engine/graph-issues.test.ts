@@ -705,3 +705,34 @@ describe('node id collisions across levels', () => {
     expect(dupeIssues(g)).toEqual([])
   })
 })
+
+describe('short AI node timeout', () => {
+  const withTimeout = (node: WorkflowNode, timeoutMs: number): WorkflowNode => ({
+    ...node,
+    execution: { timeoutMs },
+  })
+  const timeoutIssues = (node: WorkflowNode) => {
+    const g = graph(
+      [trigger, node, output('o', node.id)],
+      [edge('t', node.id), edge(node.id, 'o')],
+    )
+    return collectGraphIssues(g).filter((i) => /of model work/.test(i.message))
+  }
+
+  test('warns on an agent whose timeout leaves a tight budget, naming the budget', () => {
+    const issues = timeoutIssues(withTimeout(agent('a'), 180_000))
+    expect(issues.length).toBe(1)
+    expect(issues[0]?.severity).toBe('warning')
+    expect(issues[0]?.nodeId).toBe('a')
+    expect(issues[0]?.message).toContain('about 135s')
+  })
+
+  test('is silent for a generous timeout or the kind default', () => {
+    expect(timeoutIssues(withTimeout(agent('a'), 300_000))).toEqual([])
+    expect(timeoutIssues(agent('a'))).toEqual([])
+  })
+
+  test('ignores short timeouts on non-AI kinds, whose default is 60s', () => {
+    expect(timeoutIssues(withTimeout(tool('x'), 30_000))).toEqual([])
+  })
+})

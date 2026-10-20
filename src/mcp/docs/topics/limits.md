@@ -17,7 +17,7 @@ Numbers are this build's defaults. A host can raise a few of them (noted), and p
 | provider retries per model call | — | 1 | On top of the first attempt. |
 | one model round trip | — | 8 min | Catches a stalled connection. |
 | one tool call inside an agent | — | 90 s | |
-| in-process budget | — | node timeout − 3 min, min 30 s | Default agent node: 20 min, so about 17 min of work. Hitting it aborts the node and is **not retried**. |
+| in-process budget | — | node timeout − slack, min 30 s | Slack is ¼ of the timeout, capped at 3 min: a 20 min node gets about 17 min of work, a 3 min node about 2¼ min. Hitting it aborts the node and is **not retried**. |
 
 Sub-agent delegation (see [[agents/sub-agents]]):
 
