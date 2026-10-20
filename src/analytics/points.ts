@@ -1,4 +1,5 @@
 import {
+  agentToolCalls,
   agentUsage,
   asAgentMeta,
   tokenCostUsd,
@@ -213,10 +214,7 @@ function agentDoubles(
     costUsdMicros: cost == null ? 0 : Math.round(cost * 1_000_000),
     priced: cost == null ? 0 : 1,
     turns: agent?.steps?.length ?? 0,
-    toolCalls: (agent?.steps ?? []).reduce(
-      (n, s) => n + (s.toolCalls?.length ?? 0),
-      0,
-    ),
+    toolCalls: agentToolCalls({ meta: agent }).length,
     stoppedOnTokenBudget: agent?.stoppedOnTokenBudget ? 1 : 0,
     stoppedOnContextLimit: agent?.stoppedOnContextLimit ? 1 : 0,
   }

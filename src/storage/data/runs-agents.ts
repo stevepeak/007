@@ -1,6 +1,10 @@
 import { and, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm'
 
-import { tokenCostUsd, type ModelPriceMap } from '../../engine/cost'
+import {
+  countAgentToolCalls,
+  tokenCostUsd,
+  type ModelPriceMap,
+} from '../../engine/cost'
 import type { WorkflowGraph } from '../../engine/graph'
 import type { AgentNodeMeta } from '../../engine/nodes/agent'
 import type { WfDb } from '../client'
@@ -145,7 +149,12 @@ async function agentNodeIds(db: WfDb, agentId: string): Promise<string[]> {
   return [...ids]
 }
 
-/** Narrow a step's untyped `meta` to agent meta, or null for a non-agent step. */
+/**
+ * Narrow a step's untyped `meta` to agent meta, or null for a non-agent step.
+ * Only a `steps` array is required — looser than the engine's `asAgentMeta` —
+ * so an agent row recorded without `totalUsage` still lists its turns and tool
+ * calls; its tokens read as 0. A decision step has no `steps` and stays out.
+ */
 function asAgentMeta(meta: unknown): AgentNodeMeta | null {
   if (
     meta &&
@@ -155,22 +164,6 @@ function asAgentMeta(meta: unknown): AgentNodeMeta | null {
     return meta as AgentNodeMeta
   }
   return null
-}
-
-/** Tool ids called across a call's turns, counted and ordered most-called first. */
-function countToolCalls(
-  meta: AgentNodeMeta,
-): { toolId: string; count: number }[] {
-  const counts = new Map<string, number>()
-  for (const step of meta.steps ?? []) {
-    for (const call of step.toolCalls ?? []) {
-      if (!call.toolName) continue
-      counts.set(call.toolName, (counts.get(call.toolName) ?? 0) + 1)
-    }
-  }
-  return [...counts]
-    .map(([toolId, count]) => ({ toolId, count }))
-    .sort((a, b) => b.count - a.count || a.toolId.localeCompare(b.toolId))
 }
 
 /**
@@ -254,7 +247,7 @@ function foldCalls(
     // Null stays null only while NO call was priced: one unpriced model in a
     // fan-out shouldn't blank the whole row's cost.
     if (stepCost != null) costUsd = (costUsd ?? 0) + stepCost
-    for (const { toolId, count } of countToolCalls(meta)) {
+    for (const { toolId, count } of countAgentToolCalls({ meta })) {
       toolCalls.set(toolId, (toolCalls.get(toolId) ?? 0) + count)
     }
     if (meta.stoppedOnTokenBudget === true) stoppedOnTokenBudget = true

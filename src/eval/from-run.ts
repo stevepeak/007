@@ -1,4 +1,5 @@
 import { resolvePath } from '../engine/binding'
+import { agentToolCalls, type AgentToolCall } from '../engine/cost'
 import { defaultEvalTools } from '../engine/eval-schema'
 import type {
   CheckTree,
@@ -100,10 +101,7 @@ export function agentStepsOf(steps: RunDraftStep[]): RunAgentStep[] {
     .filter((s) => s.nodeKind === 'agent')
     .map((s) => {
       const meta = s.meta as AgentNodeMeta | undefined
-      const toolCallCount = (meta?.steps ?? []).reduce(
-        (n, st) => n + (st.toolCalls?.length ?? 0),
-        0,
-      )
+      const toolCallCount = agentToolCalls({ meta }).length
       return {
         cursor: s.cursor,
         nodeId: s.nodeId,
@@ -232,7 +230,7 @@ export function draftSampleFromRun(
 ): RunSampleDraft | { error: string } {
   const meta = args.step.meta as AgentNodeMeta | undefined
   const notes: string[] = []
-  const calls = toolCallsOf(meta)
+  const calls = agentToolCalls({ meta })
 
   if (args.layer === 'synthesis' && args.target.inputKind !== 'conversation') {
     return {
@@ -256,29 +254,10 @@ export function draftSampleFromRun(
   return { input, tools, checks, notes }
 }
 
-type ToolCall = { toolId: string; args: unknown; output: unknown }
-
-/**
- * The agent loop's tool calls, in order.
- *
- * Read the same way {@link grade} reads them (`meta.steps[].toolCalls[]`, keyed
- * on `toolName`), because that is the key a fixture is looked up under at run
- * time — a fixture keyed any other way is silently never used.
- */
-function toolCallsOf(meta: AgentNodeMeta | undefined): ToolCall[] {
-  const calls: ToolCall[] = []
-  for (const st of meta?.steps ?? []) {
-    for (const tc of st.toolCalls ?? []) {
-      calls.push({ toolId: tc.toolName, args: tc.input, output: tc.output })
-    }
-  }
-  return calls
-}
-
 function buildInput(
   args: DraftSampleArgs,
   meta: AgentNodeMeta | undefined,
-  calls: ToolCall[],
+  calls: AgentToolCall[],
   notes: string[],
 ): EvalSampleInput {
   if (args.target.inputKind === 'task') {
@@ -332,7 +311,7 @@ function buildInput(
 
 function buildTools(
   args: DraftSampleArgs,
-  calls: ToolCall[],
+  calls: AgentToolCall[],
   notes: string[],
 ): EvalTools {
   if (args.layer === 'synthesis') {
@@ -382,7 +361,7 @@ function buildTools(
 
 function buildChecks(
   args: DraftSampleArgs,
-  calls: ToolCall[],
+  calls: AgentToolCall[],
   notes: string[],
 ): CheckTree {
   const checks: CheckTree['checks'] = []

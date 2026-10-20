@@ -14,6 +14,11 @@ import {
 } from 'lucide-react'
 import type { ReactNode } from 'react'
 
+import {
+  agentToolCalls,
+  asAgentMeta,
+  countAgentToolCalls,
+} from '../../engine/cost'
 import { firstLine, previewLine } from '../../engine/text'
 import type { AgentNodeMeta, WfRunStepDTO } from '../../server/protocol'
 import { cn } from '../cn'
@@ -382,28 +387,12 @@ function StatCard({
   )
 }
 
-// Tally this step's tool calls by tool. The recorded `toolName` IS the tool's
-// registry id, so it resolves straight against the tool catalog for the icon
-// and the human-readable name (same mapping the agent editor's call list uses).
-function countToolCalls(
-  meta: AgentNodeMeta,
-): { toolId: string; count: number }[] {
-  const counts = new Map<string, number>()
-  for (const s of meta.steps ?? []) {
-    for (const tc of s.toolCalls ?? []) {
-      if (!tc.toolName) continue
-      counts.set(tc.toolName, (counts.get(tc.toolName) ?? 0) + 1)
-    }
-  }
-  return [...counts]
-    .map(([toolId, count]) => ({ toolId, count }))
-    .sort((a, b) => b.count - a.count || a.toolId.localeCompare(b.toolId))
-}
-
 // The tools this step called, each as an icon + name chip with its call count.
+// The recorded `toolName` IS the tool's registry id, so each resolves straight
+// against the tool catalog for the icon and the human-readable name.
 function ToolCallsCard({ meta }: { meta: AgentNodeMeta }) {
   const { data: tools } = useTools()
-  const calls = countToolCalls(meta)
+  const calls = countAgentToolCalls({ meta })
   if (calls.length === 0) return null
   return (
     <div className="flex min-w-0 flex-col justify-center gap-1 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5">
@@ -444,10 +433,7 @@ function AgentMetaBar({
   // One "turn" is one model round-trip in the agent loop; the tool-call total
   // across those turns is what drove the extra ones.
   const turns = meta.steps?.length ?? 0
-  const toolCalls = (meta.steps ?? []).reduce(
-    (n, s) => n + (s.toolCalls?.length ?? 0),
-    0,
-  )
+  const toolCalls = agentToolCalls({ meta }).length
   // The fullest the window got: the largest single turn's input, not the
   // cumulative spend — a 5-turn loop re-sends its whole conversation every
   // turn, so the sum says nothing about how close it came to overflowing.
@@ -693,18 +679,4 @@ function IterationTrace({ meta }: { meta: IterationMeta }) {
       </div>
     </div>
   )
-}
-
-// ── Narrowing helpers for the untyped `meta` JSON column ───────────────────────
-
-function asAgentMeta(meta: unknown): AgentNodeMeta | null {
-  if (
-    meta &&
-    typeof meta === 'object' &&
-    Array.isArray((meta as { steps?: unknown }).steps) &&
-    'totalUsage' in meta
-  ) {
-    return meta as AgentNodeMeta
-  }
-  return null
 }

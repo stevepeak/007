@@ -95,6 +95,49 @@ export function asAgentMeta(meta: unknown): AgentNodeMeta | null {
   return null
 }
 
+/** One tool call from an agent generation's transcript. */
+export type AgentToolCall = { toolId: string; args: unknown; output: unknown }
+
+/**
+ * Every tool call in an agent step's transcript (`meta.steps[].toolCalls[]`), in
+ * order, or [] for any other meta. `toolId` is the recorded `toolName` — the
+ * tool's registry id, and the key an eval fixture is looked up under.
+ *
+ * Reads only `steps`, so it is looser than {@link asAgentMeta}: a tool call needs
+ * no usage, and a row recorded without `totalUsage` still reports its calls.
+ */
+export function agentToolCalls(args: { meta: unknown }): AgentToolCall[] {
+  const steps =
+    args.meta && typeof args.meta === 'object'
+      ? (args.meta as { steps?: unknown }).steps
+      : undefined
+  if (!Array.isArray(steps)) return []
+  const calls: AgentToolCall[] = []
+  for (const st of steps as AgentNodeMeta['steps']) {
+    for (const tc of st.toolCalls ?? []) {
+      calls.push({ toolId: tc.toolName, args: tc.input, output: tc.output })
+    }
+  }
+  return calls
+}
+
+/**
+ * {@link agentToolCalls} tallied by tool id, most-called first. A call with no
+ * tool name has nothing to resolve against the catalog, so it is not counted.
+ */
+export function countAgentToolCalls(args: {
+  meta: unknown
+}): { toolId: string; count: number }[] {
+  const counts = new Map<string, number>()
+  for (const { toolId } of agentToolCalls(args)) {
+    if (!toolId) continue
+    counts.set(toolId, (counts.get(toolId) ?? 0) + 1)
+  }
+  return [...counts]
+    .map(([toolId, count]) => ({ toolId, count }))
+    .sort((a, b) => b.count - a.count || a.toolId.localeCompare(b.toolId))
+}
+
 /**
  * Narrow an untyped step `meta` to a DECISION agent's meta, or null.
  *

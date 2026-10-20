@@ -1,6 +1,7 @@
 import { generateObject, NoObjectGeneratedError, type LanguageModel } from 'ai'
 import { z } from 'zod'
 
+import { agentToolCalls } from '../engine/cost'
 import {
   DEFAULT_DECISION_THRESHOLD,
   resolveVerdicts,
@@ -17,7 +18,6 @@ import {
   type EvalCheck,
   type EvalMatch,
 } from '../engine/eval-schema'
-import type { AgentNodeMeta } from '../engine/nodes/agent'
 import type { ToolNodeMeta } from '../engine/nodes/tool'
 import { strictSchema } from '../engine/strict-schema'
 import { truncate } from '../engine/text'
@@ -41,7 +41,7 @@ export type GradeStep = {
   nodeKind: string
   input?: unknown
   output?: unknown
-  /** Tool nodes: `{ toolId, args }`. Agent nodes: an {@link AgentNodeMeta}. */
+  /** Tool nodes: `{ toolId, args }`. Agent nodes: an `AgentNodeMeta`. */
   meta?: unknown
 }
 
@@ -114,12 +114,7 @@ function collectToolCalls(steps: GradeStep[]): ToolInvocation[] {
       if (m?.toolId)
         calls.push({ toolId: m.toolId, args: m.args, output: s.output })
     } else if (s.nodeKind === 'agent') {
-      const m = s.meta as AgentNodeMeta | undefined
-      for (const st of m?.steps ?? []) {
-        for (const tc of st.toolCalls ?? []) {
-          calls.push({ toolId: tc.toolName, args: tc.input, output: tc.output })
-        }
-      }
+      calls.push(...agentToolCalls({ meta: s.meta }))
     }
   }
   return calls
