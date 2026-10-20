@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import type { WorkflowGraph, WorkflowNode } from '../../engine'
 import { stableEqual } from '../../engine/stable-stringify'
+import { truncate } from '../../engine/text'
 import { useUndoStack, type CoalesceRule } from '../undo/use-undo-stack'
 
 // One entry in the undo/redo change history. The workflow name lives here too
@@ -20,9 +21,7 @@ const MAX_HISTORY = 50
 // A node's display name, quoted and length-capped, for a history message.
 function nodeName(node: WorkflowNode): string {
   const label = node.label.trim()
-  const short =
-    label.length > MAX_NAME_LEN ? `${label.slice(0, MAX_NAME_LEN - 1)}…` : label
-  return `"${short}"`
+  return `"${truncate({ text: label, max: MAX_NAME_LEN })}"`
 }
 
 // Human-friendly node kind (the schema uses a few hyphenated kinds).

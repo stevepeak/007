@@ -7,6 +7,7 @@ import {
   PERIODIC_TRIGGER_KIND,
   SWITCH_DEFAULT_CASE,
 } from '../../engine'
+import { truncate } from '../../engine/text'
 import { agentColor, agentIcon } from '../agent-appearance'
 import { cn } from '../cn'
 import { useAgents, useTools, useTriggerEvents, useWorkflows } from '../hooks'
@@ -198,7 +199,7 @@ export const TransformNodeRenderer = defineNode({
     if (!expression.trim()) return 'No expression yet'
     if (outputShape) return `Emits a ${outputShape}`
     const oneLine = expression.replaceAll(/\s+/g, ' ').trim()
-    return oneLine.length > 48 ? `${oneLine.slice(0, 47)}…` : oneLine
+    return truncate({ text: oneLine, max: 48 })
   },
 })
 
@@ -214,7 +215,7 @@ export const TextNodeRenderer = defineNode({
     const body = data.config.body.trim()
     if (!body) return 'No text yet'
     const oneLine = body.replaceAll(/\s+/g, ' ')
-    return oneLine.length > 56 ? `${oneLine.slice(0, 55)}…` : oneLine
+    return truncate({ text: oneLine, max: 56 })
   },
 })
 

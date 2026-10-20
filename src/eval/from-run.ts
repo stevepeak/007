@@ -8,6 +8,7 @@ import type {
 } from '../engine/eval-schema'
 import type { AgentNode, ArgBinding, WorkflowGraph } from '../engine/graph'
 import type { AgentNodeMeta } from '../engine/nodes/agent'
+import { truncate } from '../engine/text'
 import { allNodes } from '../storage/data/authoring-graph'
 
 // Turning a real run into an eval Sample.
@@ -357,8 +358,7 @@ function buildTools(
     const json = JSON.stringify(c.output ?? {})
     if (json.length > max) {
       truncated.add(c.toolId)
-      fixtures[c.toolId] =
-        `${json.slice(0, max)}… [truncated ${json.length - max} chars]`
+      fixtures[c.toolId] = truncate({ text: json, max, suffix: 'count' })
     } else {
       fixtures[c.toolId] = c.output ?? {}
     }

@@ -2,6 +2,7 @@ import type { JsonSchema } from './agent-output-scan'
 import type { ToolNode, WorkflowGraph } from './graph'
 import type { GraphIssue } from './graph-issues'
 import { allNodes } from './graph-walk'
+import { truncate } from './text'
 
 // Tool-node argument drift. A Tool node stores its args as bindings authored
 // against the tool's input schema AT AUTHORING TIME — and the schema keeps
@@ -82,7 +83,7 @@ function jsonTypeOf(v: unknown): string {
 
 function describe(v: unknown): string {
   const s = JSON.stringify(v)
-  return s.length > 40 ? `${s.slice(0, 37)}…` : s
+  return truncate({ text: s, max: 40 })
 }
 
 /**

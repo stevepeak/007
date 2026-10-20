@@ -11,6 +11,7 @@ import {
 import { useMemo, useState } from 'react'
 
 import type { AgentConfig } from '../../engine'
+import { truncate } from '../../engine/text'
 import type { WfEvalResultDTO, WfEvalSetSummary } from '../../server/protocol'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
@@ -536,7 +537,5 @@ function ResultRowLine({
 const MAX_INLINE_ERROR = 160
 function errorLine(result: WfEvalResultDTO): string {
   const text = (result.error ?? '').trim()
-  return text.length > MAX_INLINE_ERROR
-    ? `${text.slice(0, MAX_INLINE_ERROR)}…`
-    : text
+  return truncate({ text, max: MAX_INLINE_ERROR })
 }

@@ -20,6 +20,7 @@ import {
 import type { AgentNodeMeta } from '../engine/nodes/agent'
 import type { ToolNodeMeta } from '../engine/nodes/tool'
 import { strictSchema } from '../engine/strict-schema'
+import { truncate } from '../engine/text'
 
 // Phase 3 — the pure grading engine. Given a row's `checks` tree and a run's
 // trace (`wf_run_step[]` + `wf_run.output`), produce a verdict:
@@ -195,7 +196,7 @@ function matches(
 
 function preview(value: unknown): string {
   const s = typeof value === 'string' ? value : JSON.stringify(value)
-  return s == null ? 'undefined' : s.length > 120 ? `${s.slice(0, 117)}…` : s
+  return s == null ? 'undefined' : truncate({ text: s, max: 120 })
 }
 
 // ── deterministic checks ────────────────────────────────────────────────────

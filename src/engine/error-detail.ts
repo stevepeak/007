@@ -6,6 +6,7 @@ import {
 } from 'ai'
 
 import { errorMessage, stringifyThrown } from './error-message'
+import { truncate } from './text'
 
 // When an agent/tool node's model call fails, the thrown value is usually an
 // AI SDK `APICallError` whose `.message` is a bare "Bad Request". The one thing
@@ -57,9 +58,7 @@ const MAX_STORED = 16_000
 const MAX_TEXT = 2_000
 
 function cap(s: string, limit = MAX_STORED): string {
-  return s.length > limit
-    ? `${s.slice(0, limit)}…[truncated ${s.length - limit} chars]`
-    : s
+  return truncate({ text: s, max: limit, suffix: 'count' })
 }
 
 /**

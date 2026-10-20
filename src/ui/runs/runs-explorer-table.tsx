@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight, CornerDownRight } from 'lucide-react'
 import { Fragment, useState } from 'react'
 
+import { firstLine } from '../../engine/text'
 import type { WfRunListRow, WfRunSummary } from '../../server/protocol'
 import {
   formatDuration,
@@ -10,7 +11,6 @@ import {
 } from '../cost'
 import { useChildRuns } from '../hooks'
 import { useWfNav } from '../nav'
-import { firstLine } from '../text-preview'
 
 import { RunStatusBadge } from './run-status'
 

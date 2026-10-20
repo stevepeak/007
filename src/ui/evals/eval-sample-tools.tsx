@@ -1,6 +1,7 @@
 import { ChevronDown, Radio, Wrench } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
+import { truncate } from '../../engine/text'
 import type {
   AgentConfig,
   EvalToolMode,
@@ -305,7 +306,7 @@ function ToolRowHint({
 function previewOutput(v: unknown): string {
   try {
     const s = JSON.stringify(v) ?? ''
-    return s.length > 120 ? `${s.slice(0, 117)}…` : s
+    return truncate({ text: s, max: 120 })
   } catch {
     return String(v)
   }

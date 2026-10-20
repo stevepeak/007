@@ -1,3 +1,4 @@
+import { truncate } from '../../engine/text'
 import { isJudgeCheck, type EvalCheck, type EvalMatch } from '../../server/protocol'
 import { toText } from '../to-text'
 
@@ -40,15 +41,14 @@ const MATCH_VERB: Record<EvalMatch, string> = {
 
 /** Render a check's expected value compactly for use inside a name. */
 function formatValue(value: unknown): string {
-  if (typeof value === 'string') return `“${truncate(value, 30)}”`
+  if (typeof value === 'string') {
+    return `“${truncate({ text: value.trim(), max: 30 })}”`
+  }
   if (value == null) return 'nothing'
-  if (typeof value === 'object') return truncate(JSON.stringify(value), 30)
+  if (typeof value === 'object') {
+    return truncate({ text: JSON.stringify(value), max: 30 })
+  }
   return toText(value)
-}
-
-function truncate(text: string, max: number): string {
-  const t = text.trim()
-  return t.length > max ? `${t.slice(0, max)}…` : t
 }
 
 /**
@@ -85,10 +85,15 @@ export function heuristicCheckName(check: EvalCheck): string | null {
       })
       if (check.verdict) {
         return parts.length > 0
-          ? `Verdict ${check.verdict}, with ${truncate(parts.join(', '), 40)}`
+          ? `Verdict ${check.verdict}, with ${truncate({
+              text: parts.join(', ').trim(),
+              max: 40,
+            })}`
           : `Verdict ${check.verdict}`
       }
-      return parts.length > 0 ? `Answers ${truncate(parts.join(', '), 50)}` : null
+      return parts.length > 0
+        ? `Answers ${truncate({ text: parts.join(', ').trim(), max: 50 })}`
+        : null
     }
     // Both judges assert in prose, so `describeCheck` quotes the rubric rather
     // than deriving a sentence from config that isn't there.
@@ -117,7 +122,7 @@ export function describeCheck(check: EvalCheck | undefined): string {
   // through to the bare label "Calibrated judge", showing none of the question
   // it asks while its twin one row up showed the whole rubric.
   if (isJudgeCheck(check) && check.rubric.trim()) {
-    return `“${truncate(check.rubric, 60)}”`
+    return `“${truncate({ text: check.rubric.trim(), max: 60 })}”`
   }
   return CHECK_TYPE_LABELS[check.type]
 }

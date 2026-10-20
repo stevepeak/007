@@ -14,6 +14,7 @@ import {
 import { useState } from 'react'
 
 import type { AgentConfig } from '../../engine'
+import { truncate } from '../../engine/text'
 import type {
   AgentPreviewResult,
   ToolContextField,
@@ -417,7 +418,7 @@ function summarizeInput(input: Record<string, string>): string {
   const values = Object.values(input).filter(Boolean)
   if (values.length === 0) return '(no input)'
   const joined = values.join(' · ').replaceAll(/\s+/g, ' ')
-  return joined.length > 80 ? `${joined.slice(0, 80)}…` : joined
+  return truncate({ text: joined, max: 80 })
 }
 
 // A short boolean-ish answer (what a yes/no classifier emits) — `yes`/`no`/
@@ -653,7 +654,7 @@ function ToolCallLine({
           </summary>
           <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-white px-2 py-1 font-mono text-[10px] text-neutral-600">
             {highlightCode(
-              clipped ? `${output.slice(0, MAX_RESULT_CHARS)}…` : output,
+              truncate({ text: output, max: MAX_RESULT_CHARS }),
               'json',
             )}
           </pre>

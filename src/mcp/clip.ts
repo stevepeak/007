@@ -14,6 +14,8 @@
 // tools are its only callers and `mcp` sits BELOW `server`: it was the one
 // VALUE import that made `mcp → server` more than a type dependency.
 
+import { truncate } from '../engine/text'
+
 /** Past this many JSON characters, a single value is replaced by an excerpt. */
 const DEFAULT_MAX_CHARS = 4000
 
@@ -28,7 +30,12 @@ export function clip(value: unknown, max = DEFAULT_MAX_CHARS): unknown {
   if (value == null) return value
   const json = JSON.stringify(value)
   if (json.length <= max) return value
-  return `${json.slice(0, max)}… [truncated ${json.length - max} chars — ask for a specific node to see more]`
+  return truncate({
+    text: json,
+    max,
+    suffix: 'count',
+    hint: 'ask for a specific node to see more',
+  })
 }
 
 /**

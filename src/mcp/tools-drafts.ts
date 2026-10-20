@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { truncate } from '../engine/text'
 import {
   agentNodeFor,
   agentStepsOf,
@@ -45,7 +46,7 @@ function draftName(agentName: string, input: unknown): string {
   const line = (source ?? '').split('\n').find((l) => l.trim().length > 0)
   if (!line) return `${agentName} sample`
   const trimmed = line.trim()
-  return trimmed.length > 70 ? `${trimmed.slice(0, 69)}…` : trimmed
+  return truncate({ text: trimmed, max: 70 })
 }
 
 /** The customer rating on this run, if it has one. Never fatal. */

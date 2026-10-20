@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import type { ReactNode } from 'react'
 
+import { firstLine, previewLine } from '../../engine/text'
 import type { AgentNodeMeta, WfRunStepDTO } from '../../server/protocol'
 import { cn } from '../cn'
 import { formatDurationMs, formatTokens, formatUsd } from '../cost'
@@ -23,7 +24,6 @@ import { BrandMark, inferModelBrand } from '../evals/shared'
 import { useTools } from '../hooks'
 import { useModels } from '../hooks-models'
 import { formatContext } from '../models-list-shared'
-import { firstLine, previewLine } from '../text-preview'
 import { ToolCallChip } from '../tool-call-chip'
 import { Tooltip } from '../tooltip'
 

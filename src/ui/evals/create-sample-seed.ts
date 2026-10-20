@@ -1,7 +1,7 @@
 import type { AgentNode } from '../../engine'
+import { firstLine, previewText } from '../../engine/text'
 import { recoverTaskVariables } from '../../eval/from-run'
 import type { EvalSampleInput, WfRunStepDTO } from '../../server/protocol'
-import { firstLine, previewText } from '../text-preview'
 
 // ── Given reconstruction ──────────────────────────────────────────────────────
 

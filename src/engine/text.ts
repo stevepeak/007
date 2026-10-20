@@ -1,11 +1,29 @@
-// Best-effort one-line previews of message/response payloads, shared by the run
-// log and the "create sample from run" flow (both used to carry their own copy).
-// Pure string logic — no React, no server deps.
-//
-// The extraction (`previewText`) and the collapse-to-one-line (`firstLine`) are
-// kept separate so callers can compose them differently: the run log wants the
-// combined `previewLine`, while `deriveTitle` collapses its own already-chosen
-// raw string (which may be a prompt variable, not the input) at a shorter width.
+// Pure string helpers for bounded, human-readable previews. Engine-level so
+// every layer (ui, mcp, eval) shares one truncation convention.
+
+/**
+ * Shorten `text` to `max` characters.
+ *
+ * - `'ellipsis'` (default): the result fits within `max`, ending in one `…`;
+ *   trailing whitespace before the `…` is dropped.
+ * - `'count'`: keeps the first `max` characters and says how many were dropped
+ *   (`… [truncated N chars]`, with `hint` appended inside the brackets), so a
+ *   reader can tell a clipped payload from the end of the data.
+ */
+export function truncate(args: {
+  text: string
+  max: number
+  suffix?: 'ellipsis' | 'count'
+  hint?: string
+}): string {
+  const { text, max, suffix = 'ellipsis', hint } = args
+  if (text.length <= max) return text
+  if (suffix === 'count') {
+    const note = hint ? ` — ${hint}` : ''
+    return `${text.slice(0, max)}… [truncated ${text.length - max} chars${note}]`
+  }
+  return `${text.slice(0, max - 1).trimEnd()}…`
+}
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -16,6 +34,9 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
  * WITHOUT truncating. Handles chat triggers (`{messages: [...]}` — the last
  * message's first text part, else its string content), agent output (`{text}`),
  * plain strings, and falls back to a compact JSON glimpse for anything else.
+ *
+ * Kept separate from `firstLine` so a caller can collapse a raw string it chose
+ * itself (e.g. a prompt variable) at its own width.
  */
 export function previewText(value: unknown): string {
   if (value == null) return ''
@@ -38,14 +59,14 @@ export function previewText(value: unknown): string {
   return JSON.stringify(value)
 }
 
-/** First non-empty, trimmed line of `text`, truncated to `max` chars with an ellipsis. */
+/** First non-empty, trimmed line of `text`, truncated to fit within `max` chars. */
 export function firstLine(text: string, max = 100): string {
   const line =
     text
       .split('\n')
       .map((l) => l.trim())
       .find(Boolean) ?? ''
-  return line.length > max ? `${line.slice(0, max)}…` : line
+  return truncate({ text: line, max })
 }
 
 /** `previewText` extraction collapsed to a single truncated line. */

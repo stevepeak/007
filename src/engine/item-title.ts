@@ -1,4 +1,5 @@
 import { resolvePath } from './binding'
+import { truncate } from './text'
 
 // ---------------------------------------------------------------------------
 // Naming one item of a fan-out
@@ -103,9 +104,7 @@ export function iterationItemTitle(
   if (!resolvedAny) return null
   const title = filled.replaceAll(/\s+/g, ' ').trim()
   if (!title) return null
-  return title.length > ITEM_TITLE_MAX_LENGTH
-    ? `${title.slice(0, ITEM_TITLE_MAX_LENGTH - 1).trimEnd()}…`
-    : title
+  return truncate({ text: title, max: ITEM_TITLE_MAX_LENGTH })
 }
 
 /**
