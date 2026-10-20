@@ -1,9 +1,11 @@
 import type { z } from 'zod'
 
+import { nodeRefs } from './graph-bindings'
 import {
   duplicateNodeIdsDeep,
   graphShapeFacts,
   joinViolation,
+  strayBranchEdges,
   switchCoverage,
 } from './graph-rules'
 import {
@@ -67,58 +69,30 @@ function checkGraphShape(g: GraphShape, ctx: GraphCheckCtx): void {
   }
 }
 
-// Ref bindings must point at real nodes. Tool `args`, Workflow/Transform/Text
-// `inputs`, and the Branch/Output/Transform `source` all share the ArgBinding
-// shape. A binary decision
-// (branch) may still leave one arm unconnected — it "fizzles out" at run time —
-// so a missing yes/no edge is deliberately not flagged here. (An Output with no
+// Ref bindings must point at real nodes — every ref slot of every kind, read
+// through the same `nodeRefs` the author-time Issues panel walks, so a dangling
+// ref is rejected here instead of failing mid-run. A binary decision (branch)
+// may still leave one arm unconnected — it "fizzles out" at run time — so a
+// missing yes/no edge is deliberately not flagged here. (An Output with no
 // `source` at all is a distinct, softer author-time concern handled elsewhere.)
 function checkRefBindings(g: GraphShape, ctx: GraphCheckCtx): void {
   const ids = new Set(g.nodes.map((n) => n.id))
   for (const n of g.nodes) {
-    const bindings =
-      n.kind === 'tool'
-        ? n.config.args
-        : n.kind === 'workflow'
-          ? n.config.inputs
-          : n.kind === 'transform' || n.kind === 'text'
-            ? n.config.inputs
-            : null
-    if (bindings) {
-      const label = n.kind === 'tool' ? 'arg' : 'input'
-      const kindLabel =
-        n.kind === 'tool'
-          ? 'Tool'
-          : n.kind === 'workflow'
-            ? 'Workflow'
-            : n.kind === 'text'
-              ? 'Text'
-              : 'Transform'
-      for (const [argName, binding] of Object.entries(bindings)) {
-        if (binding.kind === 'ref' && !ids.has(binding.nodeId)) {
-          ctx.addIssue({
-            code: 'custom',
-            message: `${kindLabel} node ${n.id} ${label} '${argName}' references missing node ${binding.nodeId}.`,
-          })
-        }
-      }
-    }
-    if (n.kind === 'branch' || n.kind === 'output' || n.kind === 'transform') {
-      const src = n.config.source
-      if (src && src.kind === 'ref' && !ids.has(src.nodeId)) {
-        const label =
-          n.kind === 'branch'
-            ? 'Branch'
-            : n.kind === 'output'
-              ? 'Output'
-              : 'Transform'
-        ctx.addIssue({
-          code: 'custom',
-          message: `${label} node ${n.id} source references missing node ${src.nodeId}.`,
-        })
-      }
+    for (const { slot, ref } of nodeRefs(n)) {
+      if (ids.has(ref.nodeId)) continue
+      ctx.addIssue({
+        code: 'custom',
+        message: `${nodeKindLabel(n.kind)} node ${n.id} ${slot} references missing node ${ref.nodeId}.`,
+      })
     }
   }
+}
+
+function nodeKindLabel(kind: string): string {
+  return kind
+    .split('-')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ')
 }
 
 // Switch nodes: unique, non-reserved case keys; an outgoing edge per case; and
@@ -174,17 +148,14 @@ function checkSwitchNodes(g: GraphShape, ctx: GraphCheckCtx): void {
 // answer rather than an error. A CONNECTED-BUT-MISSING arm stays legal: like
 // Switch's absent 'else', an unconnected arm simply fizzles out.
 function checkBranchNodes(g: GraphShape, ctx: GraphCheckCtx): void {
-  const arms = new Set<string>(BRANCH_ARMS)
   for (const n of g.nodes) {
     if (n.kind !== 'branch') continue
     const outs = g.edges.filter((e) => e.source === n.id)
-    for (const e of outs) {
-      if (e.condition == null || !arms.has(e.condition)) {
-        ctx.addIssue({
-          code: 'custom',
-          message: `Branch node ${n.id} edge ${e.id} condition '${e.condition ?? 'null'}' matches no arm (${[...arms].join(', ')}) — an unconditioned edge out of a branch is always live, so it fires on both results.`,
-        })
-      }
+    for (const e of strayBranchEdges({ outgoing: outs })) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Branch node ${n.id} edge ${e.id} condition '${e.condition ?? 'null'}' matches no arm (${BRANCH_ARMS.join(', ')}) — an unconditioned edge out of a branch is always live, so it fires on both results.`,
+      })
     }
   }
 }

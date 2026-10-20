@@ -13,6 +13,7 @@ import {
   duplicateNodeIdsDeep,
   graphShapeFacts,
   joinViolation,
+  strayBranchEdges,
   switchCoverage,
 } from './graph-rules'
 import { analyzeJoinTopology } from './graph-topology'
@@ -486,9 +487,7 @@ function collectLevelIssues(graph: WorkflowGraph): GraphIssue[] {
     // `graph-validation.ts` the edge fired on BOTH results with no error at all
     // — the branch just quietly stopped branching.
     if (node.kind === 'branch') {
-      const stray = out.filter(
-        (e) => e.condition !== 'yes' && e.condition !== 'no',
-      )
+      const stray = strayBranchEdges({ outgoing: out })
       if (stray.length > 0) {
         issues.push({
           ...base,

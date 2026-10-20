@@ -1,4 +1,5 @@
 import {
+  BRANCH_ARMS,
   SWITCH_DEFAULT_CASE,
   type WorkflowEdge,
   type WorkflowGraph,
@@ -90,6 +91,18 @@ export function switchCoverage(
     .map((c) => c.key)
     .filter((k) => !conds.has(k))
   return { missingCases, hasDefault: conds.has(SWITCH_DEFAULT_CASE) }
+}
+
+/**
+ * A Branch's outgoing edges that name neither arm. The scheduler treats a null
+ * condition as always-live, so such an edge fires on both results and the
+ * Branch silently routes nothing. `outgoing` is the branch's own edges.
+ */
+export function strayBranchEdges(args: {
+  outgoing: WorkflowEdge[]
+}): WorkflowEdge[] {
+  const arms = new Set<string | null>(BRANCH_ARMS)
+  return args.outgoing.filter((e) => !arms.has(e.condition))
 }
 
 /**
