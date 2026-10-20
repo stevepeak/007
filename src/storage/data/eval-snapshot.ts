@@ -1,4 +1,5 @@
 import type { EvalRowSnapshot } from '../../engine/eval-schema'
+import { sha256Hex } from '../../engine/sha256'
 import { stableStringify } from '../../engine/stable-stringify'
 
 import type { EvalRowRecord } from './evals'
@@ -69,11 +70,7 @@ export async function hashEvalSnapshot(
   // the key) or unchanged Samples would silently re-classify as "changed" and
   // dedup against already-stored hashes would break. `eval-snapshot.test.ts`
   // locks a known digest to catch any drift.
-  const bytes = new TextEncoder().encode(
-    stableStringify(semantic, { undefinedKeys: 'literal' }),
-  )
-  const digest = await crypto.subtle.digest('SHA-256', bytes)
-  return [...new Uint8Array(digest)]
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
+  return await sha256Hex({
+    text: stableStringify(semantic, { undefinedKeys: 'literal' }),
+  })
 }

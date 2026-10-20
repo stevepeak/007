@@ -42,6 +42,37 @@ describe('synthesizeTargets — naming', () => {
     )
     expect(names).toEqual(['spawn_research', 'spawn_research_2'])
   })
+
+  // A tool name is what the model calls, and saved transcripts name it, so the
+  // slug of a display name is frozen. No accent folding and no length cap.
+  test('pinned slugs', () => {
+    const pinned: [string, string][] = [
+      ['Café', 'spawn_caf'],
+      ['Crème Brûlée!', 'spawn_cr_me_br_l_e'],
+      ['🚀 Launch 🚀', 'spawn_launch'],
+      ['🚀', 'spawn_target'],
+      ['Hello, World!', 'spawn_hello_world'],
+      ['--leading and trailing--', 'spawn_leading_and_trailing'],
+      ['__under__', 'spawn_under'],
+      ['', 'spawn_target'],
+      ['   ', 'spawn_target'],
+      ['123 go', 'spawn_123_go'],
+      ['2fast', 'spawn_2fast'],
+      ['ÀÉÎÕÜ', 'spawn_target'],
+      ['ﬁle ²', 'spawn_le'],
+      ['İstanbul', 'spawn_i_stanbul'],
+      ['Straße', 'spawn_stra_e'],
+      ['MiXeD_Case-Name', 'spawn_mixed_case_name'],
+      ['tab\tnew\nline', 'spawn_tab_new_line'],
+      ['a'.repeat(39) + ' b', `spawn_${'a'.repeat(39)}_b`],
+      ['x'.repeat(62) + '-yz', `spawn_${'x'.repeat(62)}_yz`],
+      ['word '.repeat(20), `spawn_${'word_'.repeat(19)}word`],
+    ]
+    for (const [displayName, toolName] of pinned) {
+      const [info] = synthesizeTargets([agent('a')], () => ({ displayName }))
+      expect(info.toolName).toBe(toolName)
+    }
+  })
 })
 
 describe('spawnInputSchema', () => {

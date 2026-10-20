@@ -7,6 +7,7 @@ import {
   type DecisionModelOption,
   type DecisionRule,
 } from '../../engine'
+import { slugify } from '../../engine/slug'
 import { cn } from '../cn'
 import { Tooltip } from '../tooltip'
 
@@ -41,12 +42,7 @@ const AREA =
 
 /** A stable key from a label: `Needs review` → `needs_review`. */
 export function keyFromLabel(label: string, taken: Set<string>): string {
-  const base =
-    label
-      .toLowerCase()
-      .replaceAll(/[^a-z0-9]+/g, '_')
-      .replaceAll(/^_+|_+$/g, '')
-      .slice(0, 40) || 'option'
+  const base = slugify({ text: label, sep: '_', max: 40, fallback: 'option' })
   if (!taken.has(base)) return base
   for (let i = 2; ; i++) {
     const key = `${base}_${i}`

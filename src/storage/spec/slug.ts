@@ -2,6 +2,8 @@
 // identity of an agent/workflow (see `wfAgent.slug`). These derive one from a
 // display name for backfill, and de-collide within a batch.
 
+import { slugify as slugifyText } from '../../engine/slug'
+
 // Combining diacritical marks, stripped after an NFKD decomposition so "Café"
 // slugs to "cafe". The Unicode property escape avoids an explicit code-point
 // range (and any invisible combining glyphs) in the source.
@@ -14,13 +16,11 @@ const COMBINING_MARKS = /\p{Diacritic}/gu
  * never gets an empty slug to de-collide.
  */
 export function slugify(name: string): string {
-  const base = name
-    .normalize('NFKD')
-    .replaceAll(COMBINING_MARKS, '')
-    .toLowerCase()
-    .replaceAll(/[^a-z0-9]+/gu, '-')
-    .replaceAll(/^-+|-+$/gu, '')
-  return base || 'item'
+  return slugifyText({
+    text: name.normalize('NFKD').replaceAll(COMBINING_MARKS, ''),
+    sep: '-',
+    fallback: 'item',
+  })
 }
 
 /**

@@ -19,6 +19,8 @@
 // `storage/data/connectors.ts` mints ids while `connectors/client.ts` reads the
 // rows back.
 
+import { sha256Hex } from './sha256'
+import { slugify } from './slug'
 import { stableStringify } from './stable-stringify'
 
 /** Namespace every connector tool id carries. */
@@ -40,13 +42,9 @@ export const CONNECTOR_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/
  * always satisfies {@link CONNECTOR_ID_PATTERN}.
  */
 export function slugifyConnectorId(label: string): string {
-  const slug = label
-    .toLowerCase()
-    .replaceAll(/[^a-z0-9]+/g, '-')
-    .replaceAll(/^-+|-+$/g, '')
-    .slice(0, 63)
-    .replace(/-+$/, '')
-  return slug.length > 0 ? slug : 'connector'
+  const slug = slugify({ text: label, sep: '-', max: 63, fallback: 'connector' })
+  // The cut at 63 can land on a dash; it is trimmed.
+  return slug.replace(/-+$/, '')
 }
 
 /** Build the namespaced id an agent or Tool node references. */
@@ -101,12 +99,5 @@ export async function schemaHash(input: {
     input: input.inputSchema ?? null,
     output: input.outputSchema ?? null,
   })
-  const digest = await crypto.subtle.digest(
-    'SHA-256',
-    new TextEncoder().encode(canonical),
-  )
-  return [...new Uint8Array(digest)]
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-    .slice(0, 32)
+  return await sha256Hex({ text: canonical, bytes: 16 })
 }

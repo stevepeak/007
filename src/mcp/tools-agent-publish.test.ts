@@ -92,7 +92,8 @@ describe('publish_agent — the dry run', () => {
     expect(calls.published).toEqual([])
     expect(out.dryRun).toBe(true)
     expect(out.changed).toEqual(['prompt'])
-    expect(out.confirm).toMatch(/^[0-9a-f]{12}$/)
+    // 12 hex chars: the first 6 bytes of a SHA-256 of the reviewed draft.
+    expect(out.confirm).toBe('835bab4afe89')
     expect(out.affected).toEqual(blastRadius)
   })
 

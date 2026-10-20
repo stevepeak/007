@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { sha256Hex } from '../engine/sha256'
 import { stableStringify } from '../engine/stable-stringify'
 
 import { optString, reqString, type WfMcpTool } from './tools'
@@ -52,13 +53,10 @@ async function confirmToken(
   base: number,
   config: unknown,
 ): Promise<string> {
-  const bytes = new TextEncoder().encode(
-    stableStringify({ agentId, base, config }),
-  )
-  const digest = await crypto.subtle.digest('SHA-256', bytes)
-  return [...new Uint8Array(digest).slice(0, 6)]
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
+  return await sha256Hex({
+    text: stableStringify({ agentId, base, config }),
+    bytes: 6,
+  })
 }
 
 export function agentPublishTools(): WfMcpTool[] {

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import type { SubAgentTarget } from '../graph'
+import { slugify } from '../slug'
 
 // Pure synthesis of a delegating agent's tool surface: names, input schemas, and
 // descriptions derived from the whitelist of sub-agents/workflows. Kept free of
@@ -35,20 +36,12 @@ export type TargetDisplay = {
   promptVariables?: string[]
 }
 
-// Lowercase, non-alphanumeric → `_`, collapse repeats, trim — turns a display
-// name into a valid tool-key suffix.
-function slugify(name: string): string {
-  const slug = name
-    .toLowerCase()
-    .replaceAll(/[^a-z0-9]+/g, '_')
-    .replaceAll(/_+/g, '_')
-    .replaceAll(/^_|_$/g, '')
-  return slug || 'target'
-}
-
 // Base tool name: the author override verbatim, else `spawn_<slug(name)>`.
 function baseToolName(target: SubAgentTarget, displayName: string): string {
-  return target.toolName ?? `spawn_${slugify(displayName)}`
+  return (
+    target.toolName ??
+    `spawn_${slugify({ text: displayName, sep: '_', fallback: 'target' })}`
+  )
 }
 
 /**

@@ -88,6 +88,17 @@ describe('schema hashing', () => {
     const b = await schemaHash({ inputSchema: { required: ['b', 'a'] } })
     expect(a).not.toBe(b)
   })
+
+  // The hash is persisted per tool and compared on every refresh, so its exact
+  // output is frozen: 32 hex chars, the first 16 bytes of the SHA-256.
+  test('produces the frozen digest', async () => {
+    expect(
+      await schemaHash({
+        inputSchema: { type: 'object', properties: { q: { type: 'string' } } },
+      }),
+    ).toBe('2734cd6ce3ab8bf7391ddca98fbe963f')
+    expect(await schemaHash({})).toBe('517631925d95632b3a904d30a1b85c38')
+  })
 })
 
 describe('slugifyConnectorId', () => {
@@ -100,6 +111,37 @@ describe('slugifyConnectorId', () => {
   test('always satisfies CONNECTOR_ID_PATTERN', () => {
     for (const label of ['🚀', '---', '', 'x'.repeat(200), 'A'.repeat(62) + '-']) {
       expect(slugifyConnectorId(label)).toMatch(CONNECTOR_ID_PATTERN)
+    }
+  })
+
+  // A connector id is embedded in every saved tool id, so the slug of a given
+  // label is frozen. No accent folding: `Café` loses its `é`.
+  test('pinned output', () => {
+    const pinned: [string, string][] = [
+      ['Café', 'caf'],
+      ['Crème Brûlée!', 'cr-me-br-l-e'],
+      ['🚀 Launch 🚀', 'launch'],
+      ['🚀', 'connector'],
+      ['Hello, World!', 'hello-world'],
+      ['--leading and trailing--', 'leading-and-trailing'],
+      ['__under__', 'under'],
+      ['', 'connector'],
+      ['   ', 'connector'],
+      ['123 go', '123-go'],
+      ['2fast', '2fast'],
+      ['ÀÉÎÕÜ', 'connector'],
+      ['ﬁle ²', 'le'],
+      ['İstanbul', 'i-stanbul'],
+      ['Straße', 'stra-e'],
+      ['MiXeD_Case-Name', 'mixed-case-name'],
+      ['tab\tnew\nline', 'tab-new-line'],
+      ['a'.repeat(39) + ' b', 'a'.repeat(39) + '-b'],
+      // Cut at 63, then the dash the cut left at the end is trimmed.
+      ['x'.repeat(62) + '-yz', 'x'.repeat(62)],
+      ['word '.repeat(20), 'word-'.repeat(12) + 'wor'],
+    ]
+    for (const [label, slug] of pinned) {
+      expect(slugifyConnectorId(label)).toBe(slug)
     }
   })
 })

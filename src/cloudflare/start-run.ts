@@ -4,6 +4,7 @@ import type {
   StartGraphRunInput,
   StartGraphRunResult,
 } from '../engine/run-input'
+import { bytesToHex } from '../engine/sha256'
 import { createWfDb } from '../storage/client'
 import { createRun, getVersionGraph } from '../storage/data'
 
@@ -38,7 +39,7 @@ export type { StartGraphRunInput, StartGraphRunResult }
 function newTraceId(): string {
   const bytes = new Uint8Array(16)
   crypto.getRandomValues(bytes)
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+  return bytesToHex(bytes)
 }
 
 export async function startGraphRun(
