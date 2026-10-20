@@ -46,7 +46,8 @@ import {
   parseGraph,
   recordedUpdate,
   requireExists,
-  toEpoch,
+  scheduleBackgroundSummary,
+  versionSummaryDTO,
   type CreateWfSdkHandlersOptions,
   type HandlerCtx,
   type WfHandlers,
@@ -268,34 +269,28 @@ export function buildWorkflowHandlers<TDeps>(
         note: p.changeNote ?? null,
       })
 
-      // Published before the summary was ready: generate + persist it in the
-      // background so the response returns immediately. Only when the host
-      // wired a scheduler — otherwise the summary stays null until a later
-      // explicit summarizeChanges call. `env` is resolved now, inside the
-      // request scope, so the deferred work doesn't depend on request-bound
-      // context that may be gone once the response is sent.
-      if (!p.aiSummary && opts.waitUntil) {
-        const env = await c.env()
-        opts.waitUntil(
-          (async () => {
-            try {
-              const summary = await computeChangeSummary(opts, {
-                previousGraph,
-                nextGraph: graph,
-                ctx: c.ctx,
-                req: c.req,
-                env,
-              })
-              await setVersionAiSummary(c.db, {
-                versionId: out.versionId,
-                short: summary.short,
-                long: summary.long,
-              })
-            } catch (err) {
-              c.logger.error('[wf] background summary failed', err)
-            }
-          })(),
-        )
+      if (!p.aiSummary) {
+        await scheduleBackgroundSummary({
+          waitUntil: opts.waitUntil,
+          c,
+          failureMessage: '[wf] background summary failed',
+          compute: ({ env }) => {
+            return computeChangeSummary(opts, {
+              previousGraph,
+              nextGraph: graph,
+              ctx: c.ctx,
+              req: c.req,
+              env,
+            })
+          },
+          persist: (summary) => {
+            return setVersionAiSummary(c.db, {
+              versionId: out.versionId,
+              short: summary.short,
+              long: summary.long,
+            })
+          },
+        })
       }
       return out
     },
@@ -356,15 +351,7 @@ export function buildWorkflowHandlers<TDeps>(
       const { workflowId } = c.params
       await requireExists(c.db, workflowId)
       const rows = await listVersions(c.db, workflowId)
-      return rows.map((v) => ({
-        id: v.id,
-        versionNumber: v.versionNumber,
-        changeNote: v.changeNote,
-        aiSummaryShort: v.aiSummaryShort,
-        aiSummaryLong: v.aiSummaryLong,
-        createdAt: v.createdAt.getTime(),
-        publishedAt: toEpoch(v.publishedAt),
-      }))
+      return rows.map((row) => versionSummaryDTO({ row }))
     },
 
     getVersion: async (c) => {

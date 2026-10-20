@@ -15,10 +15,12 @@ import type { WfDb } from '../../storage/client'
 import type { DashboardAnalytics, RecordChangeInput } from '../../storage/data'
 import { agentExists, workflowExists } from '../../storage/data'
 import type {
+  WfChangeSummary,
   WfDataClient,
   WfRunReleaseRef,
   WfRunSummary,
   WfRunTreeTotals,
+  WfVersionSummary,
 } from '../protocol'
 
 import type { WfServerContext } from './handler-options'
@@ -35,6 +37,59 @@ export type {
 
 export function toEpoch(d: Date | null | undefined): number | null {
   return d ? d.getTime() : null
+}
+
+// The wire shape of one published version. Workflows and agents share it
+// (`WfVersionSummary` and `WfAgentVersionSummary` are structurally identical) so
+// one versions menu renders the history of either.
+export function versionSummaryDTO(args: {
+  row: {
+    id: string
+    versionNumber: number
+    changeNote: string | null
+    aiSummaryShort: string | null
+    aiSummaryLong: string | null
+    createdAt: Date
+    publishedAt: Date | null
+  }
+}): WfVersionSummary {
+  const { row } = args
+  return {
+    id: row.id,
+    versionNumber: row.versionNumber,
+    changeNote: row.changeNote,
+    aiSummaryShort: row.aiSummaryShort,
+    aiSummaryLong: row.aiSummaryLong,
+    createdAt: row.createdAt.getTime(),
+    publishedAt: toEpoch(row.publishedAt),
+  }
+}
+
+// Generate and persist a version's change summary after the response is sent,
+// for a version published before its summary was ready. A no-op when the host
+// wired no scheduler: the summary then stays null until an explicit summarize
+// call. `env` is resolved now, inside the request scope, because request-bound
+// context may be gone once the response is sent. A failure is logged, never
+// thrown — the publish it describes has already succeeded.
+export async function scheduleBackgroundSummary(args: {
+  waitUntil: ((promise: Promise<unknown>) => void) | undefined
+  c: Pick<HandlerCtx, 'env' | 'logger'>
+  failureMessage: string
+  compute: (args: { env: unknown }) => Promise<WfChangeSummary>
+  persist: (summary: WfChangeSummary) => Promise<void>
+}): Promise<void> {
+  const { waitUntil, c } = args
+  if (!waitUntil) return
+  const env = await c.env()
+  waitUntil(
+    (async () => {
+      try {
+        await args.persist(await args.compute({ env }))
+      } catch (err) {
+        c.logger.error(args.failureMessage, err)
+      }
+    })(),
+  )
 }
 
 // The wire shape of one run row. Shared by the runs list, the run detail load,

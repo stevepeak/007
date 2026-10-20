@@ -32,6 +32,7 @@ import {
   optString,
   reqString,
   stringRecord,
+  versionHistory,
   type WfMcpTool,
 } from './tools'
 
@@ -476,15 +477,7 @@ export function agentReadTools(): WfMcpTool[] {
           agentId,
           name: detail.agent.name,
           live: detail.agent.latestVersionNumber,
-          versions: [...versions]
-            .sort((a, b) => b.versionNumber - a.versionNumber)
-            .map((v) => ({
-              versionNumber: v.versionNumber,
-              changeNote: v.changeNote,
-              summary: v.aiSummaryShort,
-              details: v.aiSummaryLong,
-              publishedAt: v.publishedAt,
-            })),
+          versions: versionHistory({ versions }),
           note:
             versions.length === 0
               ? 'This agent has never been published, so no workflow can run it yet.'

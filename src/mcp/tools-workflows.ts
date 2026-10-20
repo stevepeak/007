@@ -38,6 +38,7 @@ import {
   notFound,
   optString,
   reqString,
+  versionHistory,
   type WfMcpTool,
   workflowIdArg,
 } from './tools'
@@ -636,16 +637,7 @@ export function workflowReadTools(): WfMcpTool[] {
                 graphDelta({ before: detail.currentVersion?.graph, after: detail.draft.graph }),
               )
             : false,
-          versions: [...versions]
-            .sort((a, b) => b.versionNumber - a.versionNumber)
-            .map((v) => ({
-              versionId: v.id,
-              versionNumber: v.versionNumber,
-              changeNote: v.changeNote,
-              summary: v.aiSummaryShort,
-              details: v.aiSummaryLong,
-              publishedAt: v.publishedAt,
-            })),
+          versions: versionHistory({ versions }),
         }
       },
     },

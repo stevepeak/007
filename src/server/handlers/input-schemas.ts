@@ -65,6 +65,14 @@ const PASSED_THROUGH = z.unknown()
  */
 const AI_SUMMARY = z.object({ short: z.string(), long: z.string() })
 
+/**
+ * The wire shape of a method whose only input is one required id — what a
+ * positional id (`getWorkflow(workflowId)`) is wrapped into on the way out.
+ */
+function idInput<const K extends string>(key: K) {
+  return z.object({ [key]: z.string().min(1) } as { [P in K]: z.ZodString })
+}
+
 export const wfInputSchemas = {
   // ---- models -------------------------------------------------------------
   listModels: NO_INPUT,
@@ -73,7 +81,7 @@ export const wfInputSchemas = {
   listDecisionProviders: NO_INPUT,
   getModelCatalog: NO_INPUT,
   getProviderBudgets: NO_INPUT,
-  refreshModels: z.object({ providerId: z.string().min(1) }),
+  refreshModels: idInput('providerId'),
   setModelEnabled: z.object({ modelId: z.string().min(1), enabled: z.boolean() }),
 
   // ---- tools --------------------------------------------------------------
@@ -95,7 +103,7 @@ export const wfInputSchemas = {
   // ---- MCP connectors -----------------------------------------------------
   getConnectorCapability: NO_INPUT,
   listConnectors: NO_INPUT,
-  getConnector: z.object({ connectorId: z.string().min(1) }),
+  getConnector: idInput('connectorId'),
   saveConnector: z.object({
     id: z.string().optional(),
     label: z.string().min(1),
@@ -108,12 +116,12 @@ export const wfInputSchemas = {
     color: z.string().nullable().optional(),
     note: z.string().nullable().optional(),
   }),
-  deleteConnector: z.object({ connectorId: z.string().min(1) }),
+  deleteConnector: idInput('connectorId'),
   setConnectorEnabled: z.object({
     connectorId: z.string().min(1),
     enabled: z.boolean(),
   }),
-  refreshConnector: z.object({ connectorId: z.string().min(1) }),
+  refreshConnector: idInput('connectorId'),
   setConnectorToolEnabled: z.object({
     toolId: z.string().min(1),
     enabled: z.boolean(),
@@ -127,17 +135,17 @@ export const wfInputSchemas = {
     returnTo: z.string().optional(),
   }),
   saveConnectorToken: z.object({ connectorId: z.string().min(1), token: z.string().min(1) }),
-  disconnectConnector: z.object({ connectorId: z.string().min(1) }),
+  disconnectConnector: idInput('connectorId'),
 
   // ---- triggers -----------------------------------------------------------
   listTriggerEvents: NO_INPUT,
 
   // ---- workflows ----------------------------------------------------------
   listWorkflows: NO_INPUT,
-  getWorkflow: z.object({ workflowId: z.string().min(1) }),
-  discardDraft: z.object({ workflowId: z.string().min(1) }),
-  listVersions: z.object({ workflowId: z.string().min(1) }),
-  getVersion: z.object({ versionId: z.string().min(1) }),
+  getWorkflow: idInput('workflowId'),
+  discardDraft: idInput('workflowId'),
+  listVersions: idInput('workflowId'),
+  getVersion: idInput('versionId'),
   getVersionByNumber: z.object({
     workflowId: z.string().min(1),
     versionNumber: z.number().int(),
@@ -189,7 +197,7 @@ export const wfInputSchemas = {
     limit: z.number().optional(),
     offset: z.number().optional(),
   }),
-  listChildRuns: z.object({ parentRunId: z.string().min(1) }),
+  listChildRuns: idInput('parentRunId'),
   getRun: z.object({
     runId: z.string().min(1),
     // Cache hint only — see `WfClient.getRun`. A stale or unknown id simply
@@ -201,7 +209,7 @@ export const wfInputSchemas = {
     // response for this run.
     settledStepCursor: z.number().int().nonnegative().optional(),
   }),
-  getRunStatus: z.object({ runId: z.string().min(1) }),
+  getRunStatus: idInput('runId'),
   retryRun: z.object({
     runId: z.string().min(1),
     mode: z.enum(['restart', 'resume']).optional(),
@@ -222,18 +230,18 @@ export const wfInputSchemas = {
 
   // ---- agents -------------------------------------------------------------
   listAgents: NO_INPUT,
-  getAgent: z.object({ agentId: z.string().min(1) }),
-  listAgentVersions: z.object({ agentId: z.string().min(1) }),
-  getAgentVersion: z.object({ versionId: z.string().min(1) }),
+  getAgent: idInput('agentId'),
+  listAgentVersions: idInput('agentId'),
+  getAgentVersion: idInput('versionId'),
   getAgentVersionByNumber: z.object({
     agentId: z.string().min(1),
     versionNumber: z.number().int(),
   }),
-  countAgentReferences: z.object({ agentId: z.string().min(1) }),
-  getAgentBlastRadius: z.object({ agentId: z.string().min(1) }),
-  listAgentReferences: z.object({ agentId: z.string().min(1) }),
-  archiveAgent: z.object({ agentId: z.string().min(1) }),
-  discardAgentDraft: z.object({ agentId: z.string().min(1) }),
+  countAgentReferences: idInput('agentId'),
+  getAgentBlastRadius: idInput('agentId'),
+  listAgentReferences: idInput('agentId'),
+  archiveAgent: idInput('agentId'),
+  discardAgentDraft: idInput('agentId'),
   listAgentCalls: z.object({
     agentId: z.string().min(1),
     limit: z.number().optional(),
@@ -286,16 +294,16 @@ export const wfInputSchemas = {
     setId: z.string().min(1),
     includeArchived: z.boolean().optional(),
   }),
-  deleteEvalSet: z.object({ setId: z.string().min(1) }),
-  deleteEvalRow: z.object({ rowId: z.string().min(1) }),
-  restoreEvalRow: z.object({ rowId: z.string().min(1) }),
-  getEvalRun: z.object({ evalRunId: z.string().min(1) }),
+  deleteEvalSet: idInput('setId'),
+  deleteEvalRow: idInput('rowId'),
+  restoreEvalRow: idInput('rowId'),
+  getEvalRun: idInput('evalRunId'),
   getEvalRunDrive: z.object({
     evalRunId: z.string().min(1),
     withPlan: z.boolean().optional(),
   }),
-  finalizeEvalRun: z.object({ evalRunId: z.string().min(1) }),
-  cancelEvalRun: z.object({ evalRunId: z.string().min(1) }),
+  finalizeEvalRun: idInput('evalRunId'),
+  cancelEvalRun: idInput('evalRunId'),
   listEvalSets: z.object({ includeArchived: z.boolean().optional() }),
   listChanges: z.object({
     entityKind: z.enum(WF_CHANGE_ENTITY_KINDS).optional(),

@@ -6,6 +6,7 @@ import type {
   WfDataClient,
   WfRunDetail,
   WfRunSummary,
+  WfVersionSummary,
 } from '../server/protocol'
 
 import { clip, clipTail } from './clip'
@@ -83,6 +84,26 @@ export function noSuchVersion(args: {
   return {
     error: `${args.what} has no published version ${args.wanted}. Published versions are ${numbers || '(none yet)'}.`,
   }
+}
+
+/**
+ * A published-version history, newest first, as both version-list tools show
+ * it. `WfAgentVersionSummary` is structurally `WfVersionSummary`, so either
+ * entity's list fits.
+ */
+export function versionHistory(args: {
+  versions: readonly WfVersionSummary[]
+}) {
+  return [...args.versions]
+    .sort((a, b) => b.versionNumber - a.versionNumber)
+    .map((v) => ({
+      versionId: v.id,
+      versionNumber: v.versionNumber,
+      changeNote: v.changeNote,
+      summary: v.aiSummaryShort,
+      details: v.aiSummaryLong,
+      publishedAt: v.publishedAt,
+    }))
 }
 
 /** `agentId` as every agent tool declares it — one wording the model learns once. */

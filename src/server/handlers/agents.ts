@@ -60,7 +60,8 @@ import {
   recordedUpdate,
   requireAgentExists,
   requireHook,
-  toEpoch,
+  scheduleBackgroundSummary,
+  versionSummaryDTO,
   type CreateWfSdkHandlersOptions,
   type HandlerCtx,
   type WfHandlers,
@@ -378,34 +379,28 @@ export function buildAgentHandlers<TDeps>(
         note: p.changeNote ?? null,
       })
 
-      // Published before the summary was ready: generate + persist it in the
-      // background so the response returns immediately. Only when the host
-      // wired a scheduler — otherwise the summary stays null until a later
-      // explicit summarizeAgentChanges call. `env` is resolved now, inside the
-      // request scope, so the deferred work doesn't depend on request-bound
-      // context that may be gone once the response is sent.
-      if (!p.aiSummary && opts.waitUntil && kind === 'generation') {
-        const env = await c.env()
-        opts.waitUntil(
-          (async () => {
-            try {
-              const summary = await computeAgentChangeSummary(opts, {
-                previousConfig,
-                nextConfig: config as AgentConfig,
-                ctx: c.ctx,
-                req: c.req,
-                env,
-              })
-              await setAgentVersionAiSummary(c.db, {
-                versionId: out.versionId,
-                short: summary.short,
-                long: summary.long,
-              })
-            } catch (err) {
-              c.logger.error('[wf] background agent summary failed', err)
-            }
-          })(),
-        )
+      if (!p.aiSummary && kind === 'generation') {
+        await scheduleBackgroundSummary({
+          waitUntil: opts.waitUntil,
+          c,
+          failureMessage: '[wf] background agent summary failed',
+          compute: ({ env }) => {
+            return computeAgentChangeSummary(opts, {
+              previousConfig,
+              nextConfig: config as AgentConfig,
+              ctx: c.ctx,
+              req: c.req,
+              env,
+            })
+          },
+          persist: (summary) => {
+            return setAgentVersionAiSummary(c.db, {
+              versionId: out.versionId,
+              short: summary.short,
+              long: summary.long,
+            })
+          },
+        })
       }
       return out
     },
@@ -459,15 +454,7 @@ export function buildAgentHandlers<TDeps>(
       const { agentId } = c.params
       await requireAgentExists(c.db, agentId)
       const rows = await listAgentVersions(c.db, agentId)
-      return rows.map((v) => ({
-        id: v.id,
-        versionNumber: v.versionNumber,
-        changeNote: v.changeNote,
-        aiSummaryShort: v.aiSummaryShort,
-        aiSummaryLong: v.aiSummaryLong,
-        createdAt: v.createdAt.getTime(),
-        publishedAt: toEpoch(v.publishedAt),
-      }))
+      return rows.map((row) => versionSummaryDTO({ row }))
     },
 
     updateAgentMeta: async (c) => {
