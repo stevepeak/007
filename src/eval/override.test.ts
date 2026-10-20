@@ -2,7 +2,7 @@ import { MockLanguageModelV3 } from 'ai/test'
 import { describe, expect, test } from 'bun:test'
 import { z } from 'zod'
 
-import { agentConfigSchema, type WfSdkConfig } from '../engine'
+import { agentConfigSchema, type RunContext, type WfSdkConfig } from '../engine'
 import { makeAgentConfig } from '../engine/agent-test-helpers'
 import { mockFinish, mockUsage } from '../engine/model-test-helpers'
 import type { AgentNodeMeta } from '../engine/nodes/agent'
@@ -119,6 +119,35 @@ describe('agent override — matrix eval seam', () => {
     const meta = agentStep?.meta as AgentNodeMeta
     expect(meta.model).toBe('override-model')
     expect(meta.systemPrompt).toBe('Overridden prompt.')
+  })
+
+  // The harness passes the caller's RunContext through whole, so a field the
+  // host reads at run time is not silently dropped on the way in.
+  test('the whole runContext reaches the host', async () => {
+    const seen: RunContext[] = []
+    const config = makeConfig([])
+    const getModel = config.getModel
+    await runWorkflowUnderConditions({
+      name: 'context',
+      graph,
+      triggerInput,
+      config: {
+        ...config,
+        getModel: (modelId, rc) => {
+          seen.push(rc)
+          return getModel(modelId, rc)
+        },
+      },
+      manifest,
+      runContext: { actorId: 'u1', hostContext: { org: 'o1' }, isEval: true },
+    })
+
+    expect(seen[0]).toMatchObject({
+      actorId: 'u1',
+      hostContext: { org: 'o1' },
+      isEval: true,
+      triggerKind: 'chat',
+    })
   })
 
   test('no override falls through to the agent’s saved model + prompt', async () => {

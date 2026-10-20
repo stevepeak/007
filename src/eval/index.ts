@@ -131,7 +131,7 @@ export type WorkflowTestCase<TDeps> = {
   triggerInput: unknown
   /** Host config — point `getModel`/`toolRegistry` at mocks for deterministic runs. */
   config: WfSdkConfig<TDeps>
-  /** Partial run context; subject/correlation default to eval placeholders. */
+  /** Partial run context, passed through whole; `triggerKind` comes from the graph. */
   runContext?: Partial<Omit<RunContext, 'triggerKind'>>
   /** Frozen run manifest — resolves agent nodes' `agentId` to their config. */
   manifest?: WfRunManifestEntry[]
@@ -157,18 +157,12 @@ export async function runWorkflowUnderConditions<TDeps>(
   const recorder = createMemoryRunRecorder()
   const sink: StreamSink & { logs: RunLogEntry[] } = createMemorySink()
 
+  // Spread, not copied field by field: a RunContext field added later must
+  // reach the run here too, or this entry point stops testing what runs.
   const runContext: RunContext = {
-    subjectId: tc.runContext?.subjectId,
-    correlationId: tc.runContext?.correlationId,
+    ...tc.runContext,
     triggerKind: triggerKindOf(tc.graph),
-    promptVariables: tc.runContext?.promptVariables,
     manifest: tc.manifest ?? tc.runContext?.manifest,
-    simulate: tc.runContext?.simulate,
-    fixtures: tc.runContext?.fixtures,
-    liveReads: tc.runContext?.liveReads,
-    freezeTools: tc.runContext?.freezeTools,
-    agentOverride: tc.runContext?.agentOverride,
-    env: tc.runContext?.env,
   }
 
   const result = await executeWorkflow({
