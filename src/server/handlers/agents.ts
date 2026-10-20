@@ -1,5 +1,7 @@
+import { loadConnectorCatalog } from '../../connectors/registry'
 import { changedEntityMetaFields, changedFields } from '../../engine'
 import { toAgentKind, type WfAgentKind } from '../../engine/agent-kind'
+import { isConnectorToolId } from '../../engine/connector-tool-id'
 import { runDecisionAgent } from '../../engine/decision-agent'
 import {
   decisionAgentConfigIssues,
@@ -573,8 +575,14 @@ export function buildAgentHandlers<TDeps>(
         'The tool playground is not configured on this host.',
       )
       const { toolId, args } = c.params
-      // Guard against calling an unregistered tool before we build real deps.
-      if (!opts.config.toolRegistry.has(toolId)) {
+      // Guard against calling an unknown tool before we build real deps. Known
+      // means what `listTools` advertises: host tools plus enabled connector
+      // tools, which the host's `executeToolPreview` resolves.
+      const known =
+        opts.config.toolRegistry.has(toolId) ||
+        (isConnectorToolId(toolId) &&
+          (await loadConnectorCatalog(c.db)).some((e) => e.id === toolId))
+      if (!known) {
         throw new Error(`Tool '${toolId}' is not registered.`)
       }
       return await runToolPreview({
