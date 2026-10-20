@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 
+import { errorMessage } from '../engine/error-message'
 import type { WfDataClient } from '../server/protocol'
 
 import { allTools, selectTools } from './catalog'
@@ -74,7 +75,7 @@ export function createWfMcpServer(opts: CreateWfMcpServerOptions): McpServer {
           // reason and can act on it. The overwhelmingly common failure is an
           // auth or connectivity one, which is not about the arguments at all
           // and needs to be legible as such.
-          const message = err instanceof Error ? err.message : String(err)
+          const message = errorMessage(err)
           return {
             isError: true,
             content: [

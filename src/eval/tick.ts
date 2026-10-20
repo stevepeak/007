@@ -1,3 +1,4 @@
+import { errorFeedLine } from '../engine/error-detail'
 import { consoleWfLogger, type WfLogger } from '../engine/logger'
 import type { WfDataClient } from '../server/protocol'
 
@@ -156,7 +157,7 @@ export async function tickEvalRun(
           // The judge blew up, not the target. Still a cell with no verdict.
           await record(
             entry.cell,
-            err instanceof Error ? err.message : String(err),
+            errorFeedLine(err),
             entry.wfRunId,
           )
         }
@@ -239,7 +240,7 @@ export async function tickEvalRun(
           // a failed run: three in a row and the rest are recorded, not called.
           consecutiveErrors += 1
           if (consecutiveErrors >= MAX_CONSECUTIVE_CELL_ERRORS) providerDown = true
-          await record(cell, err instanceof Error ? err.message : String(err))
+          await record(cell, errorFeedLine(err))
           // Stop calling a provider that has just been declared down. The run
           // path cannot do this — its failures arrive on a LATER tick, long
           // after the loop that started them — but a decision cell fails
@@ -264,7 +265,7 @@ export async function tickEvalRun(
       } catch (err) {
         // `startEvalRun` threw — a bad target, a missing row, the host hook
         // unwired. The cell gets its row and the sweep carries on.
-        await record(cell, err instanceof Error ? err.message : String(err))
+        await record(cell, errorFeedLine(err))
       }
     }
   }

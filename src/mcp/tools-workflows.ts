@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { errorMessage } from '../engine/error-message'
 import {
   argBindingSchema,
   informUserSchema,
@@ -949,7 +950,7 @@ export function workflowWriteTools(): WfMcpTool[] {
             applied.push(applyPatchOp(graph, op))
           } catch (err) {
             return {
-              error: `ops[${i}] failed: ${err instanceof Error ? err.message : String(err)} Nothing was written.`,
+              error: `ops[${i}] failed: ${errorMessage(err)} Nothing was written.`,
               applied,
             }
           }

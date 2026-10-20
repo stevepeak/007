@@ -1,13 +1,14 @@
 import { z } from 'zod'
 
 import { agentModelRequirements } from '../engine/agent-config-schema'
+import { errorMessage } from '../engine/error-message'
 import type { CheckResult, EvalCheck } from '../engine/eval-schema'
 import {
   mergeModelRequirements,
   unmetRequirementsReason,
 } from '../engine/model-capabilities'
-import { agentCallTotals, buildMatrixSummary, isMatrixRun } from '../eval/report'
 import { resolveEvalCellMode } from '../eval/plan'
+import { agentCallTotals, buildMatrixSummary, isMatrixRun } from '../eval/report'
 import {
   createEvalSweep,
   DEFAULT_EVAL_CONCURRENCY,
@@ -936,7 +937,7 @@ export function evalRunWriteTools(): WfMcpTool[] {
           // condition and worth saying plainly rather than surfacing as a stack.
           return {
             evalRunId,
-            error: err instanceof Error ? err.message : String(err),
+            error: errorMessage(err),
           }
         }
         const after = await client.getEvalRun(evalRunId)

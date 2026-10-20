@@ -5,6 +5,8 @@ import {
   RetryError,
 } from 'ai'
 
+import { errorMessage, stringifyThrown } from './error-message'
+
 // When an agent/tool node's model call fails, the thrown value is usually an
 // AI SDK `APICallError` whose `.message` is a bare "Bad Request". The one thing
 // we actually need to debug it — the provider's response body, the status code,
@@ -150,7 +152,7 @@ export function errorFeedLine(err: unknown): string {
     const finish = d.finishReason ? ` (finish: ${d.finishReason})` : ''
     return `${d.name}: ${d.message}${status}${finish}${tries}`
   }
-  return err instanceof Error ? err.message : String(err)
+  return errorMessage(err)
 }
 
 /**
@@ -162,19 +164,7 @@ export function errorStored(err: unknown): string {
   const d = apiErrorDetail(err)
   if (d) return cap(JSON.stringify(d, null, 2))
   if (err instanceof Error) return cap(err.stack ?? err.message)
-  return cap(String(err))
-}
-
-/** Readable text for a thrown value that isn't an Error (JS permits any). */
-function stringifyThrown(value: unknown): string {
-  if (typeof value === 'string') return value
-  if (value == null || typeof value !== 'object') return String(value)
-  try {
-    // A circular object throws here; a function or symbol returns undefined.
-    return JSON.stringify(value) ?? Object.prototype.toString.call(value)
-  } catch {
-    return Object.prototype.toString.call(value)
-  }
+  return cap(stringifyThrown(err))
 }
 
 /**

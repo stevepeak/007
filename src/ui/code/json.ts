@@ -1,3 +1,4 @@
+import { errorMessage } from '../../engine/error-message'
 // Parsing and formatting for the JSON an author types by hand — the half of a
 // JSON field that isn't rendering. Kept apart from `CodeEditor` so the rules are
 // testable without a DOM.
@@ -21,7 +22,7 @@ export function parseJson(text: string): JsonParse {
 }
 
 function describeJsonError(err: unknown, text: string): string {
-  const raw = err instanceof Error ? err.message : String(err)
+  const raw = errorMessage(err)
   const at = /position (\d+)/i.exec(raw)
   // Each engine phrases (and decorates) this differently: V8 appends the byte
   // offset, JSC and SpiderMonkey prefix the thrower's name, SpiderMonkey also

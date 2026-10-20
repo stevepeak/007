@@ -1,3 +1,4 @@
+import { errorMessage } from '../error-message'
 import type { SubAgentTarget } from '../graph'
 
 // The in-memory registry behind a delegating agent's `spawn_*` / `await_subagents`
@@ -170,7 +171,7 @@ export class SpawnManager {
       handle.result = result
     } catch (err) {
       handle.status = 'failed'
-      handle.error = err instanceof Error ? err.message : String(err)
+      handle.error = errorMessage(err)
     } finally {
       this.semaphore.release()
       // Wake any parked join to re-evaluate.

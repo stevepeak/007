@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 
 import { agentInputVariables, type AgentConfig } from '../../engine'
+import { errorMessage } from '../../engine/error-message'
 import type {
   AgentPreviewMessage,
   AgentPreviewResult,
@@ -226,7 +227,7 @@ export function usePlaygroundRuns(config: AgentConfig) {
                 ? {
                     ...r,
                     status: 'error',
-                    error: err instanceof Error ? err.message : String(err),
+                    error: errorMessage(err),
                   }
                 : r
             })

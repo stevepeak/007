@@ -1,6 +1,7 @@
 import { NonRetryableError } from 'cloudflare:workflows'
 
 import { errorFeedLine, errorStored } from '../engine/error-detail'
+import { errorMessage } from '../engine/error-message'
 import { emitNodeStartProgress } from '../engine/node-progress'
 import { failureMustAbort } from '../engine/nodes/decision-agent'
 import { recordedBranchResult } from '../engine/run-recorder'
@@ -220,7 +221,7 @@ export async function deliverOutput<TDeps, E extends GraphWorkflowEnv>(
       // caller's catch record it, exactly as it did when this check ran in the
       // orchestrator body.
       throw new NonRetryableError(
-        err instanceof Error ? err.message : String(err),
+        errorMessage(err),
       )
     }
   }

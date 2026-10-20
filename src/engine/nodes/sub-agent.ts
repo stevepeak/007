@@ -1,5 +1,6 @@
 import { tool, type Tool } from 'ai'
 
+import { errorStored } from '../error-detail'
 import {
   agentFromManifest,
   inferPromptVariables,
@@ -8,7 +9,7 @@ import {
   substitutePromptVariables,
   workflowFromManifest,
 } from '../graph'
-import { errorMessage, type RunNodeContext } from '../run-node'
+import type { RunNodeContext } from '../run-node'
 import { buildAgentToolSet } from '../tool-registry'
 
 import { coerceToMessages, runAgentGeneration } from './agent'
@@ -301,7 +302,7 @@ function makeRunSubAgent<TDeps>(
             sequence: 0,
             input,
             status: 'failed',
-            error: errorMessage(err),
+            error: errorStored(err),
           })
           .catch(() => {})
       }

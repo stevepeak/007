@@ -9,6 +9,7 @@ import {
   withConnectorTools,
 } from '../connectors/registry'
 import type { WfSdkConfig } from '../engine/config'
+import { errorFeedLine } from '../engine/error-detail'
 import {
   workflowGraphSchema,
   type AgentOverride,
@@ -647,7 +648,10 @@ export function makeGraphWorkflow<
           scheduler.report(settled.nodeId, settled.report)
         }
       } catch (err) {
-        const message = errorMessage(err)
+        // `errorFeedLine`, as the inline engine records it: a failed model call's
+        // bare `.message` is "Bad Request", and this is the run-level error the
+        // chat surface and the run header both read.
+        const message = errorFeedLine(err)
         // Whatever the outcome, nothing may still be running when we settle or
         // fail the run — an in-flight `step.do` cannot be cancelled, so the only
         // option is to let it land.

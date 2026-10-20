@@ -4,6 +4,7 @@ import type {
   ModelProviderStatus,
   ProviderBudget,
 } from '../../engine/config'
+import { errorMessage } from '../../engine/error-message'
 import { describeTriggerEvents } from '../../engine/trigger-registry'
 import {
   getModelCatalog,
@@ -252,7 +253,7 @@ export function buildModelHandlers<TDeps>(
             return {
               ...unsupported,
               status: 'error',
-              message: err instanceof Error ? err.message : String(err),
+              message: errorMessage(err),
             }
           }
         }),

@@ -7,6 +7,7 @@ import {
   verdictReasoning,
   type DecisionAgentConfig,
 } from '../../engine'
+import { errorMessage } from '../../engine/error-message'
 import type { DecisionPreviewResult } from '../../server/protocol'
 import { cn } from '../cn'
 import { useWfClient, useWfComponents } from '../context'
@@ -51,7 +52,7 @@ export function DecisionPlaygroundPanel({
       )
     } catch (e: unknown) {
       setResult(null)
-      setError(e instanceof Error ? e.message : String(e))
+      setError(errorMessage(e))
     } finally {
       setRunning(false)
     }

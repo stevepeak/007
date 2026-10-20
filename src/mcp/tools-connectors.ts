@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { errorMessage } from '../engine/error-message'
 import type {
   ConnectorSummary,
   ConnectorToolInfo,
@@ -442,7 +443,7 @@ export function connectorWriteTools(): WfMcpTool[] {
           // is to fix the args, so it is an answer, not a transport failure.
           return {
             toolId,
-            error: err instanceof Error ? err.message : String(err),
+            error: errorMessage(err),
           }
         }
       },

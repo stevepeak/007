@@ -2,6 +2,7 @@ import type { BrowserWorker } from '@cloudflare/puppeteer'
 import { z } from 'zod'
 
 import type { WfBlobRef } from '../engine/blob-ref'
+import { errorMessage } from '../engine/error-message'
 import type { ToolRegistryEntry } from '../engine/tool-registry'
 
 import { spillTextIfLarge } from './blob-spill'
@@ -324,7 +325,7 @@ export function createExtractTextTool<TDeps>(
               mode: 'markdown',
               meta: {
                 ocr: false,
-                notes: `OCR failed: ${err instanceof Error ? err.message : String(err)}`,
+                notes: `OCR failed: ${errorMessage(err)}`,
               },
             })
           }

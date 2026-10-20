@@ -1,3 +1,4 @@
+import { errorMessage } from './error-message'
 // Blob-ref convention — the SDK's answer to "a node produced a value too big to
 // pass between steps." A node can return a **pointer** to externally-stored bytes
 // instead of the bytes themselves; a downstream node rehydrates the pointer to
@@ -99,7 +100,7 @@ export async function rehydrateBlobRefs(
     } catch (err) {
       throw new Error(
         `rehydrateBlobRefs: blob ${value.key} is tagged ${WF_BLOB_JSON_CONTENT_TYPE} but did not parse: ${
-          err instanceof Error ? err.message : String(err)
+          errorMessage(err)
         }`,
       )
     }

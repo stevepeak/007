@@ -1,4 +1,5 @@
 import { describeNode, resolveBinding } from '../binding'
+import { errorStored } from '../error-detail'
 import {
   ITERATION_MAX_ITEMS_FALLBACK,
   workflowGraphSchema,
@@ -212,7 +213,9 @@ export async function executeSubgraph<TDeps>(
           nodeKind: node.kind,
           input,
           status: 'failed',
-          error: errorMessage(err),
+          // The stored form, as a top-level step row records it: the provider
+          // status and body survive into the row a reader drills into.
+          error: errorStored(err),
           startedAt,
           finishedAt: new Date(),
         })
