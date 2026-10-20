@@ -2,6 +2,7 @@ import { AlertTriangle } from 'lucide-react'
 
 import type { ToolContextField, ToolOption } from '../../server/protocol'
 import { cn } from '../cn'
+import { Switch } from '../switch'
 import { ToolAvatar } from '../tool-appearance'
 import { Tooltip } from '../tooltip'
 
@@ -96,11 +97,11 @@ export function ToolModeList({
               >
                 {isLive ? 'Live' : 'Simulated'}
               </span>
-              <ModeSwitch
-                live={isLive}
-                risky={isRiskyLive(t)}
+              <Switch
+                checked={isLive}
+                tone={isRiskyLive(t) ? 'risk' : 'ok'}
                 disabled={disabled}
-                label={t.name}
+                ariaLabel={`Run ${t.name} ${isLive ? 'live' : 'simulated'}`}
                 onChange={(next) => onToggle(t.id, next)}
               />
             </li>
@@ -196,43 +197,5 @@ function CapabilityBadge({ tool }: { tool: ToolOption }) {
         Unclassified · assumed unsafe
       </span>
     </Tooltip>
-  )
-}
-
-/** Off = simulated, on = live. Red when on for a tool that can change data. */
-function ModeSwitch({
-  live,
-  risky,
-  disabled,
-  label,
-  onChange,
-}: {
-  live: boolean
-  risky: boolean
-  disabled?: boolean
-  label: string
-  onChange: (live: boolean) => void
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={live}
-      aria-label={`Run ${label} ${live ? 'live' : 'simulated'}`}
-      disabled={disabled}
-      onClick={() => onChange(!live)}
-      className={cn(
-        'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
-        live ? (risky ? 'bg-rose-500' : 'bg-emerald-500') : 'bg-neutral-200',
-        disabled && 'cursor-not-allowed opacity-60',
-      )}
-    >
-      <span
-        className={cn(
-          'inline-block size-4 transform rounded-full bg-white shadow transition-transform',
-          live ? 'translate-x-4' : 'translate-x-0.5',
-        )}
-      />
-    </button>
   )
 }

@@ -1,4 +1,4 @@
-import { Lock, RefreshCw, Scale } from 'lucide-react'
+import { RefreshCw, Scale } from 'lucide-react'
 import { useMemo } from 'react'
 
 import type {
@@ -25,6 +25,7 @@ import {
 } from './models-list-shared'
 import { WfLink } from './nav'
 import { ProviderBudgetBar } from './provider-budget'
+import { Switch } from './switch'
 import { Tooltip } from './tooltip'
 
 export function ProviderCard({
@@ -222,7 +223,7 @@ function ModelRow({
       </span>
 
       <Tooltip content={lockReason} side="left">
-        <ToggleSwitch
+        <Switch
           checked={model.enabled}
           locked={locked}
           disabled={
@@ -263,45 +264,5 @@ function AgentAvatars({ agents }: { agents: AgentUsageRef[] }) {
         <span className="ml-0.5 text-xs text-neutral-400">+{extra}</span>
       ) : null}
     </div>
-  )
-}
-
-function ToggleSwitch({
-  checked,
-  disabled,
-  locked,
-  onChange,
-}: {
-  checked: boolean
-  disabled?: boolean
-  /** In use by an agent: shown as locked-on and non-interactive. */
-  locked?: boolean
-  onChange: (checked: boolean) => void
-}) {
-  const blocked = disabled || locked
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-disabled={blocked}
-      disabled={blocked}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
-        checked ? 'bg-emerald-500' : 'bg-neutral-200',
-        locked && 'cursor-not-allowed',
-        disabled && !locked && 'cursor-not-allowed opacity-60',
-      )}
-    >
-      <span
-        className={cn(
-          'inline-flex size-4 transform items-center justify-center rounded-full bg-white shadow transition-transform',
-          checked ? 'translate-x-4' : 'translate-x-0.5',
-        )}
-      >
-        {locked ? <Lock className="size-2.5 text-neutral-400" /> : null}
-      </span>
-    </button>
   )
 }

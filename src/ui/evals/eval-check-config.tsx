@@ -5,7 +5,7 @@ import {
   type WfDecisionAgentSummary,
   type WfEvalTargetKind,
 } from '../../server/protocol'
-import { cn } from '../cn'
+import { Segmented, type SegmentedOption } from '../filters'
 import { useDecisionModels } from '../hooks-models'
 
 import { BinaryConfig } from './eval-check-config-binary'
@@ -79,6 +79,11 @@ export function CheckConfigBody({
   )
 }
 
+const JUDGE_KINDS: SegmentedOption<'llm_judge' | 'decision_judge'>[] = [
+  { value: 'llm_judge', label: 'A model reading it' },
+  { value: 'decision_judge', label: 'A calibrated decider' },
+]
+
 /**
  * Which kind of judge grades this check. Hidden entirely when the deployment has
  * no decision provider — offering a choice with one real option is noise, and a
@@ -114,29 +119,13 @@ function JudgeKindToggle({
   return (
     <div className="flex items-center gap-2 text-xs text-neutral-500">
       <span>Graded by</span>
-      <div className="inline-flex overflow-hidden rounded-md border border-neutral-300">
-        {(
-          [
-            ['llm_judge', 'A model reading it'],
-            ['decision_judge', 'A calibrated decider'],
-          ] as const
-        ).map(([type, label]) => (
-          <button
-            key={type}
-            type="button"
-            aria-pressed={check.type === type}
-            className={cn(
-              'px-2 py-1',
-              check.type === type
-                ? 'bg-amber-100 text-amber-700'
-                : 'hover:bg-neutral-100',
-            )}
-            onClick={() => pick(type)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <Segmented
+        variant="joined"
+        label="Graded by"
+        options={JUDGE_KINDS}
+        value={check.type}
+        onChange={pick}
+      />
     </div>
   )
 }

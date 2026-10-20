@@ -11,6 +11,7 @@ import type {
 } from '../../server/protocol'
 import { toolSetting, withToolSetting } from '../../server/protocol'
 import { cn } from '../cn'
+import { Segmented, type SegmentedOption } from '../filters'
 import { useAgent, useTools } from '../hooks'
 import { ToolAvatar } from '../tool-appearance'
 import { Tooltip } from '../tooltip'
@@ -230,7 +231,13 @@ function ToolRow({
         </button>
 
         {mockable ? (
-          <ModeToggle value={setting.mode} onChange={onModeChange} />
+          <Segmented
+            variant="chip"
+            label="Tool mode"
+            options={MODES}
+            value={setting.mode}
+            onChange={onModeChange}
+          />
         ) : tool ? (
           <StaticBehavior write={tool.sideEffect === 'write'} />
         ) : null}
@@ -304,46 +311,20 @@ function previewOutput(v: unknown): string {
   }
 }
 
-const MODES: { mode: EvalToolMode; label: string; icon: typeof Wrench }[] = [
-  { mode: 'mocked', label: 'Mocked', icon: Wrench },
-  { mode: 'live', label: 'Live', icon: Radio },
+const MODES: SegmentedOption<EvalToolMode>[] = [
+  {
+    value: 'mocked',
+    label: 'Mocked',
+    icon: Wrench,
+    activeClass: 'bg-violet-100 text-violet-700',
+  },
+  {
+    value: 'live',
+    label: 'Live',
+    icon: Radio,
+    activeClass: 'bg-sky-100 text-sky-700',
+  },
 ]
-
-function ModeToggle({
-  value,
-  onChange,
-}: {
-  value: EvalToolMode
-  onChange: (mode: EvalToolMode) => void
-}) {
-  return (
-    <div className="flex shrink-0 items-center gap-0.5 rounded-md border border-neutral-200 bg-white p-0.5">
-      {MODES.map((m) => {
-        const Icon = m.icon
-        const on = m.mode === value
-        return (
-          <button
-            key={m.mode}
-            type="button"
-            aria-pressed={on}
-            onClick={() => onChange(m.mode)}
-            className={cn(
-              'flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition',
-              on
-                ? m.mode === 'live'
-                  ? 'bg-sky-100 text-sky-700'
-                  : 'bg-violet-100 text-violet-700'
-                : 'text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600',
-            )}
-          >
-            <Icon className="size-3" />
-            {m.label}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
 
 /** For the tools whose behavior the sample doesn't get to choose. */
 function StaticBehavior({ write }: { write: boolean }) {

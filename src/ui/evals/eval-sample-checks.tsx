@@ -15,9 +15,9 @@ import type {
 } from '../../server/protocol'
 import { ArchiveButton } from '../archive-button'
 import { cn } from '../cn'
+import { Segmented, type SegmentedOption } from '../filters'
 import { useEvalRuns } from '../hooks'
 import { useOpenAsset } from '../nav'
-import { Tooltip } from '../tooltip'
 
 import { describeCheck } from './check-naming'
 import { CheckConfigBody } from './eval-check-config'
@@ -145,7 +145,10 @@ export function ChecksList({
                 {/* The row's vertical padding lives on the expander button, not
                     the row, so the full height of the row is clickable. */}
                 <div className="flex items-center gap-3 px-3">
-                  <FamilyToggle
+                  <Segmented
+                    variant="icon"
+                    label="Check family"
+                    options={FAMILIES}
                     value={familyOf(c)}
                     onChange={(f) => setFamily(i, f)}
                   />
@@ -223,63 +226,22 @@ export function ChecksList({
 // one lit. It replaces what used to be a pair of full-width tiles on a separate
 // page — at this size the choice reads as a property of the check rather than a
 // step you have to complete, which is what it is.
-const FAMILIES: {
-  value: CheckFamily
-  icon: typeof Binary
-  label: string
-  hint: string
-  on: string
-}[] = [
+const FAMILIES: SegmentedOption<CheckFamily>[] = [
   {
     value: 'binary',
     icon: Binary,
     label: 'Binary',
     hint: 'Binary — a deterministic pass/fail read off the run trace.',
-    on: 'bg-sky-100 text-sky-700',
+    activeClass: 'bg-sky-100 text-sky-700',
   },
   {
     value: 'scored',
     icon: Gauge,
     label: 'Scored',
     hint: 'Scored — an LLM judge decides whether the output holds up.',
-    on: 'bg-amber-100 text-amber-700',
+    activeClass: 'bg-amber-100 text-amber-700',
   },
 ]
-
-function FamilyToggle({
-  value,
-  onChange,
-}: {
-  value: CheckFamily
-  onChange: (family: CheckFamily) => void
-}) {
-  return (
-    <div className="flex shrink-0 items-center gap-0.5 rounded-md border border-neutral-200 bg-white p-0.5">
-      {FAMILIES.map((f) => {
-        const Icon = f.icon
-        const on = f.value === value
-        return (
-          <Tooltip key={f.value} content={f.hint} side="bottom">
-            <button
-              type="button"
-              aria-label={f.label}
-              aria-pressed={on}
-              onClick={() => onChange(f.value)}
-              className={cn(
-                'flex size-6 items-center justify-center rounded transition',
-                on
-                  ? f.on
-                  : 'text-neutral-300 hover:bg-neutral-100 hover:text-neutral-500',
-              )}
-            >
-              <Icon className="size-3.5" />
-            </button>
-          </Tooltip>
-        )
-      })}
-    </div>
-  )
-}
 
 // Test runs that included this sample. A run spans a whole set (goal) by
 // `setIds` — there is no per-sample run table — so these are the goal's runs,

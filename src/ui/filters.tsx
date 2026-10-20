@@ -1,8 +1,9 @@
-import { Check } from 'lucide-react'
+import { Check, type LucideIcon } from 'lucide-react'
 import { Fragment, type ReactNode, useState } from 'react'
 
 import { cn } from './cn'
 import { Popover } from './popover'
+import { Tooltip } from './tooltip'
 
 // The filter / segmented-control family. Four flavours of the same "pick one
 // of N labelled options" data model, kept as distinct exports because their
@@ -51,40 +52,132 @@ export function FilterSelect({
 
 // ── Segmented ─────────────────────────────────────────────────────────────────
 
-/** A pill/segmented button track — mutually-exclusive options in a gray rail. */
+export type SegmentedOption<T extends string> = {
+  value: T
+  label: string
+  icon?: LucideIcon
+  /** Tooltip; with the `icon` variant it is the only visible description. */
+  hint?: string
+  /** Overrides the variant's active colors for this one option. */
+  activeClass?: string
+}
+
+type SegmentedVariant = 'rail' | 'fill' | 'chip' | 'icon' | 'joined'
+
+// One look per call-site family. Each is a full class set rather than a
+// modifier because `cn` is clsx only: a later class cannot override an earlier
+// one, so sizes and colors must be chosen here, never appended.
+const SEGMENTED_STYLES: Record<
+  SegmentedVariant,
+  {
+    track: string
+    button: string
+    active: string
+    idle: string
+    /** Hover for an idle option; dropped while disabled. */
+    hover: string
+    icon: string
+  }
+> = {
+  /** Neutral gray rail, the active option lifted. Toolbar tabs. */
+  rail: {
+    track: 'inline-flex items-center rounded-md bg-neutral-100 p-0.5',
+    button: 'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+    active: 'bg-white text-neutral-900 shadow-sm',
+    idle: 'text-neutral-500',
+    hover: 'hover:text-neutral-900',
+    icon: 'size-3.5',
+  },
+  /** The rail on semantic tokens, stretched to fill its row. Inspector fields. */
+  fill: {
+    track: 'bg-muted inline-flex w-full gap-0.5 rounded-md p-0.5',
+    button:
+      'flex flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2.5 py-1.5 text-xs font-medium transition-colors',
+    active: 'bg-background text-foreground shadow-sm',
+    idle: 'text-muted-foreground',
+    hover: 'hover:text-foreground',
+    icon: 'size-3.5',
+  },
+  /** Small outlined chips, each option tinted by its `activeClass`. */
+  chip: {
+    track:
+      'flex shrink-0 items-center gap-0.5 rounded-md border border-neutral-200 bg-white p-0.5',
+    button:
+      'flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition',
+    active: 'bg-neutral-100 text-neutral-900',
+    idle: 'text-neutral-400',
+    hover: 'hover:bg-neutral-100 hover:text-neutral-600',
+    icon: 'size-3',
+  },
+  /** `chip` as square icon-only buttons; the label becomes the aria-label. */
+  icon: {
+    track:
+      'flex shrink-0 items-center gap-0.5 rounded-md border border-neutral-200 bg-white p-0.5',
+    button: 'flex size-6 items-center justify-center rounded transition',
+    active: 'bg-neutral-100 text-neutral-900',
+    idle: 'text-neutral-300',
+    hover: 'hover:bg-neutral-100 hover:text-neutral-500',
+    icon: 'size-3.5',
+  },
+  /** Flush buttons sharing one bordered box. */
+  joined: {
+    track: 'inline-flex overflow-hidden rounded-md border border-neutral-300',
+    button: 'px-2 py-1',
+    active: 'bg-amber-100 text-amber-700',
+    idle: '',
+    hover: 'hover:bg-neutral-100',
+    icon: 'size-3',
+  },
+}
+
+/** A segmented button track — mutually-exclusive options, one pressed. */
 export function Segmented<T extends string>({
   label,
   options,
   value,
   onChange,
+  variant = 'rail',
+  disabled,
 }: {
   label: string
-  options: { value: T; label: string }[]
+  options: SegmentedOption<T>[]
   value: T
   onChange: (value: T) => void
+  variant?: SegmentedVariant
+  disabled?: boolean
 }) {
+  const style = SEGMENTED_STYLES[variant]
+  const iconOnly = variant === 'icon'
   return (
     <div
       role="group"
       aria-label={label}
-      className="inline-flex items-center rounded-md bg-neutral-100 p-0.5"
+      className={cn(style.track, disabled && 'cursor-not-allowed opacity-60')}
     >
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          aria-pressed={value === opt.value}
-          onClick={() => onChange(opt.value)}
-          className={cn(
-            'rounded px-2.5 py-1 text-xs font-medium transition-colors',
-            value === opt.value
-              ? 'bg-white text-neutral-900 shadow-sm'
-              : 'text-neutral-500 hover:text-neutral-900',
-          )}
-        >
-          {opt.label}
-        </button>
-      ))}
+      {options.map((opt) => {
+        const active = opt.value === value
+        const Icon = opt.icon
+        return (
+          <Tooltip key={opt.value} content={opt.hint} side="bottom">
+            <button
+              type="button"
+              aria-label={iconOnly ? opt.label : undefined}
+              aria-pressed={active}
+              disabled={disabled}
+              onClick={() => onChange(opt.value)}
+              className={cn(
+                style.button,
+                active ? (opt.activeClass ?? style.active) : style.idle,
+                !disabled && !active && style.hover,
+                disabled && 'cursor-not-allowed',
+              )}
+            >
+              {Icon ? <Icon className={style.icon} /> : null}
+              {iconOnly ? null : opt.label}
+            </button>
+          </Tooltip>
+        )
+      })}
     </div>
   )
 }

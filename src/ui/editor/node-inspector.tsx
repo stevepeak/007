@@ -14,8 +14,8 @@ import {
   type IterationNode,
   type WorkflowNode,
 } from '../../engine'
-import { cn } from '../cn'
 import { useWfComponents } from '../context'
+import { Segmented } from '../filters'
 import { WfLink } from '../nav'
 
 import { NodeInputsPanel } from './node-data-panel'
@@ -79,54 +79,6 @@ const NODE_INSPECTORS: Partial<
 // message, may embed ${run variables}), or dynamic (agent only — stream the
 // model's live reasoning/tool activity).
 type InformMode = 'off' | 'static' | 'dynamic'
-
-// A compact segmented control — a nicer multi-choice than a checkbox for
-// "this OR that" toggles. Renders a pill track with the active segment lifted.
-function SegmentedToggle<T extends string>({
-  value,
-  options,
-  onChange,
-  disabled,
-}: {
-  value: T
-  options: { value: T; label: string; icon?: LucideIcon }[]
-  onChange: (value: T) => void
-  disabled?: boolean
-}) {
-  return (
-    <div
-      className={cn(
-        'bg-muted inline-flex w-full gap-0.5 rounded-md p-0.5',
-        disabled && 'cursor-not-allowed opacity-60',
-      )}
-    >
-      {options.map((opt) => {
-        const active = opt.value === value
-        const Icon = opt.icon
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            aria-pressed={active}
-            disabled={disabled}
-            onClick={() => onChange(opt.value)}
-            className={cn(
-              'flex flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2.5 py-1.5 text-xs font-medium transition-colors',
-              active
-                ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground',
-              !disabled && !active && 'hover:text-foreground',
-              disabled && 'cursor-not-allowed',
-            )}
-          >
-            {Icon ? <Icon className="size-3.5" /> : null}
-            {opt.label}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
 
 // A labeled on/off row: a leading icon + title over a short description, with a
 // checkbox at the trailing edge. Used for the dynamic "Inform user" sub-toggles
@@ -243,7 +195,9 @@ export function NodeInspector(props: NodeInspectorProps) {
         <InspectorSection>
           <SectionHeader icon={MessageSquareText}>Inform user</SectionHeader>
 
-          <SegmentedToggle
+          <Segmented
+            variant="fill"
+            label="Inform user"
             value={informMode}
             onChange={setInformMode}
             options={informOptions}
