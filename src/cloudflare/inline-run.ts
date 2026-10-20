@@ -42,6 +42,7 @@ import {
   type SpawnedChildRun,
 } from './child-run'
 import type { GraphWorkflowEnv, GraphWorkflowParams } from './graph-workflow'
+import { logRowOf } from './graph-workflow-dispatch-logs'
 import {
   createTelemeteredRecorder,
   resolveTelemetrySink,
@@ -144,15 +145,7 @@ function createInlineSink(
             runId,
             nodeId,
             ordinal,
-            entry: {
-              nodeId,
-              nodeKind: stamped.nodeKind ?? null,
-              sequence: stamped.sequence ?? null,
-              level: stamped.level,
-              message: stamped.message,
-              meta: stamped.meta ?? null,
-              ts: stamped.ts ?? Date.now(),
-            },
+            entry: logRowOf(stamped),
           })
         } catch (err) {
           logger.warn('[wf] inline sink persist failed', err)

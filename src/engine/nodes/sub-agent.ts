@@ -1,6 +1,5 @@
 import { tool, type Tool } from 'ai'
 
-import { errorStored } from '../error-detail'
 import {
   agentFromManifest,
   inferPromptVariables,
@@ -10,6 +9,11 @@ import {
   workflowFromManifest,
 } from '../graph'
 import type { RunNodeContext } from '../run-node'
+import {
+  stepRowFor,
+  type RecordStepArgs,
+  type StepOutcome,
+} from '../run-recorder'
 import { buildAgentToolSet } from '../tool-registry'
 
 import { coerceToMessages, runAgentGeneration } from './agent'
@@ -221,27 +225,30 @@ async function runAgentTarget<TDeps>(
   }
 
   if (ctx.subStepRecorder) {
-    await ctx.subStepRecorder.record({
-      nodeId: `sub:${primaryNodeId}:${ordinal}`,
-      nodeKind: 'agent',
-      parentNodeId: primaryNodeId,
-      itemIndex: ordinal,
-      sequence: 0,
-      input: message,
-      status: 'completed',
-      output: result.output,
-      // Stamped with the agent it ran, like a top-level agent node — a spawned
-      // sub-agent has no graph node of its own, so this is the ONLY link from
-      // its step back to the agent (see AgentNodeMeta.agentId).
-      meta: {
-        ...result.meta,
-        agentId: target.id,
-        agentVersion: entry.versionNumber,
-        subAgentName: entry.name,
-      },
-      startedAt,
-      finishedAt: new Date(),
-    })
+    await ctx.subStepRecorder.record(
+      subAgentStepRow({
+        primaryNodeId,
+        ordinal,
+        input: message,
+        startedAt,
+        outcome: {
+          ok: true,
+          result: {
+            recordedOutput: result.output,
+            // Stamped with the agent it ran, like a top-level agent node — a
+            // spawned sub-agent has no graph node of its own, so this is the
+            // ONLY link from its step back to the agent (see
+            // AgentNodeMeta.agentId).
+            meta: {
+              ...result.meta,
+              agentId: target.id,
+              agentVersion: entry.versionNumber,
+              subAgentName: entry.name,
+            },
+          },
+        },
+      }),
+    )
   }
 
   return { output: result.output, meta: result.meta, stopSignalled, reason }
@@ -279,6 +286,30 @@ async function runWorkflowTarget<TDeps>(
   return { output, stopSignalled: false }
 }
 
+/**
+ * A spawned agent's child step: keyed under the primary node by spawn ordinal,
+ * since it has no graph node of its own.
+ */
+function subAgentStepRow(args: {
+  primaryNodeId: string
+  ordinal: number
+  input: unknown
+  startedAt?: Date
+  outcome: StepOutcome
+}): RecordStepArgs {
+  return {
+    ...stepRowFor({
+      node: { id: `sub:${args.primaryNodeId}:${args.ordinal}`, kind: 'agent' },
+      sequence: 0,
+      input: args.input,
+      startedAt: args.startedAt,
+      outcome: args.outcome,
+    }),
+    parentNodeId: args.primaryNodeId,
+    itemIndex: args.ordinal,
+  }
+}
+
 function makeRunSubAgent<TDeps>(
   sub: SubAgentCtx<TDeps>,
   allowStopSignal: boolean,
@@ -294,16 +325,14 @@ function makeRunSubAgent<TDeps>(
       // their own inner failed step via `executeSubgraph`.
       if (target.kind === 'agent' && sub.ctx.subStepRecorder) {
         await sub.ctx.subStepRecorder
-          .record({
-            nodeId: `sub:${sub.primaryNodeId}:${ordinal}`,
-            nodeKind: 'agent',
-            parentNodeId: sub.primaryNodeId,
-            itemIndex: ordinal,
-            sequence: 0,
-            input,
-            status: 'failed',
-            error: errorStored(err),
-          })
+          .record(
+            subAgentStepRow({
+              primaryNodeId: sub.primaryNodeId,
+              ordinal,
+              input,
+              outcome: { ok: false, error: err },
+            }),
+          )
           .catch(() => {})
       }
       throw err

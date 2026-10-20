@@ -4,7 +4,6 @@ import { errorFeedLine, errorStored } from '../engine/error-detail'
 import { errorMessage } from '../engine/error-message'
 import { emitNodeStartProgress } from '../engine/node-progress'
 import { failureMustAbort } from '../engine/nodes/decision-agent'
-import { recordedBranchResult } from '../engine/run-recorder'
 import type { ExecutableNode, ReportResult } from '../engine/scheduler'
 import type { RunLogEntry } from '../engine/stream-sink'
 import { enforceOutputContract } from '../engine/trigger-registry'
@@ -135,9 +134,7 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
 
   await recordTerminal(ctx, node, seq, input, startEntry, {
     status: 'completed',
-    output: result.recordedOutput,
-    meta: result.meta,
-    branchResult: recordedBranchResult(result),
+    result,
     // `logs` is the `run:` step's journaled copy — the same array, returned
     // through the step so it survives replay. A self-stepping node has no such
     // step and fills `bodyLogs` directly.

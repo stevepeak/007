@@ -8,6 +8,26 @@ import type { RunLogEntry } from './stream-sink'
 // `node-end`. A backend that skipped them would render as a run where nothing is
 // happening.
 
+/**
+ * A sink entry with the emitting node's identity (and a timestamp) filled in for
+ * anything the emitter left off. Every per-node sink stamps through here, so a
+ * line reads the same whichever backend wrote it.
+ */
+export function stampEntry(args: {
+  node: { id: string; kind: string }
+  seq: number
+  entry: RunLogEntry
+}): RunLogEntry {
+  const { node, seq, entry } = args
+  return {
+    ...entry,
+    ts: entry.ts ?? Date.now(),
+    nodeId: entry.nodeId ?? node.id,
+    nodeKind: entry.nodeKind ?? node.kind,
+    sequence: entry.sequence ?? seq,
+  }
+}
+
 /** Human label for a node in the log feed, falling back to its kind. */
 export function nodeLabel(node: ExecutableNode): string {
   return (node as { label?: string }).label?.trim() || node.kind

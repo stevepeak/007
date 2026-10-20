@@ -1,5 +1,5 @@
 import type { RunContext, WfSdkConfig } from './config'
-import { errorFeedLine, errorStored } from './error-detail'
+import { errorFeedLine } from './error-detail'
 import { resolveAnswerNodeIds } from './graph-engine'
 import { resolveWfLogger } from './logger'
 import type { ModelBudget } from './model-budget'
@@ -7,9 +7,9 @@ import { emitNodeStartProgress } from './node-progress'
 import { settleOf, type NodeSettlement } from './node-settlement'
 import { failureMustAbort } from './nodes/decision-agent'
 import type { ChildWorkflowRunner } from './nodes/workflow'
-import { endEntryOf, startEntryOf } from './run-log-entries'
+import { endEntryOf, stampEntry, startEntryOf } from './run-log-entries'
 import { buildRunNodeContext, errorMessage, runNode } from './run-node'
-import { recordedBranchResult, type RunRecorder } from './run-recorder'
+import { stepRowFor, type RunRecorder } from './run-recorder'
 import {
   Scheduler,
   WorkflowStalledError,
@@ -218,13 +218,7 @@ export async function executeWorkflow<TDeps>(
     return (
       sink && {
         log: (entry: RunLogEntry) => {
-          return sink.log?.({
-            ...entry,
-            ts: entry.ts ?? Date.now(),
-            nodeId: entry.nodeId ?? node.id,
-            nodeKind: entry.nodeKind ?? node.kind,
-            sequence: entry.sequence ?? seq,
-          })
+          return sink.log?.(stampEntry({ node, seq, entry }))
         },
         // Handed ONLY to the answer-producing node, and only when the backend can
         // carry a stream at all — see `deltaChannelFor`.
@@ -338,18 +332,15 @@ export async function executeWorkflow<TDeps>(
       const result = deps.wrapNode
         ? await deps.wrapNode(node, seq, execute)
         : await execute()
-      await recorder.record({
-        nodeId: node.id,
-        nodeKind: node.kind,
-        sequence: seq,
-        input,
-        status: 'completed',
-        output: result.recordedOutput,
-        meta: result.meta,
-        branchResult: recordedBranchResult(result),
-        startedAt,
-        finishedAt: new Date(),
-      })
+      await recorder.record(
+        stepRowFor({
+          node,
+          sequence: seq,
+          input,
+          startedAt,
+          outcome: { ok: true, result },
+        }),
+      )
       await nodeSink?.log?.(endEntryOf(node, seq, Date.now(), false))
       return {
         nodeId: node.id,
@@ -366,16 +357,15 @@ export async function executeWorkflow<TDeps>(
       // error object — the entire diagnosis, discarded the moment it's
       // stringified. The stored value keeps that; the feed line stays short.
       const message = errorFeedLine(err)
-      await recorder.record({
-        nodeId: node.id,
-        nodeKind: node.kind,
-        sequence: seq,
-        input,
-        status: 'failed',
-        error: errorStored(err),
-        startedAt,
-        finishedAt: new Date(),
-      })
+      await recorder.record(
+        stepRowFor({
+          node,
+          sequence: seq,
+          input,
+          startedAt,
+          outcome: { ok: false, error: err },
+        }),
+      )
       await nodeSink?.log?.(endEntryOf(node, seq, Date.now(), true, message))
       // Best-effort node: continue the run with a `null` output rather than
       // aborting. Mirrors the Cloudflare backend; never for decision nodes.

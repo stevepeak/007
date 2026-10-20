@@ -1,3 +1,4 @@
+import { errorStored } from './error-detail'
 import type { WfNodeKind } from './graph'
 
 // The recorder is the engine's only persistence seam. The engine calls
@@ -53,6 +54,62 @@ export function recordedBranchResult(result: {
   return result.branchResult
     ? { result: result.branchResult, reasoning: result.branchReasoning ?? '' }
     : null
+}
+
+/**
+ * How a node's step ended: the run result, or the thrown value. A backend whose
+ * error already crossed a durable boundary passes its stored rendering instead,
+ * since the thrown value didn't survive the crossing.
+ */
+export type StepOutcome =
+  | {
+      ok: true
+      result: {
+        recordedOutput: unknown
+        meta?: unknown
+        branchResult?: string
+        branchReasoning?: string
+      }
+    }
+  | { ok: false; error: unknown }
+  | { ok: false; stored: string }
+
+/**
+ * The terminal row for one step — every backend and nested runner (iteration
+ * items, sub-agents) builds it here, so the stored error form and the persisted
+ * `branchResult` shape are applied once. `finishedAt` defaults to now.
+ */
+export function stepRowFor(args: {
+  node: { id: string; kind: WfNodeKind }
+  sequence: number
+  input: unknown
+  startedAt?: Date
+  finishedAt?: Date
+  outcome: StepOutcome
+}): RecordStepArgs {
+  const { node, outcome } = args
+  const base = {
+    nodeId: node.id,
+    nodeKind: node.kind,
+    sequence: args.sequence,
+    input: args.input,
+    startedAt: args.startedAt,
+    finishedAt: args.finishedAt ?? new Date(),
+  }
+  if (outcome.ok) {
+    return {
+      ...base,
+      status: 'completed',
+      output: outcome.result.recordedOutput,
+      meta: outcome.result.meta,
+      branchResult: recordedBranchResult(outcome.result),
+    }
+  }
+  return {
+    ...base,
+    status: 'failed',
+    error: 'stored' in outcome ? outcome.stored : errorStored(outcome.error),
+  }
 }
 
 /**

@@ -1,5 +1,10 @@
-import { endEntryOf, nodeLabel, startEntryOf } from '../engine/run-log-entries'
-import type { RecordStepArgs } from '../engine/run-recorder'
+import {
+  endEntryOf,
+  nodeLabel,
+  stampEntry,
+  startEntryOf,
+} from '../engine/run-log-entries'
+import { stepRowFor, type StepOutcome } from '../engine/run-recorder'
 import type { ExecutableNode } from '../engine/scheduler'
 import type { RunLogEntry } from '../engine/stream-sink'
 import { createWfDb } from '../storage/client'
@@ -36,10 +41,15 @@ export function logRow(
   seq: number,
   e: RunLogEntry,
 ): WfRunLogRow {
+  return logRowOf(stampEntry({ node, seq, entry: e }))
+}
+
+/** A (stamped) sink entry as a `wf_run_log` row. */
+export function logRowOf(e: RunLogEntry): WfRunLogRow {
   return {
-    nodeId: e.nodeId ?? node.id,
-    nodeKind: e.nodeKind ?? node.kind,
-    sequence: e.sequence ?? seq,
+    nodeId: e.nodeId ?? null,
+    nodeKind: e.nodeKind ?? null,
+    sequence: e.sequence ?? null,
     level: e.level,
     message: e.message,
     meta: e.meta ?? null,
@@ -177,9 +187,7 @@ export async function recordTerminal<TDeps, E extends GraphWorkflowEnv>(
       }
     | {
         status: 'completed'
-        output: unknown
-        meta: unknown
-        branchResult: RecordStepArgs['branchResult']
+        result: Extract<StepOutcome, { ok: true }>['result']
         bodyLogs: RunLogEntry[]
         // Actual execution window measured around runNode. Overwrites the
         // enter-time start so the persisted Speed reflects real work, not the
@@ -191,14 +199,14 @@ export async function recordTerminal<TDeps, E extends GraphWorkflowEnv>(
 ): Promise<void> {
   await stepDo(ctx.step, `record:${node.id}`, DEFAULT_STEP_OPTS, async () => {
     if (outcome.status === 'failed') {
-      await ctx.recordOne({
-        nodeId: node.id,
-        nodeKind: node.kind,
-        sequence: seq,
-        input,
-        status: 'failed',
-        error: outcome.error,
-      })
+      await ctx.recordOne(
+        stepRowFor({
+          node,
+          sequence: seq,
+          input,
+          outcome: { ok: false, stored: outcome.error },
+        }),
+      )
       await persistLogs(
         ctx,
         node,
@@ -208,18 +216,16 @@ export async function recordTerminal<TDeps, E extends GraphWorkflowEnv>(
         endEntryOf(node, seq, Date.now(), true, outcome.feed ?? outcome.error),
       )
     } else {
-      await ctx.recordOne({
-        nodeId: node.id,
-        nodeKind: node.kind,
-        sequence: seq,
-        input,
-        status: 'completed',
-        output: outcome.output,
-        meta: outcome.meta,
-        branchResult: outcome.branchResult,
-        startedAt: outcome.startedAt,
-        finishedAt: outcome.finishedAt,
-      })
+      await ctx.recordOne(
+        stepRowFor({
+          node,
+          sequence: seq,
+          input,
+          startedAt: outcome.startedAt,
+          finishedAt: outcome.finishedAt,
+          outcome: { ok: true, result: outcome.result },
+        }),
+      )
       await persistLogs(
         ctx,
         node,

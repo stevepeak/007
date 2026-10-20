@@ -1,5 +1,4 @@
 import { describeNode, resolveBinding } from '../binding'
-import { errorStored } from '../error-detail'
 import {
   ITERATION_MAX_ITEMS_FALLBACK,
   workflowGraphSchema,
@@ -15,7 +14,7 @@ import {
   type NodeRunResult,
   type RunNodeContext,
 } from '../run-node'
-import { recordedBranchResult, type RunRecorder } from '../run-recorder'
+import { stepRowFor, type RunRecorder } from '../run-recorder'
 import { Scheduler, WorkflowStalledError } from '../scheduler'
 import type { StreamSink } from '../stream-sink'
 
@@ -129,12 +128,11 @@ export async function executeSubgraph<TDeps>(
   // scope onto every row. Omitted entirely when no recorder is wired.
   let seq = 0
   const rec = record
-    ? (args: Omit<Parameters<RunRecorder['record']>[0], 'sequence'>) => {
+    ? (args: Omit<Parameters<typeof stepRowFor>[0], 'sequence'>) => {
         return record.recorder.record({
-          ...args,
+          ...stepRowFor({ ...args, sequence: seq++ }),
           parentNodeId: record.parentNodeId,
           itemIndex: record.itemIndex,
-          sequence: seq++,
         })
       }
     : null
@@ -142,11 +140,9 @@ export async function executeSubgraph<TDeps>(
   // The subgraph trigger is identity — its output IS the item.
   if (rec) {
     await rec({
-      nodeId: scheduler.trigger.id,
-      nodeKind: 'trigger',
+      node: { id: scheduler.trigger.id, kind: 'trigger' },
       input: item,
-      status: 'completed',
-      output: item,
+      outcome: { ok: true, result: { recordedOutput: item } },
     })
   }
 
@@ -170,11 +166,9 @@ export async function executeSubgraph<TDeps>(
     if (instruction.type === 'output') {
       if (rec) {
         await rec({
-          nodeId: instruction.nodeId,
-          nodeKind: 'output',
+          node: { id: instruction.nodeId, kind: 'output' },
           input: instruction.output,
-          status: 'completed',
-          output: instruction.output,
+          outcome: { ok: true, result: { recordedOutput: instruction.output } },
         })
       }
       // Settle it so the walk moves PAST this Output to the remaining arms,
@@ -209,15 +203,10 @@ export async function executeSubgraph<TDeps>(
     } catch (err) {
       if (rec) {
         await rec({
-          nodeId: node.id,
-          nodeKind: node.kind,
+          node,
           input,
-          status: 'failed',
-          // The stored form, as a top-level step row records it: the provider
-          // status and body survive into the row a reader drills into.
-          error: errorStored(err),
           startedAt,
-          finishedAt: new Date(),
+          outcome: { ok: false, error: err },
         })
       }
       // Same rule the top-level walk applies to a drain failure: once the
@@ -228,17 +217,7 @@ export async function executeSubgraph<TDeps>(
       throw err
     }
     if (rec) {
-      await rec({
-        nodeId: node.id,
-        nodeKind: node.kind,
-        input,
-        status: 'completed',
-        output: result.recordedOutput,
-        meta: result.meta,
-        branchResult: recordedBranchResult(result),
-        startedAt,
-        finishedAt: new Date(),
-      })
+      await rec({ node, input, startedAt, outcome: { ok: true, result } })
     }
     scheduler.report(node.id, {
       output: result.schedulerOutput,

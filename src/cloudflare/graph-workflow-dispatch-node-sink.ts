@@ -1,10 +1,11 @@
+import { stampEntry } from '../engine/run-log-entries'
 import type { ExecutableNode } from '../engine/scheduler'
 import type { RunLogEntry, StreamSink } from '../engine/stream-sink'
 import { createWfDb } from '../storage/client'
 import { appendRunLog, countNodeBodyLogs } from '../storage/data'
 
 import type { GraphWorkflowEnv } from './graph-workflow'
-import { logRow } from './graph-workflow-dispatch-logs'
+import { logRowOf } from './graph-workflow-dispatch-logs'
 import type { RunCtx } from './graph-workflow-dispatch-run-ctx'
 
 // The per-node feed writer.
@@ -44,20 +45,14 @@ export function createNodeSink<TDeps, E extends GraphWorkflowEnv>(
   const logDb = createWfDb(ctx.env.WF_DB)
   return {
     log: (entry) => {
-      const e: RunLogEntry = {
-        ...entry,
-        ts: entry.ts ?? Date.now(),
-        nodeId: entry.nodeId ?? node.id,
-        nodeKind: entry.nodeKind ?? node.kind,
-        sequence: entry.sequence ?? seq,
-      }
+      const e = stampEntry({ node, seq, entry })
       const ordinal = nextOrdinal()
       bodyLogs.push(e)
       void appendRunLog(logDb, {
         runId: ctx.p.workflowRunId,
         nodeId: node.id,
         ordinal,
-        entry: logRow(node, seq, e),
+        entry: logRowOf(e),
       }).catch((err: unknown) => {
         ctx.logger.error('[wf] live log append failed', err)
       })
