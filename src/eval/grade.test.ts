@@ -119,6 +119,49 @@ describe('gradeRow — deterministic checks', () => {
     expect(r.status).toBe('pass')
   })
 
+  test('output_match paths take bracket indices and a final .length', async () => {
+    const r = await gradeRow({
+      checks: {
+        op: 'and',
+        checks: [
+          { type: 'output_match', path: 'items[1].id', match: 'equals', value: 'b' },
+          { type: 'output_match', path: 'items.length', match: 'equals', value: 2 },
+          { type: 'output_match', path: 'items[0].id.length', match: 'equals', value: 1 },
+        ],
+      },
+      steps: [],
+      output: { items: [{ id: 'a' }, { id: 'b' }] },
+    })
+    expect(r.status).toBe('pass')
+    const list = await gradeRow({
+      checks: {
+        op: 'and',
+        checks: [
+          { type: 'output_match', path: '[0].id', match: 'equals', value: 'a' },
+          { type: 'output_match', path: 'length', match: 'equals', value: 1 },
+        ],
+      },
+      steps: [],
+      output: [{ id: 'a' }],
+    })
+    expect(list.status).toBe('pass')
+  })
+
+  test('equals treats an undefined key as missing', async () => {
+    const r = await gradeRow({
+      checks: {
+        op: 'and',
+        checks: [
+          { type: 'output_match', path: 'obj', match: 'equals', value: { a: 1 } },
+          { type: 'output_match', path: 'list', match: 'contains', value: { b: 2 } },
+        ],
+      },
+      steps: [],
+      output: { obj: { a: 1, b: undefined }, list: [{ b: 2, c: undefined }] },
+    })
+    expect(r.status).toBe('pass')
+  })
+
   test('binary checks never contribute a score (score is null with no judge)', async () => {
     const r = await grade({
       op: 'and',

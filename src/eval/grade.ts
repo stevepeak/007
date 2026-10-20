@@ -1,6 +1,7 @@
 import { generateObject, NoObjectGeneratedError, type LanguageModel } from 'ai'
 import { z } from 'zod'
 
+import { resolvePath } from '../engine/binding'
 import { agentToolCalls } from '../engine/cost'
 import {
   DEFAULT_DECISION_THRESHOLD,
@@ -19,6 +20,7 @@ import {
   type EvalMatch,
 } from '../engine/eval-schema'
 import type { ToolNodeMeta } from '../engine/nodes/tool'
+import { stableEqual } from '../engine/stable-stringify'
 import { strictSchema } from '../engine/strict-schema'
 import { truncate } from '../engine/text'
 
@@ -120,49 +122,34 @@ function collectToolCalls(steps: GradeStep[]): ToolInvocation[] {
   return calls
 }
 
-/** Walk a dot / bracket path (`a.b[0].c`) into a value; whole value if no path. */
+/**
+ * The binding path language ({@link resolvePath}) plus two extras check authors
+ * already rely on: bracket indices (`a.b[0].c` reads as `a.b.0.c`) and a final
+ * `.length` on an array or string. Kept here rather than in `resolvePath` so
+ * workflow binding semantics stay exactly as they are. Whole value if no path.
+ */
 function valueAtPath(value: unknown, path?: string): unknown {
   if (!path) return value
-  const parts = path
+  const dotted = path
     .replaceAll(/\[(\w+)\]/g, '.$1')
     .split('.')
     .filter(Boolean)
-  let cur: unknown = value
-  for (const part of parts) {
-    if (cur == null) return undefined
-    cur = (cur as Record<string, unknown>)[part]
+    .join('.')
+  const parentPath = dotted.replace(/(?:^|\.)length$/, '')
+  if (parentPath !== dotted) {
+    const parent = resolvePath(value, parentPath)
+    if (Array.isArray(parent) || typeof parent === 'string') return parent.length
   }
-  return cur
-}
-
-function deepEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true
-  if (typeof a !== typeof b || a == null || b == null) return false
-  if (Array.isArray(a) && Array.isArray(b)) {
-    return a.length === b.length && a.every((x, i) => deepEqual(x, b[i]))
-  }
-  if (typeof a === 'object' && typeof b === 'object') {
-    const ka = Object.keys(a)
-    const kb = Object.keys(b)
-    return (
-      ka.length === kb.length &&
-      ka.every((k) => {
-        return deepEqual(
-          (a as Record<string, unknown>)[k],
-          (b as Record<string, unknown>)[k],
-        )
-      })
-    )
-  }
-  return false
+  return resolvePath(value, dotted)
 }
 
 /**
  * Compare an actual value to the check's expected `value` under a match mode.
- * `equals` = deep equality; `contains` = substring (strings) or membership
- * (arrays); `regex` = the expected as a RegExp over the stringified actual.
- * `jsonpath` is a v1 alias for `equals` after `path` selection (richer JSONPath
- * matching is parked — see the plan's ideas list).
+ * `equals` = deep equality, where an `undefined` key equals a missing one;
+ * `contains` = substring (strings) or membership (arrays); `regex` = the
+ * expected as a RegExp over the stringified actual. `jsonpath` is a v1 alias
+ * for `equals` after `path` selection (richer JSONPath matching is parked — see
+ * the plan's ideas list).
  */
 function matches(
   actual: unknown,
@@ -172,11 +159,11 @@ function matches(
   switch (match) {
     case 'equals':
     case 'jsonpath':
-      return deepEqual(actual, expected)
+      return stableEqual(actual, expected)
     case 'contains':
       if (typeof actual === 'string') return actual.includes(String(expected))
       if (Array.isArray(actual))
-        return actual.some((x) => deepEqual(x, expected))
+        return actual.some((x) => stableEqual(x, expected))
       return false
     case 'regex':
       try {
