@@ -207,6 +207,20 @@ export function agentVersionByNumber(
   return agentVersions.byNumber(db, agentId, versionNumber)
 }
 
+/**
+ * An agent pin resolved to its published version: `null` floats to latest, a
+ * number names that exact version. Undefined when nothing matches — a pinned
+ * number never falls back to latest.
+ */
+export function resolveAgentVersion(
+  db: WfDb,
+  args: { agentId: string; pin: number | null },
+) {
+  return args.pin == null
+    ? latestAgentVersion(db, args.agentId)
+    : agentVersionByNumber(db, args.agentId, args.pin)
+}
+
 /** Cheap existence check (see `workflowExists`) — one indexed `SELECT id`. */
 export function agentExists(db: WfDb, agentId: string): Promise<boolean> {
   return agentVersions.exists(db, agentId)

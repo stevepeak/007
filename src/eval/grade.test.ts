@@ -273,7 +273,7 @@ describe('gradeRow — judge checks', () => {
     await gradeRow({
       checks: { op: 'and', checks: [{ type: 'llm_judge', rubric: 'r' }] },
       steps: workflowSteps,
-      output: { pad: tail, docMeta: { parties: ['Acme Corp'] } },
+      output: { pad: tail, docMeta: { recipients: ['Acme Corp'] } },
       getModel: () => model,
       defaultJudgeModelId: 'mock',
     })
@@ -287,19 +287,19 @@ describe('gradeRow — judge checks', () => {
       checks: {
         op: 'and',
         checks: [
-          { type: 'llm_judge', rubric: 'parties are present', path: 'docMeta.parties' },
+          { type: 'llm_judge', rubric: 'recipients are present', path: 'docMeta.recipients' },
         ],
       },
       steps: workflowSteps,
       output: {
         outline: [{ headerText: 'noise'.repeat(50) }],
-        docMeta: { parties: ['Acme Corp', 'Beta LLC'] },
+        docMeta: { recipients: ['Acme Corp', 'Beta LLC'] },
       },
       getModel: () => model,
       defaultJudgeModelId: 'mock',
     })
     expect(r.status).toBe('pass')
-    expect(seen.prompt).toContain('docMeta.parties') // labeled with the path
+    expect(seen.prompt).toContain('docMeta.recipients') // labeled with the path
     expect(seen.prompt).toContain('Beta LLC') // the plucked value is present
     expect(seen.prompt).not.toContain('outline') // unrelated fields are excluded
   })
@@ -325,7 +325,7 @@ describe('gradeRow — judge checks', () => {
                   {
                     toolCallId: '1',
                     toolName: 'search_rag',
-                    input: { query: 'statute of limitations' },
+                    input: { query: 'refund window' },
                     output: { chunks: ['SECRET_RETRIEVED_FACT'] },
                   },
                 ],

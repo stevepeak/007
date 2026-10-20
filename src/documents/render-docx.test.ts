@@ -131,7 +131,7 @@ const FIXTURE: DocumentModel = {
       type: 'signature',
       closing: 'Sincerely,',
       name: 'Mark Halloran',
-      title: 'Managing Attorney',
+      title: 'Managing Director',
       organization: 'Artisian Law, PLLC',
     },
     {
@@ -238,7 +238,7 @@ describe('renderDocx', () => {
     expect(withHead).not.toContain(FIXTURE.title)
 
     const memo: DocumentModel = {
-      title: 'Matter summary — Halberd v. Sterling',
+      title: 'Account summary — Halberd Sterling Ltd',
       blocks: [{ type: 'paragraph', runs: [{ text: 'Background.' }] }],
     }
     const withoutHead = unzip(await renderDocx(memo)).get('word/document.xml')!

@@ -167,7 +167,7 @@ describe('the surrounding signal', () => {
         return {
           rows: [
             { runId: 'other', rating: 'up', note: null },
-            { runId: 'run_1', rating: 'down', note: 'Missed the Bex matter.' },
+            { runId: 'run_1', rating: 'down', note: 'Missed the Bex account.' },
           ],
           correlations: [],
           raters: [],
@@ -180,10 +180,10 @@ describe('the surrounding signal', () => {
     }
     expect(result.feedback).toEqual({
       rating: 'down',
-      note: 'Missed the Bex matter.',
+      note: 'Missed the Bex account.',
     })
     const judge = result.draft.checks.checks.find((c) => c.type === 'llm_judge')
-    expect(judge?.rubric).toContain('Missed the Bex matter.')
+    expect(judge?.rubric).toContain('Missed the Bex account.')
   })
 
   // A host with no feedback wiring must still be able to draft from a run.

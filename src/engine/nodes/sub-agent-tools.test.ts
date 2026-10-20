@@ -23,9 +23,9 @@ function agent (id: string, extra: Partial<SubAgentTarget> = {}): SubAgentTarget
 describe('synthesizeTargets — naming', () => {
   test('derives spawn_<slug> from the display name', () => {
     const [info] = synthesizeTargets([agent('a')], () => ({
-      displayName: 'Legal Research!',
+      displayName: 'Web Research!',
     }))
-    expect(info.toolName).toBe('spawn_legal_research')
+    expect(info.toolName).toBe('spawn_web_research')
   })
 
   test('honors an explicit toolName override verbatim', () => {

@@ -99,7 +99,7 @@ describe('schemaPathOptions', () => {
   test('leaves an open-ended list without a value list', () => {
     const options = schemaPathOptions({
       type: 'object',
-      properties: { parties: { type: 'array', items: { type: 'string' } } },
+      properties: { recipients: { type: 'array', items: { type: 'string' } } },
     })
     expect(options?.[0].values).toBeUndefined()
   })
@@ -144,13 +144,13 @@ describe('schemaPathOptions', () => {
     const options = schemaPathOptions({
       type: 'object',
       properties: {
-        parties: {
+        recipients: {
           type: 'array',
           items: { type: 'object', properties: { name: { type: 'string' } } },
         },
       },
     })
-    expect(options?.map((o) => o.value)).toEqual(['parties'])
+    expect(options?.map((o) => o.value)).toEqual(['recipients'])
   })
 
   test('stops descending past a few levels rather than flattening a deep schema', () => {

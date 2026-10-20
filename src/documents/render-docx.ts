@@ -413,7 +413,7 @@ const NUMBERING_CONFIG = [
       level,
       format: LevelFormat.DECIMAL,
       // `1.` at the top level, `1.1` / `1.1.1` below it — the convention every
-      // legal document uses, and the reason the trailing dot is level-0 only.
+      // formal document uses, and the reason the trailing dot is level-0 only.
       text:
         Array.from({ length: level + 1 }, (_, i) => `%${i + 1}`).join('.') +
         (level === 0 ? '.' : ''),
@@ -484,7 +484,7 @@ export async function renderDocx(
 
   const doc = new Document({
     title: model.title,
-    // Times New Roman 12pt (half-points), the default every legal document
+    // Times New Roman 12pt (half-points), the default every formal document
     // arrives in. `size` is in half-points; `24` is 12pt.
     styles: {
       default: {

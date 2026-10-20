@@ -7,7 +7,7 @@
 //     summary: z.string(),
 //     riskScore: z.number(),
 //     isUrgent: z.boolean(),
-//     parties: z.array(z.string()).optional(),
+//     tags: z.array(z.string()).optional(),
 //   })
 //
 // which we compile to a JSON Schema fed to `generateObject`.

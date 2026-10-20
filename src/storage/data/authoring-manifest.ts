@@ -9,7 +9,7 @@ import {
 import type { WfDb } from '../client'
 import { wfAgent, wfModel, wfWorkflow } from '../schema'
 
-import { agentVersionByNumber, latestAgentVersion } from './authoring-agents'
+import { resolveAgentVersion } from './authoring-agents'
 import {
   agentPinsInGraph,
   MAX_WORKFLOW_DEPTH,
@@ -63,9 +63,7 @@ export async function resolveRunManifest(
     // the node then fails at run time with a clear "not in manifest" error.
     // The agent row does not depend on the version, so both reads run together.
     const [version, agentRows] = await Promise.all([
-      pin == null
-        ? latestAgentVersion(db, agentId)
-        : agentVersionByNumber(db, agentId, pin),
+      resolveAgentVersion(db, { agentId, pin }),
       db
         .select({ name: wfAgent.name, kind: wfAgent.kind })
         .from(wfAgent)

@@ -17,6 +17,7 @@ import type { DashboardAnalytics } from './dashboard'
 import {
   collapseSeries,
   foldCostRows,
+  foldPricedCostRows,
   loadDashboard,
   resolveWindow,
   type DashboardSeries,
@@ -204,6 +205,40 @@ describe('foldCostRows', () => {
     )
     expect(cost.totalUsd).toBeNull()
     expect(cost.unpricedTokens).toBe(200)
+  })
+})
+
+describe('foldPricedCostRows', () => {
+  const window = resolveWindow({ since: NOW - 2 * DAY }, NOW)
+
+  test('sums run-time dollars and leaves the unpriced remainder as tokens', () => {
+    const cost = foldPricedCostRows(
+      [
+        {
+          ordinal: window.firstOrdinal,
+          model: PRICED,
+          inputTokens: 300,
+          outputTokens: 100,
+          costUsd: 0.5,
+          pricedTokens: 400,
+        },
+        {
+          ordinal: window.firstOrdinal,
+          model: UNPRICED,
+          inputTokens: 50,
+          outputTokens: 50,
+          costUsd: 0,
+          pricedTokens: 0,
+        },
+      ],
+      window,
+    )
+    expect(cost.totalUsd).toBeCloseTo(0.5, 6)
+    expect(cost.totalTokens).toBe(500)
+    expect(cost.unpricedTokens).toBe(100)
+    expect(cost.series.map((s) => s.key)).toEqual([PRICED])
+    expect(cost.source).toBe('analytics')
+    expect(cost.pricedAtRunTime).toBe(true)
   })
 })
 

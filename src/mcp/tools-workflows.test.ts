@@ -77,7 +77,7 @@ function detail(over: Partial<WfWorkflowDetail> = {}): WfWorkflowDetail {
   return {
     workflow: {
       id: 'w1',
-      name: 'Legal chat',
+      name: 'Support chat',
       description: null,
       createdAt: 0,
       archived: false,

@@ -133,9 +133,9 @@ describe('a question saved with legacy considerations', () => {
     modelId: 'venice:jev-latest',
     questions: [
       {
-        id: 'is_legal',
+        id: 'is_billing',
         type: 'boolean',
-        prompt: 'Is this a legal question?',
+        prompt: 'Is this a billing question?',
         considerations: { not_automated: 'Not an auto-reply', blank: ' ' },
       },
     ],
@@ -146,7 +146,7 @@ describe('a question saved with legacy considerations', () => {
   test('folds them into the prompt as a list', () => {
     const [q] = decisionAgentConfigSchema.parse(legacy).questions
     expect(q.prompt).toBe(
-      'Is this a legal question?\n\nTake these into account:\n- not automated: Not an auto-reply',
+      'Is this a billing question?\n\nTake these into account:\n- not automated: Not an auto-reply',
     )
     expect('considerations' in q).toBe(false)
   })
@@ -161,7 +161,7 @@ describe('a question saved with legacy considerations', () => {
       ...legacy,
       questions: [{ ...legacy.questions[0], considerations: {} }],
     }).questions
-    expect(q.prompt).toBe('Is this a legal question?')
+    expect(q.prompt).toBe('Is this a billing question?')
   })
 })
 
@@ -268,7 +268,7 @@ describe('applyDecisionRules', () => {
       questions: [
         question({ threshold: 0.7 }),
         question({
-          id: 'matter',
+          id: 'topic',
           type: 'category',
           choices: [{ key: 'billing' }, { key: 'outage' }],
         }),
@@ -279,14 +279,14 @@ describe('applyDecisionRules', () => {
           verdict: 'escalate',
           conditions: [
             { questionId: 'is_urgent', op: 'is', yes: true, keys: [] },
-            { questionId: 'matter', op: 'equals', keys: ['outage'] },
+            { questionId: 'topic', op: 'equals', keys: ['outage'] },
           ],
         },
         { id: 'r2', verdict: 'auto_reply', conditions: [] },
       ],
     })
-    const matter = (value: string): DecisionVerdict => ({
-      id: 'matter',
+    const topic = (value: string): DecisionVerdict => ({
+      id: 'topic',
       type: 'category',
       value,
       confidence: 0.6,
@@ -295,14 +295,14 @@ describe('applyDecisionRules', () => {
     expect(
       applyDecisionRules(
         cfg.rules,
-        { is_urgent: booleanVerdict(0.9), matter: matter('billing') },
+        { is_urgent: booleanVerdict(0.9), topic: topic('billing') },
         cfg.questions,
       ).verdict,
     ).toBe('auto_reply')
     expect(
       applyDecisionRules(
         cfg.rules,
-        { is_urgent: booleanVerdict(0.9), matter: matter('outage') },
+        { is_urgent: booleanVerdict(0.9), topic: topic('outage') },
         cfg.questions,
       ).verdict,
     ).toBe('escalate')
@@ -433,7 +433,7 @@ describe('decisionAgentConfigIssues', () => {
       modelId: 'm',
       questions: [
         question({
-          id: 'matter',
+          id: 'topic',
           type: 'category',
           prompt: 'What kind?',
           choices: [{ key: 'a' }, { key: 'b' }],
@@ -444,7 +444,7 @@ describe('decisionAgentConfigIssues', () => {
         {
           id: 'r1',
           verdict: 'x',
-          conditions: [{ questionId: 'matter', op: 'gte', probability: 0.5, keys: [] }],
+          conditions: [{ questionId: 'topic', op: 'gte', probability: 0.5, keys: [] }],
         },
         { id: 'r2', verdict: 'x', conditions: [] },
       ],

@@ -47,12 +47,12 @@ describe('executeTextNode', () => {
     // The engine has to bind that to the same `my_var` the editor lists.
     const r = await executeTextNode({
       node: node({
-        body: 'Matter: ${my\\_var}',
-        inputs: { my_var: { kind: 'literal', value: 'Acme v. Ajax' } },
+        body: 'Customer: ${my\\_var}',
+        inputs: { my_var: { kind: 'literal', value: 'Acme Ajax Ltd' } },
       }),
       nodeOutputs: new Map(),
     })
-    expect(r.output).toBe('Matter: Acme v. Ajax')
+    expect(r.output).toBe('Customer: Acme Ajax Ltd')
   })
 
   test('stringifies a non-string value and blanks a null one', async () => {
@@ -85,11 +85,11 @@ describe('executeTextNode', () => {
     // The whole point of the node is text a person reads, so a half-filled
     // sentence is a worse outcome than a failed run.
     const run = executeTextNode({
-      node: node({ body: 'Hello ${name}, re ${matter}.' }),
+      node: node({ body: 'Hello ${name}, re ${topic}.' }),
       nodeOutputs: new Map(),
     })
     expect(run).rejects.toThrow(
-      /Draft the reply has unbound variables: \$\{name\}, \$\{matter\}/,
+      /Draft the reply has unbound variables: \$\{name\}, \$\{topic\}/,
     )
   })
 

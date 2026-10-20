@@ -35,7 +35,7 @@ const CHECKS = {
   op: 'and' as const,
   checks: [
     { type: 'tool_called' as const, toolId: 'search_rag', called: true },
-    { type: 'llm_judge' as const, rubric: 'Cites the statute.' },
+    { type: 'llm_judge' as const, rubric: 'Cites the policy.' },
   ],
 }
 
@@ -53,7 +53,7 @@ async function seedRow(): Promise<string> {
   return await upsertEvalRow(db, {
     setId,
     name: 'Refuses out of scope',
-    input: { kind: 'task', variables: { matterName: 'Acme v. Byrne' } },
+    input: { kind: 'task', variables: { customerName: 'Acme Byrne Ltd' } },
     tools: {
       fallback: 'mocked',
       byTool: { search_rag: { mode: 'mocked', output: { hits: [] } } },
@@ -75,7 +75,7 @@ describe('upsertEvalRow — omitting a field', () => {
     expect(found?.row.checks.checks).toHaveLength(2)
     expect(found?.row.input).toEqual({
       kind: 'task',
-      variables: { matterName: 'Acme v. Byrne' },
+      variables: { customerName: 'Acme Byrne Ltd' },
     })
     expect(found?.row.tools).toEqual({
       fallback: 'mocked',
@@ -102,7 +102,7 @@ describe('upsertEvalRow — omitting a field', () => {
     // The other two are untouched.
     expect(found?.row.checks.checks).toHaveLength(2)
     expect((found?.row.input as { variables: unknown }).variables).toEqual({
-      matterName: 'Acme v. Byrne',
+      customerName: 'Acme Byrne Ltd',
     })
   })
 

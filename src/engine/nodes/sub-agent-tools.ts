@@ -19,7 +19,7 @@ export const SIGNAL_STOP_TOOL_NAME = 'signal_stop'
 /** A target resolved to the display info needed to name & document its tool. */
 export type SynthesizedTarget = {
   target: SubAgentTarget
-  /** The synthesized tool key (e.g. `spawn_legal_research`). */
+  /** The synthesized tool key (e.g. `spawn_web_research`). */
   toolName: string
   /** The target's display name, used in the description. */
   displayName: string

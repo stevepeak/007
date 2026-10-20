@@ -55,9 +55,9 @@ function models(): ModelOption[] {
 function tools(): ToolOption[] {
   return [
     {
-      id: 'search_matters',
-      name: 'Search matters',
-      description: 'finds matters',
+      id: 'search_tickets',
+      name: 'Search tickets',
+      description: 'finds tickets',
       kind: 'function',
       origin: 'host',
     },
@@ -81,8 +81,8 @@ function createClient(over: Partial<WfDataClient> = {}): WfDataClient {
  */
 const minimal = {
   modelId: 'venice:qwen',
-  prompt: 'You check for conflicts.',
-  userPrompt: 'Check this matter:\n\n${matter}',
+  prompt: 'You check for duplicates.',
+  userPrompt: 'Check this ticket:\n\n${ticket}',
 }
 
 describe('create_agent', () => {
@@ -97,9 +97,9 @@ describe('create_agent', () => {
       },
     })
     const result = (await tool.run(client, {
-      name: 'Conflict checker',
+      name: 'Duplicate checker',
       config: minimal,
-      description: 'Screens a new matter against existing clients.',
+      description: 'Screens a new ticket against existing ones.',
     })) as { ok: boolean; agentId: string; inputContract: { variables: string[] } }
 
     expect(result.ok).toBe(true)
@@ -111,7 +111,7 @@ describe('create_agent', () => {
     )
     // The bindings a node pointing at this agent will have to map — the thing
     // the caller needs next and would otherwise re-derive.
-    expect(result.inputContract.variables).toEqual(['matter'])
+    expect(result.inputContract.variables).toEqual(['ticket'])
   })
 
   // A new agent seeds a published v1 (as the console's own button does), and
@@ -119,7 +119,7 @@ describe('create_agent', () => {
   // say so rather than leave the caller to assume a draft.
   test('says the version is live and that nothing references it', async () => {
     const result = (await tool.run(createClient(), {
-      name: 'Conflict checker',
+      name: 'Duplicate checker',
       config: minimal,
     })) as { versionNumber: number; note: string }
     expect(result.versionNumber).toBe(1)
@@ -133,7 +133,7 @@ describe('create_agent', () => {
       },
     })
     const result = (await tool.run(client, {
-      name: 'Conflict checker',
+      name: 'Duplicate checker',
       config: minimal,
     })) as { ok: boolean }
     expect(result.ok).toBe(true)
@@ -169,7 +169,7 @@ describe('create_agent', () => {
 
   test('refuses a model id that is not enabled, and names the ones that are', async () => {
     const result = (await tool.run(refusingClient(), {
-      name: 'Conflict checker',
+      name: 'Duplicate checker',
       config: { ...minimal, modelId: 'qwen' },
     })) as { error: string }
     // The composite-vs-native trap: the provider-native half alone 404s.
@@ -178,12 +178,12 @@ describe('create_agent', () => {
 
   test('refuses a tool id that is not in the catalog', async () => {
     const result = (await tool.run(refusingClient(), {
-      name: 'Conflict checker',
-      config: { ...minimal, toolIds: ['search_matters', 'search_everything'] },
+      name: 'Duplicate checker',
+      config: { ...minimal, toolIds: ['search_tickets', 'search_everything'] },
     })) as { error: string }
     expect(result.error).toContain('search_everything')
     // Only the unknown one is named — the real id is not the caller's problem.
-    expect(result.error).not.toContain('search_matters')
+    expect(result.error).not.toContain('search_tickets')
   })
 
   // The editor never offers a model that cannot run what the agent is
@@ -191,11 +191,11 @@ describe('create_agent', () => {
   // gate has to be here or nowhere.
   test('refuses a model that cannot call the tools the agent is given', async () => {
     const result = (await tool.run(refusingClient(), {
-      name: 'Conflict checker',
+      name: 'Duplicate checker',
       config: {
         ...minimal,
         modelId: 'venice:tiny',
-        toolIds: ['search_matters'],
+        toolIds: ['search_tickets'],
       },
     })) as { error: string }
     expect(result.error).toContain('no tool calling')
@@ -208,8 +208,8 @@ describe('create_agent', () => {
       listModels: async () => [{ id: 'venice:qwen', label: 'Qwen' }],
     })
     const result = (await tool.run(client, {
-      name: 'Conflict checker',
-      config: { ...minimal, toolIds: ['search_matters'] },
+      name: 'Duplicate checker',
+      config: { ...minimal, toolIds: ['search_tickets'] },
     })) as { ok?: boolean; error?: string }
     expect(result.error).toBeUndefined()
     expect(result.ok).toBe(true)
@@ -217,10 +217,10 @@ describe('create_agent', () => {
 
   test('a conversation agent is told its nodes must bind the thread', async () => {
     const result = (await tool.run(createClient(), {
-      name: 'Legal chat',
+      name: 'Support chat',
       config: {
         modelId: 'venice:qwen',
-        prompt: 'You answer legal questions.',
+        prompt: 'You answer support questions.',
         inputKind: 'conversation',
       },
     })) as { inputContract: { inputKind: string; note: string } }
@@ -389,7 +389,7 @@ describe('run_agent_preview', () => {
     await tool.run(client, {
       agentId: 'a1',
       input: 'hello',
-      liveToolIds: ['search_matters'],
+      liveToolIds: ['search_tickets'],
     })
     expect(sent[0]?.liveToolIds).toBeUndefined()
     expect(Object.keys(tool.inputSchema)).not.toContain('liveToolIds')
@@ -480,11 +480,11 @@ describe('run_agent_preview', () => {
     const { sent, client } = capture()
     await tool.run(client, {
       agentId: 'a1',
-      promptVariables: { matter: 'M-1', ignored: 7 },
+      promptVariables: { account: 'A-1', ignored: 7 },
     })
     // Strings only — the handler parses a string record, and a number silently
     // dropped downstream would render as an empty variable.
-    expect(sent[0]?.promptVariables).toEqual({ matter: 'M-1' })
+    expect(sent[0]?.promptVariables).toEqual({ account: 'A-1' })
     expect(sent[0]?.input).toBeUndefined()
   })
 })
@@ -529,7 +529,7 @@ describe('update_agent_draft — the preflight it used to skip', () => {
       config: {
         ...published,
         modelId: 'venice:tiny',
-        toolIds: ['search_matters'],
+        toolIds: ['search_tickets'],
       },
     })) as { error: string }
     expect(result.error).toContain('no tool calling')
@@ -713,7 +713,7 @@ describe('list_agent_calls', () => {
       inputTokens: 100,
       outputTokens: 50,
       costUsd: 0.01,
-      toolCalls: [{ toolId: 'search_matters', count: 3 }],
+      toolCalls: [{ toolId: 'search_tickets', count: 3 }],
       stoppedOnTokenBudget: false,
       stoppedOnContextLimit: false,
       subAgentName: null,
@@ -738,7 +738,7 @@ describe('list_agent_calls', () => {
     expect(out.note).toContain('toolTokenBudget')
     expect(out.note).toContain('not the prompt')
     expect(out.calls[0]?.toolCalls).toEqual([
-      { toolId: 'search_matters', count: 3 },
+      { toolId: 'search_tickets', count: 3 },
     ])
   })
 
@@ -795,7 +795,7 @@ describe('update_agent', () => {
           agent: {
             id: 'a1',
             name: 'Intake',
-            workflows: [{ id: 'w1', name: 'Legal chat' }],
+            workflows: [{ id: 'w1', name: 'Support chat' }],
           } as never,
         }) },
       updateAgentMeta: async (input) => {
@@ -804,17 +804,17 @@ describe('update_agent', () => {
     })
     const out = (await toolNamed('update_agent').run(client, {
       agentId: 'a1',
-      name: 'Conflict checker',
+      name: 'Duplicate checker',
       icon: 'scale',
     })) as { before: { name: string }; referencedBy: string[]; note: string }
     expect(seen).toEqual({
       agentId: 'a1',
-      name: 'Conflict checker',
+      name: 'Duplicate checker',
       icon: 'scale',
       color: undefined,
     })
     expect(out.before.name).toBe('Intake')
-    expect(out.referencedBy).toEqual(['Legal chat'])
+    expect(out.referencedBy).toEqual(['Support chat'])
     expect(out.note).toContain('no version was created')
   })
 
@@ -934,7 +934,7 @@ describe('run_agent_preview — a conversation agent', () => {
       agentId: 'a1',
       input: 'And the deadline?',
       messages: [
-        { role: 'user', text: 'What is the statute?' },
+        { role: 'user', text: 'What is the refund policy?' },
         { role: 'assistant', text: 'Section 12.' },
       ],
     })) as { turnsSeeded: number }

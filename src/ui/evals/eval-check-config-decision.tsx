@@ -155,7 +155,7 @@ export function DecisionJudgeConfig({
         <Textarea
           rows={3}
           value={rubricField.value}
-          placeholder="e.g. The answer cites the statute that actually governs the question asked."
+          placeholder="e.g. The answer cites the policy section that actually applies to the question asked."
           onChange={(e) => rubricField.onChange(e.target.value)}
           onBlur={rubricField.onBlur}
         />

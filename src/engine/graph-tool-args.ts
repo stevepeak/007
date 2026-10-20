@@ -11,7 +11,7 @@ import { truncate } from './text'
 // message that reaches it. The failure that motivated this (ART-146) was a
 // renamed field (`note` → `internalNote` / `publicNote`) plus a boolean stored
 // as the string "false" — three ZodErrors, visible only after a customer was
-// told "your attorney has been notified" while nothing had been written.
+// told "your account manager has been notified" while nothing had been written.
 //
 // This lint is the author-time counterpart of that parse. It is deliberately a
 // pure function over JSON Schema (not zod): the editor holds JSON Schema from

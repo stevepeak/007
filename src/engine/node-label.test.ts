@@ -11,7 +11,7 @@ const MANIFEST = [
     pinnedVersion: null,
     versionId: 'v-latest',
     versionNumber: 5,
-    name: 'Legal Researcher',
+    name: 'Researcher',
     config: {},
   },
   {
@@ -27,10 +27,10 @@ const MANIFEST = [
 describe('nodeSpanLabel', () => {
   it('folds the resolved agent name and node label together', () => {
     const label = nodeSpanLabel(
-      { kind: 'agent', label: 'Draft the memo', config: { agentId: 'a1' } },
+      { kind: 'agent', label: 'Draft the summary', config: { agentId: 'a1' } },
       MANIFEST,
     )
-    expect(label).toBe('Agent: Legal Researcher - Draft the memo')
+    expect(label).toBe('Agent: Researcher - Draft the summary')
   })
 
   it('honors the version pin when resolving the agent', () => {
@@ -50,10 +50,10 @@ describe('nodeSpanLabel', () => {
 
   it('falls back to just the node label when the agent is unresolved', () => {
     const label = nodeSpanLabel(
-      { kind: 'agent', label: 'Draft the memo', config: { agentId: 'missing' } },
+      { kind: 'agent', label: 'Draft the summary', config: { agentId: 'missing' } },
       MANIFEST,
     )
-    expect(label).toBe('Agent: Draft the memo')
+    expect(label).toBe('Agent: Draft the summary')
   })
 
   it('prefixes decision nodes with a pretty kind', () => {

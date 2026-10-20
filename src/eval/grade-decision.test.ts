@@ -36,7 +36,7 @@ function tree(check: Partial<Record<string, unknown>> = {}): CheckTree {
     checks: [
       {
         type: 'decision_judge',
-        rubric: 'The answer cites the governing statute.',
+        rubric: 'The answer cites the governing policy.',
         ...check,
       },
     ],
@@ -129,7 +129,7 @@ describe('decision_judge', () => {
       {
         id: 'passes',
         type: 'boolean',
-        prompt: 'The answer cites the governing statute.',
+        prompt: 'The answer cites the governing policy.',
       },
     ])
     expect(calls[0].state).toMatchObject({
@@ -141,15 +141,15 @@ describe('decision_judge', () => {
   test('grades only the pinned path when the check names one', async () => {
     const { decide, calls } = stubDecider(0.9)
     await gradeRow({
-      checks: tree({ path: 'docMeta.parties' }),
+      checks: tree({ path: 'docMeta.recipients' }),
       steps: [],
-      output: { docMeta: { parties: ['Acme', 'Beta'] } },
+      output: { docMeta: { recipients: ['Acme', 'Beta'] } },
       getDecider: () => decide,
       defaultDecisionModelId: 'test:decider',
     })
     expect(calls[0].state).toMatchObject({
       output: ['Acme', 'Beta'],
-      outputPath: 'docMeta.parties',
+      outputPath: 'docMeta.recipients',
     })
   })
 

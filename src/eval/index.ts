@@ -97,6 +97,7 @@ export {
   buildAgentWrapperGraph,
   ensureAgentEvalWrapper,
   evalWrapperName,
+  goalPinError,
   resolveEvalTarget,
   EVAL_WRAPPER_NAME_PREFIX,
 } from './wrapper'

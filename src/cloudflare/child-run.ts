@@ -205,7 +205,7 @@ export async function spawnCalleeRun(
 
 /**
  * The context a callee runs under: the caller's, re-pointed at the callee's own
- * trigger. `triggerKind` becomes the callee trigger's kind (a "Legal chat" run
+ * trigger. `triggerKind` becomes the callee trigger's kind (a "Support chat" run
  * should not be listed as `email_matched` because an email started its
  * caller), and the identity fields are overridden by whatever that trigger's
  * `resolveIdentity` reads off the bound input — field by field, so a trigger

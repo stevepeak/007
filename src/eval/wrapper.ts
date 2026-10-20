@@ -37,6 +37,22 @@ import {
 export { EVAL_WRAPPER_NAME_PREFIX, evalWrapperName }
 
 /**
+ * The error for a Goal whose `targetVersion` names a version that was never
+ * published. Every pin check (agent wrapper, workflow target, decision sweep)
+ * throws this same text, so the reader learns which Goal to repoint.
+ */
+export function goalPinError(args: {
+  kind: 'agent' | 'workflow'
+  id: string
+  version: number
+}): string {
+  return (
+    `This goal pins v${args.version} of ${args.kind} ${args.id}, which has no published version ${args.version}. ` +
+    'Repoint the goal at Latest, or at a version that exists.'
+  )
+}
+
+/**
  * The minimal runnable graph for an agent eval: a manual trigger wired through
  * an agent node (pointing at `agentId`) into an Output. `version` is the goal's
  * target pin — `null` floats to the agent's latest published version, a number
@@ -147,8 +163,7 @@ export async function ensureAgentEvalWrapper(
   // so every later eval would fail the same opaque way.
   if (version != null && !(await agentVersionByNumber(db, input.agentId, version))) {
     throw new Error(
-      `This goal pins v${version} of agent ${input.agentId}, which has no published version ${version}. ` +
-        'Repoint the goal at Latest, or at a version that exists.',
+      goalPinError({ kind: 'agent', id: input.agentId, version }),
     )
   }
   const name = evalWrapperName(input.agentId, version)
@@ -259,8 +274,7 @@ export async function resolveEvalTarget(
     const pinned = await versionByNumber(db, target.id, version)
     if (!pinned) {
       throw new Error(
-        `This goal pins v${version} of workflow ${target.id}, which has no published version ${version}. ` +
-          'Repoint the goal at Latest, or at a version that exists.',
+        goalPinError({ kind: 'workflow', id: target.id, version }),
       )
     }
     return { workflowVersionId: pinned.id, triggerKind: setTriggerKind }

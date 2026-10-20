@@ -1,16 +1,10 @@
+import { isEmptyValue } from '../../engine/nodes/branch'
 import type { WfRunStepDTO } from '../../server/protocol'
 
 // A step row exists from the moment its node starts: `meta` and `output` are
 // written as `{}` (the column defaults) and filled in when the node finishes.
-// So an empty value on a live step means "not yet", never "nothing".
-
-/** `null`, `undefined`, `''`, `[]` and `{}` carry no data worth a section. */
-export function isEmptyValue(value: unknown): boolean {
-  if (value === null || value === undefined || value === '') return true
-  if (Array.isArray(value)) return value.length === 0
-  if (typeof value === 'object') return Object.keys(value).length === 0
-  return false
-}
+// So an empty value on a live step means "not yet", never "nothing". `null`,
+// `undefined`, `''`, `[]` and `{}` carry no data worth a section.
 
 /** The step's node has started but not settled. */
 export function isStepInFlight(status: string): boolean {

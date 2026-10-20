@@ -70,7 +70,7 @@ const REGISTRY: ToolRegistry<unknown> = new Map([
         return tool({
           description: 'Looks something up.',
           inputSchema: z.object({ q: z.string() }),
-          execute: async () => ({ hit: 'the statute' }),
+          execute: async () => ({ hit: 'the policy' }),
         })
       },
     },
@@ -94,7 +94,7 @@ function eagerAnswerer(seen: { toolChoices: unknown[] }) {
                   type: 'tool-call' as const,
                   toolCallId: `c${call}`,
                   toolName: 'lookup',
-                  input: JSON.stringify({ q: 'the statute' }),
+                  input: JSON.stringify({ q: 'the policy' }),
                 },
               ]
             : [{ type: 'text' as const, text: 'Answer.' }],

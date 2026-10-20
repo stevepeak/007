@@ -10,7 +10,7 @@
 // letterhead template later consumes.
 //
 // The vocabulary is deliberately CLOSED and small. Every block here earned its
-// place in a real document (demand letter, engagement letter, matter memo); the
+// place in a real document (cover letter, offer letter, project memo); the
 // seam for anything else is `extraBlocks` below, not a new optional field.
 //
 // AUTHORING NOTE: every optional is `.nullish()`, never `.optional()`. Providers

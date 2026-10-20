@@ -51,7 +51,7 @@ function scalarString(v: unknown): string {
 // "Empty" spans the shapes an upstream node realistically produces: nullish,
 // the empty string, an empty array, or an object with no own keys. `0` and
 // `false` are NOT empty — they're present values.
-function isEmptyValue(v: unknown): boolean {
+export function isEmptyValue(v: unknown): boolean {
   if (v == null) {
     return true
   }

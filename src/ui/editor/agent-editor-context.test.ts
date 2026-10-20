@@ -60,7 +60,7 @@ describe('contextFieldsFor', () => {
   })
 
   test('drops a key the host never declared', () => {
-    expect(contextFieldsFor(FIELDS, ['matterId'])).toEqual([])
+    expect(contextFieldsFor(FIELDS, ['accountId'])).toEqual([])
   })
 })
 
@@ -101,8 +101,8 @@ describe('contextLabelsFor', () => {
   })
 
   test('an undeclared key shows as its raw key rather than vanishing', () => {
-    expect(contextLabelsFor(tool('x', ['matterId']), FIELDS)).toEqual([
-      'matterId',
+    expect(contextLabelsFor(tool('x', ['accountId']), FIELDS)).toEqual([
+      'accountId',
     ])
   })
 })

@@ -25,13 +25,13 @@ export const NON_STEP_KINDS = new Set([
 // Step statuses that mean a node is done (any which way).
 export const TERMINAL_STEP_STATUSES = new Set(['completed', 'failed', 'skipped'])
 
-// Run statuses that mean the run is finished as far as a progress bar is
-// concerned — it pins to 100%.
+// Run statuses that mean the run's answer is final — a progress bar pins to
+// 100% and an eval waiter stops polling.
 //
 // `done` counts. The Output was reached and the answer is final; what remains
 // is background arms draining, which nobody is waiting on. Leaving it out left
 // a finished answer sitting under a bar that still read "working".
-const TERMINAL_RUN_STATUSES = new Set([
+export const TERMINAL_RUN_STATUSES = new Set([
   'done',
   'completed',
   'failed',

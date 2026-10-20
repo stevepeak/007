@@ -36,7 +36,7 @@ import { substitutePromptVariables } from './prompt-variables'
 export type DecisionAgentResult = {
   /** The verdict the first matching rule named. Never null — a fallback is required. */
   verdict: string
-  /** Which rule fired and what it read: `rule 1 (is_urgent 0.82, matter outage)`. */
+  /** Which rule fired and what it read: `rule 1 (is_urgent 0.82, topic outage)`. */
   because: string
   /** The raw judgment, per question id — distributions, thresholds and all. */
   answers: Record<string, DecisionVerdict>

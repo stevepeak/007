@@ -1,5 +1,6 @@
 import { errorFeedLine } from '../engine/error-detail'
 import { consoleWfLogger, type WfLogger } from '../engine/logger'
+import { TERMINAL_RUN_STATUSES } from '../engine/run-progress'
 import type { WfDataClient } from '../server/protocol'
 
 import {
@@ -29,8 +30,8 @@ import {
 // A run has TWO success states: `done` (the Output was reached — the answer is
 // final and persisted — while branches that don't feed it are still draining)
 // and `completed` (nothing left to run). A waiter after an ANSWER must accept
-// both; only a waiter for the graph to fall quiet holds out for `completed`.
-const RUN_TERMINAL = new Set(['done', 'completed', 'failed', 'cancelled'])
+// both (`TERMINAL_RUN_STATUSES` does); only a waiter for the graph to fall
+// quiet holds out for `completed`.
 
 /**
  * Consecutive failed model calls before the run stops launching new cells. Once
@@ -135,7 +136,7 @@ export async function tickEvalRun(
     // in-flight cell per tick. On `getRun` it was a full run-inspector load —
     // every step's tool IO, the whole log feed, and the serialized graph.
     const status = await client.getRunStatus(entry.wfRunId)
-    if (status && RUN_TERMINAL.has(status.status)) {
+    if (status && TERMINAL_RUN_STATUSES.has(status.status)) {
       if (status.status === 'done' || status.status === 'completed') {
         try {
           await client.gradeEvalResult({

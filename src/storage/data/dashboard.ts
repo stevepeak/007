@@ -216,6 +216,19 @@ export function resolveWindow(
 /** A zero-filled points array — the baseline every series accumulates into. */
 const zeros = (n: number) => new Array<number>(n).fill(0)
 
+/** Add `value` into the bucket at `ordinal`; an ordinal outside the window is dropped. */
+function addToBucket(args: {
+  points: number[]
+  window: Pick<DashboardWindow, 'firstOrdinal'>
+  ordinal: number
+  value: number
+}) {
+  const i = args.ordinal - args.window.firstOrdinal
+  if (i >= 0 && i < args.points.length) {
+    args.points[i] = (args.points[i] ?? 0) + args.value
+  }
+}
+
 /**
  * Accumulate `(key, ordinal, value)` triples into gap-free series.
  *
@@ -304,10 +317,12 @@ export function foldRunVolume(
   for (const r of rows) {
     total += Number(r.runs)
     failed += Number(r.failed)
-    const i = r.ordinal - window.firstOrdinal
-    if (i >= 0 && i < failedPoints.length) {
-      failedPoints[i] = (failedPoints[i] ?? 0) + Number(r.failed)
-    }
+    addToBucket({
+      points: failedPoints,
+      window,
+      ordinal: r.ordinal,
+      value: Number(r.failed),
+    })
   }
   return { total, failed, series, failedPoints, source }
 }
@@ -319,58 +334,93 @@ type CostRow = {
   outputTokens: number
 }
 
+/** One spend row as {@link foldSpend} reads it. `usd` is null when unpriced. */
+type RowSpend = {
+  ordinal: number
+  model: string | null
+  tokens: number
+  pricedTokens: number
+  usd: number | null
+}
+
 /**
- * Price the per-model token group-by into dollar series.
- *
- * `tokenCostUsd` returns null for a model the catalog never priced, and this
- * keeps those tokens in `unpricedTokens` instead of folding them in as $0 —
- * under-reporting spend silently is worse than showing an explicit caveat.
+ * Fold spend rows into dollar series. A row with no model or no price adds its
+ * tokens to `unpricedTokens` rather than folding in as $0 — under-reporting
+ * spend silently is worse than showing an explicit caveat.
+ */
+function foldSpend<R>(args: {
+  rows: R[]
+  window: DashboardWindow
+  spendOf: (row: R) => RowSpend
+  source: DashboardSource
+  pricedAtRunTime: boolean
+}): DashboardStats<never>['cost'] {
+  let totalTokens = 0
+  let pricedTokens = 0
+  let totalUsd = 0
+  let priced = false
+
+  const priceable: Array<{ ordinal: number; model: string; usd: number }> = []
+  for (const row of args.rows) {
+    const r = args.spendOf(row)
+    totalTokens += r.tokens
+    pricedTokens += r.pricedTokens
+    if (r.usd == null || !r.model) continue
+    priced = true
+    totalUsd += r.usd
+    priceable.push({ ordinal: r.ordinal, model: r.model, usd: r.usd })
+  }
+
+  return {
+    totalUsd: priced ? totalUsd : null,
+    totalTokens,
+    unpricedTokens: Math.max(0, totalTokens - pricedTokens),
+    series: collapseSeries(
+      accumulate(priceable, args.window, (r) => ({
+        key: r.model,
+        label: r.model,
+        ordinal: r.ordinal,
+        value: r.usd,
+      })),
+      MAX_COST_SERIES,
+    ),
+    source: args.source,
+    pricedAtRunTime: args.pricedAtRunTime,
+  }
+}
+
+/**
+ * Price the per-model token group-by into dollar series. `tokenCostUsd` returns
+ * null for a model the catalog never priced, which leaves those tokens unpriced.
  */
 export function foldCostRows(
   rows: CostRow[],
   priceMap: ModelPriceMap,
   window: DashboardWindow,
 ): DashboardStats<never>['cost'] {
-  let totalTokens = 0
-  let unpricedTokens = 0
-  let totalUsd = 0
-  let priced = false
-
-  const priceable: Array<{ ordinal: number; model: string; usd: number }> = []
-  for (const r of rows) {
-    const input = Number(r.inputTokens) || 0
-    const output = Number(r.outputTokens) || 0
-    totalTokens += input + output
-    const model = r.model
-    const usd = model ? tokenCostUsd(input, output, priceMap.get(model)) : null
-    if (usd == null || !model) {
-      unpricedTokens += input + output
-      continue
-    }
-    priced = true
-    totalUsd += usd
-    priceable.push({ ordinal: r.ordinal, model, usd })
-  }
-
-  const series = collapseSeries(
-    accumulate(priceable, window, (r) => ({
-      key: r.model,
-      label: r.model,
-      ordinal: r.ordinal,
-      value: r.usd,
-    })),
-    MAX_COST_SERIES,
-  )
-  return {
-    totalUsd: priced ? totalUsd : null,
-    totalTokens,
-    unpricedTokens,
-    series,
+  return foldSpend({
+    rows,
+    window,
+    spendOf: (r) => {
+      const input = Number(r.inputTokens) || 0
+      const output = Number(r.outputTokens) || 0
+      const tokens = input + output
+      const usd = r.model
+        ? tokenCostUsd(input, output, priceMap.get(r.model))
+        : null
+      return {
+        ordinal: r.ordinal,
+        model: r.model,
+        tokens,
+        pricedTokens: usd == null ? 0 : tokens,
+        usd,
+      }
+    },
     source: 'db',
     // The D1 path multiplies stored tokens by the CURRENT catalog price, so
     // these dollars move whenever the catalog does.
     pricedAtRunTime: false,
-  }
+  })
 }
 
 /**
@@ -384,37 +434,19 @@ export function foldPricedCostRows(
   rows: AnalyticsCostRow[],
   window: DashboardWindow,
 ): DashboardStats<never>['cost'] {
-  let totalTokens = 0
-  let pricedTokens = 0
-  let totalUsd = 0
-  let priced = false
-
-  const priceable: Array<{ ordinal: number; model: string; usd: number }> = []
-  for (const r of rows) {
-    totalTokens += r.inputTokens + r.outputTokens
-    pricedTokens += r.pricedTokens
-    if (!r.model || r.pricedTokens <= 0) continue
-    priced = true
-    totalUsd += r.costUsd
-    priceable.push({ ordinal: r.ordinal, model: r.model, usd: r.costUsd })
-  }
-
-  return {
-    totalUsd: priced ? totalUsd : null,
-    totalTokens,
-    unpricedTokens: Math.max(0, totalTokens - pricedTokens),
-    series: collapseSeries(
-      accumulate(priceable, window, (r) => ({
-        key: r.model,
-        label: r.model,
-        ordinal: r.ordinal,
-        value: r.usd,
-      })),
-      MAX_COST_SERIES,
-    ),
+  return foldSpend({
+    rows,
+    window,
+    spendOf: (r) => ({
+      ordinal: r.ordinal,
+      model: r.model,
+      tokens: r.inputTokens + r.outputTokens,
+      pricedTokens: r.pricedTokens,
+      usd: r.model && r.pricedTokens > 0 ? r.costUsd : null,
+    }),
     source: 'analytics',
     pricedAtRunTime: true,
-  }
+  })
 }
 
 /** Shape the Workflows step group-by into the billing panel's totals + series. */
@@ -433,10 +465,7 @@ export function foldSteps(
     runs += r.runs
     nodes += r.nodes
     iterationItems += r.iterationItems
-    const i = r.ordinal - window.firstOrdinal
-    if (i >= 0 && i < points.length) {
-      points[i] = (points[i] ?? 0) + r.workflowSteps
-    }
+    addToBucket({ points, window, ordinal: r.ordinal, value: r.workflowSteps })
   }
   return {
     total,
@@ -482,8 +511,7 @@ export function foldFeedback(
     const points = r.rating === 'down' ? downPoints : upPoints
     if (r.rating === 'down') down += count
     else up += count
-    const i = r.ordinal - window.firstOrdinal
-    if (i >= 0 && i < points.length) points[i] = (points[i] ?? 0) + count
+    addToBucket({ points, window, ordinal: r.ordinal, value: count })
   }
   return { unacknowledged, unacknowledgedDown, up, down, upPoints, downPoints }
 }

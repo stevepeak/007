@@ -392,7 +392,7 @@ export function readTools(): WfMcpTool[] {
       name: 'list_feedback',
       title: 'List feedback',
       description:
-        'Customer thumbs ratings, newest first, each with the run that produced the rated answer. Thumbs-down rows with a runId are the highest-value input for authoring eval samples — they are real failures someone complained about. Pair with get_run to read what actually happened, draft_sample_from_run to turn one into a test, and triage_feedback to acknowledge it and write down what was done (otherwise the same row comes back next session). `facets` lists the client/matter and rater ids you can filter by.',
+        'Customer thumbs ratings, newest first, each with the run that produced the rated answer. Thumbs-down rows with a runId are the highest-value input for authoring eval samples — they are real failures someone complained about. Pair with get_run to read what actually happened, draft_sample_from_run to turn one into a test, and triage_feedback to acknowledge it and write down what was done (otherwise the same row comes back next session). `facets` lists the correlation and rater ids you can filter by.',
       inputSchema: {
         rating: z
           .string()
@@ -407,7 +407,7 @@ export function readTools(): WfMcpTool[] {
           .array(z.string())
           .nullish()
           .describe(
-            'Keep only rows from these client/matter groupings — "every complaint from this matter", which is otherwise not expressible. The `correlations` facet in the reply lists the ids that exist.',
+            'Keep only rows from these correlation groupings — "every complaint from this customer", which is otherwise not expressible. The `correlations` facet in the reply lists the ids that exist.',
           ),
         raterIds: z
           .array(z.string())
@@ -452,7 +452,7 @@ export function readTools(): WfMcpTool[] {
           // The facets, but only when nothing was filtered by them yet. They
           // exist to populate the UI's dropdowns, and they are noise to a model
           // that already knows the value it wants — but a model that does NOT
-          // cannot otherwise discover that "every complaint from this matter" is
+          // cannot otherwise discover that "every complaint from this customer" is
           // even expressible, let alone what the ids look like.
           facets:
             correlationIds || raterIds

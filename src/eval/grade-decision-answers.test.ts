@@ -59,13 +59,13 @@ describe('decision_answers', () => {
         verdict: 'escalate',
         expect: [
           { questionId: 'is_urgent', yes: true },
-          { questionId: 'matter', key: 'billing' },
+          { questionId: 'topic', key: 'billing' },
         ],
       }),
       steps: [],
       output: output({
         is_urgent: boolean('is_urgent', 0.82),
-        matter: category('matter', 'billing', 0.7),
+        topic: category('topic', 'billing', 0.7),
       }),
     })
     expect(result.status).toBe('pass')
@@ -83,14 +83,14 @@ describe('decision_answers', () => {
         verdict: 'escalate',
         expect: [
           { questionId: 'is_urgent', yes: true },
-          { questionId: 'matter', key: 'billing' },
+          { questionId: 'topic', key: 'billing' },
         ],
       }),
       steps: [],
       output: output(
         {
           is_urgent: boolean('is_urgent', 0.1),
-          matter: category('matter', 'outage', 0.9),
+          topic: category('topic', 'outage', 0.9),
         },
         'auto_reply',
       ),
@@ -99,7 +99,7 @@ describe('decision_answers', () => {
     const reason = result.checkResults[0]?.reason ?? ''
     expect(reason).toContain('verdict expected escalate')
     expect(reason).toContain('is_urgent expected yes')
-    expect(reason).toContain('matter expected billing')
+    expect(reason).toContain('topic expected billing')
   })
 
   test('a right answer below the sample’s tolerance is a fail, and says so', async () => {

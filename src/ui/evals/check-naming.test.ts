@@ -13,10 +13,10 @@ describe('heuristicCheckName', () => {
     expect(
       heuristicCheckName({
         type: 'tool_called',
-        toolId: 'search_statutes',
+        toolId: 'search_docs',
         called: true,
       }),
-    ).toBe('Calls search_statutes')
+    ).toBe('Calls search_docs')
     expect(
       heuristicCheckName({
         type: 'tool_called',
@@ -60,10 +60,10 @@ describe('describeCheck', () => {
   test('summarizes a configured check from its assertion', () => {
     const check: EvalCheck = {
       type: 'tool_called',
-      toolId: 'search_statutes',
+      toolId: 'search_docs',
       called: true,
     }
-    expect(describeCheck(check)).toBe('Calls search_statutes')
+    expect(describeCheck(check)).toBe('Calls search_docs')
   })
 
   test('ignores a stray label left over from when checks had titles', () => {
@@ -71,11 +71,11 @@ describe('describeCheck', () => {
     // The summary is derived, always — a title can't override what it says.
     const legacy = {
       type: 'tool_called',
-      toolId: 'search_statutes',
+      toolId: 'search_docs',
       called: true,
-      label: 'Cites the statute',
+      label: 'Cites the docs',
     } as unknown as EvalCheck
-    expect(describeCheck(legacy)).toBe('Calls search_statutes')
+    expect(describeCheck(legacy)).toBe('Calls search_docs')
   })
 
   test('a judge quotes its rubric — prose, not a name', () => {

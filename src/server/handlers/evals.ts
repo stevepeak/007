@@ -12,6 +12,7 @@ import {
   collectSeededToolCalls,
   decisionInvocation,
   EVAL_NODE_EXECUTION,
+  goalPinError,
   gradeRow,
   type GradeDeciderFactory,
   resolveEvalTarget,
@@ -27,7 +28,6 @@ import {
 } from '../../eval/plan'
 import type { WfDb } from '../../storage/client'
 import {
-  agentVersionByNumber,
   buildEvalSnapshot,
   cancelEvalRun,
   changesBetween,
@@ -45,7 +45,6 @@ import {
   getRunForGrading,
   hashEvalSnapshot,
   insertEvalResult,
-  latestAgentVersion,
   listEvalRunVerdicts,
   listEvalRuns,
   listEvalSets,
@@ -53,6 +52,7 @@ import {
   loadPreviousSnapshotHashes,
   loadModelPriceMap,
   loadRunStats,
+  resolveAgentVersion,
   restoreEvalRow,
   saveEvalRunDrive,
   updateEvalRun,
@@ -676,15 +676,19 @@ export function buildEvalHandlers<TDeps>(
       if (p.config) {
         config = parseDecisionAgentConfig(p.config)
       } else {
-        const version =
-          set.targetVersion == null
-            ? await latestAgentVersion(c.db, set.targetId)
-            : await agentVersionByNumber(c.db, set.targetId, set.targetVersion)
+        const version = await resolveAgentVersion(c.db, {
+          agentId: set.targetId,
+          pin: set.targetVersion,
+        })
         if (!version) {
           throw new BadRequestError(
             set.targetVersion == null
               ? `Decision agent ${set.targetId} has no published version to eval against.`
-              : `This goal pins v${set.targetVersion} of agent ${set.targetId}, which has no published version ${set.targetVersion}. Repoint the goal at Latest, or at a version that exists.`,
+              : goalPinError({
+                  kind: 'agent',
+                  id: set.targetId,
+                  version: set.targetVersion,
+                }),
           )
         }
         config = parseDecisionAgentConfig(version.config)

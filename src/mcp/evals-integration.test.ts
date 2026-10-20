@@ -36,7 +36,7 @@ let agentId: string
 const CONFIG = agentConfigSchema.parse({
   modelId: 'venice:test',
   prompt: 'You check for conflicts.',
-  userPrompt: 'Check ${matterName}.',
+  userPrompt: 'Check ${customerName}.',
   inputKind: 'task',
   toolIds: ['search_rag'],
   output: {
@@ -85,7 +85,7 @@ async function seedGoalWithSample(): Promise<{
   const sample = (await tool('upsert_eval_sample').run(client, {
     setId: goal.setId,
     name: 'Refuses out of scope',
-    input: { kind: 'task', variables: { matterName: 'Acme v. Byrne' } },
+    input: { kind: 'task', variables: { customerName: 'Acme Byrne Ltd' } },
     tools: { byTool: { search_rag: { mode: 'mocked', output: { hits: [] } } } },
     checks: {
       op: 'and',
@@ -159,7 +159,7 @@ describe('authoring a Goal over the real dispatcher', () => {
     const out = (await tool('upsert_eval_sample').run(client, {
       setId,
       name: 'Mocks a tool that is not wired',
-      input: { kind: 'task', variables: { matterName: 'x' } },
+      input: { kind: 'task', variables: { customerName: 'x' } },
       tools: { byTool: { list_matters: { mode: 'mocked', output: {} } } },
       checks: {
         op: 'and',
@@ -302,7 +302,7 @@ describe('an MCP client can CRUD a sample’s per-tool settings', () => {
     const created = (await tool('upsert_eval_sample').run(client, {
       setId: goal.setId,
       name: 'Pins the search, reads memory for real',
-      input: { kind: 'task', variables: { matterName: 'Acme v. Byrne' } },
+      input: { kind: 'task', variables: { customerName: 'Acme Byrne Ltd' } },
       tools: {
         byTool: {
           search_rag: { mode: 'mocked', output: { hits: ['nothing'] } },
@@ -350,7 +350,7 @@ describe('an MCP client can CRUD a sample’s per-tool settings', () => {
     await tool('upsert_eval_sample').run(client, {
       setId: goal.setId,
       name: 'Written by an older client',
-      input: { kind: 'task', variables: { matterName: 'Acme' } },
+      input: { kind: 'task', variables: { customerName: 'Acme' } },
       tools: { mode: 'mocked', fixtures: { search_rag: { hits: [] } } },
       checks: { op: 'and', checks: [] },
     })
@@ -369,7 +369,7 @@ describe('an MCP client can CRUD a sample’s per-tool settings', () => {
     const { rowId } = (await tool('upsert_eval_sample').run(client, {
       setId: goal.setId,
       name: 'Two pinned tools',
-      input: { kind: 'task', variables: { matterName: 'Acme' } },
+      input: { kind: 'task', variables: { customerName: 'Acme' } },
       tools: {
         byTool: {
           search_rag: { mode: 'mocked', output: { hits: [1] } },
@@ -432,7 +432,7 @@ describe('an MCP client can CRUD a sample’s per-tool settings', () => {
     const { rowId } = (await tool('upsert_eval_sample').run(client, {
       setId: goal.setId,
       name: 'Archive me',
-      input: { kind: 'task', variables: { matterName: 'Acme' } },
+      input: { kind: 'task', variables: { customerName: 'Acme' } },
       tools: { byTool: { search_rag: { mode: 'mocked', output: { hits: [7] } } } },
       checks: { op: 'and', checks: [] },
     })) as { rowId: string }

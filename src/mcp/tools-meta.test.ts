@@ -31,7 +31,7 @@ const SAMPLE: WfEvalRowDTO = {
   setId: 'set_1',
   name: 'Refuses an adverse party',
   description: null,
-  input: { kind: 'task', variables: { matter: 'Acme v. Byrd' } },
+  input: { kind: 'task', variables: { customer: 'Acme Byrd Ltd' } },
   tools: {
     fallback: 'mocked',
     byTool: { search_rag: { mode: 'mocked', output: { hits: [] } } },
@@ -210,7 +210,7 @@ describe('update_description — a run’s triage note', () => {
       getRun: async () => { return ({
           run: {
             id: 'run_1',
-            workflowName: 'Legal chat',
+            workflowName: 'Support chat',
             note: 'looks like a 429',
           },
           steps: [],
@@ -234,7 +234,7 @@ describe('update_description — a run’s triage note', () => {
     // Not attributed and not private — the last write wins, so what it replaced
     // is worth showing.
     expect(result.before).toBe('looks like a 429')
-    expect(result.name).toBe('Legal chat')
+    expect(result.name).toBe('Support chat')
   })
 
   test('a missing run is a refusal, not a silent no-op', async () => {

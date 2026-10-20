@@ -169,7 +169,7 @@ export const evalCheckSchema = z.discriminatedUnion('type', [
     rubric: z.string(),
     /**
      * Optional JSON path into the run `output`. When set, the judge grades ONLY
-     * the value at that path (e.g. `docMeta.parties`) instead of the whole
+     * the value at that path (e.g. `docMeta.recipients`) instead of the whole
      * output — a way to point the rubric at one known field. Omit = whole output.
      */
     path: z.string().optional(),

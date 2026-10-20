@@ -153,7 +153,7 @@ describe('create_document — the guardrail', () => {
     await call({
       facts: [],
       document: {
-        title: 'Matter summary',
+        title: 'Account summary',
         blocks: [
           {
             type: 'table',
@@ -184,8 +184,8 @@ describe('documentFilename', () => {
     expect(documentFilename('Demand for Payment — Sterling')).toBe(
       'Demand-for-Payment-Sterling.docx',
     )
-    expect(documentFilename('Halberd v. Sterling: engagement')).toBe(
-      'Halberd-v.-Sterling-engagement.docx',
+    expect(documentFilename('Halberd Inc. Sterling: kickoff')).toBe(
+      'Halberd-Inc.-Sterling-kickoff.docx',
     )
     // No path separators can reach the object key.
     expect(documentFilename(String.raw`a/b\c`)).toBe('abc.docx')

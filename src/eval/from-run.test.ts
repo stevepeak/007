@@ -105,7 +105,7 @@ describe('recoverTaskVariables', () => {
     config: {
       agentId: 'ag_1',
       inputs: {
-        matterName: { kind: 'literal', value: 'Acme v. Bex' },
+        customerName: { kind: 'literal', value: 'Acme Bex Ltd' },
         summary: { kind: 'ref', nodeId: 'n0', path: 'doc.title' },
       },
     },
@@ -118,8 +118,8 @@ describe('recoverTaskVariables', () => {
 
   test('resolves literal and ref bindings against the recorded outputs', () => {
     expect(
-      recoverTaskVariables(node, steps[1], steps, ['matterName', 'summary']),
-    ).toEqual({ matterName: 'Acme v. Bex', summary: 'Lease' })
+      recoverTaskVariables(node, steps[1], steps, ['customerName', 'summary']),
+    ).toEqual({ customerName: 'Acme Bex Ltd', summary: 'Lease' })
   })
 
   test('leaves a run-level variable absent rather than inventing one', () => {
@@ -345,10 +345,10 @@ describe('the seeded rubric', () => {
   test('never treats a thumbs-down answer as the standard', () => {
     const { rubric, notes } = rubricFor({
       rating: 'down',
-      note: 'It missed the Bex matter.',
+      note: 'It missed the Bex account.',
     })
     expect(rubric).toContain('must FAIL this rubric')
-    expect(rubric).toContain('It missed the Bex matter.')
+    expect(rubric).toContain('It missed the Bex account.')
     expect(notes.join(' ')).toContain('do not seed it as the expected output')
   })
 

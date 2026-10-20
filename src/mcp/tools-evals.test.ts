@@ -68,7 +68,7 @@ describe('create_eval_set target preflight', () => {
 
   test("hands back the target's input shape with its variables named", async () => {
     const client = stubClient({
-      getAgent: async () => { return agentDetail({ inputKind: 'task', inputVariables: ['matterName', 'jurisdiction'] }) },
+      getAgent: async () => { return agentDetail({ inputKind: 'task', inputVariables: ['customerName', 'region'] }) },
       createEvalSet: async () => ({ setId: 'set_1' }),
     })
     const result = (await toolNamed('create_eval_set').run(client, {
@@ -79,7 +79,7 @@ describe('create_eval_set target preflight', () => {
     expect(result.target.sampleInputKind).toBe('task')
     expect(result.target.inputTemplate).toEqual({
       kind: 'task',
-      variables: { matterName: '', jurisdiction: '' },
+      variables: { customerName: '', region: '' },
     })
   })
 
@@ -277,7 +277,7 @@ describe('upsert_eval_sample', () => {
     const result = (await toolNamed('upsert_eval_sample').run(client, {
       setId: 'set_1',
       name: 'Empty var',
-      input: { kind: 'task', variables: { matterName: '' } },
+      input: { kind: 'task', variables: { customerName: '' } },
       tools: { fallback: 'mocked', byTool: {} },
       checks: { op: 'and', checks: [] },
     })) as { warnings: string[] }

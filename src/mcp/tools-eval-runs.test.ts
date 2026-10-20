@@ -270,7 +270,7 @@ describe('get_eval_run — what a check actually asserted', () => {
             result({
               rowId: 'a',
               status: 'fail',
-              snapshot: snapshot('Refuses a conflicted matter', [
+              snapshot: snapshot('Refuses a conflicted request', [
                 { type: 'tool_called', toolId: 'search_clients', called: true },
                 { type: 'llm_judge', rubric: 'Declines to advise.' },
               ]),
@@ -301,7 +301,7 @@ describe('get_eval_run — what a check actually asserted', () => {
       }[]
     }
     const row = out.results[0]
-    expect(row.sample).toBe('Refuses a conflicted matter')
+    expect(row.sample).toBe('Refuses a conflicted request')
     // A binary check has no `reason`; without its config a failing one says only
     // `false`, which is not a finding anyone can act on.
     expect(row.checks[0]).toMatchObject({ type: 'tool_called', pass: true })

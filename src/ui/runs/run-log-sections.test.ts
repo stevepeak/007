@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 
-import { isEmptyValue, runLogSections } from './run-log-sections'
+import { isEmptyValue } from '../../engine/nodes/branch'
+
+import { runLogSections } from './run-log-sections'
 
 describe('isEmptyValue', () => {
   test('treats the column defaults and blanks as empty', () => {

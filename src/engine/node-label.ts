@@ -19,7 +19,7 @@ type LabelableNode = {
 }
 
 /**
- * Human label for a node, e.g. `Agent: Legal Researcher - Draft the memo` or
+ * Human label for a node, e.g. `Agent: Researcher - Draft the summary` or
  * `Branch: Has prior rulings?`. Entity-backed nodes (agent, workflow) fold in
  * the resolved entity name from the run manifest; every other kind is just
  * `{Kind}: {node label}`. Falls back gracefully when the label or manifest

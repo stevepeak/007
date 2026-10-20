@@ -8,6 +8,7 @@ import {
   buildAgentWrapperGraph,
   evalWrapperName,
   EVAL_WRAPPER_NAME_PREFIX,
+  goalPinError,
 } from './wrapper'
 
 // Phase 5 — the wrapper graph builder is pure. The db-backed
@@ -130,6 +131,15 @@ describe('evalWrapperName', () => {
     // under the bare name. Changing it would orphan every one of them.
     expect(evalWrapperName('agent-abc', null)).toBe(
       evalWrapperName('agent-abc'),
+    )
+  })
+})
+
+describe('goalPinError', () => {
+  test('names the kind, the target and the missing version', () => {
+    expect(goalPinError({ kind: 'workflow', id: 'w1', version: 3 })).toBe(
+      'This goal pins v3 of workflow w1, which has no published version 3. ' +
+        'Repoint the goal at Latest, or at a version that exists.',
     )
   })
 })

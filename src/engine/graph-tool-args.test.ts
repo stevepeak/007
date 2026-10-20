@@ -51,7 +51,7 @@ function graph(...nodes: WorkflowNode[]): WorkflowGraph {
   return { version: 1, nodes, edges: [] }
 }
 
-const ref = { kind: 'ref' as const, nodeId: 'up', path: 'attorney_rationale' }
+const ref = { kind: 'ref' as const, nodeId: 'up', path: 'reviewer_rationale' }
 
 describe('collectToolArgIssues', () => {
   test('the ART-146 v25 node: renamed field + string boolean → three errors, one warning', () => {

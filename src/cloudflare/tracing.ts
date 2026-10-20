@@ -56,7 +56,7 @@ export type NodeSpanInfo = {
   subjectId?: string
   correlationId?: string
   /**
-   * Human span title, e.g. `Agent: Legal Researcher - Draft the memo` or
+   * Human span title, e.g. `Agent: Researcher - Draft the summary` or
    * `Branch: Has prior rulings?`. Falls back to the terse kind + id form when
    * absent.
    */

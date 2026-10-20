@@ -42,7 +42,7 @@ let agentId: string
 const CONFIG = agentConfigSchema.parse({
   modelId: 'venice:test',
   prompt: 'You check for conflicts.',
-  userPrompt: 'Check ${matterName}.',
+  userPrompt: 'Check ${customerName}.',
   inputKind: 'task',
 })
 

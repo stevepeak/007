@@ -299,7 +299,7 @@ describe('list_feedback', () => {
   // that filters by naming the value it wants.
   // The facets exist to populate the UI's dropdowns and are noise to a model
   // that already knows the value it wants — but a model that does NOT cannot
-  // otherwise discover that "every complaint from this matter" is expressible.
+  // otherwise discover that "every complaint from this customer" is expressible.
   // So they come back on an unfiltered read and drop out once one is in use.
   test('offers the filter facets until they have been used', async () => {
     const client = stubClient({
@@ -331,11 +331,11 @@ describe('list_feedback', () => {
       },
     })
     await toolNamed('list_feedback').run(client, {
-      correlationIds: ['matter_7'],
+      correlationIds: ['account_7'],
       raterIds: ['user_3'],
     })
     expect(seen).toMatchObject({
-      correlationIds: ['matter_7'],
+      correlationIds: ['account_7'],
       raterIds: ['user_3'],
     })
   })

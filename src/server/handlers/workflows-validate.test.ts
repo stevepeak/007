@@ -120,7 +120,7 @@ describe('validateGraph handler', () => {
   test('workflowId lints the draft when there is one, else the published graph', async () => {
     const handlers = buildWorkflowHandlers(options())
     const { workflowId } = await createWorkflow(db, {
-      name: 'Legal chat',
+      name: 'Support chat',
       createdBy: 'tester',
       graph: graphWith(v27Args),
     })
@@ -142,7 +142,7 @@ describe('validateGraph handler', () => {
   test('versionId lints that version; nothing to lint is a 400', async () => {
     const handlers = buildWorkflowHandlers(options())
     const { workflowId, versionId } = await createWorkflow(db, {
-      name: 'Legal chat',
+      name: 'Support chat',
       createdBy: 'tester',
       graph: graphWith(v25Args),
     })
@@ -185,7 +185,7 @@ describe('saveVersion publish gates', () => {
   async function seeded() {
     const handlers = buildWorkflowHandlers(options())
     const { workflowId } = await createWorkflow(db, {
-      name: 'Legal chat',
+      name: 'Support chat',
       createdBy: 'tester',
       graph: graphWith(v27Args),
     })
@@ -237,7 +237,7 @@ describe('getVersionByNumber', () => {
     const db = freshDb()
     const handlers = buildWorkflowHandlers(options())
     const { workflowId } = await createWorkflow(db, {
-      name: 'Legal chat',
+      name: 'Support chat',
       createdBy: 'tester',
       graph: graphWith(v27Args),
     })

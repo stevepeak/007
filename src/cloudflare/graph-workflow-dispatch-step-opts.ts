@@ -4,6 +4,7 @@ import type { NodeExecution } from '../engine/graph'
 import {
   AI_NODE_TIMEOUT_MS,
   DEFAULT_NODE_TIMEOUT_MS,
+  defaultNodeTimeoutMs,
   resolveNodeTimeoutMs,
 } from '../engine/node-timeout'
 
@@ -39,18 +40,13 @@ export const DEFAULT_STEP_OPTS = {
 // so the const defaults keep their guaranteed `retries`, which `stepOptsFor`
 // reads when layering a partial override.
 function kindDefaultOpts(kind: string) {
-  // The deterministic `branch` needs no retries/long timeout and falls through
-  // to the default policy. The subgraph CONTAINERS — `workflow` (one callee) and
-  // `iteration` (one item) — each run several LLM nodes inside one step, so they
-  // get the longer, retried AI policy; authors can raise it further per-node via
-  // `execution`.
-  //
-  // This must stay in lockstep with `defaultNodeTimeoutMs`: the timeout below is
-  // handed to `step.do` while the same number, via `resolveStepTimeoutMs`,
-  // derives the in-process model budget. If the two kind lists disagree, the
-  // budget stops being a strictly-shorter version of the step timeout and the
-  // external kill wins the race again.
-  return kind === 'agent' || kind === 'workflow' || kind === 'iteration'
+  // The policy follows `defaultNodeTimeoutMs`, which reads the registry's
+  // `timeout` column: `agent` and the subgraph CONTAINERS (`workflow`,
+  // `iteration`) get the longer, retried AI policy; deterministic kinds fall
+  // through to the default. Deriving it from the same function keeps the step
+  // timeout and the in-process model budget (via `resolveStepTimeoutMs`) on one
+  // kind list, so the budget stays strictly shorter than the external kill.
+  return defaultNodeTimeoutMs(kind) === AI_NODE_TIMEOUT_MS
     ? AI_STEP_OPTS
     : DEFAULT_STEP_OPTS
 }

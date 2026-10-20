@@ -122,7 +122,7 @@ describe('checkFacts — the fabrication the spike caught', () => {
 
   test('every invented figure is flagged when no facts were supplied', () => {
     const doc: DocumentModel = {
-      title: 'Matter summary',
+      title: 'Account summary',
       blocks: [
         {
           type: 'table',
@@ -135,7 +135,7 @@ describe('checkFacts — the fabrication the spike caught', () => {
       ],
     }
     // The brief supplied prose context and no numbers at all.
-    const result = checkFacts({ matter: 'Halberd v. Sterling' }, doc)
+    const result = checkFacts({ account: 'Halberd Sterling Ltd' }, doc)
     expect(result.ok).toBe(false)
     const flagged = result.unsupported.map((f) => f.text)
     for (const value of INVENTED) expect(flagged).toContain(value)
@@ -163,7 +163,7 @@ describe('checkFacts — abstention passes', () => {
   test('TBD and "not calculable" are correct behaviour, not failures', () => {
     // What gpt-54-mini did instead of inventing: emit the table, abstain in it.
     const doc: DocumentModel = {
-      title: 'Matter summary',
+      title: 'Account summary',
       blocks: [
         {
           type: 'table',
@@ -179,7 +179,7 @@ describe('checkFacts — abstention passes', () => {
         },
       ],
     }
-    const result = checkFacts({ matter: 'Halberd v. Sterling' }, doc)
+    const result = checkFacts({ account: 'Halberd Sterling Ltd' }, doc)
     expect(result.ok).toBe(true)
     expect(result.checked).toBe(0)
   })
@@ -215,7 +215,7 @@ describe('checkFacts — normalization and what is exempt', () => {
       ],
     }
     // Facts mention none of 4, 30, 1.5, 12 or 2024 — and none should be flagged.
-    expect(checkFacts({ matter: 'x' }, doc).unsupported).toEqual([])
+    expect(checkFacts({ account: 'x' }, doc).unsupported).toEqual([])
   })
 
   test('a grouped or dollar-prefixed figure is checked whatever its size', () => {
@@ -229,7 +229,7 @@ describe('checkFacts — normalization and what is exempt', () => {
       ],
     }
     // Under 1,000, but it carries a `$` — this is exactly a money claim.
-    const result = checkFacts({ matter: 'x' }, doc)
+    const result = checkFacts({ account: 'x' }, doc)
     expect(result.unsupported.map((f) => f.text)).toEqual(['$402'])
   })
 
@@ -255,7 +255,7 @@ describe('checkFacts — coverage of the whole document', () => {
       title: 'Demand for $77,777.00',
       letterhead: { subject: 'Unpaid invoice 8888' },
       blocks: [
-        { type: 'signature', name: 'Mark Halloran', title: 'Attorney #6543' },
+        { type: 'signature', name: 'Mark Halloran', title: 'Engineer #6543' },
       ],
     }
     const flagged = checkFacts(FACTS, doc).unsupported.map((f) => f.text)
