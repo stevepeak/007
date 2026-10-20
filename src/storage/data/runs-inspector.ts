@@ -328,6 +328,7 @@ export async function getRunRetrySource(db: WfDb, runId: string) {
     await db
       .select({
         workflowVersionId: wfRun.workflowVersionId,
+        status: wfRun.status,
         triggerKind: wfRun.triggerKind,
         subjectId: wfRun.subjectId,
         correlationId: wfRun.correlationId,

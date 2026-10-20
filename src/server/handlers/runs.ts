@@ -19,6 +19,7 @@ import type {
 } from '../protocol'
 
 import {
+  BadRequestError,
   NotFoundError,
   requireHook,
   runSummary,
@@ -192,6 +193,13 @@ export function buildRunHandlers<TDeps>(
       const source = await getRunRetrySource(c.db, runId)
       if (!source) {
         throw new NotFoundError('Run not found.')
+      }
+      // Retrying something still going would leave two live runs doing the
+      // same work; the run viewer only offers Retry on a finished one.
+      if (source.status === 'running' || source.status === 'queued') {
+        throw new BadRequestError(
+          `Run ${runId} is still ${source.status}. Wait for it to finish — retrying now would leave two live runs doing the same work.`,
+        )
       }
       const latestVersionId = source.workflowId
         ? await getLatestVersionId(c.db, source.workflowId)

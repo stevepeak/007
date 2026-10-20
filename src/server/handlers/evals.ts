@@ -40,6 +40,7 @@ import {
   getEvalRunDrive,
   getEvalRunStatus,
   getAgent,
+  getWorkflow,
   getEvalSet,
   getRunForGrading,
   hashEvalSnapshot,
@@ -86,6 +87,23 @@ import {
 // error pages; the report shows this inline, and the full detail already lives
 // in `wf_run_step.error` reachable via `wfRunId`.
 const MAX_RECORDED_ERROR_CHARS = 2000
+
+/**
+ * A Goal's target must exist — `target_id` has no foreign key, so a wrong id
+ * saves fine and only fails when a run is started against it.
+ */
+async function requireEvalTarget(
+  db: WfDb,
+  target: { kind: 'agent' | 'workflow'; id: string },
+): Promise<void> {
+  const found =
+    target.kind === 'agent'
+      ? await getAgent(db, target.id)
+      : await getWorkflow(db, target.id)
+  if (!found) {
+    throw new NotFoundError(`No ${target.kind} found for id ${target.id}.`)
+  }
+}
 
 type EvalResultInput = Parameters<typeof insertEvalResult>[1]
 
@@ -312,6 +330,7 @@ export function buildEvalHandlers<TDeps>(
       // defending against a value the dispatcher could not let through.
       const { name, targetId, triggerKind, targetKind } = c.params
       const p = c.params
+      await requireEvalTarget(c.db, { kind: targetKind, id: targetId })
       const setId = await createEvalSet(c.db, {
         name,
         description: p.description,
@@ -338,6 +357,12 @@ export function buildEvalHandlers<TDeps>(
       // Read first: a Goal has no version history, so this before-image is the
       // only record of what it used to say.
       const existing = await getEvalSet(c.db, setId)
+      if (existing && (p.targetKind || p.targetId)) {
+        await requireEvalTarget(c.db, {
+          kind: p.targetKind ?? existing.set.targetKind,
+          id: p.targetId ?? existing.set.targetId,
+        })
+      }
       await updateEvalSet(c.db, {
         setId,
         name: p.name,
@@ -536,6 +561,14 @@ export function buildEvalHandlers<TDeps>(
         throw new NotFoundError('Eval sample not found.')
       }
       const { row, set } = found
+      // The draft override is an AGENT's config. A workflow target has no
+      // config to swap, so applying one there would silently grade the
+      // published graph against nothing the editor showed.
+      if (configOverride && set.targetKind !== 'agent') {
+        throw new BadRequestError(
+          'A draft config only applies to a goal that targets an agent; this one targets a workflow.',
+        )
+      }
       // Resolve the target to a concrete version (agent → hidden wrapper) and
       // the trigger kind to start under, before handing the host the run.
       const resolved = await resolveEvalTarget(
