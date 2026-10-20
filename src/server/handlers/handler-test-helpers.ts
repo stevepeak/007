@@ -1,7 +1,9 @@
 import { consoleWfLogger } from '../../engine/logger'
 import type { WfDb } from '../../storage/client'
 import { recordChange } from '../../storage/data'
+import type { WfDataClient } from '../protocol'
 
+import type { WfInput } from './input-schemas'
 import type { CreateWfSdkHandlersOptions, HandlerCtx } from './shared'
 
 // The two fixtures every handler test needs: the builder options a
@@ -54,14 +56,18 @@ export function testHandlerOptions<TDeps = unknown>(
  * tests exercise the handlers end to end, and a stub would hide a broken change
  * write — which is the half of a mutation nobody looks at until someone asks
  * who touched a workflow.
+ *
+ * `K` is inferred from the handler the result is passed to, so the fixture
+ * type-checks against `HandlerCtx<K>`. `params` stays `unknown` on the way in
+ * because tests also feed handlers shapes the dispatcher's schema would reject.
  */
-export function testHandlerCtx(
+export function testHandlerCtx<K extends keyof WfDataClient>(
   db: WfDb,
   params: unknown,
-  over: Partial<HandlerCtx> = {},
-): HandlerCtx {
+  over: Partial<HandlerCtx<K>> = {},
+): HandlerCtx<K> {
   return {
-    params,
+    params: params as WfInput<K>,
     ctx: { userId: 'tester' },
     db,
     req: new Request('http://localhost/api/wf', { method: 'POST' }),
