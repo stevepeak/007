@@ -1,23 +1,17 @@
 import { AlertTriangle, Plus, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 
 import {
   decisionAgentConfigIssues,
   type DecisionAgentConfig,
   type DecisionRule,
 } from '../../engine'
-import { AGENT_ICONS, DEFAULT_AGENT_COLOR } from '../agent-appearance'
-import { AppearancePicker } from '../appearance-picker'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { useDecisionModels, useDecisionProviders } from '../hooks-models'
-import { useWfNav } from '../nav'
-import { WfShell } from '../shell'
 import { Tooltip } from '../tooltip'
 
-import { ArchiveAgentDialog } from './agent-editor-archive'
-import { AgentEditorHeaderActions } from './agent-editor-header-actions'
-import { PublishAgentDialog } from './agent-editor-publish'
+import { AgentEditorChrome } from './agent-editor-chrome'
 import { DecisionPlaygroundPanel } from './decision-agent-playground'
 import { DecisionQuestionList } from './decision-agent-questions'
 import { DecisionRulesEditor } from './decision-agent-rules'
@@ -29,12 +23,12 @@ import { useDecisionAgentDraft } from './use-decision-agent-editor-state'
 // editor.
 //
 // A separate page from `AgentEditor` rather than a mode inside it, for the same
-// reason the configs are separate types: the two share the shell, the
-// appearance picker, the header actions and the publish dialog, and share
-// nothing else. Every control on the generation editor — model from the chat
-// catalog, system prompt, user message, tools, turns, output contract,
-// sub-agents, token budget — has no counterpart here, and every control here
-// has none there.
+// reason the configs are separate types: the two share `AgentEditorChrome` —
+// the shell, the appearance picker, the header actions and the publish and
+// archive dialogs — and nothing else. Every control on the generation editor —
+// model from the chat catalog, system prompt, user message, tools, turns,
+// output contract, sub-agents, token budget — has no counterpart here, and
+// every control here has none there.
 //
 // The layout mirrors the generation editor's, so an author moving between them
 // knows where things are: configuration on the left, evidence on the right.
@@ -60,14 +54,13 @@ export function DecisionAgentEditorInner({
   className?: string
   onPublished?: (result: { versionId: string; versionNumber: number }) => void
 }) {
-  const { navigate } = useWfNav()
   const { Label } = useWfComponents()
   const meta = useAgentMeta({
     agentId,
     initialName,
     initialDescription,
-    initialIcon: initialIcon || AGENT_ICONS[0].name,
-    initialColor: initialColor || DEFAULT_AGENT_COLOR,
+    initialIcon,
+    initialColor,
   })
   const draft = useDecisionAgentDraft({
     agentId,
@@ -75,7 +68,6 @@ export function DecisionAgentEditorInner({
     initialBaseVersionNumber,
     onPublished,
   })
-  const [showArchive, setShowArchive] = useState(false)
 
   const models = useDecisionModels()
   const providers = useDecisionProviders()
@@ -92,210 +84,156 @@ export function DecisionAgentEditorInner({
   )
 
   return (
-    <>
-      <WfShell
-        className={className}
-        titleIcon={
-          <AppearancePicker
-            icon={meta.icon}
-            color={meta.color}
-            onSelectIcon={meta.selectIcon}
-            onSelectColor={meta.selectColor}
-            label="Agent appearance"
-          />
-        }
-        assetLabel="Decision agent"
-        crumbs={[
-          {
-            editable: {
-              value: meta.name,
-              onChange: meta.setName,
-              onCommit: meta.commitRename,
-              ariaLabel: 'Agent name',
-            },
-          },
-        ]}
-        descriptionEditable={{
-          value: meta.description,
-          onChange: meta.setDescription,
-          onCommit: meta.commitDescription,
-          ariaLabel: 'Agent description',
-          placeholder: 'Add a description…',
-        }}
-        actions={
-          <AgentEditorHeaderActions
-            draft={draft}
-            onArchive={() => setShowArchive(true)}
-            publishBlockedReason={
-              issues.length > 0
-                ? `Fix ${issues.length === 1 ? 'the issue' : `the ${issues.length} issues`} in the Issues panel before publishing.`
-                : undefined
-            }
-          />
-        }
-      >
-        <div className="w-full space-y-6 p-6">
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <div className="space-y-6">
-              <section className="space-y-2 rounded-lg border border-neutral-200 bg-white p-4">
-                <Label>Judge with</Label>
-                <select
-                  className={cn(
-                    'border-input bg-card text-foreground h-9 w-full rounded-md border px-2 text-sm outline-none focus:border-ring',
-                    !config.modelId && 'border-destructive',
-                  )}
-                  value={config.modelId}
-                  aria-label="Decision model"
-                  onChange={(e) => draft.patch({ modelId: e.target.value })}
-                >
-                  {/* A prompt, not a choice: `modelId` cannot be blank, so once a
-                      model is picked the placeholder is no longer selectable. */}
-                  <option value="" disabled={config.modelId !== ''}>
-                    Pick a decision model…
-                  </option>
-                  {groupByProvider(
-                    models.data ?? [],
-                    providers.data ?? [],
-                  ).map(({ label, kind, items }) => (
-                    <optgroup key={label} label={label}>
-                      {items.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.label}
-                          {kind === 'chat-emulated' ? ' (emulated)' : ''}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-                {(models.data ?? []).length === 0 && !models.isLoading ? (
-                  <p className="text-xs text-neutral-500">
-                    No decision provider is wired up in this deployment, so this
-                    agent cannot run. See <code>WfSdkConfig.getDecider</code>.
-                  </p>
-                ) : chosen && chosen.calibrated === false ? (
-                  <p className="text-xs text-neutral-500">
-                    This decider emulates judgments on a chat model. Its
-                    probabilities are the model’s own estimate rather than a
-                    calibrated distribution — treat every threshold below as
-                    rough.
-                  </p>
-                ) : null}
-              </section>
-
-              <section className="space-y-2 rounded-lg border border-neutral-200 bg-white p-4">
-                <Label>Questions</Label>
-                <DecisionQuestionList
-                  questions={config.questions}
-                  rules={config.rules}
-                  model={chosen}
-                  onChange={(patch) => draft.patch(patch)}
-                />
-              </section>
-
-              <section className="space-y-2 rounded-lg border border-neutral-200 bg-white p-4">
-                {/* The rename hazard rides on the heading, same as a question's
-                    name: an icon that stays visible without an amber block
-                    shouting at an author who is only adding a verdict. A verdict
-                    is what a Goal ASSERTS on, so renaming one is the version of
-                    this cascade with the most reach. */}
-                <div className="flex items-center gap-1.5">
-                  <Label>Verdicts</Label>
-                  {config.rules.length > 0 ? (
-                    <Tooltip
-                      side="right"
-                      content={
-                        <>
-                          Renaming a verdict re-points the rules that return it,
-                          here. It does <b>not</b> update eval samples: a Goal
-                          expecting the old name will quietly stop matching. Fix
-                          those by hand.
-                        </>
-                      }
-                    >
-                      <AlertTriangle
-                        className="size-3 shrink-0 text-amber-600"
-                        aria-label="Renaming a verdict updates the rules here but not eval samples"
-                      />
-                    </Tooltip>
-                  ) : null}
-                </div>
-                {/* The explanation goes ABOVE the list. Underneath, it was
-                    read after the author had already guessed wrong about what
-                    a verdict is — the guess being that it is a second kind of
-                    question rather than the agent's answer. */}
-                <p className="text-muted-foreground text-xs">
-                  The complete set of answers this agent can give. Every run
-                  returns exactly one of them as its{' '}
-                  <code className="text-foreground">verdict</code> — the value
-                  a Goal grades and a caller branches on. The questions above
-                  gather evidence; the rules below turn that evidence into one
-                  of these names.
-                </p>
-                <VerdictsEditor
-                  verdicts={config.verdicts}
-                  rules={config.rules}
-                  onChange={(patch) => draft.patch(patch)}
-                />
-              </section>
-
-              <section className="space-y-2 rounded-lg border border-neutral-200 bg-white p-4">
-                <Label>Rules</Label>
-                <DecisionRulesEditor
-                  rules={config.rules}
-                  questions={config.questions}
-                  verdicts={config.verdicts}
-                  onChange={(rules) => draft.patch({ rules })}
-                />
-              </section>
-            </div>
-
-            <div className="space-y-6">
-              {issues.length > 0 ? (
-                <section className="space-y-1.5 rounded-lg border border-amber-200 bg-amber-50 p-4">
-                  <h2 className="flex items-center gap-1.5 text-sm font-medium text-amber-900">
-                    <AlertTriangle className="size-4" />
-                    Issues
-                  </h2>
-                  <ul className="space-y-1 text-xs text-amber-800">
-                    {issues.map((issue, i) => (
-                      <li key={i}>{issue}</li>
+    <AgentEditorChrome
+      agentId={agentId}
+      meta={meta}
+      draft={draft}
+      assetLabel="Decision agent"
+      publishBlockedReason={
+        issues.length > 0
+          ? `Fix ${issues.length === 1 ? 'the issue' : `the ${issues.length} issues`} in the Issues panel before publishing.`
+          : undefined
+      }
+      // No AI summary for a decision agent: the summarizer's prompt is written
+      // around a system prompt, tools and an output contract, and the server
+      // refuses rather than describing fields that aren't there.
+      summarize={false}
+      className={className}
+    >
+      <div className="w-full space-y-6 p-6">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div className="space-y-6">
+            <section className="space-y-2 rounded-lg border border-neutral-200 bg-white p-4">
+              <Label>Judge with</Label>
+              <select
+                className={cn(
+                  'border-input bg-card text-foreground h-9 w-full rounded-md border px-2 text-sm outline-none focus:border-ring',
+                  !config.modelId && 'border-destructive',
+                )}
+                value={config.modelId}
+                aria-label="Decision model"
+                onChange={(e) => draft.patch({ modelId: e.target.value })}
+              >
+                {/* A prompt, not a choice: `modelId` cannot be blank, so once a
+                    model is picked the placeholder is no longer selectable. */}
+                <option value="" disabled={config.modelId !== ''}>
+                  Pick a decision model…
+                </option>
+                {groupByProvider(
+                  models.data ?? [],
+                  providers.data ?? [],
+                ).map(({ label, kind, items }) => (
+                  <optgroup key={label} label={label}>
+                    {items.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.label}
+                        {kind === 'chat-emulated' ? ' (emulated)' : ''}
+                      </option>
                     ))}
-                  </ul>
-                </section>
+                  </optgroup>
+                ))}
+              </select>
+              {(models.data ?? []).length === 0 && !models.isLoading ? (
+                <p className="text-xs text-neutral-500">
+                  No decision provider is wired up in this deployment, so this
+                  agent cannot run. See <code>WfSdkConfig.getDecider</code>.
+                </p>
+              ) : chosen && chosen.calibrated === false ? (
+                <p className="text-xs text-neutral-500">
+                  This decider emulates judgments on a chat model. Its
+                  probabilities are the model’s own estimate rather than a
+                  calibrated distribution — treat every threshold below as
+                  rough.
+                </p>
               ) : null}
-              <DecisionPlaygroundPanel config={config} />
-            </div>
+            </section>
+
+            <section className="space-y-2 rounded-lg border border-neutral-200 bg-white p-4">
+              <Label>Questions</Label>
+              <DecisionQuestionList
+                questions={config.questions}
+                rules={config.rules}
+                model={chosen}
+                onChange={(patch) => draft.patch(patch)}
+              />
+            </section>
+
+            <section className="space-y-2 rounded-lg border border-neutral-200 bg-white p-4">
+              {/* The rename hazard rides on the heading, same as a question's
+                  name: an icon that stays visible without an amber block
+                  shouting at an author who is only adding a verdict. A verdict
+                  is what a Goal ASSERTS on, so renaming one is the version of
+                  this cascade with the most reach. */}
+              <div className="flex items-center gap-1.5">
+                <Label>Verdicts</Label>
+                {config.rules.length > 0 ? (
+                  <Tooltip
+                    side="right"
+                    content={
+                      <>
+                        Renaming a verdict re-points the rules that return it,
+                        here. It does <b>not</b> update eval samples: a Goal
+                        expecting the old name will quietly stop matching. Fix
+                        those by hand.
+                      </>
+                    }
+                  >
+                    <AlertTriangle
+                      className="size-3 shrink-0 text-amber-600"
+                      aria-label="Renaming a verdict updates the rules here but not eval samples"
+                    />
+                  </Tooltip>
+                ) : null}
+              </div>
+              {/* The explanation goes ABOVE the list. Underneath, it was
+                  read after the author had already guessed wrong about what
+                  a verdict is — the guess being that it is a second kind of
+                  question rather than the agent's answer. */}
+              <p className="text-muted-foreground text-xs">
+                The complete set of answers this agent can give. Every run
+                returns exactly one of them as its{' '}
+                <code className="text-foreground">verdict</code> — the value
+                a Goal grades and a caller branches on. The questions above
+                gather evidence; the rules below turn that evidence into one
+                of these names.
+              </p>
+              <VerdictsEditor
+                verdicts={config.verdicts}
+                rules={config.rules}
+                onChange={(patch) => draft.patch(patch)}
+              />
+            </section>
+
+            <section className="space-y-2 rounded-lg border border-neutral-200 bg-white p-4">
+              <Label>Rules</Label>
+              <DecisionRulesEditor
+                rules={config.rules}
+                questions={config.questions}
+                verdicts={config.verdicts}
+                onChange={(rules) => draft.patch({ rules })}
+              />
+            </section>
+          </div>
+
+          <div className="space-y-6">
+            {issues.length > 0 ? (
+              <section className="space-y-1.5 rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <h2 className="flex items-center gap-1.5 text-sm font-medium text-amber-900">
+                  <AlertTriangle className="size-4" />
+                  Issues
+                </h2>
+                <ul className="space-y-1 text-xs text-amber-800">
+                  {issues.map((issue, i) => (
+                    <li key={i}>{issue}</li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+            <DecisionPlaygroundPanel config={config} />
           </div>
         </div>
-      </WfShell>
-
-      {draft.showPublish ? (
-        <PublishAgentDialog
-          agentId={agentId}
-          config={config}
-          // No AI summary for a decision agent: the summarizer's prompt is
-          // written around a system prompt, tools and an output contract, and
-          // the server refuses rather than describing fields that aren't there.
-          summarize={false}
-          publishing={draft.publishing}
-          error={draft.publishError}
-          onCancel={() => draft.setShowPublish(false)}
-          onConfirm={draft.onPublish}
-        />
-      ) : null}
-
-      {showArchive ? (
-        <ArchiveAgentDialog
-          agentId={agentId}
-          agentName={meta.name}
-          onClose={() => setShowArchive(false)}
-          onArchived={() => {
-            setShowArchive(false)
-            navigate('agents')
-          }}
-        />
-      ) : null}
-    </>
+      </div>
+    </AgentEditorChrome>
   )
 }
 

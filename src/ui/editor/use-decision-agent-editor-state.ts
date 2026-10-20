@@ -1,15 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
-
 import type { DecisionAgentConfig } from '../../engine'
 import { useWfClient } from '../context'
-import {
-  useAgentVersions,
-  usePublishAgent,
-  useSaveAgentDraft,
-} from '../hooks'
+import { useAgentVersions } from '../hooks'
 import { useUndoStack, type CoalesceRule } from '../undo/use-undo-stack'
 
 import { describeDecisionAgentChange } from './decision-agent-diff'
+import { useAgentPublishLifecycle } from './use-agent-publish-lifecycle'
 
 // The versioned half of a DECISION agent's editor, the sibling of
 // `useAgentDraft`.
@@ -18,9 +13,9 @@ import { describeDecisionAgentChange } from './decision-agent-diff'
 // hook is doing has no counterpart here: there are no TipTap prompt editors to
 // push text into imperatively, no compiled output schema riding alongside the
 // config, and so none of the ref-and-shadow machinery that exists to keep those
-// two in step with undo. What is left is the part both genuinely share — an
-// undo stack, save, publish, load-a-version — and that part is small enough
-// that one honest copy beats a hook with two modes.
+// two in step with undo. Save and publish are kind-independent and come from
+// `useAgentPublishLifecycle`; what is left — an undo stack and load-a-version —
+// is small enough that one honest copy beats a hook with two modes.
 //
 // The entity METADATA half is not duplicated: `useAgentMeta` knows nothing
 // about a config and both editors use it as-is.
@@ -58,17 +53,7 @@ export function useDecisionAgentDraft({
   onPublished?: (result: { versionId: string; versionNumber: number }) => void
 }) {
   const client = useWfClient()
-  const saveDraft = useSaveAgentDraft()
-  const publish = usePublishAgent()
   const versions = useAgentVersions(agentId)
-  // Advanced only by this editor's own publishes: a refetch that shows someone
-  // else's newer version must not quietly become the base.
-  const baseVersionRef = useRef(initialBaseVersionNumber)
-
-  const [showPublish, setShowPublish] = useState(false)
-  const [showVersions, setShowVersions] = useState(false)
-  const [showHistory, setShowHistory] = useState(false)
-  const [justPublished, setJustPublished] = useState<number | null>(null)
 
   const history = useUndoStack<DecisionAgentConfig>({
     initial: initialConfig,
@@ -76,6 +61,13 @@ export function useDecisionAgentDraft({
     coalesce: coalesceDecisionEdit,
   })
   const config = history.state
+  const lifecycle = useAgentPublishLifecycle({
+    agentId,
+    config,
+    initialBaseVersionNumber,
+    markSaved: history.markSaved,
+    onPublished,
+  })
 
   function patch(next: Partial<DecisionAgentConfig>) {
     history.record({ ...config, ...next })
@@ -88,7 +80,7 @@ export function useDecisionAgentDraft({
 
   async function loadVersion(versionId: string) {
     const v = await client.getAgentVersion(versionId)
-    setShowVersions(false)
+    lifecycle.setShowVersions(false)
     // Kind-guarded: a version id is all this holds, and reading a generation
     // config into a question list would render an editor over fields that
     // aren't there. It cannot happen through the UI — versions belong to one
@@ -100,36 +92,6 @@ export function useDecisionAgentDraft({
     })
   }
 
-  function onSaveDraft() {
-    saveDraft.mutate({ agentId, config }, { onSuccess: history.markSaved })
-  }
-
-  function onPublish({ changeNote }: { changeNote: string }) {
-    publish.mutate(
-      {
-        agentId,
-        config,
-        changeNote: changeNote.trim() || undefined,
-        baseVersionNumber: baseVersionRef.current,
-      },
-      {
-        onSuccess: (result) => {
-          baseVersionRef.current = result.versionNumber
-          history.markSaved()
-          setShowPublish(false)
-          setJustPublished(result.versionNumber)
-          onPublished?.(result)
-        },
-      },
-    )
-  }
-
-  useEffect(() => {
-    if (justPublished == null) return
-    const timer = setTimeout(() => setJustPublished(null), 4000)
-    return () => clearTimeout(timer)
-  }, [justPublished])
-
   return {
     config,
     patch,
@@ -138,20 +100,8 @@ export function useDecisionAgentDraft({
     snapshots: history.entries,
     historyIndex: history.index,
     applySnapshot: history.applyIndex,
-    showHistory,
-    setShowHistory,
-    saveError: saveDraft.error?.message ?? publish.error?.message ?? null,
-    publishError: publish.error?.message ?? null,
-    saving: saveDraft.isPending,
-    publishing: publish.isPending,
-    justPublished,
-    onSaveDraft,
-    onPublish,
     loadVersion,
     versions: versions.data,
-    showPublish,
-    setShowPublish,
-    showVersions,
-    setShowVersions,
+    ...lifecycle,
   }
 }

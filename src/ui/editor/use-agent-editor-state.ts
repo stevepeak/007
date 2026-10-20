@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 
 import {
   zodSourceFromJsonSchema,
@@ -6,15 +6,11 @@ import {
   type AgentOutput,
 } from '../../engine'
 import { useWfClient } from '../context'
-import {
-  useAgentVersions,
-  usePublishAgent,
-  useSaveAgentDraft,
-  useUpdateAgentMeta,
-} from '../hooks'
+import { useAgentVersions, useUpdateAgentMeta } from '../hooks'
 import { useUndoStack, type CoalesceRule } from '../undo/use-undo-stack'
 
 import { describeAgentChange } from './agent-config-diff'
+import { useAgentPublishLifecycle } from './use-agent-publish-lifecycle'
 
 // The agent editor's state, split the way the DATA is split rather than the way
 // the screen is.
@@ -144,13 +140,8 @@ function initialZodSource(config: AgentConfig): string {
  * The versioned half: the draft `AgentConfig`, what it takes to save or publish
  * it, and the two ways an author can travel backwards through it — loading an
  * older published version, or restoring the config a playground run was
- * recorded against.
- *
- * Both dialog toggles live here rather than with the component's other UI state
- * because neither is closed by the button that opened it: publishing closes the
- * publish dialog on success, and picking a version closes the versions menu.
- * Owning the toggle next to the mutation that closes it is what keeps a failed
- * publish from silently dismissing its own dialog.
+ * recorded against. Save, publish and their dialog toggles come from
+ * `useAgentPublishLifecycle`, shared with the decision editor.
  *
  * Travelling backwards is `useUndoStack`'s job now. Loading a version and
  * restoring a playground run both land ON the stack rather than replacing what
@@ -174,18 +165,7 @@ export function useAgentDraft({
   onPublished?: (result: { versionId: string; versionNumber: number }) => void
 }) {
   const client = useWfClient()
-  const saveDraft = useSaveAgentDraft()
-  const publish = usePublishAgent()
   const versions = useAgentVersions(agentId)
-  // Advanced only by this editor's own publishes: a refetch that shows someone
-  // else's newer version must not quietly become the base.
-  const baseVersionRef = useRef(initialBaseVersionNumber)
-
-  const [showPublish, setShowPublish] = useState(false)
-  const [showVersions, setShowVersions] = useState(false)
-  const [showHistory, setShowHistory] = useState(false)
-  // Transient "Published" confirmation shown in place of navigating away.
-  const [justPublished, setJustPublished] = useState<number | null>(null)
 
   // Every other control is driven by `config`, but both prompt bodies are TipTap
   // documents seeded once from `initialBody` — so a restore has to push the new
@@ -224,6 +204,13 @@ export function useAgentDraft({
   })
 
   const { config, zodSource } = history.state
+  const lifecycle = useAgentPublishLifecycle({
+    agentId,
+    config,
+    initialBaseVersionNumber,
+    markSaved: history.markSaved,
+    onPublished,
+  })
 
   function patch(next: Partial<AgentConfig>) {
     // The editors are the source of these two, so record what they already show
@@ -260,10 +247,6 @@ export function useAgentDraft({
     })
   }
 
-  function onSaveDraft() {
-    saveDraft.mutate({ agentId, config }, { onSuccess: history.markSaved })
-  }
-
   // Load a published version back into the editor as an unsaved edit. Nothing is
   // published and the live version doesn't move — the author reviews it and, if
   // they want it back, publishes it as a NEW version on top. History is never
@@ -271,7 +254,7 @@ export function useAgentDraft({
   // edits it replaced.
   async function loadVersion(versionId: string) {
     const v = await client.getAgentVersion(versionId)
-    setShowVersions(false)
+    lifecycle.setShowVersions(false)
     // Kind-guarded: a version id is all this holds, and a decision config
     // rendered through the prompt editor would be a page of empty fields. It
     // cannot happen through the UI — a version belongs to one agent and an
@@ -284,40 +267,6 @@ export function useAgentDraft({
     })
   }
 
-  function onPublish({
-    changeNote,
-    aiSummary,
-  }: {
-    changeNote: string
-    aiSummary: { short: string; long: string } | null
-  }) {
-    publish.mutate(
-      {
-        agentId,
-        config,
-        changeNote: changeNote.trim() || undefined,
-        aiSummary: aiSummary ?? undefined,
-        baseVersionNumber: baseVersionRef.current,
-      },
-      {
-        onSuccess: (result) => {
-          baseVersionRef.current = result.versionNumber
-          history.markSaved()
-          setShowPublish(false)
-          setJustPublished(result.versionNumber)
-          onPublished?.(result)
-        },
-      },
-    )
-  }
-
-  // Auto-dismiss the "Published" confirmation after a few seconds.
-  useEffect(() => {
-    if (justPublished == null) return
-    const timer = setTimeout(() => setJustPublished(null), 4000)
-    return () => clearTimeout(timer)
-  }, [justPublished])
-
   return {
     config,
     patch,
@@ -328,23 +277,11 @@ export function useAgentDraft({
     snapshots: history.entries,
     historyIndex: history.index,
     applySnapshot: history.applyIndex,
-    showHistory,
-    setShowHistory,
-    saveError: saveDraft.error?.message ?? publish.error?.message ?? null,
-    publishError: publish.error?.message ?? null,
-    saving: saveDraft.isPending,
-    publishing: publish.isPending,
-    justPublished,
     restoreConfig,
     registerSetBody,
     registerSetUserPrompt,
-    onSaveDraft,
-    onPublish,
     loadVersion,
     versions: versions.data,
-    showPublish,
-    setShowPublish,
-    showVersions,
-    setShowVersions,
+    ...lifecycle,
   }
 }
