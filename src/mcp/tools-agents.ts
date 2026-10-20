@@ -24,10 +24,14 @@ import type {
 
 import { clip } from './clip'
 import {
+  agentIdArg,
   boundedLimit,
+  formatZodIssues,
   noSuchVersion,
+  notFound,
   optString,
   reqString,
+  stringRecord,
   type WfMcpTool,
 } from './tools'
 
@@ -217,6 +221,29 @@ export function draftOrPublished<TConfig extends Record<string, unknown>>(
 }
 
 /**
+ * {@link draftOrPublished}, or the published version alone when the caller
+ * asked for it — null when that version does not exist, never a fallback to
+ * the draft.
+ */
+function pickAgentConfig<TConfig extends Record<string, unknown>>(args: {
+  detail: {
+    draft: { config: TConfig } | null
+    currentVersion: { config: TConfig } | null
+  }
+  usePublished: boolean
+}): ReturnType<typeof draftOrPublished<TConfig>> {
+  const { detail, usePublished } = args
+  if (!usePublished) return draftOrPublished(detail)
+  return detail.currentVersion
+    ? {
+        config: detail.currentVersion.config,
+        source: 'published',
+        unsavedFields: [],
+      }
+    : null
+}
+
+/**
  * A detail narrowed to the GENERATION shape, at a site that has already checked
  * `agent.kind`.
  *
@@ -277,9 +304,11 @@ export async function preflightAgentConfig(
     // Field-by-field: the schema's messages are written for an author (the
     // `userPrompt` refinement explains how data reaches an agent at all), and a
     // stringified ZodError buries them.
-    const issues = parsed.error.issues
-      .map((i) => `${i.path.join('.') || 'config'}: ${i.message}`)
-      .join('\n')
+    const issues = formatZodIssues({
+      error: parsed.error,
+      separator: '\n',
+      root: 'config',
+    })
     return { error: `The config is not valid:\n${issues}` }
   }
   const config = parsed.data
@@ -330,9 +359,11 @@ export async function preflightDecisionAgentConfig(
   }
   const parsed = decisionAgentConfigSchema.safeParse(raw)
   if (!parsed.success) {
-    const issues = parsed.error.issues
-      .map((i) => `${i.path.join('.') || 'config'}: ${i.message}`)
-      .join('\n')
+    const issues = formatZodIssues({
+      error: parsed.error,
+      separator: '\n',
+      root: 'config',
+    })
     return { error: `The config is not valid:\n${issues}` }
   }
   const config = parsed.data
@@ -346,16 +377,6 @@ export async function preflightDecisionAgentConfig(
   })
   if (issues.length > 0) return { error: issues.join('\n') }
   return { config }
-}
-
-/** Values for `${…}` prompt variables — strings only, as the handler parses them. */
-function stringRecord(raw: unknown): Record<string, string> {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
-  const out: Record<string, string> = {}
-  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-    if (typeof v === 'string') out[k] = v
-  }
-  return out
 }
 
 /** A preview's trace, reduced to what a reader of the ANSWER wants next. */
@@ -409,7 +430,7 @@ export function agentReadTools(): WfMcpTool[] {
         'Relevant to eval drift too. A Goal normally FLOATS to the agent’s latest published version, so republishing changes everything under test while leaving every sample’s hash identical — get_eval_run reports that as `agentRepublishedSinceLastRun`, and this is what says which version it moved to and what changed in it.',
       ].join('\n'),
       inputSchema: {
-        agentId: z.string().describe('Agent id, from list_agents.'),
+        agentId: agentIdArg,
         versionNumber: z
           .number()
           .nullish()
@@ -421,7 +442,7 @@ export function agentReadTools(): WfMcpTool[] {
       run: async (client, args) => {
         const agentId = reqString(args.agentId, 'agentId')
         const detail = await client.getAgent(agentId)
-        if (!detail) return { error: `No agent found for id ${agentId}.` }
+        if (!detail) return notFound({ kind: 'agent', id: agentId })
         const versions = await client.listAgentVersions(agentId)
         const wanted =
           typeof args.versionNumber === 'number' ? args.versionNumber : undefined
@@ -484,7 +505,7 @@ export function agentReadTools(): WfMcpTool[] {
         'Real runs only: an eval’s simulated runs never appear here, so this is production behaviour and not test behaviour. An iteration fan-out folds into one row — `callCount` and `itemIndexes` say how many executions it covers.',
       ].join('\n'),
       inputSchema: {
-        agentId: z.string().describe('Agent id, from list_agents.'),
+        agentId: agentIdArg,
         limit: z
           .number()
           .nullish()
@@ -686,7 +707,7 @@ export function agentWriteTools(): WfMcpTool[] {
         'Nothing is published: the draft changes what run_eval (with draftAgentId) and run_agent_preview measure, and no workflow runs it until it is published with publish_agent (a dry run, then a confirmed publish). It also replaces whatever draft someone had open in the editor, so say what you changed.',
       ].join('\n'),
       inputSchema: {
-        agentId: z.string().describe('Agent id, from list_agents.'),
+        agentId: agentIdArg,
         config: z
           .record(z.string(), z.unknown())
           .nullish()
@@ -719,7 +740,7 @@ export function agentWriteTools(): WfMcpTool[] {
           )
         }
         const before = await client.getAgent(agentId)
-        if (!before) return { error: `No agent found for id ${agentId}.` }
+        if (!before) return notFound({ kind: 'agent', id: agentId })
         const published = before.currentVersion?.config as
           | Record<string, unknown>
           | undefined
@@ -834,7 +855,7 @@ export function agentWriteTools(): WfMcpTool[] {
         const agentId = reqString(args.agentId, 'agentId')
         const state = reqString(args.state, 'state')
         const detail = await client.getAgent(agentId)
-        if (!detail) return { error: `No agent found for id ${agentId}.` }
+        if (!detail) return notFound({ kind: 'agent', id: agentId })
         if (detail.agent.kind !== 'decision') {
           return {
             error: `Agent ${agentId} is a GENERATION agent — it has questions to answer only in the sense that a prompt does. Use run_agent_preview instead.`,
@@ -845,15 +866,7 @@ export function agentWriteTools(): WfMcpTool[] {
           currentVersion: { config: DecisionAgentConfig } | null
         }
         const usePublished = args.usePublished === true
-        const chosen = usePublished
-          ? decision.currentVersion
-            ? {
-                config: decision.currentVersion.config,
-                source: 'published' as const,
-                unsavedFields: [],
-              }
-            : null
-          : draftOrPublished(decision)
+        const chosen = pickAgentConfig({ detail: decision, usePublished })
         if (!chosen) {
           return {
             error: usePublished
@@ -870,7 +883,7 @@ export function agentWriteTools(): WfMcpTool[] {
         const result = await client.runDecisionPreview({
           config: chosen.config,
           state,
-          variables: stringRecord(args.variables),
+          variables: stringRecord({ raw: args.variables }),
         })
         return {
           ranConfig: chosen.source,
@@ -893,7 +906,7 @@ export function agentWriteTools(): WfMcpTool[] {
       description:
         'Run one agent once, in isolation, against a made-up input — the playground. Runs the DRAFT — what the agent editor shows — so it tests edits before they are published; the reply’s `unsavedFields` names the fields that actually differ from the live version, and is empty when the draft merely matches it. ALL TOOLS ARE SIMULATED: the model writes plausible tool results rather than any real search or record being touched, so this checks prompt, format and which tools the agent reaches for, and is NOT evidence the answer is correct. Nothing is persisted and no workflow is affected. Cheap — one model call — so use it between an edit and a run_eval sweep.',
       inputSchema: {
-        agentId: z.string().describe('Agent id, from list_agents.'),
+        agentId: agentIdArg,
         input: z
           .string()
           .nullish()
@@ -928,7 +941,7 @@ export function agentWriteTools(): WfMcpTool[] {
       run: async (client, args) => {
         const agentId = reqString(args.agentId, 'agentId')
         const detail = await client.getAgent(agentId)
-        if (!detail) return { error: `No agent found for id ${agentId}.` }
+        if (!detail) return notFound({ kind: 'agent', id: agentId })
 
         if (detail.agent.kind === 'decision') {
           return {
@@ -937,15 +950,7 @@ export function agentWriteTools(): WfMcpTool[] {
         }
         const usePublished = args.usePublished === true
         const generation = asGenerationDetail(detail)
-        const chosen = usePublished
-          ? generation.currentVersion
-            ? {
-                config: generation.currentVersion.config,
-                source: 'published' as const,
-                unsavedFields: [],
-              }
-            : null
-          : draftOrPublished(generation)
+        const chosen = pickAgentConfig({ detail: generation, usePublished })
         if (!chosen) {
           return {
             error: usePublished
@@ -955,7 +960,7 @@ export function agentWriteTools(): WfMcpTool[] {
         }
 
         const input = optString(args.input) ?? ''
-        const promptVariables = stringRecord(args.promptVariables)
+        const promptVariables = stringRecord({ raw: args.promptVariables })
         // Roles are narrowed here rather than in the schema: a z.enum would emit
         // JSON Schema a strict-mode client may drop (see the conventions note in
         // `tools.ts`), and the handler parses the array defensively anyway.
@@ -1018,13 +1023,13 @@ export function agentWriteTools(): WfMcpTool[] {
         'It also discards whatever a person had unsaved in the editor. Same caveat as the workflow twin: there is one draft row per agent and this clears it.',
       ].join('\n'),
       inputSchema: {
-        agentId: z.string().describe('Agent id, from list_agents.'),
+        agentId: agentIdArg,
       },
       readOnly: false,
       run: async (client, args) => {
         const agentId = reqString(args.agentId, 'agentId')
         const detail = await client.getAgent(agentId)
-        if (!detail) return { error: `No agent found for id ${agentId}.` }
+        if (!detail) return notFound({ kind: 'agent', id: agentId })
         if (!detail.draft) {
           return { ok: true, agentId, note: 'There was no draft to discard.' }
         }
@@ -1058,7 +1063,7 @@ export function agentWriteTools(): WfMcpTool[] {
         'The name is what every agent node’s picker shows and what list_agents matches on; it is display metadata, not identity — the id is identity, and it never changes.',
       ].join('\n'),
       inputSchema: {
-        agentId: z.string().describe('Agent id, from list_agents.'),
+        agentId: agentIdArg,
         name: z.string().nullish().describe('New name for the agent.'),
         icon: z
           .string()
@@ -1084,7 +1089,7 @@ export function agentWriteTools(): WfMcpTool[] {
           }
         }
         const before = await client.getAgent(agentId)
-        if (!before) return { error: `No agent found for id ${agentId}.` }
+        if (!before) return notFound({ kind: 'agent', id: agentId })
         await client.updateAgentMeta({ agentId, name, icon, color })
         return {
           agentId,

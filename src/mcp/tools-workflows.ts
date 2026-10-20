@@ -32,7 +32,15 @@ import type {
   WfWorkflowDetail,
 } from '../server/protocol'
 
-import { noSuchVersion, optString, reqString, type WfMcpTool } from './tools'
+import {
+  formatZodIssues,
+  noSuchVersion,
+  notFound,
+  optString,
+  reqString,
+  type WfMcpTool,
+  workflowIdArg,
+} from './tools'
 
 // The workflow write path. Same neighborhood as `tools-agents.ts`, one line
 // drawn differently: a workflow publishes in ONE gated call, an agent only
@@ -562,7 +570,9 @@ async function requireWorkflow(
   workflowId: string,
 ): Promise<WfWorkflowDetail> {
   const detail = await client.getWorkflow(workflowId)
-  if (!detail) throw new Error(`No workflow found for id ${workflowId}.`)
+  if (!detail) {
+    throw new Error(notFound({ kind: 'workflow', id: workflowId }).error)
+  }
   return detail
 }
 
@@ -608,7 +618,7 @@ export function workflowReadTools(): WfMcpTool[] {
       description:
         'Every published version of one workflow, newest first, with its number, the author’s change note and the AI summary. The highest number is what runs. Use it to find when a behavior changed, then get_workflow_version to read that graph and list_changes to see who published it.',
       inputSchema: {
-        workflowId: z.string().describe('Workflow id, from list_workflows.'),
+        workflowId: workflowIdArg,
       },
       readOnly: true,
       run: async (client, args) => {
@@ -652,7 +662,7 @@ export function workflowReadTools(): WfMcpTool[] {
       run: async (client, args) => {
         const versionId = reqString(args.versionId, 'versionId')
         const v = await client.getVersion(versionId)
-        return v ?? { error: `No version found for id ${versionId}.` }
+        return v ?? notFound({ kind: 'version', id: versionId })
       },
     },
 
@@ -845,7 +855,7 @@ export function workflowWriteTools(): WfMcpTool[] {
         'Both land in the `wf_change` feed attributed to whoever authorized this session.',
       ].join('\n'),
       inputSchema: {
-        workflowId: z.string().describe('Workflow id, from list_workflows.'),
+        workflowId: workflowIdArg,
         name: z.string().nullish().describe('New name for the workflow.'),
         archived: z
           .boolean()
@@ -911,7 +921,7 @@ export function workflowWriteTools(): WfMcpTool[] {
         'Ops apply in order and all-or-nothing: one bad op writes nothing. The reply lints the result and names every node that now differs from the published version. Nothing runs the draft; publish_workflow makes it live. Read get_workflow first for node ids, and validate_workflow_graph or get_tool_catalog for what a tool’s args are called and typed.',
       ].join('\n'),
       inputSchema: {
-        workflowId: z.string().describe('Workflow id, from list_workflows.'),
+        workflowId: workflowIdArg,
         ops: z.array(opSchema).describe('The changes, applied in order.'),
       },
       readOnly: false,
@@ -947,11 +957,13 @@ export function workflowWriteTools(): WfMcpTool[] {
         // in particular can produce a config the node's kind does not accept.
         const shaped = workflowGraphShapeSchema.safeParse(graph)
         if (!shaped.success) {
+          const issues = formatZodIssues({
+            error: shaped.error,
+            separator: '; ',
+            max: 5,
+          })
           return {
-            error: `The patched graph is not well-formed, so nothing was written: ${shaped.error.issues
-              .slice(0, 5)
-              .map((i) => `${i.path.join('.')}: ${i.message}`)
-              .join('; ')}`,
+            error: `The patched graph is not well-formed, so nothing was written: ${issues}`,
             applied,
           }
         }
@@ -986,7 +998,7 @@ export function workflowWriteTools(): WfMcpTool[] {
         'The reply lints the result and names every node that now differs from the published version. Nothing runs the draft; publish_workflow makes it live.',
       ].join('\n'),
       inputSchema: {
-        workflowId: z.string().describe('Workflow id, from list_workflows.'),
+        workflowId: workflowIdArg,
         graph: z
           .record(z.string(), z.unknown())
           .nullish()
@@ -1034,11 +1046,13 @@ export function workflowWriteTools(): WfMcpTool[] {
 
         const shaped = workflowGraphShapeSchema.safeParse(args.graph)
         if (!shaped.success) {
+          const issues = formatZodIssues({
+            error: shaped.error,
+            separator: '; ',
+            max: 5,
+          })
           return {
-            error: `\`graph\` is not a well-formed workflow graph, so nothing was written: ${shaped.error.issues
-              .slice(0, 5)
-              .map((i) => `${i.path.join('.')}: ${i.message}`)
-              .join('; ')}`,
+            error: `\`graph\` is not a well-formed workflow graph, so nothing was written: ${issues}`,
           }
         }
         return await saveDraft(client, detail, shaped.data)
@@ -1051,7 +1065,7 @@ export function workflowWriteTools(): WfMcpTool[] {
       description:
         'Publish the workflow’s current DRAFT as a new immutable version — from this moment it is what the trigger runs. THIS CHANGES WHAT CUSTOMERS GET. Two gates, both refusals rather than warnings: the draft must lint with zero errors (see validate_workflow_graph), and baseVersionNumber must equal the version that is live right now — pass the versionNumber you read from get_workflow or list_workflow_versions, so a version someone else published since you read is never silently overwritten. changeNote is required and becomes the version’s note in the history and the wf_change feed. Does not publish agents — publish_agent does that, separately.',
       inputSchema: {
-        workflowId: z.string().describe('Workflow id, from list_workflows.'),
+        workflowId: workflowIdArg,
         changeNote: z
           .string()
           .describe('What changed and why, in one line — a git commit subject.'),
@@ -1146,7 +1160,7 @@ export function workflowWriteTools(): WfMcpTool[] {
       description:
         'Throw away the workflow’s unsaved draft so the editor shows the published version again. The undo for patch_workflow_draft / update_workflow_draft. Also discards whatever a person had unsaved in the editor, so the reply says what was lost.',
       inputSchema: {
-        workflowId: z.string().describe('Workflow id, from list_workflows.'),
+        workflowId: workflowIdArg,
       },
       readOnly: false,
       run: async (client, args) => {
@@ -1201,7 +1215,7 @@ export function workflowWriteTools(): WfMcpTool[] {
         }
         const mode: RetryRunMode = raw
         const before = await client.getRun(runId)
-        if (!before) return { error: `No run found for id ${runId}.` }
+        if (!before) return notFound({ kind: 'run', id: runId })
         // Retrying something still going would produce two live runs of the same
         // work — and the run viewer only offers Retry on a finished one, so this
         // is the same gate rather than a new rule.

@@ -3,7 +3,13 @@ import { z } from 'zod'
 import { sha256Hex } from '../engine/sha256'
 import { stableStringify } from '../engine/stable-stringify'
 
-import { optString, reqString, type WfMcpTool } from './tools'
+import {
+  agentIdArg,
+  notFound,
+  optString,
+  reqString,
+  type WfMcpTool,
+} from './tools'
 import {
   changedKeys,
   preflightAgentConfig,
@@ -74,7 +80,7 @@ export function agentPublishTools(): WfMcpTool[] {
         '`baseVersionNumber` is the live versionNumber you read (get_agent → currentVersion.versionNumber), as for publish_workflow. The draft is re-checked like update_agent_draft checks it — model id and capabilities, tool ids, a decision agent’s rules — so a draft that would fail at run time is refused here. Grade it first with run_eval({ draftAgentId }). The version records you (the authorized user) as its publisher; name a reviewer or approver in `changeNote` if one signed off.',
       ].join('\n'),
       inputSchema: {
-        agentId: z.string().describe('Agent id, from list_agents.'),
+        agentId: agentIdArg,
         baseVersionNumber: z
           .number()
           .describe(
@@ -111,7 +117,7 @@ export function agentPublishTools(): WfMcpTool[] {
         }
 
         const detail = await client.getAgent(agentId)
-        if (!detail) return { error: `No agent found for id ${agentId}.` }
+        if (!detail) return notFound({ kind: 'agent', id: agentId })
         const live = detail.currentVersion
         const liveNumber = live?.versionNumber ?? 0
         if (liveNumber !== base) {

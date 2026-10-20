@@ -22,7 +22,7 @@ import type {
 } from '../server/protocol'
 
 import { clip } from './clip'
-import { optString, reqString, type WfMcpTool } from './tools'
+import { notFound, optString, reqString, type WfMcpTool } from './tools'
 
 // The eval AUTHORING surface — the point of the whole MCP server. Reading a
 // trace is useful; turning what a trace shows into a Goal with samples that run
@@ -158,9 +158,11 @@ async function resolveTargetContract(
   if (targetKind === 'agent') {
     const detail = await client.getAgent(targetId)
     if (!detail) {
-      return {
-        error: `No agent found for id ${targetId}. Ids come from list_agents — a name is not an id.`,
-      }
+      return notFound({
+        kind: 'agent',
+        id: targetId,
+        hint: 'Ids come from list_agents — a name is not an id.',
+      })
     }
     const { agent } = detail
     const warnings: string[] = []
@@ -227,9 +229,11 @@ async function resolveTargetContract(
 
   const detail = await client.getWorkflow(targetId)
   if (!detail) {
-    return {
-      error: `No workflow found for id ${targetId}. Ids come from list_workflows.`,
-    }
+    return notFound({
+      kind: 'workflow',
+      id: targetId,
+      hint: 'Ids come from list_workflows.',
+    })
   }
   const warnings: string[] = []
   const declared = graphTriggerKind(detail)
@@ -444,7 +448,7 @@ export function evalReadTools(): WfMcpTool[] {
         const detail = await client.getEvalSet(setId, {
           includeArchived: args.includeArchived === true,
         })
-        if (!detail) return { error: `No eval goal found for id ${setId}.` }
+        if (!detail) return notFound({ kind: 'eval goal', id: setId })
         const contract = await resolveTargetContract(
           client,
           detail.set.targetKind,
@@ -566,9 +570,11 @@ export function evalWriteTools(): WfMcpTool[] {
         const setId = reqString(args.setId, 'setId')
         const before = await client.getEvalSet(setId)
         if (!before) {
-          return {
-            error: `No eval goal found for id ${setId}. Ids come from list_eval_sets.`,
-          }
+          return notFound({
+            kind: 'eval goal',
+            id: setId,
+            hint: 'Ids come from list_eval_sets.',
+          })
         }
         const targetId = optString(args.targetId)
         const targetKind: WfEvalTargetKind | undefined =
@@ -710,9 +716,11 @@ export function evalWriteTools(): WfMcpTool[] {
         // fields this call happened to send.
         const detail = await client.getEvalSet(setId, { includeArchived: true })
         if (!detail) {
-          return {
-            error: `No eval goal found for id ${setId}. Ids come from list_eval_sets.`,
-          }
+          return notFound({
+            kind: 'eval goal',
+            id: setId,
+            hint: 'Ids come from list_eval_sets.',
+          })
         }
         const existing = id ? detail.rows.find((r) => r.id === id) : undefined
         if (id && !existing) {

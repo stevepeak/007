@@ -9,7 +9,14 @@ import type {
 } from '../server/protocol'
 
 import { clip } from './clip'
-import { boundedLimit, optString, reqString, type WfMcpTool } from './tools'
+import {
+  boundedLimit,
+  notFound,
+  optString,
+  reqString,
+  stringRecord,
+  type WfMcpTool,
+} from './tools'
 
 // Connectors — the INBOUND direction: a third party's MCP server whose tools
 // this deployment consumes. (The outbound direction, a client connecting to us,
@@ -172,9 +179,11 @@ export function connectorReadTools(): WfMcpTool[] {
         if (connectorId) {
           const detail = await client.getConnector({ connectorId })
           if (!detail) {
-            return {
-              error: `No connector found for id ${connectorId}. Ids come from list_connectors — they are the slug embedded in every one of its tool ids (\`mcp:<slug>:<tool>\`).`,
-            }
+            return notFound({
+              kind: 'connector',
+              id: connectorId,
+              hint: `Ids come from list_connectors — they are the slug embedded in every one of its tool ids (\`mcp:<slug>:<tool>\`).`,
+            })
           }
           const showDisabled = args.includeDisabledTools === true
           const tools = detail.tools.filter((t) => showDisabled || t.enabled)
@@ -330,7 +339,7 @@ export function connectorWriteTools(): WfMcpTool[] {
             .listConnectors()
             .catch(() => [])
           return {
-            error: `No connector found for id ${connectorId}.`,
+            ...notFound({ kind: 'connector', id: connectorId }),
             connectorIds: all.map((c) => c.id),
           }
         }
@@ -405,7 +414,9 @@ export function connectorWriteTools(): WfMcpTool[] {
           }
         }
 
-        const context = stringRecord(args.context)
+        // An empty context value counts as missing, so the required-key check
+        // below sees it as absent rather than supplied.
+        const context = stringRecord({ raw: args.context, dropEmpty: true })
         const required = (tool.requiresContext ?? []).length > 0
           ? (await client.listToolContextFields().catch(() => []))
               .filter(
@@ -449,14 +460,4 @@ export function connectorWriteTools(): WfMcpTool[] {
       },
     },
   ]
-}
-
-/** A context bag — strings only, as the handler maps them into the run scope. */
-function stringRecord(raw: unknown): Record<string, string> {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
-  const out: Record<string, string> = {}
-  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-    if (typeof v === 'string' && v.length > 0) out[k] = v
-  }
-  return out
 }

@@ -85,6 +85,62 @@ export function noSuchVersion(args: {
   }
 }
 
+/** `agentId` as every agent tool declares it — one wording the model learns once. */
+export const agentIdArg = z.string().describe('Agent id, from list_agents.')
+
+/** `workflowId` as every workflow tool declares it. */
+export const workflowIdArg = z
+  .string()
+  .describe('Workflow id, from list_workflows.')
+
+/**
+ * The refusal for an id that loads nothing. Returned, not thrown, so the model
+ * reads it as an answer; `hint` says where a valid id comes from.
+ */
+export function notFound(args: {
+  kind: string
+  id: string
+  hint?: string
+}): { error: string } {
+  const hint = args.hint ? ` ${args.hint}` : ''
+  return { error: `No ${args.kind} found for id ${args.id}.${hint}` }
+}
+
+/**
+ * A zod failure as one line per issue, `path: message`. A stringified ZodError
+ * buries the schema's messages, which are written for an author. `root` names
+ * an issue on the value itself (empty path); `max` keeps the first few.
+ */
+export function formatZodIssues(args: {
+  error: z.ZodError
+  separator: string
+  root?: string
+  max?: number
+}): string {
+  return args.error.issues
+    .slice(0, args.max)
+    .map((i) => `${i.path.join('.') || (args.root ?? '')}: ${i.message}`)
+    .join(args.separator)
+}
+
+/**
+ * A model-supplied map narrowed to its string values; anything else is
+ * dropped. `dropEmpty` drops `""` too, for callers where an empty value means
+ * "not given" rather than "the empty string".
+ */
+export function stringRecord(args: {
+  raw: unknown
+  dropEmpty?: boolean
+}): Record<string, string> {
+  const { raw, dropEmpty = false } = args
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === 'string' && (!dropEmpty || v.length > 0)) out[k] = v
+  }
+  return out
+}
+
 /** Clamp a model-supplied count into a sane window without a JSON-Schema bound. */
 export function boundedLimit(
   raw: unknown,
@@ -201,13 +257,13 @@ export function readTools(): WfMcpTool[] {
       description:
         "Read one agent's full config, published version and unsaved draft (which can differ). Check `agent.kind` first — it says which shape `config` is. A \"generation\" agent has a system prompt, user prompt, allowed tools, max turns, sub-agent delegation and an output contract; a \"decision\" agent has `questions` (boolean/category/scale, with per-question `threshold` and, on a boolean, optional `yesMeans`/`noMeans` definitions), the `verdicts` it may reach, and the ordered `rules` that roll answers up into one — first match wins, last rule is the fallback.",
       inputSchema: {
-        agentId: z.string().describe('Agent id, from list_agents.'),
+        agentId: agentIdArg,
       },
       readOnly: true,
       run: async (client, args) => {
         const agentId = reqString(args.agentId, 'agentId')
         const detail = await client.getAgent(agentId)
-        return detail ?? { error: `No agent found for id ${agentId}.` }
+        return detail ?? notFound({ kind: 'agent', id: agentId })
       },
     },
 
@@ -227,13 +283,13 @@ export function readTools(): WfMcpTool[] {
       description:
         "Read one workflow's graph — nodes (trigger/agent/tool/branch/switch/iteration/workflow-call/output) and edges — for both the published version and the unsaved draft. Use to explain or critique how it is wired.",
       inputSchema: {
-        workflowId: z.string().describe('Workflow id, from list_workflows.'),
+        workflowId: workflowIdArg,
       },
       readOnly: true,
       run: async (client, args) => {
         const workflowId = reqString(args.workflowId, 'workflowId')
         const detail = await client.getWorkflow(workflowId)
-        return detail ?? { error: `No workflow found for id ${workflowId}.` }
+        return detail ?? notFound({ kind: 'workflow', id: workflowId })
       },
     },
 
@@ -318,7 +374,7 @@ export function readTools(): WfMcpTool[] {
       run: async (client, args) => {
         const runId = reqString(args.runId, 'runId')
         const detail = await client.getRun(runId)
-        if (!detail) return { error: `No run found for id ${runId}.` }
+        if (!detail) return notFound({ kind: 'run', id: runId })
         // Child runs, when there are any. A workflow-call node makes its callee a
         // SEPARATE run with its own steps, so a parent's trace shows the call and
         // not what happened inside it — and a parent can read green while a child
@@ -369,7 +425,7 @@ export function readTools(): WfMcpTool[] {
           )
         }
         const detail = await client.getRun(runId)
-        if (!detail) return { error: `No run found for id ${runId}.` }
+        if (!detail) return notFound({ kind: 'run', id: runId })
         const step = detail.steps.find((s) => s.cursor === cursor)
         if (!step) {
           return {

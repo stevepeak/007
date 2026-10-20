@@ -10,7 +10,7 @@ import {
 } from '../eval/from-run'
 import type { WfDataClient } from '../server/protocol'
 
-import { optString, reqString, type WfMcpTool } from './tools'
+import { notFound, optString, reqString, type WfMcpTool } from './tools'
 
 // `draft_sample_from_run` — the reason this MCP server is worth more than the
 // eval editor's own "Create sample" button.
@@ -109,7 +109,7 @@ export function draftTools(): WfMcpTool[] {
         const layer = requested as RunDraftLayer
 
         const detail = await client.getRun(runId)
-        if (!detail) return { error: `No run found for id ${runId}.` }
+        if (!detail) return notFound({ kind: 'run', id: runId })
 
         const candidates = agentStepsOf(detail.steps)
         if (candidates.length === 0) {

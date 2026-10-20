@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 import type { WfDataClient } from '../server/protocol'
 
-import { optString, reqString, type WfMcpTool } from './tools'
+import { notFound, optString, reqString, type WfMcpTool } from './tools'
 
 // `update_description` — the one editable piece of prose that every authored
 // entity carries and that none of the other write tools can reach.
@@ -69,9 +69,11 @@ async function applyDescription(
   if (kind === 'workflow') {
     const detail = await client.getWorkflow(id)
     if (!detail) {
-      return {
-        error: `No workflow found for id ${id}. Ids come from list_workflows.`,
-      }
+      return notFound({
+        kind: 'workflow',
+        id,
+        hint: 'Ids come from list_workflows.',
+      })
     }
     await client.updateWorkflow({ workflowId: id, description })
     return {
@@ -86,9 +88,11 @@ async function applyDescription(
   if (kind === 'agent') {
     const detail = await client.getAgent(id)
     if (!detail) {
-      return {
-        error: `No agent found for id ${id}. Ids come from list_agents — a name is not an id.`,
-      }
+      return notFound({
+        kind: 'agent',
+        id,
+        hint: 'Ids come from list_agents — a name is not an id.',
+      })
     }
     await client.updateAgentMeta({ agentId: id, description })
     return {
@@ -103,9 +107,11 @@ async function applyDescription(
   if (kind === 'eval_set') {
     const detail = await client.getEvalSet(id)
     if (!detail) {
-      return {
-        error: `No eval goal found for id ${id}. Ids come from list_eval_sets.`,
-      }
+      return notFound({
+        kind: 'eval goal',
+        id,
+        hint: 'Ids come from list_eval_sets.',
+      })
     }
     await client.updateEvalSet({ setId: id, description })
     return {
@@ -129,7 +135,7 @@ async function applyDescription(
   }
   const detail = await client.getEvalSet(setId)
   if (!detail) {
-    return { error: `No eval goal found for id ${setId}.` }
+    return notFound({ kind: 'eval goal', id: setId })
   }
   const row = detail.rows.find((r) => r.id === id)
   if (!row) {
@@ -175,9 +181,11 @@ async function applyRunNote(
 ): Promise<Applied | { error: string }> {
   const detail = await client.getRun(runId)
   if (!detail) {
-    return {
-      error: `No run found for id ${runId}. Ids come from list_runs, get_run or list_feedback.`,
-    }
+    return notFound({
+      kind: 'run',
+      id: runId,
+      hint: 'Ids come from list_runs, get_run or list_feedback.',
+    })
   }
   await client.setRunNote({ runId, note })
   return {

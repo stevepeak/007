@@ -1,9 +1,16 @@
 import { describe, expect, test } from 'bun:test'
+import { z } from 'zod'
 
 import type { WfDataClient, WfFeedbackRow } from '../server/protocol'
 
 import { allTools, selectTools } from './server'
-import { readTools, type WfMcpTool } from './tools'
+import {
+  formatZodIssues,
+  notFound,
+  readTools,
+  stringRecord,
+  type WfMcpTool,
+} from './tools'
 
 /**
  * The tools are thin over `WfDataClient`, so what is worth testing is what the
@@ -652,5 +659,45 @@ describe('list_runs — the filters the schema used to strip', () => {
     })
     await toolNamed('list_runs').run(client, { since: 'yesterday' })
     expect(seen.since).toBeUndefined()
+  })
+})
+
+describe('shared argument and refusal helpers', () => {
+  test('notFound keeps one wording, with an optional hint', () => {
+    expect(notFound({ kind: 'agent', id: 'a1' })).toEqual({
+      error: 'No agent found for id a1.',
+    })
+    expect(
+      notFound({ kind: 'run', id: 'r1', hint: 'Ids come from list_runs.' }),
+    ).toEqual({ error: 'No run found for id r1. Ids come from list_runs.' })
+  })
+
+  test('formatZodIssues names a path-less issue and caps the list', () => {
+    const schema = z.object({ a: z.string(), b: z.number(), c: z.boolean() })
+    const nested = schema.safeParse({})
+    if (nested.success) throw new Error('expected a failure')
+    const capped = formatZodIssues({
+      error: nested.error,
+      separator: '; ',
+      max: 2,
+    })
+    expect(capped.split('; ')).toHaveLength(2)
+
+    const root = schema.safeParse('nope')
+    if (root.success) throw new Error('expected a failure')
+    expect(
+      formatZodIssues({ error: root.error, separator: '\n', root: 'config' }),
+    ).toStartWith('config: ')
+    expect(
+      formatZodIssues({ error: root.error, separator: '\n' }),
+    ).toStartWith(': ')
+  })
+
+  test('stringRecord keeps only strings, and drops "" only when asked', () => {
+    const raw = { a: 'x', b: '', c: 1, d: null }
+    expect(stringRecord({ raw })).toEqual({ a: 'x', b: '' })
+    expect(stringRecord({ raw, dropEmpty: true })).toEqual({ a: 'x' })
+    expect(stringRecord({ raw: ['x'] })).toEqual({})
+    expect(stringRecord({ raw: null })).toEqual({})
   })
 })

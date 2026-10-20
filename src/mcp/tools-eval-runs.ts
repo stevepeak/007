@@ -28,7 +28,13 @@ import type {
 } from '../server/protocol'
 
 import { clip } from './clip'
-import { boundedLimit, optString, reqString, type WfMcpTool } from './tools'
+import {
+  boundedLimit,
+  notFound,
+  optString,
+  reqString,
+  type WfMcpTool,
+} from './tools'
 import { draftOrPublished } from './tools-agents'
 
 // Running a Goal and reading its report — the half of the loop that makes the
@@ -395,7 +401,7 @@ export function evalRunReadTools(): WfMcpTool[] {
       run: async (client, args) => {
         const evalRunId = reqString(args.evalRunId, 'evalRunId')
         const detail = await client.getEvalRun(evalRunId)
-        if (!detail) return { error: `No eval run found for id ${evalRunId}.` }
+        if (!detail) return notFound({ kind: 'eval run', id: evalRunId })
 
         const rowId = typeof args.rowId === 'string' ? args.rowId : undefined
         const all = detail.results
@@ -641,9 +647,11 @@ export function evalRunWriteTools(): WfMcpTool[] {
         )
         const missing = setIds.filter((_, i) => sets[i] === null)
         if (missing.length > 0) {
-          return {
-            error: `No eval goal found for id ${missing.join(', ')}. Ids come from list_eval_sets.`,
-          }
+          return notFound({
+            kind: 'eval goal',
+            id: missing.join(', '),
+            hint: 'Ids come from list_eval_sets.',
+          })
         }
         const samples = sets.reduce(
           (n, s) => n + (s ? s.rows.filter((r) => !r.archived).length : 0),
@@ -706,7 +714,7 @@ export function evalRunWriteTools(): WfMcpTool[] {
           }
           const detail = await client.getAgent(draftAgentId)
           if (!detail) {
-            return { error: `No agent found for id ${draftAgentId}.` }
+            return notFound({ kind: 'agent', id: draftAgentId })
           }
           const chosen = draftOrPublished(detail)
           if (!chosen || chosen.source !== 'draft') {
@@ -905,7 +913,7 @@ export function evalRunWriteTools(): WfMcpTool[] {
       run: async (client, args) => {
         const evalRunId = reqString(args.evalRunId, 'evalRunId')
         const before = await client.getEvalRun(evalRunId)
-        if (!before) return { error: `No eval run found for id ${evalRunId}.` }
+        if (!before) return notFound({ kind: 'eval run', id: evalRunId })
         if (before.run.status === 'completed') {
           return {
             evalRunId,
