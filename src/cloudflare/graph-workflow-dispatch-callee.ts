@@ -1,11 +1,15 @@
 import { NonRetryableError } from 'cloudflare:workflows'
 
-import { workflowFromManifest, type WorkflowCallNode } from '../engine/graph'
-import { buildCalleeTriggerInput } from '../engine/nodes/workflow'
+import type { WorkflowCallNode } from '../engine/graph'
+import { resolveCallee } from '../engine/nodes/workflow'
 import { errorMessage } from '../engine/run-node'
 import { createWfDb } from '../storage/client'
 
-import { InvalidEventTypeError, calleeEventType } from './callee-protocol'
+import {
+  InvalidEventTypeError,
+  calleeEventType,
+  unwrapCalleeWire,
+} from './callee-protocol'
 import type { CalleeDoneEvent, CalleeDoneWire } from './callee-protocol'
 import { reportCalleeResult, spawnCalleeRun } from './child-run'
 import type { GraphWorkflowEnv } from './graph-workflow'
@@ -77,20 +81,19 @@ export async function dispatchCallee<TDeps, E extends GraphWorkflowEnv>(
   input: unknown,
 ): Promise<RunStepResult> {
   const { step, env, p, manifest, scheduler, instanceId, traceId } = ctx
-  const entry = workflowFromManifest(manifest, node.config.workflowId)
-  if (!entry) {
-    throw new NonRetryableError(
-      `Workflow node ${node.id} references workflow ${
-        node.config.workflowId || '(none)'
-      }, which is not in the run manifest.`,
-    )
+  let callee: ReturnType<typeof resolveCallee>
+  try {
+    callee = resolveCallee({
+      node,
+      input,
+      nodeOutputs: scheduler.getOutputs(),
+      manifest,
+    })
+  } catch (err) {
+    // A callee missing from the frozen manifest stays missing on every retry.
+    throw new NonRetryableError(errorMessage(err))
   }
-
-  const triggerInput = buildCalleeTriggerInput(
-    node,
-    input,
-    scheduler.getOutputs(),
-  )
+  const { entry, triggerInput } = callee
   const eventType = calleeEventType(node.id)
 
   // Create the callee's own `wf_run` and start it in ONE journaled step, so a
@@ -125,31 +128,20 @@ export async function dispatchCallee<TDeps, E extends GraphWorkflowEnv>(
     timeout: resolveStepTimeoutMs(node),
   })
 
-  const meta = {
-    workflowId: entry.id,
-    versionId: entry.versionId,
-    versionNumber: entry.versionNumber,
-    name: entry.name,
-    // The link the run viewer needs to offer a drill-down into the callee's own
-    // trace, and which engine that trace will be shaped like.
-    childRunId: spawned.childRunId,
-    engine: spawned.engine,
-  }
-
-  if (!settled.payload.ok) {
-    // The callee already recorded its own failure against its own run; this is
-    // the parent's copy of why its node failed. Not retryable: retrying would
-    // spawn a whole second callee run, and the first one's side effects have
-    // already happened.
-    throw new NonRetryableError(
-      `Called workflow "${entry.name}" failed: ${settled.payload.error}`,
-    )
-  }
-
-  const output: unknown = JSON.parse(settled.payload.outputJson)
+  const output = unwrapCalleeWire({
+    wire: settled.payload,
+    failed: `Called workflow "${entry.name}" failed`,
+    toError: (message) => new NonRetryableError(message),
+  })
   return {
     schedulerOutput: output,
     recordedOutput: output,
-    meta,
+    // The link the run viewer needs to offer a drill-down into the callee's own
+    // trace, and which engine that trace will be shaped like.
+    meta: {
+      ...callee.meta,
+      childRunId: spawned.childRunId,
+      engine: spawned.engine,
+    },
   }
 }

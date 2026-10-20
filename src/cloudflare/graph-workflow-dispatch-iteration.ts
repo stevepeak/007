@@ -12,10 +12,14 @@ import {
 import { buildRunNodeContext } from '../engine/run-node'
 import { withoutUserProgress, type StreamSink } from '../engine/stream-sink'
 import { createWfDb } from '../storage/client'
-import { createRun } from '../storage/data'
 
-import { calleeEventType, iterationItemParams } from './callee-protocol'
+import {
+  calleeEventType,
+  iterationItemParams,
+  unwrapCalleeWire,
+} from './callee-protocol'
 import type { CalleeDoneWire } from './callee-protocol'
+import { createChildRunRow } from './child-run'
 import type { GraphWorkflowEnv } from './graph-workflow'
 import type {
   RunCtx,
@@ -29,7 +33,6 @@ import {
   stepOptsFor,
 } from './graph-workflow-dispatch-step-opts'
 import { createTelemeteredRecorder } from './graph-workflow-telemetry'
-import { releaseFromEnv } from './release'
 import { runContextFor } from './run-context'
 
 // Run one iteration node. Iteration orchestrates its own per-item durable steps,
@@ -228,23 +231,12 @@ async function runItemAsChildInstance<TDeps, E extends GraphWorkflowEnv>(
     `spawn:${node.id}:${index}`,
     DEFAULT_STEP_OPTS,
     async () => {
-      const childRunId = await createRun(createWfDb(env.WF_DB), {
+      const childRunId = await createChildRunRow({
+        db: createWfDb(env.WF_DB),
+        env,
         workflowVersionId: p.workflowVersionId,
-        triggerKind: p.runContext.triggerKind,
-        subjectId: p.runContext.subjectId,
-        correlationId: p.runContext.correlationId,
-        actorId: p.runContext.actorId,
-        // An eval's items are eval runs too — every dashboard query filters
-        // `is_eval = false`, so an unmarked child would be counted where its
-        // parent is excluded.
-        isEval: p.runContext.isEval,
-        sentryTraceId: traceId,
-        // Read from THIS deploy's env rather than copied off the parent row:
-        // the item runs on whatever is deployed when it is spawned, which after
-        // a resume-across-deploy is not what the parent started on.
-        ...releaseFromEnv(env),
-        // What nests this item under its parent in the run viewer, and the only
-        // link that survives the parent finishing. See NEW-172.
+        runContext: p.runContext,
+        traceId,
         parent: {
           runId: p.workflowRunId,
           nodeId: node.id,
@@ -281,20 +273,18 @@ async function runItemAsChildInstance<TDeps, E extends GraphWorkflowEnv>(
     { type: eventType, timeout: resolveStepTimeoutMs(node) },
   )
 
-  if (!settled.payload.ok) {
-    // Not retryable: a retry would spawn a whole second child for this item and
-    // the first one's side effects have already happened. `runIteration` decides
-    // what this does to the rest of the loop — a placeholder in this item's slot,
-    // or a drain — according to `stopOnError`.
-    throw new NonRetryableError(
-      `Item ${index} of iteration "${node.label}" failed (run ${spawned.childRunId}): ${settled.payload.error}`,
-    )
-  }
-
+  // A failed item is not retryable; `runIteration` decides what it does to the
+  // rest of the loop — a placeholder in this item's slot, or a drain —
+  // according to `stopOnError`.
+  //
   // The child spilled a large output to R2 inside its own run and reported the
   // POINTER, so this crosses the 1 MiB event cap the same way the inline path's
   // `spillAtBoundary` return crosses the step-return cap — and lands in the
   // collection in the same shape. Downstream nodes rehydrate inside their own
   // steps either way.
-  return JSON.parse(settled.payload.outputJson)
+  return unwrapCalleeWire({
+    wire: settled.payload,
+    failed: `Item ${index} of iteration "${node.label}" failed (run ${spawned.childRunId})`,
+    toError: (message) => new NonRetryableError(message),
+  })
 }

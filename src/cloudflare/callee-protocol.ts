@@ -165,3 +165,21 @@ export function toCalleeWire(payload: CalleeDoneEvent): CalleeDoneWire {
     ? { ok: true, outputJson: JSON.stringify(payload.output ?? null) }
     : payload
 }
+
+/**
+ * A settled child's answer, unwrapped: the parsed Output, or a throw naming the
+ * child (`failed`) and why it failed. The child already recorded its own
+ * failure against its own run; this is the caller's copy. `toError` lets the
+ * durable backend make it non-retryable — a retry would spawn a whole second
+ * child, and the first one's side effects have already happened.
+ */
+export function unwrapCalleeWire(args: {
+  wire: CalleeDoneWire
+  failed: string
+  toError?: (message: string) => Error
+}): unknown {
+  const { wire } = args
+  if (wire.ok) return JSON.parse(wire.outputJson) as unknown
+  const message = `${args.failed}: ${wire.error}`
+  throw args.toError ? args.toError(message) : new Error(message)
+}

@@ -2,6 +2,7 @@ import { resolveBinding } from '../binding'
 import {
   workflowFromManifest,
   type WfEngine,
+  type WfRunManifestEntry,
   type WfWorkflowManifestEntry,
   type WorkflowCallNode,
 } from '../graph'
@@ -86,13 +87,23 @@ export function buildCalleeTriggerInput(
   return obj
 }
 
-export async function executeWorkflowNode<TDeps>(args: {
+/**
+ * What every path that starts a callee needs first — the frozen manifest
+ * entry, the trigger input it is seeded with, and the node meta naming it.
+ * Throws when the callee is not in the run manifest.
+ */
+export function resolveCallee(args: {
   node: WorkflowCallNode
   input: unknown
-  ctx: RunNodeContext<TDeps>
-}): Promise<WorkflowNodeResult> {
-  const { node, input, ctx } = args
-  const entry = workflowFromManifest(ctx.manifest ?? [], node.config.workflowId)
+  nodeOutputs: Map<string, unknown>
+  manifest: readonly WfRunManifestEntry[]
+}): {
+  entry: WfWorkflowManifestEntry
+  triggerInput: unknown
+  meta: WorkflowNodeMeta
+} {
+  const { node } = args
+  const entry = workflowFromManifest(args.manifest, node.config.workflowId)
   if (!entry) {
     throw new Error(
       `Workflow node ${node.id} references workflow ${
@@ -100,13 +111,30 @@ export async function executeWorkflowNode<TDeps>(args: {
       }, which is not in the run manifest.`,
     )
   }
-  const triggerInput = buildCalleeTriggerInput(node, input, ctx.nodeOutputs)
-  const base = {
-    workflowId: entry.id,
-    versionId: entry.versionId,
-    versionNumber: entry.versionNumber,
-    name: entry.name,
+  return {
+    entry,
+    triggerInput: buildCalleeTriggerInput(node, args.input, args.nodeOutputs),
+    meta: {
+      workflowId: entry.id,
+      versionId: entry.versionId,
+      versionNumber: entry.versionNumber,
+      name: entry.name,
+    },
   }
+}
+
+export async function executeWorkflowNode<TDeps>(args: {
+  node: WorkflowCallNode
+  input: unknown
+  ctx: RunNodeContext<TDeps>
+}): Promise<WorkflowNodeResult> {
+  const { node, input, ctx } = args
+  const { entry, triggerInput, meta: base } = resolveCallee({
+    node,
+    input,
+    nodeOutputs: ctx.nodeOutputs,
+    manifest: ctx.manifest ?? [],
+  })
   if (ctx.runChildWorkflow) {
     const child = await ctx.runChildWorkflow({ node, entry, triggerInput })
     return {

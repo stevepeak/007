@@ -111,6 +111,47 @@ export type SpawnCalleeRunArgs = {
 }
 
 /**
+ * The `wf_run` row for a spawned child — a workflow-call node's callee or one
+ * durable iteration item. The one place both are created, so a child row is
+ * attributed, eval-marked and nested the same way whichever spawned it.
+ */
+export async function createChildRunRow(args: {
+  db: WfDb
+  env: ChildRunBindings
+  workflowVersionId: string
+  runContext: GraphRunContextInput
+  traceId?: string
+  /** The nesting link the run viewer reads to show this run UNDER its caller. */
+  parent: {
+    runId: string
+    nodeId: string
+    itemIndex?: number
+    itemTitle?: string | null
+  }
+}): Promise<string> {
+  const { runContext } = args
+  return await createRun(args.db, {
+    workflowVersionId: args.workflowVersionId,
+    triggerKind: runContext.triggerKind,
+    subjectId: runContext.subjectId,
+    correlationId: runContext.correlationId,
+    // The child acts for the same principal as its caller — carried onto the
+    // row so a failure inside a spawned run is attributable without walking
+    // back to the parent.
+    actorId: runContext.actorId,
+    // A child of an eval is an eval run too. Without this it lands in every
+    // dashboard query (they all filter `is_eval = false`) while its parent is
+    // excluded, and the two can never be reconciled.
+    isEval: runContext.isEval,
+    sentryTraceId: args.traceId,
+    // This deploy's release, not the caller's: the child runs on whatever is
+    // deployed at spawn time, which after a resume-across-deploy can differ.
+    ...releaseFromEnv(args.env),
+    parent: args.parent,
+  })
+}
+
+/**
  * Create the callee's run row and start it on its own engine.
  *
  * Callers must treat this as a single atomic effect: the durable backend runs
@@ -126,27 +167,14 @@ export async function spawnCalleeRun(
 ): Promise<SpawnedChildRun> {
   const { entry } = args
   const runContext = calleeRunContext(args)
-  const childRunId = await createRun(db, {
+  const childRunId = await createChildRunRow({
+    db,
+    env,
     workflowVersionId: entry.versionId,
-    triggerKind: runContext.triggerKind,
-    subjectId: runContext.subjectId,
-    correlationId: runContext.correlationId,
-    // The callee acts for the same principal as its caller — carried onto the
-    // child row so a failure inside a spawned sub-run is attributable without
-    // walking back to the parent.
-    actorId: runContext.actorId,
-    // An eval's callees are eval runs too. Without this the child lands in
-    // every dashboard query (they all filter `is_eval = false`) while its
-    // parent is excluded, and the two can never be reconciled.
-    isEval: runContext.isEval,
-    sentryTraceId: args.traceId,
-    // This deploy's release, not the caller's: the callee runs on whatever is
-    // deployed at spawn time, which after a resume-across-deploy can differ.
-    ...releaseFromEnv(env),
-    // The nesting link the run viewer reads to show this callee UNDER its
-    // caller. A workflow-call node spawns exactly one callee, so it takes the
-    // top-level item sentinel; durable iteration items pass a real 0-based
-    // index instead.
+    runContext,
+    traceId: args.traceId,
+    // A workflow-call node spawns exactly one callee, so it takes the
+    // top-level item sentinel; durable iteration items pass a real index.
     parent: { runId: args.parentRunId, nodeId: args.nodeId },
   })
 

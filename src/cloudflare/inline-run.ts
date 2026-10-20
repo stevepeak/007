@@ -36,6 +36,7 @@ import {
   calleeEventType,
   type CalleeDoneEvent,
   type CalleeDoneWire,
+  unwrapCalleeWire,
 } from './callee-protocol'
 import {
   reportCalleeResultBestEffort,
@@ -226,14 +227,11 @@ export function buildChildWorkflowRunner<E extends GraphWorkflowEnv>(args: {
       await settled.catch(() => undefined)
       throw err
     }
-    const wire = await settled
-    if (!wire.ok) {
-      // The callee recorded its own failure against its own run; this is the
-      // caller's copy of why its node failed.
-      throw new Error(`Called workflow "${entry.name}" failed: ${wire.error}`)
-    }
     return {
-      output: JSON.parse(wire.outputJson) as unknown,
+      output: unwrapCalleeWire({
+        wire: await settled,
+        failed: `Called workflow "${entry.name}" failed`,
+      }),
       childRunId: spawned.childRunId,
       engine: spawned.engine,
     }

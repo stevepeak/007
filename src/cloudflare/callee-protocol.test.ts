@@ -4,6 +4,7 @@ import {
   assertValidEventType,
   calleeEventType,
   toCalleeWire,
+  unwrapCalleeWire,
   WF_EVENT_TYPE_PATTERN,
 } from './callee-protocol'
 
@@ -91,5 +92,36 @@ describe('toCalleeWire', () => {
       ok: false,
       error: 'boom',
     })
+  })
+})
+
+describe('unwrapCalleeWire', () => {
+  test('parses a successful answer', () => {
+    expect(
+      unwrapCalleeWire({
+        wire: { ok: true, outputJson: '{"a":1}' },
+        failed: 'x',
+      }),
+    ).toEqual({ a: 1 })
+  })
+
+  test('throws a failure naming the child', () => {
+    expect(() => {
+      return unwrapCalleeWire({
+        wire: { ok: false, error: 'boom' },
+        failed: 'Called workflow "W" failed',
+      })
+    }).toThrow('Called workflow "W" failed: boom')
+  })
+
+  test('uses the caller\'s error type when given', () => {
+    class Special extends Error {}
+    expect(() => {
+      return unwrapCalleeWire({
+        wire: { ok: false, error: 'boom' },
+        failed: 'f',
+        toError: (m) => new Special(m),
+      })
+    }).toThrow(Special)
   })
 })
