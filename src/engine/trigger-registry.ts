@@ -1,6 +1,7 @@
-import { z } from 'zod'
+import type { z } from 'zod'
 
 import type { JsonSchema } from './agent-output'
+import { toJsonSchema } from './to-json-schema'
 
 // How a workflow gets started. Three modes, two of which are SDK built-ins and
 // one host-declared:
@@ -198,19 +199,6 @@ function reflectFields(schema: z.ZodType): TriggerEventField[] {
   }))
 }
 
-// Convert an event's Zod schema (input payload or output contract) to JSON
-// Schema for the data-mapping tree / contract check. `unrepresentable: 'any'`
-// keeps a lone transform/pipe anywhere in the schema from throwing (which would
-// omit the whole shape); it degrades to `{}` instead. Best-effort: a still-
-// unrepresentable schema simply omits the shape.
-function toJsonSchema(schema: z.ZodType): JsonSchema | undefined {
-  try {
-    return z.toJSONSchema(schema, { unrepresentable: 'any' })
-  } catch {
-    return undefined
-  }
-}
-
 /** Describe every host event as a wire-safe option for the creation flow. */
 export function describeTriggerEvents(
   triggers: TriggerRegistry,
@@ -219,9 +207,13 @@ export function describeTriggerEvents(
     kind,
     description: entry.description,
     fields: reflectFields(entry.inputSchema),
-    inputSchema: toJsonSchema(entry.inputSchema),
-    outputContract: entry.outputContractSchema
-      ? toJsonSchema(entry.outputContractSchema)
-      : undefined,
+    // Both are described from the side that ACCEPTS a value: the trigger input
+    // is what a caller passes, and the output contract parses what a run's
+    // Output produces.
+    inputSchema: toJsonSchema({ schema: entry.inputSchema, io: 'input' }),
+    outputContract: toJsonSchema({
+      schema: entry.outputContractSchema,
+      io: 'input',
+    }),
   }))
 }

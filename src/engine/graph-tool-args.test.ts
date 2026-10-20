@@ -8,7 +8,7 @@ import { collectToolArgIssues, type ToolInputSchemas } from './graph-tool-args'
 const pos = { x: 0, y: 0 }
 
 // The real schema behind ART-146, in the shape the server hands the editor
-// (`toJsonSchema(entry.inputSchema, 'input')`): three REQUIRED nullable fields.
+// (`toJsonSchema({ schema: entry.inputSchema, io: 'input' })`): three REQUIRED nullable fields.
 const escalate = z.object({
   internalNote: z.string().max(2_000).nullable(),
   publicNote: z.string().max(2_000).nullable(),

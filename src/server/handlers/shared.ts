@@ -1,5 +1,3 @@
-import { z } from 'zod'
-
 import type { WfAgentKind } from '../../engine/agent-kind'
 import {
   decisionAgentConfigSchema,
@@ -17,7 +15,6 @@ import type { WfDb } from '../../storage/client'
 import type { DashboardAnalytics, RecordChangeInput } from '../../storage/data'
 import { agentExists, workflowExists } from '../../storage/data'
 import type {
-  JsonSchema,
   WfDataClient,
   WfRunReleaseRef,
   WfRunSummary,
@@ -35,26 +32,6 @@ export type {
   WfServerContext,
 } from './handler-options'
 
-// Converts a tool's Zod schema to JSON Schema for the wire. Zod v4 ships a
-// native converter. `io` picks which side of any transform/pipe to project — an
-// input schema is described as what the tool *accepts* (`'input'`), an output
-// schema as what it *emits* (`'output'`). `unrepresentable: 'any'` is essential:
-// without it a single `.transform()` anywhere in the tree (e.g. a coercing field
-// like `partySchema` deep inside `docMeta`) makes the whole conversion THROW, so
-// the tool would surface no input/output schema at all — the field just degrades
-// to `{}` (any) instead. Anything still unconvertible falls back to "no schema"
-// rather than failing the whole listing.
-export function toJsonSchema(
-  schema: z.ZodType | undefined,
-  io: 'input' | 'output',
-): JsonSchema | undefined {
-  if (!schema) return undefined
-  try {
-    return z.toJSONSchema(schema, { io, unrepresentable: 'any' })
-  } catch {
-    return undefined
-  }
-}
 
 export function toEpoch(d: Date | null | undefined): number | null {
   return d ? d.getTime() : null
@@ -101,8 +78,7 @@ export function runSummary(
   const releaseRef = (
     kind: 'host' | 'sdk',
     id: string | null | undefined,
-  ): WfRunReleaseRef | null =>
-    id ? { id, url: releaseUrl ? (releaseUrl(kind, id) ?? null) : null } : null
+  ): WfRunReleaseRef | null => { return id ? { id, url: releaseUrl ? (releaseUrl(kind, id) ?? null) : null } : null }
   return {
     id: r.id,
     status: r.status,

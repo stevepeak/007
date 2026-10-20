@@ -60,4 +60,16 @@ describe('describeTriggerEvents', () => {
     const ping = options.find((o) => o.kind === 'ping')
     expect(ping?.outputContract).toBeUndefined()
   })
+
+  // A trigger input is what a caller PASSES, so a defaulted field is optional
+  // to it — the output side would list it as required.
+  test('describes the trigger input from the side a caller passes', () => {
+    const [option] = describeTriggerEvents({
+      queued: {
+        description: 'Queued job',
+        inputSchema: z.object({ id: z.string(), priority: z.number().default(0) }),
+      },
+    })
+    expect(option.inputSchema).toMatchObject({ required: ['id'] })
+  })
 })

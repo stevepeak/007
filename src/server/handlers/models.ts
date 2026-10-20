@@ -5,6 +5,7 @@ import type {
   ProviderBudget,
 } from '../../engine/config'
 import { errorMessage } from '../../engine/error-message'
+import { toJsonSchema } from '../../engine/to-json-schema'
 import { describeTriggerEvents } from '../../engine/trigger-registry'
 import {
   getModelCatalog,
@@ -22,7 +23,6 @@ import type { JsonSchema, WfToolInvocation } from '../protocol'
 
 import {
   toEpoch,
-  toJsonSchema,
   type CreateWfSdkHandlersOptions,
   type HandlerCtx,
   type WfHandlers,
@@ -80,8 +80,8 @@ export function buildModelHandlers<TDeps>(
       ? [...entry.requiresContext]
       : undefined,
     produces: entry.produces ? [...entry.produces] : undefined,
-    inputSchema: toJsonSchema(entry.inputSchema, 'input'),
-    outputSchema: toJsonSchema(entry.outputSchema, 'output'),
+    inputSchema: toJsonSchema({ schema: entry.inputSchema, io: 'input' }),
+    outputSchema: toJsonSchema({ schema: entry.outputSchema, io: 'output' }),
   }))
 
   return {

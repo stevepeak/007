@@ -16,6 +16,7 @@ import {
 } from '../../engine'
 import { decisionAgentConfigSchema } from '../../engine/decision-agent-schema'
 import { graphDelta, isEmptyGraphDelta } from '../../engine/graph-delta'
+import { toJsonSchema } from '../../engine/to-json-schema'
 import {
   createWorkflow,
   discardDraft,
@@ -44,7 +45,6 @@ import {
   parseGraph,
   requireExists,
   toEpoch,
-  toJsonSchema,
   type CreateWfSdkHandlersOptions,
   type HandlerCtx,
   type WfHandlers,
@@ -107,7 +107,7 @@ export function buildWorkflowHandlers<TDeps>(
     hostToolInputs ??= new Map(
       [...opts.config.toolRegistry].map(([id, entry]) => [
         id,
-        toJsonSchema(entry.inputSchema, 'input'),
+        toJsonSchema({ schema: entry.inputSchema, io: 'input' }),
       ]),
     )
     const all = new Map(hostToolInputs)
