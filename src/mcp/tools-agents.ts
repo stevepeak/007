@@ -23,7 +23,13 @@ import type {
 } from '../server/protocol'
 
 import { clip } from './clip'
-import { boundedLimit, optString, reqString, type WfMcpTool } from './tools'
+import {
+  boundedLimit,
+  noSuchVersion,
+  optString,
+  reqString,
+  type WfMcpTool,
+} from './tools'
 
 // The agent write path — the endgame of the "extend the surface" queue, and the
 // only tools here with real blast radius.
@@ -423,14 +429,11 @@ export function agentReadTools(): WfMcpTool[] {
         if (wanted != null) {
           const target = versions.find((v) => v.versionNumber === wanted)
           if (!target) {
-            return {
-              error: `Agent "${detail.agent.name}" has no version ${wanted}. Published: ${
-                versions
-                  .map((v) => v.versionNumber)
-                  .sort((a, b) => a - b)
-                  .join(', ') || '(none yet)'
-              }.`,
-            }
+            return noSuchVersion({
+              what: `Agent "${detail.agent.name}"`,
+              wanted,
+              published: versions,
+            })
           }
           const full = await client.getAgentVersion(target.id)
           if (!full) {
@@ -727,23 +730,16 @@ export function agentWriteTools(): WfMcpTool[] {
         const kind = before.agent.kind
         let config: AnyAgentConfig
         if (fromVersion != null) {
-          const versions = await client.listAgentVersions(agentId)
-          const target = versions.find((v) => v.versionNumber === fromVersion)
-          if (!target) {
-            return {
-              error: `Agent ${agentId} has no published version ${fromVersion}. Published versions are ${
-                versions.length > 0
-                  ? versions
-                      .map((v) => v.versionNumber)
-                      .sort((a, b) => a - b)
-                      .join(', ')
-                  : '(none yet)'
-              }.`,
-            }
-          }
-          const full = await client.getAgentVersion(target.id)
+          const full = await client.getAgentVersionByNumber({
+            agentId,
+            versionNumber: fromVersion,
+          })
           if (!full) {
-            return { error: `Version ${fromVersion} could not be read back.` }
+            return noSuchVersion({
+              what: `Agent ${agentId}`,
+              wanted: fromVersion,
+              published: await client.listAgentVersions(agentId),
+            })
           }
           // A stored version was valid when it was published; running it through
           // the preflight anyway is not paranoia — the CATALOG moves underneath

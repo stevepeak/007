@@ -270,6 +270,11 @@ export interface WfDataClient {
   getVersion(
     versionId: string,
   ): Promise<{ graph: WorkflowGraph; versionNumber: number } | null>
+  /** {@link getVersion} by the workflow's own version number; null if never published. */
+  getVersionByNumber(input: {
+    workflowId: string
+    versionNumber: number
+  }): Promise<{ graph: WorkflowGraph; versionNumber: number } | null>
   /**
    * Lint a graph the way the editor's Issues panel does, plus the checks only
    * the server can make (Tool-node args against the live tool catalog). Pass
@@ -425,6 +430,15 @@ export interface WfDataClient {
    * it just received satisfies.
    */
   getAgentVersion(versionId: string): Promise<{
+    config: AnyAgentConfig
+    kind: WfAgentKind
+    versionNumber: number
+  } | null>
+  /** {@link getAgentVersion} by the agent's own version number; null if never published. */
+  getAgentVersionByNumber(input: {
+    agentId: string
+    versionNumber: number
+  }): Promise<{
     config: AnyAgentConfig
     kind: WfAgentKind
     versionNumber: number

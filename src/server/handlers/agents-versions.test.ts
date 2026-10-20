@@ -110,6 +110,20 @@ describe('agent publish handler', () => {
     ).rejects.toThrow(StaleBaseError)
   })
 
+  test('getAgentVersionByNumber reads one version; null for one never published', async () => {
+    const handlers = buildAgentHandlers(options())
+    const v1 = await handlers.getAgentVersionByNumber(
+      testHandlerCtx(db, { agentId, versionNumber: 1 }),
+    )
+    expect(v1?.versionNumber).toBe(1)
+    expect(v1?.kind).toBe('generation')
+    expect(
+      await handlers.getAgentVersionByNumber(
+        testHandlerCtx(db, { agentId, versionNumber: 4 }),
+      ),
+    ).toBeNull()
+  })
+
   // The change log has to be written by the HANDLER, not just by `recordChange`
   // — nothing in the type system forces the call, so it needs a test that would
   // notice it going missing.

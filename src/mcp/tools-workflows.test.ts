@@ -708,11 +708,7 @@ describe('update_workflow_draft — fromVersion', () => {
     old.nodes[1].label = 'Escalate (v20)'
     const client = stubClient({
       getWorkflow: async () => detail({ draft: { graph: published } }),
-      listVersions: async () => { return [
-          { id: 'v20', versionNumber: 20 },
-          { id: 'v28', versionNumber: 28 },
-        ] as never },
-      getVersion: async () => ({ graph: old }) as never,
+      getVersionByNumber: async () => ({ graph: old }) as never,
       updateDraft: async (input) => {
         writes.push(input)
       },
@@ -731,6 +727,7 @@ describe('update_workflow_draft — fromVersion', () => {
   test('names the versions that exist when the number is wrong', async () => {
     const client = stubClient({
       getWorkflow: async () => detail(),
+      getVersionByNumber: async () => null,
       listVersions: async () => [{ id: 'v28', versionNumber: 28 }] as never,
     })
     const result = (await tool.run(client, {

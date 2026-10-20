@@ -231,3 +231,25 @@ describe('saveVersion publish gates', () => {
     expect(out.versionNumber).toBe(2)
   })
 })
+
+describe('getVersionByNumber', () => {
+  test('reads a published version by its number; null for one never published', async () => {
+    const db = freshDb()
+    const handlers = buildWorkflowHandlers(options())
+    const { workflowId } = await createWorkflow(db, {
+      name: 'Legal chat',
+      createdBy: 'tester',
+      graph: graphWith(v27Args),
+    })
+    const v1 = await handlers.getVersionByNumber(
+      testHandlerCtx(db, { workflowId, versionNumber: 1 }),
+    )
+    expect(v1?.versionNumber).toBe(1)
+    expect(v1?.graph.nodes.map((n) => n.id)).toEqual(['t', 'esc', 'o'])
+    expect(
+      await handlers.getVersionByNumber(
+        testHandlerCtx(db, { workflowId, versionNumber: 7 }),
+      ),
+    ).toBeNull()
+  })
+})

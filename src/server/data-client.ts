@@ -98,6 +98,7 @@ export function createWfDataClient(call: WfDataTransport): WfDataClient {
     discardDraft: bind('discardDraft'),
     listVersions: (workflowId) => send('listVersions', { workflowId }),
     getVersion: (versionId) => send('getVersion', { versionId }),
+    getVersionByNumber: bind('getVersionByNumber'),
     validateGraph: bind('validateGraph'),
     listRuns: bind('listRuns'),
     listChildRuns: bind('listChildRuns'),
@@ -119,6 +120,7 @@ export function createWfDataClient(call: WfDataTransport): WfDataClient {
     summarizeAgentChanges: bind('summarizeAgentChanges'),
     listAgentVersions: (agentId) => send('listAgentVersions', { agentId }),
     getAgentVersion: (versionId) => send('getAgentVersion', { versionId }),
+    getAgentVersionByNumber: bind('getAgentVersionByNumber'),
     updateAgentMeta: bind('updateAgentMeta'),
     discardAgentDraft: bind('discardAgentDraft'),
     countAgentReferences: (agentId) => {

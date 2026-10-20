@@ -32,7 +32,7 @@ import type {
   WfWorkflowDetail,
 } from '../server/protocol'
 
-import { optString, reqString, type WfMcpTool } from './tools'
+import { noSuchVersion, optString, reqString, type WfMcpTool } from './tools'
 
 // The workflow write path. Same neighborhood as `tools-agents.ts`, one line
 // drawn differently: a workflow publishes in ONE gated call, an agent only
@@ -1010,23 +1010,19 @@ export function workflowWriteTools(): WfMcpTool[] {
         const detail = await requireWorkflow(client, workflowId)
 
         if (fromVersion != null) {
-          const versions = await client.listVersions(workflowId)
-          const target = versions.find((v) => v.versionNumber === fromVersion)
-          if (!target) {
-            return {
-              error: `Workflow ${workflowId} has no published version ${fromVersion}. Published versions are ${
-                versions.length > 0
-                  ? versions.map((v) => v.versionNumber).sort((a, b) => a - b).join(', ')
-                  : '(none yet)'
-              }.`,
-            }
-          }
           // Read the stored graph rather than asking the caller to relay it: the
           // relay IS the lossy step, and a version is immutable so the server's
           // copy is definitionally the right one.
-          const full = await client.getVersion(target.id)
+          const full = await client.getVersionByNumber({
+            workflowId,
+            versionNumber: fromVersion,
+          })
           if (!full) {
-            return { error: `Version ${fromVersion} could not be read back.` }
+            return noSuchVersion({
+              what: `Workflow ${workflowId}`,
+              wanted: fromVersion,
+              published: await client.listVersions(workflowId),
+            })
           }
           const saved = await saveDraft(client, detail, full.graph)
           return {

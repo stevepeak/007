@@ -138,6 +138,10 @@ export const wfInputSchemas = {
   discardDraft: z.object({ workflowId: z.string().min(1) }),
   listVersions: z.object({ workflowId: z.string().min(1) }),
   getVersion: z.object({ versionId: z.string().min(1) }),
+  getVersionByNumber: z.object({
+    workflowId: z.string().min(1),
+    versionNumber: z.number().int(),
+  }),
   validateGraph: z.object({
     workflowId: z.string().optional(),
     versionId: z.string().optional(),
@@ -221,6 +225,10 @@ export const wfInputSchemas = {
   getAgent: z.object({ agentId: z.string().min(1) }),
   listAgentVersions: z.object({ agentId: z.string().min(1) }),
   getAgentVersion: z.object({ versionId: z.string().min(1) }),
+  getAgentVersionByNumber: z.object({
+    agentId: z.string().min(1),
+    versionNumber: z.number().int(),
+  }),
   countAgentReferences: z.object({ agentId: z.string().min(1) }),
   getAgentBlastRadius: z.object({ agentId: z.string().min(1) }),
   listAgentReferences: z.object({ agentId: z.string().min(1) }),

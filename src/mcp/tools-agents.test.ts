@@ -587,11 +587,7 @@ describe('update_agent_draft — fromVersion', () => {
     const old = { ...published, prompt: 'The old wording.' }
     const client = stubClient({
       getAgent: async () => detail(),
-      listAgentVersions: async () => { return [
-          { id: 'v1', versionNumber: 1 },
-          { id: 'v2', versionNumber: 2 },
-        ] as never },
-      getAgentVersion: async () => ({
+      getAgentVersionByNumber: async () => ({
         config: old,
         kind: 'generation' as const,
         versionNumber: 1,
@@ -611,6 +607,7 @@ describe('update_agent_draft — fromVersion', () => {
   test('names the versions that exist when the number is wrong', async () => {
     const client = stubClient({
       getAgent: async () => detail(),
+      getAgentVersionByNumber: async () => null,
       listAgentVersions: async () => [{ id: 'v2', versionNumber: 2 }] as never,
     })
     const result = (await toolNamed('update_agent_draft').run(client, {

@@ -21,6 +21,7 @@ import {
   createWorkflow,
   discardDraft,
   getVersionGraph,
+  versionByNumber,
   getWorkflow,
   listAgentRefs,
   listAgents,
@@ -97,6 +98,7 @@ export function buildWorkflowHandlers<TDeps>(
   | 'discardDraft'
   | 'listVersions'
   | 'getVersion'
+  | 'getVersionByNumber'
   | 'validateGraph'
 > {
   // Host tools' input schemas, converted once per isolate and only if a
@@ -374,6 +376,14 @@ export function buildWorkflowHandlers<TDeps>(
         graph: v.graph,
         versionNumber: v.versionNumber,
       }
+    },
+
+    getVersionByNumber: async (c) => {
+      const { workflowId, versionNumber } = c.params
+      const row = await versionByNumber(c.db, workflowId, versionNumber)
+      if (!row) return null
+      const v = await getVersionGraph(c.db, row.id)
+      return v ? { graph: v.graph, versionNumber: v.versionNumber } : null
     },
 
     validateGraph: async (c) => {

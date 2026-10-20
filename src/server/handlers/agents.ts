@@ -27,6 +27,7 @@ import {
   createAgent,
   discardAgentDraft,
   getAgent,
+  agentVersionByNumber,
   getAgentVersionConfig,
   listAgentCalls,
   listAgentVersions,
@@ -181,6 +182,7 @@ export function buildAgentHandlers<TDeps>(
   | 'summarizeAgentChanges'
   | 'listAgentVersions'
   | 'getAgentVersion'
+  | 'getAgentVersionByNumber'
   | 'updateAgentMeta'
   | 'discardAgentDraft'
   | 'countAgentReferences'
@@ -441,6 +443,16 @@ export function buildAgentHandlers<TDeps>(
         return null
       }
       return { config: v.config, kind: v.kind, versionNumber: v.versionNumber }
+    },
+
+    getAgentVersionByNumber: async (c) => {
+      const { agentId, versionNumber } = c.params
+      const row = await agentVersionByNumber(c.db, agentId, versionNumber)
+      if (!row) return null
+      const v = await getAgentVersionConfig(c.db, row.id)
+      return v
+        ? { config: v.config, kind: v.kind, versionNumber: v.versionNumber }
+        : null
     },
 
     listAgentVersions: async (c) => {

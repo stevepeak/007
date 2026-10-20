@@ -70,6 +70,21 @@ export function reqString(value: unknown, field: string): string {
   return s
 }
 
+/** The refusal for a version number never published, naming those that were. */
+export function noSuchVersion(args: {
+  what: string
+  wanted: number
+  published: readonly { versionNumber: number }[]
+}): { error: string } {
+  const numbers = args.published
+    .map((v) => v.versionNumber)
+    .sort((a, b) => a - b)
+    .join(', ')
+  return {
+    error: `${args.what} has no published version ${args.wanted}. Published versions are ${numbers || '(none yet)'}.`,
+  }
+}
+
 /** Clamp a model-supplied count into a sane window without a JSON-Schema bound. */
 export function boundedLimit(
   raw: unknown,
