@@ -1,12 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 
 import { makeAgentConfig } from '../engine/agent-test-helpers'
-import type { WorkflowGraph } from '../engine/graph'
 import type {
+  WfAgentBlastRadius,
   WfAgentDetail,
-  WfAgentSummary,
   WfDataClient,
-  WfWorkflowDetail,
 } from '../server/protocol'
 
 import { agentPublishTools } from './tools-agent-publish'
@@ -30,34 +28,26 @@ function agentDetail(over: Partial<WfAgentDetail> = {}): WfAgentDetail {
   }
 }
 
-/** A graph whose agent node points at `a1`, optionally pinned. */
-function graphWith(version: number | null, nested = false): WorkflowGraph {
-  const agentNode = {
-    id: 'n1',
-    kind: 'agent',
-    label: 'Draft reply',
-    position: { x: 0, y: 0 },
-    informUser: { mode: 'off' },
-    config: { agentId: 'a1', version, inputs: {} },
-  }
-  const node = nested
-    ? {
-        id: 'it',
-        kind: 'iteration',
-        label: 'Each item',
-        position: { x: 0, y: 0 },
-        informUser: { mode: 'off' },
-        config: { subgraph: { version: 1, nodes: [agentNode], edges: [] } },
-      }
-    : agentNode
-  return { version: 1, nodes: [node], edges: [] } as unknown as WorkflowGraph
-}
-
-function workflow(graph: WorkflowGraph | null): WfWorkflowDetail {
-  return {
-    currentVersion: graph ? { graph } : null,
-    draft: null,
-  } as unknown as WfWorkflowDetail
+// Who a publish reaches is computed in storage (`listAgentBlastRadius`, tested
+// there); the tool's job is to show it in the dry run.
+const blastRadius: WfAgentBlastRadius = {
+  floating: [
+    {
+      workflowId: 'w_float',
+      workflowName: 'w_float',
+      nodes: ['Draft reply'],
+      pinnedVersions: [],
+    },
+  ],
+  pinned: [
+    {
+      workflowId: 'w_pinned',
+      workflowName: 'w_pinned',
+      nodes: ['Draft reply'],
+      pinnedVersions: [2],
+    },
+  ],
+  draftOnly: [{ workflowId: 'w_draft', workflowName: 'w_draft' }],
 }
 
 type Calls = { published: unknown[] }
@@ -66,25 +56,13 @@ function client(
   over: Partial<WfDataClient> = {},
   calls: Calls = { published: [] },
 ): WfDataClient {
-  const workflows: Record<string, WfWorkflowDetail> = {
-    w_float: workflow(graphWith(null)),
-    w_nested: workflow(graphWith(null, true)),
-    w_pinned: workflow(graphWith(2)),
-    w_draft: workflow(null),
-  }
   return {
     getAgent: async () => agentDetail(),
     listModels: async () => [
       { id: 'test-model', label: 'Test', capabilities: {} },
     ],
     listTools: async () => [],
-    listAgents: async () => [
-      {
-        id: 'a1',
-        workflows: Object.keys(workflows).map((id) => ({ id, name: id })),
-      } as unknown as WfAgentSummary,
-    ],
-    getWorkflow: async (id: string) => workflows[id] ?? null,
+    getAgentBlastRadius: async () => blastRadius,
     summarizeAgentChanges: async () => ({ short: 'cites sources', long: '' }),
     publishAgent: async (input) => {
       calls.published.push(input)
@@ -115,14 +93,7 @@ describe('publish_agent — the dry run', () => {
     expect(out.dryRun).toBe(true)
     expect(out.changed).toEqual(['prompt'])
     expect(out.confirm).toMatch(/^[0-9a-f]{12}$/)
-    expect(out.affected.floating.map((w) => w.workflowId).sort()).toEqual([
-      'w_float',
-      'w_nested',
-    ])
-    expect(
-      out.affected.pinned.map((w) => [w.workflowId, w.pinnedVersions]),
-    ).toEqual([['w_pinned', [2]]])
-    expect(out.affected.draftOnly.map((w) => w.workflowId)).toEqual(['w_draft'])
+    expect(out.affected).toEqual(blastRadius)
   })
 
   test('the token is stable for the same draft', async () => {

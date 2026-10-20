@@ -1,8 +1,6 @@
 import { z } from 'zod'
 
-import type { WorkflowGraph, WorkflowNode } from '../engine/graph'
 import { stableStringify } from '../engine/stable-stringify'
-import type { WfDataClient } from '../server/protocol'
 
 import { optString, reqString, type WfMcpTool } from './tools'
 import {
@@ -40,72 +38,6 @@ import {
 // The draft is also preflighted the way `update_agent_draft` checks it, because
 // a draft can be written by the console with a model that has since been
 // disabled — and the publish is the last point at which that is cheap to catch.
-
-type AgentRef = {
-  workflowId: string
-  workflowName: string
-  /** Labels of the nodes that point at the agent, nested iterations included. */
-  nodes: string[]
-  /** Pinned versions in use, when any node pins one. */
-  pinnedVersions: number[]
-}
-
-type Affected = {
-  /** Published graphs with an unpinned reference — these change on their next run. */
-  floating: AgentRef[]
-  /** Published graphs that reference the agent only through a version pin. */
-  pinned: AgentRef[]
-  /** Workflows that reference it only in an unpublished draft — not live. */
-  draftOnly: { workflowId: string; workflowName: string }[]
-}
-
-/** Every agent node in a graph, iteration subgraphs included. */
-function agentNodes(graph: WorkflowGraph | undefined, agentId: string): WorkflowNode[] {
-  const out: WorkflowNode[] = []
-  const walk = (g: WorkflowGraph): void => {
-    for (const node of g.nodes) {
-      if (node.kind === 'agent' && node.config.agentId === agentId) out.push(node)
-      if (node.kind === 'iteration') walk(node.config.subgraph)
-    }
-  }
-  if (graph) walk(graph)
-  return out
-}
-
-async function affectedWorkflows(
-  client: WfDataClient,
-  agentId: string,
-): Promise<Affected> {
-  const summary = (await client.listAgents()).find((a) => a.id === agentId)
-  const affected: Affected = { floating: [], pinned: [], draftOnly: [] }
-  for (const ref of summary?.workflows ?? []) {
-    const detail = await client.getWorkflow(ref.id)
-    if (!detail) continue
-    const nodes = agentNodes(detail.currentVersion?.graph, agentId)
-    if (nodes.length === 0) {
-      affected.draftOnly.push({ workflowId: ref.id, workflowName: ref.name })
-      continue
-    }
-    const pinnedVersions = [
-      ...new Set(
-        nodes
-          .map((n) => (n.kind === 'agent' ? n.config.version : null))
-          .filter((v): v is number => typeof v === 'number'),
-      ),
-    ]
-    const floats = nodes.some(
-      (n) => n.kind === 'agent' && typeof n.config.version !== 'number',
-    )
-    const entry: AgentRef = {
-      workflowId: ref.id,
-      workflowName: ref.name,
-      nodes: nodes.map((n) => n.label),
-      pinnedVersions,
-    }
-    ;(floats ? affected.floating : affected.pinned).push(entry)
-  }
-  return affected
-}
 
 /**
  * The confirmation token: a short digest of what the dry run showed.
@@ -216,7 +148,7 @@ export function agentPublishTools(): WfMcpTool[] {
         const confirm = optString(args.confirm)
 
         if (!confirm) {
-          const affected = await affectedWorkflows(client, agentId)
+          const affected = await client.getAgentBlastRadius(agentId)
           return {
             dryRun: true,
             agentId,

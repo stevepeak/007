@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql } from 'drizzle-orm'
 
-import type { WorkflowGraph } from '../../engine/graph'
+import { triggerKindOf, type WorkflowGraph } from '../../engine/graph'
 import type { WfDb } from '../client'
 import { wfAgent, wfRun, wfWorkflowDraft, wfWorkflowVersion } from '../schema'
 
@@ -118,11 +118,7 @@ export async function listWorkflowsWithStats(
     const agentIds = graph ? agentIdsInGraph(graph) : []
     agentIdsByWf.set(w.id, agentIds)
     for (const id of agentIds) referencedAgentIds.add(id)
-    const trigger = graph?.nodes.find((n) => n.kind === 'trigger')
-    triggerKindByWf.set(
-      w.id,
-      trigger?.kind === 'trigger' ? trigger.config.triggerKind : null,
-    )
+    triggerKindByWf.set(w.id, triggerKindOf({ graph }))
   }
   const agentRows = await selectChunked([...referencedAgentIds], (agentIds) => {
     return db

@@ -222,6 +222,7 @@ export const wfInputSchemas = {
   listAgentVersions: z.object({ agentId: z.string().min(1) }),
   getAgentVersion: z.object({ versionId: z.string().min(1) }),
   countAgentReferences: z.object({ agentId: z.string().min(1) }),
+  getAgentBlastRadius: z.object({ agentId: z.string().min(1) }),
   listAgentReferences: z.object({ agentId: z.string().min(1) }),
   archiveAgent: z.object({ agentId: z.string().min(1) }),
   discardAgentDraft: z.object({ agentId: z.string().min(1) }),

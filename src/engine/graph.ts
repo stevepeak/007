@@ -4,6 +4,7 @@
 //   • graph-kinds       — node-kind constants & guards
 //   • graph-schema      — zod node/edge/graph schemas + the recursive types
 //   • graph-validation  — the strict runtime gate (`workflowGraphSchema`)
+//   • graph-walk        — node/graph walks that reach into iteration subgraphs
 //   • graph-builders    — starter/iteration graph constructors
 //   • prompt-variables  — `${token}` inference & substitution
 //   • run-manifest      — frozen-at-run-start manifest types & lookups
@@ -12,6 +13,7 @@ export * from './graph-kinds'
 export * from './graph-schema'
 export * from './graph-engine'
 export * from './graph-validation'
+export * from './graph-walk'
 export * from './graph-builders'
 export * from './prompt-variables'
 export * from './run-manifest'

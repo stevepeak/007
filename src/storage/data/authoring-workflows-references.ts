@@ -4,7 +4,7 @@ import type { WorkflowGraph } from '../../engine/graph'
 import type { WfDb } from '../client'
 import { wfWorkflow, wfWorkflowDraft } from '../schema'
 
-import { agentIdsInGraph } from './authoring-graph'
+import { agentIdsInGraph, allNodes } from './authoring-graph'
 import { latestVersionGraphs } from './authoring-workflows'
 
 // Which workflows reference which agents, read from each workflow's "live"
@@ -43,9 +43,16 @@ import { latestVersionGraphs } from './authoring-workflows'
 // workflow the Workflows list deliberately hides, leaving nothing to click) and
 // could never be archived, because a wrapper is regenerated from its eval set
 // and there is nothing to disconnect. Usage means AUTHORED usage.
-async function loadWorkflowReferenceGraphs(
-  db: WfDb,
-): Promise<{ id: string; name: string; graphs: WorkflowGraph[] }[]> {
+async function loadWorkflowReferenceGraphs(db: WfDb): Promise<
+  {
+    id: string
+    name: string
+    /** The latest published graph — what runs today. */
+    published: WorkflowGraph | undefined
+    /** Draft + published, the "live" pair. */
+    graphs: WorkflowGraph[]
+  }[]
+> {
   const [workflows, drafts, latestByWorkflow] = await Promise.all([
     db
       .select({ id: wfWorkflow.id, name: wfWorkflow.name })
@@ -62,14 +69,19 @@ async function loadWorkflowReferenceGraphs(
     latestVersionGraphs(db),
   ])
   const draftByWorkflow = new Map(drafts.map((d) => [d.workflowId, d.graph]))
-  return workflows.map((wf) => ({
-    id: wf.id,
-    name: wf.name,
-    graphs: [
-      draftByWorkflow.get(wf.id),
-      latestByWorkflow.get(wf.id)?.graph,
-    ].filter(Boolean) as WorkflowGraph[],
-  }))
+  return workflows.map((wf) => {
+    const published = latestByWorkflow.get(wf.id)?.graph as
+      | WorkflowGraph
+      | undefined
+    return {
+      id: wf.id,
+      name: wf.name,
+      published,
+      graphs: [draftByWorkflow.get(wf.id), published].filter(
+        Boolean,
+      ) as WorkflowGraph[],
+    }
+  })
 }
 
 export async function listWorkflowsReferencingAgent(
@@ -112,4 +124,63 @@ export async function countWorkflowsReferencingAgent(
   input: { agentId: string },
 ): Promise<number> {
   return (await listWorkflowsReferencingAgent(db, input)).length
+}
+
+/** A workflow that points at an agent, and how. */
+export type AgentBlastRadiusRef = {
+  workflowId: string
+  workflowName: string
+  /** Labels of the published nodes that point at the agent, subgraphs included. */
+  nodes: string[]
+  /** Pinned versions in use, when any of those nodes pins one. */
+  pinnedVersions: number[]
+}
+
+/**
+ * What publishing an agent changes, from the same one-pass load as the other
+ * listers: published graphs with an unpinned node (they run the new version
+ * next), those that only pin a version (they don't), and workflows that name
+ * the agent only in an unpublished draft (not live).
+ */
+export async function listAgentBlastRadius(
+  db: WfDb,
+  input: { agentId: string },
+): Promise<{
+  floating: AgentBlastRadiusRef[]
+  pinned: AgentBlastRadiusRef[]
+  draftOnly: { workflowId: string; workflowName: string }[]
+}> {
+  const out = {
+    floating: [] as AgentBlastRadiusRef[],
+    pinned: [] as AgentBlastRadiusRef[],
+    draftOnly: [] as { workflowId: string; workflowName: string }[],
+  }
+  for (const wf of await loadWorkflowReferenceGraphs(db)) {
+    if (!wf.graphs.some((g) => agentIdsInGraph(g).includes(input.agentId))) {
+      continue
+    }
+    const nodes = wf.published
+      ? [...allNodes(wf.published)].filter((n) => {
+          return n.kind === 'agent' && n.config.agentId === input.agentId
+        })
+      : []
+    if (nodes.length === 0) {
+      out.draftOnly.push({ workflowId: wf.id, workflowName: wf.name })
+      continue
+    }
+    const versions = nodes.map((n) => {
+      return n.kind === 'agent' ? n.config.version : undefined
+    })
+    const ref: AgentBlastRadiusRef = {
+      workflowId: wf.id,
+      workflowName: wf.name,
+      nodes: nodes.map((n) => n.label),
+      pinnedVersions: [
+        ...new Set(versions.filter((v): v is number => typeof v === 'number')),
+      ],
+    }
+    const floats = versions.some((v) => typeof v !== 'number')
+    ;(floats ? out.floating : out.pinned).push(ref)
+  }
+  return out
 }

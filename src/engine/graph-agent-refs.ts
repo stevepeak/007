@@ -1,5 +1,6 @@
-import type { AgentNode, WorkflowGraph, WorkflowNode } from './graph'
+import type { AgentNode, WorkflowGraph } from './graph'
 import type { GraphIssue } from './graph-issues'
+import { allNodes } from './graph-walk'
 
 // Agent-node pointer drift — the sibling of `graph-tool-args.ts`, for the other
 // thing a node stores as a bare id it cannot verify.
@@ -54,11 +55,8 @@ export type AgentRefIndex = ReadonlyMap<string, AgentRefEntry>
  * Every agent node in the graph — including those inside iteration subgraphs,
  * which are the ones an author is least likely to re-open.
  */
-function* agentNodes(nodes: WorkflowNode[]): Generator<AgentNode> {
-  for (const n of nodes) {
-    if (n.kind === 'agent') yield n
-    else if (n.kind === 'iteration') yield* agentNodes(n.config.subgraph.nodes)
-  }
+function* agentNodes(graph: WorkflowGraph): Generator<AgentNode> {
+  for (const n of allNodes(graph)) if (n.kind === 'agent') yield n
 }
 
 /**
@@ -79,7 +77,7 @@ export function collectAgentRefIssues(
   agents: AgentRefIndex,
 ): GraphIssue[] {
   const issues: GraphIssue[] = []
-  for (const node of agentNodes(graph.nodes)) {
+  for (const node of agentNodes(graph)) {
     const base = { nodeId: node.id, nodeLabel: node.label } as const
     const agentId = node.config.agentId
     // Unconfigured, not broken — `collectGraphIssues` owns this one.

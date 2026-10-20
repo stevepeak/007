@@ -11,6 +11,7 @@ import {
   type CheckTree,
   type EvalTools,
 } from '../engine/eval-schema'
+import { triggerKindOf, type WorkflowGraph } from '../engine/graph'
 import { MANUAL_TRIGGER_KIND } from '../engine/trigger-registry'
 import type {
   AgentConfig,
@@ -118,16 +119,12 @@ function agentInputTemplate(
 
 /** The trigger kind a workflow's own graph declares, draft included. */
 function graphTriggerKind(detail: {
-  currentVersion: {
-    graph: { nodes: { kind: string; config: unknown }[] }
-  } | null
-  draft: { graph: { nodes: { kind: string; config: unknown }[] } } | null
+  currentVersion: { graph: WorkflowGraph } | null
+  draft: { graph: WorkflowGraph } | null
 }): string | null {
-  const graph = detail.currentVersion?.graph ?? detail.draft?.graph
-  const trigger = graph?.nodes.find((n) => n.kind === 'trigger')
-  if (!trigger) return null
-  const config = trigger.config as { triggerKind?: unknown }
-  return typeof config.triggerKind === 'string' ? config.triggerKind : null
+  return triggerKindOf({
+    graph: detail.currentVersion?.graph ?? detail.draft?.graph,
+  })
 }
 
 /**

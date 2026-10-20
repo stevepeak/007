@@ -19,6 +19,7 @@ import type {
   AgentPreviewResult,
   DecisionPreviewInput,
   DecisionPreviewResult,
+  WfAgentBlastRadius,
   WfAgentCall,
   WfAgentDetail,
   WfAgentSummary,
@@ -445,6 +446,8 @@ export interface WfDataClient {
   listAgentReferences(
     agentId: string,
   ): Promise<{ workflows: { id: string; name: string }[] }>
+  /** What publishing this agent changes: floating, pinned and draft-only workflows. */
+  getAgentBlastRadius(agentId: string): Promise<WfAgentBlastRadius>
   /**
    * Soft-delete the agent (drops it from the agents list + node picker). Rejects
    * if any workflow still references it — the UI blocks first, this is a backstop.

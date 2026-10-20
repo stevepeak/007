@@ -33,6 +33,7 @@ import {
   listAgents,
   listWorkflowsReferencingAgent,
   listWorkflowsReferencingAllAgents,
+  listAgentBlastRadius,
   parseStoredAgentConfig,
   publishAgent,
   setAgentVersionAiSummary,
@@ -183,6 +184,7 @@ export function buildAgentHandlers<TDeps>(
   | 'updateAgentMeta'
   | 'discardAgentDraft'
   | 'countAgentReferences'
+  | 'getAgentBlastRadius'
   | 'listAgentReferences'
   | 'archiveAgent'
   | 'listAgentCalls'
@@ -488,6 +490,12 @@ export function buildAgentHandlers<TDeps>(
       await requireAgentExists(c.db, agentId)
       await discardAgentDraft(c.db, { agentId })
       return { ok: true }
+    },
+
+    getAgentBlastRadius: async (c) => {
+      const { agentId } = c.params
+      await requireAgentExists(c.db, agentId)
+      return await listAgentBlastRadius(c.db, { agentId })
     },
 
     countAgentReferences: async (c) => {

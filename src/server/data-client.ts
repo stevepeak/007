@@ -125,6 +125,7 @@ export function createWfDataClient(call: WfDataTransport): WfDataClient {
       return send('countAgentReferences', { agentId })
     },
     listAgentReferences: (agentId) => send('listAgentReferences', { agentId }),
+    getAgentBlastRadius: (agentId) => send('getAgentBlastRadius', { agentId }),
     archiveAgent: (agentId) => send('archiveAgent', { agentId }),
     listAgentCalls: bind('listAgentCalls'),
     // A tool-calling agent can run well past the default 20s UI backstop, so

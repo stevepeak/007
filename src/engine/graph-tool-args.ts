@@ -1,6 +1,7 @@
 import type { JsonSchema } from './agent-output-scan'
-import type { ToolNode, WorkflowGraph, WorkflowNode } from './graph'
+import type { ToolNode, WorkflowGraph } from './graph'
 import type { GraphIssue } from './graph-issues'
+import { allNodes } from './graph-walk'
 
 // Tool-node argument drift. A Tool node stores its args as bindings authored
 // against the tool's input schema AT AUTHORING TIME — and the schema keeps
@@ -89,11 +90,8 @@ function describe(v: unknown): string {
  * which are the ones an author is least likely to re-open after a schema
  * change.
  */
-function* toolNodes(nodes: WorkflowNode[]): Generator<ToolNode> {
-  for (const n of nodes) {
-    if (n.kind === 'tool') yield n
-    else if (n.kind === 'iteration') yield* toolNodes(n.config.subgraph.nodes)
-  }
+function* toolNodes(graph: WorkflowGraph): Generator<ToolNode> {
+  for (const n of allNodes(graph)) if (n.kind === 'tool') yield n
 }
 
 /**
@@ -117,7 +115,7 @@ export function collectToolArgIssues(
   tools: ToolInputSchemas,
 ): GraphIssue[] {
   const issues: GraphIssue[] = []
-  for (const node of toolNodes(graph.nodes)) {
+  for (const node of toolNodes(graph)) {
     const base = { nodeId: node.id, nodeLabel: node.label } as const
     const toolId = node.config.toolId
     if (!tools.has(toolId)) {

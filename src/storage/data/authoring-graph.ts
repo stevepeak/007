@@ -1,25 +1,13 @@
-import type { WorkflowGraph } from '../../engine/graph'
+import { allNodes, type WorkflowGraph } from '../../engine/graph'
 
 // Pure graph-walk helpers shared by the authoring modules (workflow reference
 // listing and run-manifest resolution). No DB, no siblings — just structural
 // traversal of a `WorkflowGraph`.
 
-// Every node in a graph, INCLUDING those nested inside iteration subgraphs. An
-// iteration node's subgraph runs as an inline graph once per item, and those
-// per-item nodes resolve against the SAME flat run manifest — so an agent or a
-// sub-workflow call living inside a subgraph must contribute to the manifest
-// just as a top-level one does. (Iteration can't nest, but a subgraph may hold a
-// `workflow` node, whose callee is resolved transitively by `resolveInto`.)
-export function* allNodes(
-  graph: WorkflowGraph,
-): Generator<WorkflowGraph['nodes'][number]> {
-  for (const node of graph.nodes) {
-    yield node
-    if (node.kind === 'iteration') {
-      yield* allNodes(node.config.subgraph)
-    }
-  }
-}
+// Every node in a graph, iteration subgraphs included — those per-item nodes
+// resolve against the SAME flat run manifest, so they contribute to it just as
+// top-level ones do.
+export { allNodes }
 
 // Distinct non-empty values a per-node `pick` yields across the graph (incl.
 // iteration subgraphs) — the shared walk behind the id collectors below.

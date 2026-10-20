@@ -2,9 +2,11 @@ import { z } from 'zod'
 
 import { errorMessage } from '../engine/error-message'
 import {
+  allGraphs,
   argBindingSchema,
   informUserSchema,
   nodeExecutionSchema,
+  triggerKindOf,
   workflowGraphShapeSchema,
   type ArgBinding,
   type WorkflowEdge,
@@ -234,23 +236,11 @@ function findOwner(
   graph: WorkflowGraph,
   id: string,
 ): { graph: WorkflowGraph; node: WorkflowNode } | undefined {
-  for (const n of graph.nodes) {
-    if (n.id === id) return { graph, node: n }
-    if (n.kind === 'iteration') {
-      const inner = findOwner(n.config.subgraph, id)
-      if (inner) return inner
-    }
+  for (const g of allGraphs(graph)) {
+    const node = g.nodes.find((n) => n.id === id)
+    if (node) return { graph: g, node }
   }
   return undefined
-}
-
-/** Every graph in the tree — the top level plus each iteration subgraph. */
-function allGraphs(graph: WorkflowGraph): WorkflowGraph[] {
-  const out = [graph]
-  for (const n of graph.nodes) {
-    if (n.kind === 'iteration') out.push(...allGraphs(n.config.subgraph))
-  }
-  return out
 }
 
 function need(op: PatchOp, key: 'nodeId' | 'arg' | 'label' | 'source' | 'target'): string {
@@ -877,11 +867,9 @@ export function workflowWriteTools(): WfMcpTool[] {
         }
         const detail = await requireWorkflow(client, workflowId)
         await client.updateWorkflow({ workflowId, name, archived })
-        const trigger = detail.currentVersion?.graph.nodes.find(
-          (n) => n.kind === 'trigger',
-        )
-        const triggerKind =
-          trigger?.kind === 'trigger' ? trigger.config.triggerKind : undefined
+        const triggerKind = triggerKindOf({
+          graph: detail.currentVersion?.graph,
+        })
         return {
           workflowId,
           before: { name: detail.workflow.name, archived: detail.workflow.archived },

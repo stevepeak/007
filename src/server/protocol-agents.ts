@@ -1,10 +1,10 @@
 import type { WfAgentKind } from '../engine/agent-kind'
 import type { DecisionQuestionType } from '../engine/decision'
+import type { DecisionAgentResult } from '../engine/decision-agent'
 import type {
   AnyAgentConfig,
   DecisionAgentConfig,
 } from '../engine/decision-agent-schema'
-import type { DecisionAgentResult } from '../engine/decision-agent'
 import type { AgentConfig, AgentOutput } from '../engine/graph'
 import type { ModelCapabilities } from '../engine/model-catalog'
 import type { AgentNodeMeta } from '../engine/nodes/agent'
@@ -271,4 +271,24 @@ export type WfAgentCall = {
 export type AgentPreviewResult = {
   output: { text: string } | Record<string, unknown>
   meta: AgentNodeMeta
+}
+
+/** A workflow that points at an agent, and how — see {@link WfAgentBlastRadius}. */
+export type WfAgentBlastRadiusRef = {
+  workflowId: string
+  workflowName: string
+  /** Labels of the published nodes that point at the agent, subgraphs included. */
+  nodes: string[]
+  /** Pinned versions in use, when any of those nodes pins one. */
+  pinnedVersions: number[]
+}
+
+/** What publishing an agent changes, workflow by workflow. */
+export type WfAgentBlastRadius = {
+  /** Published graphs with an unpinned reference — these change on their next run. */
+  floating: WfAgentBlastRadiusRef[]
+  /** Published graphs that reference the agent only through a version pin. */
+  pinned: WfAgentBlastRadiusRef[]
+  /** Workflows that reference it only in an unpublished draft — not live. */
+  draftOnly: { workflowId: string; workflowName: string }[]
 }
