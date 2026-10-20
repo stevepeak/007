@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 import type { WorkflowGraph, WorkflowNode } from '../../engine'
+import { stableEqual } from '../../engine/stable-stringify'
 import { useUndoStack, type CoalesceRule } from '../undo/use-undo-stack'
 
 // One entry in the undo/redo change history. The workflow name lives here too
@@ -76,7 +77,7 @@ export function describeChange(prev: WorkflowGraph, next: WorkflowGraph): string
     const pn = prevNodes.get(id)
     if (!pn) continue
     if (pn.label !== nn.label) return `Renamed node to ${nodeName(nn)}`
-    if (JSON.stringify(pn.config) !== JSON.stringify(nn.config)) {
+    if (!stableEqual(pn.config, nn.config)) {
       return `Edited ${nodeName(nn)} settings`
     }
     if (pn.position.x !== nn.position.x || pn.position.y !== nn.position.y) {

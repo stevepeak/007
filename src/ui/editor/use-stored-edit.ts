@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 
 import { workflowGraphShapeSchema, type WorkflowGraph } from '../../engine'
+import { stableEqual } from '../../engine/stable-stringify'
 
 // Unsaved edits are persisted to localStorage so navigating away and back
 // doesn't lose work. Keyed per workflow; cleared once the edit is saved.
@@ -76,7 +77,7 @@ export function useStoredEdit(
     const stored = readStoredEdit(workflowId)
     if (!stored) return
     if (
-      JSON.stringify(stored.graph) === JSON.stringify(initialGraph) &&
+      stableEqual(stored.graph, initialGraph) &&
       stored.name === initialName
     ) {
       return

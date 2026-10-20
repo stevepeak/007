@@ -5,6 +5,8 @@
 // Evals, entity metadata and assignments have no such table because nothing ever
 // needed to describe them — until now.
 
+import { stableEqual } from './stable-stringify'
+
 /** Compare two records over a label table, returning the labels that moved. */
 function diff<T>(
   fields: { key: keyof T; label: string }[],
@@ -12,7 +14,7 @@ function diff<T>(
   b: Partial<T>,
 ): string[] {
   return fields
-    .filter((f) => JSON.stringify(a[f.key]) !== JSON.stringify(b[f.key]))
+    .filter((f) => !stableEqual(a[f.key], b[f.key]))
     .map((f) => f.label)
 }
 

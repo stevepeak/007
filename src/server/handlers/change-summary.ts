@@ -1,5 +1,6 @@
 import type { AgentConfig, WorkflowGraph } from '../../engine/graph'
 import { resolveWfLogger } from '../../engine/logger'
+import { stableEqual } from '../../engine/stable-stringify'
 import type { WfChangeSummary } from '../protocol'
 import {
   summarizeAgentChanges,
@@ -46,8 +47,7 @@ export function heuristicChangeSummary(
     const pn = prevNodes.get(id)
     if (!pn) continue
     if (
-      JSON.stringify({ l: pn.label, c: pn.config }) !==
-      JSON.stringify({ l: nn.label, c: nn.config })
+      !stableEqual({ l: pn.label, c: pn.config }, { l: nn.label, c: nn.config })
     ) {
       edited++
     }
@@ -85,10 +85,10 @@ export function heuristicAgentChangeSummary(
 
   if (prev.maxTurns !== next.maxTurns) parts.push('changed the turn limit')
   if (prev.inputKind !== next.inputKind) parts.push('changed the input kind')
-  if (JSON.stringify(prev.output) !== JSON.stringify(next.output)) {
+  if (!stableEqual(prev.output, next.output)) {
     parts.push('changed the output contract')
   }
-  if (JSON.stringify(prev.subAgents) !== JSON.stringify(next.subAgents)) {
+  if (!stableEqual(prev.subAgents, next.subAgents)) {
     parts.push('changed delegation')
   }
   return sentence(parts, 'No configuration changes.')

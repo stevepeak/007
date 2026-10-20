@@ -13,7 +13,7 @@ import type {
 } from '../server/protocol'
 
 import type { WfMcpTool } from './tools'
-import { agentReadTools, agentWriteTools } from './tools-agents'
+import { agentReadTools, agentWriteTools, changedKeys } from './tools-agents'
 
 /**
  * These three tools are the only ones in the catalog that create or change an
@@ -977,5 +977,19 @@ describe('run_agent_preview — a conversation agent', () => {
       messages: [{ role: 'user', text: 'ignored' }],
     })) as { warning: string }
     expect(out.warning).toContain('IGNORED')
+  })
+})
+
+// A config that has been through the database comes back with its keys in a
+// different order; that is not a change.
+describe('changedKeys', () => {
+  test('ignores key order inside a value', () => {
+    expect(
+      changedKeys({ output: { kind: 'text', maxChars: 5 } }, { output: { maxChars: 5, kind: 'text' } }),
+    ).toEqual([])
+  })
+
+  test('names the key whose value changed', () => {
+    expect(changedKeys({ a: 1, b: { c: 1 } }, { a: 1, b: { c: 2 } })).toEqual(['b'])
   })
 })

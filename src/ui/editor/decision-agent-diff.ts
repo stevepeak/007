@@ -1,4 +1,5 @@
 import type { DecisionAgentConfig } from '../../engine'
+import { stableEqual } from '../../engine/stable-stringify'
 
 // How a DECISION agent's edit is described — for the History dropdown, and as
 // the undo stack's coalescing key (two consecutive edits to the same thing
@@ -31,7 +32,7 @@ export function describeDecisionAgentChange(
   // question removed and another added.
   const movedQuestions = a.questions
     .map((q, i) => ({ q, other: b.questions[i] }))
-    .filter(({ q, other }) => JSON.stringify(q) !== JSON.stringify(other))
+    .filter(({ q, other }) => !stableEqual(q, other))
   if (movedQuestions.length > 0) {
     const names = movedQuestions.map(({ other }) => other?.id ?? '?')
     return names.length > MAX_LISTED
@@ -39,7 +40,7 @@ export function describeDecisionAgentChange(
       : `Edited question ${names.join(' and ')}`
   }
 
-  if (JSON.stringify(a.verdicts) !== JSON.stringify(b.verdicts)) {
+  if (!stableEqual(a.verdicts, b.verdicts)) {
     return a.verdicts.length === b.verdicts.length
       ? 'Renamed a verdict'
       : b.verdicts.length > a.verdicts.length
@@ -52,7 +53,7 @@ export function describeDecisionAgentChange(
   }
   const movedRules = a.rules
     .map((_, i) => i)
-    .filter((i) => JSON.stringify(a.rules[i]) !== JSON.stringify(b.rules[i]))
+    .filter((i) => !stableEqual(a.rules[i], b.rules[i]))
   if (movedRules.length > 0) {
     return movedRules.length > MAX_LISTED
       ? `Edited ${movedRules.length} rules`

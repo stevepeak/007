@@ -1,5 +1,6 @@
 import type { AnyAgentConfig } from '../engine/decision-agent-schema'
 import type { WfLogger } from '../engine/logger'
+import { stableEqual } from '../engine/stable-stringify'
 import type { WfDataClient } from '../server/protocol'
 
 import {
@@ -241,7 +242,7 @@ export async function driveEvalRun(
       result.started > 0 ||
       result.settled > 0 ||
       at - lastSavedAt >= EVAL_HEARTBEAT_INTERVAL_MS ||
-      JSON.stringify(result.state) !== JSON.stringify(drive.driveState)
+      !stableEqual(result.state, drive.driveState)
     if (mustSave) {
       await client.saveEvalRunDrive({
         evalRunId,

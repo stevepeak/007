@@ -1,14 +1,14 @@
 import { z } from 'zod'
 
+import {
+  unsupportedQuestionTypes,
+  type DecisionModelOption,
+} from '../engine/decision'
 import { decisionAgentQuestions } from '../engine/decision-agent'
 import {
   decisionAgentConfigIssues,
   decisionAgentConfigSchema,
 } from '../engine/decision-agent-schema'
-import {
-  unsupportedQuestionTypes,
-  type DecisionModelOption,
-} from '../engine/decision'
 import {
   agentConfigSchema,
   agentInputVariables,
@@ -18,6 +18,7 @@ import {
   REQUIREMENT_REASON,
   unmetRequirements,
 } from '../engine/model-capabilities'
+import { stableEqual } from '../engine/stable-stringify'
 import type {
   AgentConfig,
   AgentNodeMeta,
@@ -131,7 +132,7 @@ export function changedKeys(
   if (!before) return Object.keys(after).sort()
   const keys = new Set([...Object.keys(before), ...Object.keys(after)])
   return [...keys]
-    .filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]))
+    .filter((k) => !stableEqual(before[k], after[k]))
     .sort()
 }
 

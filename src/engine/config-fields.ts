@@ -1,4 +1,5 @@
 import type { AgentConfig } from './agent-config-schema'
+import { stableEqual } from './stable-stringify'
 
 // Which fields of an agent config differ between two versions of it, named the
 // way a person would name them.
@@ -31,6 +32,6 @@ export const CONFIG_FIELDS: { key: keyof AgentConfig; label: string }[] = [
 /** Human labels for every field that differs between two configs. */
 export function changedFields(a: AgentConfig, b: AgentConfig): string[] {
   return CONFIG_FIELDS.filter(
-    (f) => JSON.stringify(a[f.key]) !== JSON.stringify(b[f.key]),
+    (f) => !stableEqual(a[f.key], b[f.key]),
   ).map((f) => f.label)
 }
