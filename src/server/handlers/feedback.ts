@@ -12,6 +12,7 @@ import type {
 } from '../protocol'
 
 import {
+  NotFoundError,
   toEpoch,
   type CreateWfSdkHandlersOptions,
   type WfHandlers,
@@ -92,18 +93,23 @@ export function buildFeedbackHandlers<TDeps>(
     },
 
     setFeedbackAcknowledged: async (c) => {
-      await setFeedbackAck(c.db, {
+      const row = await setFeedbackAck(c.db, {
         subjectId: c.params.subjectId,
         acknowledged: c.params.acknowledged,
         ackByUserId: c.ctx.userId ?? null,
       })
+      if (!row) throw new NotFoundError('Feedback not found')
       return { ok: true as const }
     },
 
     setFeedbackInternalNote: async (c) => {
       // An all-whitespace note reads as "cleared", same as an explicit null.
       const note = c.params.note?.trim() || null
-      await setFeedbackInternalNote(c.db, { subjectId: c.params.subjectId, note })
+      const row = await setFeedbackInternalNote(c.db, {
+        subjectId: c.params.subjectId,
+        note,
+      })
+      if (!row) throw new NotFoundError('Feedback not found')
       return { ok: true as const }
     },
 

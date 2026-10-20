@@ -1216,8 +1216,8 @@ export function agentWriteTools(): WfMcpTool[] {
               'Pass `acknowledged`, `internalNote`, or both — there is nothing else this tool changes.',
           }
         }
-        // Resolve first: neither setter checks that the row exists, so a wrong
-        // subjectId would update zero rows and answer `{ ok: true }`.
+        // Read first for the before-image, and so a wrong id gets an answer that
+        // says where ids come from rather than the setter's bare 404.
         const existing = await client.getFeedbackForSubjects({
           subjectIds: [subjectId],
         })
@@ -1228,10 +1228,7 @@ export function agentWriteTools(): WfMcpTool[] {
           }
         }
         if (note !== undefined) {
-          await client.setFeedbackInternalNote({
-            subjectId,
-            note: note.trim() === '' ? null : note,
-          })
+          await client.setFeedbackInternalNote({ subjectId, note })
         }
         if (acknowledged !== undefined) {
           await client.setFeedbackAcknowledged({ subjectId, acknowledged })
@@ -1249,7 +1246,8 @@ export function agentWriteTools(): WfMcpTool[] {
           },
           after: {
             acknowledged: acknowledged ?? row.acknowledgedAt != null,
-            internalNote: note === undefined ? row.internalNote : note || null,
+            internalNote:
+              note === undefined ? row.internalNote : note.trim() || null,
           },
           note:
             acknowledged === true

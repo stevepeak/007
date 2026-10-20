@@ -864,7 +864,7 @@ describe('triage_feedback', () => {
   })
 
   // An empty note is the documented way to clear one, and `optString` would read
-  // it as absent.
+  // it as absent. The handler owns the trim-to-null.
   test('clears the note with an empty string', async () => {
     let seen: unknown
     const client = stubClient({
@@ -874,15 +874,16 @@ describe('triage_feedback', () => {
         return { ok: true as const }
       },
     })
-    await toolNamed('triage_feedback').run(client, {
+    const out = (await toolNamed('triage_feedback').run(client, {
       subjectId: 'msg_1',
       internalNote: '',
-    })
-    expect(seen).toEqual({ subjectId: 'msg_1', note: null })
+    })) as { after: { internalNote: string | null } }
+    expect(seen).toEqual({ subjectId: 'msg_1', note: '' })
+    expect(out.after.internalNote).toBeNull()
   })
 
-  // Neither setter checks that the row exists, so a wrong id would update zero
-  // rows and answer ok.
+  // A wrong id is refused with a pointer to where ids come from, before any
+  // write.
   test('refuses a subjectId with no feedback rather than no-opping', async () => {
     let wrote = false
     const client = stubClient({
