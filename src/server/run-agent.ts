@@ -1,8 +1,12 @@
 import type { RunContext, WfSdkConfig } from '../engine/config'
 import { errorFeedLine } from '../engine/error-detail'
 import { executeWorkflow } from '../engine/executor'
-import { modelBudgetFor } from '../engine/model-budget'
-import { resolveNodeTimeoutMs } from '../engine/node-timeout'
+import { resolveWfLogger } from '../engine/logger'
+import {
+  MAX_ROUND_TRIP_MS,
+  MAX_TOOL_MS,
+  remainingBudget,
+} from '../engine/model-budget'
 import { MANUAL_TRIGGER_KIND } from '../engine/trigger-registry'
 import { ensureAgentEvalWrapper } from '../eval/wrapper'
 import type { WfDb } from '../storage/client'
@@ -42,6 +46,13 @@ import { createDurableRunRecorder } from '../storage/run-recorder'
 /** Default ceiling on the whole call, model included. */
 export const RUN_AGENT_TIMEOUT_MS = 10_000
 
+/**
+ * How far past the deadline the agent's own model budget runs. The deadline
+ * timer must win so the caller always gets the timeout error; the budget then
+ * aborts the provider call right behind it.
+ */
+const ABORT_GRACE_MS = 1_000
+
 export type RunAgentResult = {
   /** The agent's output — for an `object` agent, the validated object. */
   output: unknown
@@ -52,21 +63,41 @@ export type RunAgentResult = {
 
 // Per-isolate: an agent's wrapper version is stable once created (it only
 // changes when the wrapper BUILDER changes, i.e. on a deploy), so resolving it
-// once saves three D1 reads on every later call. Keyed by database so two
-// databases in one process (tests) can't hand each other a version id.
-const wrapperVersions = new WeakMap<WfDb, Map<string, string>>()
+// once saves three D1 reads on every later call. Keyed by the underlying driver
+// (`$client` — the D1 binding in a Worker), not the drizzle wrapper: callers
+// mint a fresh `createWfDb` per request, so keying on that would never hit,
+// while two databases in one process still can't hand each other a version id.
+// Same rule as the price-map memo in `storage/data/runs-cost.ts`.
+const wrapperVersions = new WeakMap<object, Map<string, string>>()
 
-async function wrapperVersionFor(db: WfDb, agentId: string): Promise<string> {
-  let byAgent = wrapperVersions.get(db)
+function wrapperCacheFor(db: WfDb): Map<string, string> | null {
+  const client = (db as unknown as { $client?: unknown }).$client
+  if (typeof client !== 'object' || client === null) return null
+  let byAgent = wrapperVersions.get(client)
   if (!byAgent) {
     byAgent = new Map()
-    wrapperVersions.set(db, byAgent)
+    wrapperVersions.set(client, byAgent)
   }
-  const cached = byAgent.get(agentId)
-  if (cached) return cached
+  return byAgent
+}
+
+/** The wrapper version's graph, re-resolving once when a cached id has gone
+ *  (the wrapper was deleted or its runs purged since this isolate cached it). */
+async function wrapperGraphFor(db: WfDb, agentId: string) {
+  const cache = wrapperCacheFor(db)
+  const cached = cache?.get(agentId)
+  if (cached) {
+    const version = await getVersionGraph(db, cached)
+    if (version) return { workflowVersionId: cached, graph: version.graph }
+    cache?.delete(agentId)
+  }
   const { workflowVersionId } = await ensureAgentEvalWrapper(db, { agentId })
-  byAgent.set(agentId, workflowVersionId)
-  return workflowVersionId
+  const version = await getVersionGraph(db, workflowVersionId)
+  if (!version) {
+    throw new Error(`runAgent: wrapper version ${workflowVersionId} is gone`)
+  }
+  cache?.set(agentId, workflowVersionId)
+  return { workflowVersionId, graph: version.graph }
 }
 
 export async function runAgent<TDeps>(opts: {
@@ -93,17 +124,14 @@ export async function runAgent<TDeps>(opts: {
   /** Ceiling on the whole call. Defaults to {@link RUN_AGENT_TIMEOUT_MS}. */
   timeoutMs?: number
 }): Promise<RunAgentResult> {
-  const { db } = opts
+  const { db, wfConfig } = opts
+  const logger = resolveWfLogger(wfConfig.logger)
   const startedAt = Date.now()
   const timeoutMs = opts.timeoutMs ?? RUN_AGENT_TIMEOUT_MS
 
   const agentId = await agentIdBySlug(db, opts.slug)
   if (!agentId) throw new Error(`runAgent: no agent with slug "${opts.slug}"`)
-  const workflowVersionId = await wrapperVersionFor(db, agentId)
-  const version = await getVersionGraph(db, workflowVersionId)
-  if (!version) {
-    throw new Error(`runAgent: wrapper version ${workflowVersionId} is gone`)
-  }
+  const { workflowVersionId, graph } = await wrapperGraphFor(db, agentId)
 
   const workflowRunId = await createRun(db, {
     workflowVersionId,
@@ -114,66 +142,128 @@ export async function runAgent<TDeps>(opts: {
     hostContext: opts.hostContext,
   })
 
-  // Settled by whichever finishes first — the walk or the timer — so a run the
-  // timer already failed is never then marked done by a late answer.
-  let settled = false
+  let runContext: RunContext = {
+    triggerKind: MANUAL_TRIGGER_KIND,
+    runId: workflowRunId,
+    subjectId: opts.subjectId,
+    correlationId: opts.correlationId,
+    actorId: opts.actorId,
+    hostContext: opts.hostContext,
+    promptVariables: opts.promptVariables,
+    env: opts.env,
+  }
+
+  // The host's lifecycle hooks fire from HERE, after the run row says how the
+  // run ended — left to the executor they would run while `wf_run` still said
+  // `running`. Best-effort, as on both engines: a throwing hook is logged and
+  // never changes an outcome that is already recorded.
+  const execConfig: WfSdkConfig<TDeps> = {
+    ...wfConfig,
+    onRunComplete: undefined,
+    onRunFailed: undefined,
+  }
+  const notifyHost = async (
+    name: string,
+    fn: () => void | Promise<void>,
+  ): Promise<void> => {
+    try {
+      await fn()
+    } catch (err) {
+      logger.error(`[wf] lifecycle callback '${name}' failed`, err)
+    }
+  }
+
+  // The whole call's budget, spent down from `startedAt`. Handed to the agent
+  // node as its model budget, so the provider call (and the tools it drives) is
+  // ABORTED just past the deadline rather than abandoned behind it — without
+  // this the node's own budget floors at `MIN_TOTAL_MS` and keeps spending well
+  // after the caller has been told it timed out.
+  const budgetMs = timeoutMs + ABORT_GRACE_MS
+  const callBudget = {
+    totalMs: budgetMs,
+    stepMs: Math.min(budgetMs, MAX_ROUND_TRIP_MS),
+    toolMs: Math.min(budgetMs, MAX_TOOL_MS),
+  }
+
+  // The walk and the timer race to CLAIM the outcome. A walk that answers
+  // first records `done`, and the timer then stands down, so an answer still
+  // being written is never reported as a timeout; a timer that fires first
+  // fails the run, and the late answer is dropped. Anything that leaves the run
+  // without a recorded `done` — timeout, a failed node, a failed write — fails
+  // it.
+  let claimed = false
+  const claim = (): boolean => {
+    if (claimed) return false
+    claimed = true
+    return true
+  }
+  let doneRecorded = false
+
   const execute = async (): Promise<unknown> => {
     // Throws "not in the run manifest" for an agent with no published
     // version, which is the honest answer for one.
-    const manifest = await resolveRunManifest(db, version.graph)
+    const manifest = await resolveRunManifest(db, graph)
     await setRunManifest(db, { runId: workflowRunId, manifest })
     await markRunRunning(db, { runId: workflowRunId })
+    runContext = { ...runContext, manifest }
 
-    const runContext: RunContext = {
-      triggerKind: MANUAL_TRIGGER_KIND,
-      runId: workflowRunId,
-      subjectId: opts.subjectId,
-      correlationId: opts.correlationId,
-      actorId: opts.actorId,
-      hostContext: opts.hostContext,
-      promptVariables: opts.promptVariables,
-      manifest,
-      env: opts.env,
-    }
     const result = await executeWorkflow({
-      graph: version.graph,
+      graph,
       triggerInput: {},
-      config: opts.wfConfig,
+      config: execConfig,
       runContext,
       recorder: createDurableRunRecorder({ db, runId: workflowRunId }),
-      // The same per-node bound the inline engine applies. It has a floor
-      // (`MIN_TOTAL_MS`) well above a request's patience, so the timer below
-      // is what actually holds `timeoutMs`; this is what stops the provider
-      // call itself rather than just abandoning it.
-      resolveModelBudget: (node) => {
-        return modelBudgetFor(resolveNodeTimeoutMs(node, { timeoutMs }))
+      resolveModelBudget: () => {
+        return remainingBudget(callBudget, Date.now() - startedAt)
       },
     })
-    if (!settled) {
-      settled = true
+    if (claim()) {
       await markRunDone(db, {
         runId: workflowRunId,
         output: result.output,
         settled: true,
       })
+      doneRecorded = true
+      if (wfConfig.onRunComplete) {
+        await notifyHost('on-complete', () => {
+          return wfConfig.onRunComplete!(runContext, {
+            output: result.output,
+            outputNodeId: result.outputNodeId,
+          })
+        })
+      }
     }
     return result.output
   }
 
   let timer: ReturnType<typeof setTimeout> | undefined
+  // Anchored at `startedAt`, like the budget, so the two can't drift apart by
+  // however long the setup reads took.
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
+      if (!claim()) return
       reject(new Error(`runAgent: "${opts.slug}" timed out after ${timeoutMs}ms`))
-    }, timeoutMs)
+    }, Math.max(0, startedAt + timeoutMs - Date.now()))
   })
 
   try {
     const output = await Promise.race([execute(), timeout])
     return { output, workflowRunId, durationMs: Date.now() - startedAt }
   } catch (err) {
-    if (!settled) {
-      settled = true
-      await failRun(db, { runId: workflowRunId, error: errorFeedLine(err) })
+    if (!doneRecorded) {
+      const error = errorFeedLine(err)
+      // The caller is owed the error that ended the call, not a D1 hiccup
+      // recording it.
+      try {
+        await failRun(db, { runId: workflowRunId, error })
+      } catch (recordErr) {
+        logger.error('[wf] runAgent could not record its failure', recordErr)
+      }
+      if (wfConfig.onRunFailed) {
+        await notifyHost('on-failed', () => {
+          return wfConfig.onRunFailed!(runContext, { error, workflowRunId })
+        })
+      }
     }
     throw err
   } finally {

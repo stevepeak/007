@@ -1220,8 +1220,11 @@ const { output, workflowRunId } = await runAgent({
 
 It throws on an unknown slug, an agent with no published version, a failed
 model call and the timeout — treat any of them as "no answer" if the agent is
-optional to your caller. The run is the agent's hidden eval wrapper, so it
-floats to the latest published version unless that wrapper is pinned.
+optional to your caller. The timeout is the agent's model budget too, so the
+provider call is aborted at the deadline rather than left running behind it.
+`onRunComplete` / `onRunFailed` fire once the run row records the outcome, as
+on both engines. The run is the agent's hidden eval wrapper, so it floats to
+the latest published version unless that wrapper is pinned.
 
 > ⚠️ **In-process previews require the web Worker to hold the tools' runtime
 > bindings.** `runToolPreview` runs `buildRunDeps(runContext)` and the tool's real
