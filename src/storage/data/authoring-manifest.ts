@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 
 import { decisionAgentConfigSchema } from '../../engine/decision-agent-schema'
 import {
@@ -96,17 +96,7 @@ export async function resolveRunManifest(
       return
     }
     const config = agentConfigSchema.parse(version.config)
-    // Freeze the model's context window alongside the config: the engine's
-    // overflow guard needs it, and `getModel` only returns a model, not its
-    // metadata. A model the platform hasn't catalogued (or one reporting no
-    // context length) leaves this undefined and the guard simply stands down.
-    const model = (
-      await db
-        .select({ contextLength: wfModel.contextLength })
-        .from(wfModel)
-        .where(eq(wfModel.id, config.modelId))
-        .limit(1)
-    )[0]
+    // `contextLength` is filled in after the walk, in one query for every model.
     entries.push({
       kind: 'agent',
       id: agentId,
@@ -115,9 +105,6 @@ export async function resolveRunManifest(
       versionNumber: version.versionNumber,
       name: agent?.name ?? '',
       config,
-      ...(model?.contextLength != null
-        ? { contextLength: model.contextLength }
-        : {}),
     })
     // Freeze the agent's delegation targets so its `spawn_*` tools resolve.
     for (const target of config.subAgents.targets) {
@@ -187,5 +174,25 @@ export async function resolveRunManifest(
   }
 
   await resolveInto(graph, [])
+
+  // Freeze each agent's model context window alongside its config: the engine's
+  // overflow guard needs it, and `getModel` only returns a model, not its
+  // metadata. A model the platform hasn't catalogued (or one reporting no
+  // context length) leaves this undefined and the guard simply stands down.
+  const agentEntries = entries.filter((e) => e.kind === 'agent')
+  const modelIds = [...new Set(agentEntries.map((e) => e.config.modelId))]
+  if (modelIds.length > 0) {
+    const models = await db
+      .select({ id: wfModel.id, contextLength: wfModel.contextLength })
+      .from(wfModel)
+      .where(inArray(wfModel.id, modelIds))
+    const contextLengths = new Map(models.map((m) => [m.id, m.contextLength]))
+    for (const entry of agentEntries) {
+      const contextLength = contextLengths.get(entry.config.modelId)
+      if (contextLength != null) {
+        entry.contextLength = contextLength
+      }
+    }
+  }
   return entries
 }
