@@ -10,7 +10,6 @@ import {
   GitBranch,
   Repeat,
   User,
-  Users,
   Wrench,
 } from 'lucide-react'
 import type { ReactNode } from 'react'
@@ -25,8 +24,7 @@ import { useTools } from '../hooks'
 import { useModels } from '../hooks-models'
 import { formatContext } from '../models-list-shared'
 import { firstLine, previewLine } from '../text-preview'
-import { toolChip } from '../tool-appearance'
-import { ToolIcon } from '../tool-icon'
+import { ToolCallChip } from '../tool-call-chip'
 import { Tooltip } from '../tooltip'
 
 import { AgentWaterfall } from './agent-waterfall'
@@ -402,8 +400,6 @@ function countToolCalls(
 }
 
 // The tools this step called, each as an icon + name chip with its call count.
-// A synthesized delegation tool (`spawn_*` / `await_subagents`) isn't in the
-// catalog, so it gets the sub-agent look instead of a missing-tool fallback.
 function ToolCallsCard({ meta }: { meta: AgentNodeMeta }) {
   const { data: tools } = useTools()
   const calls = countToolCalls(meta)
@@ -414,46 +410,9 @@ function ToolCallsCard({ meta }: { meta: AgentNodeMeta }) {
         Tools
       </div>
       <div className="flex flex-wrap items-center gap-1">
-        {calls.map((call) => {
-          const tool = tools?.find((t) => t.id === call.toolId)
-          const delegation =
-            !tool &&
-            (call.toolId.startsWith('spawn_') ||
-              call.toolId.endsWith('_subagents'))
-          const label = tool?.name ?? call.toolId
-          return (
-            <Tooltip
-              key={call.toolId}
-              content={`${label} · called ${call.count} ${call.count === 1 ? 'time' : 'times'}`}
-            >
-              <span
-                className={cn(
-                  'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5',
-                  delegation
-                    ? 'bg-indigo-50 text-indigo-500'
-                    : toolChip(tool?.color ?? null),
-                )}
-              >
-                {delegation ? (
-                  <Users className="size-3.5 shrink-0" />
-                ) : (
-                  <ToolIcon
-                    icon={tool?.icon}
-                    iconName={tool?.iconName}
-                    iconUrl={tool?.iconUrl}
-                    className="size-3.5"
-                  />
-                )}
-                <span className="max-w-[9rem] truncate text-[11px] font-semibold">
-                  {label}
-                </span>
-                <span className="text-[11px] font-semibold tabular-nums opacity-70">
-                  ×{call.count}
-                </span>
-              </span>
-            </Tooltip>
-          )
-        })}
+        {calls.map((call) => (
+          <ToolCallChip key={call.toolId} call={call} tools={tools} showLabel />
+        ))}
       </div>
     </div>
   )

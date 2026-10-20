@@ -4,8 +4,7 @@ import { useMemo, useRef, useState } from 'react'
 import type { ToolOption } from '../../server/protocol'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
-import { toolChip } from '../tool-appearance'
-import { ToolIcon } from '../tool-icon'
+import { ToolAvatar } from '../tool-appearance'
 
 // Tool selection for the agent/tool-node editors. Replaces the old checkbox
 // list: pick tools by fuzzy-searching the registry, and manage the selection as
@@ -118,27 +117,7 @@ export function ToolPicker({
                 key={t.id}
                 className="flex items-center gap-2.5 rounded-md border border-border bg-muted p-2"
               >
-                <span
-                  className={cn(
-                    'flex size-7 shrink-0 items-center justify-center overflow-hidden rounded',
-                    toolChip(t.color),
-                  )}
-                >
-                  <ToolIcon
-                    icon={t.icon}
-                    iconName={t.iconName}
-                    iconUrl={t.iconUrl}
-                    className="size-4"
-                  />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-foreground">
-                    {t.name}
-                  </span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {t.description}
-                  </span>
-                </span>
+                <ToolRowContent tool={t} />
               </li>
             ))}
           </ul>
@@ -160,27 +139,7 @@ export function ToolPicker({
               key={t.id}
               className="flex items-center gap-2.5 rounded-md border border-border bg-card p-2"
             >
-              <span
-                className={cn(
-                  'flex size-7 shrink-0 items-center justify-center overflow-hidden rounded',
-                  toolChip(t.color),
-                )}
-              >
-                <ToolIcon
-                  icon={t.icon}
-                  iconName={t.iconName}
-                  iconUrl={t.iconUrl}
-                  className="size-4"
-                />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-foreground">
-                  {t.name}
-                </span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  {t.description}
-                </span>
-              </span>
+              <ToolRowContent tool={t} />
               <button
                 type="button"
                 aria-label={`Remove ${t.name}`}
@@ -249,27 +208,7 @@ export function ToolPicker({
                     'flex w-full items-center gap-2.5 rounded-md p-2 text-left transition-colors hover:bg-accent',
                   )}
                 >
-                  <span
-                  className={cn(
-                    'flex size-7 shrink-0 items-center justify-center overflow-hidden rounded',
-                    toolChip(t.color),
-                  )}
-                >
-                  <ToolIcon
-                    icon={t.icon}
-                    iconName={t.iconName}
-                    iconUrl={t.iconUrl}
-                    className="size-4"
-                  />
-                </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-foreground">
-                      {t.name}
-                    </span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {t.description}
-                    </span>
-                  </span>
+                  <ToolRowContent tool={t} />
                   <Wrench className="size-3.5 shrink-0 text-muted-foreground" />
                 </button>
               ))
@@ -278,5 +217,22 @@ export function ToolPicker({
         ) : null}
       </div>
     </div>
+  )
+}
+
+/** A tool's avatar, name and one-line description — the body of every row. */
+function ToolRowContent({ tool }: { tool: ToolOption }) {
+  return (
+    <>
+      <ToolAvatar tool={tool} size="md" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium text-foreground">
+          {tool.name}
+        </span>
+        <span className="block truncate text-xs text-muted-foreground">
+          {tool.description}
+        </span>
+      </span>
+    </>
   )
 }

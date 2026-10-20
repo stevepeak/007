@@ -1,4 +1,4 @@
-import { ArrowUpRight, Scissors, Users } from 'lucide-react'
+import { ArrowUpRight, Scissors } from 'lucide-react'
 
 import type { ToolOption, WfAgentCall } from '../../server/protocol'
 import { cn } from '../cn'
@@ -13,8 +13,7 @@ import { useAgentCalls, useTools } from '../hooks'
 import { WfLink } from '../nav'
 import { QueryState } from '../query-state'
 import { runStatusDotClass } from '../runs/run-status'
-import { toolChip } from '../tool-appearance'
-import { ToolIcon } from '../tool-icon'
+import { ToolCallChip } from '../tool-call-chip'
 import { Tooltip } from '../tooltip'
 
 import { runLinkFor } from './agent-editor-call-inspect'
@@ -398,54 +397,6 @@ function Cell({ value, hint }: { value: string; hint?: string }) {
     <Tooltip content={hint} side="top" className="justify-self-end">
       <span className="text-sm font-medium tabular-nums text-neutral-800">
         {value}
-      </span>
-    </Tooltip>
-  )
-}
-
-/**
- * One tool the agent reached for, as its icon plus how many times it was called.
- * Ids the registry doesn't know are the synthesized delegation tools (`spawn_*`,
- * `await_subagents`) — real calls the agent made, so they're shown with a
- * delegation icon rather than dropped.
- */
-function ToolCallChip({
-  call,
-  tools,
-}: {
-  call: { toolId: string; count: number }
-  tools: ToolOption[]
-}) {
-  const tool = tools.find((t) => t.id === call.toolId)
-  const delegation =
-    !tool &&
-    (call.toolId.startsWith('spawn_') || call.toolId.endsWith('_subagents'))
-  const label = tool?.name ?? call.toolId
-  return (
-    <Tooltip
-      content={`${label} · called ${call.count} ${call.count === 1 ? 'time' : 'times'}`}
-    >
-      <span
-        className={cn(
-          'inline-flex items-center gap-1 rounded-md px-1.5 py-1',
-          delegation
-            ? 'bg-indigo-50 text-indigo-500'
-            : toolChip(tool?.color ?? null),
-        )}
-      >
-        {delegation ? (
-          <Users className="size-3.5" />
-        ) : (
-          <ToolIcon
-            icon={tool?.icon}
-            iconName={tool?.iconName}
-            iconUrl={tool?.iconUrl}
-            className="size-3.5"
-          />
-        )}
-        <span className="text-[11px] font-semibold tabular-nums">
-          {call.count}
-        </span>
       </span>
     </Tooltip>
   )

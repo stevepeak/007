@@ -9,8 +9,7 @@ import { useTools } from '../hooks'
 import { Popover } from '../popover'
 import { QueryState } from '../query-state'
 import { toText } from '../to-text'
-import { toolChip } from '../tool-appearance'
-import { ToolIcon } from '../tool-icon'
+import { ToolAvatar } from '../tool-appearance'
 import { useCommittedField } from '../use-committed-field'
 
 const MATCH_OPTIONS = evalMatchSchema.options
@@ -75,19 +74,7 @@ export function EvalToolPicker({
             onClick={toggle}
             className="flex h-9 w-full items-center gap-2 rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none transition focus:border-neutral-500"
           >
-            <span
-              className={cn(
-                'flex size-5 shrink-0 items-center justify-center overflow-hidden rounded',
-                toolChip(selected?.color ?? null),
-              )}
-            >
-              <ToolIcon
-                icon={selected?.icon}
-                iconName={selected?.iconName}
-                iconUrl={selected?.iconUrl}
-                className="size-3.5"
-              />
-            </span>
+            <ToolAvatar tool={selected} size="xs" />
             <span
               className={cn(
                 'min-w-0 flex-1 truncate text-left',
@@ -146,19 +133,7 @@ export function EvalToolPicker({
                       isSel ? 'bg-neutral-100' : 'hover:bg-neutral-50',
                     )}
                   >
-                    <span
-                      className={cn(
-                        'flex size-5 shrink-0 items-center justify-center overflow-hidden rounded',
-                        toolChip(t.color),
-                      )}
-                    >
-                      <ToolIcon
-                        icon={t.icon}
-                        iconName={t.iconName}
-                        iconUrl={t.iconUrl}
-                        className="size-3.5"
-                      />
-                    </span>
+                    <ToolAvatar tool={t} size="xs" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium text-neutral-800">
                         {t.name}

@@ -9,8 +9,7 @@ import type {
 import type { ToolOption, WfWorkflowSummary } from '../../server/protocol'
 import { cn } from '../cn'
 import { RichSelect } from '../rich-select'
-import { toolChip } from '../tool-appearance'
-import { ToolIcon } from '../tool-icon'
+import { ToolAvatar } from '../tool-appearance'
 
 export type NodeInspectorProps = {
   node: WorkflowNode
@@ -124,9 +123,9 @@ export function WorkflowSelect({
 }
 
 // Rich tool picker: shows each tool's icon and name (a native <select> can't
-// render the inline-SVG ToolIcon). Icon and chip color come from the same
-// `toolChip` + `ToolIcon` pair every other tool surface uses, so a tool looks
-// the same here as on its card, in the node, and in the run log.
+// render the inline-SVG ToolIcon). The `ToolAvatar` every other tool surface
+// uses, so a tool looks the same here as on its card, in the node, and in the
+// run log.
 export function ToolSelect({
   tools,
   value,
@@ -146,27 +145,13 @@ export function ToolSelect({
       empty="No tools registered."
       renderValue={(t) => (
         <>
-          <span
-            className={cn(
-              'flex size-5 shrink-0 items-center justify-center overflow-hidden rounded',
-              toolChip(t.color),
-            )}
-          >
-            <ToolIcon icon={t.icon} iconName={t.iconName} iconUrl={t.iconUrl} className="size-3.5" />
-          </span>
+          <ToolAvatar tool={t} size="xs" />
           <span className="min-w-0 flex-1 truncate">{t.name}</span>
         </>
       )}
       renderOption={(t) => (
         <>
-          <span
-            className={cn(
-              'mt-0.5 flex size-6 shrink-0 items-center justify-center overflow-hidden rounded',
-              toolChip(t.color),
-            )}
-          >
-            <ToolIcon icon={t.icon} iconName={t.iconName} iconUrl={t.iconUrl} className="size-4" />
-          </span>
+          <ToolAvatar tool={t} size="sm" className="mt-0.5" />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium text-foreground">
               {t.name}

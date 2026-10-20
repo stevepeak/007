@@ -16,8 +16,7 @@ import {
 import { agentColor, agentIcon } from '../agent-appearance'
 import { cn } from '../cn'
 import { useAgents, useTools, useTriggerEvents, useWorkflows } from '../hooks'
-import { toolChip } from '../tool-appearance'
-import { ToolIcon } from '../tool-icon'
+import { ToolAvatar } from '../tool-appearance'
 
 import {
   branchConditionLabel,
@@ -147,19 +146,7 @@ export const ToolNodeRenderer = defineNode({
     return tool
       ? {
           iconSlot: (
-            <span
-              className={cn(
-                'mt-0.5 flex size-5 shrink-0 items-center justify-center overflow-hidden rounded',
-                toolChip(tool.color),
-              )}
-            >
-              <ToolIcon
-                icon={tool.icon}
-                iconName={tool.iconName}
-                iconUrl={tool.iconUrl}
-                className="size-3.5"
-              />
-            </span>
+            <ToolAvatar tool={tool} size="xs" className="mt-0.5" />
           ),
         }
       : undefined

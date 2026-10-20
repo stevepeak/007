@@ -21,9 +21,8 @@ import {
 import { useWfNav } from './nav'
 import { QueryState } from './query-state'
 import { runStatusClass } from './runs/run-status'
-import { toolChip } from './tool-appearance'
+import { ToolAvatar } from './tool-appearance'
 import { ContextField } from './tool-context-field'
-import { ToolIcon } from './tool-icon'
 
 // The tool detail page: one tool's identity, a real-execution playground, and
 // its recent calls pulled from run history. Reached by clicking a card on the
@@ -94,19 +93,7 @@ function ToolHeader({ tool }: { tool: ToolOption }) {
   const { Badge } = useWfComponents()
   return (
     <div className="flex items-start gap-4">
-      <span
-        className={cn(
-          'flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg',
-          toolChip(tool.color),
-        )}
-      >
-        <ToolIcon
-          icon={tool.icon}
-          iconName={tool.iconName}
-          iconUrl={tool.iconUrl}
-          className="size-7"
-        />
-      </span>
+      <ToolAvatar tool={tool} size="xl" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <h1 className="truncate text-xl font-semibold text-neutral-900">

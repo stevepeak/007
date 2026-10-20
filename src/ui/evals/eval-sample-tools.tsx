@@ -12,8 +12,7 @@ import type {
 import { toolSetting, withToolSetting } from '../../server/protocol'
 import { cn } from '../cn'
 import { useAgent, useTools } from '../hooks'
-import { toolChip } from '../tool-appearance'
-import { ToolIcon } from '../tool-icon'
+import { ToolAvatar } from '../tool-appearance'
 import { Tooltip } from '../tooltip'
 
 import { MockOutputEditor } from './eval-sample-mocks'
@@ -203,19 +202,7 @@ function ToolRow({
   return (
     <div className={cn(open && 'bg-neutral-50/60')}>
       <div className="flex items-center gap-2 px-3 py-2.5">
-        <span
-          className={cn(
-            'flex size-5 shrink-0 items-center justify-center overflow-hidden rounded',
-            toolChip(tool?.color ?? null),
-          )}
-        >
-          <ToolIcon
-            icon={tool?.icon}
-            iconName={tool?.iconName}
-            iconUrl={tool?.iconUrl}
-            className="size-3.5"
-          />
-        </span>
+        <ToolAvatar tool={tool} size="xs" />
         <button
           type="button"
           disabled={!expandable}

@@ -2,8 +2,7 @@ import { AlertTriangle } from 'lucide-react'
 
 import type { ToolContextField, ToolOption } from '../../server/protocol'
 import { cn } from '../cn'
-import { toolChip } from '../tool-appearance'
-import { ToolIcon } from '../tool-icon'
+import { ToolAvatar } from '../tool-appearance'
 import { Tooltip } from '../tooltip'
 
 import { contextLabelsFor } from './agent-editor-context'
@@ -70,19 +69,7 @@ export function ToolModeList({
           const isLive = live.has(t.id)
           return (
             <li key={t.id} className="flex items-center gap-2.5 px-2.5 py-2">
-              <span
-                className={cn(
-                  'flex size-6 shrink-0 items-center justify-center overflow-hidden rounded',
-                  toolChip(t.color),
-                )}
-              >
-                <ToolIcon
-                  icon={t.icon}
-                  iconName={t.iconName}
-                  iconUrl={t.iconUrl}
-                  className="size-3.5"
-                />
-              </span>
+              <ToolAvatar tool={t} size="sm" iconClassName="size-3.5" />
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-1.5">
                   <span className="min-w-0 truncate text-xs font-medium text-neutral-800">
