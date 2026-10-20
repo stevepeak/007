@@ -227,6 +227,7 @@ export async function tickEvalRun(
             rowId: cell.rowId,
             modelId: cell.modelId,
             attempt: cell.attempt,
+            judgeModelId: plan.judgeModelId,
             config: plan.configOverride,
           })
           settled.add(evalCellKey(cell))

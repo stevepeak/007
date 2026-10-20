@@ -610,6 +610,8 @@ export interface WfDataClient {
     modelId?: string
     /** Matrix cell: which best-of-N attempt this is. */
     attempt?: number
+    /** The run's pinned judge for `llm_judge` checks; see `gradeEvalResult`. */
+    judgeModelId?: string
     /** Grade this decision config instead of the published version (a draft). */
     config?: AnyAgentConfig
   }): Promise<WfEvalResultDTO>

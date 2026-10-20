@@ -348,6 +348,7 @@ export const wfInputSchemas = {
     rowId: z.string().min(1),
     modelId: z.string().optional(),
     attempt: z.number().optional(),
+    judgeModelId: z.string().optional(),
     // The unsaved-draft override — a whole DecisionAgentConfig, parsed by the
     // handler against the target agent's kind.
     config: PASSED_THROUGH.optional(),

@@ -2,7 +2,7 @@ import { changedEvalRowFields, changedEvalSetFields } from '../../engine'
 import { toAgentKind } from '../../engine/agent-kind'
 import { runDecisionAgent } from '../../engine/decision-agent'
 import {
-  decisionAgentConfigSchema,
+  decisionAgentConfigIssues,
   type DecisionAgentConfig,
 } from '../../engine/decision-agent-schema'
 import type { EvalRowSnapshot } from '../../engine/eval-schema'
@@ -72,6 +72,7 @@ import {
 import {
   BadRequestError,
   NotFoundError,
+  parseDecisionAgentConfig,
   requireHook,
   type CreateWfSdkHandlersOptions,
   type HandlerCtx,
@@ -169,6 +170,46 @@ function driftChange(row: WfChangeRecord): WfEvalDriftChange {
     actorId: row.actorId,
     note: row.note,
     at: row.createdAt.getTime(),
+  }
+}
+
+/**
+ * The model seams a check tree grades through, for a run cell and a decision
+ * cell alike — so both pick the same judge and the same decision model.
+ *
+ * The caller's pin wins over the host's, which wins over "whatever sorts first
+ * in the enabled catalog". That last fallback is why a pin matters: the judge
+ * is the measuring instrument, so enabling a new model can silently re-grade
+ * an entire suite, and the drift report — which watches the sample and the
+ * target — would attribute the move to the agent.
+ *
+ * The decision pair stays undefined on a host with no decision provider, and
+ * `gradeDecisionJudge` then reports that in the check's own error rather than
+ * failing the row with something opaque.
+ */
+async function graderSeams<TDeps>(args: {
+  opts: CreateWfSdkHandlersOptions<TDeps>
+  env: unknown
+  judgeModelId?: string
+}): Promise<{
+  getModel: GradeModelFactory
+  defaultJudgeModelId: string | undefined
+  getDecider: GradeDeciderFactory | undefined
+  defaultDecisionModelId: string | undefined
+}> {
+  const { config } = args.opts
+  const ctx = { triggerKind: 'eval', env: args.env }
+  const getDecider = config.getDecider
+  return {
+    getModel: (modelId) => config.getModel(modelId, ctx),
+    defaultJudgeModelId:
+      args.judgeModelId ??
+      args.opts.evalJudgeModelId ??
+      (await config.listModels({ env: args.env }))[0]?.id,
+    getDecider: getDecider ? (modelId) => getDecider(modelId, ctx) : undefined,
+    defaultDecisionModelId: config.listDecisionModels
+      ? (await config.listDecisionModels({ env: args.env }))[0]?.id
+      : undefined,
   }
 }
 
@@ -551,7 +592,7 @@ export function buildEvalHandlers<TDeps>(
       // stored result a lie about what was graded.
       let config: DecisionAgentConfig
       if (p.config) {
-        config = decisionAgentConfigSchema.parse(p.config)
+        config = parseDecisionAgentConfig(p.config)
       } else {
         const version =
           set.targetVersion == null
@@ -564,12 +605,21 @@ export function buildEvalHandlers<TDeps>(
               : `This goal pins v${set.targetVersion} of agent ${set.targetId}, which has no published version ${set.targetVersion}. Repoint the goal at Latest, or at a version that exists.`,
           )
         }
-        config = decisionAgentConfigSchema.parse(version.config)
+        config = parseDecisionAgentConfig(version.config)
       }
       // The matrix's model column, layered on top — the only axis a decision
       // sweep has. There is no prompt to A/B: the questions ARE the prompt, and
       // swapping them wholesale is a different agent, not a cell.
       if (p.modelId) config = { ...config, modelId: p.modelId }
+      // The gate the playground and publishing apply: a rule that cannot hold
+      // falls through to the fallback, so grading it would score a verdict the
+      // rules never reached. Thrown, so the tick records the cell as failed.
+      const issues = decisionAgentConfigIssues(config)
+      if (issues.length > 0) {
+        throw new BadRequestError(
+          `This decision agent would not run:\n${issues.map((i) => `- ${i}`).join('\n')}`,
+        )
+      }
 
       const { state, variables } = decisionInvocation(row.input)
       const env = await c.env()
@@ -589,14 +639,7 @@ export function buildEvalHandlers<TDeps>(
         checks: row.checks,
         steps: [],
         output: result,
-        getModel: (modelId) =>
-          opts.config.getModel(modelId, { triggerKind: 'eval', env }),
-        defaultJudgeModelId:
-          opts.evalJudgeModelId ??
-          (await opts.config.listModels({ env }))[0]?.id,
-        getDecider: (modelId) =>
-          getDecider(modelId, { triggerKind: 'eval', env }),
-        defaultDecisionModelId: config.modelId,
+        ...(await graderSeams({ opts, env, judgeModelId: p.judgeModelId })),
       })
 
       const snapshot = buildEvalSnapshot(row, set)
@@ -655,42 +698,11 @@ export function buildEvalHandlers<TDeps>(
       }
       const steps = toGradeSteps(runResult.steps)
       const env = await c.env()
-      // Judge checks resolve their model through the host's live seam.
-      const getModel: GradeModelFactory = (modelId) => {
-        return opts.config.getModel(modelId, { triggerKind: 'eval', env })
-      }
-      // The caller's pin wins over the host's, which wins over "whatever sorts
-      // first in the enabled catalog". That last fallback is why a pin matters:
-      // the judge is the measuring instrument, so enabling a new model can
-      // silently re-grade an entire suite, and the drift report — which watches
-      // the sample and the target — would attribute the move to the agent.
-      const defaultJudgeModelId =
-        cell.judgeModelId ??
-        opts.evalJudgeModelId ??
-        (await opts.config.listModels({ env }))[0]?.id
-      // The decision counterpart, for `decision_judge` checks. Both stay
-      // undefined on a host with no decision provider, and `gradeDecisionJudge`
-      // then reports that in the check's own error rather than failing the row
-      // with something opaque.
-      const getDecider: GradeDeciderFactory | undefined = opts.config.getDecider
-        ? (modelId) => {
-            return opts.config.getDecider!(modelId, {
-              triggerKind: 'eval',
-              env,
-            })
-          }
-        : undefined
-      const defaultDecisionModelId = opts.config.listDecisionModels
-        ? (await opts.config.listDecisionModels({ env }))[0]?.id
-        : undefined
       const graded = await gradeRow({
         checks: found.row.checks,
         steps,
         output: runResult.output,
-        getModel,
-        defaultJudgeModelId,
-        getDecider,
-        defaultDecisionModelId,
+        ...(await graderSeams({ opts, env, judgeModelId: cell.judgeModelId })),
         // Synthesis mode: the tools were frozen, so the model's context came from
         // the Sample's seeded conversation, not the run trace. Hand those staged
         // tool results to the judge so it can grade the answer's groundedness.

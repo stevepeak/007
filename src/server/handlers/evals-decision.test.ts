@@ -173,6 +173,54 @@ describe('runDecisionEvalCell', () => {
     expect(result.status).toBe('fail')
   })
 
+  test('an unrunnable config is refused before the provider is called', async () => {
+    let called = false
+    const h = buildEvalHandlers(
+      testHandlerOptions({
+        config: {
+          getDecider: () => {
+            called = true
+            return decider(0.91)
+          },
+        },
+      }),
+    )
+    // Parses, but a question with no prompt is one the provider cannot ask.
+    const base = agentConfig()
+    const broken = { ...base, questions: base.questions.map((q) => ({ ...q, prompt: ' ' })) }
+    await expect(
+      h.runDecisionEvalCell(testHandlerCtx(db, { evalRunId, rowId, config: broken })),
+    ).rejects.toThrow('would not run')
+    expect(called).toBe(false)
+  })
+
+  // The same seams `gradeEvalResult` uses: the run's pinned judge for
+  // `llm_judge`, and the catalog's decision model — not the agent's own — as
+  // the default for `decision_judge`.
+  test('judge checks grade through the pinned judge', async () => {
+    await seed(
+      { kind: 'decision', state: 'Customer is furious.', variables: {} },
+      { op: 'and', checks: [{ type: 'llm_judge', rubric: 'r' }] },
+    )
+    const asked: string[] = []
+    const h = buildEvalHandlers(
+      testHandlerOptions({
+        config: {
+          getDecider: () => decider(0.91),
+          listModels: async () => [{ id: 'first', label: 'First', providerId: 'p' }],
+          getModel: (modelId) => {
+            asked.push(modelId)
+            throw new Error('no model in this test')
+          },
+        },
+      }),
+    )
+    await h.runDecisionEvalCell(
+      testHandlerCtx(db, { evalRunId, rowId, judgeModelId: 'pinned-judge' }),
+    )
+    expect(asked).toEqual(['pinned-judge'])
+  })
+
   test('a generation-agent goal is refused rather than judged as a decision', async () => {
     db = freshDb()
     const created = await createAgent(db, {
