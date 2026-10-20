@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { eq } from 'drizzle-orm'
 
 import type { AgentConfig, WorkflowGraph } from '../engine/graph'
 import type { WfDb } from '../storage/client'
@@ -10,8 +11,14 @@ import {
   saveVersion,
 } from '../storage/data'
 import { freshDb } from '../storage/db-test-helpers'
+import { wfWorkflow } from '../storage/schema'
 
-import { evalWrapperName, resolveEvalTarget } from './wrapper'
+import {
+  buildAgentWrapperGraph,
+  ensureAgentEvalWrapper,
+  evalWrapperName,
+  resolveEvalTarget,
+} from './wrapper'
 
 // Fix for the version pin that never was. A Goal's `targetVersion` was stored,
 // rendered in the UI as "pinned v3", and frozen into every result's snapshot —
@@ -215,5 +222,41 @@ describe('resolveEvalTarget — workflow version pin', () => {
       (e: unknown) => e as Error,
     )
     expect(err?.message).toContain('v3')
+  })
+})
+
+describe('ensureAgentEvalWrapper — concurrent first calls', () => {
+  test('racing first calls create one wrapper and agree on its version', async () => {
+    const db = freshDb()
+    const agentId = await agentWithTwoVersions(db)
+
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => {
+        return ensureAgentEvalWrapper(db, { agentId })
+      }),
+    )
+
+    const rows = await db
+      .select({ id: wfWorkflow.id })
+      .from(wfWorkflow)
+      .where(eq(wfWorkflow.name, evalWrapperName(agentId)))
+    expect(rows).toHaveLength(1)
+    expect(new Set(results.map((r) => r.workflowVersionId)).size).toBe(1)
+  })
+
+  test('a wrapper created before ids were derived is still reused', async () => {
+    const db = freshDb()
+    const agentId = await agentWithTwoVersions(db)
+    const legacy = await createWorkflow(db, {
+      name: evalWrapperName(agentId),
+      hidden: true,
+      graph: buildAgentWrapperGraph(agentId),
+    })
+
+    const resolved = await ensureAgentEvalWrapper(db, { agentId })
+    expect(resolved).toEqual({
+      workflowId: legacy.workflowId,
+      workflowVersionId: legacy.versionId,
+    })
   })
 })

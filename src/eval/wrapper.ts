@@ -14,6 +14,7 @@ import {
   getVersionGraph,
   saveVersion,
   versionByNumber,
+  workflowExists,
 } from '../storage/data'
 
 // Phase 5 — target resolution. An eval always runs through the same
@@ -154,40 +155,80 @@ export async function ensureAgentEvalWrapper(
   const graph = buildAgentWrapperGraph(input.agentId, version)
   const existing = await findWorkflowByName(db, name)
   if (existing) {
-    const versionId = await getLatestVersionId(db, existing.id)
-    if (versionId) {
-      const stored = await getVersionGraph(db, versionId)
-      // Order-insensitive: a stored graph has been through JSON and zod,
-      // either of which may reorder keys or drop an explicitly-undefined one
-      // relative to the object the builder just returned, so a plain
-      // `JSON.stringify` comparison would report drift on every call.
-      if (stored && stableEqual(stored.graph, graph)) {
-        return { workflowId: existing.id, workflowVersionId: versionId }
-      }
-      // Stale (or unreadable) — publish the current shape as a new version and
-      // run against that. History is preserved, so a past eval result still
-      // resolves the exact graph it was produced by.
-      const published = await saveVersion(db, {
-        workflowId: existing.id,
-        graph,
-        changeNote: 'Regenerated eval wrapper (builder shape changed).',
-        publishedBy: input.createdBy,
-      })
-      return { workflowId: existing.id, workflowVersionId: published.versionId }
-    }
-    // Row exists but somehow has no version — fall through and recreate cleanly
-    // under a fresh id (the orphaned row is harmless; it's hidden and unused).
+    return await currentWrapperVersion(db, {
+      workflowId: existing.id,
+      graph,
+      createdBy: input.createdBy,
+    })
   }
-  const created = await createWorkflow(db, {
-    name,
-    description: `Auto-generated eval wrapper for agent ${input.agentId}.`,
-    hidden: true,
-    createdBy: input.createdBy,
-    graph,
-  })
-  return {
-    workflowId: created.workflowId,
-    workflowVersionId: created.versionId,
+  // The row id IS the name, so the primary key makes creation single-winner:
+  // two first calls racing here (`runAgent` puts this on a request path) can't
+  // both insert a wrapper. The loser adopts the winner's row. Wrappers created
+  // before this carry random ids and are still found by name above.
+  try {
+    const created = await createWorkflow(db, {
+      id: name,
+      name,
+      description: `Auto-generated eval wrapper for agent ${input.agentId}.`,
+      hidden: true,
+      createdBy: input.createdBy,
+      graph,
+    })
+    return {
+      workflowId: created.workflowId,
+      workflowVersionId: created.versionId,
+    }
+  } catch (err) {
+    if (!(await workflowExists(db, name))) throw err
+    return await currentWrapperVersion(db, {
+      workflowId: name,
+      graph,
+      createdBy: input.createdBy,
+    })
+  }
+}
+
+/**
+ * The wrapper row's latest version, republished first when it is stale or
+ * missing. A missing version means a concurrent creator sits between its row
+ * insert and its v1 seed (or died there). A publish can lose a race too — the
+ * `(workflow, version number)` unique index rejects the second writer — so a
+ * failed publish re-reads, and accepts the winner's version when it carries the
+ * same graph.
+ */
+async function currentWrapperVersion(
+  db: WfDb,
+  input: { workflowId: string; graph: WorkflowGraph; createdBy?: string },
+): Promise<{ workflowId: string; workflowVersionId: string }> {
+  const { workflowId, graph } = input
+  const current = async () => {
+    const versionId = await getLatestVersionId(db, workflowId)
+    // Order-insensitive: a stored graph has been through JSON and zod, either
+    // of which may reorder keys or drop an explicitly-undefined one relative to
+    // the object the builder just returned, so a plain `JSON.stringify`
+    // comparison would report drift on every call.
+    const stored = versionId ? await getVersionGraph(db, versionId) : null
+    return versionId && stored && stableEqual(stored.graph, graph)
+      ? versionId
+      : null
+  }
+  const versionId = await current()
+  if (versionId) return { workflowId, workflowVersionId: versionId }
+  try {
+    // Stale, unreadable or missing — publish the current shape as a new
+    // version. History is preserved, so a past eval result still resolves the
+    // exact graph it was produced by.
+    const published = await saveVersion(db, {
+      workflowId,
+      graph,
+      changeNote: 'Regenerated eval wrapper (builder shape changed).',
+      publishedBy: input.createdBy,
+    })
+    return { workflowId, workflowVersionId: published.versionId }
+  } catch (err) {
+    const winner = await current()
+    if (!winner) throw err
+    return { workflowId, workflowVersionId: winner }
   }
 }
 
