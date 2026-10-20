@@ -60,10 +60,9 @@ export type RunFailure = {
   error: string
   /**
    * The `wf_run` id — the one in the run viewer's URL. Present on both backing
-   * stores (durable + inline); undefined only on the pure in-process engine
-   * (evals, tests, the playground), which writes no run row at all. A host that
-   * reports failures somewhere durable needs this to link back, and it cannot
-   * reconstruct it from `RunContext` — nothing there names the run.
+   * stores (durable + inline); on the pure in-process engine (evals, tests, the
+   * playground) it is `RunContext.runId`, undefined when the caller wrote no run
+   * row at all.
    */
   workflowRunId?: string
 }

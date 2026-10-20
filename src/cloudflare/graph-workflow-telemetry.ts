@@ -128,6 +128,23 @@ export function withRunCounts(
 }
 
 /**
+ * The run point's counts, read off the run's counters the same way on both
+ * engines; what differs per engine (its name, start instant, billed steps) is
+ * the caller's.
+ */
+export function runPointCounts(args: {
+  counters: RunCounters
+  telemetry: TelemetrySink
+}) {
+  return {
+    nodeCount: args.counters.nodes,
+    iterationItems: args.counters.iterationItems,
+    failedNodeCount: args.counters.failedNodes,
+    droppedPoints: args.telemetry.dropped(),
+  }
+}
+
+/**
  * Emit the run's single terminal point. MUST be called from inside the run's
  * last durable step — the orchestrator body re-executes on every wake, so an
  * emission out there would fire once per hibernation.
@@ -163,11 +180,8 @@ export function emitRunPoint<TDeps, E extends GraphWorkflowEnv>(
       // journaled start instant; latency then reads 0 rather than nonsense.
       startedAtMs: ctx.runStartedAtMs ?? finishedAtMs,
       finishedAtMs,
-      nodeCount: ctx.counters.nodes,
-      iterationItems: ctx.counters.iterationItems,
       workflowSteps: ctx.counters.steps + args.extraSteps,
-      failedNodeCount: ctx.counters.failedNodes,
-      droppedPoints: ctx.telemetry.dropped(),
+      ...runPointCounts(ctx),
     }),
     ctx.logger,
   )

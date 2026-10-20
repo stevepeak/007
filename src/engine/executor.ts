@@ -1,7 +1,7 @@
 import type { RunContext, WfSdkConfig } from './config'
 import { errorFeedLine } from './error-detail'
 import { resolveAnswerNodeIds } from './graph-engine'
-import { resolveWfLogger } from './logger'
+import { notifyHostSafely, resolveWfLogger } from './logger'
 import type { ModelBudget } from './model-budget'
 import { emitNodeStartProgress } from './node-progress'
 import { settleOf, type NodeSettlement } from './node-settlement'
@@ -368,18 +368,6 @@ export async function executeWorkflow<TDeps>(
     }
   }
 
-  // Lifecycle callbacks mirror the Cloudflare backend: best-effort host
-  // notifications that never change the run outcome (a throwing callback is
-  // swallowed and logged). No durable step here — the in-process backend awaits
-  // inline — but the contract the host sees is identical.
-  const notifyHost = async (fn: () => void | Promise<void>): Promise<void> => {
-    try {
-      await fn()
-    } catch (err) {
-      logger.error('[wf] lifecycle callback failed', err)
-    }
-  }
-
   // The answer, once settled. Its presence is what turns the loop below from
   // "producing the answer" into "draining what's left": every exit and failure
   // path reads differently on each side of it.
@@ -406,8 +394,12 @@ export async function executeWorkflow<TDeps>(
       pendingNodes: scheduler.inFlightCount(),
     })
     if (config.onRunComplete) {
-      await notifyHost(() => {
-        return config.onRunComplete!(runContext, { output, outputNodeId })
+      await notifyHostSafely({
+        name: 'on-complete',
+        fn: () => {
+          return config.onRunComplete!(runContext, { output, outputNodeId })
+        },
+        logger,
       })
     }
     return { output, outputNodeId }
@@ -544,8 +536,16 @@ export async function executeWorkflow<TDeps>(
     }
     await drainInflight()
     if (config.onRunFailed) {
-      await notifyHost(() => {
-        return config.onRunFailed!(runContext, { error: errorMessage(err) })
+      await notifyHostSafely({
+        name: 'on-failed',
+        fn: () => {
+          // The run-level error text both stored backends report.
+          return config.onRunFailed!(runContext, {
+            error: errorFeedLine(err),
+            workflowRunId: runContext.runId,
+          })
+        },
+        logger,
       })
     }
     throw err

@@ -7,6 +7,7 @@ import {
   resolveGraphEngine,
   resolveGraphTriggerKind,
 } from '../engine/graph-engine'
+import type { WfLogger } from '../engine/logger'
 import type { TriggerRegistry } from '../engine/trigger-registry'
 import type { WfDb } from '../storage/client'
 import { createRun } from '../storage/data'
@@ -232,4 +233,28 @@ export async function reportCalleeResult(
   assertValidEventType(sub.eventType, 'Reporting to parent workflow')
   const parent = await env.GRAPH_WORKFLOW.get(sub.parent.instanceId)
   await parent.sendEvent({ type: sub.eventType, payload: wire })
+}
+
+/**
+ * {@link reportCalleeResult} for a caller with no retried step to lean on (the
+ * inline engine): a failed report is logged, and the parent's own wait times
+ * out — the same outcome as a child that died silently. No-op for a run that
+ * was not spawned.
+ */
+export async function reportCalleeResultBestEffort(args: {
+  env: ChildRunBindings
+  sub: { parent: CalleeParent; eventType: string } | undefined
+  payload: CalleeDoneEvent
+  runId: string
+  logger: WfLogger
+}): Promise<void> {
+  if (!args.sub) return
+  try {
+    await reportCalleeResult(args.env, args.sub, args.payload)
+  } catch (err) {
+    args.logger.error(
+      `[wf] inline run ${args.runId} could not report to its caller`,
+      err,
+    )
+  }
 }

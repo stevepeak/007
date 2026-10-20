@@ -1,6 +1,7 @@
 import { Validator } from '@cfworker/json-schema'
 import { jsonSchema, tool } from 'ai'
 
+import type { WfSdkConfig } from '../engine/config'
 import type {
   ToolRegistry,
   ToolRegistryEntry,
@@ -257,4 +258,33 @@ export function withConnectorTools<
     if (!merged.has(entry.id)) merged.set(entry.id, entry)
   }
   return { ...config, toolRegistry: merged }
+}
+
+/**
+ * A run's config with the connector tools joined in, as both engines build it:
+ * a catalog snapshot with no credential in it, each token resolved lazily at
+ * call time. Off — the config as given — unless the host wired a connector
+ * secret. `loadCatalog` wraps the catalog read, so the durable backend can
+ * journal it in its own step and freeze the run's tool set across a replay.
+ */
+export async function withRunConnectors<
+  TDeps,
+  TConfig extends WfSdkConfig<TDeps>,
+>(args: {
+  config: TConfig
+  env: unknown
+  resolveDb: () => WfDb
+  loadCatalog?: (
+    load: () => Promise<ConnectorCatalogEntry[]>,
+  ) => Promise<ConnectorCatalogEntry[]>
+}): Promise<TConfig> {
+  const { config, resolveDb } = args
+  const secret = config.resolveConnectorSecret?.({ env: args.env })
+  if (!secret) return config
+  const load = () => loadConnectorCatalog(resolveDb())
+  const catalog = await (args.loadCatalog ? args.loadCatalog(load) : load())
+  return withConnectorTools<TDeps, TConfig>(config, catalog, {
+    resolveDb,
+    resolveSecret: () => secret,
+  })
 }

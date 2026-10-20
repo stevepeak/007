@@ -80,3 +80,22 @@ function guard(logger: WfLogger): WfLogger {
 export function resolveWfLogger(logger?: WfLogger): WfLogger {
   return logger ? guard(logger) : consoleWfLogger
 }
+
+/**
+ * Best-effort host lifecycle notification (`onRunComplete` / `onRunFailed`).
+ * The run's outcome is already settled when the host is told, so a callback
+ * that throws is logged and swallowed — a broken host hook can neither turn a
+ * completed run into a failed one nor mask the real error on the failure path.
+ * The durable backend passes an `fn` wrapped in its own step, so it retries.
+ */
+export async function notifyHostSafely(args: {
+  name: string
+  fn: () => void | Promise<void>
+  logger: WfLogger
+}): Promise<void> {
+  try {
+    await args.fn()
+  } catch (err) {
+    args.logger.error(`[wf] lifecycle callback '${args.name}' failed`, err)
+  }
+}

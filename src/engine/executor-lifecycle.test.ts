@@ -40,6 +40,24 @@ describe('executor — lifecycle callbacks', () => {
     expect(failure).toEqual({ error: 'boom failed' })
   })
 
+  test('onRunFailed names the run when the caller wrote one', async () => {
+    let failure: RunFailure | undefined
+    await expect(
+      executeWorkflow({
+        graph: chainGraph(),
+        triggerInput: { n: 1 },
+        config: makeConfig({
+          onRunFailed: (_ctx, f) => {
+            failure = f
+          },
+        }),
+        runContext: { triggerKind: 'go', runId: 'run-1' },
+        recorder: createMemoryRunRecorder(),
+      }),
+    ).rejects.toThrow('boom failed')
+    expect(failure?.workflowRunId).toBe('run-1')
+  })
+
   test('a throwing callback is swallowed and never changes the outcome', async () => {
     // The completed run must still resolve even if the host callback blows up.
     const result = await executeWorkflow({

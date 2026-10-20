@@ -4,10 +4,7 @@ import {
   type WorkflowStep,
 } from 'cloudflare:workers'
 
-import {
-  loadConnectorCatalog,
-  withConnectorTools,
-} from '../connectors/registry'
+import { withRunConnectors } from '../connectors/registry'
 import type { RunFlags, WfSdkConfig } from '../engine/config'
 import { errorFeedLine } from '../engine/error-detail'
 import {
@@ -395,22 +392,12 @@ export function makeGraphWorkflow<
       // The snapshot carries no credential: the token is resolved lazily inside
       // each node's own step (see `connectors/registry`), where a live D1
       // binding is legal. Off entirely unless the host wired an encryption key.
-      const connectorSecret = config.resolveConnectorSecret?.({ env })
-      const connectorCatalog = connectorSecret
-        ? await stepDo(step, 'load-connectors', async () => {
-            return await loadConnectorCatalog(createWfDb(env.WF_DB))
-          })
-        : []
-      const runConfig = connectorSecret
-        ? withConnectorTools<TDeps, WfSdkConfig<TDeps>>(
-            config,
-            connectorCatalog,
-            {
-              resolveDb: () => createWfDb(env.WF_DB),
-              resolveSecret: () => connectorSecret,
-            },
-          )
-        : config
+      const runConfig = await withRunConnectors<TDeps, WfSdkConfig<TDeps>>({
+        config,
+        env,
+        resolveDb: () => createWfDb(env.WF_DB),
+        loadCatalog: (load) => stepDo(step, 'load-connectors', load),
+      })
 
       // Shared run-level locals threaded into the hoisted dispatch/log/finish
       // helpers (defined in ./graph-workflow-dispatch) so they can live at

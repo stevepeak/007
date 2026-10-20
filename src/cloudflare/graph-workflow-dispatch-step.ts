@@ -3,27 +3,30 @@ import type {
   WorkflowStepConfig,
 } from 'cloudflare:workers'
 
-import { consoleWfLogger, type WfLogger } from '../engine/logger'
+import {
+  consoleWfLogger,
+  notifyHostSafely,
+  type WfLogger,
+} from '../engine/logger'
 
-// Best-effort host lifecycle notification. Runs in its own durable step (so it
-// retries), but a callback that ultimately throws is swallowed (logged) rather
-// than changing the run outcome — the run's success/failure is already settled
-// by the time we notify. Keeps a broken host callback from turning a completed
-// run into a failed one, or masking the real error on the failure path.
+// Best-effort host lifecycle notification, in its own durable step (so it
+// retries); see `notifyHostSafely` for why a throwing callback is swallowed.
 export async function notifyHost(
   step: WorkflowStep,
   name: string,
   fn: () => void | Promise<void>,
   logger: WfLogger = consoleWfLogger,
 ): Promise<void> {
-  try {
-    await stepDo(step, name, async () => {
-      await fn()
-      return null
-    })
-  } catch (err) {
-    logger.error(`[wf] lifecycle callback '${name}' failed`, err)
-  }
+  await notifyHostSafely({
+    name,
+    logger,
+    fn: async () => {
+      await stepDo(step, name, async () => {
+        await fn()
+        return null
+      })
+    },
+  })
 }
 
 // Cloudflare's `step.do` constrains return values to `Serializable<T>`, which

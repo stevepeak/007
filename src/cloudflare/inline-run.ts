@@ -1,13 +1,14 @@
 import { encodeRunPoint } from '../analytics/points'
-import {
-  loadConnectorCatalog,
-  withConnectorTools,
-} from '../connectors/registry'
+import { withRunConnectors } from '../connectors/registry'
 import type { RunContext, WfSdkConfig } from '../engine/config'
 import { errorFeedLine } from '../engine/error-detail'
 import { executeWorkflow, type ResumeStep } from '../engine/executor'
 import type { WfRunManifestEntry } from '../engine/graph'
-import { resolveWfLogger, type WfLogger } from '../engine/logger'
+import {
+  notifyHostSafely,
+  resolveWfLogger,
+  type WfLogger,
+} from '../engine/logger'
 import { modelBudgetFor } from '../engine/model-budget'
 import { resolveNodeTimeoutMs } from '../engine/node-timeout'
 import type { ChildWorkflowRunner } from '../engine/nodes/workflow'
@@ -37,7 +38,7 @@ import {
   type CalleeDoneWire,
 } from './callee-protocol'
 import {
-  reportCalleeResult,
+  reportCalleeResultBestEffort,
   spawnCalleeRun,
   type SpawnedChildRun,
 } from './child-run'
@@ -47,6 +48,7 @@ import {
   createTelemeteredRecorder,
   resolveTelemetrySink,
   runDims,
+  runPointCounts,
   withRunCounts,
 } from './graph-workflow-telemetry'
 import { runContextFor } from './run-context'
@@ -170,21 +172,6 @@ function createInlineSink(
   }
 }
 
-// Best-effort host lifecycle notification. Mirrors the durable backend's
-// `notifyHost`: a callback that throws is logged, never allowed to change a run
-// outcome that is already settled.
-async function notifyHost(
-  name: string,
-  fn: () => void | Promise<void>,
-  logger: WfLogger,
-): Promise<void> {
-  try {
-    await fn()
-  } catch (err) {
-    logger.error(`[wf] lifecycle callback '${name}' failed`, err)
-  }
-}
-
 /**
  * The inline engine's half of a workflow-call node: give the callee a run of its
  * own, then park until it reports back.
@@ -287,27 +274,24 @@ export async function recordInlineRunFailure<TDeps, E extends GraphWorkflowEnv>(
     // Wake the caller BEFORE the host callback: a callee that dies silently
     // leaves its caller parked until the calling node's timeout, turning a
     // legible failure into a long stall.
-    if (p.subRun) {
-      try {
-        await reportCalleeResult(env, p.subRun, { ok: false, error: message })
-      } catch (err) {
-        logger.error(
-          `[wf] inline run ${p.workflowRunId} could not report to its caller`,
-          err,
-        )
-      }
-    }
+    await reportCalleeResultBestEffort({
+      env,
+      sub: p.subRun,
+      payload: { ok: false, error: message },
+      runId: p.workflowRunId,
+      logger,
+    })
     if (config.onRunFailed) {
-      await notifyHost(
-        'on-failed',
-        () => {
+      await notifyHostSafely({
+        name: 'on-failed',
+        fn: () => {
           return config.onRunFailed!(runContext, {
             error: message,
             workflowRunId: p.workflowRunId,
           })
         },
         logger,
-      )
+      })
     }
   } catch (recordErr) {
     // Nothing left to report to — log and let the run sit in whatever state
@@ -368,11 +352,8 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
         error: args.error,
         startedAtMs,
         finishedAtMs: Date.now(),
-        nodeCount: counters.nodes,
-        iterationItems: counters.iterationItems,
         workflowSteps: 0,
-        failedNodeCount: counters.failedNodes,
-        droppedPoints: telemetry.dropped(),
+        ...runPointCounts({ counters, telemetry }),
       }),
       logger,
     )
@@ -402,16 +383,14 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
   // engine exists for, and the reason a callee that returns bulk should be on
   // the durable engine, which is its own trigger's call to make.
   const sub = p.subRun
-  const report = async (payload: CalleeDoneEvent): Promise<void> => {
-    if (!sub) return
-    try {
-      await reportCalleeResult(env, sub, payload)
-    } catch (err) {
-      logger.error(
-        `[wf] inline run ${p.workflowRunId} could not report to its caller`,
-        err,
-      )
-    }
+  const report = (payload: CalleeDoneEvent): Promise<void> => {
+    return reportCalleeResultBestEffort({
+      env,
+      sub,
+      payload,
+      runId: p.workflowRunId,
+      logger,
+    })
   }
 
   // Per-node Sentry sends in flight (see `wrapNode`). `flushTraces` never
@@ -504,17 +483,11 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
     // Connector tools, exactly as the durable backend's `load-connectors` step
     // adds them: a catalog snapshot with no credential in it, each token
     // resolved lazily at call time. Off unless the host wired a key.
-    const connectorSecret = config.resolveConnectorSecret?.({ env })
-    const runConfig = connectorSecret
-      ? withConnectorTools<TDeps, WfSdkConfig<TDeps>>(
-          execConfig,
-          await loadConnectorCatalog(db),
-          {
-            resolveDb: () => createWfDb(env.WF_DB),
-            resolveSecret: () => connectorSecret,
-          },
-        )
-      : execConfig
+    const runConfig = await withRunConnectors<TDeps, WfSdkConfig<TDeps>>({
+      config: execConfig,
+      env,
+      resolveDb: () => createWfDb(env.WF_DB),
+    })
 
     const result = await executeWorkflow({
       graph: version.graph,
@@ -608,13 +581,13 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
         // answer should wait behind work they never depended on.
         await report({ ok: true, output })
         if (config.onRunComplete) {
-          await notifyHost(
-            'on-complete',
-            () => {
+          await notifyHostSafely({
+            name: 'on-complete',
+            fn: () => {
               return config.onRunComplete!(runContext, { output, outputNodeId })
             },
             logger,
-          )
+          })
         }
       },
     })
