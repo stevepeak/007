@@ -62,6 +62,13 @@ export type LoopOutcome = {
   text: string
   finishReason: string
   /**
+   * The finish reason exactly as the provider sent it. Undefined means the
+   * response ended before the provider sent one at all, which the SDK reports
+   * as `finishReason: 'other'`. That is a cut-off transport, not a model that
+   * chose to say nothing, and `throwForEmptyAnswer` tells the two apart by it.
+   */
+  rawFinishReason: string | undefined
+  /**
    * The provider's own error, captured off the stream. Only the streaming path
    * can produce one; `generateText` throws instead.
    */
@@ -90,6 +97,7 @@ export type DriveArgs = {
 type GeneratedTurn = {
   text: string
   finishReason: string
+  rawFinishReason: string | undefined
   responseMessages: ModelMessage[]
 }
 
@@ -99,6 +107,7 @@ type StreamedTurn = {
   fullStream: AsyncIterable<TextStreamPart<ToolSet>>
   text: PromiseLike<string>
   finishReason: PromiseLike<string>
+  rawFinishReason: PromiseLike<string | undefined>
 }
 
 /**
@@ -119,6 +128,7 @@ export async function driveGenerate(
     return {
       text: generated.text,
       finishReason: generated.finishReason,
+      rawFinishReason: generated.rawFinishReason,
       streamError: undefined,
       object: undefined,
     }
@@ -128,6 +138,7 @@ export async function driveGenerate(
     return {
       text: generated.text,
       finishReason: generated.finishReason,
+      rawFinishReason: generated.rawFinishReason,
       streamError: undefined,
       object: early,
     }
@@ -185,6 +196,8 @@ export async function driveGenerate(
   return {
     text: JSON.stringify(formatted.object),
     finishReason: formatted.finishReason,
+    // The formatting call returned a parsed object, so it plainly finished.
+    rawFinishReason: formatted.finishReason,
     streamError: undefined,
     object: formatted.object,
   }
@@ -215,7 +228,16 @@ export async function driveStream(
   // about it. Keep the first one (later parts are usually knock-on effects of the
   // same fault) and let the caller decide whether it mattered.
   let streamError: unknown
+  // The SDK ends the stream with an `abort` part, not an error, when the call's
+  // signal fires (the node's total budget or a round-trip watchdog). What it
+  // leaves behind reads exactly like a provider that sent nothing, so it is
+  // thrown below, inside `runGuarded`, which can tell an overrun from a stall.
+  let abortReason: string | undefined
   for await (const part of stream.fullStream) {
+    if (part.type === 'abort') {
+      abortReason = part.reason ?? 'aborted'
+      continue
+    }
     if (part.type === 'error') {
       streamError ??= part.error
       // Named here whether or not it proves fatal: an error the agent went on to
@@ -243,6 +265,9 @@ export async function driveStream(
       : '⇢ answer not streamed (no step was forced to answer; delivered whole)',
     meta: { streamedChars },
   })
+  if (abortReason !== undefined) {
+    throw new Error(`${modelId} call was aborted: ${abortReason}`)
+  }
   // Awaited after the stream is drained, so these are settled.
   //
   // `stream.text` is the one promise here that CAN reject: when the call produced
@@ -257,6 +282,7 @@ export async function driveStream(
     return {
       text: await stream.text,
       finishReason: await stream.finishReason,
+      rawFinishReason: await stream.rawFinishReason,
       streamError,
       object: undefined,
     }

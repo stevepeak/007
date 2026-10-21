@@ -226,7 +226,7 @@ async function runToolLoop(
  * "produced no answer after N of M turns" to all of them — including the case
  * where the model call simply failed on turn 2 of 10. That reads as a turn
  * ceiling that was never reached, and it sent readers (and the chat's copy)
- * looking for a prompt problem instead of a provider outage. Four outcomes, four
+ * looking for a prompt problem instead of a provider outage. Five outcomes, five
  * messages, and only the last two are a wall a retry would hit again — those are
  * the ones marked fatal.
  */
@@ -260,6 +260,17 @@ function throwForEmptyAnswer(
       `Agent's model call failed after ${turns} of ${maxTurns} turns ` +
         `(finish reason: error), and the provider reported no error detail. ` +
         `It called ${toolCount} tools and wrote no text.`,
+    )
+  }
+  if (result.rawFinishReason === undefined) {
+    // The response ended before the provider sent any finish reason (the SDK
+    // fills in `other`). The connection was cut off. The model did not decide
+    // to stop, so nothing says a second attempt would end the same way, and
+    // this is not marked fatal.
+    throw new Error(
+      `Agent's model stream closed before the provider sent a finish reason, ` +
+        `after ${turns} of ${maxTurns} turns. It called ${toolCount} tools and ` +
+        `wrote no text.`,
     )
   }
   if (result.finishReason === 'length') {

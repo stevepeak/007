@@ -320,3 +320,47 @@ describe('agent node — cut off before answering', () => {
     expect((err as Record<string, unknown>)[AGENT_NO_OUTPUT]).toBe(true)
   })
 })
+
+// A stream the transport closed before the provider sent `finish_reason`. The
+// OpenAI-compatible provider still emits a `finish` part on close, with `other`
+// and no raw reason, so this is what reaches the loop. It is a cut connection,
+// not a model that chose silence, and it must not be marked fatal.
+describe('agent node — stream closed before the provider finished', () => {
+  function closedEarly(raw: string | undefined): MockLanguageModelV3 {
+    return new MockLanguageModelV3({
+      doStream: async () => {
+        return mockStream([
+          { type: 'stream-start', warnings: [] },
+          {
+            type: 'finish',
+            finishReason: { unified: 'other', raw },
+            usage: mockUsage(0, 0),
+          },
+        ])
+      },
+    })
+  }
+
+  test('no raw finish reason is named as a closed stream and stays retryable', async () => {
+    const err = await run(closedEarly(undefined), 10, streamingSink()).catch(
+      (e: unknown) => e,
+    )
+
+    expect((err as Error).message).toContain(
+      'stream closed before the provider sent a finish reason',
+    )
+    expect((err as Error).message).not.toContain('produced no answer')
+    expect(isFatalAgentError(err)).toBe(false)
+  })
+
+  test('a finish reason the provider DID send still reads as no answer', async () => {
+    const err = await run(
+      closedEarly('content_filter'),
+      10,
+      streamingSink(),
+    ).catch((e: unknown) => e)
+
+    expect((err as Error).message).toContain('produced no answer')
+    expect(isFatalAgentError(err)).toBe(true)
+  })
+})
