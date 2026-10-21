@@ -1,4 +1,4 @@
-import { isNotNull, sql } from 'drizzle-orm'
+import { inArray, isNotNull, sql } from 'drizzle-orm'
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core'
 
 import type { WfDb } from '../client'
@@ -10,6 +10,8 @@ import {
   wfRunLog,
   wfRunStep,
 } from '../schema'
+
+import { chunk, selectChunked } from './shared'
 
 // Wholesale run purge — the "clean slate" the Runs explorer's hidden
 // Delete-all-runs control fires. Deliberately NOT a per-run delete: the
@@ -86,4 +88,43 @@ export async function deleteAllRuns(db: WfDb): Promise<DeleteAllRunsResult> {
   await db.delete(wfRun)
 
   return { runs, steps, logs, evalResults, evalRuns, feedbackUnlinked }
+}
+
+/**
+ * Delete the given runs and everything derived from them — the per-run form of
+ * {@link deleteAllRuns}, with the same cascade and the same feedback rule.
+ *
+ * An eval run can span several workflows, so one only goes once none of its
+ * results remain; a sweep that also graded another workflow keeps its row.
+ */
+export async function deleteRuns(db: WfDb, runIds: readonly string[]) {
+  const evalRunIds = new Set<string>()
+  // Sequential chunks, children before the runs, for the same reason as
+  // `deleteAllRuns`: a mid-way failure must not strand a trace without its run.
+  for (const ids of chunk(runIds)) {
+    const results = await db
+      .select({ evalRunId: wfEvalResult.evalRunId })
+      .from(wfEvalResult)
+      .where(inArray(wfEvalResult.wfRunId, ids))
+    for (const r of results) evalRunIds.add(r.evalRunId)
+    await db.delete(wfRunStep).where(inArray(wfRunStep.runId, ids))
+    await db.delete(wfRunLog).where(inArray(wfRunLog.runId, ids))
+    await db.delete(wfEvalResult).where(inArray(wfEvalResult.wfRunId, ids))
+    await db
+      .update(wfFeedback)
+      .set({ runId: null })
+      .where(inArray(wfFeedback.runId, ids))
+    await db.delete(wfRun).where(inArray(wfRun.id, ids))
+  }
+
+  const stillGrading = await selectChunked([...evalRunIds], (ids) => {
+    return db
+      .selectDistinct({ id: wfEvalResult.evalRunId })
+      .from(wfEvalResult)
+      .where(inArray(wfEvalResult.evalRunId, ids))
+  })
+  const kept = new Set(stillGrading.map((r) => r.id))
+  for (const ids of chunk([...evalRunIds].filter((id) => !kept.has(id)))) {
+    await db.delete(wfEvalRun).where(inArray(wfEvalRun.id, ids))
+  }
 }

@@ -4,8 +4,11 @@ import type { WfDb } from '../client'
 import { migratedSqlite, wrapSqlite } from '../db-test-helpers'
 import {
   wfAgent,
+  wfEvalResult,
+  wfEvalRun,
   wfFeedback,
   wfRun,
+  wfRunLog,
   wfRunStep,
   wfWorkflow,
   wfWorkflowVersion,
@@ -290,6 +293,21 @@ describe('D1 parameter budget', () => {
         status: 'completed' as const,
       })),
     )
+    await db
+      .insert(wfRunLog)
+      .values(
+        runIds.map((runId) => ({ runId, level: 'info', message: 'm', ts: 1 })),
+      )
+    // One eval run per result, so the eval-run sweep is over budget too.
+    await db.insert(wfEvalRun).values(runIds.map((id) => ({ id: `er-${id}` })))
+    await db.insert(wfEvalResult).values(
+      runIds.map((wfRunId) => ({
+        evalRunId: `er-${wfRunId}`,
+        rowId: 'row-1',
+        wfRunId,
+        status: 'pass' as const,
+      })),
+    )
 
     probe.record(true)
     await deleteWorkflow(db, 'wf-1')
@@ -297,6 +315,9 @@ describe('D1 parameter budget', () => {
 
     expect((await db.select().from(wfRun)).length).toBe(0)
     expect((await db.select().from(wfRunStep)).length).toBe(0)
+    expect((await db.select().from(wfRunLog)).length).toBe(0)
+    expect((await db.select().from(wfEvalResult)).length).toBe(0)
+    expect((await db.select().from(wfEvalRun)).length).toBe(0)
     expect((await db.select().from(wfWorkflowVersion)).length).toBe(0)
     expect((await db.select().from(wfWorkflow)).length).toBe(0)
     expectWithinBudget(probe)

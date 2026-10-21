@@ -9,7 +9,6 @@ import {
 import type { WfDb } from '../client'
 import {
   wfRun,
-  wfRunStep,
   wfWorkflow,
   wfWorkflowAssignment,
   wfWorkflowDraft,
@@ -17,7 +16,8 @@ import {
 } from '../schema'
 import { createVersionedEntity } from '../versioned-entity'
 
-import { chunk, pickDefined, selectChunked } from './shared'
+import { deleteRuns } from './runs-purge'
+import { pickDefined, selectChunked } from './shared'
 
 // Data-access for the authoring domain: workflows, agents, their shared
 // version/draft lifecycle, run-manifest resolution, and trigger assignments.
@@ -120,7 +120,8 @@ export async function createWorkflow(
 
 /**
  * Delete a workflow and everything hanging off it — its versions, draft,
- * trigger assignments, and the runs (+ steps) recorded against those versions.
+ * trigger assignments, and the runs recorded against those versions (with
+ * everything derived from them — see `deleteRuns`).
  * The wf_* tables carry no FK constraints, so this does the cascade by hand.
  * Used by the seed's `--replace` path to drop a workflow before recreating it.
  */
@@ -137,15 +138,10 @@ export async function deleteWorkflow(db: WfDb, workflowId: string) {
         .from(wfRun)
         .where(inArray(wfRun.workflowVersionId, ids))
     })
-    // A busy workflow has thousands of runs, so the cascade deletes go a chunk
-    // at a time — sequentially, matching the other bulk writes in this package.
-    // Not `db.batch`: the HTTP client replays batches non-atomically anyway
-    // (see `createWfDbHttp`), so batching would only imply a guarantee that
-    // doesn't hold. This cascade is already non-atomic by nature.
-    for (const runIds of chunk(runs.map((r) => r.id))) {
-      await db.delete(wfRunStep).where(inArray(wfRunStep.runId, runIds))
-      await db.delete(wfRun).where(inArray(wfRun.id, runIds))
-    }
+    await deleteRuns(
+      db,
+      runs.map((r) => r.id),
+    )
   }
   await db
     .delete(wfWorkflowVersion)
