@@ -104,7 +104,7 @@ export function createWfDataClient(call: WfDataTransport): WfDataClient {
     listChildRuns: bind('listChildRuns'),
     listRunTriggerKinds: bind('listRunTriggerKinds'),
     getRun: (runId, opts) => send('getRun', { runId, ...opts }),
-    getRunStatus: (runId) => send('getRunStatus', { runId }),
+    getRunStatuses: (runIds) => send('getRunStatuses', { runIds }),
     retryRun: bind('retryRun'),
     setRunNote: bind('setRunNote'),
     // A full purge sweeps several tables — give it room past the 20s default.

@@ -68,12 +68,11 @@ function driveHarness(
       return { ok: true as const }
     },
     startEvalRun: async ({ rowId }) => ({ wfRunId: `run_${rowId}` }),
-    getRunStatus: async () => {
-      return {
+    getRunStatuses: async (ids) => {
+      return Object.fromEntries(ids.map((id) => [id, {
         status: opts.cellsFinish ? 'done' : 'running',
         error: null,
-      } as never
-    },
+      }])) as never},
     gradeEvalResult: async ({ rowId }) => {
       graded.push(rowId)
       settledKeys.push(evalCellKey({ rowId }))

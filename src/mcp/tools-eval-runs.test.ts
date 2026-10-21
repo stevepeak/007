@@ -570,7 +570,9 @@ describe('run_eval — bounding the sweep', () => {
       // the arithmetic rather than about a sweep of sixty stubbed runs
       // finishing. Only the first tick's worth actually start.
       startEvalRun: async () => ({ wfRunId: 'run_1' }),
-      getRunStatus: async () => ({ status: 'running', error: null }) as never,
+      getRunStatuses: async (ids) => {
+        return Object.fromEntries(ids.map((id) => [id, { status: 'running', error: null }])) as never
+      },
       finalizeEvalRun: async () => ({}) as never,
     })
     const out = (await toolNamed('run_eval').run(client, {
@@ -596,7 +598,9 @@ describe('run_eval — bounding the sweep', () => {
       },
       ...driveStubs(),
       startEvalRun: async () => ({ wfRunId: 'run_1' }),
-      getRunStatus: async () => ({ status: 'running', error: null }) as never,
+      getRunStatuses: async (ids) => {
+        return Object.fromEntries(ids.map((id) => [id, { status: 'running', error: null }])) as never
+      },
       gradeEvalResult: async () => ({}) as never,
       finalizeEvalRun: async () => ({}) as never,
     })
@@ -664,7 +668,9 @@ describe('run_eval — returning before the sweep finishes', () => {
       },
       // Nothing the first tick started has finished yet — which is the normal
       // case for a sweep whose cells take minutes.
-      getRunStatus: async () => ({ status: 'running', error: null }) as never,
+      getRunStatuses: async (ids) => {
+        return Object.fromEntries(ids.map((id) => [id, { status: 'running', error: null }])) as never
+      },
       gradeEvalResult: async () => ({}) as never,
       finalizeEvalRun: async () => {
         finalized = true
@@ -698,7 +704,9 @@ describe('run_eval — returning before the sweep finishes', () => {
         } as never
       },
       startEvalRun: async () => ({ wfRunId: 'run_1' }),
-      getRunStatus: async () => ({ status: 'running', error: null }) as never,
+      getRunStatuses: async (ids) => {
+        return Object.fromEntries(ids.map((id) => [id, { status: 'running', error: null }])) as never
+      },
       finalizeEvalRun: async () => ({}) as never,
     })
     const out = (await toolNamed('run_eval').run(client, {
@@ -808,7 +816,9 @@ describe('run_eval — grading an unsaved draft', () => {
         },
         // The launched cell never settles, so the tool answers after its first
         // tick and the assertions are about what it started, not what it graded.
-        getRunStatus: async () => ({ status: 'running', error: null }) as never,
+        getRunStatuses: async (ids) => {
+        return Object.fromEntries(ids.map((id) => [id, { status: 'running', error: null }])) as never
+      },
         finalizeEvalRun: async () => ({}) as never,
         ...over,
       }),
@@ -1199,7 +1209,9 @@ describe('run_eval — gating the models before spending anything', () => {
       listAgents: async () => { return [{ id: 'ag_1', modelRequirements: { tools: true } }] as never },
       getEvalSet: async () => oneSampleSet as never,
       startEvalRun: async () => ({ wfRunId: 'run_1' }),
-      getRunStatus: async () => ({ status: 'running', error: null }) as never,
+      getRunStatuses: async (ids) => {
+        return Object.fromEntries(ids.map((id) => [id, { status: 'running', error: null }])) as never
+      },
     })
     const out = (await toolNamed('run_eval').run(client, {
       setIds: ['set_1'],
@@ -1217,7 +1229,9 @@ describe('run_eval — gating the models before spending anything', () => {
       },
       getEvalSet: async () => oneSampleSet as never,
       startEvalRun: async () => ({ wfRunId: 'run_1' }),
-      getRunStatus: async () => ({ status: 'running', error: null }) as never,
+      getRunStatuses: async (ids) => {
+        return Object.fromEntries(ids.map((id) => [id, { status: 'running', error: null }])) as never
+      },
     })
     const out = (await toolNamed('run_eval').run(client, {
       setIds: ['set_1'],
@@ -1338,7 +1352,9 @@ describe('resume_eval_run', () => {
       },
       saveEvalRunDrive: async () => ({ ok: true as const }),
       startEvalRun: async () => ({ wfRunId: 'run_1' }),
-      getRunStatus: async () => ({ status: 'running', error: null }) as never,
+      getRunStatuses: async (ids) => {
+        return Object.fromEntries(ids.map((id) => [id, { status: 'running', error: null }])) as never
+      },
     })
     const out = (await toolNamed('resume_eval_run').run(client, {
       evalRunId: 'er_1',

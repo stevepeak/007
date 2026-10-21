@@ -1,4 +1,13 @@
-import { and, asc, desc, eq, getTableColumns, isNull, sql } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  getTableColumns,
+  inArray,
+  isNull,
+  sql,
+} from 'drizzle-orm'
 
 import { stepCost } from '../../engine/cost'
 import type { WorkflowGraph } from '../../engine/graph'
@@ -17,6 +26,7 @@ import { countChildRuns } from './runs-children'
 import { loadModelPriceMap } from './runs-cost'
 import { getRunLogs } from './runs-logs'
 import { rollUpRunCost } from './runs-rollup'
+import { selectChunked } from './shared'
 
 // ---------------------------------------------------------------------------
 // Run inspector — the single-run load shape (run, steps, logs, graph, cost)
@@ -42,6 +52,26 @@ export async function getRunStatus(db: WfDb, runId: string) {
       .limit(1)
   )[0]
   return row ?? null
+}
+
+/**
+ * {@link getRunStatus} for many runs in one statement, keyed by run id. A
+ * waiter tracking several runs at once (an eval tick's in-flight cells) reads
+ * them together instead of one round-trip per run. Absent ids are omitted.
+ */
+export async function getRunStatuses(db: WfDb, runIds: readonly string[]) {
+  const rows = await selectChunked(runIds, (ids) => {
+    return db
+      .select({
+        id: wfRun.id,
+        status: wfRun.status,
+        output: wfRun.output,
+        error: wfRun.error,
+      })
+      .from(wfRun)
+      .where(inArray(wfRun.id, ids))
+  })
+  return new Map(rows.map(({ id, ...row }) => [id, row]))
 }
 
 /**

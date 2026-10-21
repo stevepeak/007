@@ -181,7 +181,7 @@ export type RetryRunMode = 'restart' | 'resume'
 /**
  * The settle-check payload — the three fields a poll loop acts on, read off one
  * indexed run row. The cheap sibling of {@link WfRunDetail}: anything that only
- * needs to notice a run finished asks for this. See `WfDataClient.getRunStatus`.
+ * needs to notice a run finished asks for this. See `WfDataClient.getRunStatuses`.
  */
 export type WfRunStatusDTO = {
   status: string

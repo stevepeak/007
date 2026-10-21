@@ -95,7 +95,9 @@ describe('tickEvalRun — starting cells', () => {
         started.push(rowId)
         return { wfRunId: `run_${rowId}` }
       },
-      getRunStatus: async () => ({ status: 'running', error: null }) as never,
+      getRunStatuses: async (ids) => {
+        return Object.fromEntries(ids.map((id) => [id, { status: 'running', error: null }])) as never
+      },
     })
     const inflight: EvalDriveState = {
       ...EMPTY_DRIVE_STATE,
@@ -109,6 +111,29 @@ describe('tickEvalRun — starting cells', () => {
     // not the one that is already running.
     expect(started).toEqual(['row_1'])
     expect(out.state.inflight).toHaveLength(2)
+  })
+
+  test('polls every in-flight cell in one batched status read', async () => {
+    const calls: string[][] = []
+    const client = stubClient({
+      getRunStatuses: async (ids) => {
+        calls.push(ids)
+        return Object.fromEntries(ids.map((id) => [id, { status: 'running', error: null }])) as never
+      },
+    })
+    const now = Date.now()
+    const drive = driveOf(planOf(rows(3), { concurrency: 3 }), {
+      driveState: {
+        ...EMPTY_DRIVE_STATE,
+        inflight: [0, 1, 2].map((i) => ({
+          cell: { rowId: `row_${i}` },
+          wfRunId: `run_${i}`,
+          startedAt: now,
+        })),
+      },
+    })
+    await tickEvalRun(client, { drive })
+    expect(calls).toEqual([['run_0', 'run_1', 'run_2']])
   })
 
   test('distinguishes matrix cells of the same sample', async () => {
@@ -161,7 +186,9 @@ describe('tickEvalRun — settling cells', () => {
   test('grades a run that reached a terminal success', async () => {
     let graded: unknown = null
     const client = stubClient({
-      getRunStatus: async () => ({ status: 'done', error: null }) as never,
+      getRunStatuses: async (ids) => {
+        return Object.fromEntries(ids.map((id) => [id, { status: 'done', error: null }])) as never
+      },
       gradeEvalResult: async (input) => {
         graded = input
         return {} as never
@@ -184,9 +211,8 @@ describe('tickEvalRun — settling cells', () => {
   test('accepts `completed` as well as `done`', async () => {
     let graded = false
     const client = stubClient({
-      getRunStatus: async () => {
-        return { status: 'completed', error: null } as never
-      },
+      getRunStatuses: async (ids) => {
+        return Object.fromEntries(ids.map((id) => [id, { status: 'completed', error: null }])) as never},
       gradeEvalResult: async () => {
         graded = true
         return {} as never
@@ -204,9 +230,8 @@ describe('tickEvalRun — settling cells', () => {
     let graded = false
     const failures: string[] = []
     const client = stubClient({
-      getRunStatus: async () => {
-        return { status: 'failed', error: 'provider 503' } as never
-      },
+      getRunStatuses: async (ids) => {
+        return Object.fromEntries(ids.map((id) => [id, { status: 'failed', error: 'provider 503' }])) as never},
       gradeEvalResult: async () => {
         graded = true
         return {} as never
@@ -231,7 +256,9 @@ describe('tickEvalRun — settling cells', () => {
   test('times a cell out without blaming the provider', async () => {
     const failures: string[] = []
     const client = stubClient({
-      getRunStatus: async () => ({ status: 'running', error: null }) as never,
+      getRunStatuses: async (ids) => {
+        return Object.fromEntries(ids.map((id) => [id, { status: 'running', error: null }])) as never
+      },
       recordEvalFailure: async ({ error }) => {
         failures.push(error)
         return {} as never
@@ -256,9 +283,8 @@ describe('tickEvalRun — the circuit breaker', () => {
     const failures: string[] = []
     let starts = 0
     const client = stubClient({
-      getRunStatus: async () => {
-        return { status: 'failed', error: 'provider down' } as never
-      },
+      getRunStatuses: async (ids) => {
+        return Object.fromEntries(ids.map((id) => [id, { status: 'failed', error: 'provider down' }])) as never},
       recordEvalFailure: async ({ error }) => {
         failures.push(error)
         return {} as never
@@ -292,7 +318,9 @@ describe('tickEvalRun — the circuit breaker', () => {
 
   test('a success clears the tally', async () => {
     const client = stubClient({
-      getRunStatus: async () => ({ status: 'done', error: null }) as never,
+      getRunStatuses: async (ids) => {
+        return Object.fromEntries(ids.map((id) => [id, { status: 'done', error: null }])) as never
+      },
       gradeEvalResult: async () => ({}) as never,
       startEvalRun: async () => ({ wfRunId: 'run_2' }),
     })
@@ -315,7 +343,9 @@ describe('tickEvalRun — the circuit breaker', () => {
 describe('tickEvalRun — finishing', () => {
   test('is not done while a cell is still running', async () => {
     const client = stubClient({
-      getRunStatus: async () => ({ status: 'running', error: null }) as never,
+      getRunStatuses: async (ids) => {
+        return Object.fromEntries(ids.map((id) => [id, { status: 'running', error: null }])) as never
+      },
     })
     const out = await tickEvalRun(client, {
       drive: driveOf(planOf(rows(1)), {
@@ -353,10 +383,9 @@ describe('tickEvalRun — finishing', () => {
   test('drops an in-flight entry another driver already graded', async () => {
     let polled = 0
     const client = stubClient({
-      getRunStatus: async () => {
+      getRunStatuses: async (ids) => {
         polled += 1
-        return { status: 'running', error: null } as never
-      },
+        return Object.fromEntries(ids.map((id) => [id, { status: 'running', error: null }])) as never},
     })
     const cell = { rowId: 'row_0' }
     const out = await tickEvalRun(client, {

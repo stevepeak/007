@@ -3,7 +3,7 @@ import {
   getLatestVersionId,
   getRun,
   getRunRetrySource,
-  getRunStatus,
+  getRunStatuses,
   listChildRuns,
   listRunTriggerKinds,
   listRuns,
@@ -36,7 +36,7 @@ export function buildRunHandlers<TDeps>(
   | 'listChildRuns'
   | 'listRunTriggerKinds'
   | 'getRun'
-  | 'getRunStatus'
+  | 'getRunStatuses'
   | 'retryRun'
   | 'setRunNote'
   | 'deleteAllRuns'
@@ -87,19 +87,15 @@ export function buildRunHandlers<TDeps>(
     // The settle check. Deliberately NOT `getRun` with the fields picked off:
     // this is one indexed row, and the whole point is that a poll loop never
     // touches the step, log, graph or price-map reads to learn a run finished.
-    getRunStatus: async (c) => {
-      const row = await getRunStatus(c.db, c.params.runId)
-      if (!row) {
-        return null
+    getRunStatuses: async (c) => {
+      const rows = await getRunStatuses(c.db, c.params.runIds)
+      const out: Record<string, WfRunStatusDTO> = {}
+      for (const [runId, row] of rows) {
+        // Named rather than spread, so a column added to the storage read
+        // can't silently widen the payload this exists to keep narrow.
+        out[runId] = { status: row.status, output: row.output, error: row.error }
       }
-      // Named rather than spread, so a column added to the storage read can't
-      // silently widen the payload this exists to keep narrow.
-      const status: WfRunStatusDTO = {
-        status: row.status,
-        output: row.output,
-        error: row.error,
-      }
-      return status
+      return out
     },
 
     getRun: async (c) => {

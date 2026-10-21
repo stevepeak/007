@@ -324,7 +324,7 @@ export interface WfDataClient {
    *   stale; anything still in flight keeps arriving in full on every tick.
    *
    * A run that only needs to be checked for settlement should call
-   * {@link WfDataClient.getRunStatus} instead — none of this load is free.
+   * {@link WfDataClient.getRunStatuses} instead — none of this load is free.
    */
   getRun(
     runId: string,
@@ -336,9 +336,10 @@ export interface WfDataClient {
    * This is what a loop that waits for a run to finish must call. `getRun` is
    * the *inspector* load, and calling it on a timer to read `status` costs a
    * full re-serialization of every step's tool IO — per poll, per waiter.
-   * Returns null when the run row is absent.
+   * Batched so a loop tracking several runs reads them in one statement, keyed
+   * by run id; an absent run row is simply missing from the result.
    */
-  getRunStatus(runId: string): Promise<WfRunStatusDTO | null>
+  getRunStatuses(runIds: string[]): Promise<Record<string, WfRunStatusDTO>>
   /**
    * Re-dispatch a finished run as a NEW run (the original stays as history).
    * The same trigger input is reconstructed from the original run's recorded

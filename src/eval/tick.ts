@@ -131,11 +131,14 @@ export async function tickEvalRun(
     (i) => !settled.has(evalCellKey(i.cell)),
   )
   const stillInflight: EvalInflightCell[] = []
+  // One batched settle check for every in-flight cell — not `getRun` (the full
+  // inspector load), and not one status read per cell per tick.
+  const statuses =
+    inflight.length > 0
+      ? await client.getRunStatuses(inflight.map((i) => i.wfRunId))
+      : {}
   for (const entry of inflight) {
-    // `getRunStatus`, not `getRun`: this reads exactly two fields, once per
-    // in-flight cell per tick. On `getRun` it was a full run-inspector load —
-    // every step's tool IO, the whole log feed, and the serialized graph.
-    const status = await client.getRunStatus(entry.wfRunId)
+    const status = statuses[entry.wfRunId]
     if (status && TERMINAL_RUN_STATUSES.has(status.status)) {
       if (status.status === 'done' || status.status === 'completed') {
         try {

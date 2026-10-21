@@ -12,7 +12,7 @@ import {
   loadRunPriceTable,
   priceMapFromTable,
 } from './runs-cost'
-import { getRunStatus } from './runs-inspector'
+import { getRunStatus, getRunStatuses } from './runs-inspector'
 
 async function addModel(db: WfDb, id: string, modelId: string, price: number) {
   await db.insert(wfModel).values({
@@ -131,6 +131,25 @@ describe('getRunStatus', () => {
 
   test('returns null for an unknown run id', async () => {
     expect(await getRunStatus(db, 'nope')).toBeNull()
+  })
+})
+
+describe('getRunStatuses', () => {
+  test('reads many runs at once, keyed by id, omitting unknown ids', async () => {
+    const db = freshDb()
+    await db.insert(wfRun).values([
+      { id: 'run-a', workflowVersionId: 'ver-1', triggerKind: 'chat', status: 'running' },
+      { id: 'run-b', workflowVersionId: 'ver-1', triggerKind: 'chat', status: 'failed', error: 'boom' },
+    ])
+
+    const r = await getRunStatuses(db, ['run-a', 'run-b', 'nope'])
+    expect([...r.keys()].sort()).toEqual(['run-a', 'run-b'])
+    expect(r.get('run-a')?.status).toBe('running')
+    expect(r.get('run-b')?.error).toBe('boom')
+  })
+
+  test('an empty id list reads nothing', async () => {
+    expect((await getRunStatuses(freshDb(), [])).size).toBe(0)
   })
 })
 

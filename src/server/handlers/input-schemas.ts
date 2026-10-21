@@ -209,7 +209,11 @@ export const wfInputSchemas = {
     // response for this run.
     settledStepCursor: z.number().int().nonnegative().optional(),
   }),
-  getRunStatus: idInput('runId'),
+  // Bounded: the caller is a poll loop over its own in-flight runs, never a
+  // listing, so a long list is a bug rather than a workload.
+  getRunStatuses: z.object({
+    runIds: z.array(z.string().min(1)).max(100),
+  }),
   retryRun: z.object({
     runId: z.string().min(1),
     mode: z.enum(['restart', 'resume']).optional(),
