@@ -63,7 +63,7 @@ A list longer than `maxItems` fails the node with a too-many-items error, which 
 | Cells one MCP-launched sweep may request (`run_eval`) | 100 |
 | Concurrency choices | 1, 2, 4, 8 (default 2) |
 | Circuit breaker | stops after 3 consecutive cell errors |
-| Eval node timeout | 7 min per node (tightens only) |
+| Eval node timeout | 12 min per node, about 9 min of agent work (tightens only) |
 | How long a cell is waited on | 15 min |
 | Judge attempts | 2 |
 | Fixture size when drafting a sample from a run (`draft_sample_from_run`) | 20,000 chars per fixture |

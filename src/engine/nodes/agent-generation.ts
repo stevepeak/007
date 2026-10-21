@@ -56,6 +56,7 @@ import {
 export {
   AGENT_NO_OUTPUT,
   isFatalAgentError,
+  isTotalBudgetOverrun,
   TOTAL_BUDGET_OVERRUN,
 } from './agent-generation-guard'
 export { stepAgentVersion } from './agent-generation-types'

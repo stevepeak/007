@@ -22,7 +22,7 @@ describe('resolveNodeTimeoutMs with a run-scoped override', () => {
     // 20 minutes. If the kind default didn't participate in the comparison the
     // override would be a no-op for exactly these nodes.
     expect(resolveNodeTimeoutMs({ kind: 'agent' }, EVAL_NODE_EXECUTION)).toBe(
-      7 * 60_000,
+      12 * 60_000,
     )
   })
 
@@ -41,7 +41,7 @@ describe('resolveNodeTimeoutMs with a run-scoped override', () => {
         { kind: 'agent', execution: { timeoutMs: 30 * 60_000 } },
         EVAL_NODE_EXECUTION,
       ),
-    ).toBe(7 * 60_000)
+    ).toBe(12 * 60_000)
   })
 
   test('an override with no timeout changes nothing', () => {

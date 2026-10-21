@@ -6,9 +6,12 @@ import type { NodeExecution } from '../engine/graph'
 // their production graph and not of our harness.
 
 /**
- * `timeoutMs: 7 min` derives (via `modelBudgetFor`) a ~5-minute in-process
- * budget — comfortably above a legitimate multi-turn eval cell, and far tighter
- * than the 20-minute AI default it would otherwise inherit.
+ * `timeoutMs: 12 min` derives (via `modelBudgetFor`) a 9-minute in-process
+ * budget. A slow reasoning model spends 30–50s a turn, so a ten-turn research
+ * agent plus its final schema pass needs most of that; a tighter cap fails the
+ * cell on our clock and the report blames the model. Still well under the
+ * 20-minute AI default it would otherwise inherit, and under the
+ * 15-minute `EVAL_WAIT_TIMEOUT_MS` the waiter gives it.
  *
  * Timeout only, no `retries`: agent-eval wrappers run on the INLINE engine
  * (`buildAgentWrapperGraph`), which has no `step.do` and therefore no step
@@ -20,5 +23,5 @@ import type { NodeExecution } from '../engine/graph'
  * fail invisibly, which was the actual defect.
  */
 export const EVAL_NODE_EXECUTION: NodeExecution = {
-  timeoutMs: 7 * 60_000,
+  timeoutMs: 12 * 60_000,
 }

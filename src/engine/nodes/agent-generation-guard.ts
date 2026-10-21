@@ -69,6 +69,12 @@ export function markNoOutput(err: Error): Error {
   return err
 }
 
+/** True for an error raised because the agent spent its whole total budget. */
+export function isTotalBudgetOverrun(err: unknown): boolean {
+  if (err == null || typeof err !== 'object') return false
+  return (err as Record<string, unknown>)[TOTAL_BUDGET_OVERRUN] === true
+}
+
 /** True for an error the engine should fail outright instead of retrying — the
  * second attempt would deterministically reach the same wall. */
 export function isFatalAgentError(err: unknown): boolean {

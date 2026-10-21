@@ -4,6 +4,7 @@ import { agentTimingSpans, type TimingSpan } from '../engine/agent-timeline'
 import { apiErrorDetail } from '../engine/error-detail'
 import type { WfRunManifestEntry } from '../engine/graph'
 import { nodeSpanLabel } from '../engine/node-label'
+import { isTotalBudgetOverrun } from '../engine/nodes/agent-generation'
 import type { ExecutableNode } from '../engine/scheduler'
 
 import type { GraphWorkflowParams } from './graph-workflow'
@@ -55,6 +56,8 @@ export type NodeSpanInfo = {
   actorId?: string
   subjectId?: string
   correlationId?: string
+  /** Mirrors `wf_run.is_eval`; decides which node failures are worth an issue. */
+  isEval?: boolean
   /**
    * Human span title, e.g. `Agent: Researcher - Draft the summary` or
    * `Branch: Has prior rulings?`. Falls back to the terse kind + id form when
@@ -84,6 +87,7 @@ export function nodeSpanInfo(args: {
     actorId: params.runContext.actorId,
     subjectId: params.runContext.subjectId,
     correlationId: params.runContext.correlationId,
+    isEval: params.runContext.isEval,
   }
 }
 
@@ -118,6 +122,10 @@ export async function withNodeSpan<T>(
       recordTimingSpans(result)
       return result
     } catch (err) {
+      // An eval cell that runs out of budget is a result of the model under
+      // test, already recorded on the run and in the eval report — not a fault
+      // for anyone to triage. The same overrun on a production run still is.
+      if (info.isEval && isTotalBudgetOverrun(err)) throw err
       Sentry.captureException(err, (scope) => {
         scope.setTag('wf.run_id', info.runId)
         scope.setTag('wf.node_id', info.nodeId)
