@@ -1,30 +1,19 @@
 import { HelpCircle } from 'lucide-react'
-import { type ReactNode, useEffect, useState } from 'react'
+import { type ReactNode, useState } from 'react'
 
 import type { JsonSchema } from '../../engine'
-import type { ModelCapabilities } from '../../engine/config'
 import type { EvalCheck } from '../../server/protocol'
 import { useWfComponents } from '../context'
-import { ModelSelect } from '../editor/model-select'
-import { useModels } from '../hooks'
 import { Modal } from '../modal'
-import { unmetRequirements } from '../../engine/model-capabilities'
 import { useCommittedField } from '../use-committed-field'
 
 import { OutputPathSelect, schemaPathOptions } from './fields'
 
-// A judge grades by emitting a JSON verdict (`generateObject` in eval/grade),
-// so a model that can't do structured output can't be a judge at all. Rather
-// than hide those models — which reads as "my provider is missing" — the picker
-// shows them greyed out with the reason.
-const JUDGE_REQUIREMENTS: ModelCapabilities = { structuredOutput: true }
-
 // ── Scored (judge) config ────────────────────────────────────────────────────
 //
-// Three settings, in the order they're decided: WHO grades (the model), WHAT it
-// looks at (a field of the target's output, or all of it), and WHAT HAS TO HOLD.
-// The last one gets the full width below because it's the only one that's
-// written rather than picked.
+// Two settings: WHAT it looks at (a field of the target's output, or all of
+// it) and WHAT HAS TO HOLD. WHO grades is not a check setting — the judge model
+// is picked once per run in the launch dialog, so one report has one judge.
 //
 // It's labelled "What must be true" rather than "Rubric" — same word the help
 // dialog uses for a Check itself. "Rubric" is grading jargon, and worse, it
@@ -49,42 +38,12 @@ export function JudgeConfig({
     return persist({ ...check, rubric })
   })
 
-  // The judge model is required, so keep one selected: as soon as the model list
-  // loads, seed an empty selection with the first model that can actually judge.
-  const models = useModels()
-  useEffect(() => {
-    if (check.modelId) return
-    const first = models.data?.find(
-      (m) => unmetRequirements(m, JUDGE_REQUIREMENTS).length === 0,
-    )?.id
-    if (first) persist({ ...check, modelId: first })
-  }, [check, models.data, persist])
-
   const pathOptions = schemaPathOptions(outputSchema)
   const selectedField = pathOptions?.find((o) => o.value === (check.path ?? ''))
 
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="space-y-1">
-          <div className="flex items-center gap-1">
-            <Label>Model</Label>
-            <FieldHelp title="Model">
-              <p>
-                The model that does the grading. A judge has to return a
-                structured verdict — a pass/fail with a reason — so models that
-                don’t support structured output can’t be picked. They’re still
-                listed, greyed out with the reason, so it’s clear they exist and
-                why they’re unavailable.
-              </p>
-            </FieldHelp>
-          </div>
-          <ModelSelect
-            value={check.modelId ?? ''}
-            onChange={(modelId) => persist({ ...check, modelId })}
-            requirements={JUDGE_REQUIREMENTS}
-          />
-        </div>
         <div className="space-y-1">
           <div className="flex items-center gap-1">
             <Label>Output field</Label>

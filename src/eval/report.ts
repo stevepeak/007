@@ -1,4 +1,8 @@
-import type { WfEvalResultDTO, WfEvalResultRunStats } from '../server/protocol'
+import type {
+  WfEvalResultDTO,
+  WfEvalResultRunStats,
+  WfEvalRunJudges,
+} from '../server/protocol'
 
 // The eval report's arithmetic, with no reader attached to it.
 //
@@ -209,4 +213,18 @@ export function agentCallTotals(
     totalCostUsd: costs.length > 0 ? costs.reduce((a, b) => a + b, 0) : null,
     totalTokens: tokens.length > 0 ? tokens.reduce((a, b) => a + b, 0) : null,
   }
+}
+
+/** True when a judge kind both runs recorded was graded by different models. */
+export function judgeMoved(
+  before: WfEvalRunJudges,
+  after: WfEvalRunJudges,
+): boolean {
+  const moved = (a: string | null, b: string | null) => {
+    return a != null && b != null && a !== b
+  }
+  return (
+    moved(before.judgeModelId, after.judgeModelId) ||
+    moved(before.decisionJudgeModelId, after.decisionJudgeModelId)
+  )
 }

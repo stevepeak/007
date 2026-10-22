@@ -11,7 +11,6 @@ import { WfShell } from '../shell'
 import { sectionCrumb } from '../wf-crumbs'
 
 import { SampleConfigSteps } from './eval-sample-steps'
-import { RunConfigDialog } from './run-config-dialog'
 import { GoalRunsTable, Tabs, useTargetAgentCrumb } from './shared'
 import { useEvalSampleDraft } from './use-eval-sample-draft'
 
@@ -63,7 +62,6 @@ export function EvalSample({
   const { Button } = useWfComponents()
   const { navigate } = useWfNav()
   const [tab, setTab] = useState<SampleTab>('config')
-  const [runOpen, setRunOpen] = useState(false)
   const state = useEvalSampleDraft({ setId, sampleId, initialCheckIndex })
   const { set, row, draft } = state
   const targetAgentCrumb = useTargetAgentCrumb(set?.targetId, set?.targetVersion)
@@ -145,7 +143,7 @@ export function EvalSample({
                 // What you see is what runs. Before the draft model these could
                 // not diverge; now they can, and grading yesterday's definition
                 // is precisely the confusion this project exists to remove.
-                void state.saveIfDirty().then(() => setRunOpen(true))
+                void state.saveIfDirty().then(() => navigate(`evals/${setId}/run`))
               }}
               disabled={state.saving}
             >
@@ -172,14 +170,6 @@ export function EvalSample({
         >
           {({ draft }) => (
             <>
-              <RunConfigDialog
-                open={runOpen}
-                onClose={() => setRunOpen(false)}
-                scope="sample"
-                targetName={set?.name || draft.name || 'goal'}
-                setIds={[setId]}
-              />
-
               <Tabs
                 active={tab}
                 onChange={(k) => setTab(k as SampleTab)}

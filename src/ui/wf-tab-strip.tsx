@@ -240,6 +240,8 @@ function TabItem({
       return <EvalSampleTab asset={asset} {...common} />
     case 'evalRun':
       return <EvalRunTab asset={asset} {...common} />
+    case 'evalRunNew':
+      return <EvalRunNewTab asset={asset} {...common} />
     case 'feedbackItem':
       return <FeedbackTab asset={asset} {...common} />
     case 'connector':
@@ -372,6 +374,17 @@ function EvalRunTab({ asset: _asset, ...rest }: KindProps<'evalRun'>) {
       icon={sectionIcon(Target, 'text-rose-500')}
       label="Run report"
       trail={['Run report']}
+      {...rest}
+    />
+  )
+}
+
+function EvalRunNewTab({ asset: _asset, ...rest }: KindProps<'evalRunNew'>) {
+  return (
+    <TabChrome
+      icon={sectionIcon(Target, 'text-rose-500')}
+      label="New run"
+      trail={['New run']}
       {...rest}
     />
   )

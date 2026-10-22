@@ -62,9 +62,10 @@ describe('eval checks schema', () => {
     }).toThrow()
   })
 
-  test('a judge is rubric + where to look + who looks — nothing else', () => {
-    // The old `bar` / `threshold` / `weight` knobs are gone; a stored one is an
-    // unknown key, so zod drops it rather than failing a saved row.
+  test('a judge is rubric + where to look — nothing else', () => {
+    // Unknown keys — the old `bar` / `threshold` / `weight` knobs, and a
+    // per-check `modelId` (the run picks the judge) — are dropped rather than
+    // failing a saved row.
     expect(
       evalCheckSchema.parse({
         type: 'llm_judge',
@@ -75,7 +76,7 @@ describe('eval checks schema', () => {
         threshold: 0.7,
         weight: 2,
       }),
-    ).toEqual({ type: 'llm_judge', rubric: 'x', path: 'title', modelId: 'm1' })
+    ).toEqual({ type: 'llm_judge', rubric: 'x', path: 'title' })
   })
 
   test('check tree reduces an op over a list', () => {
@@ -83,7 +84,7 @@ describe('eval checks schema', () => {
       op: 'or',
       checks: [
         { type: 'tool_called', toolId: 't', called: true },
-        { type: 'llm_judge', rubric: 'good', modelId: 'm1' },
+        { type: 'llm_judge', rubric: 'good' },
       ],
     }
     expect(checkTreeSchema.parse(tree)).toEqual(tree)
@@ -299,11 +300,11 @@ describe('describeCheckVocabulary', () => {
   test('carries the fields a picker would render, optionality included', () => {
     const lines = describeCheckVocabulary()
     const decision = lines.find((l) => l.startsWith('decision_judge'))
-    // The three fields whose absence from the prose made a calibrated judge
-    // unauthorable over MCP.
+    // The fields whose absence from the prose made a calibrated judge
+    // unauthorable over MCP. No `modelId`: the run picks the judge.
     expect(decision).toContain('rubric')
-    expect(decision).toContain('modelId?')
     expect(decision).toContain('threshold?')
+    expect(decision).not.toContain('modelId')
   })
 
   test('marks `value` as required — it is z.unknown(), not .optional()', () => {

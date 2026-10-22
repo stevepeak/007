@@ -1,4 +1,5 @@
 import type { AnyAgentConfig } from '../engine/decision-agent-schema'
+import { judgeTypesUsed } from '../engine/eval-schema'
 import type { WfLogger } from '../engine/logger'
 import { stableEqual } from '../engine/stable-stringify'
 import type { WfDataClient } from '../server/protocol'
@@ -108,12 +109,13 @@ export type RunEvalInput = {
    */
   matrix?: { models: EvalMatrixModel[]; prompts: EvalMatrixPrompt[] }
   /**
-   * Pin the model every JUDGE check is graded by, for this sweep only. Omitted →
-   * the host's `evalJudgeModelId`, and failing that whatever sorts first in the
-   * enabled catalog — which means enabling a model can silently re-grade a suite.
-   * Frozen into the plan so a resuming driver grades by the same judge.
+   * The chat model every `llm_judge` check is graded by, and the decision model
+   * every `decision_judge` is. Each is required when the sweep's Samples carry
+   * that kind of judge — checks cannot name their own, so one report has one
+   * judge. Frozen into the plan so a resuming driver grades by the same ones.
    */
   judgeModelId?: string
+  decisionJudgeModelId?: string
   /**
    * How each cell executes — see {@link EvalCellMode}. Omitted → `'run'`, the
    * workflow/generation-agent path. The caller supplies it because only the
@@ -149,9 +151,22 @@ export async function createEvalSweep(
   const sets = await Promise.all(
     input.setIds.map((id) => client.getEvalSet(id)),
   )
-  const rowIds = sets
+  const rows = sets
     .filter((s): s is NonNullable<typeof s> => !!s)
-    .flatMap((s) => s.rows.map((row) => row.id))
+    .flatMap((s) => s.rows)
+  const rowIds = rows.map((row) => row.id)
+
+  const judges = judgeTypesUsed(rows.map((row) => row.checks))
+  if (judges.has('llm_judge') && !input.judgeModelId) {
+    throw new Error(
+      'These Samples have llm_judge checks — pick the judge model for this run.',
+    )
+  }
+  if (judges.has('decision_judge') && !input.decisionJudgeModelId) {
+    throw new Error(
+      'These Samples have decision_judge checks — pick the decision judge for this run.',
+    )
+  }
 
   const plan: EvalPlan = {
     version: 1,
@@ -160,7 +175,10 @@ export async function createEvalSweep(
     configOverride: input.configOverride,
     concurrency: clampConcurrency(input.concurrency),
     timeoutMs: input.timeoutMs ?? EVAL_WAIT_TIMEOUT_MS,
-    judgeModelId: input.judgeModelId,
+    judgeModelId: judges.has('llm_judge') ? input.judgeModelId : undefined,
+    decisionJudgeModelId: judges.has('decision_judge')
+      ? input.decisionJudgeModelId
+      : undefined,
   }
 
   const { evalRunId } = await client.createEvalRun({

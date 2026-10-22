@@ -89,6 +89,17 @@ describe('classifyAssetPath — asset routes', () => {
     })
   })
 
+  test('new eval run — every Goal, or one', () => {
+    expect(classifyAssetPath('evals/runs/new')).toEqual({
+      type: 'evalRunNew',
+      setId: null,
+    })
+    expect(classifyAssetPath('evals/set_1/run')).toEqual({
+      type: 'evalRunNew',
+      setId: 'set_1',
+    })
+  })
+
   test('ignores a trailing query string', () => {
     expect(classifyAssetPath('wf_1/edit?v=2')).toEqual({
       type: 'workflow',

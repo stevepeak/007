@@ -763,7 +763,12 @@ export async function loadPreviousSnapshotHashes(
 export async function loadPreviousEvalRun(
   db: WfDb,
   previous: Map<string, { hash: string | null; evalRunId: string; at: Date }>,
-): Promise<{ id: string; at: Date; agentVersion: number | null } | null> {
+): Promise<{
+  id: string
+  at: Date
+  agentVersion: number | null
+  plan: unknown
+} | null> {
   let newest: { evalRunId: string; at: Date } | null = null
   for (const p of previous.values()) {
     if (!newest || p.at > newest.at)
@@ -778,7 +783,14 @@ export async function loadPreviousEvalRun(
   const runIds = rows
     .map((r) => r.wfRunId)
     .filter((id): id is string => id != null)
-  const stats = await loadRunStats(db, runIds)
+  const [stats, [run]] = await Promise.all([
+    loadRunStats(db, runIds),
+    db
+      .select({ plan: wfEvalRun.plan })
+      .from(wfEvalRun)
+      .where(eq(wfEvalRun.id, newest.evalRunId))
+      .limit(1),
+  ])
   // Any cell answers: a run's agent nodes all resolve from one frozen manifest.
   let agentVersion: number | null = null
   for (const s of stats.values()) {
@@ -787,7 +799,12 @@ export async function loadPreviousEvalRun(
       break
     }
   }
-  return { id: newest.evalRunId, at: newest.at, agentVersion }
+  return {
+    id: newest.evalRunId,
+    at: newest.at,
+    agentVersion,
+    plan: run?.plan ?? null,
+  }
 }
 
 /** Insert a per-row result placeholder (before or after the row's run grades). */

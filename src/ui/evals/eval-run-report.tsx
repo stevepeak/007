@@ -44,8 +44,16 @@ export function EvalRunReport({ evalRunId, className }: EvalRunReportProps) {
       >
         {(data) => (
           <div className="mx-auto max-w-5xl space-y-4 p-6">
-            <RunHeader run={data.run} results={data.results} />
-            <DriftBanner drift={data.drift} results={data.results} />
+            <RunHeader
+              run={data.run}
+              judges={data.judges}
+              results={data.results}
+            />
+            <DriftBanner
+              drift={data.drift}
+              judges={data.judges}
+              results={data.results}
+            />
             <MatrixSummary results={data.results} onHoverCell={setHoveredCell} />
             <ResultsTable
               results={data.results}

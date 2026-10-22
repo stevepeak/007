@@ -80,10 +80,8 @@ export function defaultCheck(type: EvalCheck['type']): EvalCheck {
     case 'output_match':
       return { type, match: 'contains', value: '' }
     case 'llm_judge':
-      // modelId is filled in by JudgeConfig once the model list loads.
-      return { type, rubric: '' }
     case 'decision_judge':
-      // Same: the decision model list fills `modelId` in on first render.
+      // No model: the run's launch dialog picks the judge for every check.
       return { type, rubric: '' }
     case 'decision_answers':
       // Empty on purpose: the editor seeds one expectation row per question

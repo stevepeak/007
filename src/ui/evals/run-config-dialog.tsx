@@ -6,6 +6,7 @@ import { Modal } from '../modal'
 import { useWfNav } from '../nav'
 
 import { ConfirmStep } from './run-config-dialog-confirm'
+import { JudgeAxis } from './run-config-dialog-judges'
 import { ModelAxis } from './run-config-dialog-models'
 import { PromptAxis } from './run-config-dialog-prompts'
 import { useRunConfigMatrix } from './use-run-config-matrix'
@@ -167,6 +168,14 @@ export function RunConfigDialog({
             onBody={matrix.setPromptBody}
           />
 
+          <JudgeAxis
+            types={matrix.judgeTypes}
+            judgeModelId={matrix.judgeModelId}
+            onJudge={matrix.setJudgeModelId}
+            decisionJudgeModelId={matrix.decisionJudgeModelId}
+            onDecisionJudge={matrix.setDecisionJudgeModelId}
+          />
+
           <SimulationNotice />
 
           {setIds.length === 0 ? (
@@ -182,6 +191,9 @@ export function RunConfigDialog({
           counts={matrix.counts}
           promptCount={matrix.prompts.length}
           totalTests={matrix.totalTests}
+          judgeTypes={matrix.judgeTypes}
+          judgeModelId={matrix.judgeModelId}
+          decisionJudgeModelId={matrix.decisionJudgeModelId}
           concurrency={matrix.concurrency}
           onConcurrencyChange={matrix.setConcurrency}
           runError={matrix.runError}
@@ -204,7 +216,7 @@ function DraftNotice() {
   )
 }
 
-function SimulationNotice() {
+export function SimulationNotice() {
   return (
     <div className="flex items-start gap-2 rounded-lg bg-neutral-50 px-3 py-2.5 text-sm text-neutral-600">
       <ShieldCheck className="mt-0.5 size-4 shrink-0 text-emerald-600" />

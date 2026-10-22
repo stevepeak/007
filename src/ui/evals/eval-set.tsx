@@ -24,7 +24,6 @@ import { useUnsavedGuard } from '../undo/use-unsaved-guard'
 import { sectionCrumb } from '../wf-crumbs'
 
 import { describeGoalChange, type GoalDraft } from './describe-sample-change'
-import { RunConfigDialog } from './run-config-dialog'
 import { GoalRunsTable, Tabs } from './shared'
 
 // The Goal detail page (route: evals/<setId>). A goal is a wf_eval_set: its
@@ -44,7 +43,6 @@ export function EvalSet({ setId, className }: EvalSetProps) {
   const { Button } = useWfComponents()
   const { navigate } = useWfNav()
   const [tab, setTab] = useState<SetTab>('samples')
-  const [runOpen, setRunOpen] = useState(false)
 
   const { data, isLoading } = useEvalSet(setId)
   const set = data?.set
@@ -181,7 +179,7 @@ export function EvalSet({ setId, className }: EvalSetProps) {
               disabled={rows.length === 0}
               onClick={() => {
                 // What you see is what runs.
-                void saveIfDirty().then(() => setRunOpen(true))
+                void saveIfDirty().then(() => navigate(`evals/${setId}/run`))
               }}
             >
               <Play className="size-4" />
@@ -205,14 +203,6 @@ export function EvalSet({ setId, className }: EvalSetProps) {
                 setId={setId}
                 targetId={set.targetId}
                 targetVersion={set.targetVersion}
-              />
-
-              <RunConfigDialog
-                open={runOpen}
-                onClose={() => setRunOpen(false)}
-                scope="goal"
-                targetName={set.name}
-                setIds={[setId]}
               />
 
               <Tabs

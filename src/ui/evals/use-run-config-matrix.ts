@@ -10,6 +10,8 @@ import { groupModelsByProvider } from '../editor/model-grouping'
 import {
   DEFAULT_EVAL_CONCURRENCY,
   useAgents,
+  useDecisionModels,
+  useEvalJudgeTypes,
   useEvalSets,
   useModels,
   useProviders,
@@ -19,6 +21,8 @@ import {
   mergeModelRequirements,
   unmetRequirements,
 } from '../../engine/model-capabilities'
+
+import { JUDGE_REQUIREMENTS } from './run-config-dialog-judges'
 
 // The MATRIX behind `RunConfigDialog` — everything the dialog knows that isn't
 // markup. Extracted so the dialog file is layout and this file is the rules,
@@ -139,6 +143,25 @@ export function useRunConfigMatrix({
   // cost/provider-pressure decision rather than part of the matrix itself.
   const [concurrency, setConcurrency] = useState<number>(DEFAULT_EVAL_CONCURRENCY)
 
+  // The run's judges — one per judge kind the Samples carry. Required, so each
+  // starts on the first model that can do the job and the picker only changes it.
+  const judgeTypes = useEvalJudgeTypes(setIds)
+  const decidersQuery = useDecisionModels()
+  const defaultJudgeId =
+    models.find((m) => unmetRequirements(m, JUDGE_REQUIREMENTS).length === 0)
+      ?.id ?? ''
+  const defaultDecisionJudgeId = decidersQuery.data?.[0]?.id ?? ''
+  const [judgePick, setJudgePick] = useState('')
+  const [decisionJudgePick, setDecisionJudgePick] = useState('')
+  const judgeModelId = judgePick || defaultJudgeId
+  const decisionJudgeModelId = decisionJudgePick || defaultDecisionJudgeId
+  const needsJudge = judgeTypes.types.has('llm_judge')
+  const needsDecisionJudge = judgeTypes.types.has('decision_judge')
+  const judgesReady =
+    !judgeTypes.loading &&
+    (!needsJudge || judgeModelId !== '') &&
+    (!needsDecisionJudge || decisionJudgeModelId !== '')
+
   // Reset the selection each time the dialog opens so a stale pick from a prior
   // target doesn't leak in. A draft run opens with the draft's OWN model already
   // picked: "does my edit still pass?" is the question being asked, and it is
@@ -152,6 +175,8 @@ export function useRunConfigMatrix({
       setPrompts([])
       setStep('configure')
       setConcurrency(DEFAULT_EVAL_CONCURRENCY)
+      setJudgePick('')
+      setDecisionJudgePick('')
     }
     // Keyed on the model id rather than the config object: the editor replaces
     // `config` wholesale on every keystroke, and depending on it would reset the
@@ -205,7 +230,8 @@ export function useRunConfigMatrix({
     ? 'Unsaved draft prompt'
     : 'Agent’s saved prompt'
 
-  const canConfigure = setIds.length > 0 && selectedIds.length > 0
+  const canConfigure =
+    setIds.length > 0 && selectedIds.length > 0 && judgesReady
   const canRun = canConfigure && !runEval.isPending
 
   const launch = useCallback(() => {
@@ -233,6 +259,10 @@ export function useRunConfigMatrix({
       matrix,
       concurrency,
       configOverride: draftConfig,
+      judgeModelId: needsJudge ? judgeModelId : undefined,
+      decisionJudgeModelId: needsDecisionJudge
+        ? decisionJudgeModelId
+        : undefined,
       onStart: (evalRunId) => {
         onClose()
         onLaunched(evalRunId)
@@ -248,6 +278,10 @@ export function useRunConfigMatrix({
     setIds,
     concurrency,
     draftConfig,
+    needsJudge,
+    needsDecisionJudge,
+    judgeModelId,
+    decisionJudgeModelId,
     onClose,
     onLaunched,
   ])
@@ -271,6 +305,12 @@ export function useRunConfigMatrix({
     setPromptBody,
     availableVariables,
     baselineLabel,
+    // judges
+    judgeTypes: judgeTypes.types,
+    judgeModelId,
+    setJudgeModelId: setJudgePick,
+    decisionJudgeModelId,
+    setDecisionJudgeModelId: setDecisionJudgePick,
     // flow
     step,
     setStep,

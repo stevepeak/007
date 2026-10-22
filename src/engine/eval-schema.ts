@@ -121,6 +121,9 @@ export const evalCheckSchema = z.discriminatedUnion('type', [
    * It is a lens beside `llm_judge`, not a replacement: a rubric that needs a
    * written critique still wants the LLM. Use this for the ones that reduce to a
    * yes/no you would otherwise be thresholding by eye.
+   *
+   * The decision model is not chosen here: it is the run's
+   * `decisionJudgeModelId`, picked at launch, so one report has one judge.
    */
   z.object({
     type: z.literal('decision_judge'),
@@ -128,8 +131,6 @@ export const evalCheckSchema = z.discriminatedUnion('type', [
     rubric: z.string(),
     /** Optional JSON path into the run `output`; omit = whole output. */
     path: z.string().optional(),
-    /** A DECISION model id; falls back to the suite/run default when omitted. */
-    modelId: z.string().optional(),
     /**
      * Probability at or above which the row passes. Defaults to 0.5. This is the
      * author's line to draw, which is exactly why the provider never sees it.
@@ -164,6 +165,11 @@ export const evalCheckSchema = z.discriminatedUnion('type', [
      */
     nodeId: z.string().optional(),
   }),
+  /**
+   * A chat model reads the output and writes a verdict. The model is the run's
+   * `judgeModelId`, picked at launch — never per check — so one report has one
+   * judge.
+   */
   z.object({
     type: z.literal('llm_judge'),
     rubric: z.string(),
@@ -173,8 +179,6 @@ export const evalCheckSchema = z.discriminatedUnion('type', [
      * output — a way to point the rubric at one known field. Omit = whole output.
      */
     path: z.string().optional(),
-    /** Judge model; falls back to a suite/run default when omitted. */
-    modelId: z.string().optional(),
   }),
 ])
 export type EvalCheck = z.infer<typeof evalCheckSchema>
@@ -200,8 +204,7 @@ export const EVAL_CHECK_TYPES: EvalCheckType[] = evalCheckSchema.options.map(
  *
  * It exists because that description drifted exactly as {@link EVAL_CHECK_TYPES}
  * was built to prevent: it hardcoded six types and missed `decision_judge`
- * entirely, along with both judges' `modelId` and the decision judge's
- * `threshold` — so the one check type built to produce a legible borderline
+ * entirely, along with the decision judge's `threshold` — so the one check type built to produce a legible borderline
  * verdict could not be authored over MCP at all. A picker deriving from the
  * schema can't forget a type; a paragraph can, so the paragraph is generated.
  *
@@ -239,6 +242,22 @@ export const checkTreeSchema = z.object({
   checks: z.array(evalCheckSchema),
 })
 export type CheckTree = z.infer<typeof checkTreeSchema>
+
+/**
+ * Which judge kinds a set of check trees needs a model for — what a launch
+ * must name a judge for, and which judge pickers the run dialog shows.
+ */
+export function judgeTypesUsed(trees: CheckTree[]): Set<JudgeCheckType> {
+  const used = new Set<JudgeCheckType>()
+  for (const tree of trees) {
+    for (const check of tree?.checks ?? []) {
+      if (check.type === 'llm_judge' || check.type === 'decision_judge') {
+        used.add(check.type)
+      }
+    }
+  }
+  return used
+}
 
 // ── Synthesis mode (seeded conversation) ────────────────────────────────────
 // One tool interaction folded into a seeded assistant turn: the call the

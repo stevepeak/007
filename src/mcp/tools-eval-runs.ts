@@ -2,13 +2,22 @@ import { z } from 'zod'
 
 import { agentModelRequirements } from '../engine/agent-config-schema'
 import { errorMessage } from '../engine/error-message'
-import type { CheckResult, EvalCheck } from '../engine/eval-schema'
+import {
+  type CheckResult,
+  type EvalCheck,
+  judgeTypesUsed,
+} from '../engine/eval-schema'
 import {
   mergeModelRequirements,
   unmetRequirementsReason,
 } from '../engine/model-capabilities'
 import { resolveEvalCellMode } from '../eval/plan'
-import { agentCallTotals, buildMatrixSummary, isMatrixRun } from '../eval/report'
+import {
+  agentCallTotals,
+  buildMatrixSummary,
+  isMatrixRun,
+  judgeMoved,
+} from '../eval/report'
 import {
   createEvalSweep,
   DEFAULT_EVAL_CONCURRENCY,
@@ -91,11 +100,10 @@ import { draftOrPublished } from './tools-agents'
 //   • Run ONE Sample — the console's "Run Sample" button actually runs the whole
 //     Goal, so there is nothing to mirror. A single-sample sweep is a Goal with
 //     one sample in it.
-//   • A JUDGE axis on the drift report. `run_eval` can now pin `judgeModelId`,
-//     which is the half that prevents the problem. Detecting it after the fact
-//     would mean recording the judge on `EvalRowSnapshot` and adding a third
-//     drift axis — and the snapshot's hash is a frozen wire format whose digest
-//     is locked by a test, so that is a migration-shaped change, not a field.
+//   • A JUDGE axis on the row snapshot. The judges are frozen on each run's
+//     plan, which is where the report reads them; recording them on
+//     `EvalRowSnapshot` would change a frozen wire format whose digest is
+//     locked by a test.
 //
 // ── The distinction the whole report hangs on ────────────────────────────────
 //
@@ -275,8 +283,13 @@ function driftReport(detail: WfEvalRunDetail): unknown {
       versions.length > 0 &&
       !versions.includes(drift.previousAgentVersion),
     targetChanges: drift.targetChanges,
+    // Axis 3: did the INSTRUMENT change? A different judge re-grades the same
+    // answers. Only judges both runs recorded are compared.
+    previousJudges: drift.previousJudges,
+    judgeChangedSinceLastRun: judgeMoved(drift.previousJudges, detail.judges),
   }
 }
+
 
 /**
  * What a model must be able to do to run these Goals' targets.
@@ -478,6 +491,8 @@ export function evalRunReadTools(): WfMcpTool[] {
             createdAt: detail.run.createdAt,
             startedAt: detail.run.startedAt,
             finishedAt: detail.run.finishedAt,
+            // Frozen at launch; null = no check of that kind in this run.
+            judges: detail.judges,
           },
           summary: {
             ...counts,
@@ -550,7 +565,7 @@ export function evalRunWriteTools(): WfMcpTool[] {
       description: [
         'Run one or more Goals: every Sample is executed against its target for real and graded by its checks. Returns the evalRunId immediately and the sweep continues on the server, so poll get_eval_run until `status` is `completed`.',
         '',
-        'Optionally sweep across models and alternate prompts, grade an agent’s unsaved draft with draftAgentId, or pin the judge with judgeModelId. Every model you name is checked against the target’s requirements first: a model that cannot do what the agent needs is refused here rather than erroring in every cell of its column and reading as an outage.',
+        'Optionally sweep across models and alternate prompts, grade an agent’s unsaved draft with draftAgentId, or choose the judges with judgeModelId / decisionJudgeModelId (one judge per run — checks cannot name their own). Every model you name is checked against the target’s requirements first: a model that cannot do what the agent needs is refused here rather than erroring in every cell of its column and reading as an outage.',
         '',
         `Each cell is a real model call and the cap is ${MAX_CELLS} cells. Keep sweeps small.`,
       ].join('\n'),
@@ -592,7 +607,13 @@ export function evalRunWriteTools(): WfMcpTool[] {
           .string()
           .nullish()
           .describe(
-            'Pin the model the JUDGE checks are graded by (a chat model id from list_models — NOT the same thing as `models`, which is what the target runs on). Omit and the judge is the host default, or failing that whatever sorts first in the enabled catalog — so enabling a model can silently re-grade a whole suite, and the drift report will blame the agent. Pin it whenever you intend to compare this report against an earlier one.',
+            'The chat model every `llm_judge` check in this run is graded by (an id from list_models — NOT the same thing as `models`, which is what the target runs on). Omit to take the first enabled model; the reply echoes the one chosen. Use the same judge whenever you intend to compare this report against an earlier one.',
+          ),
+        decisionJudgeModelId: z
+          .string()
+          .nullish()
+          .describe(
+            'The decision model every `decision_judge` check in this run is graded by (an id from list_decision_models — a different catalog). Omit to take the first one; the reply echoes the one chosen.',
           ),
         prompts: z
           .array(
@@ -653,6 +674,9 @@ export function evalRunWriteTools(): WfMcpTool[] {
             hint: 'Ids come from list_eval_sets.',
           })
         }
+        const judges = judgeTypesUsed(
+          sets.flatMap((s) => (s ? s.rows.map((r) => r.checks) : [])),
+        )
         const samples = sets.reduce(
           (n, s) => n + (s ? s.rows.filter((r) => !r.archived).length : 0),
           0,
@@ -813,7 +837,18 @@ export function evalRunWriteTools(): WfMcpTool[] {
           setIds,
           mode: resolvedMode.mode,
           configOverride,
-          judgeModelId: optString(args.judgeModelId),
+          // Omitted → the catalog's first model, read only for a judge kind
+          // these Samples actually carry.
+          judgeModelId:
+            optString(args.judgeModelId) ??
+            (judges.has('llm_judge')
+              ? (await client.listModels().catch(() => []))[0]?.id
+              : undefined),
+          decisionJudgeModelId:
+            optString(args.decisionJudgeModelId) ??
+            (judges.has('decision_judge')
+              ? (await client.listDecisionModels().catch(() => []))[0]?.id
+              : undefined),
           concurrency:
             typeof args.concurrency === 'number' ? args.concurrency : undefined,
           matrix:
@@ -868,12 +903,10 @@ export function evalRunWriteTools(): WfMcpTool[] {
             target: configOverride
               ? `the draft of agent ${draftAgentId ?? ''}`
               : 'each goal’s published target',
-            // Echoed because the report cannot say it either way: the judge is
-            // not recorded per result, so "which judge graded this?" is only
-            // answerable from the plan this launch froze.
-            judge:
-              plan.judgeModelId ??
-              'the host default (unpinned — a later run may use a different judge)',
+            // Echoed because an omitted judge took the catalog's first model,
+            // which the caller did not name. Absent = no check of that kind.
+            judge: plan.judgeModelId,
+            decisionJudge: plan.decisionJudgeModelId,
             attemptsPerModel:
               models.length > 0
                 ? Object.fromEntries(

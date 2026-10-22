@@ -15,6 +15,8 @@ export type WfAsset =
   | { type: 'evalSet'; setId: string }
   | { type: 'evalSample'; setId: string; sampleId: string }
   | { type: 'evalRun'; evalRunId: string }
+  /** Configure + launch a run. `setId` null = every Goal. */
+  | { type: 'evalRunNew'; setId: string | null }
   | { type: 'feedbackItem'; subjectId: string }
   | { type: 'connector'; connectorId: string }
 
@@ -60,10 +62,26 @@ export function classifyAssetPath(path: string): WfAsset | null {
     return { type: 'feedbackItem', subjectId: parts[1] }
   }
 
+  // `evals/runs/new` — configure a run of every Goal. Must precede the run
+  // report below (`new` is reserved, never a run id).
+  if (
+    parts.length === 3 &&
+    parts[0] === 'evals' &&
+    parts[1] === 'runs' &&
+    parts[2] === 'new'
+  ) {
+    return { type: 'evalRunNew', setId: null }
+  }
+
   // `evals/runs/<evalRunId>` — a run report. Must precede `evals/<setId>`
   // (`runs` is a reserved segment, never a set id).
   if (parts.length === 3 && parts[0] === 'evals' && parts[1] === 'runs') {
     return { type: 'evalRun', evalRunId: parts[2] }
+  }
+
+  // `evals/<setId>/run` — configure a run of one Goal.
+  if (parts.length === 3 && parts[0] === 'evals' && parts[2] === 'run') {
+    return { type: 'evalRunNew', setId: parts[1] }
   }
 
   // `evals/<setId>/samples/<sampleId>` — a single sample.
@@ -156,6 +174,7 @@ export function tabGroup(path: string): WfTabGroup {
     case 'evalSet':
     case 'evalSample':
     case 'evalRun':
+    case 'evalRunNew':
       return 'evals'
     case 'feedbackItem':
       return 'feedback'

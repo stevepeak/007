@@ -1,9 +1,11 @@
 import {
   useMutation,
+  useQueries,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
 
+import { judgeTypesUsed } from '../engine/eval-schema'
 import { runEval, type RunEvalInput } from '../eval/run-eval'
 import type {
   CheckTree,
@@ -37,6 +39,26 @@ export function useEvalSet(setId: string | null) {
     queryFn: () => client.getEvalSet(setId as string),
     enabled: !!setId,
   })
+}
+
+/**
+ * Which judge kinds these Goals' Samples carry — the judges a launch has to
+ * name. Reads each Goal through the same query `useEvalSet` caches.
+ */
+export function useEvalJudgeTypes(setIds: string[]) {
+  const client = useWfClient()
+  const sets = useQueries({
+    queries: setIds.map((setId) => ({
+      queryKey: keys.evalSet(setId),
+      queryFn: () => client.getEvalSet(setId),
+    })),
+  })
+  return {
+    loading: sets.some((q) => q.isLoading),
+    types: judgeTypesUsed(
+      sets.flatMap((q) => (q.data?.rows ?? []).map((row) => row.checks)),
+    ),
+  }
 }
 
 export function useEvalRuns(limit?: number) {

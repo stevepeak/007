@@ -666,7 +666,7 @@ export function evalWriteTools(): WfMcpTool[] {
         '',
         '`match` is equals | contains | jsonpath | regex. `path` addresses a field of the target’s declared output (`target.outputSchema`); omit it to grade the whole output.',
         '',
-        'The two judges are the same assertion reached two ways. `llm_judge` asks a chat model to write a verdict and rate its own confidence. `decision_judge` puts one yes/no question to a DECISION model, which returns a calibrated probability, and `threshold` (default 0.5) is where you draw the line — so a borderline row reads as 0.52 instead of as a coin-flip pass with a cheerful 8/10 beside it. Use it for anything that reduces to a yes/no you would otherwise threshold by eye; keep `llm_judge` where you want the written critique. Their `modelId`s come from DIFFERENT catalogs — list_models for `llm_judge`, list_decision_models for `decision_judge` — and omitting one takes whatever sorts first.',
+        'The two judges are the same assertion reached two ways. `llm_judge` asks a chat model to write a verdict and rate its own confidence. `decision_judge` puts one yes/no question to a DECISION model, which returns a calibrated probability, and `threshold` (default 0.5) is where you draw the line — so a borderline row reads as 0.52 instead of as a coin-flip pass with a cheerful 8/10 beside it. Use it for anything that reduces to a yes/no you would otherwise threshold by eye; keep `llm_judge` where you want the written critique. A check names no model: the judges are chosen per run, with run_eval’s `judgeModelId` and `decisionJudgeModelId`.',
         '',
         'Prefer a deterministic check where one exists and a judge only for what cannot be asserted literally.',
       ].join('\n'),

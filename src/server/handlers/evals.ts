@@ -65,6 +65,7 @@ import type {
   WfEvalResultDTO,
   WfEvalRowDTO,
   WfEvalRunDrift,
+  WfEvalRunJudges,
 } from '../protocol'
 
 import {
@@ -182,6 +183,15 @@ function toGradeSteps(
 // latest published version.
 //
 // Never throws: a report that can't explain itself is still a report.
+/** The judges frozen on a stored plan; all null for a run with no plan. */
+function planJudges(raw: unknown): WfEvalRunJudges {
+  const plan = raw == null ? null : parseEvalPlan(raw)
+  return {
+    judgeModelId: plan?.judgeModelId ?? null,
+    decisionJudgeModelId: plan?.decisionJudgeModelId ?? null,
+  }
+}
+
 async function loadDrift(
   c: HandlerCtx,
   input: {
@@ -220,6 +230,7 @@ async function loadDrift(
       previousRunId: prev.id,
       previousRunAt: prev.at.getTime(),
       previousAgentVersion: prev.agentVersion,
+      previousJudges: planJudges(prev.plan),
       goalChanges: goal.map(driftChange),
       targetChanges: target.map(driftChange),
     }
@@ -244,11 +255,8 @@ function driftChange(row: WfChangeRecord): WfEvalDriftChange {
  * The model seams a check tree grades through, for a run cell and a decision
  * cell alike — so both pick the same judge and the same decision model.
  *
- * The caller's pin wins over the host's, which wins over "whatever sorts first
- * in the enabled catalog". That last fallback is why a pin matters: the judge
- * is the measuring instrument, so enabling a new model can silently re-grade
- * an entire suite, and the drift report — which watches the sample and the
- * target — would attribute the move to the agent.
+ * The judges come from the run's plan, chosen at launch. The catalog fallback
+ * only serves plans frozen before a launch had to name them.
  *
  * The decision pair stays undefined on a host with no decision provider, and
  * `gradeDecisionJudge` then reports that in the check's own error rather than
@@ -258,25 +266,27 @@ async function graderSeams<TDeps>(args: {
   opts: CreateWfSdkHandlersOptions<TDeps>
   env: unknown
   judgeModelId?: string
+  decisionJudgeModelId?: string
 }): Promise<{
   getModel: GradeModelFactory
-  defaultJudgeModelId: string | undefined
+  judgeModelId: string | undefined
   getDecider: GradeDeciderFactory | undefined
-  defaultDecisionModelId: string | undefined
+  decisionJudgeModelId: string | undefined
 }> {
   const { config } = args.opts
   const ctx = { triggerKind: 'eval', env: args.env }
   const getDecider = config.getDecider
   return {
     getModel: (modelId) => config.getModel(modelId, ctx),
-    defaultJudgeModelId:
+    judgeModelId:
       args.judgeModelId ??
-      args.opts.evalJudgeModelId ??
       (await config.listModels({ env: args.env }))[0]?.id,
     getDecider: getDecider ? (modelId) => getDecider(modelId, ctx) : undefined,
-    defaultDecisionModelId: config.listDecisionModels
-      ? (await config.listDecisionModels({ env: args.env }))[0]?.id
-      : undefined,
+    decisionJudgeModelId:
+      args.decisionJudgeModelId ??
+      (config.listDecisionModels
+        ? (await config.listDecisionModels({ env: args.env }))[0]?.id
+        : undefined),
   }
 }
 
@@ -722,7 +732,12 @@ export function buildEvalHandlers<TDeps>(
         checks: row.checks,
         steps: [],
         output: result,
-        ...(await graderSeams({ opts, env, judgeModelId: p.judgeModelId })),
+        ...(await graderSeams({
+          opts,
+          env,
+          judgeModelId: p.judgeModelId,
+          decisionJudgeModelId: p.decisionJudgeModelId,
+        })),
       })
 
       return await writeEvalResult({
@@ -779,7 +794,12 @@ export function buildEvalHandlers<TDeps>(
         checks: found.row.checks,
         steps,
         output: runResult.output,
-        ...(await graderSeams({ opts, env, judgeModelId: cell.judgeModelId })),
+        ...(await graderSeams({
+          opts,
+          env,
+          judgeModelId: cell.judgeModelId,
+          decisionJudgeModelId: cell.decisionJudgeModelId,
+        })),
         // Synthesis mode: the tools were frozen, so the model's context came from
         // the Sample's seeded conversation, not the run trace. Hand those staged
         // tool results to the judge so it can grade the answer's groundedness.
@@ -919,6 +939,7 @@ export function buildEvalHandlers<TDeps>(
       })
       return {
         run: evalRunSummary(result.run),
+        judges: planJudges(result.run.plan),
         results: result.results.map((r) => {
           return evalResultDTO(
             r,

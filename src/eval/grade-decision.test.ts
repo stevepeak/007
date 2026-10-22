@@ -57,7 +57,7 @@ describe('decision_judge', () => {
         steps: [],
         output: 'some answer',
         getDecider: () => decide,
-        defaultDecisionModelId: 'test:decider',
+        decisionJudgeModelId: 'test:decider',
       })
       expect(graded.checkResults[0].pass).toBe(pass)
     }
@@ -70,7 +70,7 @@ describe('decision_judge', () => {
       steps: [],
       output: 'x',
       getDecider: () => decide,
-      defaultDecisionModelId: 'test:decider',
+      decisionJudgeModelId: 'test:decider',
     })
     expect(graded.checkResults[0].pass).toBe(true)
   })
@@ -85,7 +85,7 @@ describe('decision_judge', () => {
       steps: [],
       output: 'x',
       getDecider: () => decide,
-      defaultDecisionModelId: 'test:decider',
+      decisionJudgeModelId: 'test:decider',
     })
     expect(graded.checkResults[0].probability).toBe(0.52)
     expect(graded.checkResults[0].reason).toContain('p=0.52')
@@ -101,7 +101,7 @@ describe('decision_judge', () => {
       steps: [],
       output: 'x',
       getDecider: () => decide,
-      defaultDecisionModelId: 'test:decider',
+      decisionJudgeModelId: 'test:decider',
     })
     expect(graded.checkResults[0].confidence).toBe(0)
 
@@ -111,7 +111,7 @@ describe('decision_judge', () => {
       steps: [],
       output: 'x',
       getDecider: () => sure,
-      defaultDecisionModelId: 'test:decider',
+      decisionJudgeModelId: 'test:decider',
     })
     expect(confident.checkResults[0].confidence).toBe(10)
   })
@@ -123,7 +123,7 @@ describe('decision_judge', () => {
       steps: [],
       output: { answer: 'cites s.21' },
       getDecider: () => decide,
-      defaultDecisionModelId: 'test:decider',
+      decisionJudgeModelId: 'test:decider',
     })
     expect(calls[0].questions).toEqual([
       {
@@ -145,7 +145,7 @@ describe('decision_judge', () => {
       steps: [],
       output: { docMeta: { recipients: ['Acme', 'Beta'] } },
       getDecider: () => decide,
-      defaultDecisionModelId: 'test:decider',
+      decisionJudgeModelId: 'test:decider',
     })
     expect(calls[0].state).toMatchObject({
       output: ['Acme', 'Beta'],
@@ -160,7 +160,7 @@ describe('decision_judge', () => {
       steps: [],
       output: 'x',
       getDecider: () => decide,
-      defaultDecisionModelId: 'test:decider',
+      decisionJudgeModelId: 'test:decider',
     })
     expect(graded.score).toBe(1)
     expect(graded.status).toBe('pass')

@@ -47,11 +47,11 @@ export type GradeStep = {
   meta?: unknown
 }
 
-/** Resolves a judge `modelId` to a model. Bound by the caller (server/test). */
+/** Resolves the run's judge model id to a model. Bound by the caller (server/test). */
 export type GradeModelFactory = (modelId: string) => LanguageModel
 
 /**
- * Resolves a `decision_judge`'s `modelId` to a {@link Decider}. The decision
+ * Resolves the run's decision judge id to a {@link Decider}. The decision
  * counterpart of {@link GradeModelFactory}, and optional for the same reason the
  * SDK's `getDecider` is: a host with no decision provider simply has no
  * `decision_judge` checks to grade.
@@ -64,12 +64,12 @@ export type GradeRowInput = {
   output: unknown
   /** Required only when the tree contains an `llm_judge` check. */
   getModel?: GradeModelFactory
-  /** Judge model used when a judge check omits its own `modelId`. */
-  defaultJudgeModelId?: string
+  /** The run's judge: the chat model every `llm_judge` check is graded by. */
+  judgeModelId?: string
   /** Required only when the tree contains a `decision_judge` check. */
   getDecider?: GradeDeciderFactory
-  /** Decision model used when a `decision_judge` omits its own `modelId`. */
-  defaultDecisionModelId?: string
+  /** The run's decision judge: the model every `decision_judge` is graded by. */
+  decisionJudgeModelId?: string
   /**
    * Synthesis-mode context — tool calls STAGED in the row's seeded conversation
    * (see `collectSeededToolCalls`). Under `freezeTools` the agent calls nothing,
@@ -419,10 +419,10 @@ async function gradeDecisionJudge(
   check: Extract<EvalCheck, { type: 'decision_judge' }>,
   input: GradeRowInput,
 ): Promise<CheckResult & { confidence: number }> {
-  const modelId = check.modelId ?? input.defaultDecisionModelId
+  const modelId = input.decisionJudgeModelId
   if (!input.getDecider || !modelId) {
     throw new Error(
-      'decision_judge check requires a getDecider factory and a decision modelId (per-check or defaultDecisionModelId). A host with no decision provider cannot grade this check — see WfSdkConfig.getDecider.',
+      'decision_judge check requires a getDecider factory and the run\'s decisionJudgeModelId. A host with no decision provider cannot grade this check — see WfSdkConfig.getDecider.',
     )
   }
   const toolCalls = [
@@ -471,10 +471,10 @@ async function gradeJudge(
   check: Extract<EvalCheck, { type: 'llm_judge' }>,
   input: GradeRowInput,
 ): Promise<CheckResult & { confidence: number }> {
-  const modelId = check.modelId ?? input.defaultJudgeModelId
+  const modelId = input.judgeModelId
   if (!input.getModel || !modelId) {
     throw new Error(
-      'llm_judge check requires a getModel factory and a judge modelId (per-check or defaultJudgeModelId)',
+      'llm_judge check requires a getModel factory and the run\'s judgeModelId',
     )
   }
   // Tool calls the model was shown: the ones it actually made in the run, plus

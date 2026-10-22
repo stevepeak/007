@@ -34,9 +34,8 @@ import { boundedLimit, optString, reqString, type WfMcpTool } from './tools'
 //
 //   • `list_decision_models` — the same argument as `list_models`, one namespace
 //     over. Deciders are a SEPARATE catalog from chat models, and two write
-//     tools already take an id out of it: a `decision_judge` check's `modelId`
-//     (`upsert_eval_sample`) and a decision agent's `config.modelId`
-//     (`create_agent`). With nothing listing them, a model either
+//     tools already take an id out of it: `run_eval`'s `decisionJudgeModelId`
+//     and a decision agent's `config.modelId` (`create_agent`). With nothing listing them, a model either
 //     invented an id — failing at the provider after a sweep had launched, the
 //     exact failure `list_models` was built to prevent — or omitted it and
 //     silently got whatever sorts first.
@@ -377,7 +376,7 @@ export function platformReadTools(): WfMcpTool[] {
       name: 'list_decision_models',
       title: 'List decision models',
       description:
-        'The DECISION models (deciders) this deployment can reach — a separate catalog from list_models, which returns chat models. A decider answers one closed question with a probability instead of prose. Pass an `id` from here VERBATIM wherever a decision model is named: a `decision_judge` check’s `modelId`, or a decision agent’s `config.modelId`. A chat model id in either slot resolves to nothing. `calibrated` says whether the probabilities are real or the model’s self-report — a threshold means much less against an uncalibrated decider. An empty list means this deployment has no decision provider wired, so `decision_judge` checks cannot be graded here and decision agents are off.',
+        'The DECISION models (deciders) this deployment can reach — a separate catalog from list_models, which returns chat models. A decider answers one closed question with a probability instead of prose. Pass an `id` from here VERBATIM wherever a decision model is named: `run_eval`’s `decisionJudgeModelId`, or a decision agent’s `config.modelId`. A chat model id in either slot resolves to nothing. `calibrated` says whether the probabilities are real or the model’s self-report — a threshold means much less against an uncalibrated decider. An empty list means this deployment has no decision provider wired, so `decision_judge` checks cannot be graded here and decision agents are off.',
       inputSchema: {},
       readOnly: true,
       run: async (client) => {

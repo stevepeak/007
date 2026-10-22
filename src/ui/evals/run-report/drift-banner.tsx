@@ -1,9 +1,11 @@
 import { GitCompare } from 'lucide-react'
 
+import { judgeMoved } from '../../../eval/report'
 import type {
   WfEvalDriftChange,
   WfEvalResultDTO,
   WfEvalRunDrift,
+  WfEvalRunJudges,
 } from '../../../server/protocol'
 import { formatTimestamp } from '../shared'
 
@@ -36,9 +38,11 @@ function summarizeChanges(changes: WfEvalDriftChange[]): string | null {
 
 export function DriftBanner({
   drift,
+  judges,
   results,
 }: {
   drift: WfEvalRunDrift | null
+  judges: WfEvalRunJudges
   results: WfEvalResultDTO[]
 }) {
   if (!drift) return null
@@ -50,7 +54,8 @@ export function DriftBanner({
 
   // Nothing moved on either axis, and no version drift — then the comparison is
   // clean, and saying so is worth as much as a warning would be.
-  const quiet = !move && !goal && !target && !span.mixed
+  const rejudged = judgeMoved(drift.previousJudges, judges)
+  const quiet = !move && !goal && !target && !span.mixed && !rejudged
   if (quiet) return null
 
   return (
@@ -82,6 +87,12 @@ export function DriftBanner({
           ) : null}
         </span>
       </p>
+      {rejudged ? (
+        <p className="mt-2 pl-6 text-xs text-amber-800">
+          A different judge graded this run than the last one, so a moved score
+          may be the judge rather than the agent.
+        </p>
+      ) : null}
       {span.mixed ? (
         <p className="mt-2 pl-6 text-xs text-amber-800">
           This run spanned agent versions {span.versions.join(', ')} — it was

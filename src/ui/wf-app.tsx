@@ -13,6 +13,7 @@ import { EvalRunReport } from './evals/eval-run-report'
 import { EvalSample } from './evals/eval-sample'
 import { EvalSet } from './evals/eval-set'
 import { EvalsList } from './evals/evals-list'
+import { EvalRunConfigPage } from './evals/run-config-page'
 import { FeedbackDetail } from './feedback-detail'
 import { FeedbackList } from './feedback-list'
 import { useTools } from './hooks'
@@ -335,6 +336,14 @@ function AssetRoute({ path }: { path: string }) {
         <EvalRunReport
           key={asset.evalRunId}
           evalRunId={asset.evalRunId}
+          className="h-full"
+        />
+      )
+    case 'evalRunNew':
+      return (
+        <EvalRunConfigPage
+          key={asset.setId ?? 'all'}
+          setId={asset.setId}
           className="h-full"
         />
       )

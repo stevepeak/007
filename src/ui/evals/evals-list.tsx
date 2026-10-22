@@ -23,7 +23,6 @@ import { QueryState } from '../query-state'
 
 import { EvalsHelpDialog } from './evals-help-dialog'
 import { NewGoalDialog } from './new-goal-dialog'
-import { RunConfigDialog } from './run-config-dialog'
 import {
   EvalRunsTable,
   formatTimestamp,
@@ -48,7 +47,6 @@ export function EvalsList({ className }: EvalsListProps) {
   const [tab, setTab] = useState<EvalsTab>('sets')
   const [helpOpen, setHelpOpen] = useState(false)
   const [creating, setCreating] = useState(false)
-  const [runOpen, setRunOpen] = useState(false)
 
   const setsQuery = useEvalSets()
   const runsQuery = useEvalRuns()
@@ -80,7 +78,7 @@ export function EvalsList({ className }: EvalsListProps) {
           <Button
             size="sm"
             disabled={allSetIds.length === 0}
-            onClick={() => setRunOpen(true)}
+            onClick={() => navigate('evals/runs/new')}
           >
             <Play className="size-4" />
             Run tests
@@ -96,13 +94,6 @@ export function EvalsList({ className }: EvalsListProps) {
           setCreating(false)
           navigate(`evals/${id}`)
         }}
-      />
-      <RunConfigDialog
-        open={runOpen}
-        onClose={() => setRunOpen(false)}
-        scope="goal"
-        targetName={`all goals (${allSetIds.length})`}
-        setIds={allSetIds}
       />
 
       <Tabs

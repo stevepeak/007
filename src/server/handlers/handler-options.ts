@@ -343,10 +343,4 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
     ctx: WfServerContext
     req: Request
   }) => Promise<{ wfRunId: string }>
-  /**
-   * Optional: which model `gradeEvalResult` uses for `llm_judge` checks that
-   * don't pin their own `modelId`. Defaults to the host's first offered model
-   * (`listModels()[0]`).
-   */
-  evalJudgeModelId?: string
 }

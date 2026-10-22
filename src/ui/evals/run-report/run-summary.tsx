@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import { agentCallTotals, mean } from '../../../eval/report'
 import type {
   WfEvalResultDTO,
+  WfEvalRunJudges,
   WfEvalRunSummary,
 } from '../../../server/protocol'
 import { agentColor, agentIcon } from '../../agent-appearance'
@@ -21,9 +22,11 @@ import { changedSampleCount } from './drift-model'
 // run's rolled-up figures (pass rate, mean score, counts, agent-call averages).
 export function RunHeader({
   run,
+  judges,
   results,
 }: {
   run: WfEvalRunSummary
+  judges: WfEvalRunJudges
   results: WfEvalResultDTO[]
 }) {
   const running = isEvalRunInFlight(run)
@@ -86,6 +89,7 @@ export function RunHeader({
             </Metric>
           </>
         )}
+        <JudgeMetrics judges={judges} />
         <Metric label="Started">
           <span className="text-neutral-600">
             {run.startedAt ? formatTimestamp(run.startedAt) : '—'}
@@ -117,6 +121,41 @@ function EditedSamplesNote({ count }: { count: number }) {
       </span>{' '}
       since they last ran — compare with care.
     </p>
+  )
+}
+
+/**
+ * Which models graded this run, frozen at launch. Neither set means the run
+ * had no judge checks — or was launched before judges were recorded.
+ */
+function JudgeMetrics({ judges }: { judges: WfEvalRunJudges }) {
+  if (!judges.judgeModelId && !judges.decisionJudgeModelId) {
+    return (
+      <Metric label="Judge">
+        <span
+          className="text-neutral-400"
+          title="No judge checks in this run, or it was launched before judges were recorded."
+        >
+          —
+        </span>
+      </Metric>
+    )
+  }
+  return (
+    <>
+      {judges.judgeModelId ? (
+        <Metric label="Judge">
+          <code className="text-xs text-neutral-700">{judges.judgeModelId}</code>
+        </Metric>
+      ) : null}
+      {judges.decisionJudgeModelId ? (
+        <Metric label="Decision judge">
+          <code className="text-xs text-neutral-700">
+            {judges.decisionJudgeModelId}
+          </code>
+        </Metric>
+      ) : null}
+    </>
   )
 }
 

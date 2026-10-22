@@ -101,9 +101,6 @@ function JudgeKindToggle({
 
   const pick = (type: 'llm_judge' | 'decision_judge') => {
     if (type === check.type) return
-    // `modelId` is deliberately NOT carried across: the two catalogs are
-    // different namespaces, and a chat model id in a decision check would
-    // resolve to nothing. Each panel seeds its own default on first render.
     const shared = { rubric: check.rubric, path: check.path }
     // The two branches build the same fields on purpose — what differs is the
     // literal `type`, which a discriminated union needs spelled out at the

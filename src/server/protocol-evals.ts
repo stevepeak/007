@@ -221,11 +221,25 @@ export type WfEvalDriftChange = {
  * whatever Goals were asked for, so the run before this one in time may share no
  * samples with it.
  */
+/**
+ * The judges a run was graded by, frozen on its plan at launch. Null for a kind
+ * the run had no checks of — and for every kind on a run launched before
+ * judges were recorded.
+ */
+export type WfEvalRunJudges = {
+  /** The chat model behind every `llm_judge` check. */
+  judgeModelId: string | null
+  /** The decision model behind every `decision_judge` check. */
+  decisionJudgeModelId: string | null
+}
+
 export type WfEvalRunDrift = {
   previousRunId: string
   previousRunAt: number
   /** The agent version that run executed, when it recorded one. */
   previousAgentVersion: number | null
+  /** The judges that run was graded by — a moved judge moves the score too. */
+  previousJudges: WfEvalRunJudges
   /** Edits to the Goal and its samples between the two runs. */
   goalChanges: WfEvalDriftChange[]
   /** Edits to the agent (or workflow) under test between the two runs. */
@@ -234,6 +248,7 @@ export type WfEvalRunDrift = {
 
 export type WfEvalRunDetail = {
   run: WfEvalRunSummary
+  judges: WfEvalRunJudges
   results: WfEvalResultDTO[]
   /** Null when no earlier run covered any of these samples. */
   drift: WfEvalRunDrift | null

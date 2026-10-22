@@ -1,4 +1,6 @@
 import type { ModelOption } from '../../engine/config'
+import type { JudgeCheckType } from '../../engine/eval-schema'
+import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { EVAL_CONCURRENCY_CHOICES } from '../hooks'
 
@@ -15,9 +17,13 @@ export function ConfirmStep({
   counts,
   promptCount,
   totalTests,
+  judgeTypes,
+  judgeModelId,
+  decisionJudgeModelId,
   concurrency,
   onConcurrencyChange,
   runError,
+  className,
 }: {
   /** Name of the always-present first prompt row — saved prompt, or the draft. */
   baselineLabel: string
@@ -25,10 +31,16 @@ export function ConfirmStep({
   counts: Record<string, number>
   promptCount: number
   totalTests: number
+  /** The judge kinds the Samples carry, and the model picked for each. */
+  judgeTypes: Set<JudgeCheckType>
+  judgeModelId: string
+  decisionJudgeModelId: string
   /** In-flight tests allowed at once — see EVAL_CONCURRENCY_CHOICES. */
   concurrency: number
   onConcurrencyChange: (next: number) => void
   runError: boolean
+  /** Replaces the dialog's own scroll padding — the run page lays it out inline. */
+  className?: string
 }) {
   const { Button } = useWfComponents()
   // Row per prompt variation: the baseline plus each extra prompt.
@@ -38,7 +50,11 @@ export function ConfirmStep({
   ]
 
   return (
-    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+    <div
+      className={cn(
+        className ?? 'min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4',
+      )}
+    >
       <div className="grid grid-cols-2 gap-3">
         <Stat label="Models" value={String(selectedModels.length)} />
         <Stat label="Prompts" value={String(promptRows.length)} />
@@ -99,6 +115,28 @@ export function ConfirmStep({
           per sample
         </p>
       </div>
+
+      {judgeTypes.size > 0 ? (
+        <div>
+          <h3 className="mb-1.5 text-xs font-semibold tracking-wide text-neutral-500 uppercase">
+            Judged by
+          </h3>
+          <ul className="space-y-0.5 text-sm text-neutral-700">
+            {judgeTypes.has('llm_judge') ? (
+              <li>
+                <span className="text-neutral-500">Judge checks · </span>
+                <code className="text-xs">{judgeModelId}</code>
+              </li>
+            ) : null}
+            {judgeTypes.has('decision_judge') ? (
+              <li>
+                <span className="text-neutral-500">Calibrated checks · </span>
+                <code className="text-xs">{decisionJudgeModelId}</code>
+              </li>
+            ) : null}
+          </ul>
+        </div>
+      ) : null}
 
       {/* How hard to push the provider. Each slot is one in-flight agent call;
           the runs don't contend with each other locally, so this is purely a

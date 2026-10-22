@@ -73,8 +73,9 @@ export type EvalPlan = {
   /** How long one cell's run may take before the driver stops waiting for it. */
   timeoutMs: number
   /**
-   * Model every JUDGE check in this sweep is graded by, overriding the host's
-   * `evalJudgeModelId` and the enabled-catalog default.
+   * The chat model every `llm_judge` check in this sweep is graded by. Chosen
+   * at launch and required whenever the sweep's Samples carry an `llm_judge`;
+   * checks cannot name their own.
    *
    * Frozen into the plan for the same reason `configOverride` is: a resuming
    * driver has no other way to learn it, and half a matrix graded by one judge
@@ -83,6 +84,12 @@ export type EvalPlan = {
    * model the target runs on.
    */
   judgeModelId?: string
+  /**
+   * The decision model every `decision_judge` check is graded by — a separate
+   * catalog from {@link judgeModelId}'s. Required whenever the sweep's Samples
+   * carry a `decision_judge`; frozen for the same reason.
+   */
+  decisionJudgeModelId?: string
 }
 
 /** A cell that has been started and whose run has not yet reached a verdict. */
@@ -210,6 +217,11 @@ export function parseEvalPlan(raw: unknown): EvalPlan | null {
     judgeModelId:
       typeof p.judgeModelId === 'string' && p.judgeModelId.length > 0
         ? p.judgeModelId
+        : undefined,
+    decisionJudgeModelId:
+      typeof p.decisionJudgeModelId === 'string' &&
+      p.decisionJudgeModelId.length > 0
+        ? p.decisionJudgeModelId
         : undefined,
   }
 }

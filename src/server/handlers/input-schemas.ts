@@ -374,6 +374,7 @@ export const wfInputSchemas = {
     modelId: z.string().optional(),
     attempt: z.number().optional(),
     judgeModelId: z.string().optional(),
+    decisionJudgeModelId: z.string().optional(),
     // The unsaved-draft override — a whole DecisionAgentConfig, parsed by the
     // handler against the target agent's kind.
     config: PASSED_THROUGH.optional(),
@@ -386,9 +387,10 @@ export const wfInputSchemas = {
     promptLabel: z.string().optional(),
     promptBody: z.string().optional(),
     attempt: z.number().optional(),
-    // The judge the CHECKS run on, distinct from `modelId` (the model the
+    // The judges the CHECKS run on, distinct from `modelId` (the model the
     // TARGET ran on, which is a matrix column).
     judgeModelId: z.string().optional(),
+    decisionJudgeModelId: z.string().optional(),
   }),
   recordEvalFailure: z.object({
     evalRunId: z.string().min(1),

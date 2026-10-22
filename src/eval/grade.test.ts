@@ -275,7 +275,7 @@ describe('gradeRow — judge checks', () => {
       steps: workflowSteps,
       output: { pad: tail, docMeta: { recipients: ['Acme Corp'] } },
       getModel: () => model,
-      defaultJudgeModelId: 'mock',
+      judgeModelId: 'mock',
     })
     expect(seen.prompt).toContain('Acme Corp') // last field survives
     expect(seen.prompt).toContain(tail) // not chopped at 120 chars
@@ -296,7 +296,7 @@ describe('gradeRow — judge checks', () => {
         docMeta: { recipients: ['Acme Corp', 'Beta LLC'] },
       },
       getModel: () => model,
-      defaultJudgeModelId: 'mock',
+      judgeModelId: 'mock',
     })
     expect(r.status).toBe('pass')
     expect(seen.prompt).toContain('docMeta.recipients') // labeled with the path
@@ -336,7 +336,7 @@ describe('gradeRow — judge checks', () => {
       ],
       output: { text: 'answer' },
       getModel: () => model,
-      defaultJudgeModelId: 'mock',
+      judgeModelId: 'mock',
     })
     expect(seen.prompt).toContain('SECRET_RETRIEVED_FACT') // the result reached the judge
   })
@@ -357,7 +357,7 @@ describe('gradeRow — judge checks', () => {
         },
       ],
       getModel: () => model,
-      defaultJudgeModelId: 'mock',
+      judgeModelId: 'mock',
     })
     expect(seen.prompt).toContain('SEEDED_CONTEXT_CHUNK')
     expect(seen.prompt).toContain('filing deadline')
@@ -366,7 +366,7 @@ describe('gradeRow — judge checks', () => {
   test('the judge decides pass/fail directly — there is no bar to clear', async () => {
     const passed = await grade(
       { op: 'and', checks: [{ type: 'llm_judge', rubric: 'polite' }] },
-      { getModel: () => judgeModel(true, 9), defaultJudgeModelId: 'mock' },
+      { getModel: () => judgeModel(true, 9), judgeModelId: 'mock' },
     )
     expect(passed.status).toBe('pass')
     expect(passed.score).toBe(1)
@@ -376,7 +376,7 @@ describe('gradeRow — judge checks', () => {
 
     const failed = await grade(
       { op: 'and', checks: [{ type: 'llm_judge', rubric: 'polite' }] },
-      { getModel: () => judgeModel(false, 10), defaultJudgeModelId: 'mock' },
+      { getModel: () => judgeModel(false, 10), judgeModelId: 'mock' },
     )
     expect(failed.status).toBe('fail')
     expect(failed.score).toBe(0)
@@ -391,31 +391,35 @@ describe('gradeRow — judge checks', () => {
     // pulled onto that scale rather than rejected.
     const high = await grade(
       { op: 'and', checks: [{ type: 'llm_judge', rubric: 'x' }] },
-      { getModel: () => judgeModel(true, 42), defaultJudgeModelId: 'mock' },
+      { getModel: () => judgeModel(true, 42), judgeModelId: 'mock' },
     )
     expect(high.status).toBe('pass')
     expect(high.checkResults[0]?.confidence).toBe(10)
 
     const fractional = await grade(
       { op: 'and', checks: [{ type: 'llm_judge', rubric: 'x' }] },
-      { getModel: () => judgeModel(true, 7.5), defaultJudgeModelId: 'mock' },
+      { getModel: () => judgeModel(true, 7.5), judgeModelId: 'mock' },
     )
     expect(fractional.checkResults[0]?.confidence).toBe(8)
   })
 
   test('score is the judge PASS RATE, binary checks excluded', async () => {
-    const verdicts: Record<string, boolean> = { a: true, b: false }
+    // One judge per run, so the two verdicts differ by call order instead.
+    const verdicts = [true, false]
     const r = await grade(
       {
         op: 'or',
         checks: [
           // Passes, and is still absent from the score.
           { type: 'tool_called', toolId: 'issue_refund', called: true },
-          { type: 'llm_judge', rubric: 'a', modelId: 'a' },
-          { type: 'llm_judge', rubric: 'b', modelId: 'b' },
+          { type: 'llm_judge', rubric: 'a' },
+          { type: 'llm_judge', rubric: 'b' },
         ],
       },
-      { getModel: (id) => judgeModel(verdicts[id] ?? false) },
+      {
+        getModel: () => judgeModel(verdicts.shift() ?? false),
+        judgeModelId: 'mock',
+      },
     )
     expect(r.score).toBeCloseTo(0.5, 5)
   })
@@ -436,7 +440,7 @@ describe('gradeRow — judge checks', () => {
         getModel: () => {
           throw new Error('model down')
         },
-        defaultJudgeModelId: 'mock',
+        judgeModelId: 'mock',
       },
     )
     expect(r.status).toBe('error')
@@ -460,7 +464,7 @@ describe('gradeRow — judge checks', () => {
         getModel: () => {
           throw new Error('model down')
         },
-        defaultJudgeModelId: 'mock',
+        judgeModelId: 'mock',
       },
     )
     expect(r.status).toBe('pass')
@@ -481,7 +485,7 @@ describe('gradeRow — judge checks', () => {
         getModel: () => {
           throw new Error('model down')
         },
-        defaultJudgeModelId: 'mock',
+        judgeModelId: 'mock',
       },
     )
     expect(r.status).toBe('fail')
@@ -500,7 +504,7 @@ describe('gradeRow — judge checks', () => {
         getModel: () => {
           throw new Error('model down')
         },
-        defaultJudgeModelId: 'mock',
+        judgeModelId: 'mock',
       },
     )
     expect(r.status).toBe('error')
@@ -518,7 +522,7 @@ describe('gradeRow — judge checks', () => {
             statusCode: 504,
           })
         },
-        defaultJudgeModelId: 'mock',
+        judgeModelId: 'mock',
       },
     )
     // `err.message` alone would have been the useless bare "Bad Request".
@@ -532,7 +536,7 @@ describe('gradeRow — judge checks', () => {
     ])
     const r = await grade(
       { op: 'and', checks: [{ type: 'llm_judge', rubric: 'x' }] },
-      { getModel: () => judge.model, defaultJudgeModelId: 'mock' },
+      { getModel: () => judge.model, judgeModelId: 'mock' },
     )
     expect(r.status).toBe('pass')
     expect(judge.calls.count).toBe(2)
@@ -542,7 +546,7 @@ describe('gradeRow — judge checks', () => {
     const judge = sequencedJudge(['{ not json', '{ still not json'])
     const r = await grade(
       { op: 'and', checks: [{ type: 'llm_judge', rubric: 'x' }] },
-      { getModel: () => judge.model, defaultJudgeModelId: 'mock' },
+      { getModel: () => judge.model, judgeModelId: 'mock' },
     )
     expect(r.status).toBe('error')
     // Exactly the cap — not a loop that keeps paying for a judge that can't answer.
@@ -558,7 +562,7 @@ describe('gradeRow — judge checks', () => {
           calls += 1
           throw new Error('model down')
         },
-        defaultJudgeModelId: 'mock',
+        judgeModelId: 'mock',
       },
     )
     expect(r.status).toBe('error')

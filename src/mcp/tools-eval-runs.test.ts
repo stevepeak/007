@@ -94,6 +94,7 @@ function detail(over: {
   drift?: WfEvalRunDetail['drift']
 }): WfEvalRunDetail {
   return {
+    judges: { judgeModelId: null, decisionJudgeModelId: null },
     run: {
       id: 'er_1',
       status: over.status ?? 'completed',
@@ -359,6 +360,7 @@ describe('get_eval_run — drift has two axes', () => {
             previousRunId: 'er_0',
             previousRunAt: 1,
             previousAgentVersion: 6,
+            previousJudges: { judgeModelId: null, decisionJudgeModelId: null },
             goalChanges: [],
             targetChanges: [],
           },
@@ -405,6 +407,7 @@ describe('get_eval_run — drift has two axes', () => {
             previousRunId: 'er_0',
             previousRunAt: 1,
             previousAgentVersion: 6,
+            previousJudges: { judgeModelId: null, decisionJudgeModelId: null },
             goalChanges: [],
             targetChanges: [],
           },
@@ -1243,9 +1246,14 @@ describe('run_eval — gating the models before spending anything', () => {
 })
 
 describe('run_eval — per-model attempts and the judge pin', () => {
+  const judged = { op: 'and', checks: [{ type: 'llm_judge', rubric: 'x' }] }
   const setWithRows = (n: number) => ({
     set: { id: 'set_1', name: 'Goal', targetKind: 'agent', targetId: 'ag_1' },
-    rows: Array.from({ length: n }, (_, i) => ({ id: `row_${i}`, archived: false })),
+    rows: Array.from({ length: n }, (_, i) => ({
+      id: `row_${i}`,
+      archived: false,
+      checks: judged,
+    })),
   })
 
   const stubs = (over: Partial<WfDataClient> = {}) => {
@@ -1301,9 +1309,8 @@ describe('run_eval — per-model attempts and the judge pin', () => {
     expect(out.launched.attemptsPerModel).toEqual({ baseline: 1 })
   })
 
-  // The judge is the measuring instrument: unpinned it is whatever sorts first
-  // in the enabled catalog, so enabling a model silently re-grades a suite and
-  // the drift report blames the agent.
+  // The judge is the measuring instrument, so the one a launch names — or
+  // defaulted to — is frozen on the plan and echoed back.
   test('freezes the judge onto the plan so a resuming driver grades the same way', async () => {
     const { client, planOf } = stubs()
     const out = (await toolNamed('run_eval').run(client, {
@@ -1314,12 +1321,27 @@ describe('run_eval — per-model attempts and the judge pin', () => {
     expect(out.launched.judge).toBe('venice:judge')
   })
 
-  test('says plainly when the judge is unpinned', async () => {
-    const { client } = stubs()
+  test('an omitted judge takes the first enabled model, and says which', async () => {
+    const { client, planOf } = stubs()
     const out = (await toolNamed('run_eval').run(client, {
       setIds: ['set_1'],
     })) as { launched: { judge: string } }
-    expect(out.launched.judge).toContain('unpinned')
+    expect(planOf()?.judgeModelId).toBe('baseline')
+    expect(out.launched.judge).toBe('baseline')
+  })
+
+  test('a sweep with no judge checks freezes no judge', async () => {
+    const { client, planOf } = stubs({
+      getEvalSet: async () => { return {
+          ...setWithRows(1),
+          rows: [{ id: 'row_0', archived: false, checks: { op: 'and', checks: [] } }],
+        } as never },
+    })
+    await toolNamed('run_eval').run(client, {
+      setIds: ['set_1'],
+      judgeModelId: 'venice:judge',
+    })
+    expect(planOf()?.judgeModelId).toBeUndefined()
   })
 })
 

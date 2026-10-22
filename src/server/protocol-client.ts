@@ -635,8 +635,9 @@ export interface WfDataClient {
     modelId?: string
     /** Matrix cell: which best-of-N attempt this is. */
     attempt?: number
-    /** The run's pinned judge for `llm_judge` checks; see `gradeEvalResult`. */
+    /** The run's judges, from its plan; see `gradeEvalResult`. */
     judgeModelId?: string
+    decisionJudgeModelId?: string
     /** Grade this decision config instead of the published version (a draft). */
     config?: AnyAgentConfig
   }): Promise<WfEvalResultDTO>
@@ -655,16 +656,12 @@ export interface WfDataClient {
     promptBody?: string
     attempt?: number
     /**
-     * Model the JUDGE checks run on, overriding the host's `evalJudgeModelId`
-     * (and, failing that, whatever sorts first in the enabled catalog).
-     *
-     * Worth being able to pin: the judge is the measuring instrument, so a
-     * newly-enabled model silently becoming the default re-grades an entire
-     * suite, and the drift report — which only knows about the sample and the
-     * target — will confidently attribute the move to the agent. A sweep carries
-     * this on its plan so every cell of it is graded by the same judge.
+     * The run's judges, from its plan: the chat model for `llm_judge` checks
+     * and the decision model for `decision_judge` checks. The judge is the
+     * measuring instrument, so every cell of a sweep is graded by the same one.
      */
     judgeModelId?: string
+    decisionJudgeModelId?: string
   }): Promise<WfEvalResultDTO>
   /**
    * Record a cell that never produced a gradeable run — the run failed, was

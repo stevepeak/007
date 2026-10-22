@@ -1,5 +1,3 @@
-import { useEffect } from 'react'
-
 import { DEFAULT_DECISION_THRESHOLD, type JsonSchema } from '../../engine'
 import type { EvalCheck } from '../../server/protocol'
 import { useWfComponents } from '../context'
@@ -11,8 +9,9 @@ import { OutputPathSelect, schemaPathOptions } from './fields'
 
 // ── Calibrated (decision) judge config ───────────────────────────────────────
 //
-// The same three decisions as the LLM judge — who grades, what it looks at, what
-// has to hold — plus the one this check exists for: WHERE THE LINE IS.
+// The same decisions as the LLM judge — what it looks at, what has to hold —
+// plus the one this check exists for: WHERE THE LINE IS. The decision model is
+// picked once per run in the launch dialog, not here.
 //
 // An LLM judge is asked for a verdict and then for its confidence in that
 // verdict, which is a guess about a guess. A decision model answers with a
@@ -35,16 +34,7 @@ export function DecisionJudgeConfig({
     return persist({ ...check, rubric })
   })
 
-  // Keep a decider selected, the same way the LLM judge keeps a model: the check
-  // cannot grade without one, so seed the first as soon as the list loads.
   const models = useDecisionModels()
-  useEffect(() => {
-    if (check.modelId) return
-    const first = models.data?.[0]?.id
-    if (first) persist({ ...check, modelId: first })
-  }, [check, models.data, persist])
-
-  const chosen = models.data?.find((m) => m.id === check.modelId)
   const pathOptions = schemaPathOptions(outputSchema)
   const selectedField = pathOptions?.find((o) => o.value === (check.path ?? ''))
 
@@ -60,38 +50,7 @@ export function DecisionJudgeConfig({
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="space-y-1">
-          <div className="flex items-center gap-1">
-            <Label>Decider</Label>
-            <FieldHelp title="Decider">
-              <p>
-                The decision model that grades this check. Unlike a chat judge it
-                answers with a probability rather than a written verdict, so the
-                result carries how close the call was instead of a self-reported
-                confidence.
-              </p>
-            </FieldHelp>
-          </div>
-          <select
-            value={check.modelId ?? ''}
-            onChange={(e) => persist({ ...check, modelId: e.target.value })}
-            className="h-9 w-full rounded-md border border-neutral-300 bg-transparent px-2 text-sm outline-none focus:border-neutral-500"
-          >
-            {(models.data ?? []).map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-                {m.calibrated === false ? ' (emulated)' : ''}
-              </option>
-            ))}
-          </select>
-          {chosen?.calibrated === false ? (
-            <p className="text-xs text-neutral-400">
-              Emulated on a chat model — treat the threshold as rough.
-            </p>
-          ) : null}
-        </div>
-
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <div className="flex items-center gap-1">
             <Label>Passes above</Label>
