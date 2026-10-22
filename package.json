@@ -90,7 +90,7 @@
     }
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20261021.1",
+    "@cloudflare/workers-types": "^5.20261022.1",
     "@dexaai/config": "^0.0.10",
     "@ocavue/eslint-config": "^4.21.0",
     "@types/bun": "^1.4.3",
