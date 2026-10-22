@@ -16,6 +16,7 @@ import {
   workflowIdsInGraph,
 } from './authoring-graph'
 import { latestVersion } from './authoring-workflows'
+import { selectChunked } from './shared'
 
 // ---------------------------------------------------------------------------
 // Run manifest resolution
@@ -43,6 +44,31 @@ export async function resolveRunManifest(
   // by different nodes lands as several distinct entries.
   const seenAgentPins = new Set<string>()
   const seenWorkflows = new Set<string>()
+  // Agent rows by id (null = no such agent). Loaded a graph or a delegation
+  // whitelist at a time so the walk reads `wf_agent` once per level, not once
+  // per agent.
+  const agentRows = new Map<
+    string,
+    { name: string; kind: typeof wfAgent.$inferSelect.kind } | null
+  >()
+  const loadAgents = async (agentIds: readonly string[]): Promise<void> => {
+    const missing = [...new Set(agentIds)].filter((id) => !agentRows.has(id))
+    if (missing.length === 0) {
+      return
+    }
+    const rows = await selectChunked(missing, (ids) => {
+      return db
+        .select({ id: wfAgent.id, name: wfAgent.name, kind: wfAgent.kind })
+        .from(wfAgent)
+        .where(inArray(wfAgent.id, ids))
+    })
+    for (const id of missing) {
+      agentRows.set(id, null)
+    }
+    for (const { id, ...row } of rows) {
+      agentRows.set(id, row)
+    }
+  }
 
   // Resolve one agent pin (from a graph node OR a delegation target), push its
   // frozen entry, then recurse into its own delegation whitelist. `stack` is the
@@ -61,19 +87,16 @@ export async function resolveRunManifest(
     // `null` pin floats to latest; a number resolves that exact version. A
     // pin pointing at a version that no longer exists resolves to nothing —
     // the node then fails at run time with a clear "not in manifest" error.
-    // The agent row does not depend on the version, so both reads run together.
-    const [version, agentRows] = await Promise.all([
+    // The agent row does not depend on the version, so both reads run
+    // together. Callers prefetch the row, so `loadAgents` is normally a no-op.
+    const [version] = await Promise.all([
       resolveAgentVersion(db, { agentId, pin }),
-      db
-        .select({ name: wfAgent.name, kind: wfAgent.kind })
-        .from(wfAgent)
-        .where(eq(wfAgent.id, agentId))
-        .limit(1),
+      loadAgents([agentId]),
     ])
     if (!version) {
       return
     }
-    const agent = agentRows[0]
+    const agent = agentRows.get(agentId)
     // A DECISION agent is a question set, not a prompt and a tool loop, so it
     // freezes into its own entry kind — parsed against its own schema BEFORE
     // `agentConfigSchema` ever sees it, which would otherwise throw
@@ -105,6 +128,11 @@ export async function resolveRunManifest(
       config,
     })
     // Freeze the agent's delegation targets so its `spawn_*` tools resolve.
+    await loadAgents(
+      config.subAgents.targets
+        .filter((t) => t.kind === 'agent')
+        .map((t) => t.id),
+    )
     for (const target of config.subAgents.targets) {
       if (target.kind === 'agent') {
         await resolveAgentPin(target.id, target.version, stack)
@@ -163,7 +191,9 @@ export async function resolveRunManifest(
         `Workflow nesting too deep (> ${MAX_WORKFLOW_DEPTH}): ${stack.join(' → ')}.`,
       )
     }
-    for (const { agentId, version: pin } of agentPinsInGraph(g)) {
+    const pins = agentPinsInGraph(g)
+    await loadAgents(pins.map((p) => p.agentId))
+    for (const { agentId, version: pin } of pins) {
       await resolveAgentPin(agentId, pin, stack)
     }
     for (const workflowId of workflowIdsInGraph(g)) {
