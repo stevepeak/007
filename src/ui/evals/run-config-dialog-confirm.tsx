@@ -1,5 +1,4 @@
 import type { ModelOption } from '../../engine/config'
-import type { JudgeCheckType } from '../../engine/eval-schema'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { EVAL_CONCURRENCY_CHOICES } from '../hooks'
@@ -17,8 +16,7 @@ export function ConfirmStep({
   counts,
   promptCount,
   totalTests,
-  judgeTypes,
-  judgeModelId,
+  needsJudge,
   decisionJudgeModelId,
   concurrency,
   onConcurrencyChange,
@@ -31,9 +29,8 @@ export function ConfirmStep({
   counts: Record<string, number>
   promptCount: number
   totalTests: number
-  /** The judge kinds the Samples carry, and the model picked for each. */
-  judgeTypes: Set<JudgeCheckType>
-  judgeModelId: string
+  /** Whether the Samples carry a judge check, and the judge picked for them. */
+  needsJudge: boolean
   decisionJudgeModelId: string
   /** In-flight tests allowed at once — see EVAL_CONCURRENCY_CHOICES. */
   concurrency: number
@@ -116,25 +113,12 @@ export function ConfirmStep({
         </p>
       </div>
 
-      {judgeTypes.size > 0 ? (
+      {needsJudge ? (
         <div>
           <h3 className="mb-1.5 text-xs font-semibold tracking-wide text-neutral-500 uppercase">
             Judged by
           </h3>
-          <ul className="space-y-0.5 text-sm text-neutral-700">
-            {judgeTypes.has('llm_judge') ? (
-              <li>
-                <span className="text-neutral-500">Judge checks · </span>
-                <code className="text-xs">{judgeModelId}</code>
-              </li>
-            ) : null}
-            {judgeTypes.has('decision_judge') ? (
-              <li>
-                <span className="text-neutral-500">Calibrated checks · </span>
-                <code className="text-xs">{decisionJudgeModelId}</code>
-              </li>
-            ) : null}
-          </ul>
+          <code className="text-xs text-neutral-700">{decisionJudgeModelId}</code>
         </div>
       ) : null}
 

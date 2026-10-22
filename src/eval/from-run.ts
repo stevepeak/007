@@ -372,12 +372,12 @@ function buildChecks(
       checks.push({ type: 'tool_called', toolId, called: true })
     }
   }
-  checks.push({ type: 'llm_judge', rubric: seedRubric(args, notes) })
+  checks.push({ type: 'decision_judge', rubric: seedRubric(args, notes) })
   return { op: 'and', checks }
 }
 
 /**
- * A judge rubric seeded from the run — and never from its output.
+ * A judge question seeded from the run — and never from its output.
  *
  * Asserting the run's own answer is the standard is wrong in both directions:
  * on a run a human rated BAD it would enshrine the failure as correct, and on
@@ -396,12 +396,12 @@ function seedRubric(args: DraftSampleArgs, notes: string[]): string {
       'TODO — rewrite this rubric before saving.',
       "A human rated this run's answer bad.",
       note ? `They said: "${note}"` : 'They left no note.',
-      'State what a correct answer must do instead. The answer this run produced must FAIL this rubric.',
+      'Ask, as a yes/no question, whether the answer does what a correct one must instead. The answer this run produced must get "no".',
     ].join(' ')
   }
   return [
     'TODO — rewrite this rubric before saving.',
-    'State what a correct answer must contain for this input.',
+    'Ask, as a yes/no question, whether the answer contains what a correct one must for this input.',
     "The run's own answer is a reference, not the standard — grade the requirement, not the phrasing.",
   ].join(' ')
 }

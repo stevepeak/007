@@ -5,12 +5,9 @@ import {
   type WfDecisionAgentSummary,
   type WfEvalTargetKind,
 } from '../../server/protocol'
-import { Segmented, type SegmentedOption } from '../filters'
-import { useDecisionModels } from '../hooks-models'
 
 import { BinaryConfig } from './eval-check-config-binary'
 import { DecisionJudgeConfig } from './eval-check-config-decision'
-import { JudgeConfig } from './eval-check-config-judge'
 
 export {
   defaultCheck,
@@ -43,27 +40,12 @@ export function CheckConfigBody({
   decisionContract?: WfDecisionAgentSummary | null
 }) {
   if (isJudgeCheck(check)) {
-    // The two judges are the same assertion reached two ways, so switching
-    // between them is a toggle inside the scored family rather than a different
-    // kind of check to add — and the rubric and output field carry across, since
-    // re-typing them would make trying the other one cost more than it's worth.
     return (
-      <div className="space-y-3">
-        <JudgeKindToggle check={check} persist={persist} />
-        {check.type === 'decision_judge' ? (
-          <DecisionJudgeConfig
-            check={check}
-            persist={persist}
-            outputSchema={outputSchema}
-          />
-        ) : (
-          <JudgeConfig
-            check={check}
-            persist={persist}
-            outputSchema={outputSchema}
-          />
-        )}
-      </div>
+      <DecisionJudgeConfig
+        check={check}
+        persist={persist}
+        outputSchema={outputSchema}
+      />
     )
   }
   return (
@@ -76,53 +58,5 @@ export function CheckConfigBody({
       allowToolIds={allowToolIds}
       decisionContract={decisionContract}
     />
-  )
-}
-
-const JUDGE_KINDS: SegmentedOption<'llm_judge' | 'decision_judge'>[] = [
-  { value: 'llm_judge', label: 'A model reading it' },
-  { value: 'decision_judge', label: 'A calibrated decider' },
-]
-
-/**
- * Which kind of judge grades this check. Hidden entirely when the deployment has
- * no decision provider — offering a choice with one real option is noise, and a
- * disabled row would imply something is misconfigured when nothing is.
- */
-function JudgeKindToggle({
-  check,
-  persist,
-}: {
-  check: Extract<EvalCheck, { type: 'llm_judge' | 'decision_judge' }>
-  persist: (next: EvalCheck) => void
-}) {
-  const deciders = useDecisionModels()
-  if ((deciders.data ?? []).length === 0) return null
-
-  const pick = (type: 'llm_judge' | 'decision_judge') => {
-    if (type === check.type) return
-    const shared = { rubric: check.rubric, path: check.path }
-    // The two branches build the same fields on purpose — what differs is the
-    // literal `type`, which a discriminated union needs spelled out at the
-    // construction site. Written with the narrowed variable it read as
-    // duplicated code; written with the literals it reads as what it is.
-    persist(
-      type === 'decision_judge'
-        ? { type: 'decision_judge', ...shared }
-        : { type: 'llm_judge', ...shared },
-    )
-  }
-
-  return (
-    <div className="flex items-center gap-2 text-xs text-neutral-500">
-      <span>Graded by</span>
-      <Segmented
-        variant="joined"
-        label="Graded by"
-        options={JUDGE_KINDS}
-        value={check.type}
-        onChange={pick}
-      />
-    </div>
   )
 }

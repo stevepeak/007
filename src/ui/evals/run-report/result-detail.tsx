@@ -1,16 +1,21 @@
 import { ArrowUpRight, ChevronRight } from 'lucide-react'
 
+import { DEFAULT_DECISION_THRESHOLD } from '../../../engine/decision'
 import type {
   CheckResult,
   EvalCheck,
   WfEvalResultRunStats,
 } from '../../../server/protocol'
-import { JUDGE_CONFIDENCE_MAX } from '../../../server/protocol'
+import {
+  isJudgeCheck,
+  JUDGE_CONFIDENCE_MAX,
+} from '../../../server/protocol'
 import { cn } from '../../cn'
 import { formatDurationMs, formatTokens, formatUsd } from '../../cost'
 import { WfLink } from '../../nav'
 import { describeCheck } from '../check-naming'
 
+import { ProbabilityBar } from './atoms'
 import type { ResultRow } from './model'
 
 // The expanded row: the goal ▸ sample breadcrumb + run link, the agent-call
@@ -169,9 +174,25 @@ function CheckRow({
           ) : (
             <span className="group flex min-w-0 items-center">{label}</span>
           )}
-          {/* Judge checks only — a binary check's ✓/✗ IS the whole verdict, so
-              a confidence chip beside it would be noise. */}
-          {result.confidence != null ? (
+          {/* Judge checks only — a binary check's ✓/✗ IS the whole verdict.
+              A decision judge shows its probability against the line; a
+              result graded by the old chat judge has only a confidence. */}
+          {result.probability != null ? (
+            <span className="flex w-28 shrink-0 items-center gap-1.5">
+              <ProbabilityBar
+                probability={result.probability}
+                threshold={
+                  check && isJudgeCheck(check)
+                    ? (check.threshold ?? DEFAULT_DECISION_THRESHOLD)
+                    : DEFAULT_DECISION_THRESHOLD
+                }
+                pass={result.pass}
+              />
+              <span className="text-[11px] text-neutral-600 tabular-nums">
+                {result.probability.toFixed(2)}
+              </span>
+            </span>
+          ) : result.confidence != null ? (
             <span
               title="How sure the judge was of this call — not how good the output is."
               className={cn(

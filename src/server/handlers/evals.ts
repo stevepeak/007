@@ -6,7 +6,12 @@ import {
   decisionAgentConfigIssues,
   type DecisionAgentConfig,
 } from '../../engine/decision-agent-schema'
-import type { EvalRowSnapshot } from '../../engine/eval-schema'
+import {
+  evalCheckSchema,
+  isJudgeCheck,
+  upgradeLegacyCheck,
+  type EvalRowSnapshot,
+} from '../../engine/eval-schema'
 import { agentConfigSchema } from '../../engine/graph'
 import {
   collectSeededToolCalls,
@@ -18,9 +23,9 @@ import {
   resolveEvalTarget,
   evalInvocation,
   rollup,
-  type GradeModelFactory,
   type GradeStep,
 } from '../../eval'
+import { defaultDecisionJudge } from '../../eval/judge'
 import {
   evalCellKey,
   parseEvalDriveState,
@@ -252,24 +257,21 @@ function driftChange(row: WfChangeRecord): WfEvalDriftChange {
 }
 
 /**
- * The model seams a check tree grades through, for a run cell and a decision
- * cell alike — so both pick the same judge and the same decision model.
+ * The decider seam a check tree grades through, for a run cell and a decision
+ * cell alike — so both grade with the same judge.
  *
- * The judges come from the run's plan, chosen at launch. The catalog fallback
- * only serves plans frozen before a launch had to name them.
+ * The judge comes from the run's plan, chosen at launch. The catalog fallback
+ * only serves plans frozen before a launch had to name it.
  *
- * The decision pair stays undefined on a host with no decision provider, and
- * `gradeDecisionJudge` then reports that in the check's own error rather than
- * failing the row with something opaque.
+ * Both stay undefined on a host with no decision provider, and the grader then
+ * reports that in each judge check's own error rather than failing the row with
+ * something opaque.
  */
 async function graderSeams<TDeps>(args: {
   opts: CreateWfSdkHandlersOptions<TDeps>
   env: unknown
-  judgeModelId?: string
   decisionJudgeModelId?: string
 }): Promise<{
-  getModel: GradeModelFactory
-  judgeModelId: string | undefined
   getDecider: GradeDeciderFactory | undefined
   decisionJudgeModelId: string | undefined
 }> {
@@ -277,15 +279,13 @@ async function graderSeams<TDeps>(args: {
   const ctx = { triggerKind: 'eval', env: args.env }
   const getDecider = config.getDecider
   return {
-    getModel: (modelId) => config.getModel(modelId, ctx),
-    judgeModelId:
-      args.judgeModelId ??
-      (await config.listModels({ env: args.env }))[0]?.id,
     getDecider: getDecider ? (modelId) => getDecider(modelId, ctx) : undefined,
     decisionJudgeModelId:
       args.decisionJudgeModelId ??
       (config.listDecisionModels
-        ? (await config.listDecisionModels({ env: args.env }))[0]?.id
+        ? defaultDecisionJudge(
+            await config.listDecisionModels({ env: args.env }),
+          )?.id
         : undefined),
   }
 }
@@ -306,6 +306,7 @@ export function buildEvalHandlers<TDeps>(
   | 'startEvalRun'
   | 'runDecisionEvalCell'
   | 'gradeEvalResult'
+  | 'previewJudgeCheck'
   | 'recordEvalFailure'
   | 'finalizeEvalRun'
   | 'cancelEvalRun'
@@ -735,7 +736,6 @@ export function buildEvalHandlers<TDeps>(
         ...(await graderSeams({
           opts,
           env,
-          judgeModelId: p.judgeModelId,
           decisionJudgeModelId: p.decisionJudgeModelId,
         })),
       })
@@ -773,6 +773,28 @@ export function buildEvalHandlers<TDeps>(
       })
     },
 
+    previewJudgeCheck: async (c) => {
+      const parsed = evalCheckSchema.safeParse(upgradeLegacyCheck(c.params.check))
+      if (!parsed.success || !isJudgeCheck(parsed.data)) {
+        throw new BadRequestError('Only a valid judge check can be tried.')
+      }
+      const seams = await graderSeams({
+        opts,
+        env: await c.env(),
+        decisionJudgeModelId: c.params.decisionJudgeModelId,
+      })
+      const graded = await gradeRow({
+        checks: { op: 'and', checks: [parsed.data] },
+        steps: [],
+        output: c.params.output,
+        ...seams,
+      })
+      return {
+        result: graded.checkResults[0] ?? { pass: false },
+        decisionJudgeModelId: seams.decisionJudgeModelId ?? null,
+      }
+    },
+
     gradeEvalResult: async (c) => {
       // Matrix cell identity to stamp on the result — all absent for a plain run.
       const cell = c.params
@@ -797,7 +819,6 @@ export function buildEvalHandlers<TDeps>(
         ...(await graderSeams({
           opts,
           env,
-          judgeModelId: cell.judgeModelId,
           decisionJudgeModelId: cell.decisionJudgeModelId,
         })),
         // Synthesis mode: the tools were frozen, so the model's context came from

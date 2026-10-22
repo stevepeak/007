@@ -71,7 +71,7 @@ If the reading tool is **untagged**, it runs for real no matter what the Sample 
 
 ## Checks
 
-`checks: { "op": "and" | "or", "checks": [ … ] }`. Deterministic checks read the trace; judges call a model.
+`checks: { "op": "and" | "or", "checks": [ … ] }`. Deterministic checks read the trace; judges call the run's decision model.
 
 | check | fields | passes when |
 | ----- | ------ | ----------- |
@@ -81,14 +81,15 @@ If the reading tool is **untagged**, it runs for real no matter what the Sample 
 | `node_input_match` | `nodeId`, `path?`, `match`, `value` | the node's recorded input matches |
 | `output_match` | `path?`, `match`, `value` | the run output matches |
 | `decision_answers` | `verdict?`, `expect: [{ questionId, yes? \| key?, minProbability? }]`, `nodeId?` | a decision agent's matrix matches, every miss reported. On a workflow Goal, set `nodeId` to the decision node: the workflow's output is what its Output returns, not the decision |
-| `llm_judge` | `rubric`, `path?` | a chat model writes a reason, then pass/fail, then a 0–10 confidence |
-| `decision_judge` | `rubric`, `path?`, `threshold?` | a decision model's P(yes) ≥ `threshold` (default 0.5) |
+| `decision_judge` | `rubric`, `path?`, `answer?`, `choices?`, `expected?`, `minLevel?`, `threshold?` | the decision model's probability that the row passed ≥ `threshold` (default 0.5) |
 
 - `match` is `equals` (deep equality), `contains` (substring, or array membership), `regex`, or `jsonpath` (currently an alias for `equals` after `path` selection). `path` is a dot/bracket path (`a.b[0].c`) into the output, args or input; omit for the whole value. A path that resolves to nothing grades `undefined`, which reads as a wrong answer.
 - **What checks can see:** the run output and the **top-level** steps — Tool nodes and each agent node's own tool calls (including the synthesized `spawn_*` / `await_subagents` calls of a delegating agent). Steps recorded under a parent — iteration items and a sub-agent's own internal tool calls — are not graded, and neither are a called child workflow's internal steps.
+- `decision_judge` is the only judge. `rubric` is put to the model as the question itself. `answer` picks the shape and what the probability measures: `boolean` (default) — p(yes); `category` — `choices` are the options and p is the mass on the `expected` ones; `scale` — `choices` are levels lowest-first and p is the mass at or above `minLevel`. A legacy `llm_judge` check is read as a boolean `decision_judge` with the same rubric and path.
+- A Sample's judge checks are asked together: one decider request per output `path`, split only past the model's question cap. Ask one thing per check — splitting a long rubric costs no extra calls.
 - Judges are shown the graded output plus every tool call the checks can see, with outputs, plus any staged synthesis calls — so a rubric can ask about groundedness.
 - Row **status**: AND/OR over every check. **score**: the pass rate of the judge checks only (null with no judge). A Sample with **no checks** grades `error`, not pass or fail. A run that failed is not graded — its cell is `error`.
-- Prefer a deterministic check wherever one can express the assertion; use a judge only for what cannot be asserted literally. Use `decision_judge` for anything that reduces to yes/no — a probability of 0.52 is visible, a judge's "8/10" is not.
+- Prefer a deterministic check wherever one can express the assertion; use a judge only for what cannot be asserted literally. A borderline call is visible: each judge result stores its `probability` beside `pass`.
 
 ## Mining Samples from real runs
 
@@ -97,7 +98,7 @@ If the reading tool is **untagged**, it runs for real no matter what the Sample 
 - `trajectory` (default): the run's real tool results become mocked pins, and `tool_called` checks are added for each tool used. A tool called more than once keeps only its **last** result. Large results are truncated — replace them.
 - `synthesis`: the tool results are staged as an assistant turn in the conversation and nothing is pinned. The agent keeps its tools; a call returns `{}`, so pin a tool if the answer depends on calling it again. Conversation agents only.
 
-Both seed an `llm_judge` rubric from the run (never from its answer). Rewrite the rubric, then save with `upsert_eval_sample`. A run with several agent steps answers with the list; pass `cursor` to choose.
+Both seed a `decision_judge` question from the run (never from its answer). Rewrite the question, then save with `upsert_eval_sample`. A run with several agent steps answers with the list; pass `cursor` to choose.
 
 ## Running: sweeps, drafts, judges, cost
 
@@ -107,12 +108,12 @@ Both seed an `llm_judge` rubric from the run (never from its answer). Rewrite th
 - `prompts: [{ label, body }]` — alternate system prompts; the saved prompt is always included as a baseline column. Requires `models`. Not available for decision agents (their questions are the prompt).
 - `attempts` / `attemptsByModel` — best-of-N per model, to see variance. Requires `models`.
 - `draftAgentId` — grade the agent's **unsaved draft** instead of its published version (every named Goal must target that agent). The draft config is frozen into the run's plan. If the draft is identical to the published version, the reply says so.
-- `judgeModelId` / `decisionJudgeModelId` — the run's judges: the chat model behind every `llm_judge` check and the decision model behind every `decision_judge` check. A check cannot name its own model, so one report has one judge. Omitted, the judge is the cheapest enabled chat model that supports structured output and the decision judge is the first decision model, and the reply's `launched.judge` / `launched.decisionJudge` say which. Only a kind the Samples carry is frozen. Keep them fixed across runs you will compare.
+- `decisionJudgeModelId` — the run's judge: the decision model behind every judge check. A check cannot name its own model, so one report has one judge. Omitted, it is the first calibrated decision model, and the reply's `launched.judge` says which. Frozen only when the Samples carry a judge check. Keep it fixed across runs you will compare.
 - `concurrency` — 1, 2, 4 or 8 in flight (default 2). This is the rate the sweep hits the provider.
 
 Limits: at most **100 cells** (samples × models × prompts × attempts) per call. Each cell is a real, billed model call. Each node of an eval run is capped at a 12-minute timeout, about 9 minutes of agent work (applied run-wide, without changing the target's graph); a cell that takes longer than 15 minutes is given up on and recorded as `error`. After three consecutive provider failures a circuit breaker stops launching cells and records the rest.
 
-The report (`get_eval_run`): per-sample verdicts with each check's reason, cost/tokens/model per cell, `matrix` (per model × prompt: pass rate, mean score, average cost, throughput, and `bestAccuracy` / `cheapest` / `fastest`), the run's `judges`, and a **drift** section comparing against the last comparable run — including whether the agent was republished since and whether a different judge graded it (`judgeChangedSinceLastRun`). `results` is bounded at 60 rows, worst first; narrow with `status`, `modelId`, `promptLabel`, page with `offset`, or pass `rowId` for one Sample unclipped. `pending` is cells not yet settled (or called off).
+The report (`get_eval_run`): per-sample verdicts with each check's reason, cost/tokens/model per cell, `matrix` (per model × prompt: pass rate, mean score, average cost, throughput, and `bestAccuracy` / `cheapest` / `fastest`), the run's `judges` (`decisionJudgeModelId`; `judgeModelId` only on runs graded by the old chat judge), and a **drift** section comparing against the last comparable run — including whether the agent was republished since and whether a different judge graded it (`judgeChangedSinceLastRun`). `results` is bounded at 60 rows, worst first; narrow with `status`, `modelId`, `promptLabel`, page with `offset`, or pass `rowId` for one Sample unclipped. `pending` is cells not yet settled (or called off).
 
 ## Resumable runs
 

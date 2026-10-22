@@ -1,12 +1,12 @@
-import { generateObject, NoObjectGeneratedError, type LanguageModel } from 'ai'
-import { z } from 'zod'
-
 import { resolvePath } from '../engine/binding'
 import { agentToolCalls } from '../engine/cost'
 import {
+  buildProviderQuestion,
+  chunkQuestions,
   DEFAULT_DECISION_THRESHOLD,
   resolveVerdicts,
   type Decider,
+  type DecisionQuestion,
   type DecisionVerdict,
 } from '../engine/decision'
 import { errorFeedLine } from '../engine/error-detail'
@@ -18,10 +18,10 @@ import {
   type DecisionExpectation,
   type EvalCheck,
   type EvalMatch,
+  upgradeLegacyChecks,
 } from '../engine/eval-schema'
 import type { ToolNodeMeta } from '../engine/nodes/tool'
 import { stableEqual } from '../engine/stable-stringify'
-import { strictSchema } from '../engine/strict-schema'
 import { truncate } from '../engine/text'
 
 // Phase 3 — the pure grading engine. Given a row's `checks` tree and a run's
@@ -33,8 +33,8 @@ import { truncate } from '../engine/text'
 //              judgements went its way; the confidence each judge reports is
 //              kept per-check rather than folded in, because how SURE a judge
 //              was is not a statement about how GOOD the output was.
-// Deterministic checks read the trace synchronously; only `llm_judge` needs a
-// model (via `getModel`). No database, no Cloudflare — unit-testable with plain
+// Deterministic checks read the trace synchronously; only judge checks need a
+// provider (via `getDecider`). No database, no Cloudflare — unit-testable with plain
 // fixtures. Shared by the server's `gradeEvalResult` (Phase 4) and `bun:test`.
 
 /** The minimal `wf_run_step` shape the grader reads. */
@@ -47,14 +47,10 @@ export type GradeStep = {
   meta?: unknown
 }
 
-/** Resolves the run's judge model id to a model. Bound by the caller (server/test). */
-export type GradeModelFactory = (modelId: string) => LanguageModel
-
 /**
- * Resolves the run's decision judge id to a {@link Decider}. The decision
- * counterpart of {@link GradeModelFactory}, and optional for the same reason the
- * SDK's `getDecider` is: a host with no decision provider simply has no
- * `decision_judge` checks to grade.
+ * Resolves the run's decision judge id to a {@link Decider}. Bound by the caller
+ * (server/test); optional for the same reason the SDK's `getDecider` is: a host
+ * with no decision provider has no judge to grade with.
  */
 export type GradeDeciderFactory = (modelId: string) => Decider
 
@@ -62,18 +58,14 @@ export type GradeRowInput = {
   checks: CheckTree
   steps: GradeStep[]
   output: unknown
-  /** Required only when the tree contains an `llm_judge` check. */
-  getModel?: GradeModelFactory
-  /** The run's judge: the chat model every `llm_judge` check is graded by. */
-  judgeModelId?: string
-  /** Required only when the tree contains a `decision_judge` check. */
+  /** Required only when the tree contains a judge check. */
   getDecider?: GradeDeciderFactory
-  /** The run's decision judge: the model every `decision_judge` is graded by. */
+  /** The run's decision judge: the model every judge check is graded by. */
   decisionJudgeModelId?: string
   /**
    * Synthesis-mode context — tool calls STAGED in the row's seeded conversation
    * (see `collectSeededToolCalls`). Under `freezeTools` the agent calls nothing,
-   * so these never land in `steps`; they're passed here so an `llm_judge` can
+   * so these never land in `steps`; they're passed here so a judge can
    * grade the answer's faithfulness to the context the model was shown. Binary
    * `tool_called` / `tool_args_match` checks IGNORE these — those grade what the
    * agent actually did, not what was pre-seeded.
@@ -321,8 +313,7 @@ function expectationMiss(
   // The winning outcome's share of the mass, on one scale for all three types —
   // the number `minProbability` is a floor on. For a boolean expecting `no`
   // that is `1 - p`, because "no with p(yes)=0.1" is a confident no.
-  const confidenceOf = (key: string) =>
-    verdict.distribution.find((e) => e.key === key)?.probability ?? 0
+  const confidenceOf = (key: string) => { return verdict.distribution.find((e) => e.key === key)?.probability ?? 0 }
 
   if (verdict.type === 'boolean') {
     if (expectation.yes != null && verdict.value !== expectation.yes) {
@@ -348,208 +339,168 @@ function expectationMiss(
   return null
 }
 
-// ── judge check ─────────────────────────────────────────────────────────────
+// ── judge checks ────────────────────────────────────────────────────────────
+// Every judge is a `decision_judge`: a question put to the run's decision model,
+// answered with a probability. A row's judges are asked TOGETHER — one decider
+// request per output path, chunked only past the model's question cap — so ten
+// judge checks cost one round trip, not ten.
 
-// `reason` is declared FIRST on purpose: `generateObject` emits the object's
-// keys in schema order, so the judge has to write its justification before it
-// commits to a verdict. Reversed, the verdict comes out first and the reason is
-// a post-hoc rationalization of a decision the model already guessed at.
-//
-// `confidence` comes last, after the decision it is about: asked for first, the
-// model picks a number and then reasons toward a verdict that matches it. It is
-// also deliberately UNBOUNDED here and clamped below instead — a min/max would
-// turn "9.5" or "95" into a `NoObjectGeneratedError` that costs the whole check
-// its verdict, and the verdict is the part worth having. The prompt states the
-// scale; the code enforces it.
-const judgeSchema = z.object({
-  reason: z.string(),
-  pass: z.boolean(),
-  confidence: z
-    .number()
-    .describe(`Confidence in the verdict, 0 to ${JUDGE_CONFIDENCE_MAX}.`),
-})
+type JudgeCheck = Extract<EvalCheck, { type: 'decision_judge' }>
 
-// The written anchors that make the decision repeatable. These, not the rubric,
-// are what stop one judge run from passing output that the next one fails.
-const PASS_ANCHOR =
-  'the output satisfies the rubric. Cosmetic shortfalls a reviewer would not ask to change still pass.'
-const FAIL_ANCHOR =
-  'the output does not satisfy the rubric, satisfies it only by accident, or a reviewer would ask for a concrete fix (a gap, a hedge, an unsupported claim).'
-
-// Anchors for the confidence number, so it means the same thing across runs and
-// across models. It measures how far from the line the call was — NOT how good
-// the output is. A confident fail and a confident pass both report 10.
-const CONFIDENCE_ANCHORS = [
-  '0–3 — a coin flip: the rubric is ambiguous here, or the output sits right on the line.',
-  '4–7 — a defensible call, but a careful reviewer could reach the other verdict.',
-  '8–10 — no real doubt: the output clearly does, or clearly does not, satisfy the rubric.',
-]
+/** A judge check's question plus how its answer becomes p(pass). */
+type PreparedJudge = {
+  question: DecisionQuestion
+  /** The keys whose probability mass counts as a pass (unused for boolean). */
+  passKeys: Set<string>
+  /** How the reason names what was measured, e.g. `p(yes)`. */
+  measured: string
+}
 
 /**
- * How many times one judge call may be issued before giving up.
- *
- * `generateObject` already defaults to `maxRetries: 2`, but that only covers
- * RETRYABLE provider rejections (429, 503) — it fires inside the call, before a
- * response exists. A response that arrives intact and simply isn't the
- * `{reason, pass, confidence}` object the schema asked for throws
- * `NoObjectGeneratedError` on the FIRST occurrence and is never retried, so a
- * judge that merely fumbled its JSON used to cost the whole cell its verdict.
- * One extra attempt turns that formatting flake into a graded row. Same bound
- * and same reasoning as `STRUCTURED_MAX_ATTEMPTS` on the structured agent path
- * (`engine/nodes/agent-generation.ts`). Anything else — a provider rejection, a
- * missing model — has either already been retried or will never succeed, so it
- * propagates untouched rather than being tried again here.
+ * Validate one check and build its provider question. Throws on a check that
+ * cannot be asked — a category with no expected option, a scale whose
+ * `minLevel` isn't one of its levels — so the row reports the author's mistake
+ * as that check's error instead of grading it against nothing.
  */
-const JUDGE_MAX_ATTEMPTS = 2
-
-/**
- * Grade one `decision_judge`: put the rubric to a decision model as a single
- * boolean question and threshold the probability it comes back with.
- *
- * Deliberately much smaller than {@link gradeJudge}. There is no prompt to
- * engineer (the rubric IS the question), no retry for malformed JSON (there is no
- * JSON for the model to malform), and no confidence to elicit — the engine
- * derives one, on the same scale every other decider's answers use.
- *
- * The tool calls the run made are folded into the state, exactly as the LLM judge
- * folds them into its prompt: under synthesis mode the seeded calls are the only
- * context the model was given, so a rubric about groundedness has to see them.
- */
-async function gradeDecisionJudge(
-  check: Extract<EvalCheck, { type: 'decision_judge' }>,
-  input: GradeRowInput,
-): Promise<CheckResult & { confidence: number }> {
-  const modelId = input.decisionJudgeModelId
-  if (!input.getDecider || !modelId) {
-    throw new Error(
-      'decision_judge check requires a getDecider factory and the run\'s decisionJudgeModelId. A host with no decision provider cannot grade this check — see WfSdkConfig.getDecider.',
-    )
+export function prepareJudge(check: JudgeCheck, id: string): PreparedJudge {
+  const answer = check.answer ?? 'boolean'
+  const choices = (check.choices ?? [])
+    .map((c) => c.trim())
+    .filter(Boolean)
+    .map((key) => ({ key }))
+  const question = buildProviderQuestion(
+    { id, type: answer, prompt: check.rubric },
+    choices,
+    'This judge check',
+  )
+  if (answer === 'boolean') {
+    return { question, passKeys: new Set(['yes']), measured: 'p(yes)' }
   }
-  const toolCalls = [
-    ...(input.seededToolCalls ?? []),
-    ...collectToolCalls(input.steps),
-  ].map((c) => ({ tool: c.toolId, args: c.args, output: c.output }))
-  const graded = valueAtPath(input.output, check.path)
-
-  const question = {
-    id: 'passes',
-    type: 'boolean' as const,
-    prompt: check.rubric,
+  const keys = choices.map((c) => c.key)
+  if (answer === 'category') {
+    const expected = (check.expected ?? []).filter((k) => keys.includes(k))
+    if (expected.length === 0) {
+      throw new Error(
+        'This category judge has no expected option — pick the option(s) that count as a pass.',
+      )
+    }
+    return {
+      question,
+      passKeys: new Set(expected),
+      measured: `p(${expected.join(' | ')})`,
+    }
   }
-  const response = await input.getDecider(modelId)({
-    // A structured state rather than a rendered prompt: a decider takes the
-    // context as data, and labelling the parts is all the framing it needs.
-    state: {
-      output: graded,
-      outputPath: check.path ?? null,
-      toolCallsAndResults: toolCalls,
-    },
-    questions: [question],
-  })
-  const verdict = resolveVerdicts([question], response.answers, {
-    threshold: check.threshold ?? DEFAULT_DECISION_THRESHOLD,
-  }).passes
-  if (verdict.type !== 'boolean') {
+  const from = keys.indexOf(check.minLevel ?? '')
+  if (from < 0) {
     throw new Error(
-      `decision_judge expected a boolean verdict, got '${verdict.type}'.`,
+      'This scale judge has no minimum level — pick the lowest level that counts as a pass.',
     )
   }
   return {
-    pass: verdict.value,
-    probability: verdict.probability,
-    // Rescaled to the 0..10 the stored `CheckResult.confidence` is read as
-    // everywhere downstream, so a calibrated judge and an LLM one land on one
-    // axis in the report instead of two that look alike and aren't.
-    confidence: Math.round(verdict.confidence * JUDGE_CONFIDENCE_MAX),
-    reason: `p=${verdict.probability.toFixed(2)} ${
-      verdict.value ? '≥' : '<'
-    } ${verdict.threshold.toFixed(2)} (${modelId})`,
+    question,
+    passKeys: new Set(keys.slice(from)),
+    measured: `p(≥ ${keys[from]})`,
   }
 }
 
-async function gradeJudge(
-  check: Extract<EvalCheck, { type: 'llm_judge' }>,
+/** The probability a verdict gives the passing answer(s). */
+function passProbability(verdict: DecisionVerdict, judge: PreparedJudge): number {
+  if (verdict.type === 'boolean') return verdict.probability
+  return Math.min(
+    1,
+    verdict.distribution
+      .filter((e) => judge.passKeys.has(e.key))
+      .reduce((sum, e) => sum + e.probability, 0),
+  )
+}
+
+/** One judge's outcome: a verdict, or the error that kept it from one. */
+type JudgeOutcome = { ok: true; result: CheckResult } | { ok: false; error: unknown }
+
+/**
+ * Grade every judge check of a row. Returns one outcome per entry of `checks`,
+ * by index. Checks sharing an output path are asked in one decider request
+ * (split by the decider's `maxQuestionsPerCall`); a request that fails fails
+ * only the checks it carried.
+ */
+async function gradeJudges(
+  checks: { check: JudgeCheck; index: number }[],
   input: GradeRowInput,
-): Promise<CheckResult & { confidence: number }> {
-  const modelId = input.judgeModelId
-  if (!input.getModel || !modelId) {
-    throw new Error(
-      'llm_judge check requires a getModel factory and the run\'s judgeModelId',
+): Promise<Map<number, JudgeOutcome>> {
+  const outcomes = new Map<number, JudgeOutcome>()
+  if (checks.length === 0) return outcomes
+  const modelId = input.decisionJudgeModelId
+  if (!input.getDecider || !modelId) {
+    const error = new Error(
+      'Judge checks need the run\'s decisionJudgeModelId and a getDecider factory. A host with no decision provider cannot grade them — see WfSdkConfig.getDecider.',
     )
+    for (const { index } of checks) outcomes.set(index, { ok: false, error })
+    return outcomes
   }
-  // Tool calls the model was shown: the ones it actually made in the run, plus
-  // any STAGED in a seeded conversation (synthesis mode — under `freezeTools`
-  // the agent calls nothing, so the seeded context is the only context). Each
-  // carries its OUTPUT so the judge can grade whether the answer stayed faithful
-  // to what was retrieved, not just whether the right tool was named.
+  const decider = input.getDecider(modelId)
+  // The tool calls the run made are folded into the state: under synthesis mode
+  // the seeded calls are the only context the model was given, so a question
+  // about groundedness has to see them.
   const toolCalls = [
     ...(input.seededToolCalls ?? []),
     ...collectToolCalls(input.steps),
   ].map((c) => ({ tool: c.toolId, args: c.args, output: c.output }))
-  // The judge grades the whole output, or — when the check pins a `path` — only
-  // the value at that path, so a rubric can target one known field.
-  const graded = valueAtPath(input.output, check.path)
-  const outputLabel = check.path
-    ? `RUN OUTPUT (at \`${check.path}\`)`
-    : 'RUN OUTPUT'
-  // Built once, outside the retry loop, so a re-issue re-sends an IDENTICAL
-  // request — a retry that also changed the prompt would be a different
-  // experiment, not a second attempt at the same one.
-  const prompt = [
-    'You are grading an AI system’s run against a rubric. Write a one- or',
-    'two-sentence justification citing the specific part of the output you are',
-    'reacting to, THEN decide whether it passes:',
-    `  • pass — ${PASS_ANCHOR}`,
-    `  • fail — ${FAIL_ANCHOR}`,
-    '',
-    `Finally, rate your CONFIDENCE in that decision from 0 to ${JUDGE_CONFIDENCE_MAX}.`,
-    'Confidence is about how clear-cut the call was, not about how good the',
-    'output is — a clear failure is a 10, not a 0:',
-    ...CONFIDENCE_ANCHORS.map((a) => `  • ${a}`),
-    '',
-    'Judge ONLY against the rubric — ignore anything the rubric does not ask',
-    'about, however good or bad. The TOOL CALLS & RESULTS below are the context',
-    'the model was given; use them to judge whether the output is grounded in',
-    '(and consistent with) that context.',
-    '',
-    `RUBRIC:\n${check.rubric}`,
-    '',
-    `${outputLabel}:\n${JSON.stringify(graded)}`,
-    '',
-    `TOOL CALLS & RESULTS:\n${JSON.stringify(toolCalls)}`,
-  ].join('\n')
-  // The model factory is resolved once: `getModel` is a host seam and may build
-  // a client, which the retry has no reason to redo.
-  const model = input.getModel(modelId)
-  let object: z.infer<typeof judgeSchema>
-  for (let attempt = 1; ; attempt++) {
+
+  const byPath = new Map<string, { judge: PreparedJudge; check: JudgeCheck; index: number }[]>()
+  for (const { check, index } of checks) {
     try {
-      ;({ object } = await generateObject({
-        model,
-        schema: strictSchema(judgeSchema),
-        prompt,
-      }))
-      break
-    } catch (err) {
-      if (
-        attempt >= JUDGE_MAX_ATTEMPTS ||
-        !NoObjectGeneratedError.isInstance(err)
-      ) {
-        throw err
-      }
+      const judge = prepareJudge(check, `c${index}`)
+      const path = check.path ?? ''
+      byPath.set(path, [...(byPath.get(path) ?? []), { judge, check, index }])
+    } catch (error) {
+      outcomes.set(index, { ok: false, error })
     }
   }
-  return {
-    pass: object.pass,
-    // Clamped and rounded rather than trusted: the stored value is read as
-    // "N out of 10" everywhere downstream, so a model that answers 11 for
-    // emphasis or 7.5 for precision must not put a number on that scale that
-    // it can't carry.
-    confidence: Math.round(
-      Math.min(Math.max(object.confidence, 0), JUDGE_CONFIDENCE_MAX),
-    ),
-    reason: object.reason,
-  }
+
+  await Promise.all(
+    [...byPath].flatMap(([path, group]) => {
+      const state = {
+        output: valueAtPath(input.output, path || undefined),
+        outputPath: path || null,
+        toolCallsAndResults: toolCalls,
+      }
+      return chunkQuestions(
+        group.map((g) => g.judge.question),
+        decider.maxQuestionsPerCall,
+      ).map(async (questions) => {
+        const members = group.filter((g) => questions.includes(g.judge.question))
+        try {
+          const response = await decider({ state, questions })
+          for (const { judge, check, index } of members) {
+            const threshold = check.threshold ?? DEFAULT_DECISION_THRESHOLD
+            const verdict = resolveVerdicts([judge.question], response.answers, {
+              threshold,
+            })[judge.question.id]
+            const probability = passProbability(verdict, judge)
+            const pass = probability >= threshold
+            outcomes.set(index, {
+              ok: true,
+              result: {
+                pass,
+                probability,
+                // On the 0..10 the stored `confidence` is read as everywhere
+                // downstream: how far from a coin flip the answer landed.
+                confidence: Math.round(
+                  Math.abs(2 * probability - 1) * JUDGE_CONFIDENCE_MAX,
+                ),
+                reason: `${judge.measured}=${probability.toFixed(2)} ${
+                  pass ? '≥' : '<'
+                } ${threshold.toFixed(2)} (${response.modelId ?? modelId})`,
+              },
+            })
+          }
+        } catch (error) {
+          for (const { index } of members) outcomes.set(index, { ok: false, error })
+        }
+      })
+    }),
+  )
+  return outcomes
 }
 
 // ── row grading ─────────────────────────────────────────────────────────────
@@ -565,12 +516,12 @@ type GradedCheck = { result: CheckResult; verdict: boolean | 'unknown' }
 
 /**
  * Grade one row's checks against its run trace. Deterministic checks resolve
- * synchronously; judge checks are awaited (concurrently). `status` is a
+ * synchronously; judge checks are batched into decider calls. `status` is a
  * three-valued reduction over every check (see below) and `score` is the pass
  * rate across the judges that actually answered.
  */
 export async function gradeRow(input: GradeRowInput): Promise<GradeRowResult> {
-  const { op, checks } = input.checks
+  const { op, checks } = upgradeLegacyChecks(input.checks)
 
   // A sample that asserts nothing used to report `pass` — the most confident
   // green cell in the report and the least earned, inflating every pass rate it
@@ -596,38 +547,34 @@ export async function gradeRow(input: GradeRowInput): Promise<GradeRowResult> {
   // rendering as a red cell above an empty banner.
   const judgeErrors: string[] = []
 
-  const graded = await Promise.all(
-    checks.map(async (check): Promise<GradedCheck> => {
-      if (!isJudgeCheck(check)) {
-        const result = gradeBinary(check, input)
-        return { result, verdict: result.pass }
-      }
-      try {
-        // Both judge families share the accumulator, the error handling and the
-        // three-valued reduction below — they differ only in how a verdict is
-        // reached, which is the point of having two.
-        const r =
-          check.type === 'decision_judge'
-            ? await gradeDecisionJudge(check, input)
-            : await gradeJudge(check, input)
-        judgesAnswered += 1
-        if (r.pass) judgesPassed += 1
-        return { result: r, verdict: r.pass }
-      } catch (err) {
-        // `errorFeedLine`, not `err.message`: a bare message on an APICallError
-        // is "Bad Request" and on a RetryError it's "Failed after N attempts",
-        // both useless. The helper keeps the status code, the attempt count and
-        // — for a structured failure — the finish reason, which is the whole
-        // diagnosis: it says whether the judge's answer was TRUNCATED or merely
-        // malformed.
-        const reason = `judge error: ${errorFeedLine(err)}`
-        judgeErrors.push(reason)
-        // Stored `pass: false` keeps the check rendering as not-passing, which
-        // is honest; only the reduction below treats it as unknown.
-        return { result: { pass: false, reason }, verdict: 'unknown' }
-      }
-    }),
+  const judgeOutcomes = await gradeJudges(
+    checks
+      .map((check, index) => ({ check, index }))
+      .filter((c): c is { check: JudgeCheck; index: number } => {
+        return isJudgeCheck(c.check)
+      }),
+    input,
   )
+  const graded = checks.map((check, index): GradedCheck => {
+    const outcome = judgeOutcomes.get(index)
+    if (!outcome) {
+      const result = gradeBinary(check, input)
+      return { result, verdict: result.pass }
+    }
+    if (outcome.ok) {
+      judgesAnswered += 1
+      if (outcome.result.pass) judgesPassed += 1
+      return { result: outcome.result, verdict: outcome.result.pass }
+    }
+    // `errorFeedLine`, not `err.message`: a bare message on an APICallError is
+    // "Bad Request" and on a RetryError it's "Failed after N attempts", both
+    // useless. The helper keeps the status code and the attempt count.
+    const reason = `judge error: ${errorFeedLine(outcome.error)}`
+    judgeErrors.push(reason)
+    // Stored `pass: false` keeps the check rendering as not-passing, which is
+    // honest; only the reduction below treats it as unknown.
+    return { result: { pass: false, reason }, verdict: 'unknown' }
+  })
 
   const results = graded.map((g) => g.result)
   // Three-valued (Kleene) reduction. A judge that errored is UNKNOWN, not false:

@@ -182,7 +182,7 @@ describe('the surrounding signal', () => {
       rating: 'down',
       note: 'Missed the Bex account.',
     })
-    const judge = result.draft.checks.checks.find((c) => c.type === 'llm_judge')
+    const judge = result.draft.checks.checks.find((c) => c.type === 'decision_judge')
     expect(judge?.rubric).toContain('Missed the Bex account.')
   })
 

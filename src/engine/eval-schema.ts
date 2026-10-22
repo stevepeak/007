@@ -30,12 +30,9 @@ export type EvalMatch = z.infer<typeof evalMatchSchema>
 // validate on read and disappear on the next write.
 
 // ── Judge output ────────────────────────────────────────────────────────────
-// An LLM judge returns a DECISION and how sure it is of it, never a quality
-// float. A model asked for "a score from 0 to 1" produces numbers it cannot
-// defend — 0.72 vs 0.68 is noise, and two runs of the same output drift by more
-// than the cutoff separating pass from fail. Pass/fail is a judgement a model
-// can actually make repeatably; confidence says how close to the line it was,
-// without pretending that closeness is a measure of quality.
+// A judge returns a pass/fail, the probability behind it, and how far from a
+// coin flip that probability landed — never a quality score. How sure the judge
+// was is not a statement about how good the output was.
 
 /** How sure the judge is of its own verdict, 0 (a coin flip) to 10 (certain). */
 export const JUDGE_CONFIDENCE_MAX = 10
@@ -70,7 +67,7 @@ export type DecisionExpectation = z.infer<typeof decisionExpectationSchema>
 
 // A single assertion. Two families, split by how they produce a verdict:
 //   • binary/deterministic — pass|fail read straight off the run trace.
-//   • subjective/scored    — an LLM judge returns pass|fail AND a 0..1 score.
+//   • subjective/scored    — a decision model's probability against a line.
 export const evalCheckSchema = z.discriminatedUnion('type', [
   // ── binary / deterministic ────────────────────────────────────────────────
   z.object({
@@ -109,28 +106,34 @@ export const evalCheckSchema = z.discriminatedUnion('type', [
   }),
   // ── subjective / scored ───────────────────────────────────────────────────
   /**
-   * A calibrated judge: one boolean question put to a DECISION model (see the
-   * SDK's `decision.ts`), which answers with a probability rather than prose.
+   * The judge: one question put to a DECISION model (see the SDK's
+   * `decision.ts`), which answers with a probability rather than prose.
    *
-   * The same job as `llm_judge`, done by something built for it. An LLM judge is
-   * asked to write a verdict and then rate its own confidence in it, which is a
-   * guess about a guess; a decider returns a probability and the check applies
-   * the threshold. That makes a borderline row legible as 0.52 instead of as a
-   * coin-flip `pass` with a cheerful 8/10 next to it.
-   *
-   * It is a lens beside `llm_judge`, not a replacement: a rubric that needs a
-   * written critique still wants the LLM. Use this for the ones that reduce to a
-   * yes/no you would otherwise be thresholding by eye.
+   * Every answer type reduces to one number — the probability the row passed —
+   * and one line, `threshold`:
+   *   • boolean  — p(yes).
+   *   • category — the probability mass on the `expected` options.
+   *   • scale    — the probability mass at or above `minLevel`.
+   * So a borderline row reads as 0.52 on every type, and the report can flag
+   * it the same way.
    *
    * The decision model is not chosen here: it is the run's
    * `decisionJudgeModelId`, picked at launch, so one report has one judge.
    */
   z.object({
     type: z.literal('decision_judge'),
-    /** The question, phrased so "yes" means the row passed. */
+    /** The question, phrased so the passing answer is the expected one. */
     rubric: z.string(),
     /** Optional JSON path into the run `output`; omit = whole output. */
     path: z.string().optional(),
+    /** The answer shape. Omit = boolean. */
+    answer: z.enum(['boolean', 'category', 'scale']).optional(),
+    /** category: the options. scale: the levels, lowest first. */
+    choices: z.array(z.string()).optional(),
+    /** category: the options that count as a pass. */
+    expected: z.array(z.string()).optional(),
+    /** scale: the lowest level that counts as a pass. */
+    minLevel: z.string().optional(),
     /**
      * Probability at or above which the row passes. Defaults to 0.5. This is the
      * author's line to draw, which is exactly why the provider never sees it.
@@ -164,21 +167,6 @@ export const evalCheckSchema = z.discriminatedUnion('type', [
      * Omit for a decision-agent target, whose output IS the decision.
      */
     nodeId: z.string().optional(),
-  }),
-  /**
-   * A chat model reads the output and writes a verdict. The model is the run's
-   * `judgeModelId`, picked at launch — never per check — so one report has one
-   * judge.
-   */
-  z.object({
-    type: z.literal('llm_judge'),
-    rubric: z.string(),
-    /**
-     * Optional JSON path into the run `output`. When set, the judge grades ONLY
-     * the value at that path (e.g. `docMeta.recipients`) instead of the whole
-     * output — a way to point the rubric at one known field. Omit = whole output.
-     */
-    path: z.string().optional(),
   }),
 ])
 export type EvalCheck = z.infer<typeof evalCheckSchema>
@@ -224,7 +212,7 @@ export function describeCheckVocabulary(): string[] {
 }
 
 /** The subjective check types — the ones that need a provider to reach a verdict. */
-export const JUDGE_CHECK_TYPES = ['llm_judge', 'decision_judge'] as const
+export const JUDGE_CHECK_TYPES = ['decision_judge'] as const
 export type JudgeCheckType = (typeof JUDGE_CHECK_TYPES)[number]
 
 /**
@@ -232,31 +220,52 @@ export type JudgeCheckType = (typeof JUDGE_CHECK_TYPES)[number]
  * trace. Everything except the judges.
  */
 export const BINARY_CHECK_TYPES = EVAL_CHECK_TYPES.filter(
-  (t): t is Exclude<EvalCheckType, JudgeCheckType> =>
-    !(JUDGE_CHECK_TYPES as readonly string[]).includes(t),
+  (t): t is Exclude<EvalCheckType, JudgeCheckType> => { return !(JUDGE_CHECK_TYPES as readonly string[]).includes(t) },
 )
+
+/**
+ * Reads a check saved before the decision judge was the only judge. An
+ * `llm_judge` keeps its rubric and path and is graded as a boolean
+ * `decision_judge`. Stored rows are never rewritten in place; the next save
+ * writes the new type. Anything else passes through untouched.
+ */
+export function upgradeLegacyCheck(check: unknown): unknown {
+  if (
+    check &&
+    typeof check === 'object' &&
+    (check as { type?: unknown }).type === 'llm_judge'
+  ) {
+    const { rubric, path } = check as { rubric?: unknown; path?: unknown }
+    return {
+      type: 'decision_judge',
+      rubric,
+      ...(path === undefined ? {} : { path }),
+    }
+  }
+  return check
+}
+
+/** {@link upgradeLegacyCheck} over a whole stored tree. */
+export function upgradeLegacyChecks(tree: CheckTree): CheckTree {
+  if (!Array.isArray(tree?.checks)) return tree
+  return {
+    ...tree,
+    checks: tree.checks.map((c) => upgradeLegacyCheck(c) as EvalCheck),
+  }
+}
 
 /** The AND/OR reducer over a row's checks. */
 export const checkTreeSchema = z.object({
   op: z.enum(['and', 'or']),
-  checks: z.array(evalCheckSchema),
+  checks: z.array(z.preprocess(upgradeLegacyCheck, evalCheckSchema)),
 })
 export type CheckTree = z.infer<typeof checkTreeSchema>
 
-/**
- * Which judge kinds a set of check trees needs a model for — what a launch
- * must name a judge for, and which judge pickers the run dialog shows.
- */
-export function judgeTypesUsed(trees: CheckTree[]): Set<JudgeCheckType> {
-  const used = new Set<JudgeCheckType>()
-  for (const tree of trees) {
-    for (const check of tree?.checks ?? []) {
-      if (check.type === 'llm_judge' || check.type === 'decision_judge') {
-        used.add(check.type)
-      }
-    }
-  }
-  return used
+/** Whether any of these trees needs the run's decision judge. */
+export function hasJudgeChecks(trees: CheckTree[]): boolean {
+  return trees.some((tree) => {
+    return (tree?.checks ?? []).some((c) => isJudgeCheck(upgradeLegacyCheck(c) as EvalCheck))
+  })
 }
 
 // ── Synthesis mode (seeded conversation) ────────────────────────────────────

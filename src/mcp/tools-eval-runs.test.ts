@@ -1246,7 +1246,7 @@ describe('run_eval — gating the models before spending anything', () => {
 })
 
 describe('run_eval — per-model attempts and the judge pin', () => {
-  const judged = { op: 'and', checks: [{ type: 'llm_judge', rubric: 'x' }] }
+  const judged = { op: 'and', checks: [{ type: 'decision_judge', rubric: 'x' }] }
   const setWithRows = (n: number) => ({
     set: { id: 'set_1', name: 'Goal', targetKind: 'agent', targetId: 'ag_1' },
     rows: Array.from({ length: n }, (_, i) => ({
@@ -1257,7 +1257,7 @@ describe('run_eval — per-model attempts and the judge pin', () => {
   })
 
   const stubs = (over: Partial<WfDataClient> = {}) => {
-    let plan: { cells: unknown[]; judgeModelId?: string } | null = null
+    let plan: { cells: unknown[]; decisionJudgeModelId?: string } | null = null
     return {
       client: stubClient({
         createEvalRun: async (input: { plan?: unknown }) => {
@@ -1268,6 +1268,10 @@ describe('run_eval — per-model attempts and the judge pin', () => {
         listModels: async () => { return [
             { id: 'baseline', label: 'b', capabilities: { structuredOutput: true } },
             { id: 'candidate', label: 'c', capabilities: { structuredOutput: true } },
+          ] as never },
+        listDecisionModels: async () => { return [
+            { id: 'emulated', label: 'e', calibrated: false },
+            { id: 'native', label: 'n', calibrated: true },
           ] as never },
         listAgents: async () => [] as never,
         getEvalSet: async () => setWithRows(2) as never,
@@ -1315,19 +1319,19 @@ describe('run_eval — per-model attempts and the judge pin', () => {
     const { client, planOf } = stubs()
     const out = (await toolNamed('run_eval').run(client, {
       setIds: ['set_1'],
-      judgeModelId: 'venice:judge',
+      decisionJudgeModelId: 'emulated',
     })) as { launched: { judge: string } }
-    expect(planOf()?.judgeModelId).toBe('venice:judge')
-    expect(out.launched.judge).toBe('venice:judge')
+    expect(planOf()?.decisionJudgeModelId).toBe('emulated')
+    expect(out.launched.judge).toBe('emulated')
   })
 
-  test('an omitted judge takes the default judge model, and says which', async () => {
+  test('an omitted judge takes the first calibrated decider, and says which', async () => {
     const { client, planOf } = stubs()
     const out = (await toolNamed('run_eval').run(client, {
       setIds: ['set_1'],
     })) as { launched: { judge: string } }
-    expect(planOf()?.judgeModelId).toBe('baseline')
-    expect(out.launched.judge).toBe('baseline')
+    expect(planOf()?.decisionJudgeModelId).toBe('native')
+    expect(out.launched.judge).toBe('native')
   })
 
   test('a sweep with no judge checks freezes no judge', async () => {
@@ -1339,9 +1343,9 @@ describe('run_eval — per-model attempts and the judge pin', () => {
     })
     await toolNamed('run_eval').run(client, {
       setIds: ['set_1'],
-      judgeModelId: 'venice:judge',
+      decisionJudgeModelId: 'native',
     })
-    expect(planOf()?.judgeModelId).toBeUndefined()
+    expect(planOf()?.decisionJudgeModelId).toBeUndefined()
   })
 })
 

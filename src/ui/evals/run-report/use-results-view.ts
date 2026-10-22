@@ -6,6 +6,7 @@ import { useModels } from '../../hooks'
 import {
   buildResultRows,
   groupRows,
+  isBorderline,
   minBy,
   pickBest,
   sortRows,
@@ -65,7 +66,8 @@ export function useResultsView(results: WfEvalResultDTO[]) {
 
   const filtered = rows.filter((r) => {
     return (
-      (status === 'all' || r.status === status) &&
+      (status === 'all' ||
+        (status === 'borderline' ? isBorderline(r) : r.status === status)) &&
       (model === 'all' || r.modelLabel === model) &&
       (prompt === 'all' || r.promptLabel === prompt) &&
       (goal === 'all' || r.goalName === goal)

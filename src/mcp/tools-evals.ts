@@ -311,9 +311,7 @@ function deadPaths(checks: CheckTree, schema: JsonSchema | null): string[] {
   const known = new Set(paths)
   const used = checks.checks
     .filter(
-      (c) => { return c.type === 'output_match' ||
-        c.type === 'llm_judge' ||
-        c.type === 'decision_judge' },
+      (c) => { return c.type === 'output_match' || c.type === 'decision_judge' },
     )
     .map((c) => (c as { path?: string }).path)
     .filter((p): p is string => typeof p === 'string' && p.length > 0)
@@ -666,7 +664,7 @@ export function evalWriteTools(): WfMcpTool[] {
         '',
         '`match` is equals | contains | jsonpath | regex. `path` addresses a field of the target’s declared output (`target.outputSchema`); omit it to grade the whole output.',
         '',
-        'The two judges are the same assertion reached two ways. `llm_judge` asks a chat model to write a verdict and rate its own confidence. `decision_judge` puts one yes/no question to a DECISION model, which returns a calibrated probability, and `threshold` (default 0.5) is where you draw the line — so a borderline row reads as 0.52 instead of as a coin-flip pass with a cheerful 8/10 beside it. Use it for anything that reduces to a yes/no you would otherwise threshold by eye; keep `llm_judge` where you want the written critique. A check names no model: the judges are chosen per run, with run_eval’s `judgeModelId` and `decisionJudgeModelId`.',
+        '`decision_judge` is the judge: it puts `rubric` to a DECISION model as one question, answered with a probability, and passes when that probability reaches `threshold` (default 0.5) — so a borderline row reads as 0.52 instead of as a coin-flip pass. Phrase `rubric` as a question whose answer you expect, and ask one thing per check: several checks on a sample are asked in one request, so splitting a long rubric costs nothing. `answer` picks the shape (default boolean, where p = p(yes)): `category` takes `choices` and the passing `expected` options (p = their combined probability); `scale` takes `choices` as levels lowest-first and a passing `minLevel` (p = the probability of that level or above). A check names no model: the judge is chosen per run, with run_eval’s `decisionJudgeModelId`. A legacy `llm_judge` check is accepted and stored as a boolean `decision_judge` with the same rubric.',
         '',
         'Prefer a deterministic check where one exists and a judge only for what cannot be asserted literally.',
       ].join('\n'),

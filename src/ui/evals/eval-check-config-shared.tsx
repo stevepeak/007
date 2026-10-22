@@ -79,9 +79,8 @@ export function defaultCheck(type: EvalCheck['type']): EvalCheck {
       return { type, nodeId: '', match: 'contains', value: '' }
     case 'output_match':
       return { type, match: 'contains', value: '' }
-    case 'llm_judge':
     case 'decision_judge':
-      // No model: the run's launch dialog picks the judge for every check.
+      // No model: the run's launch page picks the judge for every check.
       return { type, rubric: '' }
     case 'decision_answers':
       // Empty on purpose: the editor seeds one expectation row per question

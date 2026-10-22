@@ -152,7 +152,6 @@ export async function tickEvalRun(
             attempt: entry.cell.attempt,
             // Frozen on the plan, so every cell of a sweep — including the ones
             // a later driver picks up — is graded by the same judge.
-            judgeModelId: plan.judgeModelId,
             decisionJudgeModelId: plan.decisionJudgeModelId,
           })
           settled.add(evalCellKey(entry.cell))
@@ -233,7 +232,6 @@ export async function tickEvalRun(
             rowId: cell.rowId,
             modelId: cell.modelId,
             attempt: cell.attempt,
-            judgeModelId: plan.judgeModelId,
             decisionJudgeModelId: plan.decisionJudgeModelId,
             config: plan.configOverride,
           })

@@ -35,7 +35,7 @@ const CHECKS = {
   op: 'and' as const,
   checks: [
     { type: 'tool_called' as const, toolId: 'search_rag', called: true },
-    { type: 'llm_judge' as const, rubric: 'Cites the policy.' },
+    { type: 'decision_judge' as const, rubric: 'Cites the policy.' },
   ],
 }
 

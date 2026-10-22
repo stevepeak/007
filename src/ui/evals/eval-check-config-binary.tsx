@@ -352,8 +352,7 @@ function BinaryFields({
           contract={decisionContract}
         />
       )
-    // Judges have no binary fields; their own panel owns the rubric.
-    case 'llm_judge':
+    // The judge has no binary fields; its own panel owns the question.
     case 'decision_judge':
       return null
   }

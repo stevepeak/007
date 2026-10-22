@@ -8,7 +8,13 @@ import type {
   ProviderBudget,
 } from '../engine/config'
 import type { AnyAgentConfig } from '../engine/decision-agent-schema'
-import type { CheckTree, EvalSampleInput, EvalTools } from '../engine/eval-schema'
+import type {
+  CheckResult,
+  CheckTree,
+  EvalCheck,
+  EvalSampleInput,
+  EvalTools,
+} from '../engine/eval-schema'
 import type { WorkflowGraph } from '../engine/graph'
 import type { TriggerEventOption } from '../engine/trigger-registry'
 import type { EvalDriveState, EvalPlan } from '../eval/plan'
@@ -635,15 +641,26 @@ export interface WfDataClient {
     modelId?: string
     /** Matrix cell: which best-of-N attempt this is. */
     attempt?: number
-    /** The run's judges, from its plan; see `gradeEvalResult`. */
-    judgeModelId?: string
+    /** The run's judge, from its plan; see `gradeEvalResult`. */
     decisionJudgeModelId?: string
     /** Grade this decision config instead of the published version (a draft). */
     config?: AnyAgentConfig
   }): Promise<WfEvalResultDTO>
   /**
+   * Ask one judge check about an answer, with no run and nothing stored — the
+   * check editor's "Try this check". Graded by the same code a run uses, so
+   * the probability it shows is the one a run would record.
+   */
+  previewJudgeCheck(input: {
+    check: EvalCheck
+    /** The answer to judge: what the target's `output` would be. */
+    output: unknown
+    /** Omit = the deployment's default decision judge. */
+    decisionJudgeModelId?: string
+  }): Promise<{ result: CheckResult; decisionJudgeModelId: string | null }>
+  /**
    * Grade a finished row run: load the `wf_run` trace, evaluate the row's check
-   * tree (judge checks use the host's model seam), and persist the verdict as a
+   * tree (judge checks use the host's decider seam), and persist the verdict as a
    * result. Pure SDK — no host hook.
    */
   gradeEvalResult(input: {
@@ -656,11 +673,10 @@ export interface WfDataClient {
     promptBody?: string
     attempt?: number
     /**
-     * The run's judges, from its plan: the chat model for `llm_judge` checks
-     * and the decision model for `decision_judge` checks. The judge is the
-     * measuring instrument, so every cell of a sweep is graded by the same one.
+     * The run's judge, from its plan: the decision model every judge check is
+     * graded by. The judge is the measuring instrument, so every cell of a
+     * sweep is graded by the same one.
      */
-    judgeModelId?: string
     decisionJudgeModelId?: string
   }): Promise<WfEvalResultDTO>
   /**

@@ -5,8 +5,8 @@ import type { CheckTree, WfDataClient } from '../server/protocol'
 import type { EvalPlan } from './plan'
 import { createEvalSweep } from './run-eval'
 
-// One judge per run: a launch must name a judge for every judge kind its
-// Samples carry, and freezes only those onto the plan.
+// One judge per run: a launch must name the decision judge when its Samples
+// carry a judge check, and freezes it only then.
 
 function sweepClient(checks: CheckTree) {
   let plan: EvalPlan | null = null
@@ -22,40 +22,35 @@ function sweepClient(checks: CheckTree) {
   return { client, planOf: () => plan }
 }
 
-const both: CheckTree = {
+const judged: CheckTree = {
   op: 'and',
-  checks: [
-    { type: 'llm_judge', rubric: 'a' },
-    { type: 'decision_judge', rubric: 'b' },
-  ],
+  checks: [{ type: 'decision_judge', rubric: 'b' }],
 }
 
-describe('createEvalSweep — the run picks the judges', () => {
-  test('refuses an llm_judge sweep with no judge model', async () => {
-    const { client } = sweepClient(both)
+describe('createEvalSweep — the run picks the judge', () => {
+  test('refuses a judged sweep with no decision judge', async () => {
+    const { client } = sweepClient(judged)
     await expect(
-      createEvalSweep(client, {
-        setIds: ['set_1'],
-        decisionJudgeModelId: 'd',
-      }),
-    ).rejects.toThrow('pick the judge model')
-  })
-
-  test('refuses a decision_judge sweep with no decision judge', async () => {
-    const { client } = sweepClient(both)
-    await expect(
-      createEvalSweep(client, { setIds: ['set_1'], judgeModelId: 'j' }),
+      createEvalSweep(client, { setIds: ['set_1'] }),
     ).rejects.toThrow('pick the decision judge')
   })
 
-  test('freezes both judges when both kinds are present', async () => {
-    const { client, planOf } = sweepClient(both)
+  test('a legacy llm_judge still needs the decision judge', async () => {
+    const { client } = sweepClient({
+      op: 'and',
+      checks: [{ type: 'llm_judge', rubric: 'a' } as never],
+    })
+    await expect(
+      createEvalSweep(client, { setIds: ['set_1'] }),
+    ).rejects.toThrow('pick the decision judge')
+  })
+
+  test('freezes the judge when the Samples carry judge checks', async () => {
+    const { client, planOf } = sweepClient(judged)
     await createEvalSweep(client, {
       setIds: ['set_1'],
-      judgeModelId: 'j',
       decisionJudgeModelId: 'd',
     })
-    expect(planOf()?.judgeModelId).toBe('j')
     expect(planOf()?.decisionJudgeModelId).toBe('d')
   })
 
@@ -64,8 +59,10 @@ describe('createEvalSweep — the run picks the judges', () => {
       op: 'and',
       checks: [{ type: 'tool_called', toolId: 't', called: true }],
     })
-    await createEvalSweep(client, { setIds: ['set_1'], judgeModelId: 'j' })
-    expect(planOf()?.judgeModelId).toBeUndefined()
+    await createEvalSweep(client, {
+      setIds: ['set_1'],
+      decisionJudgeModelId: 'd',
+    })
     expect(planOf()?.decisionJudgeModelId).toBeUndefined()
   })
 })

@@ -125,8 +125,9 @@ function EditedSamplesNote({ count }: { count: number }) {
 }
 
 /**
- * Which models graded this run, frozen at launch. Neither set means the run
- * had no judge checks — or was launched before judges were recorded.
+ * Which model graded this run, frozen at launch. Neither set means the run had
+ * no judge checks — or was launched before judges were recorded. A run from
+ * before the decision judge was the only judge may name a chat model too.
  */
 function JudgeMetrics({ judges }: { judges: WfEvalRunJudges }) {
   if (!judges.judgeModelId && !judges.decisionJudgeModelId) {
@@ -143,16 +144,16 @@ function JudgeMetrics({ judges }: { judges: WfEvalRunJudges }) {
   }
   return (
     <>
-      {judges.judgeModelId ? (
-        <Metric label="Judge">
-          <code className="text-xs text-neutral-700">{judges.judgeModelId}</code>
-        </Metric>
-      ) : null}
       {judges.decisionJudgeModelId ? (
-        <Metric label="Decision judge">
+        <Metric label="Judge">
           <code className="text-xs text-neutral-700">
             {judges.decisionJudgeModelId}
           </code>
+        </Metric>
+      ) : null}
+      {judges.judgeModelId ? (
+        <Metric label="LLM judge">
+          <code className="text-xs text-neutral-700">{judges.judgeModelId}</code>
         </Metric>
       ) : null}
     </>

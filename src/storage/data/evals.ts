@@ -18,6 +18,7 @@ import {
   legacyFreezeTools,
   parseEvalSampleInput,
   parseEvalTools,
+  upgradeLegacyChecks,
   defaultEvalTools,
   type CheckResult,
   type CheckTree,
@@ -73,7 +74,7 @@ function toEvalRow(r: typeof wfEvalRow.$inferSelect): EvalRowRecord {
     // legacy freeze flag lived on the input column, so `tools` needs it too.
     input: parseEvalSampleInput(r.input),
     tools: parseEvalTools(r.tools, legacyFreezeTools(r.input)),
-    checks: r.checks as CheckTree,
+    checks: upgradeLegacyChecks(r.checks as CheckTree),
     sortOrder: r.sortOrder,
     archived: r.archived,
   }
@@ -302,7 +303,7 @@ async function currentRowPayloads(
   return {
     input: parseEvalSampleInput(existing.input),
     tools: parseEvalTools(existing.tools, legacyFreezeTools(existing.input)),
-    checks: existing.checks as CheckTree,
+    checks: upgradeLegacyChecks(existing.checks as CheckTree),
   }
 }
 

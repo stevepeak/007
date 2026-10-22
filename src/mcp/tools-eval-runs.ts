@@ -5,13 +5,13 @@ import { errorMessage } from '../engine/error-message'
 import {
   type CheckResult,
   type EvalCheck,
-  judgeTypesUsed,
+  hasJudgeChecks,
 } from '../engine/eval-schema'
 import {
   mergeModelRequirements,
   unmetRequirementsReason,
 } from '../engine/model-capabilities'
-import { defaultJudgeModel } from '../eval/judge'
+import { defaultDecisionJudge } from '../eval/judge'
 import { resolveEvalCellMode } from '../eval/plan'
 import {
   agentCallTotals,
@@ -566,7 +566,7 @@ export function evalRunWriteTools(): WfMcpTool[] {
       description: [
         'Run one or more Goals: every Sample is executed against its target for real and graded by its checks. Returns the evalRunId immediately and the sweep continues on the server, so poll get_eval_run until `status` is `completed`.',
         '',
-        'Optionally sweep across models and alternate prompts, grade an agent’s unsaved draft with draftAgentId, or choose the judges with judgeModelId / decisionJudgeModelId (one judge per run — checks cannot name their own). Every model you name is checked against the target’s requirements first: a model that cannot do what the agent needs is refused here rather than erroring in every cell of its column and reading as an outage.',
+        'Optionally sweep across models and alternate prompts, grade an agent’s unsaved draft with draftAgentId, or choose the judge with decisionJudgeModelId (one judge per run — checks cannot name their own). Every model you name is checked against the target’s requirements first: a model that cannot do what the agent needs is refused here rather than erroring in every cell of its column and reading as an outage.',
         '',
         `Each cell is a real model call and the cap is ${MAX_CELLS} cells. Keep sweeps small.`,
       ].join('\n'),
@@ -604,17 +604,11 @@ export function evalRunWriteTools(): WfMcpTool[] {
           .describe(
             'Grade this agent’s UNSAVED draft instead of its published version — the way to find out whether an update_agent_draft edit helped without publishing it. Every named Goal must target this same agent.',
           ),
-        judgeModelId: z
-          .string()
-          .nullish()
-          .describe(
-            'The chat model every `llm_judge` check in this run is graded by (an id from list_models — NOT the same thing as `models`, which is what the target runs on). Omit to take the CHEAPEST enabled model that supports structured output; the reply echoes the one chosen. Use the same judge whenever you intend to compare this report against an earlier one.',
-          ),
         decisionJudgeModelId: z
           .string()
           .nullish()
           .describe(
-            'The decision model every `decision_judge` check in this run is graded by (an id from list_decision_models — a different catalog). Omit to take the first one; the reply echoes the one chosen.',
+            'The decision model every judge check in this run is graded by (an id from list_decision_models — NOT the same thing as `models`, which is what the target runs on). Omit to take the first calibrated decider; the reply echoes the one chosen. Use the same judge whenever you intend to compare this report against an earlier one.',
           ),
         prompts: z
           .array(
@@ -675,7 +669,7 @@ export function evalRunWriteTools(): WfMcpTool[] {
             hint: 'Ids come from list_eval_sets.',
           })
         }
-        const judges = judgeTypesUsed(
+        const judged = hasJudgeChecks(
           sets.flatMap((s) => (s ? s.rows.map((r) => r.checks) : [])),
         )
         const samples = sets.reduce(
@@ -838,18 +832,14 @@ export function evalRunWriteTools(): WfMcpTool[] {
           setIds,
           mode: resolvedMode.mode,
           configOverride,
-          // Omitted → the cheapest capable chat model and the first decider,
-          // read only for a judge kind these Samples actually carry.
-          judgeModelId:
-            optString(args.judgeModelId) ??
-            (judges.has('llm_judge')
-              ? defaultJudgeModel(await client.listModels().catch(() => []))
-                  ?.id
-              : undefined),
+          // Omitted → the first calibrated decider, read only when these
+          // Samples carry a judge check.
           decisionJudgeModelId:
             optString(args.decisionJudgeModelId) ??
-            (judges.has('decision_judge')
-              ? (await client.listDecisionModels().catch(() => []))[0]?.id
+            (judged
+              ? defaultDecisionJudge(
+                  await client.listDecisionModels().catch(() => []),
+                )?.id
               : undefined),
           concurrency:
             typeof args.concurrency === 'number' ? args.concurrency : undefined,
@@ -905,10 +895,9 @@ export function evalRunWriteTools(): WfMcpTool[] {
             target: configOverride
               ? `the draft of agent ${draftAgentId ?? ''}`
               : 'each goal’s published target',
-            // Echoed because an omitted judge took the catalog's first model,
-            // which the caller did not name. Absent = no check of that kind.
-            judge: plan.judgeModelId,
-            decisionJudge: plan.decisionJudgeModelId,
+            // Echoed because an omitted judge took the catalog's default,
+            // which the caller did not name. Absent = no judge checks.
+            judge: plan.decisionJudgeModelId,
             attemptsPerModel:
               models.length > 0
                 ? Object.fromEntries(

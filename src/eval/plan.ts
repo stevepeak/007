@@ -73,8 +73,14 @@ export type EvalPlan = {
   /** How long one cell's run may take before the driver stops waiting for it. */
   timeoutMs: number
   /**
-   * The chat model every `llm_judge` check in this sweep is graded by. Chosen
-   * at launch and required whenever the sweep's Samples carry an `llm_judge`;
+   * The chat model that graded the sweep's judge checks, on a plan frozen while
+   * judges were chat models. Read only to label those runs' reports; nothing
+   * grades with it any more.
+   */
+  judgeModelId?: string
+  /**
+   * The decision model every judge check in this sweep is graded by. Chosen at
+   * launch and required whenever the sweep's Samples carry a judge check;
    * checks cannot name their own.
    *
    * Frozen into the plan for the same reason `configOverride` is: a resuming
@@ -82,12 +88,6 @@ export type EvalPlan = {
    * and half by another is a report that cannot be compared with itself. Note
    * this is the JUDGE, not the matrix's per-cell `modelId` — that one is the
    * model the target runs on.
-   */
-  judgeModelId?: string
-  /**
-   * The decision model every `decision_judge` check is graded by — a separate
-   * catalog from {@link judgeModelId}'s. Required whenever the sweep's Samples
-   * carry a `decision_judge`; frozen for the same reason.
    */
   decisionJudgeModelId?: string
 }
@@ -195,8 +195,7 @@ export function parseEvalPlan(raw: unknown): EvalPlan | null {
   const p = raw as Partial<EvalPlan>
   if (p.version !== 1 || !Array.isArray(p.cells)) return null
   const cells = p.cells.filter(
-    (c): c is EvalCell =>
-      !!c && typeof c === 'object' && typeof c.rowId === 'string',
+    (c): c is EvalCell => { return !!c && typeof c === 'object' && typeof c.rowId === 'string' },
   )
   // An EMPTY cell list is a valid plan, not a missing one. A Goal with no
   // samples used to launch and finalize an immediately-empty report, and that
@@ -233,13 +232,12 @@ export function parseEvalDriveState(raw: unknown): EvalDriveState {
   if (s.version !== 1) return EMPTY_DRIVE_STATE
   const inflight = Array.isArray(s.inflight)
     ? s.inflight.filter(
-        (i): i is EvalInflightCell =>
-          !!i &&
+        (i): i is EvalInflightCell => { return !!i &&
           typeof i === 'object' &&
           typeof i.wfRunId === 'string' &&
           typeof i.startedAt === 'number' &&
           !!i.cell &&
-          typeof i.cell.rowId === 'string',
+          typeof i.cell.rowId === 'string' },
       )
     : []
   return {

@@ -95,7 +95,7 @@ export function ChecksList({
     const binaryDefault = hasTools === false ? 'output_match' : 'tool_called'
     replace(
       index,
-      defaultCheck(family === 'scored' ? 'llm_judge' : binaryDefault),
+      defaultCheck(family === 'scored' ? 'decision_judge' : binaryDefault),
     )
   }
 
@@ -235,7 +235,7 @@ const FAMILIES: SegmentedOption<CheckFamily>[] = [
     value: 'scored',
     icon: Gauge,
     label: 'Scored',
-    hint: 'Scored — an LLM judge decides whether the output holds up.',
+    hint: 'Scored — a judge model asks whether the output holds up.',
     activeClass: 'bg-amber-100 text-amber-700',
   },
 ]

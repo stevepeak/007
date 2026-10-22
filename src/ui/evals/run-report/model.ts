@@ -1,4 +1,10 @@
-import type { EvalCheck, WfEvalResultDTO } from '../../../server/protocol'
+import { DEFAULT_DECISION_THRESHOLD } from '../../../engine/decision'
+import {
+  isJudgeCheck,
+  upgradeLegacyCheck,
+  type EvalCheck,
+  type WfEvalResultDTO,
+} from '../../../server/protocol'
 
 // Pure data model + logic for the eval run report — no React. Everything the
 // results table sorts, filters, groups, and crowns is derived here from each
@@ -18,6 +24,12 @@ export type ResultRow = {
   modelLabel: string | null
   promptLabel: string | null
   score: number | null
+  /**
+   * How close the row's nearest judge call came to its line: the smallest
+   * |p − threshold| over its judge checks. Null when no judge reported a
+   * probability.
+   */
+  margin: number | null
   durationMs: number | null
   costUsd: number | null
   tokens: number | null
@@ -30,6 +42,7 @@ export type SortKey =
   | 'model'
   | 'prompt'
   | 'score'
+  | 'margin'
   | 'duration'
   | 'cost'
   | 'tokens'
@@ -48,6 +61,30 @@ export const STATUS_RANK: Record<string, number> = { fail: 0, error: 1, pass: 2 
 // re-exported here because this module is where the UI already imports them from.
 export { cellKey, mean } from '../../../eval/report'
 
+/** A row whose nearest judge call landed within this of its line. */
+export const BORDERLINE_BAND = 0.1
+
+export function isBorderline(row: ResultRow): boolean {
+  return row.margin != null && row.margin <= BORDERLINE_BAND
+}
+
+/** See {@link ResultRow.margin}. */
+export function judgeMargin(
+  checks: EvalCheck[],
+  results: WfEvalResultDTO['checkResults'],
+): number | null {
+  let margin: number | null = null
+  for (const [i, cr] of results.entries()) {
+    const check = checks[i]
+    if (cr.probability == null || !check || !isJudgeCheck(check)) continue
+    const gap = Math.abs(
+      cr.probability - (check.threshold ?? DEFAULT_DECISION_THRESHOLD),
+    )
+    margin = margin == null ? gap : Math.min(margin, gap)
+  }
+  return margin
+}
+
 // Build the flat rows the table renders, from results + a model-label resolver
 // (composite modelId → display label). Falls back to the run's own recorded
 // model id when the cell wasn't a matrix cell.
@@ -57,6 +94,10 @@ export function buildResultRows(
 ): ResultRow[] {
   return results.map((r) => {
     const snap = r.snapshot
+    // A frozen snapshot can still hold a legacy `llm_judge`.
+    const checks = (snap?.row.checks.checks ?? []).map(
+      (c) => upgradeLegacyCheck(c) as EvalCheck,
+    )
     const modelLabel = r.modelId
       ? (labelOf(r.modelId) ?? r.modelId)
       : (r.runStats?.models[0] ?? null)
@@ -67,10 +108,11 @@ export function buildResultRows(
       sampleName: snap?.row.name ?? r.rowId,
       setId: snap?.target.setId ?? null,
       goalName: snap?.target.setName ?? 'Goal',
-      checks: snap?.row.checks.checks ?? [],
+      checks,
       modelLabel,
       promptLabel: r.promptLabel,
       score: r.score,
+      margin: judgeMargin(checks, r.checkResults),
       durationMs: r.runStats?.durationMs ?? null,
       costUsd: r.runStats?.costUsd ?? null,
       tokens: r.runStats?.totalTokens ?? null,
@@ -92,6 +134,8 @@ function sortValue(r: ResultRow, key: SortKey): number | string | null {
       return r.promptLabel?.toLowerCase() ?? null
     case 'score':
       return r.score
+    case 'margin':
+      return r.margin
     case 'duration':
       return r.durationMs
     case 'cost':

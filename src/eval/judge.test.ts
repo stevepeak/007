@@ -1,36 +1,25 @@
 import { describe, expect, test } from 'bun:test'
 
-import type { ModelOption } from '../engine/model-catalog'
+import type { DecisionModelOption } from '../engine/decision'
 
-import { defaultJudgeModel } from './judge'
+import { defaultDecisionJudge } from './judge'
 
-function model(over: Partial<ModelOption> & { id: string }): ModelOption {
-  return { label: over.id, capabilities: { structuredOutput: true }, ...over }
+function decider(id: string, calibrated?: boolean): DecisionModelOption {
+  return { id, label: id, providerId: 'p', calibrated }
 }
 
-describe('defaultJudgeModel', () => {
-  test('takes the cheapest model that can judge', () => {
-    expect(
-      defaultJudgeModel([
-        model({ id: 'pricey', costPerMTok: 10 }),
-        model({ id: 'cheap', costPerMTok: 0.5 }),
-        model({ id: 'cheapest-but-no-json', costPerMTok: 0.1, capabilities: { structuredOutput: false } }),
-      ])?.id,
-    ).toBe('cheap')
+describe('defaultDecisionJudge', () => {
+  test('prefers the first calibrated decider', () => {
+    const models = [decider('emulated', false), decider('native', true)]
+    expect(defaultDecisionJudge(models)?.id).toBe('native')
   })
 
-  test('falls back to prompt + completion price, and unpriced sorts last', () => {
-    expect(
-      defaultJudgeModel([
-        model({ id: 'unpriced' }),
-        model({ id: 'split', promptPricePerMTok: 1, completionPricePerMTok: 2 }),
-      ])?.id,
-    ).toBe('split')
+  test('falls back to the first decider when none is calibrated', () => {
+    const models = [decider('a', false), decider('b', false)]
+    expect(defaultDecisionJudge(models)?.id).toBe('a')
   })
 
-  test('with no prices at all, keeps catalog order', () => {
-    expect(
-      defaultJudgeModel([model({ id: 'a' }), model({ id: 'b' })])?.id,
-    ).toBe('a')
+  test('an empty catalog has no default', () => {
+    expect(defaultDecisionJudge([])).toBeUndefined()
   })
 })

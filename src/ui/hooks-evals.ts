@@ -5,12 +5,13 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 
-import { judgeTypesUsed } from '../engine/eval-schema'
+import { hasJudgeChecks } from '../engine/eval-schema'
 import { runEval, type RunEvalInput } from '../eval/run-eval'
 import type {
   CheckTree,
   EvalSampleInput,
   EvalTools,
+  WfDataClient,
   WfEvalTargetKind,
 } from '../server/protocol'
 
@@ -42,10 +43,10 @@ export function useEvalSet(setId: string | null) {
 }
 
 /**
- * Which judge kinds these Goals' Samples carry — the judges a launch has to
- * name. Reads each Goal through the same query `useEvalSet` caches.
+ * Whether these Goals' Samples carry a judge check — whether a launch has to
+ * name the run's judge. Reads each Goal through the same query `useEvalSet` caches.
  */
-export function useEvalJudgeTypes(setIds: string[]) {
+export function useEvalNeedsJudge(setIds: string[]) {
   const client = useWfClient()
   const sets = useQueries({
     queries: setIds.map((setId) => ({
@@ -55,7 +56,7 @@ export function useEvalJudgeTypes(setIds: string[]) {
   })
   return {
     loading: sets.some((q) => q.isLoading),
-    types: judgeTypesUsed(
+    needed: hasJudgeChecks(
       sets.flatMap((q) => (q.data?.rows ?? []).map((row) => row.checks)),
     ),
   }
@@ -174,6 +175,15 @@ export {
 // Kicks off a full client-driven eval run. On success the eval-runs list is
 // invalidated and the new `evalRunId` is returned so the caller can navigate to
 // the report.
+/** The check editor's "Try this check": one judge check against one answer. */
+export function usePreviewJudgeCheck() {
+  return useWfMutation(
+    (client, input: Parameters<WfDataClient['previewJudgeCheck']>[0]) => {
+      return client.previewJudgeCheck(input)
+    },
+  )
+}
+
 export function useRunEval() {
   const client = useWfClient()
   const qc = useQueryClient()

@@ -194,31 +194,32 @@ describe('runDecisionEvalCell', () => {
     expect(called).toBe(false)
   })
 
-  // The same seams `gradeEvalResult` uses: the run's pinned judge for
-  // `llm_judge`, and the catalog's decision model — not the agent's own — as
-  // the default for `decision_judge`.
+  // The same seam `gradeEvalResult` uses: the run's pinned decision judge, not
+  // the agent's own decision model.
   test('judge checks grade through the pinned judge', async () => {
     await seed(
       { kind: 'decision', state: 'Customer is furious.', variables: {} },
-      { op: 'and', checks: [{ type: 'llm_judge', rubric: 'r' }] },
+      { op: 'and', checks: [{ type: 'decision_judge', rubric: 'r' }] },
     )
     const asked: string[] = []
     const h = buildEvalHandlers(
       testHandlerOptions({
         config: {
-          getDecider: () => decider(0.91),
-          listModels: async () => [{ id: 'first', label: 'First', providerId: 'p' }],
-          getModel: (modelId) => {
+          getDecider: (modelId) => {
             asked.push(modelId)
-            throw new Error('no model in this test')
+            return decider(0.91)
           },
         },
       }),
     )
     await h.runDecisionEvalCell(
-      testHandlerCtx(db, { evalRunId, rowId, judgeModelId: 'pinned-judge' }),
+      testHandlerCtx(db, {
+        evalRunId,
+        rowId,
+        decisionJudgeModelId: 'pinned-judge',
+      }),
     )
-    expect(asked).toEqual(['pinned-judge'])
+    expect(asked).toContain('pinned-judge')
   })
 
   test('a generation-agent goal is refused rather than judged as a decision', async () => {

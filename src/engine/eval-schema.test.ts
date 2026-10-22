@@ -50,7 +50,7 @@ describe('eval checks schema', () => {
   })
 
   test('accepts a judge check and applies no defaults (optional stay absent)', () => {
-    const judge = { type: 'llm_judge', rubric: 'asks politely' } as const
+    const judge = { type: 'decision_judge', rubric: 'asks politely' } as const
     const parsed = evalCheckSchema.parse(judge)
     expect(parsed).toEqual(judge)
     expect(isJudgeCheck(parsed)).toBe(true)
@@ -62,13 +62,12 @@ describe('eval checks schema', () => {
     }).toThrow()
   })
 
-  test('a judge is rubric + where to look — nothing else', () => {
-    // Unknown keys — the old `bar` / `threshold` / `weight` knobs, and a
-    // per-check `modelId` (the run picks the judge) — are dropped rather than
-    // failing a saved row.
+  test('a judge drops unknown keys rather than failing a saved row', () => {
+    // The old `bar` / `weight` knobs, and a per-check `modelId` (the run picks
+    // the judge).
     expect(
       evalCheckSchema.parse({
-        type: 'llm_judge',
+        type: 'decision_judge',
         rubric: 'x',
         path: 'title',
         modelId: 'm1',
@@ -76,7 +75,17 @@ describe('eval checks schema', () => {
         threshold: 0.7,
         weight: 2,
       }),
-    ).toEqual({ type: 'llm_judge', rubric: 'x', path: 'title' })
+    ).toEqual({ type: 'decision_judge', rubric: 'x', path: 'title', threshold: 0.7 })
+  })
+
+  test('a legacy llm_judge in a tree reads as a boolean decision_judge', () => {
+    const parsed = checkTreeSchema.parse({
+      op: 'and',
+      checks: [{ type: 'llm_judge', rubric: 'x', path: 'title', modelId: 'm' }],
+    })
+    expect(parsed.checks).toEqual([
+      { type: 'decision_judge', rubric: 'x', path: 'title' },
+    ])
   })
 
   test('check tree reduces an op over a list', () => {
@@ -84,7 +93,7 @@ describe('eval checks schema', () => {
       op: 'or',
       checks: [
         { type: 'tool_called', toolId: 't', called: true },
-        { type: 'llm_judge', rubric: 'good' },
+        { type: 'decision_judge', rubric: 'good' },
       ],
     }
     expect(checkTreeSchema.parse(tree)).toEqual(tree)

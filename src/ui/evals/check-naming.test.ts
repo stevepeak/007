@@ -51,7 +51,7 @@ describe('heuristicCheckName', () => {
 
   test('declines to name a judge — its assertion is prose', () => {
     expect(
-      heuristicCheckName({ type: 'llm_judge', rubric: 'Mention the alimony' }),
+      heuristicCheckName({ type: 'decision_judge', rubric: 'Mentions the refund' }),
     ).toBeNull()
   })
 })
@@ -80,16 +80,14 @@ describe('describeCheck', () => {
 
   test('a judge quotes its rubric — prose, not a name', () => {
     const check: EvalCheck = {
-      type: 'llm_judge',
-      rubric: 'The title should be something mentioning alimony',
+      type: 'decision_judge',
+      rubric: 'Does the title mention the refund?',
     }
-    expect(describeCheck(check)).toBe(
-      '“The title should be something mentioning alimony”',
-    )
+    expect(describeCheck(check)).toBe('“Does the title mention the refund?”')
   })
 
   test('falls back to the type name while a check is still empty', () => {
-    expect(describeCheck({ type: 'llm_judge', rubric: '' })).toBe('Judge')
+    expect(describeCheck({ type: 'decision_judge', rubric: '' })).toBe('Judge')
     expect(
       describeCheck({ type: 'tool_called', toolId: '', called: true }),
     ).toBe('Tool called')

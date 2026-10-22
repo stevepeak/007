@@ -1,5 +1,5 @@
 import type { AnyAgentConfig } from '../engine/decision-agent-schema'
-import { judgeTypesUsed } from '../engine/eval-schema'
+import { hasJudgeChecks } from '../engine/eval-schema'
 import type { WfLogger } from '../engine/logger'
 import { stableEqual } from '../engine/stable-stringify'
 import type { WfDataClient } from '../server/protocol'
@@ -109,12 +109,11 @@ export type RunEvalInput = {
    */
   matrix?: { models: EvalMatrixModel[]; prompts: EvalMatrixPrompt[] }
   /**
-   * The chat model every `llm_judge` check is graded by, and the decision model
-   * every `decision_judge` is. Each is required when the sweep's Samples carry
-   * that kind of judge — checks cannot name their own, so one report has one
-   * judge. Frozen into the plan so a resuming driver grades by the same ones.
+   * The decision model every judge check is graded by. Required when the
+   * sweep's Samples carry a judge check — checks cannot name their own, so one
+   * report has one judge. Frozen into the plan so a resuming driver grades by
+   * the same one.
    */
-  judgeModelId?: string
   decisionJudgeModelId?: string
   /**
    * How each cell executes — see {@link EvalCellMode}. Omitted → `'run'`, the
@@ -156,15 +155,10 @@ export async function createEvalSweep(
     .flatMap((s) => s.rows)
   const rowIds = rows.map((row) => row.id)
 
-  const judges = judgeTypesUsed(rows.map((row) => row.checks))
-  if (judges.has('llm_judge') && !input.judgeModelId) {
+  const judged = hasJudgeChecks(rows.map((row) => row.checks))
+  if (judged && !input.decisionJudgeModelId) {
     throw new Error(
-      'These Samples have llm_judge checks — pick the judge model for this run.',
-    )
-  }
-  if (judges.has('decision_judge') && !input.decisionJudgeModelId) {
-    throw new Error(
-      'These Samples have decision_judge checks — pick the decision judge for this run.',
+      'These Samples have judge checks — pick the decision judge for this run.',
     )
   }
 
@@ -175,10 +169,7 @@ export async function createEvalSweep(
     configOverride: input.configOverride,
     concurrency: clampConcurrency(input.concurrency),
     timeoutMs: input.timeoutMs ?? EVAL_WAIT_TIMEOUT_MS,
-    judgeModelId: judges.has('llm_judge') ? input.judgeModelId : undefined,
-    decisionJudgeModelId: judges.has('decision_judge')
-      ? input.decisionJudgeModelId
-      : undefined,
+    decisionJudgeModelId: judged ? input.decisionJudgeModelId : undefined,
   }
 
   const { evalRunId } = await client.createEvalRun({

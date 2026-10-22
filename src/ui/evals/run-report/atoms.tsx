@@ -61,3 +61,31 @@ export function ChangedPill() {
     </span>
   )
 }
+
+/** p against its threshold, as a filled track with a tick at the line. */
+export function ProbabilityBar({
+  probability,
+  threshold,
+  pass,
+}: {
+  probability: number
+  threshold: number
+  pass: boolean
+}) {
+  return (
+    <div
+      className="relative h-2 w-full rounded-full bg-neutral-200"
+      role="img"
+      aria-label={`p=${probability.toFixed(2)}, threshold ${threshold.toFixed(2)}`}
+    >
+      <div
+        className={pass ? 'absolute inset-y-0 left-0 rounded-full bg-emerald-600' : 'absolute inset-y-0 left-0 rounded-full bg-neutral-400'}
+        style={{ width: `${Math.round(probability * 100)}%` }}
+      />
+      <div
+        className="absolute -inset-y-1 w-0.5 bg-neutral-800"
+        style={{ left: `${Math.round(threshold * 100)}%` }}
+      />
+    </div>
+  )
+}

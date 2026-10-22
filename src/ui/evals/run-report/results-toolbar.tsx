@@ -3,6 +3,7 @@ import {
   ArrowDown,
   ArrowUp,
   CheckCircle2,
+  Scale,
   XCircle,
 } from 'lucide-react'
 
@@ -31,6 +32,7 @@ export function ResultsToolbar({ view }: { view: ResultsView }) {
         ] as const)
       : []),
     { value: 'score', label: 'Score' },
+    { value: 'margin', label: 'Closest to the line' },
     { value: 'duration', label: 'Speed' },
     { value: 'cost', label: 'Cost' },
     { value: 'tokens', label: 'Tokens' },
@@ -119,6 +121,9 @@ const STATUS_OPTIONS = [
   { value: 'pass', label: 'Passed', Icon: CheckCircle2, tone: 'text-emerald-600' },
   { value: 'fail', label: 'Failed', Icon: XCircle, tone: 'text-red-600' },
   { value: 'error', label: 'Errored', Icon: AlertTriangle, tone: 'text-amber-600' },
+  // Not a status: a row whose nearest judge call sat within BORDERLINE_BAND of
+  // its line, whichever way it went — the rows worth a second look.
+  { value: 'borderline', label: 'Borderline', Icon: Scale, tone: 'text-amber-600' },
 ].map(({ value, label, Icon, tone }) => ({
   value,
   label,

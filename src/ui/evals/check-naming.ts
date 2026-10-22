@@ -1,5 +1,10 @@
 import { toText, truncate } from '../../engine/text'
-import { isJudgeCheck, type EvalCheck, type EvalMatch } from '../../server/protocol'
+import {
+  isJudgeCheck,
+  upgradeLegacyCheck,
+  type EvalCheck,
+  type EvalMatch,
+} from '../../server/protocol'
 
 // How a Check gets its name.
 //
@@ -24,8 +29,7 @@ export const CHECK_TYPE_LABELS: Record<EvalCheck['type'], string> = {
   node_visited: 'Node visited',
   node_input_match: 'Node input',
   output_match: 'Output matches',
-  llm_judge: 'Judge',
-  decision_judge: 'Calibrated judge',
+  decision_judge: 'Judge',
   decision_answers: 'Decision matrix',
 }
 
@@ -94,9 +98,8 @@ export function heuristicCheckName(check: EvalCheck): string | null {
         ? `Answers ${truncate({ text: parts.join(', ').trim(), max: 50 })}`
         : null
     }
-    // Both judges assert in prose, so `describeCheck` quotes the rubric rather
+    // The judge asks in prose, so `describeCheck` quotes the question rather
     // than deriving a sentence from config that isn't there.
-    case 'llm_judge':
     case 'decision_judge':
       return null
   }
@@ -114,12 +117,10 @@ export function heuristicCheckName(check: EvalCheck): string | null {
  */
 export function describeCheck(check: EvalCheck | undefined): string {
   if (!check) return 'check'
+  // A run's frozen snapshot can still hold a legacy `llm_judge`.
+  check = upgradeLegacyCheck(check) as EvalCheck
   const derived = heuristicCheckName(check)
   if (derived) return derived
-  // BOTH judges, via `isJudgeCheck` rather than a `type` test — this read
-  // `check.type === 'llm_judge'` and so a configured `decision_judge` fell
-  // through to the bare label "Calibrated judge", showing none of the question
-  // it asks while its twin one row up showed the whole rubric.
   if (isJudgeCheck(check) && check.rubric.trim()) {
     return `“${truncate({ text: check.rubric.trim(), max: 60 })}”`
   }

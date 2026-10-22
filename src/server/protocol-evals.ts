@@ -33,6 +33,7 @@ export type {
 // pulls in only zod, so this stays safe for the browser bundle.
 export {
   BINARY_CHECK_TYPES,
+  hasJudgeChecks,
   isJudgeCheck,
   JUDGE_CHECK_TYPES,
   EVAL_CHECK_TYPES,
@@ -43,6 +44,7 @@ export {
   toolSetting,
   withToolSetting,
   defaultEvalTools,
+  upgradeLegacyCheck,
 } from '../engine/eval-schema'
 
 // Wire enums for eval targets/verdicts, derived from the DB-schema `as const`
@@ -222,14 +224,16 @@ export type WfEvalDriftChange = {
  * samples with it.
  */
 /**
- * The judges a run was graded by, frozen on its plan at launch. Null for a kind
- * the run had no checks of — and for every kind on a run launched before
- * judges were recorded.
+ * The judge a run was graded by, frozen on its plan at launch. Null when the
+ * run had no judge checks, or was launched before judges were recorded.
  */
 export type WfEvalRunJudges = {
-  /** The chat model behind every `llm_judge` check. */
+  /**
+   * The chat model that graded a run launched while judges were chat models.
+   * Null on every newer run.
+   */
   judgeModelId: string | null
-  /** The decision model behind every `decision_judge` check. */
+  /** The decision model behind every judge check. */
   decisionJudgeModelId: string | null
 }
 

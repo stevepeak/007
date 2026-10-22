@@ -305,7 +305,7 @@ describe('draftSampleFromRun — synthesis', () => {
     if ('error' in out) throw new Error(out.error)
     // Frozen tools mean the agent calls nothing, so a `tool_called` check here
     // would grade an absence and fail every time.
-    expect(out.checks.checks.map((c) => c.type)).toEqual(['llm_judge'])
+    expect(out.checks.checks.map((c) => c.type)).toEqual(['decision_judge'])
   })
 
   // Synthesis has to stage the context in a thread, and a task agent has none.
@@ -332,7 +332,7 @@ describe('the seeded rubric', () => {
       feedback,
     })
     if ('error' in out) throw new Error(out.error)
-    const judge = out.checks.checks.find((c) => c.type === 'llm_judge')
+    const judge = out.checks.checks.find((c) => c.type === 'decision_judge')
     return { rubric: (judge as { rubric: string }).rubric, notes: out.notes }
   }
 
@@ -347,7 +347,7 @@ describe('the seeded rubric', () => {
       rating: 'down',
       note: 'It missed the Bex account.',
     })
-    expect(rubric).toContain('must FAIL this rubric')
+    expect(rubric).toContain('must get "no"')
     expect(rubric).toContain('It missed the Bex account.')
     expect(notes.join(' ')).toContain('do not seed it as the expected output')
   })

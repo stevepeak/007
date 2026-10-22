@@ -373,11 +373,17 @@ export const wfInputSchemas = {
     rowId: z.string().min(1),
     modelId: z.string().optional(),
     attempt: z.number().optional(),
-    judgeModelId: z.string().optional(),
     decisionJudgeModelId: z.string().optional(),
     // The unsaved-draft override — a whole DecisionAgentConfig, parsed by the
     // handler against the target agent's kind.
     config: PASSED_THROUGH.optional(),
+  }),
+  // `check` is parsed by the handler against the check vocabulary; `output`
+  // is any JSON value.
+  previewJudgeCheck: z.object({
+    check: PASSED_THROUGH,
+    output: PASSED_THROUGH,
+    decisionJudgeModelId: z.string().optional(),
   }),
   gradeEvalResult: z.object({
     evalRunId: z.string().min(1),
@@ -387,9 +393,8 @@ export const wfInputSchemas = {
     promptLabel: z.string().optional(),
     promptBody: z.string().optional(),
     attempt: z.number().optional(),
-    // The judges the CHECKS run on, distinct from `modelId` (the model the
+    // The judge the CHECKS run on, distinct from `modelId` (the model the
     // TARGET ran on, which is a matrix column).
-    judgeModelId: z.string().optional(),
     decisionJudgeModelId: z.string().optional(),
   }),
   recordEvalFailure: z.object({

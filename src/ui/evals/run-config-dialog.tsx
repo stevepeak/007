@@ -169,9 +169,7 @@ export function RunConfigDialog({
           />
 
           <JudgeAxis
-            types={matrix.judgeTypes}
-            judgeModelId={matrix.judgeModelId}
-            onJudge={matrix.setJudgeModelId}
+            needed={matrix.needsJudge}
             decisionJudgeModelId={matrix.decisionJudgeModelId}
             onDecisionJudge={matrix.setDecisionJudgeModelId}
           />
@@ -191,8 +189,7 @@ export function RunConfigDialog({
           counts={matrix.counts}
           promptCount={matrix.prompts.length}
           totalTests={matrix.totalTests}
-          judgeTypes={matrix.judgeTypes}
-          judgeModelId={matrix.judgeModelId}
+          needsJudge={matrix.needsJudge}
           decisionJudgeModelId={matrix.decisionJudgeModelId}
           concurrency={matrix.concurrency}
           onConcurrencyChange={matrix.setConcurrency}
