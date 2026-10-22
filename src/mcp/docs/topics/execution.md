@@ -102,6 +102,8 @@ What is **not** retried, even on the durable engine:
 - an iteration list longer than `maxItems`
 - the wait on a child run or a durable iteration item (retrying would spawn a second child)
 
+An agent whose model stream closes before the provider sends a finish reason, with no text written and no tool called, re-issues the call once in place on both engines, inside the same time budget. A second cutoff fails the node, and that failure is retryable.
+
 A run-scoped override (evals use one) can only **tighten** a timeout, never loosen it.
 
 ## Engines: `inline` vs `durable`

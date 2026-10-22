@@ -364,3 +364,64 @@ describe('agent node — stream closed before the provider finished', () => {
     expect(isFatalAgentError(err)).toBe(true)
   })
 })
+
+// One cutoff before anything happened is re-issued in place: the inline engine
+// has no step retry, so without it a dropped connection fails the run.
+describe('agent node — re-issues a stream cut off before anything happened', () => {
+  function cutThenAnswer(cuts: number): {
+    model: MockLanguageModelV3
+    calls: () => number
+  } {
+    let calls = 0
+    const model = new MockLanguageModelV3({
+      doStream: async () => {
+        calls++
+        if (calls <= cuts) {
+          return mockStream([
+            { type: 'stream-start', warnings: [] },
+            {
+              type: 'finish',
+              finishReason: { unified: 'other', raw: undefined },
+              usage: mockUsage(0, 0),
+            },
+          ])
+        }
+        return mockStream([
+          { type: 'stream-start', warnings: [] },
+          { type: 'text-start', id: 't' },
+          { type: 'text-delta', id: 't', delta: 'Recovered.' },
+          { type: 'text-end', id: 't' },
+          {
+            type: 'finish',
+            finishReason: mockFinish('stop'),
+            usage: mockUsage(1, 1),
+          },
+        ])
+      },
+    })
+    return { model, calls: () => calls }
+  }
+
+  test('one cutoff is re-issued and the second attempt answers', async () => {
+    const { model, calls } = cutThenAnswer(1)
+    const sink = streamingSink()
+    const result = await run(model, 1, sink)
+
+    expect(calls()).toBe(2)
+    expect(JSON.stringify(result)).toContain('Recovered.')
+    expect(sink.logs.some((l) => l.message.includes('re-issuing once'))).toBe(
+      true,
+    )
+  })
+
+  test('a second cutoff is not re-issued again and stays retryable', async () => {
+    const { model, calls } = cutThenAnswer(2)
+    const err = await run(model, 1, streamingSink()).catch((e: unknown) => e)
+
+    expect(calls()).toBe(2)
+    expect((err as Error).message).toContain(
+      'stream closed before the provider sent a finish reason',
+    )
+    expect(isFatalAgentError(err)).toBe(false)
+  })
+})

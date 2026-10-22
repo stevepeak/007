@@ -1,4 +1,9 @@
-import { convertToModelMessages, generateText, stepCountIs, streamText } from 'ai'
+import {
+  convertToModelMessages,
+  generateText,
+  stepCountIs,
+  streamText,
+} from 'ai'
 
 import { errorFeedLine } from '../error-detail'
 import { MODEL_MAX_RETRIES } from '../model-budget'
@@ -99,7 +104,6 @@ async function runToolLoop(
   } = args
   const schema = structuredSchema(output)
   const answeringModel = withResponseFormat(model, schema)
-  const state = createLoopState({ streamToolCalls, toolStatusLabels, sink })
   const guard = armTotalBudget(budget)
 
   // Heartbeat before the loop opens. Until `onStepFinish` fires — a full model
@@ -115,57 +119,59 @@ async function runToolLoop(
 
   const streamAnswer = canStreamAnswer(sink, schema)
 
-  const callOptions = {
-    model,
-    system: systemPrompt,
-    messages: messagesForModel,
-    tools,
-    stopWhen: stepCountIs(maxTurns),
-    prepareStep: createPrepareStep({
-      state,
-      modelId,
-      maxTurns,
-      answeringModel,
-      hasTools: Object.keys(tools).length > 0,
-      contextLength,
-      answerReservePercent,
-      toolTokenBudget,
-      requireToolFirstTurn,
-      sink,
-    }),
-    // Per-round-trip and per-tool watchdogs, native to the AI SDK: each is armed
-    // and cleared around its own call, so a single stalled request or hung tool
-    // fails fast instead of silently consuming the node's whole window.
-    // `abortSignal` carries our separate total-budget guard.
-    timeout: budget && { stepMs: budget.stepMs, toolMs: budget.toolMs },
-    abortSignal: guard.signal,
-    maxRetries: MODEL_MAX_RETRIES,
-    onStepFinish: createOnStepFinish({
-      state,
-      modelId,
-      maxTurns,
-      streamReasoning,
-      streamToolCalls,
-      toolStatusLabels,
-      sink,
-    }),
-    // Turn, model-call and tool-call timing, plus the live tool lines — see
-    // `-timing`. Callbacks the SDK fires on both paths.
-    ...state.clock.callbacks,
-  }
+  // One attempt of the whole loop, on its own loop state. The total-budget
+  // guard is shared, so a re-issue spends what the first attempt left.
+  const attempt = (state: AgentLoopState): Promise<LoopOutcome> => {
+    const callOptions = {
+      model,
+      system: systemPrompt,
+      messages: messagesForModel,
+      tools,
+      stopWhen: stepCountIs(maxTurns),
+      prepareStep: createPrepareStep({
+        state,
+        modelId,
+        maxTurns,
+        answeringModel,
+        hasTools: Object.keys(tools).length > 0,
+        contextLength,
+        answerReservePercent,
+        toolTokenBudget,
+        requireToolFirstTurn,
+        sink,
+      }),
+      // Per-round-trip and per-tool watchdogs, native to the AI SDK: each is armed
+      // and cleared around its own call, so a single stalled request or hung tool
+      // fails fast instead of silently consuming the node's whole window.
+      // `abortSignal` carries our separate total-budget guard.
+      timeout: budget && { stepMs: budget.stepMs, toolMs: budget.toolMs },
+      abortSignal: guard.signal,
+      maxRetries: MODEL_MAX_RETRIES,
+      onStepFinish: createOnStepFinish({
+        state,
+        modelId,
+        maxTurns,
+        streamReasoning,
+        streamToolCalls,
+        toolStatusLabels,
+        sink,
+      }),
+      // Turn, model-call and tool-call timing, plus the live tool lines — see
+      // `-timing`. Callbacks the SDK fires on both paths.
+      ...state.clock.callbacks,
+    }
 
-  const driveArgs: DriveArgs = {
-    state,
-    model,
-    modelId,
-    maxTurns,
-    schema,
-    systemPrompt,
-    messagesForModel,
-    guard,
-    sink,
-  }
-  const result = await runGuarded(sink, modelId, startedAt, guard, () => {
+    const driveArgs: DriveArgs = {
+      state,
+      model,
+      modelId,
+      maxTurns,
+      schema,
+      systemPrompt,
+      messagesForModel,
+      guard,
+      sink,
+    }
     return streamAnswer
       ? driveStream(
           // Chunks exist only on this path, and they are what splits a turn's
@@ -174,6 +180,21 @@ async function runToolLoop(
           driveArgs,
         )
       : driveGenerate(() => generateText(callOptions), driveArgs)
+  }
+
+  let state = createLoopState({ streamToolCalls, toolStatusLabels, sink })
+  const result = await runGuarded(sink, modelId, startedAt, guard, async () => {
+    const first = await attempt(state)
+    if (!closedBeforeAnything(first, state)) return first
+    // The connection was cut before the model did anything a reader saw or a
+    // tool acted on, so the same request can go out again in place. Once only:
+    // a second cut is reported as the cutoff it is.
+    void sink?.log?.({
+      level: 'warn',
+      message: `↻ ${modelId} stream closed before a finish reason; re-issuing once`,
+    })
+    state = createLoopState({ streamToolCalls, toolStatusLabels, sink })
+    return await attempt(state)
   })
   logModelCallEnd(sink, modelId, startedAt, {
     finishReason: result.finishReason,
@@ -209,6 +230,24 @@ async function runToolLoop(
     return structuredResult(output, result.object, meta)
   }
   return { output: { text: result.text }, meta }
+}
+
+/**
+ * True when the provider closed the response without a finish reason, and
+ * before any text was written or any tool was called. Nothing has reached the
+ * reader and no tool has had an effect, so re-issuing the call is safe.
+ */
+function closedBeforeAnything(
+  result: LoopOutcome,
+  state: AgentLoopState,
+): boolean {
+  return (
+    result.rawFinishReason === undefined &&
+    result.streamError === undefined &&
+    result.finishReason !== 'error' &&
+    result.text.trim() === '' &&
+    state.stepTraces.every((s) => s.toolCalls.length === 0)
+  )
 }
 
 /**
