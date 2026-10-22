@@ -6,6 +6,7 @@ import {
   type AgentConfig,
   type ModelCapabilities,
 } from '../../engine'
+import { defaultJudgeModel } from '../../eval/judge'
 import { groupModelsByProvider } from '../editor/model-grouping'
 import {
   DEFAULT_EVAL_CONCURRENCY,
@@ -21,8 +22,6 @@ import {
   mergeModelRequirements,
   unmetRequirements,
 } from '../../engine/model-capabilities'
-
-import { JUDGE_REQUIREMENTS } from './run-config-dialog-judges'
 
 // The MATRIX behind `RunConfigDialog` — everything the dialog knows that isn't
 // markup. Extracted so the dialog file is layout and this file is the rules,
@@ -144,12 +143,11 @@ export function useRunConfigMatrix({
   const [concurrency, setConcurrency] = useState<number>(DEFAULT_EVAL_CONCURRENCY)
 
   // The run's judges — one per judge kind the Samples carry. Required, so each
-  // starts on the first model that can do the job and the picker only changes it.
+  // starts on a default — the cheapest capable judge, the first decider — and
+  // the picker only changes it.
   const judgeTypes = useEvalJudgeTypes(setIds)
   const decidersQuery = useDecisionModels()
-  const defaultJudgeId =
-    models.find((m) => unmetRequirements(m, JUDGE_REQUIREMENTS).length === 0)
-      ?.id ?? ''
+  const defaultJudgeId = defaultJudgeModel(models)?.id ?? ''
   const defaultDecisionJudgeId = decidersQuery.data?.[0]?.id ?? ''
   const [judgePick, setJudgePick] = useState('')
   const [decisionJudgePick, setDecisionJudgePick] = useState('')

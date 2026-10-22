@@ -1266,8 +1266,8 @@ describe('run_eval — per-model attempts and the judge pin', () => {
         },
         getEvalRunDrive: async () => null,
         listModels: async () => { return [
-            { id: 'baseline', label: 'b', capabilities: {} },
-            { id: 'candidate', label: 'c', capabilities: {} },
+            { id: 'baseline', label: 'b', capabilities: { structuredOutput: true } },
+            { id: 'candidate', label: 'c', capabilities: { structuredOutput: true } },
           ] as never },
         listAgents: async () => [] as never,
         getEvalSet: async () => setWithRows(2) as never,
@@ -1321,7 +1321,7 @@ describe('run_eval — per-model attempts and the judge pin', () => {
     expect(out.launched.judge).toBe('venice:judge')
   })
 
-  test('an omitted judge takes the first enabled model, and says which', async () => {
+  test('an omitted judge takes the default judge model, and says which', async () => {
     const { client, planOf } = stubs()
     const out = (await toolNamed('run_eval').run(client, {
       setIds: ['set_1'],

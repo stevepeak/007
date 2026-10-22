@@ -1,18 +1,13 @@
-import type { ModelCapabilities } from '../../engine/config'
 import type { JudgeCheckType } from '../../engine/eval-schema'
+import { JUDGE_REQUIREMENTS } from '../../eval/judge'
 import { ModelSelect } from '../editor/model-select'
 import { useDecisionModels } from '../hooks'
 
-// A judge grades by emitting a JSON verdict (`generateObject` in eval/grade),
-// so a model that can't do structured output can't be a judge at all. Rather
-// than hide those models — which reads as "my provider is missing" — the picker
-// shows them greyed out with the reason.
-export const JUDGE_REQUIREMENTS: ModelCapabilities = { structuredOutput: true }
-
 // The JUDGES of the run. One per judge kind, for every check in the sweep —
 // checks can't name their own, so one report is graded by one instrument. Only
-// the kinds the Goals' Samples actually use are shown, and each starts on the
-// first model that can do the job.
+// the kinds the Goals' Samples actually use are shown. The judge starts on the
+// cheapest model that can do the job (`defaultJudgeModel`); models that can't
+// are listed greyed out with the reason rather than hidden.
 export function JudgeAxis({
   types,
   judgeModelId,

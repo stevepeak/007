@@ -11,6 +11,7 @@ import {
   mergeModelRequirements,
   unmetRequirementsReason,
 } from '../engine/model-capabilities'
+import { defaultJudgeModel } from '../eval/judge'
 import { resolveEvalCellMode } from '../eval/plan'
 import {
   agentCallTotals,
@@ -607,7 +608,7 @@ export function evalRunWriteTools(): WfMcpTool[] {
           .string()
           .nullish()
           .describe(
-            'The chat model every `llm_judge` check in this run is graded by (an id from list_models — NOT the same thing as `models`, which is what the target runs on). Omit to take the first enabled model; the reply echoes the one chosen. Use the same judge whenever you intend to compare this report against an earlier one.',
+            'The chat model every `llm_judge` check in this run is graded by (an id from list_models — NOT the same thing as `models`, which is what the target runs on). Omit to take the CHEAPEST enabled model that supports structured output; the reply echoes the one chosen. Use the same judge whenever you intend to compare this report against an earlier one.',
           ),
         decisionJudgeModelId: z
           .string()
@@ -837,12 +838,13 @@ export function evalRunWriteTools(): WfMcpTool[] {
           setIds,
           mode: resolvedMode.mode,
           configOverride,
-          // Omitted → the catalog's first model, read only for a judge kind
-          // these Samples actually carry.
+          // Omitted → the cheapest capable chat model and the first decider,
+          // read only for a judge kind these Samples actually carry.
           judgeModelId:
             optString(args.judgeModelId) ??
             (judges.has('llm_judge')
-              ? (await client.listModels().catch(() => []))[0]?.id
+              ? defaultJudgeModel(await client.listModels().catch(() => []))
+                  ?.id
               : undefined),
           decisionJudgeModelId:
             optString(args.decisionJudgeModelId) ??
