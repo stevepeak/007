@@ -288,6 +288,13 @@
       "when": 1790953978210,
       "tag": "0040_chemical_brother_voodoo",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "6",
+      "when": 1792767180689,
+      "tag": "0041_furry_mephisto",
+      "breakpoints": true
     }
   ]
 }

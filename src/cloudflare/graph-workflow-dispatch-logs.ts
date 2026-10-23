@@ -10,6 +10,7 @@ import type { RunLogEntry } from '../engine/stream-sink'
 import { createWfDb } from '../storage/client'
 import {
   appendRunLog,
+  getRunCancelRequest,
   replaceNodeLogs,
   upsertNodeLogs,
   type WfRunLogRow,
@@ -129,11 +130,17 @@ export async function enterStep<TDeps, E extends GraphWorkflowEnv>(
   node: ExecutableNode,
   seq: number,
   input: unknown,
-): Promise<{ startEntry: RunLogEntry; startTs: number }> {
+): Promise<{ startEntry: RunLogEntry; startTs: number; cancelled: boolean }> {
   const startTs = Date.now()
   const startEntry = startEntryOf(node, seq, startTs)
   const selfStepping = ownsItsDurableSteps(node)
-  await stepDo(ctx.step, `enter:${node.id}`, DEFAULT_STEP_OPTS, async () => {
+  // The cancel check rides in this step rather than a step of its own, so it
+  // costs no extra journal write — and its answer is journaled, so a replay
+  // makes the same call. An instance journaled before this check returns null.
+  const entered = await stepDo(ctx.step, `enter:${node.id}`, DEFAULT_STEP_OPTS, async () => {
+    if (await getRunCancelRequest(createWfDb(ctx.env.WF_DB), ctx.p.workflowRunId)) {
+      return { cancelled: true }
+    }
     await ctx.recordOne({
       nodeId: node.id,
       nodeKind: node.kind,
@@ -161,9 +168,9 @@ export async function enterStep<TDeps, E extends GraphWorkflowEnv>(
         entries: [logRow(node, seq, startEntry)],
       })
     }
-    return null
+    return { cancelled: false }
   })
-  return { startEntry, startTs }
+  return { startEntry, startTs, cancelled: entered?.cancelled === true }
 }
 
 // Flip a node's (run_id, node_id) row to its terminal status and rewrite its

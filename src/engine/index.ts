@@ -257,8 +257,27 @@ export {
   toStrictJsonSchema,
 } from './strict-schema'
 export {
+  classifyFailure,
+  FAILURE_ROUTE_LABELS,
+  FAILURE_ROUTES,
+  isFailureRoute,
+  RunCancelledError,
+  tagFailure,
+  type CancelledBy,
+  type FailureRoute,
+  type RunFailurePayload,
+} from './failure-route'
+export {
+  failureHandlerGraphOf,
+  failureHandlerNodeIds,
+  failureHandlerOf,
+  failureHandlerProblems,
+  failureHandlerRoutes,
+} from './graph-failure-handler'
+export {
   describeTriggerEvents,
   ITERATION_ITEM_TRIGGER_KIND,
+  RUN_FAILURE_TRIGGER_KIND,
   MANUAL_TRIGGER_KIND,
   PERIODIC_TRIGGER_KIND,
   resolveTriggerInput,

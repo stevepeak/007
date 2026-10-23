@@ -1,14 +1,24 @@
-import type {
-  WfEngine,
-  WfRunManifestEntry,
-  WfWorkflowManifestEntry,
+import type { RunFailurePayload } from '../engine/failure-route'
+import {
+  workflowGraphShapeSchema,
+  type WfEngine,
+  type WfRunManifestEntry,
+  type WfWorkflowManifestEntry,
 } from '../engine/graph'
 import {
+  DEFAULT_WF_ENGINE,
   resolveGraphEngine,
   resolveGraphTriggerKind,
 } from '../engine/graph-engine'
+import {
+  failureHandlerOf,
+  failureHandlerRoutes,
+} from '../engine/graph-failure-handler'
 import type { WfLogger } from '../engine/logger'
-import type { TriggerRegistry } from '../engine/trigger-registry'
+import {
+  RUN_FAILURE_TRIGGER_KIND,
+  type TriggerRegistry,
+} from '../engine/trigger-registry'
 import type { WfDb } from '../storage/client'
 import { createRun } from '../storage/data'
 
@@ -197,6 +207,71 @@ export async function spawnCalleeRun(
     // is finished".
     const room = runRoomStub(env, roomId)
     await room.startInline(params)
+    return { childRunId, engine, instanceId: null }
+  }
+  const instance = await env.GRAPH_WORKFLOW.create({ params })
+  return { childRunId, engine, instanceId: instance.id }
+}
+
+/**
+ * Start the failed run's `on-failure` arm for `payload.route` as a child run, on
+ * the engine the handler node declares. Null when there is nothing to start:
+ * no handler, no arm for this route, or an eval run (a handler is real cleanup,
+ * and an eval's side effects are not real).
+ *
+ * Fire-and-forget: nobody waits on a handler, so it has no `subRun`. Same
+ * atomicity contract as {@link spawnCalleeRun} — the durable backend calls it
+ * inside one journaled step.
+ */
+export async function spawnFailureHandlerRun(
+  env: ChildRunBindings,
+  db: WfDb,
+  args: {
+    /** The failed run's whole version graph. */
+    graph: unknown
+    workflowVersionId: string
+    runContext: GraphRunContextInput
+    manifest: WfRunManifestEntry[]
+    traceId?: string
+    payload: RunFailurePayload
+  },
+): Promise<SpawnedChildRun | null> {
+  if (args.runContext.isEval) return null
+  const parsed = workflowGraphShapeSchema.safeParse(args.graph)
+  if (!parsed.success) return null
+  const graph = parsed.data
+  const handler = failureHandlerOf(graph)
+  if (!handler) return null
+  if (!failureHandlerRoutes(graph, handler.id).has(args.payload.route)) {
+    return null
+  }
+  // Its own trigger kind, so the run lists as a handler and host lifecycle
+  // hooks keyed on the failed run's kind don't fire a second time for it.
+  const runContext: GraphRunContextInput = {
+    ...args.runContext,
+    triggerKind: RUN_FAILURE_TRIGGER_KIND,
+  }
+  const childRunId = await createChildRunRow({
+    db,
+    env,
+    workflowVersionId: args.workflowVersionId,
+    runContext,
+    traceId: args.traceId,
+    parent: { runId: args.payload.runId, nodeId: handler.id },
+  })
+  const roomId = crypto.randomUUID()
+  const params: GraphWorkflowParams = {
+    runId: roomId,
+    workflowRunId: childRunId,
+    workflowVersionId: args.workflowVersionId,
+    triggerInput: args.payload,
+    runContext,
+    inheritedManifest: args.manifest,
+    failureHandler: { nodeId: handler.id, route: args.payload.route },
+  }
+  const engine = handler.config.engine ?? DEFAULT_WF_ENGINE
+  if (engine === 'inline') {
+    await runRoomStub(env, roomId).startInline(params)
     return { childRunId, engine, instanceId: null }
   }
   const instance = await env.GRAPH_WORKFLOW.create({ params })

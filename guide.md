@@ -1416,7 +1416,7 @@ scopes, and the client stores and silently refreshes the token from then on.
 `offline_access` is what makes that a one-time cost rather than a prompt at
 every expiry.
 
-**What it exposes.** Fifty-five tools — twenty-eight reads, and twenty-seven writes
+**What it exposes.** Fifty-six tools — twenty-eight reads, and twenty-eight writes
 registered only for a session whose token carries the write scope.
 
 | Tool                              | Gate      | What it does                                                        |
@@ -1464,6 +1464,7 @@ registered only for a session whose token carries the write scope.
 | `run_agent_preview`               | **write** | one throwaway run of a GENERATION agent. **Every tool simulated**   |
 | `run_decision_preview`            | **write** | judge one state with a DECISION agent — verdict, which rule fired, and the raw distributions |
 | `retry_run`                       | **write** | re-execute a finished run — `restart` on latest, or `resume` the original version. **Real side effects** |
+| `cancel_run`                      | **write** | stop a queued or running run (and its children) before its next node; its On Failure `cancelled` arm runs after |
 | `create_workflow`                 | **write** | a new workflow: the chosen trigger wired to an Output, published as v1 |
 | `update_workflow`                 | **write** | rename, or archive/restore — archiving is how a workflow is retired    |
 | `patch_workflow_draft`            | **write** | named ops on a workflow's draft — add a node, set a tool arg, an edge, a progress note, a retry policy. Reaches into iteration subgraphs. Lints the result |

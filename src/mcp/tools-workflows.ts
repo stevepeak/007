@@ -1172,6 +1172,36 @@ export function workflowWriteTools(): WfMcpTool[] {
       },
     },
     {
+      name: 'cancel_run',
+      title: 'Cancel a run',
+      description: [
+        'Ask a queued or running run to stop. Cooperative: the run starts no new node, lets the ones already running land (a running node cannot be interrupted), then settles `cancelled`. Every run it spawned — iteration items, called workflows — is cancelled with it.',
+        '',
+        "If the workflow has an On Failure node with a `cancelled` arm, that arm then runs as a child run of its own. See get_docs({ topic: 'nodes/on-failure' }).",
+        '',
+        'Returns the runs newly marked. Empty means the run had already finished, or was already being cancelled.',
+      ].join('\n'),
+      inputSchema: {
+        runId: z.string().describe('Run id, from list_runs or get_run.'),
+      },
+      readOnly: false,
+      run: async (client, args) => {
+        const runId = reqString(args.runId, 'runId')
+        const before = await client.getRun(runId)
+        if (!before) return notFound({ kind: 'run', id: runId })
+        const { cancelledRunIds } = await client.cancelRun({ runId })
+        return {
+          runId,
+          cancelledRunIds,
+          note:
+            cancelledRunIds.length > 0
+              ? 'Cancel requested. The run stops before its next node.'
+              : `Nothing to cancel — the run is ${before.run.status}${before.run.status === 'running' || before.run.status === 'queued' ? ' and already stopping' : ''}.`,
+          next: `Poll get_run("${runId}") until status is "cancelled".`,
+        }
+      },
+    },
+    {
       name: 'retry_run',
       title: 'Retry a run',
       description: [

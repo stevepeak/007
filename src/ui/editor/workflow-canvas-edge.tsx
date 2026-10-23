@@ -1,11 +1,16 @@
 import {
   BaseEdge,
+  EdgeLabelRenderer,
   getSmoothStepPath,
   useNodesData,
   type EdgeProps,
 } from '@xyflow/react'
 
-import { switchArmName } from '../../engine'
+import {
+  FAILURE_ROUTE_LABELS,
+  isFailureRoute,
+  switchArmName,
+} from '../../engine'
 
 import type { EditorNode } from './workflow-canvas-graph'
 
@@ -36,7 +41,7 @@ export function ConditionEdge({
   const sourceNode = useNodesData<EditorNode>(source)
   const fastTrack = data?.fastTrack === true
   const condition = typeof data?.condition === 'string' ? data.condition : null
-  const [path, labelX, labelY] = getSmoothStepPath({
+  const [path] = getSmoothStepPath({
     sourceX,
     sourceY,
     targetX,
@@ -44,18 +49,32 @@ export function ConditionEdge({
     sourcePosition,
     targetPosition,
   })
+  const label = conditionLabel(sourceNode?.data, condition)
   return (
-    <BaseEdge
-      id={id}
-      path={path}
-      markerEnd={markerEnd}
-      style={
-        fastTrack ? { ...style, stroke: '#f59e0b', strokeWidth: 3 } : style
-      }
-      label={conditionLabel(sourceNode?.data, condition)}
-      labelX={labelX}
-      labelY={labelY}
-    />
+    <>
+      <BaseEdge
+        id={id}
+        path={path}
+        markerEnd={markerEnd}
+        style={
+          fastTrack ? { ...style, stroke: '#f59e0b', strokeWidth: 3 } : style
+        }
+      />
+      {label ? (
+        // At the SOURCE end, beside the handle it leaves from: several arms
+        // often converge on one node, where midpoint labels would stack.
+        <EdgeLabelRenderer>
+          <div
+            className="nodrag nopan bg-card text-muted-foreground pointer-events-none absolute rounded-full border px-1.5 text-[10px] leading-4 font-medium whitespace-nowrap shadow-sm"
+            style={{
+              transform: `translate(${sourceX + 8}px, ${sourceY}px) translateY(-50%)`,
+            }}
+          >
+            {label}
+          </div>
+        </EdgeLabelRenderer>
+      ) : null}
+    </>
   )
 }
 
@@ -67,6 +86,9 @@ function conditionLabel(
   condition: string | null,
 ): string | undefined {
   if (!condition) return undefined
+  if (sourceData?.kind === 'on-failure' && isFailureRoute(condition)) {
+    return FAILURE_ROUTE_LABELS[condition]
+  }
   if (sourceData?.kind !== 'switch') return condition
   return switchArmName(sourceData.config.cases, condition)
 }

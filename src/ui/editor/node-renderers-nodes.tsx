@@ -2,10 +2,13 @@ import { Handle, Position, type NodeProps } from '@xyflow/react'
 import { AlertTriangle, StickyNote } from 'lucide-react'
 
 import {
+  FAILURE_ROUTE_LABELS,
+  FAILURE_ROUTES,
   ITERATION_ITEM_TRIGGER_KIND,
   MANUAL_TRIGGER_KIND,
   PERIODIC_TRIGGER_KIND,
   SWITCH_DEFAULT_CASE,
+  switchArmName,
 } from '../../engine'
 import { truncate } from '../../engine/text'
 import { agentColor, agentIcon } from '../agent-appearance'
@@ -16,10 +19,12 @@ import { ToolAvatar } from '../tool-appearance'
 import {
   branchConditionLabel,
   defineNode,
+  handleTop,
   KIND_STYLE,
   NodeCard,
   nodeStatusFrameClass,
   PersistedNodeResizer,
+  RouteHandle,
   RunStatusDot,
   useNodeRenderer,
   useRunAgentVersions,
@@ -276,18 +281,51 @@ export function SwitchNodeRenderer(props: NodeProps) {
         subtitle={`${subject} → ${arms.length} route${arms.length === 1 ? '' : 's'}`}
       />
       {arms.map((key, i) => (
-        <Handle
+        <RouteHandle
           key={key}
-          type="source"
-          position={Position.Right}
           id={key}
-          style={{
-            top: `${Math.round(((i + 1) / (arms.length + 1)) * 100)}%`,
-            background:
-              key === SWITCH_DEFAULT_CASE
-                ? 'rgb(148, 163, 184)'
-                : 'rgb(249, 115, 22)',
-          }}
+          label={switchArmName(data.config.cases, key)}
+          top={handleTop(i, arms.length)}
+          color={
+            key === SWITCH_DEFAULT_CASE
+              ? 'rgb(148, 163, 184)'
+              : 'rgb(249, 115, 22)'
+          }
+        />
+      ))}
+    </>
+  )
+}
+
+// Vertical room per route on the On Failure card — enough that the badge on
+// each outgoing edge clears its neighbour's.
+const ROUTE_HANDLE_SPACING_PX = 20
+
+// The failure handler: a detached root, so no target handle — and one source
+// handle per route, each `id` the route key, on the same id↔condition contract
+// as a Switch arm. Wiring two routes to one node is how they share a handler.
+export function OnFailureNodeRenderer(props: NodeProps) {
+  const r = useNodeRenderer(props, 'on-failure')
+  if (!r) return null
+  const { data, invalid, status } = r
+  return (
+    <>
+      <NodeCard
+        kind="on-failure"
+        label={data.label}
+        selected={props.selected}
+        invalid={invalid}
+        status={status}
+        subtitle={`Runs on ${data.config.engine ?? 'durable'} when the run stops`}
+        minHeight={FAILURE_ROUTES.length * ROUTE_HANDLE_SPACING_PX}
+      />
+      {FAILURE_ROUTES.map((route, i) => (
+        <RouteHandle
+          key={route}
+          id={route}
+          label={FAILURE_ROUTE_LABELS[route]}
+          top={handleTop(i, FAILURE_ROUTES.length)}
+          color="rgb(248, 113, 113)"
         />
       ))}
     </>

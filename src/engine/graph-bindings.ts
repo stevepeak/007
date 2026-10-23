@@ -71,6 +71,7 @@ export function nodeRefs(node: WorkflowNode): NodeRef[] {
     case 'iteration':
       return singleRef('source', node.config.source)
     case 'trigger':
+    case 'on-failure':
     case 'feature-request':
     case 'race':
     case 'aggregate':
@@ -191,6 +192,7 @@ export function stripNodeRefsTo(
         },
       }
     case 'trigger':
+    case 'on-failure':
     case 'feature-request':
     case 'race':
     case 'aggregate':

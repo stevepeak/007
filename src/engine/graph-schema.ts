@@ -647,6 +647,22 @@ const noteNodeSchema = baseNode.extend({
   }),
 })
 
+// The run's failure handler: a detached root whose outgoing edges each name a
+// `FailureRoute` (`edge.condition`). It never runs in the main walk; when the run
+// fails or is cancelled, the arm for that route runs as a child run of its own
+// on `config.engine` — see `graph-failure-handler.ts`. Its output, and so what
+// its descendants bind to, is a `RunFailurePayload`.
+const onFailureNodeSchema = baseNode.extend({
+  kind: z.literal('on-failure'),
+  config: z
+    .object({
+      // Absent means 'durable', like the trigger's own `engine`: cleanup that
+      // must happen wants to survive a deploy.
+      engine: wfEngineSchema.optional(),
+    })
+    .default({}),
+})
+
 const outputNodeSchema = baseNode.extend({
   kind: z.literal('output'),
   // The Output node terminates a run and names the value the caller receives.
@@ -775,6 +791,7 @@ export const workflowNodeSchema = z.discriminatedUnion('kind', [
   aggregateNodeSchema,
   iterationNodeSchema,
   noteNodeSchema,
+  onFailureNodeSchema,
   outputNodeSchema,
 ])
 
@@ -799,6 +816,7 @@ export type RaceNode = z.infer<typeof raceNodeSchema>
 export type AggregateNode = z.infer<typeof aggregateNodeSchema>
 export type NoteNode = z.infer<typeof noteNodeSchema>
 export type OutputNode = z.infer<typeof outputNodeSchema>
+export type OnFailureNode = z.infer<typeof onFailureNodeSchema>
 export interface IterationNode {
   id: string
   position: { x: number; y: number }
@@ -835,6 +853,7 @@ export type WorkflowNode =
   | AggregateNode
   | IterationNode
   | NoteNode
+  | OnFailureNode
   | OutputNode
 
 // Edges connect node outputs to node inputs. `condition` is only meaningful

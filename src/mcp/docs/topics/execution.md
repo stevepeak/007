@@ -73,7 +73,9 @@ When several nodes are ready together, they all start in the same tick. Order ma
 
 - **`done`**: an Output was reached. The answer is final and the caller is released. Before release the value is checked against the trigger's output contract (see [[triggers]]); a violation fails the run.
 - **`completed`**: every remaining arm has run itself out. Arms that don't feed the Output (a notification tool, a title update, a race loser's downstream) run in this drain phase, behind the answer.
-- A node that fails **before** the answer stops new dispatch. Nodes already running are allowed to land, since in-flight work can't be cancelled, and then the run **fails**.
+- A node that fails **before** the answer stops new dispatch. Nodes already running are allowed to land, since in-flight work can't be interrupted, and then the run **fails**.
+- **Cancel** (`cancel_run`) is cooperative and works the same way: no new node starts, the running ones land, and the run settles `cancelled`. Its child runs are cancelled with it. A single long node (an agent mid-generation) finishes before the run stops.
+- After a run fails or is cancelled before its answer, its [[nodes/on-failure]] arm for that failure's route (if wired) runs as a child run.
 - A node that fails **after** the answer cannot retract it. The run keeps its answer, records a drain error, and stops starting new work while running siblings finish. The failed step is in the trace.
 - Anything waiting on "the answer" must accept `done`, not only `completed`.
 

@@ -5,6 +5,7 @@ import {
   errorFeedLine,
   errorStored,
 } from '../engine/error-detail'
+import { classifyFailure } from '../engine/failure-route'
 import { modelBudgetFor } from '../engine/model-budget'
 import { emitNodeStartProgress } from '../engine/node-progress'
 import { isFatalAgentError } from '../engine/nodes/agent-generation'
@@ -80,7 +81,7 @@ async function runNodeBody<T>(
     return await body()
   } catch (err) {
     const feed = errorFeedLine(err)
-    onFailure({ stored: errorStored(err), feed })
+    onFailure({ stored: errorStored(err), feed, route: classifyFailure(err) })
     const detail = apiErrorDetail(err)
     // A node that burned its ENTIRE budget — or ran its whole loop without
     // writing an answer — is not worth retrying: the retry repeats the same

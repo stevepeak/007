@@ -7,6 +7,7 @@ import {
   FeatureRequestNodeRenderer,
   IterationNodeRenderer,
   NoteNodeRenderer,
+  OnFailureNodeRenderer,
   OutputNodeRenderer,
   PassthroughNodeRenderer,
   TextNodeRenderer,
@@ -51,5 +52,6 @@ export const NODE_TYPES = {
   [editorTypeForKind('race')]: RaceNodeRenderer,
   [editorTypeForKind('aggregate')]: AggregateNodeRenderer,
   [editorTypeForKind('note')]: NoteNodeRenderer,
+  [editorTypeForKind('on-failure')]: OnFailureNodeRenderer,
   [editorTypeForKind('output')]: OutputNodeRenderer,
 }

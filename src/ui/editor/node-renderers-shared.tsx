@@ -16,6 +16,7 @@ import {
   LogOut,
   Repeat,
   Sparkles,
+  ShieldAlert,
   Shuffle,
   Split,
   StickyNote,
@@ -295,6 +296,11 @@ export const KIND_STYLE: Record<
     label: 'Aggregate',
   },
   note: { icon: StickyNote, accent: 'border-l-amber-300', label: 'Note' },
+  'on-failure': {
+    icon: ShieldAlert,
+    accent: 'border-l-red-400',
+    label: 'On Failure',
+  },
   output: { icon: LogOut, accent: 'border-l-zinc-400', label: 'Output' },
 }
 
@@ -309,6 +315,7 @@ export function NodeCard({
   icon: IconOverride,
   iconChip,
   iconSlot,
+  minHeight,
 }: {
   kind: WorkflowNode['kind']
   label: string
@@ -326,6 +333,8 @@ export function NodeCard({
   iconChip?: string
   /** Fully custom icon element (e.g. a tool's inline-SVG brand icon). */
   iconSlot?: ReactNode
+  /** Room for a tall stack of route handles, so their badges don't collide. */
+  minHeight?: number
 }) {
   const style = KIND_STYLE[kind]
   const Icon = style.icon
@@ -339,7 +348,7 @@ export function NodeCard({
           !selected &&
           'ring-2 ring-sky-400 ring-offset-1 wf-node-glow',
       )}
-      style={{ minWidth: 200, maxWidth: 260 }}
+      style={{ minWidth: 200, maxWidth: 260, minHeight }}
     >
       {status ? <RunStatusDot status={status} /> : null}
       <div className="flex items-start gap-2 px-3 py-2">
@@ -472,24 +481,48 @@ export function PersistedNodeResizer({
   )
 }
 
-// Two source handles, one per condition. xyflow matches `id` to
-// edge.sourceHandle so the connection lands on the right side. Used by the
-// Branch renderer — it routes yes/no.
+// One of several source handles on a node that routes. A bare dot says nothing
+// about which arm it is, so hovering it names the arm. `id` is the arm's key —
+// what xyflow matches against `edge.sourceHandle`, and so `edge.condition`.
+export function RouteHandle({
+  id,
+  label,
+  top,
+  color,
+}: {
+  id: string
+  label: string
+  top: string
+  color: string
+}) {
+  return (
+    <Handle
+      type="source"
+      position={Position.Right}
+      id={id}
+      aria-label={label}
+      className="group"
+      style={{ top, background: color }}
+    >
+      <span className="bg-popover text-popover-foreground pointer-events-none absolute top-1/2 left-3 z-10 -translate-y-1/2 rounded border px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+        {label}
+      </span>
+    </Handle>
+  )
+}
+
+/** Where the i-th of `count` handles sits down a node's right edge. */
+export function handleTop(i: number, count: number): string {
+  return `${Math.round(((i + 1) / (count + 1)) * 100)}%`
+}
+
+// Two source handles, one per condition. Used by the Branch renderer — it
+// routes yes/no.
 export function DecisionHandles() {
   return (
     <>
-      <Handle
-        type="source"
-        position={Position.Right}
-        id="yes"
-        style={{ top: '35%', background: 'rgb(34, 197, 94)' }}
-      />
-      <Handle
-        type="source"
-        position={Position.Right}
-        id="no"
-        style={{ top: '65%', background: 'rgb(239, 68, 68)' }}
-      />
+      <RouteHandle id="yes" label="Yes" top="35%" color="rgb(34, 197, 94)" />
+      <RouteHandle id="no" label="No" top="65%" color="rgb(239, 68, 68)" />
     </>
   )
 }

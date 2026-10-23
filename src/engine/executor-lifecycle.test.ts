@@ -37,7 +37,7 @@ describe('executor — lifecycle callbacks', () => {
         recorder: createMemoryRunRecorder(),
       }),
     ).rejects.toThrow('boom failed')
-    expect(failure).toEqual({ error: 'boom failed' })
+    expect(failure).toEqual({ error: 'boom failed', route: 'internal_error' })
   })
 
   test('onRunFailed names the run when the caller wrote one', async () => {

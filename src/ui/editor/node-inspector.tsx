@@ -35,6 +35,7 @@ import {
   RaceInspector,
   TextInspector,
   ToolInspector,
+  OnFailureInspector,
   TriggerInspector,
   WorkflowInspector,
 } from './node-inspector-sections'
@@ -73,6 +74,7 @@ const NODE_INSPECTORS: Partial<
   race: RaceInspector,
   aggregate: AggregateInspector,
   note: NoteInspector,
+  'on-failure': OnFailureInspector,
 }
 
 // How a step reports progress to the user: off (nothing), static (a fixed

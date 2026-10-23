@@ -2,6 +2,7 @@ import {
   agentOutputJsonSchema,
   ancestorIds,
   inferPromptVariables,
+  FAILURE_ROUTES,
   ITERATION_ITEM_TRIGGER_KIND,
   predecessorIds,
   SWITCH_DEFAULT_CASE,
@@ -423,6 +424,7 @@ export function nodeRequires(node: WorkflowNode, maps: IoMaps): NodeInput[] {
     // and never appear as required inputs. (Text is the exception above: its
     // body names the variables, so they ARE a contract the node must satisfy.)
     case 'trigger':
+    case 'on-failure':
     case 'branch':
     case 'switch':
     case 'feature-request':
@@ -753,6 +755,35 @@ function nodeOutput(
 
     case 'output':
       return { fields: [], type: 'none' }
+
+    case 'on-failure': {
+      // A `RunFailurePayload`; `input` is the failed run's own trigger input.
+      const trigger = graph.nodes.find((n) => n.kind === 'trigger')
+      const inputSchema =
+        trigger?.kind === 'trigger'
+          ? maps.triggersByKind.get(trigger.config.triggerKind)?.inputSchema
+          : undefined
+      const leaf = (key: string, type: string, description: string) => {
+        return { key, label: key, path: key, type, description }
+      }
+      return {
+        fields: [
+          {
+            ...leaf('route', 'string', 'Why the run stopped.'),
+            enum: [...FAILURE_ROUTES],
+          },
+          leaf('error', 'string', 'The failure message.'),
+          leaf('runId', 'string', 'The run that failed.'),
+          leaf('failedNodeId', 'string', 'The node that failed, if one did.'),
+          leaf('statusCode', 'number', 'Provider HTTP status, when known.'),
+          {
+            ...leaf('input', 'object', "The failed run's trigger input."),
+            children: fieldsOf(inputSchema, 'input'),
+          },
+        ],
+        type: 'failure',
+      }
+    }
 
     case 'workflow':
       // A workflow node emits the CALLEE's output, whose shape isn't known here

@@ -8,6 +8,7 @@ import {
   type DecisionProvider,
 } from './decision'
 import { createChatDecider } from './decision-chat'
+import type { FailureRoute } from './failure-route'
 import type {
   AgentOverride,
   NodeExecution,
@@ -58,6 +59,11 @@ export type RunCompletion = { output: unknown; outputNodeId: string | null }
 /** Payload handed to {@link WfSdkConfig.onRunFailed} when a run aborts. */
 export type RunFailure = {
   error: string
+  /**
+   * Why the run stopped — `cancelled` when someone asked it to. Optional only
+   * because the in-process engine (evals, tests) does not classify.
+   */
+  route?: FailureRoute
   /**
    * The `wf_run` id — the one in the run viewer's URL. Present on both backing
    * stores (durable + inline); on the pure in-process engine (evals, tests, the

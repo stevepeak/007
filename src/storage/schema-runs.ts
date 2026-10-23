@@ -7,6 +7,8 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/sqlite-core'
 
+import type { CancelledBy } from '../engine/failure-route'
+
 import {
   createdAt,
   TOP_LEVEL_ITEM_INDEX,
@@ -61,6 +63,12 @@ export const wfRun = sqliteTable(
     startedAt: integer('started_at', { mode: 'timestamp' }),
     finishedAt: integer('finished_at', { mode: 'timestamp' }),
     error: text('error'),
+    // A cooperative stop: set by `requestRunCancel`, read by the engine before
+    // it starts each node. The run settles `cancelled` once its in-flight nodes
+    // land — a node already running cannot be interrupted. NULL means nobody
+    // asked.
+    cancelRequestedAt: integer('cancel_requested_at', { mode: 'timestamp' }),
+    cancelledBy: text('cancelled_by', { mode: 'json' }).$type<CancelledBy>(),
     output: text('output', { mode: 'json' })
       .notNull()
       .default(sql`'{}'`),

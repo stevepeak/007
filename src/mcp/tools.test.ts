@@ -53,6 +53,7 @@ describe('the tool catalog', () => {
       .sort()
     expect(writes).toEqual([
       'cancel_eval_run',
+      'cancel_run',
       'create_agent',
       'create_eval_set',
       'create_workflow',

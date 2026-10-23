@@ -47,6 +47,7 @@ These are the words used in tool results, run traces and the other pages. Where 
 - **Model / provider**: models come from a host-supplied catalog (`list_models`). Agents reference a model by composite catalog id. A model must be enabled and capable of what the agent needs (tools, structured output, reasoning, web search).
 - **Node**: one box on the graph. It has `id`, `label`, `kind`, `config`, plus optional `informUser` and `execution` policy. The kinds are listed in [[nodes]].
 - **Note node**: a sticky note on the canvas. It never runs. See [[nodes/note]].
+- **On Failure node**: the workflow's failure handler — a detached root whose edges name failure routes (`timeout`, `rate_limited`, `cancelled`, …). The matching arm runs as a child run when the run fails or is cancelled. See [[nodes/on-failure]].
 - **Passthrough**: emits an author-chosen value or the forwarded input, typically to give a branch arm the same shape as its sibling before a Race. See [[nodes/passthrough]].
 - **Progress log**: the run's human-readable feed (`wf_run_log`), with entries at levels such as `progress` (user-facing) and developer levels. See [[streaming]] and [[debugging]].
 - **Publish**: turns a draft into a new immutable version, which becomes what runs. Over MCP: `publish_workflow`, and `publish_agent` (dry run first). See [[versioning]].

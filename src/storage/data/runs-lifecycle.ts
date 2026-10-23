@@ -1,9 +1,11 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 
+import type { CancelledBy } from '../../engine/failure-route'
 import type { WfRunManifestEntry } from '../../engine/graph'
 import type { WfDb } from '../client'
 import { TOP_LEVEL_ITEM_INDEX, wfRun } from '../schema'
 
+import { descendantRunIds } from './runs-children'
 import { recordRunStateChange } from './runs-logs'
 
 // Run creation + status transitions: the queued row a trigger writes, the
@@ -171,5 +173,66 @@ export async function failRun(
     runId: input.runId,
     status: 'failed',
     detail: input.error,
+  })
+}
+
+/**
+ * Ask a run — and every run it spawned — to stop. Cooperative: each engine
+ * checks the flag before it starts a node, lets what is already running land,
+ * then settles the run `cancelled` and starts its `on-failure` handler.
+ *
+ * Only runs that have not finished are marked, and a second request keeps the
+ * first one's time and author. Returns the ids that were newly marked — empty
+ * when the run had already settled or was already being cancelled.
+ */
+export async function requestRunCancel(
+  db: WfDb,
+  input: { runId: string; by: CancelledBy },
+): Promise<string[]> {
+  const tree = await descendantRunIds(db, [input.runId])
+  const ids = tree.get(input.runId) ?? [input.runId]
+  const marked = await db
+    .update(wfRun)
+    .set({ cancelRequestedAt: new Date(), cancelledBy: input.by })
+    .where(
+      and(
+        inArray(wfRun.id, ids),
+        inArray(wfRun.status, ['queued', 'running']),
+        isNull(wfRun.cancelRequestedAt),
+      ),
+    )
+    .returning({ id: wfRun.id })
+  return marked.map((r) => r.id)
+}
+
+/** Who asked a run to stop, or null when nobody has. */
+export async function getRunCancelRequest(
+  db: WfDb,
+  runId: string,
+): Promise<{ by: CancelledBy } | null> {
+  const [row] = await db
+    .select({
+      requestedAt: wfRun.cancelRequestedAt,
+      by: wfRun.cancelledBy,
+    })
+    .from(wfRun)
+    .where(eq(wfRun.id, runId))
+    .limit(1)
+  if (!row?.requestedAt) return null
+  return { by: row.by ?? { kind: 'system' } }
+}
+
+/** A run that stopped because it was asked to — the terminal peer of `failRun`. */
+export async function markRunCancelled(
+  db: WfDb,
+  input: { runId: string; error: string },
+) {
+  await db
+    .update(wfRun)
+    .set({ status: 'cancelled', error: input.error, finishedAt: new Date() })
+    .where(eq(wfRun.id, input.runId))
+  await recordRunStateChange(db, {
+    runId: input.runId,
+    status: 'cancelled',
   })
 }

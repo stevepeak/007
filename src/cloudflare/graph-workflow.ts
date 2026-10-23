@@ -8,11 +8,19 @@ import { withRunConnectors } from '../connectors/registry'
 import type { RunFlags, WfSdkConfig } from '../engine/config'
 import { errorFeedLine } from '../engine/error-detail'
 import {
+  classifyFailure,
+  failedNodeIdOf,
+  failureStatusCode,
+  type CancelledBy,
+  type FailureRoute,
+} from '../engine/failure-route'
+import {
   workflowGraphSchema,
   type NodeExecution,
   type WfNodeKind,
   type WfRunManifestEntry,
 } from '../engine/graph'
+import { failureHandlerGraphOf } from '../engine/graph-failure-handler'
 import { resolveWfLogger } from '../engine/logger'
 import { settleOf, type NodeSettlement } from '../engine/node-settlement'
 import { iterationSubgraphOf } from '../engine/nodes/iteration'
@@ -24,9 +32,11 @@ import { runTriggerInput } from '../engine/trigger-registry'
 import { createWfDb } from '../storage/client'
 import {
   failRun,
+  getRunCancelRequest,
   getVersionGraph,
   loadResumeSteps,
   loadRunPriceTable,
+  markRunCancelled,
   markRunRunning,
   priceMapFromTable,
   resolveRunManifest,
@@ -34,6 +44,7 @@ import {
 } from '../storage/data'
 
 import type { CalleeParent } from './callee-protocol'
+import { spawnFailureHandlerRun } from './child-run'
 import {
   deliverOutput,
   dispatchNode,
@@ -195,6 +206,13 @@ export type GraphWorkflowParams = {
    * manifest exists to prevent.
    */
   inheritedManifest?: WfRunManifestEntry[]
+  /**
+   * Set when this run IS a failed run's `on-failure` handler: it runs the arm
+   * for `route` cut out of the same version (see `failureHandlerGraphOf`), the
+   * same way an iteration item digs its subgraph out of its parent's version.
+   * The trigger input is the `RunFailurePayload`.
+   */
+  failureHandler?: { nodeId: string; route: FailureRoute }
 }
 
 export type GraphWorkflowResult = {
@@ -301,7 +319,13 @@ export function makeGraphWorkflow<
           // is in.
           graph: p.subRun?.iterationNodeId
             ? iterationSubgraphOf(v.graph, p.subRun.iterationNodeId)
-            : v.graph,
+            : p.failureHandler
+              ? failureHandlerGraphOf(
+                  v.graph,
+                  p.failureHandler.nodeId,
+                  p.failureHandler.route,
+                )
+              : v.graph,
           workflowId: v.workflowId,
           prices: priceTable,
         }
@@ -379,7 +403,8 @@ export function makeGraphWorkflow<
         triggers: config.triggers,
         triggerKind: trigger.config.triggerKind,
         triggerInput: p.triggerInput,
-        spawned: Boolean(p.subRun),
+        // A failure handler's input is built by the engine, not a caller.
+        spawned: Boolean(p.subRun || p.failureHandler),
       })
 
       // MCP connector tools join the registry for the length of this run.
@@ -566,7 +591,7 @@ export function makeGraphWorkflow<
             // path quietly — an intentional "fizzle out", not a malformed graph.
             // Finalize the run with no output. A stall with no decision ever
             // fired is a genuinely unreachable Output, which stays an error.
-            if (!scheduler.hasRoutedDecision()) {
+            if (!scheduler.canEndWithoutOutput()) {
               throw new WorkflowStalledError()
             }
             return await settleRun(
@@ -618,20 +643,40 @@ export function makeGraphWorkflow<
         if (delivered) {
           return await settleRun(ctx, delivered, drainError ?? message)
         }
-        await stepDo(step, 'record-failure', async () => {
-          await failRun(createWfDb(env.WF_DB), {
-            runId: p.workflowRunId,
-            error: message,
-          })
-          // The last step this run is guaranteed to reach. Two more MAY follow,
-          // and whether they do is already decided — so count them here rather
-          // than under-report the billing line on every failure.
+        // Cancelled wins over whatever the last node threw: a run that was
+        // asked to stop usually dies of the stop itself, but a child that was
+        // cancelled underneath it reports back as an ordinary failure.
+        const thrownRoute = classifyFailure(err)
+        // The workflow's own `on-failure` arm, as a run of its own. Never for an
+        // iteration item (its graph is the container's subgraph, which cannot
+        // hold one) or for a handler run (no handler for the handler).
+        const runsFailureHandler =
+          !p.subRun?.iterationNodeId && !p.failureHandler
+        const outcome = await stepDo(step, 'record-failure', async () => {
+          const db = createWfDb(env.WF_DB)
+          const cancel = await getRunCancelRequest(db, p.workflowRunId)
+          if (cancel) {
+            await markRunCancelled(db, { runId: p.workflowRunId, error: message })
+          } else {
+            await failRun(db, { runId: p.workflowRunId, error: message })
+          }
+          // The last step this run is guaranteed to reach. Up to three more MAY
+          // follow, and whether they do is already decided — so count them here
+          // rather than under-report the billing line on every failure.
           emitRunPoint(ctx, {
             status: 'failed',
             error: message,
-            extraSteps: (p.subRun ? 1 : 0) + (config.onRunFailed ? 1 : 0),
+            extraSteps:
+              (p.subRun ? 1 : 0) +
+              (config.onRunFailed ? 1 : 0) +
+              (runsFailureHandler ? 1 : 0),
           })
+          const route: FailureRoute = cancel ? 'cancelled' : thrownRoute
+          const cancelledBy: CancelledBy | undefined = cancel?.by
+          return { route, cancelledBy }
         })
+        // An instance journaled before the route existed returns nothing here.
+        const route = outcome?.route ?? thrownRoute
         // Wake the parent BEFORE the host callback and before rethrowing: a
         // spawned callee that dies silently leaves its parent parked until the
         // node's timeout, turning a legible failure into a long stall.
@@ -644,6 +689,32 @@ export function makeGraphWorkflow<
               return config.onRunFailed!(runContextFor(p, env), {
                 error: message,
                 workflowRunId: p.workflowRunId,
+                route,
+              })
+            },
+            logger,
+          )
+        }
+        if (runsFailureHandler) {
+          await notifyHost(
+            step,
+            'on-failure-handler',
+            async () => {
+              await spawnFailureHandlerRun(env, createWfDb(env.WF_DB), {
+                graph: graphJson,
+                workflowVersionId: p.workflowVersionId,
+                runContext: p.runContext,
+                manifest,
+                traceId,
+                payload: {
+                  route,
+                  error: message,
+                  runId: p.workflowRunId,
+                  failedNodeId: failedNodeIdOf(err),
+                  statusCode: failureStatusCode(err),
+                  cancelledBy: outcome?.cancelledBy,
+                  input: validatedTriggerInput,
+                },
               })
             },
             logger,

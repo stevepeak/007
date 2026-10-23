@@ -364,6 +364,14 @@ export interface WfDataClient {
     mode: RetryRunMode
   }): Promise<{ runId: string }>
   /**
+   * Ask a queued or running run — and every run it spawned — to stop. It stops
+   * before its next node, once the nodes already running land, then settles
+   * `cancelled` and starts its `on-failure` handler's `cancelled` arm. Returns
+   * the runs newly marked; empty when the run had already finished or was
+   * already stopping.
+   */
+  cancelRun(input: { runId: string }): Promise<{ cancelledRunIds: string[] }>
+  /**
    * Write (or clear, with an empty note) the run's shared Markdown note — why
    * it failed, what was tried, what to check next. Not private and not
    * attributed: anyone looking at the run can read it and edit it, and the last

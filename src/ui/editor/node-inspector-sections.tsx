@@ -37,6 +37,37 @@ const ENGINE_HELP: Record<WfEngine, string> = {
     'Runs in one process with no checkpoints. Starts faster and writes far less, but there are no step retries and a failed run cannot be resumed. Best for interactive work someone is waiting on, like chat.',
 }
 
+export function OnFailureInspector({ node, onChange }: NodeInspectorProps) {
+  const { Label, Select } = useWfComponents()
+  if (node.kind !== 'on-failure') return null
+  const engine: WfEngine = node.config.engine ?? 'durable'
+  return (
+    <div className="space-y-3">
+      <p className="text-muted-foreground text-xs">
+        Runs when this workflow fails or is cancelled, as a run of its own. Wire
+        each route you want handled; a route with no connection does nothing.
+        It can read the failure and the failed run&apos;s input.
+      </p>
+      <div className={field}>
+        <Label>Engine</Label>
+        <Select
+          value={engine}
+          onChange={(e) => {
+            return onChange({
+              ...node,
+              config: { ...node.config, engine: e.target.value as WfEngine },
+            })
+          }}
+        >
+          <option value="durable">Durable (checkpointed)</option>
+          <option value="inline">Inline (fast, no checkpoints)</option>
+        </Select>
+        <p className="text-muted-foreground text-xs">{ENGINE_HELP[engine]}</p>
+      </div>
+    </div>
+  )
+}
+
 export function TriggerInspector({ node, onChange }: NodeInspectorProps) {
   const { Input, Label, Select } = useWfComponents()
   const triggerEvents = useTriggerEvents()

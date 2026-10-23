@@ -32,6 +32,7 @@ export type NodeKindIconName =
   | 'Play'
   | 'Repeat'
   | 'Scale'
+  | 'ShieldAlert'
   | 'Shuffle'
   | 'Sparkles'
   | 'Split'
@@ -87,6 +88,22 @@ const NODE_KINDS = {
     decision: false,
     // Template-owned: every graph has exactly one, seeded at creation.
     palette: null,
+  },
+  // A second, detached root: never part of the main walk (no incoming edges,
+  // and a bookend so `isReady` never selects it). When the run fails or is
+  // cancelled, its subgraph runs as a run of its own — see
+  // `graph-failure-handler.ts`.
+  'on-failure': {
+    label: 'On Failure',
+    icon: 'ShieldAlert',
+    timeout: 'default',
+    bookend: true,
+    decision: false,
+    palette: {
+      category: 'Other',
+      description:
+        'Runs when the workflow fails or is cancelled — route by why it stopped.',
+    },
   },
   agent: {
     label: 'Agent',

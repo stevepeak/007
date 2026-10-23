@@ -2,6 +2,11 @@ import { NonRetryableError } from 'cloudflare:workflows'
 
 import { errorFeedLine, errorStored } from '../engine/error-detail'
 import { errorMessage } from '../engine/error-message'
+import {
+  classifyFailure,
+  RunCancelledError,
+  tagFailure,
+} from '../engine/failure-route'
 import { emitNodeStartProgress } from '../engine/node-progress'
 import { failureMustAbort } from '../engine/nodes/decision-agent'
 import type { ExecutableNode, ReportResult } from '../engine/scheduler'
@@ -67,7 +72,10 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
   input: unknown,
   seq: number,
 ): Promise<{ nodeId: string; report: ReportResult }> {
-  const { startEntry } = await enterStep(ctx, node, seq, input)
+  const { startEntry, cancelled } = await enterStep(ctx, node, seq, input)
+  // Asked to stop: don't start this node. Thrown here, outside the node's own
+  // failure handling, so `continueOnError` can never swallow it.
+  if (cancelled) throw new RunCancelledError()
 
   // Both hoisted OUT of the dispatch below so they survive it THROWING —
   // `bodyLogs` holds whatever the failed attempt managed to emit (without it a
@@ -111,6 +119,7 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
     const failure: CapturedFailure = captured ?? {
       stored: errorStored(err),
       feed: errorFeedLine(err),
+      route: classifyFailure(err),
     }
     ctx.counters.failedNodes++
     await recordTerminal(ctx, node, seq, input, startEntry, {
@@ -129,7 +138,9 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
     ) {
       return { nodeId: node.id, report: { output: null } }
     }
-    throw err
+    // `err` was rebuilt by the workflow runtime; the route classified from the
+    // live error rides along so the run's `on-failure` arm is picked from it.
+    throw tagFailure(err, { route: failure.route, nodeId: node.id })
   }
 
   await recordTerminal(ctx, node, seq, input, startEntry, {

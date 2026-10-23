@@ -1,6 +1,7 @@
 import type { z } from 'zod'
 
 import { nodeRefs } from './graph-bindings'
+import { failureHandlerProblems } from './graph-failure-handler'
 import {
   duplicateNodeIdsDeep,
   graphShapeFacts,
@@ -14,7 +15,10 @@ import {
   workflowGraphShapeSchema,
 } from './graph-schema'
 import { analyzeJoinTopology } from './graph-topology'
-import { ITERATION_ITEM_TRIGGER_KIND } from './trigger-registry'
+import {
+  ITERATION_ITEM_TRIGGER_KIND,
+  RUN_FAILURE_TRIGGER_KIND,
+} from './trigger-registry'
 
 // The strict runtime gate is a sequence of independent structural checks. Each
 // is a named function taking the parsed shape + a minimal issue sink (decoupled
@@ -38,7 +42,13 @@ function checkGraphShape(g: GraphShape, ctx: GraphCheckCtx): void {
       message: `Graph must have exactly one trigger node (found ${facts.triggerCount}).`,
     })
   }
-  if (!facts.hasOutput) {
+  // A failure handler run has no answer to give: it ends when its arms do.
+  const isFailureHandlerRun = g.nodes.some((n) => {
+    return (
+      n.kind === 'trigger' && n.config.triggerKind === RUN_FAILURE_TRIGGER_KIND
+    )
+  })
+  if (!facts.hasOutput && !isFailureHandlerRun) {
     ctx.addIssue({
       code: 'custom',
       message: 'Graph must have at least one output node.',
@@ -178,12 +188,27 @@ function checkIterationSubgraphs(g: GraphShape, ctx: GraphCheckCtx): void {
         message: `Iteration node ${n.id} subgraph must start with an '${ITERATION_ITEM_TRIGGER_KIND}' trigger.`,
       })
     }
+    if (sub.nodes.some((sn) => sn.kind === 'on-failure')) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Iteration node ${n.id} cannot contain an On Failure node — put it on the workflow itself.`,
+      })
+    }
     if (sub.nodes.some((sn) => sn.kind === 'iteration')) {
       ctx.addIssue({
         code: 'custom',
         message: `Iteration node ${n.id} cannot contain another iteration node (nested iteration is not supported).`,
       })
     }
+  }
+}
+
+// The `on-failure` handler is a detached root: one at most, no incoming edges,
+// every outgoing edge naming a route, and no edge or ref crossing between it and
+// the main graph. See `failureHandlerProblems`.
+function checkFailureHandler(g: GraphShape, ctx: GraphCheckCtx): void {
+  for (const message of failureHandlerProblems(g)) {
+    ctx.addIssue({ code: 'custom', message })
   }
 }
 
@@ -228,6 +253,7 @@ export const workflowGraphSchema = workflowGraphShapeSchema.superRefine(
     checkSwitchNodes(g, ctx)
     checkBranchNodes(g, ctx)
     checkIterationSubgraphs(g, ctx)
+    checkFailureHandler(g, ctx)
     checkJoinTopology(g, ctx)
   },
 )

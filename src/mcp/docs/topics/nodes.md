@@ -18,7 +18,7 @@ A workflow graph is a list of nodes and a list of edges. **Edges carry sequencin
 | `informUser` | What the end user sees while this node runs: `{ mode: 'off' }` (default), `{ mode: 'static', note }` (a fixed line, may use run-level `${vars}`), or `{ mode: 'dynamic', reasoning, tools }` — **agents only** — streaming the agent's reasoning and/or tool-call announcements. See [[streaming]]. |
 | `execution` | Optional per-node policy: `continueOnError`, `timeoutMs`, `background`, `retries`. See [[execution]]. |
 
-Bookend kinds (`trigger`, `output`, `note`) never execute as steps, so `informUser` and `execution` mean nothing on them. `informUser` on a node *inside* an iteration subgraph never reaches the user either — set it on the iteration node.
+Bookend kinds (`trigger`, `output`, `note`, `on-failure`) never execute as steps, so `informUser` and `execution` mean nothing on them. `informUser` on a node *inside* an iteration subgraph never reaches the user either — set it on the iteration node.
 
 ## Addressing a node from a binding
 
@@ -51,6 +51,7 @@ A literal binding is `{ "kind": "literal", "value": <any JSON> }`.
 | run a subgraph once per list item | `iteration` → [[nodes/iteration]] |
 | call another workflow and use its answer | `workflow` → [[nodes/workflow]] |
 | name the run's answer | `output` → [[nodes/output]] |
+| clean up or notify when the run fails or is cancelled | `on-failure` → [[nodes/on-failure]] |
 | leave a comment on the canvas | `note` → [[nodes/note]] |
 | park an idea for a node that doesn't exist yet | `feature-request` → [[nodes/feature-request]] |
 

@@ -25,13 +25,24 @@ export const PERIODIC_TRIGGER_KIND = 'periodic'
 // Reserved so the editor's event catalog never offers it as a startable trigger.
 export const ITERATION_ITEM_TRIGGER_KIND = 'iteration_item'
 
-export type TriggerMode = 'manual' | 'periodic' | 'event' | 'iteration_item'
+// The trigger an `on-failure` handler run starts from. Its output is the failed
+// run's `RunFailurePayload`. Reserved for the same reason as `iteration_item`:
+// the engine synthesizes it, an author never picks it.
+export const RUN_FAILURE_TRIGGER_KIND = 'run_failure'
+
+export type TriggerMode =
+  | 'manual'
+  | 'periodic'
+  | 'event'
+  | 'iteration_item'
+  | 'run_failure'
 
 /** Classify a trigger kind into its mode (events are anything non-reserved). */
 export function triggerModeOf(triggerKind: string): TriggerMode {
   if (triggerKind === MANUAL_TRIGGER_KIND) return 'manual'
   if (triggerKind === PERIODIC_TRIGGER_KIND) return 'periodic'
   if (triggerKind === ITERATION_ITEM_TRIGGER_KIND) return 'iteration_item'
+  if (triggerKind === RUN_FAILURE_TRIGGER_KIND) return 'run_failure'
   return 'event'
 }
 
@@ -117,6 +128,9 @@ export function resolveTriggerInput(
     case 'iteration_item':
       // The current list element, passed straight through by the iteration
       // driver. No schema to validate against — it's whatever the list holds.
+      return input
+    case 'run_failure':
+      // Built by the engine from the failed run, never by a caller.
       return input
   }
 }

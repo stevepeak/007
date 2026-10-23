@@ -214,6 +214,9 @@ export const wfInputSchemas = {
   getRunStatuses: z.object({
     runIds: z.array(z.string().min(1)).max(100),
   }),
+  cancelRun: z.object({
+    runId: z.string().min(1),
+  }),
   retryRun: z.object({
     runId: z.string().min(1),
     mode: z.enum(['restart', 'resume']).optional(),

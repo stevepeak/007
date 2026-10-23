@@ -41,8 +41,16 @@ export function analyzeJoinTopology(graph: WorkflowGraph): JoinTopology {
   const decisionIds = new Set(
     graph.nodes.filter((n) => isDecisionKind(n.kind)).map((n) => n.id),
   )
+  // An `on-failure` node's routes are not arms: a handler run keeps only the
+  // edges of the route that fired (`failureHandlerGraphOf`), so a node fed by
+  // two routes waits on one live edge, never both.
+  const failureHandlerIds = new Set(
+    graph.nodes.filter((n) => n.kind === 'on-failure').map((n) => n.id),
+  )
   for (const e of graph.edges) {
-    if (e.condition != null) decisionIds.add(e.source)
+    if (e.condition != null && !failureHandlerIds.has(e.source)) {
+      decisionIds.add(e.source)
+    }
   }
 
   // A node is conditional iff it has a decision ancestor — equivalently, it is

@@ -1,5 +1,6 @@
 import type { RunContext, WfSdkConfig } from './config'
 import { errorFeedLine } from './error-detail'
+import { classifyFailure, RunCancelledError, tagFailure } from './failure-route'
 import { resolveAnswerNodeIds } from './graph-engine'
 import { notifyHostSafely, resolveWfLogger } from './logger'
 import type { ModelBudget } from './model-budget'
@@ -57,6 +58,13 @@ export type ExecuteWorkflowDeps<TDeps> = {
     sequence: number,
     run: () => Promise<T>,
   ) => Promise<T>
+  /**
+   * Asked before each top-level node starts: has the run been told to stop? A
+   * true answer throws `RunCancelledError` in place of the node — before its
+   * `running` row, and outside its failure handling, so `continueOnError`
+   * cannot swallow it. Omitted by evals, tests and the playground.
+   */
+  isCancelled?: () => Promise<boolean>
   /**
    * Called the moment the run's answer is final — BEFORE the walk drains the
    * arms that don't feed it. This is what lets a backend mark the run `done`
@@ -264,6 +272,7 @@ export async function executeWorkflow<TDeps>(
     input: unknown,
     seq: number,
   ): Promise<{ nodeId: string; report: ReportResult }> => {
+    if (await deps.isCancelled?.()) throw new RunCancelledError()
     // Bracket the real execution — runs inline here, so wall-clock is exact.
     const startedAt = new Date()
     const nodeSink = sinkFor(node, seq)
@@ -364,7 +373,7 @@ export async function executeWorkflow<TDeps>(
     ) {
         return { nodeId: node.id, report: { output: null } }
       }
-      throw err
+      throw tagFailure(err, { nodeId: node.id })
     }
   }
 
@@ -488,7 +497,7 @@ export async function executeWorkflow<TDeps>(
         // quietly — an intentional "fizzle out", not a malformed graph. Finish
         // with no output. A stall with no decision ever fired is a genuinely
         // unreachable Output, which stays an error.
-        if (!scheduler.hasRoutedDecision()) {
+        if (!scheduler.canEndWithoutOutput()) {
           throw new WorkflowStalledError()
         }
         delivered = await deliver(undefined, null)
@@ -543,6 +552,7 @@ export async function executeWorkflow<TDeps>(
           return config.onRunFailed!(runContext, {
             error: errorFeedLine(err),
             workflowRunId: runContext.runId,
+            route: classifyFailure(err),
           })
         },
         logger,

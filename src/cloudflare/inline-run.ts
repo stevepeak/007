@@ -3,7 +3,13 @@ import { withRunConnectors } from '../connectors/registry'
 import type { RunContext, WfSdkConfig } from '../engine/config'
 import { errorFeedLine } from '../engine/error-detail'
 import { executeWorkflow, type ResumeStep } from '../engine/executor'
+import {
+  classifyFailure,
+  failedNodeIdOf,
+  failureStatusCode,
+} from '../engine/failure-route'
 import type { WfRunManifestEntry } from '../engine/graph'
+import { failureHandlerGraphOf } from '../engine/graph-failure-handler'
 import {
   notifyHostSafely,
   resolveWfLogger,
@@ -21,10 +27,12 @@ import {
   appendRunLog,
   completeRun,
   failRun,
+  getRunCancelRequest,
   getRunManifest,
   getVersionGraph,
   loadModelPriceMap,
   loadResumeSteps,
+  markRunCancelled,
   markRunDone,
   markRunResumed,
   markRunRunning,
@@ -41,6 +49,7 @@ import {
 import {
   reportCalleeResultBestEffort,
   spawnCalleeRun,
+  spawnFailureHandlerRun,
   type SpawnedChildRun,
 } from './child-run'
 import type { GraphWorkflowEnv, GraphWorkflowParams } from './graph-workflow'
@@ -253,22 +262,32 @@ export type RunInlineGraphDeps<E> = {
 }
 
 /**
- * Record an inline run as failed and tell everyone who is waiting — the same
- * three writes the run's own catch performs, exposed so the room can perform
- * them for a run it has given up resuming (see `RunRoom.alarm`): the row, the
- * caller parked on this callee, and the host's `onRunFailed`. Never throws.
+ * Record an inline run as failed (or cancelled, when it was asked to stop) and
+ * tell everyone who is waiting — the same writes the run's own catch performs,
+ * exposed so the room can perform them for a run it has given up resuming (see
+ * `RunRoom.alarm`): the row, the caller parked on this callee, the host's
+ * `onRunFailed`, and the workflow's own `on-failure` arm. Never throws.
+ *
+ * `err` is the thrown value when there is one; the room has only a message.
  */
 export async function recordInlineRunFailure<TDeps, E extends GraphWorkflowEnv>(
   config: WfSdkConfig<TDeps>,
   deps: { env: E; params: GraphWorkflowParams },
   message: string,
+  err?: unknown,
 ): Promise<void> {
   const { env, params: p } = deps
   const db = createWfDb(env.WF_DB)
   const logger = resolveWfLogger(config.logger)
   const runContext = runContextFor(p, env)
   try {
-    await failRun(db, { runId: p.workflowRunId, error: message })
+    const cancel = await getRunCancelRequest(db, p.workflowRunId)
+    if (cancel) {
+      await markRunCancelled(db, { runId: p.workflowRunId, error: message })
+    } else {
+      await failRun(db, { runId: p.workflowRunId, error: message })
+    }
+    const route = cancel ? 'cancelled' : classifyFailure(err ?? message)
     // Wake the caller BEFORE the host callback: a callee that dies silently
     // leaves its caller parked until the calling node's timeout, turning a
     // legible failure into a long stall.
@@ -286,6 +305,38 @@ export async function recordInlineRunFailure<TDeps, E extends GraphWorkflowEnv>(
           return config.onRunFailed!(runContext, {
             error: message,
             workflowRunId: p.workflowRunId,
+            route,
+          })
+        },
+        logger,
+      })
+    }
+    // No handler for a handler run.
+    if (!p.failureHandler) {
+      await notifyHostSafely({
+        name: 'on-failure-handler',
+        fn: async () => {
+          const version = await getVersionGraph(db, p.workflowVersionId)
+          if (!version) return
+          const manifest =
+            (await getRunManifest(db, p.workflowRunId)) ??
+            p.inheritedManifest ??
+            []
+          await spawnFailureHandlerRun(env, db, {
+            graph: version.graph,
+            workflowVersionId: p.workflowVersionId,
+            runContext: p.runContext,
+            manifest,
+            traceId: p.runContext.traceId,
+            payload: {
+              route,
+              error: message,
+              runId: p.workflowRunId,
+              failedNodeId: failedNodeIdOf(err),
+              statusCode: failureStatusCode(err),
+              cancelledBy: cancel?.by,
+              input: p.triggerInput,
+            },
           })
         },
         logger,
@@ -488,7 +539,14 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
     })
 
     const result = await executeWorkflow({
-      graph: version.graph,
+      // A failure handler runs only its route's arm, cut out of the version.
+      graph: p.failureHandler
+        ? failureHandlerGraphOf(
+            version.graph,
+            p.failureHandler.nodeId,
+            p.failureHandler.route,
+          )
+        : version.graph,
       triggerInput: p.triggerInput,
       config: runConfig,
       runContext,
@@ -496,7 +554,12 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
       // Seeded raw, and answering to its caller rather than to its trigger's
       // contract — see `ExecuteWorkflowDeps.spawned`. The durable backend does
       // exactly the same for a run it was handed rather than started.
-      spawned: !!sub,
+      spawned: !!sub || !!p.failureHandler,
+      // One primary-key read per node — the price of a stop that works while
+      // the run is between nodes.
+      isCancelled: async () => {
+        return (await getRunCancelRequest(db, p.workflowRunId)) != null
+      },
       // Calling another workflow gives it a run of its own, here as much as on
       // the durable engine. This engine has no `waitForEvent`, so the wait is a
       // promise held by the room (see `waitForCallee`) — but everything either
@@ -612,7 +675,7 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
     // error is the one string the chat surface and the run header both read.
     const message = errorFeedLine(err)
     emit('failed', { error: message })
-    await recordInlineRunFailure(config, { env, params: p }, message)
+    await recordInlineRunFailure(config, { env, params: p }, message, err)
   } finally {
     // The per-node sends, then anything captured outside a node — a run-level
     // failure above, a host lifecycle callback.

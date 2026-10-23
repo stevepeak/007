@@ -3,6 +3,7 @@ import type { WorkflowStep } from 'cloudflare:workers'
 import type { RunDims } from '../analytics/points'
 import type { WfSdkConfig } from '../engine/config'
 import type { ModelPriceMap } from '../engine/cost'
+import type { FailureRoute } from '../engine/failure-route'
 import type { WfRunManifestEntry } from '../engine/graph'
 import type { WfLogger } from '../engine/logger'
 import type { NodeRunResult } from '../engine/run-node'
@@ -91,4 +92,9 @@ export type RunStepResult = NodeRunResult & {
 
 /** What a failed attempt knew about its error, captured before the error
  * crosses the `step.do` boundary (see `runNodeBody`). */
-export type CapturedFailure = { stored: string; feed: string }
+export type CapturedFailure = {
+  stored: string
+  feed: string
+  /** Classified here, where the live error still has its class and status. */
+  route: FailureRoute
+}

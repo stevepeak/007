@@ -8,6 +8,11 @@ import {
   type WorkflowNode,
 } from './graph'
 import { nodeRefs } from './graph-bindings'
+import {
+  failureHandlerNodeIds,
+  failureHandlerOf,
+  failureHandlerProblems,
+} from './graph-failure-handler'
 import { nodeKindDescriptor } from './graph-kinds'
 import {
   duplicateNodeIdsDeep,
@@ -386,6 +391,15 @@ function collectLevelIssues(graph: WorkflowGraph): GraphIssue[] {
       message: `Connection references a missing node (${e.source} → ${e.target}).`,
     })
   }
+  // The same rules the strict gate applies — see `failureHandlerProblems`.
+  for (const message of failureHandlerProblems(graph)) {
+    issues.push({ severity: 'error', message })
+  }
+  // A handler's arm ends in its side effects, so a leaf there is the point.
+  const handler = failureHandlerOf(graph)
+  const inHandler = handler
+    ? failureHandlerNodeIds(graph, handler.id)
+    : new Set<string>()
 
   // ── Per-node ──────────────────────────────────────────────────────────────
   for (const node of graph.nodes) {
@@ -415,14 +429,24 @@ function collectLevelIssues(graph: WorkflowGraph): GraphIssue[] {
 
     // Connectivity. A Note is a portless canvas annotation — it is meant to be
     // unconnected, so it's exempt from both connectivity checks.
-    if (node.kind !== 'trigger' && node.kind !== 'note' && inc.length === 0) {
+    if (
+      node.kind !== 'trigger' &&
+      node.kind !== 'note' &&
+      node.kind !== 'on-failure' &&
+      inc.length === 0
+    ) {
       issues.push({
         ...base,
         severity: 'error',
         message: 'Not connected — nothing feeds into this node.',
       })
     }
-    if (node.kind !== 'output' && node.kind !== 'note' && out.length === 0) {
+    if (
+      node.kind !== 'output' &&
+      node.kind !== 'note' &&
+      !inHandler.has(node.id) &&
+      out.length === 0
+    ) {
       issues.push({
         ...base,
         severity: 'warning',

@@ -232,6 +232,18 @@ export class Scheduler {
   }
 
   /**
+   * Whether running out of work with no Output reached is a normal end rather
+   * than a stall: a decision fizzled out (see `hasRoutedDecision`), or the graph
+   * has no Output at all — a failure-handler run, which ends when its arms do.
+   */
+  canEndWithoutOutput(): boolean {
+    return (
+      this.hasRoutedDecision() ||
+      !this.graph.nodes.some((n) => n.kind === 'output')
+    )
+  }
+
+  /**
    * Settle an Output node the backend has just handled: record its value and
    * mark it completed so `next()`/`pollOutput()` move PAST it to whatever else
    * is still ready, instead of handing back the same Output forever.

@@ -43,7 +43,12 @@ describe('NODE_KIND_REGISTRY', () => {
     // Branch or Switch downstream routes on the answer — so the scheduler treats
     // it as an ordinary step.
     expect(DECISION_NODE_KINDS).toEqual(['branch', 'switch'])
-    expect(BOOKEND_NODE_KINDS).toEqual(['trigger', 'note', 'output'])
+    expect(BOOKEND_NODE_KINDS).toEqual([
+      'trigger',
+      'on-failure',
+      'note',
+      'output',
+    ])
     expect(isDecisionKind('branch')).toBe(true)
     expect(isDecisionKind('decision')).toBe(false)
     expect(isDecisionKind('agent')).toBe(false)

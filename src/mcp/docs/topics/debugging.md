@@ -33,7 +33,7 @@ Step statuses: `running`, `completed`, `failed`, `skipped` (an iteration item th
 | `done` | the Output was reached — the answer is final and readable — but branches that don't feed the Output are **still running** |
 | `completed` | nothing left to run |
 | `failed` | the run failed before delivering an answer |
-| `cancelled` | in the vocabulary, but nothing in the engine currently sets it on a workflow run (eval runs use it — see `cancel_eval_run`) |
+| `cancelled` | someone called `cancel_run`; the run started no new node after that and its in-flight nodes landed. Its children are cancelled with it, and its On Failure `cancelled` arm (if any) runs as a child run — see [[nodes/on-failure]] |
 
 A run with no side branches goes straight to `completed` without passing through `done`. Anything waiting for "the answer" should accept `done`. A failure in a branch that drains **after** the answer was delivered does not fail the run — the answer stands and the broken branch is recorded beside it (check the step errors). See [[execution]].
 

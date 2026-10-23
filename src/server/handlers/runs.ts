@@ -7,6 +7,7 @@ import {
   listChildRuns,
   listRunTriggerKinds,
   listRuns,
+  requestRunCancel,
   RUN_NOTE_MAX_LENGTH,
   setRunNote,
 } from '../../storage/data'
@@ -38,6 +39,7 @@ export function buildRunHandlers<TDeps>(
   | 'getRun'
   | 'getRunStatuses'
   | 'retryRun'
+  | 'cancelRun'
   | 'setRunNote'
   | 'deleteAllRuns'
 > {
@@ -174,6 +176,14 @@ export function buildRunHandlers<TDeps>(
         throw new NotFoundError('Run not found.')
       }
       return { ok: true as const }
+    },
+
+    cancelRun: async (c) => {
+      const cancelled = await requestRunCancel(c.db, {
+        runId: c.params.runId,
+        by: { kind: 'user', id: c.ctx.userId },
+      })
+      return { cancelledRunIds: cancelled }
     },
 
     retryRun: async (c) => {

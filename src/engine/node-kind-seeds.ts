@@ -153,4 +153,9 @@ export const NODE_KIND_SEEDS: { [K in WfNodeKind]: NodeKindSeed<K> } = {
   aggregate: () => ({ kind: 'aggregate', label: 'Aggregate', config: {} }),
 
   note: () => ({ kind: 'note', label: 'Note', config: { text: '' } }),
+  'on-failure': () => ({
+    kind: 'on-failure',
+    label: 'On failure',
+    config: {},
+  }),
 }
