@@ -96,11 +96,15 @@ export async function rollUpRunCost(
   const out = new Map<string, RunTreeTotals>()
   if (rootIds.length === 0) return out
 
-  const trees = await descendantRunIds(db, rootIds)
+  // The price map doesn't depend on the tree, so it rides alongside the walk
+  // instead of queueing behind it.
+  const [trees, priceMap] = await Promise.all([
+    descendantRunIds(db, rootIds),
+    loadModelPriceMap(db),
+  ])
   const allIds = [...new Set([...trees.values()].flat())]
 
-  const [priceMap, usage, runRows] = await Promise.all([
-    loadModelPriceMap(db),
+  const [usage, runRows] = await Promise.all([
     selectRunUsage(db, allIds),
     selectChunked(allIds, (ids) => {
       return db

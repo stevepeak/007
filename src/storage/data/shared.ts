@@ -1,3 +1,5 @@
+import { sql, type AnyColumn, type SQL } from 'drizzle-orm'
+
 /**
  * Build a Drizzle `set` patch from only the named keys whose value is not
  * `undefined` — the "partial update" idiom used by every `update*` function
@@ -78,4 +80,21 @@ export async function selectChunked<T, R>(
   if (ids.length <= size) return await query([...ids])
   const results = await Promise.all(chunk(ids, size).map(query))
   return results.flat()
+}
+
+/**
+ * `column IN (<ids>)` as ONE statement with ONE bound parameter: the id list
+ * travels as a JSON array and `json_each` unpacks it, so D1's 100-parameter
+ * ceiling doesn't apply and the read doesn't fan out into one query per
+ * {@link ID_CHUNK_SIZE} chunk (which Sentry reports as an N+1). SQLite still
+ * resolves `IN (SELECT …)` by lookups on the column's index.
+ *
+ * Use it for a single read over a large id list. `inArray` stays the right
+ * call for a list known to be small.
+ */
+export function inJsonArray(
+  column: AnyColumn,
+  values: readonly (string | number)[],
+): SQL {
+  return sql`${column} in (select value from json_each(${JSON.stringify(values)}))`
 }

@@ -12,7 +12,7 @@ import { wfRun, wfRunStep, wfWorkflow, wfWorkflowVersion } from '../schema'
 
 import { allNodes } from './authoring-graph'
 import { loadModelPriceMap } from './runs-cost'
-import { chunk, clampLimit, ID_CHUNK_SIZE } from './shared'
+import { chunk, clampLimit, ID_CHUNK_SIZE, inJsonArray } from './shared'
 
 // ---------------------------------------------------------------------------
 // One agent's recent calls, with per-call metrics
@@ -389,27 +389,25 @@ export async function listAgentCalls(
   // times over, so mixing them in would make the metrics say nothing about what
   // this agent actually costs — the eval report is where a simulated run belongs.
   // A run id with no row here (purged run) drops out with them.
+  // One statement for the whole window: the ids ride as a single JSON parameter
+  // instead of a query per parameter-budget chunk.
   const runIds = [...new Set(candidates.map((c) => c.runId))]
-  const runPages = await Promise.all(
-    chunk(runIds).map((ids) => {
-      return db
-        .select({
-          runId: wfRun.id,
-          runCreatedAt: wfRun.createdAt,
-          workflowId: wfWorkflowVersion.workflowId,
-          workflowName: wfWorkflow.name,
-          versionNumber: wfWorkflowVersion.versionNumber,
-        })
-        .from(wfRun)
-        .innerJoin(
-          wfWorkflowVersion,
-          eq(wfRun.workflowVersionId, wfWorkflowVersion.id),
-        )
-        .innerJoin(wfWorkflow, eq(wfWorkflowVersion.workflowId, wfWorkflow.id))
-        .where(and(inArray(wfRun.id, ids), eq(wfRun.isEval, false)))
-    }),
-  )
-  const runById = new Map(runPages.flat().map((r) => [r.runId, r]))
+  const runRows = await db
+    .select({
+      runId: wfRun.id,
+      runCreatedAt: wfRun.createdAt,
+      workflowId: wfWorkflowVersion.workflowId,
+      workflowName: wfWorkflow.name,
+      versionNumber: wfWorkflowVersion.versionNumber,
+    })
+    .from(wfRun)
+    .innerJoin(
+      wfWorkflowVersion,
+      eq(wfRun.workflowVersionId, wfWorkflowVersion.id),
+    )
+    .innerJoin(wfWorkflow, eq(wfWorkflowVersion.workflowId, wfWorkflow.id))
+    .where(and(inJsonArray(wfRun.id, runIds), eq(wfRun.isEval, false)))
+  const runById = new Map(runRows.map((r) => [r.runId, r]))
 
   // Re-apply the ordering the page is specified in — newest run first, and
   // within a run the latest-started call — then take the top N. NULL
