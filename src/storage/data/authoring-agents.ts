@@ -1,4 +1,5 @@
-import { and, desc, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/sqlite-core'
 
 import { toAgentKind, type WfAgentKind } from '../../engine/agent-kind'
 import {
@@ -11,7 +12,7 @@ import { wfAgent, wfAgentDraft, wfAgentVersion } from '../schema'
 import { createVersionedEntity } from '../versioned-entity'
 
 import { listWorkflowsReferencingAgent } from './authoring-workflows-references'
-import { pickDefined, selectChunked } from './shared'
+import { inJsonArray, pickDefined, selectChunked } from './shared'
 
 export type { AnyAgentConfig }
 
@@ -219,6 +220,81 @@ export function resolveAgentVersion(
   return args.pin == null
     ? latestAgentVersion(db, args.agentId)
     : agentVersionByNumber(db, args.agentId, args.pin)
+}
+
+/** The key {@link resolveAgentVersions} files a pin's version under. */
+export function agentPinKey(args: { agentId: string; pin: number | null }) {
+  return `${args.agentId}@${args.pin ?? 'latest'}`
+}
+
+/**
+ * {@link resolveAgentVersion} for many pins in ONE query, keyed by
+ * {@link agentPinKey}; a pin that resolves to nothing is absent. Floating pins
+ * match the correlated max (see `latestVersionGraphs`); pinned ones match an
+ * id × number cross product and are filtered back to their exact pairs here.
+ * Both id lists travel as one JSON parameter each, so there is no chunking.
+ */
+export async function resolveAgentVersions(
+  db: WfDb,
+  pins: readonly { agentId: string; pin: number | null }[],
+): Promise<Map<string, typeof wfAgentVersion.$inferSelect>> {
+  const floating = [
+    ...new Set(pins.filter((p) => p.pin == null).map((p) => p.agentId)),
+  ]
+  const pinned = pins.filter((p) => p.pin != null)
+  const clauses: SQL[] = []
+  if (floating.length > 0) {
+    const inner = alias(wfAgentVersion, 'av_latest')
+    const latestVersionNumber = db
+      .select({ v: sql<number>`max(${inner.versionNumber})` })
+      .from(inner)
+      .where(eq(inner.agentId, wfAgentVersion.agentId))
+    clauses.push(
+      and(
+        inJsonArray(wfAgentVersion.agentId, floating),
+        eq(wfAgentVersion.versionNumber, latestVersionNumber),
+      )!,
+    )
+  }
+  if (pinned.length > 0) {
+    clauses.push(
+      and(
+        inJsonArray(wfAgentVersion.agentId, [
+          ...new Set(pinned.map((p) => p.agentId)),
+        ]),
+        inJsonArray(wfAgentVersion.versionNumber, [
+          ...new Set(pinned.map((p) => p.pin!)),
+        ]),
+      )!,
+    )
+  }
+  const out = new Map<string, typeof wfAgentVersion.$inferSelect>()
+  if (clauses.length === 0) return out
+  const rows = await db
+    .select()
+    .from(wfAgentVersion)
+    .where(or(...clauses))
+  const floatingIds = new Set(floating)
+  const pinnedKeys = new Set(pinned.map(agentPinKey))
+  // One row can answer both a pinned key and a floating one. A floating
+  // agent's true latest is always among the rows, so its max row here is it,
+  // even when the pinned cross product dragged in an older version too.
+  const latestByAgent = new Map<string, number>()
+  for (const r of rows) {
+    if (!floatingIds.has(r.agentId)) continue
+    const best = latestByAgent.get(r.agentId)
+    if (best === undefined || r.versionNumber > best) {
+      latestByAgent.set(r.agentId, r.versionNumber)
+    }
+  }
+  for (const r of rows) {
+    const pinKey = agentPinKey({ agentId: r.agentId, pin: r.versionNumber })
+    if (pinnedKeys.has(pinKey)) out.set(pinKey, r)
+    if (latestByAgent.get(r.agentId) === r.versionNumber) {
+      out.set(agentPinKey({ agentId: r.agentId, pin: null }), r)
+    }
+  }
+  return out
 }
 
 /** Cheap existence check (see `workflowExists`) — one indexed `SELECT id`. */

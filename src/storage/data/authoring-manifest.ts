@@ -7,9 +7,9 @@ import {
   type WorkflowGraph,
 } from '../../engine/graph'
 import type { WfDb } from '../client'
-import { wfAgent, wfModel, wfWorkflow } from '../schema'
+import { wfAgent, type wfAgentVersion, wfModel, wfWorkflow } from '../schema'
 
-import { resolveAgentVersion } from './authoring-agents'
+import { agentPinKey, resolveAgentVersions } from './authoring-agents'
 import {
   agentPinsInGraph,
   MAX_WORKFLOW_DEPTH,
@@ -70,6 +70,22 @@ export async function resolveRunManifest(
     }
   }
 
+  // Resolved versions by `agentPinKey` (absent = pin resolves to nothing).
+  // Loaded a level at a time alongside the agent rows, for the same reason.
+  const versions = new Map<string, typeof wfAgentVersion.$inferSelect>()
+  const loadedPins = new Set<string>()
+  const loadLevel = async (
+    pins: readonly { agentId: string; pin: number | null }[],
+  ): Promise<void> => {
+    const missing = pins.filter((p) => !loadedPins.has(agentPinKey(p)))
+    const [found] = await Promise.all([
+      resolveAgentVersions(db, missing),
+      loadAgents(pins.map((p) => p.agentId)),
+    ])
+    for (const p of missing) loadedPins.add(agentPinKey(p))
+    for (const [key, v] of found) versions.set(key, v)
+  }
+
   // Resolve one agent pin (from a graph node OR a delegation target), push its
   // frozen entry, then recurse into its own delegation whitelist. `stack` is the
   // workflow-nesting chain, threaded so a workflow reached via delegation still
@@ -79,7 +95,7 @@ export async function resolveRunManifest(
     pin: number | null,
     stack: string[],
   ): Promise<void> => {
-    const key = `${agentId}@${pin ?? 'latest'}`
+    const key = agentPinKey({ agentId, pin })
     if (seenAgentPins.has(key)) {
       return
     }
@@ -87,12 +103,9 @@ export async function resolveRunManifest(
     // `null` pin floats to latest; a number resolves that exact version. A
     // pin pointing at a version that no longer exists resolves to nothing —
     // the node then fails at run time with a clear "not in manifest" error.
-    // The agent row does not depend on the version, so both reads run
-    // together. Callers prefetch the row, so `loadAgents` is normally a no-op.
-    const [version] = await Promise.all([
-      resolveAgentVersion(db, { agentId, pin }),
-      loadAgents([agentId]),
-    ])
+    // Callers prefetch the level through `loadLevel`, so this is a map read.
+    await loadLevel([{ agentId, pin }])
+    const version = versions.get(key)
     if (!version) {
       return
     }
@@ -128,10 +141,10 @@ export async function resolveRunManifest(
       config,
     })
     // Freeze the agent's delegation targets so its `spawn_*` tools resolve.
-    await loadAgents(
+    await loadLevel(
       config.subAgents.targets
         .filter((t) => t.kind === 'agent')
-        .map((t) => t.id),
+        .map((t) => ({ agentId: t.id, pin: t.version })),
     )
     for (const target of config.subAgents.targets) {
       if (target.kind === 'agent') {
@@ -192,7 +205,7 @@ export async function resolveRunManifest(
       )
     }
     const pins = agentPinsInGraph(g)
-    await loadAgents(pins.map((p) => p.agentId))
+    await loadLevel(pins.map((p) => ({ agentId: p.agentId, pin: p.version })))
     for (const { agentId, version: pin } of pins) {
       await resolveAgentPin(agentId, pin, stack)
     }
