@@ -20,7 +20,7 @@ const OCR_PROMPT =
  * build a matching self-hosted asset path (and assert its pinned `pdfjs-dist`
  * dependency hasn't drifted from what the injected script expects).
  */
-export const PDFJS_VERSION = '6.4.299'
+export const PDFJS_VERSION = '6.5.438'
 
 /**
  * Where the injected page loads PDF.js from — the URL of a served *copy of the
