@@ -339,7 +339,11 @@ function TargetRow({
         <Icon className="size-4" />
       </span>
       <div className="min-w-0 flex-1 text-sm font-medium text-neutral-800">
-        {pendingLabel(agentsQuery, agent?.name, 'Unknown agent')}
+        {pendingLabel(
+          agentsQuery,
+          agent?.name,
+          'Needs to be connected to an agent',
+        )}
       </div>
       <span className="shrink-0 rounded-full border border-neutral-200 bg-white px-2 py-0.5 text-[11px] font-medium tabular-nums text-neutral-500">
         {targetVersion == null ? 'Latest' : `v${targetVersion}`}
@@ -352,14 +356,16 @@ function TargetRow({
         <Pencil className="size-3.5" />
         Change
       </button>
-      <WfLink
-        to={`agents/${targetId}/edit`}
-        newTab
-        className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-neutral-500 transition hover:text-neutral-800"
-      >
-        Open agent
-        <ArrowUpRight className="size-3.5" />
-      </WfLink>
+      {agent ? (
+        <WfLink
+          to={`agents/${targetId}/edit`}
+          newTab
+          className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-neutral-500 transition hover:text-neutral-800"
+        >
+          Open agent
+          <ArrowUpRight className="size-3.5" />
+        </WfLink>
+      ) : null}
     </div>
   )
 }

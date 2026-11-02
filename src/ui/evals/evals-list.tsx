@@ -163,29 +163,58 @@ function GoalsTable({ goals }: { goals: WfEvalSetSummary[] }) {
             No goals for this selection.
           </div>
         ) : (
-          shown.map((g) => (
-            <button
-              key={g.id}
-              type="button"
-              onClick={() => navigate(`evals/${g.id}`)}
-              className="grid w-full grid-cols-[1fr_auto_5rem] items-center gap-4 border-b border-neutral-100 px-4 py-3 text-left last:border-b-0 hover:bg-neutral-50"
-            >
-              <div className="min-w-0">
-                <div className="truncate text-sm font-medium text-neutral-900">
-                  {g.name}
-                </div>
-                {g.description ? (
-                  <div className="mt-0.5 truncate text-xs text-neutral-500">
-                    {g.description}
+          shown.map((g) => {
+            const agent = agentById.get(g.targetId)
+            // Only once agents have loaded can a miss mean "no agent".
+            const untargeted = agentsQuery.isSuccess && !agent
+            return (
+              <button
+                key={g.id}
+                type="button"
+                onClick={() => navigate(`evals/${g.id}`)}
+                className={cn(
+                  'grid w-full grid-cols-[1fr_auto_5rem] items-center gap-4 border-b border-neutral-100 px-4 py-3 text-left last:border-b-0 hover:bg-neutral-50',
+                  untargeted && 'bg-neutral-50/60',
+                )}
+              >
+                <div className="min-w-0">
+                  <div
+                    className={cn(
+                      'truncate text-sm font-medium',
+                      untargeted ? 'text-neutral-400' : 'text-neutral-900',
+                    )}
+                  >
+                    {g.name}
                   </div>
-                ) : null}
-              </div>
-              <AgentPill agent={agentById.get(g.targetId)} />
-              <div className="text-sm tabular-nums text-neutral-500">
-                {g.rowCount}
-              </div>
-            </button>
-          ))
+                  {g.description ? (
+                    <div
+                      className={cn(
+                        'mt-0.5 truncate text-xs',
+                        untargeted ? 'text-neutral-400' : 'text-neutral-500',
+                      )}
+                    >
+                      {g.description}
+                    </div>
+                  ) : null}
+                </div>
+                {untargeted ? (
+                  <span className="text-xs italic text-neutral-400">
+                    Not targeting any agent
+                  </span>
+                ) : (
+                  <AgentPill agent={agent} />
+                )}
+                <div
+                  className={cn(
+                    'text-sm tabular-nums',
+                    untargeted ? 'text-neutral-400' : 'text-neutral-500',
+                  )}
+                >
+                  {g.rowCount}
+                </div>
+              </button>
+            )
+          })
         )}
       </div>
     </div>
@@ -266,8 +295,7 @@ function AgentGlyph({ agent }: { agent: WfAgentSummary }) {
 }
 
 // The goal's target agent as a compact pill — its own icon (on its color tint)
-// plus its name. Falls back to a neutral "Unknown agent" pill while agents load
-// or if the target no longer resolves.
+// plus its name. Renders a neutral placeholder pill while agents load.
 function AgentPill({ agent }: { agent?: WfAgentSummary }) {
   const Icon = agentIcon(agent?.icon)
   const color = agentColor(agent?.color)
@@ -282,7 +310,7 @@ function AgentPill({ agent }: { agent?: WfAgentSummary }) {
         <Icon className="size-3" />
       </span>
       <span className="max-w-[10rem] truncate text-xs font-medium text-neutral-700">
-        {agent?.name ?? 'Unknown agent'}
+        {agent?.name ?? 'Loading…'}
       </span>
     </span>
   )
