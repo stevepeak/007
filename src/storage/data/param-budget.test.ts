@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 
 import type { WfDb } from '../client'
-import { migratedSqlite, wrapSqlite } from '../db-test-helpers'
+import { freshDb } from '../db-test-helpers'
 import {
   wfAgent,
   wfEvalResult,
@@ -20,96 +20,16 @@ import { getFeedbackForSubjects } from './feedback'
 import { listAgentCalls } from './runs-agents'
 import { listRuns } from './runs-list'
 import { loadRunStats } from './runs-rollup'
+import { chunk } from './shared'
 
-// D1 rejects any prepared statement binding more than 100 parameters with
-// `D1_ERROR: too many SQL variables`. Nothing in the test stack reproduces that
-// — bun:sqlite's own ceiling is 32766, so an over-budget `inArray` runs
-// perfectly happily here — which is exactly why a "seed 250 rows, assert it
-// doesn't throw" test would be worthless. So these tests watch the SQL the
-// driver is actually asked to run and assert the bound-parameter count directly.
-const D1_MAX_BOUND_PARAMS = 100
+// `freshDb()` enforces D1's 100-bound-parameter ceiling (see `D1_LIMITS`), so
+// each helper below throws `too many SQL variables` the moment it binds an
+// over-budget id list. These tests only have to drive every helper past that
+// ceiling and check the rows still come back whole.
 
-type Probe = {
-  db: WfDb
-  /** Bound-parameter counts of every statement executed while recording. */
-  counts: number[]
-  /** Start/stop recording, so seeding inserts don't pollute the assertion. */
-  record: (on: boolean) => void
-  /** Highest bound-parameter count seen; 0 when nothing was recorded. */
-  peak: () => number
-}
-
-/** `freshDb()` (the in-memory migrated database every storage test uses) with
- *  the driver wrapped so each statement's bound-parameter count is observable. */
-function probeDb(): Probe {
-  // The raw handle rather than `freshDb()`, because the proxy below has to sit
-  // between Drizzle and the driver.
-  const sqlite = migratedSqlite()
-
-  const counts: number[] = []
-  let on = false
-  const EXECUTORS = ['all', 'get', 'run', 'values', 'iterate']
-
-  // Drizzle prepares a statement and then spreads the binds into the executor,
-  // so the parameter count is the executor's own argument count.
-  // `Reflect.get` is typed `any`; taking it as `unknown` and narrowing to a
-  // callable keeps the reflection honest instead of leaking `any` through every
-  // proxied member.
-  type AnyFn = (this: unknown, ...args: unknown[]) => unknown
-  const asFn = (v: unknown): AnyFn | null => {
-    return typeof v === 'function' ? (v as AnyFn) : null
-  }
-
-  const wrapStatement = (stmt: object) => {
-    return new Proxy(stmt, {
-      get(target, prop, receiver) {
-        const value: unknown = Reflect.get(target, prop, receiver)
-        const fn = asFn(value)
-        if (!fn) return value
-        if (!EXECUTORS.includes(String(prop))) return fn.bind(target)
-        return (...params: unknown[]) => {
-          if (on) {
-            counts.push(
-              params.length === 1 && Array.isArray(params[0])
-                ? params[0].length
-                : params.length,
-            )
-          }
-          return Reflect.apply(fn, target, params)
-        }
-      },
-    })
-  }
-
-  const proxied = new Proxy(sqlite, {
-    get(target, prop, receiver) {
-      const value: unknown = Reflect.get(target, prop, receiver)
-      const fn = asFn(value)
-      if (!fn) return value
-      if (prop === 'prepare' || prop === 'query') {
-        return (...args: unknown[]) => {
-          return wrapStatement(Reflect.apply(fn, target, args) as object)
-        }
-      }
-      return fn.bind(target)
-    },
-  })
-
-  return {
-    db: wrapSqlite(proxied),
-    counts,
-    record: (v) => {
-      on = v
-    },
-    peak: () => (counts.length === 0 ? 0 : Math.max(...counts)),
-  }
-}
-
-/** Assert the recorded statements stayed inside D1's budget and that we
- *  actually watched something (a silent zero would pass vacuously). */
-function expectWithinBudget(probe: Probe) {
-  expect(probe.counts.length).toBeGreaterThan(0)
-  expect(probe.peak()).toBeLessThanOrEqual(D1_MAX_BOUND_PARAMS)
+/** Insert seed rows a few at a time, so the fixtures stay inside D1's budget. */
+async function seed<T>(rows: T[], insert: (rows: T[]) => Promise<unknown>) {
+  for (const part of chunk(rows, 5)) await insert(part)
 }
 
 function agentMeta(model: string, inputTokens: number, outputTokens: number) {
@@ -125,30 +45,23 @@ function agentMeta(model: string, inputTokens: number, outputTokens: number) {
 const N = 250
 
 describe('D1 parameter budget', () => {
-  let probe: Probe
   let db: WfDb
 
   beforeEach(() => {
-    probe = probeDb()
-    db = probe.db
+    db = freshDb()
   })
 
   test('getFeedbackForSubjects returns every row for an over-budget id list', async () => {
     const subjectIds = Array.from({ length: N }, (_, i) => `msg-${i}`)
-    await db.insert(wfFeedback).values(
-      subjectIds.map((subjectId) => ({
+    await seed(subjectIds.map((subjectId) => ({
         subjectId,
         rating: 'up' as const,
-      })),
-    )
+      })), (rows) => db.insert(wfFeedback).values(rows))
 
-    probe.record(true)
     const rows = await getFeedbackForSubjects(db, subjectIds)
-    probe.record(false)
 
     expect(rows.length).toBe(N)
     expect(new Set(rows.map((r) => r.subjectId)).size).toBe(N)
-    expectWithinBudget(probe)
   })
 
   test('loadRunStats aggregates every run across chunks', async () => {
@@ -157,19 +70,16 @@ describe('D1 parameter budget', () => {
       .insert(wfWorkflowVersion)
       .values({ id: 'v-1', workflowId: 'wf-1', versionNumber: 1, graph: {} })
     const runIds = Array.from({ length: N }, (_, i) => `run-${i}`)
-    await db.insert(wfRun).values(
-      runIds.map((id) => ({
+    await seed(runIds.map((id) => ({
         id,
         workflowVersionId: 'v-1',
         triggerKind: 'chat',
         status: 'completed' as const,
         isEval: false,
-      })),
-    )
+      })), (rows) => db.insert(wfRun).values(rows))
     // Two agent steps per run, so the per-run token sum is only right if the
     // fold sees both — i.e. if chunks are concatenated rather than overwritten.
-    await db.insert(wfRunStep).values(
-      runIds.flatMap((runId, i) => {
+    await seed(runIds.flatMap((runId, i) => {
         return [1, 2].map((sequence) => ({
           runId,
           nodeId: `node-${sequence}`,
@@ -178,19 +88,15 @@ describe('D1 parameter budget', () => {
           status: 'completed' as const,
           meta: agentMeta('m', 10 + i, 5),
         }))
-      }),
-    )
+      }), (rows) => db.insert(wfRunStep).values(rows))
 
-    probe.record(true)
     const stats = await loadRunStats(db, runIds)
-    probe.record(false)
 
     expect(stats.size).toBe(N)
     // Every run: two steps of (10 + i) input + 5 output tokens.
     for (const [i, runId] of runIds.entries()) {
       expect(stats.get(runId)?.totalTokens).toBe(2 * (10 + i + 5))
     }
-    expectWithinBudget(probe)
   })
 
   test('listRuns attaches cost to a full over-budget page', async () => {
@@ -199,74 +105,58 @@ describe('D1 parameter budget', () => {
       .insert(wfWorkflowVersion)
       .values({ id: 'v-1', workflowId: 'wf-1', versionNumber: 1, graph: {} })
     const runIds = Array.from({ length: N }, (_, i) => `run-${i}`)
-    await db.insert(wfRun).values(
-      runIds.map((id, i) => ({
+    await seed(runIds.map((id, i) => ({
         id,
         workflowVersionId: 'v-1',
         triggerKind: 'chat',
         status: 'completed' as const,
         isEval: false,
         createdAt: new Date(1_700_000_000_000 + i * 1000),
-      })),
-    )
-    await db.insert(wfRunStep).values(
-      runIds.map((runId) => ({
+      })), (rows) => db.insert(wfRun).values(rows))
+    await seed(runIds.map((runId) => ({
         runId,
         nodeId: 'node-1',
         nodeKind: 'agent',
         sequence: 1,
         status: 'completed' as const,
         meta: agentMeta('m', 7, 3),
-      })),
-    )
+      })), (rows) => db.insert(wfRunStep).values(rows))
 
-    probe.record(true)
     // 200 is RUN_PAGE_MAX — the largest page a caller can ask for, and twice
     // D1's parameter ceiling.
     const page = await listRuns(db, { limit: 200 })
-    probe.record(false)
 
     expect(page.rows.length).toBe(200)
     expect(page.total).toBe(N)
     for (const row of page.rows) expect(row.totalTokens).toBe(10)
-    expectWithinBudget(probe)
   })
 
   test('listWorkflowsWithStats rolls up an over-budget workflow set', async () => {
     const workflowIds = Array.from({ length: 150 }, (_, i) => `wf-${i}`)
-    await db
-      .insert(wfWorkflow)
-      .values(workflowIds.map((id) => ({ id, name: id })))
-    await db.insert(wfWorkflowVersion).values(
-      workflowIds.map((workflowId) => ({
+    await seed(workflowIds.map((id) => ({ id, name: id })), (rows) => db.insert(wfWorkflow).values(rows))
+    await seed(workflowIds.map((workflowId) => ({
         id: `v-${workflowId}`,
         workflowId,
         versionNumber: 1,
         graph: { nodes: [], edges: [] },
-      })),
-    )
+      })), (rows) => db.insert(wfWorkflowVersion).values(rows))
     // One non-eval run per workflow, so every workflow's `runCount` is 1 —
     // a group lost to chunking would show up as a missing count.
-    await db.insert(wfRun).values(
-      workflowIds.map((workflowId) => ({
+    await seed(workflowIds.map((workflowId) => ({
         id: `run-${workflowId}`,
         workflowVersionId: `v-${workflowId}`,
         triggerKind: 'chat',
         status: 'completed' as const,
         isEval: false,
-      })),
-    )
+      })), (rows) => db.insert(wfRun).values(rows))
 
-    probe.record(true)
     const rows = await listWorkflowsWithStats(db)
-    probe.record(false)
 
     expect(rows.length).toBe(150)
     for (const row of rows) {
       expect(row.latestVersionNumber).toBe(1)
       expect(row.runCount).toBe(1)
     }
-    expectWithinBudget(probe)
   })
 
   test('deleteWorkflow cascades over an over-budget run set', async () => {
@@ -275,43 +165,31 @@ describe('D1 parameter budget', () => {
       .insert(wfWorkflowVersion)
       .values({ id: 'v-1', workflowId: 'wf-1', versionNumber: 1, graph: {} })
     const runIds = Array.from({ length: N }, (_, i) => `run-${i}`)
-    await db.insert(wfRun).values(
-      runIds.map((id) => ({
+    await seed(runIds.map((id) => ({
         id,
         workflowVersionId: 'v-1',
         triggerKind: 'chat',
         status: 'completed' as const,
         isEval: false,
-      })),
-    )
-    await db.insert(wfRunStep).values(
-      runIds.map((runId) => ({
+      })), (rows) => db.insert(wfRun).values(rows))
+    await seed(runIds.map((runId) => ({
         runId,
         nodeId: 'node-1',
         nodeKind: 'agent',
         sequence: 1,
         status: 'completed' as const,
-      })),
-    )
-    await db
-      .insert(wfRunLog)
-      .values(
-        runIds.map((runId) => ({ runId, level: 'info', message: 'm', ts: 1 })),
-      )
+      })), (rows) => db.insert(wfRunStep).values(rows))
+    await seed(runIds.map((runId) => ({ runId, level: 'info', message: 'm', ts: 1 })), (rows) => db.insert(wfRunLog).values(rows))
     // One eval run per result, so the eval-run sweep is over budget too.
-    await db.insert(wfEvalRun).values(runIds.map((id) => ({ id: `er-${id}` })))
-    await db.insert(wfEvalResult).values(
-      runIds.map((wfRunId) => ({
+    await seed(runIds.map((id) => ({ id: `er-${id}` })), (rows) => db.insert(wfEvalRun).values(rows))
+    await seed(runIds.map((wfRunId) => ({
         evalRunId: `er-${wfRunId}`,
         rowId: 'row-1',
         wfRunId,
         status: 'pass' as const,
-      })),
-    )
+      })), (rows) => db.insert(wfEvalResult).values(rows))
 
-    probe.record(true)
     await deleteWorkflow(db, 'wf-1')
-    probe.record(false)
 
     expect((await db.select().from(wfRun)).length).toBe(0)
     expect((await db.select().from(wfRunStep)).length).toBe(0)
@@ -320,7 +198,6 @@ describe('D1 parameter budget', () => {
     expect((await db.select().from(wfEvalRun)).length).toBe(0)
     expect((await db.select().from(wfWorkflowVersion)).length).toBe(0)
     expect((await db.select().from(wfWorkflow)).length).toBe(0)
-    expectWithinBudget(probe)
   })
 
   test('listAgentCalls merges the per-chunk pages into one global top-N', async () => {
@@ -346,30 +223,24 @@ describe('D1 parameter budget', () => {
     })
     // One run per node, newest last. The step carries no `meta.agentId`, so the
     // node-id arm is the ONLY thing attributing it to the agent.
-    await db.insert(wfRun).values(
-      nodeIds.map((_, i) => ({
+    await seed(nodeIds.map((_, i) => ({
         id: `run-${i}`,
         workflowVersionId: 'v-1',
         triggerKind: 'chat',
         status: 'completed' as const,
         isEval: false,
         createdAt: new Date(1_700_000_000_000 + i * 1000),
-      })),
-    )
-    await db.insert(wfRunStep).values(
-      nodeIds.map((nodeId, i) => ({
+      })), (rows) => db.insert(wfRun).values(rows))
+    await seed(nodeIds.map((nodeId, i) => ({
         runId: `run-${i}`,
         nodeId,
         nodeKind: 'agent',
         sequence: 1,
         status: 'completed' as const,
         meta: agentMeta('m', 1, 1),
-      })),
-    )
+      })), (rows) => db.insert(wfRunStep).values(rows))
 
-    probe.record(true)
     const calls = await listAgentCalls(db, { agentId: 'agent-1', limit: 20 })
-    probe.record(false)
 
     expect(calls.length).toBe(20)
     // The 20 newest runs overall, newest first — NOT whichever rows the last
@@ -377,6 +248,5 @@ describe('D1 parameter budget', () => {
     expect(calls.map((c) => c.runId)).toEqual(
       Array.from({ length: 20 }, (_, i) => `run-${N - 1 - i}`),
     )
-    expectWithinBudget(probe)
   })
 })

@@ -33,8 +33,8 @@ const MIGRATIONS_DIR = fileURLToPath(
  * An in-memory SQLite database with every migration applied, as the raw
  * `bun:sqlite` handle.
  *
- * Reach for this only when a test needs the handle itself — `param-budget`
- * proxies it to count bound parameters. Everything else wants {@link freshDb}.
+ * Unguarded: reach for this only when a test needs the handle itself.
+ * Everything else wants {@link freshDb}, which enforces {@link D1_LIMITS}.
  */
 export function migratedSqlite(): Database {
   const sqlite = new Database(':memory:')
@@ -52,6 +52,115 @@ export function migratedSqlite(): Database {
 }
 
 /**
+ * D1's hard limits, which `bun:sqlite` does not share: it binds 32,766
+ * parameters, stores a gigabyte per value and runs real transactions. A query
+ * past any of these passes every test and fails in production, so the test
+ * handle enforces them instead.
+ *
+ * Query-planner behavior (D1 runs without ANALYZE statistics) is not a
+ * pass/fail limit and is not modelled.
+ */
+export const D1_LIMITS = {
+  /** Bound parameters per statement: `D1_ERROR: too many SQL variables`. */
+  boundParams: 100,
+  /** Bytes per string or BLOB value. */
+  valueBytes: 2_000_000,
+  /** Bytes of SQL text per statement. */
+  statementBytes: 100_000,
+} as const
+
+const TX_STATEMENT = /^\s*(?:begin|commit|end|rollback|savepoint|release)\b/i
+
+const utf8 = new TextEncoder()
+
+function d1Error(message: string): Error {
+  return new Error(`D1_ERROR: ${message} (bun:sqlite test guard)`)
+}
+
+function checkSql(sql: string) {
+  if (utf8.encode(sql).byteLength > D1_LIMITS.statementBytes) {
+    throw d1Error(`statement too long: SQLITE_TOOBIG`)
+  }
+  if (TX_STATEMENT.test(sql)) {
+    throw d1Error(`interactive transactions are not supported; use batch()`)
+  }
+}
+
+function checkBinds(params: unknown[]) {
+  // bun:sqlite takes binds either spread or as one array.
+  const binds: unknown[] =
+    params.length === 1 && Array.isArray(params[0]) ? params[0] : params
+  if (binds.length > D1_LIMITS.boundParams) {
+    throw d1Error(
+      `too many SQL variables (${binds.length} > ${D1_LIMITS.boundParams})`,
+    )
+  }
+  for (const value of binds) {
+    const bytes =
+      typeof value === 'string'
+        ? utf8.encode(value).byteLength
+        : ArrayBuffer.isView(value) || value instanceof ArrayBuffer
+          ? value.byteLength
+          : 0
+    if (bytes > D1_LIMITS.valueBytes) {
+      throw d1Error(`string or blob too big: SQLITE_TOOBIG (${bytes} bytes)`)
+    }
+  }
+}
+
+type AnyFn = (this: unknown, ...args: unknown[]) => unknown
+function asFn(v: unknown): AnyFn | null {
+  return typeof v === 'function' ? (v as AnyFn) : null
+}
+
+const EXECUTORS = new Set(['all', 'get', 'run', 'values', 'iterate'])
+
+/**
+ * Proxy a migrated `bun:sqlite` handle so every statement it prepares obeys
+ * {@link D1_LIMITS}. Apply it AFTER the migration replay: migrations are not
+ * subject to the per-query limits and run through `run` on the raw handle.
+ */
+export function d1Guard(sqlite: Database): Database {
+  // Drizzle prepares a statement and then hands the binds to an executor, so
+  // the executor's arguments are exactly what D1 would be asked to bind.
+  const wrapStatement = (stmt: object) => {
+    return new Proxy(stmt, {
+      get(target, prop, receiver) {
+        const value: unknown = Reflect.get(target, prop, receiver)
+        const fn = asFn(value)
+        if (!fn) return value
+        if (!EXECUTORS.has(String(prop))) return fn.bind(target)
+        return (...params: unknown[]) => {
+          checkBinds(params)
+          return Reflect.apply(fn, target, params)
+        }
+      },
+    })
+  }
+  return new Proxy(sqlite, {
+    get(target, prop, receiver) {
+      const value: unknown = Reflect.get(target, prop, receiver)
+      const fn = asFn(value)
+      if (!fn) return value
+      if (prop === 'transaction') {
+        return () => {
+          throw d1Error(
+            'interactive transactions are not supported; use batch()',
+          )
+        }
+      }
+      if (prop === 'prepare' || prop === 'query') {
+        return (...args: unknown[]) => {
+          checkSql(String(args[0]))
+          return wrapStatement(Reflect.apply(fn, target, args) as object)
+        }
+      }
+      return fn.bind(target)
+    },
+  })
+}
+
+/**
  * Wrap a `bun:sqlite` handle as a {@link WfDb}.
  *
  * The cast is the seam between the two drivers: production binds Drizzle to D1
@@ -60,7 +169,7 @@ export function migratedSqlite(): Database {
  * and no amount of generics makes them so.
  */
 export function wrapSqlite(sqlite: Database): WfDb {
-  return drizzle(sqlite, { schema: wfSchema }) as unknown as WfDb
+  return drizzle(d1Guard(sqlite), { schema: wfSchema }) as unknown as WfDb
 }
 
 /** A migrated, empty {@link WfDb}. One per test — `:memory:` makes it cheap. */
@@ -83,8 +192,9 @@ export function freshDb(): WfDb {
  * asserting all-or-nothing rollback wants the real thing, not this.
  */
 export function d1FromSqlite(sqlite: Database): D1Database {
+  const guarded = d1Guard(sqlite)
   const bound = (sql: string, params: unknown[]) => {
-    const stmt = () => sqlite.prepare(sql)
+    const stmt = () => guarded.prepare(sql)
     const args = () => params as SQLQueryBindings[]
     return {
       bind: (...next: unknown[]) => bound(sql, next),

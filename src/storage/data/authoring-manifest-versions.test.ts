@@ -4,7 +4,7 @@ import { drizzle } from 'drizzle-orm/bun-sqlite'
 import { makeAgentConfig } from '../../engine/agent-test-helpers'
 import type { WorkflowGraph } from '../../engine/graph'
 import type { WfDb } from '../client'
-import { migratedSqlite } from '../db-test-helpers'
+import { d1Guard, migratedSqlite } from '../db-test-helpers'
 import { wfSchema } from '../schema'
 
 import { createAgent, publishAgent } from './authoring-agents'
@@ -34,7 +34,7 @@ describe('resolveRunManifest — agent versions', () => {
   let queries: string[]
   beforeEach(() => {
     queries = []
-    db = drizzle(migratedSqlite(), {
+    db = drizzle(d1Guard(migratedSqlite()), {
       schema: wfSchema,
       logger: {
         logQuery: (q) => {
