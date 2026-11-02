@@ -225,6 +225,33 @@ describe('decision_judge', () => {
     expect(calls).toHaveLength(3)
   })
 
+  test('trims tool outputs, never the graded output, to the state cap', async () => {
+    const { decide, calls } = stubDecider(0.8)
+    const capped = Object.assign(decide, { maxStateChars: 5_000 })
+    const answer = 'a'.repeat(2_000)
+    await gradeRow({
+      checks: tree(),
+      steps: [],
+      output: answer,
+      seededToolCalls: [
+        { toolId: 'read_document', args: {}, output: 'd\n'.repeat(20_000) },
+        { toolId: 'search', args: {}, output: 'short result' },
+      ],
+      getDecider: () => capped,
+      decisionJudgeModelId: 'test:decider',
+    })
+    const state = calls[0].state as {
+      output: string
+      toolCallsAndResults: { output: unknown }[]
+    }
+    expect(JSON.stringify(state).length).toBeLessThanOrEqual(5_000)
+    expect(state.output).toBe(answer)
+    expect(state.toolCallsAndResults[1].output).toBe('short result')
+    expect(state.toolCallsAndResults[0].output).toContain(
+      "trimmed to fit the judge's input limit",
+    )
+  })
+
   test('a failed request errors only the checks it carried', async () => {
     const decide: Decider = (request) => {
       if (request.state && (request.state as { outputPath: unknown }).outputPath) {

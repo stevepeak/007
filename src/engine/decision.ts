@@ -204,11 +204,17 @@ export type DecisionResponse = {
  * {@link DecisionModelOption.maxQuestionsPerCall} from the same constant — the
  * catalog value is what the EDITOR warns against, this is what the engine chunks
  * on.
+ *
+ * `maxStateChars` is the largest serialized `state` the provider accepts, in
+ * JSON characters. Providers cap input by tokens and reject an oversize request
+ * outright, so the eval grader trims what it adds to a judge's state (tool-call
+ * outputs, never the graded output) to fit. Unset = no known limit.
  */
 export type Decider = ((
   request: DecisionRequest,
 ) => Promise<DecisionResponse>) & {
   maxQuestionsPerCall?: number
+  maxStateChars?: number
 }
 
 // ── Catalog: how a host describes its deciders to the editor ─────────────────

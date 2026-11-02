@@ -417,6 +417,75 @@ function passProbability(verdict: DecisionVerdict, judge: PreparedJudge): number
 /** One judge's outcome: a verdict, or the error that kept it from one. */
 type JudgeOutcome = { ok: true; result: CheckResult } | { ok: false; error: unknown }
 
+type JudgeToolCall = { tool: string; args: unknown; output: unknown }
+
+/** Room left per trimmed output for the "[truncated N chars …]" marker. */
+const TRIM_MARKER_CHARS = 120
+
+/**
+ * The largest per-output length such that every output cut to it fits in
+ * `budget` together: short outputs keep everything, long ones share the rest
+ * equally. `Infinity` when nothing needs cutting.
+ */
+function fairShare(args: { lengths: number[]; budget: number }): number {
+  const sorted = [...args.lengths].sort((a, b) => a - b)
+  let left = args.budget
+  for (const [i, length] of sorted.entries()) {
+    const share = Math.floor(left / (sorted.length - i))
+    if (length > share) return Math.max(0, share)
+    left -= length
+  }
+  return Infinity
+}
+
+/**
+ * A judge's state, sized to the decider's `maxStateChars`. A provider rejects an
+ * oversize state outright, and a run that read a long document easily carries
+ * one, so the tool-call outputs are cut longest-first until the serialized state
+ * fits. The graded output is never cut: it is what every rubric is about.
+ */
+function judgeState(args: {
+  output: unknown
+  outputPath: string | null
+  toolCalls: JudgeToolCall[]
+  maxChars?: number
+}): { output: unknown; outputPath: string | null; toolCallsAndResults: JudgeToolCall[] } {
+  const { output, outputPath, toolCalls, maxChars } = args
+  const state = { output, outputPath, toolCallsAndResults: toolCalls }
+  if (maxChars == null || JSON.stringify(state).length <= maxChars) return state
+
+  const texts = toolCalls.map((c) => {
+    return typeof c.output === 'string' ? c.output : (JSON.stringify(c.output) ?? '')
+  })
+  const skeleton = JSON.stringify({
+    ...state,
+    toolCallsAndResults: toolCalls.map((c) => ({ ...c, output: '' })),
+  }).length
+  // JSON escaping makes the serialized size larger than the raw text, by an
+  // amount that depends on the text. Shrink the budget until the result fits.
+  let budget = maxChars - skeleton - TRIM_MARKER_CHARS * toolCalls.length
+  for (;;) {
+    const cap = fairShare({ lengths: texts.map((t) => t.length), budget })
+    const trimmed = {
+      ...state,
+      toolCallsAndResults: toolCalls.map((c, i) => {
+        if (texts[i].length <= cap) return c
+        return {
+          ...c,
+          output: truncate({
+            text: texts[i],
+            max: cap,
+            suffix: 'count',
+            hint: "trimmed to fit the judge's input limit",
+          }),
+        }
+      }),
+    }
+    if (budget <= 0 || JSON.stringify(trimmed).length <= maxChars) return trimmed
+    budget = Math.floor(budget * 0.9)
+  }
+}
+
 /**
  * Grade every judge check of a row. Returns one outcome per entry of `checks`,
  * by index. Checks sharing an output path are asked in one decider request
@@ -459,11 +528,12 @@ async function gradeJudges(
 
   await Promise.all(
     [...byPath].flatMap(([path, group]) => {
-      const state = {
+      const state = judgeState({
         output: valueAtPath(input.output, path || undefined),
         outputPath: path || null,
-        toolCallsAndResults: toolCalls,
-      }
+        toolCalls,
+        maxChars: decider.maxStateChars,
+      })
       return chunkQuestions(
         group.map((g) => g.judge.question),
         decider.maxQuestionsPerCall,
