@@ -1,7 +1,6 @@
 import { z } from 'zod'
 
 import { agentModelRequirements } from '../engine/agent-config-schema'
-import { errorMessage } from '../engine/error-message'
 import {
   type CheckResult,
   type EvalCheck,
@@ -20,9 +19,8 @@ import {
   judgeMoved,
 } from '../eval/report'
 import {
-  createEvalSweep,
+  launchEvalSweep,
   DEFAULT_EVAL_CONCURRENCY,
-  driveEvalRun,
   type RunEvalInput,
 } from '../eval/run-eval'
 import type {
@@ -61,21 +59,9 @@ import { draftOrPublished } from './tools-agents'
 // the report page it navigates to is a poller.
 //
 // What it must NOT do is keep orchestrating after it answers. This endpoint is
-// a single Worker request and its context dies with the response, so work left
-// running there is simply cancelled. The rest of the sweep belongs to the
-// host's resume backstop, which reads the plan off the run row.
-//
-// That last part is why the sweep survives the session. The paragraph that used
-// to sit here said the opposite — "the orchestration runs in THIS process… the
-// run sits at `running` forever" — which was true before plans were persisted
-// and false afterwards, and the tool's own `next` field had already been updated
-// to contradict it. Stale prose in a tool description is not a comment nobody
-// reads: it is prompt, and it was telling models to hold a session open for a
-// sweep that no longer needed one.
-//
-// What DOES strand a sweep is a host with no resume backstop wired. Then the one
-// tick `run_eval` drives is all the progress that will ever be made, and
-// `resume_eval_run` is the manual equivalent.
+// a single Worker request and its context dies with the response, so the sweep
+// runs in a workflow of its own, which reads the plan off the run row. If that
+// workflow dies, `resume_eval_run` starts a new one.
 //
 // ── Deliberately NOT here (evals) ────────────────────────────────────────────
 //
@@ -861,19 +847,10 @@ export function evalRunWriteTools(): WfMcpTool[] {
               : undefined,
         }
 
-        // Create the run with its frozen plan, then drive exactly ONE tick:
-        // enough to launch the first cells so the report shows movement and the
-        // run leaves `queued`, and short enough that the tool still answers in
-        // seconds. The host's resume backstop drives the rest.
-        //
-        // This endpoint is why sweeps had to become resumable at all. It runs
-        // as a single Worker request, whose context is destroyed the instant it
-        // responds — so the old fire-and-forget orchestration was cancelled
-        // before its first cell started and every MCP-launched run sat at
-        // `queued` forever, with the rejection landing in a log nobody read.
-        // Now nothing here needs to outlive the response.
-        const { evalRunId, plan } = await createEvalSweep(client, input)
-        await driveEvalRun(client, evalRunId, { budgetMs: 0 })
+        // Create the run with its frozen plan and start its workflow. A Worker
+        // request's context dies with the response, so nothing here may need to
+        // outlive it, and the sweep is on its own from this point.
+        const { evalRunId, plan } = await launchEvalSweep(client, input)
 
         return {
           evalRunId,
@@ -917,11 +894,9 @@ export function evalRunWriteTools(): WfMcpTool[] {
       name: 'resume_eval_run',
       title: 'Resume a stalled eval run',
       description: [
-        'Push a sweep that has stopped moving. Settles whatever finished, launches the next batch of cells up to the run’s concurrency, and returns — it does not wait for the sweep to complete, so call it again (or poll get_eval_run) until `status` is `completed`.',
+        'Restart a sweep that has stopped moving. Each sweep runs in its own workflow, so this is only needed if that workflow died: it starts a new one, which skips every cell that already has a verdict and runs the rest. A cell that was mid-run when the workflow died runs again.',
         '',
-        'Only needed when nothing else is driving. A sweep’s plan is persisted on the run row, so normally either the browser tab that launched it or the host’s cron backstop finishes it. A run stuck at `queued` or `running` with a stale heartbeat means neither is — most often a host with no backstop wired — and before this there was no way to move it from here at all.',
-        '',
-        'Safe to call repeatedly and safe to race: drive state is re-read from storage every tick, so a cell already in flight is polled rather than started a second time. A run that has already finished returns `done` and changes nothing. Runs created before sweeps were resumable have no plan and cannot be driven.',
+        'Safe to call repeatedly: a sweep whose workflow is still going is left alone, and a run that has already finished returns `done` and changes nothing. Runs created before sweeps were resumable have no plan and cannot be run.',
       ].join('\n'),
       inputSchema: {
         evalRunId: z
@@ -949,38 +924,26 @@ export function evalRunWriteTools(): WfMcpTool[] {
             note: 'That run was cancelled, so its remaining cells will not be launched. Start a fresh sweep with run_eval.',
           }
         }
-        // One tick, the same budget `run_eval` uses and for the same reason: this
-        // is a single Worker request whose context dies with the response, so a
-        // driver that kept going here would simply be cancelled mid-cell.
-        let done = false
-        try {
-          const result = await driveEvalRun(client, evalRunId, { budgetMs: 0 })
-          done = result.done
-        } catch (err) {
-          // The one expected throw: a pre-plan run, which is a permanent
-          // condition and worth saying plainly rather than surfacing as a stack.
+        const drive = await client.getEvalRunDrive(evalRunId)
+        if (!drive?.plan) {
           return {
             evalRunId,
-            error: errorMessage(err),
+            error: `Eval run ${evalRunId} has no plan, so it cannot be run. It predates resumable sweeps.`,
           }
         }
-        const after = await client.getEvalRun(evalRunId)
-        const settledBefore = before.results.length
-        const settledAfter = after?.results.length ?? settledBefore
+        const { started } = await client.startEvalSweep({ evalRunId })
         return {
           evalRunId,
-          done,
-          status: after?.run.status ?? before.run.status,
-          settled: settledAfter,
-          total: after?.run.total ?? before.run.total,
-          progressedBy: settledAfter - settledBefore,
-          next: done
-            ? `Finished. Read the report with get_eval_run("${evalRunId}").`
-            : `Still going: ${settledAfter} of ${after?.run.total ?? before.run.total} cells have a verdict. Call resume_eval_run again in 20-30s, or poll get_eval_run if something else is driving it.`,
+          started,
+          status: before.run.status,
+          settled: before.results.length,
+          total: before.run.total,
+          next: started
+            ? `Restarted. Poll get_eval_run("${evalRunId}") every 20-30s until status is "completed".`
+            : `Its workflow is still going, so nothing changed. Poll get_eval_run("${evalRunId}") every 20-30s until status is "completed".`,
         }
       },
     },
-
     {
       name: 'cancel_eval_run',
       title: 'Cancel an eval run',

@@ -28,7 +28,6 @@ import {
 import { defaultDecisionJudge } from '../../eval/judge'
 import {
   evalCellKey,
-  parseEvalDriveState,
   parseEvalPlan,
 } from '../../eval/plan'
 import type { WfDb } from '../../storage/client'
@@ -58,7 +57,6 @@ import {
   loadRunStats,
   resolveAgentVersion,
   restoreEvalRow,
-  saveEvalRunDrive,
   updateEvalRun,
   updateEvalSet,
   upsertEvalRow,
@@ -303,7 +301,7 @@ export function buildEvalHandlers<TDeps>(
   | 'listEvalRuns'
   | 'getEvalRun'
   | 'getEvalRunDrive'
-  | 'saveEvalRunDrive'
+  | 'startEvalSweep'
 > {
   return {
     listEvalSets: async (c) => {
@@ -509,25 +507,18 @@ export function buildEvalHandlers<TDeps>(
         evalRunId,
         status: found.run.status,
         plan: parseEvalPlan(found.run.plan),
-        driveState: parseEvalDriveState(found.run.driveState),
-        // The cell identity of every result already written. This — not the
-        // driver's memory — is what makes a tick safe to repeat: a cell with a
-        // row is never started again, whoever started it the first time.
+        // The cell identity of every result already written, which is what lets
+        // a restarted sweep skip a cell that already has a verdict.
         settledKeys: found.cells.map(evalCellKey),
       }
     },
 
-    saveEvalRunDrive: async (c) => {
-      const p = c.params
-      await saveEvalRunDrive(c.db, {
-        evalRunId: p.evalRunId,
-        driveState: parseEvalDriveState(p.driveState),
-        // Releasing clears the heartbeat, which is what makes the run adoptable
-        // again immediately rather than after a stale window this driver has no
-        // reason to hold.
-        heartbeatAt: p.release === true ? null : undefined,
-      })
-      return { ok: true }
+    startEvalSweep: async (c) => {
+      const startEvalSweep = requireHook(
+        opts.startEvalSweep,
+        'Eval runs are not configured for this host.',
+      )
+      return await startEvalSweep({ evalRunId: c.params.evalRunId })
     },
 
     startEvalRun: async (c) => {
@@ -593,6 +584,11 @@ export function buildEvalHandlers<TDeps>(
         // Cap this run's nodes. Applied per-run rather than baked into the
         // graph so it covers an agent whose hidden wrapper was cached long ago.
         executionOverride: EVAL_NODE_EXECUTION,
+        launchedBy: run.createdBy,
+        // The sweep's instance id is its eval run id.
+        sweepNotice: cell.sweepEvent
+          ? { instanceId: evalRunId, eventType: cell.sweepEvent }
+          : undefined,
         ctx: c.ctx,
         req: c.req,
       })

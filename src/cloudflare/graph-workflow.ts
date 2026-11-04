@@ -5,6 +5,7 @@ import {
 } from 'cloudflare:workers'
 
 import { withRunConnectors } from '../connectors/registry'
+import type { EvalSweepNotice } from '../engine/run-input'
 import type { RunFlags, WfSdkConfig } from '../engine/config'
 import { errorFeedLine } from '../engine/error-detail'
 import {
@@ -45,6 +46,7 @@ import {
   setRunManifest,
 } from '../storage/data'
 
+import type { EvalSweepParams } from './eval-sweep-start'
 import type { CalleeParent } from './callee-protocol'
 import { spawnFailureHandlerRun } from './child-run'
 import {
@@ -97,6 +99,8 @@ export interface GraphWorkflowEnv extends ReleaseBindings {
    * entrypoint, differing only in their params.
    */
   GRAPH_WORKFLOW: Workflow<GraphWorkflowParams>
+  /** Where a run with a `sweepNotice` reports. Bound by hosts that run evals. */
+  EVAL_SWEEP_WORKFLOW?: Workflow<EvalSweepParams>
   /**
    * The RunRoom namespace, for the other half of the same job: a called
    * workflow whose trigger declares the INLINE engine is started in a room of
@@ -160,6 +164,8 @@ export type GraphWorkflowParams = {
    * `workflowVersionId` — the graph shape has to match for node ids to line up.
    */
   resumeFromRunId?: string
+  /** See `StartGraphRunInput.sweepNotice`. */
+  sweepNotice?: EvalSweepNotice
   /**
    * Set when this run was SPAWNED BY another run — the callee of a
    * workflow-call node, or one item of a durable iteration. It is a first-class

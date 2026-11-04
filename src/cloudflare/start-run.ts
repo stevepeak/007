@@ -8,6 +8,7 @@ import { bytesToHex } from '../engine/sha256'
 import { createWfDb } from '../storage/client'
 import { createRun, getVersionGraph } from '../storage/data'
 
+import type { EvalSweepParams } from './eval-sweep-start'
 import type { GraphWorkflowParams } from './graph-workflow'
 import { releaseFromEnv, type ReleaseBindings } from './release'
 import { runRoomStub } from './room-address'
@@ -25,6 +26,8 @@ export interface GraphRunBindings extends ReleaseBindings {
   /** See `RunRoomBindings.RUN_ROOM_JURISDICTION`. */
   RUN_ROOM_JURISDICTION?: string
   GRAPH_WORKFLOW: Workflow<GraphWorkflowParams>
+  /** Where a run with a `sweepNotice` reports. Bound by hosts that run evals. */
+  EVAL_SWEEP_WORKFLOW?: Workflow<EvalSweepParams>
 }
 
 // Declared in `../engine/run-input` (they name no Cloudflare type, so a host
@@ -95,6 +98,7 @@ export async function startGraphRun(
       traceId,
     },
     resumeFromRunId: input.resumeFromRunId,
+    sweepNotice: input.sweepNotice,
   }
 
   // Both branches are fire-and-forget by design: they return once the run is

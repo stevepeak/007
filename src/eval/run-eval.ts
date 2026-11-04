@@ -1,34 +1,24 @@
 import type { AnyAgentConfig } from '../engine/decision-agent-schema'
 import { hasJudgeChecks } from '../engine/eval-schema'
-import type { WfLogger } from '../engine/logger'
-import { stableEqual } from '../engine/stable-stringify'
 import type { WfDataClient } from '../server/protocol'
 
 import {
-  EMPTY_DRIVE_STATE,
   type EvalCellMode,
   type EvalMatrixModel,
   type EvalMatrixPrompt,
   type EvalPlan,
   expandEvalCells,
 } from './plan'
-import { type EvalRunDrive, tickEvalRun } from './tick'
 
 // Running a Goal — the orchestrator, with no framework in it.
 //
 // The caller creates the umbrella run with a frozen PLAN of every cell, then
-// drives it one non-blocking tick at a time until the plan is exhausted. The
-// tick itself lives in `./tick`; everything here is about launching a sweep and
-// about the one driver that stays attached to it.
+// starts the workflow that works through it. The
+// running of it lives in `./sweep`; everything here is about launching one.
 //
-// What changed, and why it matters to a new caller: the orchestration used to
-// live entirely in the caller's process, as a loop holding the only copy of the
-// work list. If that process went away mid-sweep — a browser tab closing, an
-// MCP request ending — the remaining cells were never launched and the run was
-// stranded with nothing able to finish it. Now the plan is persisted on the run
-// row, so an attached driver is an OPTIMIZATION (it makes progress every few
-// seconds instead of every minute) rather than the only thing keeping the sweep
-// alive. A host that wires the resume backstop picks up whatever is left.
+// A sweep runs entirely on the server, in a workflow of its own (`./sweep`). The
+// plan is persisted on the run row, so whoever launched it only reads progress
+// back, which is why a closed tab or an ended MCP request cannot affect it.
 //
 // Errors on one cell don't abort the batch; the run is finalized over whatever
 // results landed — and EVERY cell lands something, pass, fail, or error, so the
@@ -46,17 +36,6 @@ export type { EvalMatrixModel, EvalMatrixPrompt }
  * report with zero results and no explanation.
  */
 const EVAL_WAIT_TIMEOUT_MS = 15 * 60_000
-const EVAL_POLL_INTERVAL_MS = 3_000
-
-/**
- * How often a driver re-stamps its heartbeat on ticks that changed nothing.
- *
- * A tick that only re-polls cells still in flight has nothing new to persist,
- * so it skips the write — except to keep the heartbeat fresh. This has to sit
- * well inside a host's stale window (the backstop adopts a run whose heartbeat
- * is older than that), or a driver that is still attached looks abandoned.
- */
-const EVAL_HEARTBEAT_INTERVAL_MS = 30_000
 
 /**
  * Concurrent runs one eval may have in flight. Each is a full agent call, so
@@ -96,7 +75,7 @@ export type RunEvalInput = {
    * Run every cell against this agent config instead of the target's published
    * version — the agent editor testing its goals against UNSAVED edits. Nothing
    * is persisted on the AGENT; the config is frozen into the run's plan so a
-   * resuming driver grades the same thing the launcher meant to. The matrix's
+   * restarted sweep grades the same thing the launcher meant to. The matrix's
    * `modelId` / `promptBody` still layer on top of it, so a draft can be swept
    * across models and alternate prompts exactly like a published agent.
    * Omitted → the published version (every other caller).
@@ -111,7 +90,7 @@ export type RunEvalInput = {
   /**
    * The decision model every judge check is graded by. Required when the
    * sweep's Samples carry a judge check — checks cannot name their own, so one
-   * report has one judge. Frozen into the plan so a resuming driver grades by
+   * report has one judge. Frozen into the plan so a restarted sweep grades by
    * the same one.
    */
   decisionJudgeModelId?: string
@@ -119,30 +98,15 @@ export type RunEvalInput = {
    * How each cell executes — see {@link EvalCellMode}. Omitted → `'run'`, the
    * workflow/generation-agent path. The caller supplies it because only the
    * caller has already resolved the Goal's target; the plan then freezes it so
-   * a resuming driver doesn't have to re-derive it from a target that may have
+   * a restarted sweep doesn't have to re-derive it from a target that may have
    * been repointed since.
    */
   mode?: EvalCellMode
   concurrency?: number
-  pollIntervalMs?: number
   timeoutMs?: number
-  onProgress?: (p: { done: number; total: number }) => void
-  /**
-   * Fired the moment the umbrella run row exists (before any cell runs), so the
-   * caller can close its dialog and navigate to the live report while the matrix
-   * keeps fanning out in the background.
-   */
-  onStart?: (evalRunId: string) => void
 }
 
-/**
- * Create the umbrella run with its frozen plan, launching nothing.
- *
- * Split out from `runEval` because the two callers want different things after
- * it: an attached driver ticks the sweep to completion itself, while a caller
- * that cannot outlive the request — the MCP endpoint — starts the first batch
- * and leaves the rest to the host's resume backstop.
- */
+/** Create the umbrella run with its frozen plan, launching nothing. */
 export async function createEvalSweep(
   client: WfDataClient,
   input: RunEvalInput,
@@ -181,120 +145,20 @@ export async function createEvalSweep(
 }
 
 /**
- * Drive a sweep by ticking it until it finishes.
- *
- * `budgetMs` bounds how long this driver stays attached — a caller that cannot
- * run indefinitely (anything inside a request) passes one and lets the backstop
- * take the rest. Omitted, it drives to completion, which is what a browser tab
- * does.
- *
- * Safe to run against a sweep another driver was previously attached to: state
- * is re-read from storage on every tick, so cells already in flight are polled
- * rather than started again. The plan is the exception — it is frozen at
- * creation, so it is read once.
+ * Create a sweep and start the workflow that runs it. If the workflow can't be
+ * started the run is cancelled, so an error here never leaves a run that looks
+ * in progress with nothing behind it.
  */
-export async function driveEvalRun(
-  client: WfDataClient,
-  evalRunId: string,
-  opts: {
-    pollIntervalMs?: number
-    budgetMs?: number
-    onProgress?: (p: { done: number; total: number }) => void
-    now?: () => number
-    /** Where a cell that could not even record its own failure is reported. */
-    logger?: WfLogger
-  } = {},
-): Promise<{ done: boolean }> {
-  const pollIntervalMs = opts.pollIntervalMs ?? EVAL_POLL_INTERVAL_MS
-  const now = opts.now ?? (() => Date.now())
-  const deadline = opts.budgetMs == null ? null : now() + opts.budgetMs
-  let plan: EvalPlan | null = null
-  let lastSavedAt: number | null = null
-
-  for (;;) {
-    const read = await client.getEvalRunDrive(evalRunId, {
-      withPlan: plan == null,
-    })
-    if (!read) return { done: false }
-    const drive: EvalRunDrive = plan ? { ...read, plan } : read
-    // Another driver finished it between our read and this one, or a human
-    // cancelled it. Either way there is nothing left to do.
-    if (drive.status === 'completed' || drive.status === 'cancelled') {
-      return { done: true }
-    }
-    if (!drive.plan) {
-      // Created before plans were persisted. Nothing can resume it, and saying
-      // so beats ticking forever against a run with no work list.
-      throw new Error(
-        `Eval run ${evalRunId} has no plan, so it cannot be driven. It predates resumable sweeps.`,
-      )
-    }
-    plan = drive.plan
-
-    const result = await tickEvalRun(client, {
-      drive,
-      now: now(),
-      logger: opts.logger,
-    })
-    // Out of budget with cells left: this is the last save, so hand the run
-    // back in the same write rather than leaving a heartbeat that would make it
-    // look attended by a driver that has already gone.
-    const handOff = !result.done && deadline != null && now() >= deadline
-    // A tick that started nothing and settled nothing leaves the stored state
-    // as it found it; writing it back would only re-stamp the heartbeat, which
-    // is needed once per interval, not once per poll.
-    const at = now()
-    const mustSave =
-      lastSavedAt == null ||
-      handOff ||
-      result.done ||
-      result.started > 0 ||
-      result.settled > 0 ||
-      at - lastSavedAt >= EVAL_HEARTBEAT_INTERVAL_MS ||
-      !stableEqual(result.state, drive.driveState)
-    if (mustSave) {
-      await client.saveEvalRunDrive({
-        evalRunId,
-        driveState: result.state,
-        release: handOff,
-      })
-      lastSavedAt = at
-    }
-    opts.onProgress?.({
-      done: result.settledKeys.length,
-      total: plan.cells.length,
-    })
-
-    if (result.done) {
-      await client.finalizeEvalRun({ evalRunId })
-      return { done: true }
-    }
-    if (handOff) return { done: false }
-    await new Promise((r) => setTimeout(r, pollIntervalMs))
-  }
-}
-
-/**
- * Launch a sweep and stay attached to it until it finishes.
- *
- * The browser's path: the launch dialog calls this, `onStart` lets it navigate
- * to the live report, and the mutation keeps ticking for as long as the tab is
- * open. If the tab closes, the backstop finishes the sweep — which is new, and
- * the reason this no longer has to be the only driver.
- */
-export async function runEval(
+export async function launchEvalSweep(
   client: WfDataClient,
   input: RunEvalInput,
-): Promise<{ evalRunId: string }> {
-  const { evalRunId } = await createEvalSweep(client, input)
-  input.onStart?.(evalRunId)
-  await driveEvalRun(client, evalRunId, {
-    pollIntervalMs: input.pollIntervalMs,
-    onProgress: input.onProgress,
-  })
-  return { evalRunId }
+): Promise<{ evalRunId: string; plan: EvalPlan }> {
+  const created = await createEvalSweep(client, input)
+  try {
+    await client.startEvalSweep({ evalRunId: created.evalRunId })
+  } catch (err) {
+    await client.cancelEvalRun(created.evalRunId)
+    throw err
+  }
+  return created
 }
-
-/** The empty drive state, re-exported for hosts wiring a resume backstop. */
-export { EMPTY_DRIVE_STATE }
-export type { EvalRunDrive }

@@ -17,8 +17,8 @@ import type {
 } from '../engine/eval-schema'
 import type { WorkflowGraph } from '../engine/graph'
 import type { TriggerEventOption } from '../engine/trigger-registry'
-import type { EvalDriveState, EvalPlan } from '../eval/plan'
-import type { EvalRunDrive } from '../eval/tick'
+import type { EvalPlan, EvalRunDrive } from '../eval/plan'
+import type { RunEvalInput } from '../eval/run-eval'
 
 import type {
   AgentPreviewInput,
@@ -579,6 +579,17 @@ export interface WfDataClient {
   /** Un-archive a row, putting it back in its Goal. Undo for `deleteEvalRow`. */
   restoreEvalRow(rowId: string): Promise<{ ok: true }>
 
+  /**
+   * Create a sweep and start the workflow that runs it. The caller only has to
+   * poll `getEvalRun`, and nothing it does can stop or disturb the sweep.
+   */
+  launchEvalSweep(input: RunEvalInput): Promise<{ evalRunId: string }>
+  /**
+   * Start the workflow for a sweep that exists, or restart one that died. Answers
+   * `started: false` when it is already going or already finished. A host-wired
+   * hook; without it the method rejects with a "not configured" error.
+   */
+  startEvalSweep(input: { evalRunId: string }): Promise<{ started: boolean }>
   /** Create the umbrella eval run over one or more sets (status `queued`). */
   createEvalRun(input: {
     setIds: string[]
@@ -592,14 +603,14 @@ export interface WfDataClient {
     plan?: EvalPlan
   }): Promise<{ evalRunId: string }>
   /**
-   * The state a driver needs to advance a sweep: the frozen plan, the mutable
-   * drive state, and the cell identity of every result already written.
+   * The state a sweep needs to run: the frozen plan, its status, and the cell
+   * identity of every result already written.
    *
    * Separate from `getEvalRun` because this is polled for the length of a run
    * and that one is a report load — live cost/latency stats per result, snapshot
    * drift, previous-hash lookups. Returns null when the run is missing.
    *
-   * The plan never changes after creation, so a driver that already holds it
+   * The plan never changes after creation, so a sweep that already holds it
    * passes `withPlan: false` and gets `plan: null` back instead of re-reading
    * the largest column on the row every tick.
    */
@@ -607,20 +618,6 @@ export interface WfDataClient {
     evalRunId: string,
     opts?: { withPlan?: boolean },
   ): Promise<EvalRunDrive | null>
-  /**
-   * Persist a driver's state and stamp its heartbeat (see `EvalDriveState`).
-   *
-   * `release: true` clears the heartbeat instead of stamping it, handing the run
-   * back so a host's resume backstop adopts it on its next pass. A driver that
-   * is stopping with cells left — out of budget, or a request that has to answer
-   * now — must release, or its own last heartbeat would make the run look
-   * attended for a full stale window.
-   */
-  saveEvalRunDrive(input: {
-    evalRunId: string
-    driveState: EvalDriveState
-    release?: boolean
-  }): Promise<{ ok: true }>
   /**
    * Start ONE row's run for real — a `simulate: true, isEval: true` graph run
    * against the set's target, applying the row's tool setting. This
@@ -643,6 +640,8 @@ export interface WfDataClient {
      * published version the run manifest resolves (the normal path).
      */
     config?: AnyAgentConfig
+    /** Event the run sends its sweep when it settles. See `EvalSweepNotice`. */
+    sweepEvent?: string
   }): Promise<{ wfRunId: string }>
   /**
    * Run and grade ONE cell of a DECISION-agent sweep, in a single call.
@@ -655,7 +654,7 @@ export interface WfDataClient {
    *
    * It writes a `wf_eval_result` on every path a verdict is reached, exactly
    * as `gradeEvalResult` does; a THROW means no row was written and the caller
-   * records the failure (see `tickEvalRun`), preserving the invariant that
+   * records the failure (see `runEvalSweep`), preserving the invariant that
    * every requested cell lands something.
    */
   runDecisionEvalCell(input: {
@@ -732,9 +731,9 @@ export interface WfDataClient {
   /**
    * Call off a sweep that is still queued or running.
    *
-   * Nothing is killed: the status is the signal. `driveEvalRun` re-reads it every
-   * tick and stops, and the resume backstop only adopts `queued` / `running`
-   * runs — so cells already in flight finish and no further cell is launched.
+   * Nothing is killed: the status is the signal. `runEvalSweep` reads it before
+   * starting each cell and stops, so cells already in flight finish and no further
+   * cell is launched.
    * A sweep is billed per cell, so being unable to stop one was money that could
    * only be watched.
    *

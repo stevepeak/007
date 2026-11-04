@@ -53,6 +53,7 @@ import {
   spawnFailureHandlerRun,
   type SpawnedChildRun,
 } from './child-run'
+import { notifyEvalSweep } from './eval-sweep-start'
 import type { GraphWorkflowEnv, GraphWorkflowParams } from './graph-workflow'
 import { logRowOf } from './graph-workflow-dispatch-logs'
 import {
@@ -299,6 +300,12 @@ export async function recordInlineRunFailure<TDeps, E extends GraphWorkflowEnv>(
       runId: p.workflowRunId,
       logger,
     })
+    await notifyEvalSweep({
+      env,
+      notice: p.sweepNotice,
+      runId: p.workflowRunId,
+      logger,
+    })
     if (config.onRunFailed) {
       await notifyHostSafely({
         name: 'on-failed',
@@ -433,11 +440,17 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
   // engine exists for, and the reason a callee that returns bulk should be on
   // the durable engine, which is its own trigger's call to make.
   const sub = p.subRun
-  const report = (payload: CalleeDoneEvent): Promise<void> => {
-    return reportCalleeResultBestEffort({
+  const report = async (payload: CalleeDoneEvent): Promise<void> => {
+    await reportCalleeResultBestEffort({
       env,
       sub,
       payload,
+      runId: p.workflowRunId,
+      logger,
+    })
+    await notifyEvalSweep({
+      env,
+      notice: p.sweepNotice,
       runId: p.workflowRunId,
       logger,
     })

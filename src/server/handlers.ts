@@ -2,9 +2,11 @@ import { z } from 'zod'
 
 import { McpUnauthorizedError } from '../connectors/client'
 import { ConnectorAuthError } from '../connectors/oauth'
+import type { AnyAgentConfig } from '../engine/decision-agent-schema'
 import { errorLogText } from '../engine/error-detail'
 import { resolveWfLogger } from '../engine/logger'
 import { errorMessage } from '../engine/run-node'
+import { launchEvalSweep } from '../eval/run-eval'
 import {
   recordChange,
   StaleBaseError,
@@ -67,6 +69,17 @@ function buildHandlers<TDeps>(
     ...buildEvalHandlers(opts),
     ...buildFeedbackHandlers(opts),
     ...buildConnectorHandlers(opts),
+    // Here rather than with the eval handlers because it builds the sweep through
+    // a client over this same method table.
+    launchEvalSweep: async (c) => {
+      const client = createLocalWfDataClient(opts, { ctx: c.ctx, req: c.req })
+      const { evalRunId } = await launchEvalSweep(client, {
+        ...c.params,
+        // `createEvalRun` validates the plan this ends up in.
+        configOverride: c.params.configOverride as AnyAgentConfig | undefined,
+      })
+      return { evalRunId }
+    },
   }
   return handlers
 }

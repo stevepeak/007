@@ -194,9 +194,6 @@ describe('cancelEvalRun', () => {
     const found = await getEvalRun(db, evalRunId)
     expect(found?.run.status).toBe('cancelled')
     expect(found?.run.finishedAt).not.toBeNull()
-    // The heartbeat is cleared, but the status predicate in `listStaleEvalRuns`
-    // is what actually keeps the backstop from adopting it again.
-    expect(found?.run.heartbeatAt).toBeNull()
     // `total` stays at what was requested; the gap to the result count is the
     // record of what was called off.
     expect(found?.run.total).toBe(10)
@@ -215,7 +212,10 @@ describe('cancelEvalRun', () => {
 describe('narrow eval run reads', () => {
   test('getEvalRunStatus reads the status, and null for a missing run', async () => {
     const evalRunId = await createEvalRun(db, { setIds: [setId], total: 3 })
-    expect(await getEvalRunStatus(db, evalRunId)).toEqual({ status: 'queued' })
+    expect(await getEvalRunStatus(db, evalRunId)).toEqual({
+      status: 'queued',
+      createdBy: null,
+    })
     expect(await getEvalRunStatus(db, 'missing')).toBeNull()
   })
 

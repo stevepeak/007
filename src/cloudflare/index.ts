@@ -13,6 +13,11 @@ export type {
   GraphWorkflowResult,
 } from './graph-workflow'
 export type { RunRoom } from './run-room'
+export {
+  startEvalSweepWorkflow,
+  type EvalSweepBindings,
+  type EvalSweepParams,
+} from './eval-sweep-start'
 export type { InlineRunRoom, RunInlineGraphDeps } from './inline-run'
 export {
   startGraphRun,

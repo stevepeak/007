@@ -52,10 +52,8 @@ describe('package exports ↔ guide.md subpath table', () => {
 // ---------------------------------------------------------------------------
 // Which entry points may contain a browser.
 //
-// `runEval` used to live in `ui/hooks-evals.ts`. Nothing in it was React — it
-// touches a `WfDataClient` and `setTimeout` — but the MODULE imported
-// react-query, so `wf-mcp` could author eval Samples and not run them. Moving
-// it to `eval/run-eval.ts` is what unblocked headless runs.
+// `eval/` has no React in it — it touches a `WfDataClient` and `setTimeout` — and
+// that is what lets a sweep run in a process with no browser.
 //
 // The move is only worth as much as it stays true, and the way it stops being
 // true is quiet: someone adds one import to a file `eval/` already reaches, and

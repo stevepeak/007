@@ -6,7 +6,7 @@ import {
 } from '@tanstack/react-query'
 
 import { hasJudgeChecks } from '../engine/eval-schema'
-import { runEval, type RunEvalInput } from '../eval/run-eval'
+import type { RunEvalInput } from '../eval/run-eval'
 import type {
   CheckTree,
   EvalSampleInput,
@@ -167,14 +167,12 @@ export {
   EVAL_CONCURRENCY_CHOICES,
   type EvalMatrixModel,
   type EvalMatrixPrompt,
-  runEval,
   type RunEvalInput,
 } from '../eval/run-eval'
 
 
-// Kicks off a full client-driven eval run. On success the eval-runs list is
-// invalidated and the new `evalRunId` is returned so the caller can navigate to
-// the report.
+// Starts a sweep on the server. On success the eval-runs list is invalidated and
+// the new `evalRunId` is returned so the caller can navigate to the report.
 /** The check editor's "Try this check": one judge check against one answer. */
 export function usePreviewJudgeCheck() {
   return useWfMutation(
@@ -188,7 +186,7 @@ export function useRunEval() {
   const client = useWfClient()
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (input: RunEvalInput) => runEval(client, input),
+    mutationFn: (input: RunEvalInput) => client.launchEvalSweep(input),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.evalRunsAll }),
   })
 }

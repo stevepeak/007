@@ -38,7 +38,7 @@ import {
 //     target already defines are meaningful (missing / repeated is fine).
 // The suite size is `models × prompts` — 4 models × 4 prompts = 16 tests.
 //
-// The engine fans a run out across that matrix: `runEval` expands each sample
+// The engine fans a run out across that matrix: `expandEvalCells` expands each sample
 // into one run per (model × prompt × best-of-N attempt), and `startEvalRun`
 // swaps the wrapper agent's model / system prompt per run via the run context's
 // `agentOverride`. Each graded result is stamped with its cell so the report can
@@ -239,20 +239,23 @@ export function useRunConfigMatrix({
         ...prompts.map((p, i) => ({ label: `Test prompt ${i + 1}`, body: p.body })),
       ],
     }
-    // Don't await the whole matrix — as soon as the run row exists (`onStart`),
-    // close and hand the caller the run id. The fan-out keeps running in the
-    // background mutation and whatever is watching the run polls it.
-    runEval.mutate({
-      setIds,
-      matrix,
-      concurrency,
-      configOverride: draftConfig,
-      decisionJudgeModelId: needsJudge ? decisionJudgeModelId : undefined,
-      onStart: (evalRunId) => {
-        onClose()
-        onLaunched(evalRunId)
+    // The sweep runs on the server. This answers once its first cells are going,
+    // and whatever is watching the run polls it from there.
+    runEval.mutate(
+      {
+        setIds,
+        matrix,
+        concurrency,
+        configOverride: draftConfig,
+        decisionJudgeModelId: needsJudge ? decisionJudgeModelId : undefined,
       },
-    })
+      {
+        onSuccess: ({ evalRunId }) => {
+          onClose()
+          onLaunched(evalRunId)
+        },
+      },
+    )
   }, [
     canRun,
     selectedIds,

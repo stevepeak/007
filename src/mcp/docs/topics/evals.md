@@ -111,6 +111,6 @@ The report (`get_eval_run`): per-sample verdicts with each check's reason, cost/
 
 ## Resumable runs
 
-The plan (every cell) is frozen on the eval run at launch, so a sweep doesn't depend on the session that started it: `run_eval` launches the first batch and returns; the host's backstop (or an attached console tab) drives the rest. If a run sits at `queued` / `running` without progress, nothing is driving it — `resume_eval_run` settles what finished and launches the next batch (safe to repeat; in-flight cells are polled, not relaunched). `cancel_eval_run` stops launching new cells; cells already started finish and are graded.
+The plan (every cell) is frozen on the eval run at launch, so a sweep doesn't depend on the session that started it: both `run_eval` and the console start a workflow for the sweep and return, and it runs on the server until it finishes. If a run sits at `queued` / `running` without progress, its workflow died — `resume_eval_run` starts a new one that skips every cell with a verdict (safe to repeat; a sweep still going is left alone, and a cell that was mid-run runs again). `cancel_eval_run` stops launching new cells; cells already started finish and are graded.
 
 Related: [[agents]], [[agents/decision]], [[agents/sub-agents]], [[tools]], [[debugging]], [[authoring]].

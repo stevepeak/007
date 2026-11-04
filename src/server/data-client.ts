@@ -152,6 +152,8 @@ export function createWfDataClient(call: WfDataTransport): WfDataClient {
     runDecisionEvalCell: bind('runDecisionEvalCell', 120000),
     deleteEvalRow: (rowId) => send('deleteEvalRow', { rowId }),
     restoreEvalRow: (rowId) => send('restoreEvalRow', { rowId }),
+    launchEvalSweep: bind('launchEvalSweep'),
+    startEvalSweep: bind('startEvalSweep'),
     createEvalRun: bind('createEvalRun'),
     // Launching a real (simulated) run can outrun the default 20s backstop.
     startEvalRun: bind('startEvalRun', 120000),
@@ -164,7 +166,6 @@ export function createWfDataClient(call: WfDataTransport): WfDataClient {
     recordEvalFailure: bind('recordEvalFailure'),
     finalizeEvalRun: bind('finalizeEvalRun'),
     cancelEvalRun: (evalRunId) => send('cancelEvalRun', { evalRunId }),
-    saveEvalRunDrive: bind('saveEvalRunDrive'),
     listChanges: bind('listChanges'),
     listEvalRuns: bind('listEvalRuns'),
     getEvalRun: (evalRunId) => send('getEvalRun', { evalRunId }),

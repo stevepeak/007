@@ -2,17 +2,13 @@ import type { AnyAgentConfig } from '../engine/decision-agent-schema'
 
 // The sweep manifest — what a run was launched to do, written down.
 //
-// This module exists because `wf_eval_run` used to record only `setIds` and a
-// `total` count. The actual list of cells (sample × model × prompt × attempt)
-// lived as a local array inside whichever process called `runEval`, which made
-// the run row a counter rather than a plan: nothing outside that process could
-// say what remained. A browser tab closing or an MCP request ending stranded
-// the sweep with no way for anything else to finish it.
+// `wf_eval_run` records the list of cells (sample × model × prompt × attempt) so
+// the run row is a plan rather than a counter. No process has to stay alive to
+// remember what remains.
 //
 // With the plan persisted, "what is left" becomes derivable by anyone holding
-// the database — `plan.cells` minus the results already written minus the cells
-// currently in flight — so any driver can pick a sweep up where another left
-// off. The plan is FROZEN at launch, like a run manifest: re-expanding it later
+// the database — `plan.cells` minus the results already written — so a restarted
+// sweep picks up where the last one left off. The plan is FROZEN at launch, like a run manifest: re-expanding it later
 // against the live sets would silently change what a half-finished run is
 // measuring if a Sample were added or archived mid-sweep.
 
@@ -63,7 +59,7 @@ export type EvalPlan = {
   /**
    * Run every cell against this agent config instead of the target's published
    * version — the agent editor grading UNSAVED edits. Frozen into the plan
-   * because a resuming driver has no other way to learn it: the draft it was
+   * because a restarted sweep has no other way to learn it: the draft it was
    * launched from may have been edited again, or saved, since. Of whichever
    * shape the target agent's kind declares.
    */
@@ -91,40 +87,14 @@ export type EvalPlan = {
   decisionJudgeModelId?: string
 }
 
-/** A cell that has been started and whose run has not yet reached a verdict. */
-export type EvalInflightCell = {
-  cell: EvalCell
-  wfRunId: string
-  /** Epoch ms — the deadline for this cell is measured from here. */
-  startedAt: number
-}
-
-/**
- * Mutable driver state, persisted beside the plan.
- *
- * `inflight` is the part that matters: a cell whose run is already going has no
- * result row yet, so without this it would read as "not started" and the next
- * driver would launch it a second time — two live runs and a doubled model
- * bill for one cell of the matrix.
- */
-export type EvalDriveState = {
-  version: 1
-  inflight: EvalInflightCell[]
-  /**
-   * Consecutive failed model calls. The circuit breaker survives across ticks
-   * because the failure it protects against — a provider that is down — lasts
-   * far longer than one tick does.
-   */
-  consecutiveErrors: number
-  /** Latched once the breaker trips; the remaining cells are recorded, not run. */
-  providerDown: boolean
-}
-
-export const EMPTY_DRIVE_STATE: EvalDriveState = {
-  version: 1,
-  inflight: [],
-  consecutiveErrors: 0,
-  providerDown: false,
+/** What a sweep reads back from storage. */
+export type EvalRunDrive = {
+  evalRunId: string
+  status: string
+  /** Null for runs created before plans were persisted — those can't run. */
+  plan: EvalPlan | null
+  /** `evalCellKey` of every cell that already has a result row. */
+  settledKeys: string[]
 }
 
 /**
@@ -185,9 +155,8 @@ export function expandEvalCells(
  * Parse a `plan` column back into a plan, or null when it is absent or
  * unreadable.
  *
- * Tolerant rather than strict on purpose: this is read by the backstop across
- * every unfinished run in the table, and one malformed blob must mean "skip
- * this run" — not an exception that stops the whole sweep of runs.
+ * Tolerant rather than strict on purpose: a malformed blob must mean "this run
+ * has no plan", which the caller can say plainly, not a parse exception.
  */
 export function parseEvalPlan(raw: unknown): EvalPlan | null {
   if (!raw || typeof raw !== 'object') return null
@@ -221,30 +190,6 @@ export function parseEvalPlan(raw: unknown): EvalPlan | null {
       p.decisionJudgeModelId.length > 0
         ? p.decisionJudgeModelId
         : undefined,
-  }
-}
-
-/** Parse a `drive_state` column; an unreadable one restarts from empty. */
-export function parseEvalDriveState(raw: unknown): EvalDriveState {
-  if (!raw || typeof raw !== 'object') return EMPTY_DRIVE_STATE
-  const s = raw as Partial<EvalDriveState>
-  if (s.version !== 1) return EMPTY_DRIVE_STATE
-  const inflight = Array.isArray(s.inflight)
-    ? s.inflight.filter(
-        (i): i is EvalInflightCell => { return !!i &&
-          typeof i === 'object' &&
-          typeof i.wfRunId === 'string' &&
-          typeof i.startedAt === 'number' &&
-          !!i.cell &&
-          typeof i.cell.rowId === 'string' },
-      )
-    : []
-  return {
-    version: 1,
-    inflight,
-    consecutiveErrors:
-      typeof s.consecutiveErrors === 'number' ? s.consecutiveErrors : 0,
-    providerDown: s.providerDown === true,
   }
 }
 

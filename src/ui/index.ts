@@ -18,7 +18,6 @@ export {
   type WfTextareaProps,
 } from './primitives'
 export {
-  runEval,
   useAgent,
   useAgents,
   useAgentVersions,

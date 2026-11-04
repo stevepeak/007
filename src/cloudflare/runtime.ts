@@ -8,6 +8,7 @@
 // helpers + erased type re-exports), so pulling `wfConfig` into a Node/edge
 // route never drags `cloudflare:workers` in. Import from here ONLY in your
 // Worker entry (see guide §4); never from host config, tools, or the data route.
+export { makeEvalSweepWorkflow } from './eval-sweep-workflow'
 export { makeGraphWorkflow } from './graph-workflow'
 export {
   INLINE_HEARTBEAT_MS,

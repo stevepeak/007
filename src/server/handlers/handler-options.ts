@@ -4,6 +4,7 @@ import type {
   NodeExecution,
   WorkflowGraph,
 } from '../../engine/graph'
+import type { EvalSweepNotice } from '../../engine/run-input'
 import type { WfDb } from '../../storage/client'
 import type { DashboardAnalytics } from '../../storage/data'
 import type { WfChangeSource } from '../../storage/schema'
@@ -283,6 +284,14 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
    * start because it holds the runtime bindings. If omitted, `startEvalRun`
    * rejects with "not configured".
    */
+  /**
+   * Start the workflow that runs an eval sweep, or restart one that died: on
+   * Cloudflare, `startEvalSweepWorkflow`. If omitted, launching a sweep rejects
+   * with "not configured".
+   */
+  startEvalSweep?: (input: {
+    evalRunId: string
+  }) => Promise<{ started: boolean }>
   startEvalRun?: (input: {
     evalRunId: string
     rowId: string
@@ -340,6 +349,14 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
      * failing eval cell take ~21 minutes to report.
      */
     executionOverride: NodeExecution
+    /**
+     * Who launched the sweep. `ctx` has no user on it inside the sweep's workflow,
+     * so a host that limits a sample's `context` to what a person may see has to
+     * check this one.
+     */
+    launchedBy: string | null
+    /** Pass to `startGraphRun`, so the run wakes the sweep waiting on it. */
+    sweepNotice?: EvalSweepNotice
     ctx: WfServerContext
     req: Request
   }) => Promise<{ wfRunId: string }>

@@ -357,6 +357,25 @@ export const wfInputSchemas = {
     checks: PASSED_THROUGH.optional(),
     sortOrder: z.number().optional(),
   }),
+  launchEvalSweep: z.object({
+    setIds: z.array(z.string()),
+    // An unsaved agent config. Validated with the plan it is frozen into.
+    configOverride: PASSED_THROUGH.optional(),
+    matrix: z
+      .object({
+        models: z.array(
+          z.object({ modelId: z.string(), attempts: z.number() }),
+        ),
+        prompts: z.array(
+          z.object({ label: z.string(), body: z.string().optional() }),
+        ),
+      })
+      .optional(),
+    decisionJudgeModelId: z.string().optional(),
+    mode: z.enum(['run', 'decision']).optional(),
+    concurrency: z.number().optional(),
+    timeoutMs: z.number().optional(),
+  }),
   createEvalRun: z.object({
     setIds: z.array(z.string()),
     total: z.number().optional(),
@@ -365,11 +384,7 @@ export const wfInputSchemas = {
     // not resumable" rather than an exception.
     plan: PASSED_THROUGH.optional(),
   }),
-  saveEvalRunDrive: z.object({
-    evalRunId: z.string().min(1),
-    driveState: PASSED_THROUGH,
-    release: z.boolean().optional(),
-  }),
+  startEvalSweep: idInput('evalRunId'),
   startEvalRun: z.object({
     evalRunId: z.string().min(1),
     rowId: z.string().min(1),
@@ -377,6 +392,7 @@ export const wfInputSchemas = {
     promptBody: z.string().optional(),
     // The unsaved-draft override — a whole AgentConfig, parsed by the runner.
     config: PASSED_THROUGH.optional(),
+    sweepEvent: z.string().optional(),
   }),
   runDecisionEvalCell: z.object({
     evalRunId: z.string().min(1),

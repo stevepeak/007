@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { EMPTY_DRIVE_STATE, parseEvalPlan } from '../eval/plan'
+import { parseEvalPlan } from '../eval/plan'
 import type {
   WfDataClient,
   WfEvalResultDTO,
@@ -31,17 +31,19 @@ function stubClient(partial: Partial<WfDataClient>): WfDataClient {
   // it on every path now (to tell a decision-agent sweep from a run one), so a
   // case that says nothing about agents means "no decision agents", not
   // "this method does not exist".
-  return { listAgents: async () => [], ...partial } as WfDataClient
+  return {
+    listAgents: async () => [],
+    startEvalSweep: async () => ({ started: true }),
+    ...partial,
+  } as WfDataClient
 }
 
 /**
  * The drive half of a stub client.
  *
- * `run_eval` no longer fires a sweep off into the background — it creates the
- * run WITH its plan and drives one tick before answering, so the plan has to be
- * readable back for anything to launch at all. This stubs that round trip in
- * memory: whatever `createEvalRun` was handed comes back out of
- * `getEvalRunDrive`, with nothing settled and nothing in flight.
+ * `run_eval` creates the run WITH its plan and starts its workflow before
+ * answering. This stubs that round trip in memory: whatever `createEvalRun` was
+ * handed comes back out of `getEvalRunDrive`, with nothing settled.
  */
 function driveStubs(over: Partial<WfDataClient> = {}): Partial<WfDataClient> {
   let plan: unknown = null
@@ -54,10 +56,9 @@ function driveStubs(over: Partial<WfDataClient> = {}): Partial<WfDataClient> {
       evalRunId,
       status: 'queued',
       plan: parseEvalPlan(plan),
-      driveState: EMPTY_DRIVE_STATE,
       settledKeys: [],
     }),
-    saveEvalRunDrive: async () => ({ ok: true as const }),
+    startEvalSweep: async () => ({ started: true }),
     ...over,
   }
 }
@@ -633,7 +634,7 @@ describe('run_eval — bounding the sweep', () => {
 
   test('rejects prompt variations with no model to run them on', async () => {
     const client = stubClient({ getEvalSet: async () => setWith(1) as never })
-    // Without a model the matrix expands to zero cells and `runEval` would
+    // Without a model the matrix expands to zero cells and the sweep would
     // finalize an empty report that looks like a clean pass.
     await expect(
       toolNamed('run_eval').run(client, {
@@ -651,11 +652,15 @@ describe('run_eval — bounding the sweep', () => {
 })
 
 describe('run_eval — returning before the sweep finishes', () => {
-  test('answers once the first cells are launched, not on completion', async () => {
-    let finalized = false
-    let starts = 0
+  test('starts the workflow and answers, without running any cell itself', async () => {
+    const starts: string[] = []
     const client = stubClient({
-      ...driveStubs(),
+      ...driveStubs({
+        startEvalSweep: async ({ evalRunId }) => {
+          starts.push(evalRunId)
+          return { started: true }
+        },
+      }),
       getEvalSet: async () => {
         return {
           set: { id: 'set_1' },
@@ -665,57 +670,40 @@ describe('run_eval — returning before the sweep finishes', () => {
           })),
         } as never
       },
-      startEvalRun: async () => {
-        starts += 1
-        return { wfRunId: `run_${starts}` }
-      },
-      // Nothing the first tick started has finished yet — which is the normal
-      // case for a sweep whose cells take minutes.
-      getRunStatuses: async (ids) => {
-        return Object.fromEntries(ids.map((id) => [id, { status: 'running', error: null }])) as never
-      },
-      gradeEvalResult: async () => ({}) as never,
-      finalizeEvalRun: async () => {
-        finalized = true
-        return {} as never
-      },
     })
     const out = (await toolNamed('run_eval').run(client, {
       setIds: ['set_1'],
       concurrency: 2,
     })) as { evalRunId: string; next: string; launched: { totalRuns: number } }
     expect(out.evalRunId).toBe('er_1')
-    // One tick's worth of cells, not all six: the rest are the backstop's.
-    expect(starts).toBe(2)
+    expect(starts).toEqual(['er_1'])
     expect(out.launched.totalRuns).toBe(6)
-    expect(finalized).toBe(false)
-    expect(out.next).toContain('get_eval_run')
+    expect(out.next).toContain('runs on the server')
   })
 
-  // The old contract was that the tool fired the sweep into the background and
-  // returned. That silently stopped working when this endpoint became a Worker
-  // request: the background work was cancelled with the request context, and
-  // every MCP-launched run sat at `queued` with no error anywhere. What the
-  // caller is promised now is that the run is DRIVABLE without it.
-  test('leaves the rest of the sweep to the server, not to this session', async () => {
+  test('cancels the run when its workflow cannot start, and says so', async () => {
+    const cancelled: string[] = []
     const client = stubClient({
-      ...driveStubs(),
+      ...driveStubs({
+        startEvalSweep: async () => {
+          throw new Error('Workflows is unavailable')
+        },
+      }),
       getEvalSet: async () => {
         return {
           set: { id: 'set_1' },
           rows: [{ id: 'row_0', archived: false }],
         } as never
       },
-      startEvalRun: async () => ({ wfRunId: 'run_1' }),
-      getRunStatuses: async (ids) => {
-        return Object.fromEntries(ids.map((id) => [id, { status: 'running', error: null }])) as never
+      cancelEvalRun: async (evalRunId) => {
+        cancelled.push(evalRunId)
+        return {} as never
       },
-      finalizeEvalRun: async () => ({}) as never,
     })
-    const out = (await toolNamed('run_eval').run(client, {
-      setIds: ['set_1'],
-    })) as { next: string }
-    expect(out.next).toContain('runs on the server')
+    await expect(
+      toolNamed('run_eval').run(client, { setIds: ['set_1'] }),
+    ).rejects.toThrow('Workflows is unavailable')
+    expect(cancelled).toEqual(['er_1'])
   })
 
   test('a failure BEFORE the run row exists still reaches the caller', async () => {
@@ -829,12 +817,18 @@ describe('run_eval — grading an unsaved draft', () => {
   }
 
   test('rides the draft config onto every cell', async () => {
-    const { started, client } = stub()
+    let plan: { configOverride?: unknown } | undefined
+    const { client } = stub({
+      createEvalRun: async (input: { plan?: unknown }) => {
+        plan = input.plan as typeof plan
+        return { evalRunId: 'er_1' }
+      },
+    })
     const out = (await toolNamed('run_eval').run(client, {
       setIds: ['set_1'],
       draftAgentId: 'a1',
     })) as { launched: { target: string } }
-    expect(started[0]?.config).toEqual(draftConfig)
+    expect(plan?.configOverride).toEqual(draftConfig)
     // A draft run and a published run look identical in the report afterwards,
     // so which one this was gets said on the way out.
     expect(out.launched.target).toContain('draft')
@@ -879,7 +873,7 @@ describe('run_eval — grading an unsaved draft', () => {
   // useless. A sweep launched to answer "did my edit help?" would otherwise
   // measure the live config and read as though it measured the edit.
   test('warns when the draft is identical to what is published', async () => {
-    const { started, client } = stub({
+    const { client } = stub({
       getAgent: async () => {
         return {
           agent: { id: 'a1' },
@@ -894,7 +888,6 @@ describe('run_eval — grading an unsaved draft', () => {
     })) as { launched: { unsavedFields: string[]; draftWarning: string } }
     // Not a refusal — the run is as valid as any other, it just answers a
     // different question than the caller thinks.
-    expect(started).toHaveLength(1)
     expect(out.launched.unsavedFields).toEqual([])
     expect(out.launched.draftWarning).toContain('IDENTICAL')
   })
@@ -1292,7 +1285,7 @@ describe('run_eval — per-model attempts and the judge pin', () => {
 
   // The judge is the measuring instrument, so the one a launch names — or
   // defaulted to — is frozen on the plan and echoed back.
-  test('freezes the judge onto the plan so a resuming driver grades the same way', async () => {
+  test('freezes the judge onto the plan so a restarted sweep grades the same way', async () => {
     const { client, planOf } = stubs()
     const out = (await toolNamed('run_eval').run(client, {
       setIds: ['set_1'],
@@ -1327,45 +1320,40 @@ describe('run_eval — per-model attempts and the judge pin', () => {
 })
 
 describe('resume_eval_run', () => {
-  test('ticks a stalled sweep and reports what moved', async () => {
-    let ticked = 0
-    let results = 1
-    const client = stubClient({
-      getEvalRun: async () => { return detail({
-          status: 'running',
-          total: 4,
-          results: Array.from({ length: results }, (_, i) => { return result({ id: `res_${i}`, rowId: `row_${i}` }) },
-          ),
-        }) },
-      getEvalRunDrive: async (evalRunId: string) => {
-        ticked += 1
-        results = 2
-        return {
-          evalRunId,
-          status: 'running',
-          plan: parseEvalPlan({
-            version: 1,
-            cells: [{ rowId: 'row_0' }, { rowId: 'row_1' }],
-            concurrency: 1,
-            timeoutMs: 1000,
-          }),
-          driveState: EMPTY_DRIVE_STATE,
-          settledKeys: [],
-        }
-      },
-      saveEvalRunDrive: async () => ({ ok: true as const }),
-      startEvalRun: async () => ({ wfRunId: 'run_1' }),
-      getRunStatuses: async (ids) => {
-        return Object.fromEntries(ids.map((id) => [id, { status: 'running', error: null }])) as never
-      },
+  const withPlan = (over: Partial<WfDataClient>) => {
+    return stubClient({
+      getEvalRun: async () => detail({ results: [], status: 'running', total: 4 }),
+      getEvalRunDrive: async (evalRunId: string) => ({
+        evalRunId,
+        status: 'running',
+        plan: parseEvalPlan({
+          version: 1,
+          cells: [{ rowId: 'row_0' }],
+          concurrency: 1,
+          timeoutMs: 1000,
+        }),
+        settledKeys: [],
+      }),
+      ...over,
     })
-    const out = (await toolNamed('resume_eval_run').run(client, {
-      evalRunId: 'er_1',
-    })) as { done: boolean; progressedBy: number; next: string }
-    expect(ticked).toBeGreaterThan(0)
-    expect(out.done).toBe(false)
-    expect(out.progressedBy).toBe(1)
-    expect(out.next).toContain('resume_eval_run again')
+  }
+
+  test('restarts a sweep whose workflow died', async () => {
+    const out = (await toolNamed('resume_eval_run').run(
+      withPlan({ startEvalSweep: async () => ({ started: true }) }),
+      { evalRunId: 'er_1' },
+    )) as { started: boolean; next: string }
+    expect(out.started).toBe(true)
+    expect(out.next).toContain('Restarted')
+  })
+
+  test('leaves a sweep alone while its workflow is still going', async () => {
+    const out = (await toolNamed('resume_eval_run').run(
+      withPlan({ startEvalSweep: async () => ({ started: false }) }),
+      { evalRunId: 'er_1' },
+    )) as { started: boolean; next: string }
+    expect(out.started).toBe(false)
+    expect(out.next).toContain('still going')
   })
 
   test('changes nothing on a run that already finished', async () => {
@@ -1404,7 +1392,6 @@ describe('resume_eval_run', () => {
         status: 'running',
         // The permanent condition: created before plans were persisted.
         plan: null,
-        driveState: EMPTY_DRIVE_STATE,
         settledKeys: [],
       }),
     })

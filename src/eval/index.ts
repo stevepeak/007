@@ -55,26 +55,28 @@ export {
 } from './grade'
 export { EVAL_NODE_EXECUTION } from './execution-policy'
 export {
+  MAX_CONSECUTIVE_CELL_ERRORS,
+  runEvalSweep,
+  type EvalSweepStep,
+} from './sweep'
+export {
   createEvalSweep,
   DEFAULT_EVAL_CONCURRENCY,
-  driveEvalRun,
   EVAL_CONCURRENCY_CHOICES,
-  runEval,
+  launchEvalSweep,
   type EvalMatrixModel,
   type EvalMatrixPrompt,
   type RunEvalInput,
 } from './run-eval'
 export {
-  EMPTY_DRIVE_STATE,
   evalCellKey,
   expandEvalCells,
-  parseEvalDriveState,
   parseEvalPlan,
   resolveEvalCellMode,
   type EvalCell,
   type EvalCellMode,
-  type EvalDriveState,
   type EvalPlan,
+  type EvalRunDrive,
 } from './plan'
 export {
   agentCallTotals,
@@ -86,12 +88,6 @@ export {
   type MatrixCell,
   type MatrixSummary,
 } from './report'
-export {
-  MAX_CONSECUTIVE_CELL_ERRORS,
-  tickEvalRun,
-  type EvalRunDrive,
-  type EvalTickResult,
-} from './tick'
 export {
   buildAgentWrapperGraph,
   ensureAgentEvalWrapper,

@@ -12,6 +12,9 @@ import type { NodeExecution, WfEngine } from './graph-schema'
 // `./cloudflare` and re-exports these, so `@stevepeak/007/cloudflare` remains a
 // complete import surface for a Worker.
 
+/** Where a run reports that it settled, for the eval sweep waiting on it. */
+export type EvalSweepNotice = { instanceId: string; eventType: string }
+
 export type StartGraphRunInput = RunFlags & {
   workflowVersionId: string
   triggerKind: string
@@ -53,6 +56,12 @@ export type StartGraphRunInput = RunFlags & {
    * instead of exhausting the 20-minute AI default four times over.
    */
   executionOverride?: NodeExecution
+  /**
+   * Wake this eval sweep when the run settles. Only the inline engine sends it,
+   * which is the engine an eval's wrapper always runs on. A sweep whose notice
+   * never comes finds out at its own timeout, by reading the run's status.
+   */
+  sweepNotice?: EvalSweepNotice
   /** Resume mode: replay a prior failed run's completed steps into this run and
    * pick up at the failed node. The prior run must use the same version. */
   resumeFromRunId?: string

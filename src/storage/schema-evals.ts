@@ -104,22 +104,13 @@ export const wfEvalRun = sqliteTable(
     // cell this run was launched to produce, plus the draft config and
     // concurrency it was launched with. See `EvalPlan`.
     //
-    // This column is what makes an eval run RESUMABLE. Before it, the cell list
-    // existed only as a local array in whichever process called `runEval`, so
-    // the row was a counter rather than a plan: nothing else could tell what
-    // was left to do. A browser tab closing or an MCP request ending therefore
-    // stranded the sweep permanently, with no way for anything to pick it up.
-    // NULL for runs created before this column existed — those are not
-    // resumable and the backstop skips them.
+    // This column is what makes an eval run RESUMABLE: any process holding the
+    // database can tell what is left to do, without the one that launched it.
+    // NULL for runs created before this column existed — those cannot be run.
     plan: text('plan', { mode: 'json' }),
-    // Mutable driver state: which cells are in flight (with the `wf_run` each
-    // one started) and the circuit breaker's tally. Held here rather than in
-    // the driver's memory for the same reason as `plan` — a cell already
-    // started must not be started again by whoever picks the sweep up next.
+    // Unused since sweeps became workflows. Dropped in a later schema change.
     driveState: text('drive_state', { mode: 'json' }),
-    // Last time a driver made progress on this run. The backstop adopts a run
-    // only once this goes stale, which is what keeps it from stealing cells
-    // from a browser tab that is actively driving the same sweep.
+    // Unused since sweeps became workflows. Dropped in a later schema change.
     heartbeatAt: integer('heartbeat_at', { mode: 'timestamp' }),
     startedAt: integer('started_at', { mode: 'timestamp' }),
     finishedAt: integer('finished_at', { mode: 'timestamp' }),
@@ -128,7 +119,6 @@ export const wfEvalRun = sqliteTable(
   },
   (t) => [
     index('wf_eval_run_created_idx').on(t.createdAt),
-    // The backstop's only query: unfinished runs, oldest heartbeat first.
     index('wf_eval_run_heartbeat_idx').on(t.status, t.heartbeatAt),
   ],
 )
