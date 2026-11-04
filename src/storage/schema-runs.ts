@@ -74,7 +74,8 @@ export const wfRun = sqliteTable(
       .default(sql`'{}'`),
     // Frozen-at-run-start resolution of every floating reference (agents) to
     // the exact published version used, so a run is fully reproducible even as
-    // its leaf agents drift. See WfRunManifestEntry.
+    // its leaf agents drift. Holds refs, not version content, and stays `[]` on
+    // a spawned run, which uses its parent's. See WfRunManifestRef.
     manifest: text('manifest', { mode: 'json' })
       .notNull()
       .default(sql`'[]'`),

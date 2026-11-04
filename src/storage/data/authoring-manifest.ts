@@ -1,13 +1,24 @@
 import { eq, inArray } from 'drizzle-orm'
 
-import { decisionAgentConfigSchema } from '../../engine/decision-agent-schema'
+import {
+  decisionAgentConfigSchema,
+  type DecisionAgentConfig,
+} from '../../engine/decision-agent-schema'
 import {
   agentConfigSchema,
+  type AgentConfig,
   type WfRunManifestEntry,
+  type WfRunManifestRef,
   type WorkflowGraph,
 } from '../../engine/graph'
 import type { WfDb } from '../client'
-import { wfAgent, type wfAgentVersion, wfModel, wfWorkflow } from '../schema'
+import {
+  wfAgent,
+  wfAgentVersion,
+  wfModel,
+  wfWorkflow,
+  wfWorkflowVersion,
+} from '../schema'
 
 import { agentPinKey, resolveAgentVersions } from './authoring-agents'
 import {
@@ -25,9 +36,9 @@ import { selectChunked } from './shared'
 /**
  * Resolve every floating reference reachable from a graph — its agents AND the
  * workflows it calls, transitively — to their latest published versions, and
- * flatten them into one manifest frozen into `wf_run.manifest` at run start.
- * A called workflow's graph is frozen in whole (it runs inline as a subgraph);
- * its own agents and sub-workflows are resolved into the SAME flat manifest, so
+ * flatten them into one manifest, whose refs are frozen into `wf_run.manifest`
+ * at run start. A called workflow's version is frozen as a whole (it runs inline
+ * as a subgraph); its own agents and sub-workflows are resolved into the SAME flat manifest, so
  * nested nodes find their entries. An agent's DELEGATION whitelist
  * (`config.subAgents.targets`) is resolved the same way — a `spawn_*` tool
  * launches those targets inline at run time, so they must be in the manifest
@@ -236,4 +247,155 @@ export async function resolveRunManifest(
     }
   }
   return entries
+}
+
+// ---------------------------------------------------------------------------
+// Run manifest hydration
+// ---------------------------------------------------------------------------
+
+type VersionContent =
+  | { kind: 'agent'; config: AgentConfig }
+  | { kind: 'decision-agent'; config: DecisionAgentConfig }
+  | { kind: 'workflow'; graph: WorkflowGraph }
+
+const VERSION_CONTENT_CACHE_MAX = 256
+const VERSION_READ_ATTEMPTS = 3
+const VERSION_READ_BACKOFF_MS = 100
+
+/**
+ * Parsed version content by `versionId`, per isolate. Never stale: a version's
+ * config and graph are immutable. Keyed by the driver for the same reason as
+ * the price-map memo in `runs-cost.ts`.
+ */
+const versionContentCache = new WeakMap<object, Map<string, VersionContent>>()
+
+function versionContentCacheFor(db: WfDb): Map<string, VersionContent> | null {
+  const client = (db as unknown as { $client?: unknown }).$client
+  if (typeof client !== 'object' || client === null) return null
+  let cache = versionContentCache.get(client)
+  if (!cache) {
+    cache = new Map()
+    versionContentCache.set(client, cache)
+  }
+  return cache
+}
+
+async function readVersionRows(db: WfDb, refs: readonly WfRunManifestRef[]) {
+  const idsOf = (workflow: boolean) => {
+    return [
+      ...new Set(
+        refs
+          .filter((r) => (r.kind === 'workflow') === workflow)
+          .map((r) => r.versionId),
+      ),
+    ]
+  }
+  const [agentRows, workflowRows] = await Promise.all([
+    selectChunked(idsOf(false), (ids) => {
+      return db
+        .select({ id: wfAgentVersion.id, content: wfAgentVersion.config })
+        .from(wfAgentVersion)
+        .where(inArray(wfAgentVersion.id, ids))
+    }),
+    selectChunked(idsOf(true), (ids) => {
+      return db
+        .select({ id: wfWorkflowVersion.id, content: wfWorkflowVersion.graph })
+        .from(wfWorkflowVersion)
+        .where(inArray(wfWorkflowVersion.id, ids))
+    }),
+  ])
+  return [...agentRows, ...workflowRows]
+}
+
+/**
+ * The durable engine hydrates outside `step.do`, because a step would journal
+ * the content on every run. That leaves it no platform retry, so a transient D1
+ * failure is retried here: thrown from the run body, it would end the instance
+ * without recording anything on the run.
+ */
+async function readVersionRowsWithRetry(
+  db: WfDb,
+  refs: readonly WfRunManifestRef[],
+) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await readVersionRows(db, refs)
+    } catch (err) {
+      if (attempt >= VERSION_READ_ATTEMPTS) throw err
+      await new Promise((resolve) => {
+        setTimeout(resolve, VERSION_READ_BACKOFF_MS * 2 ** attempt)
+      })
+    }
+  }
+}
+
+function parseVersionContent(
+  ref: WfRunManifestRef,
+  content: unknown,
+): VersionContent {
+  switch (ref.kind) {
+    case 'workflow':
+      return { kind: ref.kind, graph: content as WorkflowGraph }
+    case 'decision-agent':
+      return {
+        kind: ref.kind,
+        config: decisionAgentConfigSchema.parse(content),
+      }
+    case 'agent':
+      return { kind: ref.kind, config: agentConfigSchema.parse(content) }
+  }
+}
+
+/**
+ * Turn frozen refs back into the entries the engine executes, by `versionId`, so
+ * a publish since the run started changes nothing. Rows written when manifests
+ * embedded their content hydrate the same way: the embedded copy is ignored.
+ *
+ * A ref whose version no longer exists (its workflow was deleted) is dropped, so
+ * a node that needs it fails with the usual "not in the manifest" error.
+ */
+export async function hydrateRunManifest(
+  db: WfDb,
+  refs: readonly WfRunManifestRef[],
+): Promise<WfRunManifestEntry[]> {
+  const cache = versionContentCacheFor(db)
+  const contents = new Map<string, VersionContent>()
+  const misses = new Map<string, WfRunManifestRef>()
+  for (const ref of refs) {
+    const cached = cache?.get(ref.versionId)
+    if (cached) contents.set(ref.versionId, cached)
+    else misses.set(ref.versionId, ref)
+  }
+  if (misses.size > 0) {
+    const rows = await readVersionRowsWithRetry(db, [...misses.values()])
+    for (const { id, content } of rows) {
+      const ref = misses.get(id)
+      if (!ref) continue
+      const parsed = parseVersionContent(ref, content)
+      contents.set(id, parsed)
+      if (!cache) continue
+      if (cache.size >= VERSION_CONTENT_CACHE_MAX) {
+        const oldest = cache.keys().next()
+        if (!oldest.done) cache.delete(oldest.value)
+      }
+      cache.set(id, parsed)
+    }
+  }
+  return refs.flatMap((ref): WfRunManifestEntry[] => {
+    const cached = contents.get(ref.versionId)
+    if (!cached) return []
+    // Cloned because the cache is shared across runs: nothing one run does to
+    // its entries may reach another.
+    const content = structuredClone(cached)
+    if (ref.kind === 'workflow' && content.kind === 'workflow') {
+      return [{ ...ref, graph: content.graph }]
+    }
+    if (ref.kind === 'decision-agent' && content.kind === 'decision-agent') {
+      return [{ ...ref, config: content.config }]
+    }
+    if (ref.kind === 'agent' && content.kind === 'agent') {
+      return [{ ...ref, config: content.config }]
+    }
+    return []
+  })
 }

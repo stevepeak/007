@@ -1,8 +1,9 @@
 import type { RunFailurePayload } from '../engine/failure-route'
 import {
+  toManifestRefs,
   workflowGraphShapeSchema,
   type WfEngine,
-  type WfRunManifestEntry,
+  type WfRunManifestRef,
   type WfWorkflowManifestEntry,
 } from '../engine/graph'
 import {
@@ -109,9 +110,10 @@ export type SpawnCalleeRunArgs = {
    * The caller's frozen manifest, passed down instead of re-resolved: the
    * callee's own references are already in it (resolution is transitive), and
    * re-resolving would float them to whatever is published at that moment,
-   * splitting one logical run across two prompt versions.
+   * splitting one logical run across two prompt versions. Only its refs reach
+   * the child's params.
    */
-  manifest: WfRunManifestEntry[]
+  manifest: readonly WfRunManifestRef[]
   /** The caller's Sentry trace, so the callee's spans join one distributed
    *  trace instead of starting a detached second one. */
   traceId?: string
@@ -195,7 +197,7 @@ export async function spawnCalleeRun(
     workflowVersionId: entry.versionId,
     triggerInput: args.triggerInput,
     runContext,
-    inheritedManifest: args.manifest,
+    inheritedManifest: toManifestRefs(args.manifest),
     subRun: { parent: args.parent, eventType: args.eventType },
   }
 
@@ -231,7 +233,7 @@ export async function spawnFailureHandlerRun(
     graph: unknown
     workflowVersionId: string
     runContext: GraphRunContextInput
-    manifest: WfRunManifestEntry[]
+    manifest: readonly WfRunManifestRef[]
     traceId?: string
     payload: RunFailurePayload
   },
@@ -266,7 +268,7 @@ export async function spawnFailureHandlerRun(
     workflowVersionId: args.workflowVersionId,
     triggerInput: args.payload,
     runContext,
-    inheritedManifest: args.manifest,
+    inheritedManifest: toManifestRefs(args.manifest),
     failureHandler: { nodeId: handler.id, route: args.payload.route },
   }
   const engine = handler.config.engine ?? DEFAULT_WF_ENGINE

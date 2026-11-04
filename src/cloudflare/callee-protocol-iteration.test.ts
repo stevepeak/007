@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import type { WfRunManifestEntry } from '../engine/graph'
+import { toManifestRefs, type WfRunManifestEntry } from '../engine/graph'
 
 import {
   calleeEventType,
@@ -18,7 +18,13 @@ import type { GraphWorkflowParams } from './graph-workflow'
 // input — so they are pinned here rather than left to review.
 
 const MANIFEST: WfRunManifestEntry[] = [
-  { kind: 'agent', id: 'agent-1', versionId: 'agent-1-v3', versionNumber: 3 },
+  {
+    kind: 'agent',
+    id: 'agent-1',
+    versionId: 'agent-1-v3',
+    versionNumber: 3,
+    config: { prompt: 'a full agent config' },
+  },
 ] as unknown as WfRunManifestEntry[]
 
 const parent = {
@@ -59,7 +65,14 @@ describe('iterationItemParams', () => {
     // Without this the child re-resolves every floating reference at ITS start,
     // so a publish landing mid-run splits one logical run across two prompt
     // versions — the exact thing the manifest exists to prevent.
-    expect(build(0, 'a').inheritedManifest).toEqual(MANIFEST)
+    expect(build(0, 'a').inheritedManifest).toEqual(toManifestRefs(MANIFEST))
+  })
+
+  test('hands the child refs, so 1000 items carry no version content', () => {
+    const [ref] = build(0, 'a').inheritedManifest ?? []
+    expect(ref).toBeDefined()
+    expect(ref).not.toHaveProperty('config')
+    expect(ref).not.toHaveProperty('graph')
   })
 
   test('runs against the parent version and carries the parent run context', () => {

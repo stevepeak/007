@@ -46,9 +46,10 @@ A pin on a version that was never published, or an `agentId` that does not exist
 
 ## The run manifest
 
-At run start every floating reference is resolved, transitively through called workflows and sub-agent targets, to `{ id, versionId, versionNumber, config|graph }`, and stored on the run. Consequences:
+At run start every floating reference is resolved, transitively through called workflows and sub-agent targets, to an exact version, and a reference to each (`{ kind, id, versionId, versionNumber, pinnedVersion, name, contextLength }`) is stored on the run. The config or graph itself is loaded from the immutable version row. Consequences:
 
-- A run is reproducible from its own row, even after its agents change or are archived.
+- A run keeps executing the versions it froze, even after its agents change or are archived. Deleting a workflow deletes its versions, so a run still calling it fails with "not in the manifest".
+- A spawned run (a called workflow, a durable iteration item, an `on-failure` handler) uses its parent's manifest. Its own `wf_run.manifest` is `[]`; find what it executed on its steps, or follow `parent_run_id`.
 - Republishing an agent does not affect runs already in flight, but changes every run started after.
 - `retry_run` `restart` resolves a **new** manifest (latest versions), while `resume` keeps the original version.
 - Eval drift has two axes. A sample's hash can't see that its floating target was republished, so `get_eval_run` reports that separately (`agentRepublishedSinceLastRun`). See [[evals]].

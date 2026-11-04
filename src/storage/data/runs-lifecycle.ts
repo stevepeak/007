@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 
 import type { CancelledBy } from '../../engine/failure-route'
-import type { WfRunManifestEntry } from '../../engine/graph'
+import { toManifestRefs, type WfRunManifestRef } from '../../engine/graph'
 import type { WfDb } from '../client'
 import { TOP_LEVEL_ITEM_INDEX, wfRun } from '../schema'
 
@@ -76,14 +76,18 @@ export async function createRun(
   return id
 }
 
-/** Freeze the resolved reference manifest onto the run (once, at run start). */
+/**
+ * Freeze the resolved reference manifest onto the run (once, at run start). Only
+ * refs are stored, whatever the caller holds. A spawned run stores nothing: it
+ * runs on its parent's manifest, reachable through `parent_run_id`.
+ */
 export async function setRunManifest(
   db: WfDb,
-  input: { runId: string; manifest: WfRunManifestEntry[] },
+  input: { runId: string; manifest: readonly WfRunManifestRef[] },
 ) {
   await db
     .update(wfRun)
-    .set({ manifest: input.manifest })
+    .set({ manifest: toManifestRefs(input.manifest) })
     .where(eq(wfRun.id, input.runId))
 }
 

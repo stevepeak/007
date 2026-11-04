@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 
-import type { WfWorkflowManifestEntry, WorkflowGraph } from '../engine/graph'
+import {
+  toManifestRefs,
+  type WfWorkflowManifestEntry,
+  type WorkflowGraph,
+} from '../engine/graph'
 import type { WfDb } from '../storage/client'
 import { freshDb } from '../storage/db-test-helpers'
 import {
@@ -218,7 +222,8 @@ describe('a callee is always a child run', () => {
     const [params] = spy.created
     // Re-resolving in the child would float every reference to whatever is
     // published at that instant, splitting one logical run across two versions.
-    expect(params.inheritedManifest).toEqual(baseArgs.manifest)
+    expect(params.inheritedManifest).toEqual(toManifestRefs(baseArgs.manifest))
+    expect(params.inheritedManifest?.[0]).not.toHaveProperty('graph')
     expect(params.triggerInput).toEqual(baseArgs.triggerInput)
     expect(params.subRun).toEqual({
       parent: { kind: 'room', roomId: 'room-parent' },

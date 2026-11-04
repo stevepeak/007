@@ -14,7 +14,7 @@ import { createdAt } from './schema-common'
 // and color are display metadata edited in place; the versioned behavior
 // (model, prompt, tools, output contract) lives in `config` on each version.
 // Workflow agent nodes reference an agent by `wf_agent.id` and float to its
-// latest published version; a run freezes the resolved config in its manifest.
+// latest published version; a run freezes the resolved version in its manifest.
 export const wfAgent = sqliteTable('wf_agent', {
   id: text('id')
     .primaryKey()

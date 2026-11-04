@@ -1,6 +1,6 @@
 import { and, asc, eq } from 'drizzle-orm'
 
-import type { WfRunManifestEntry } from '../../engine/graph'
+import type { WfRunManifestRef } from '../../engine/graph'
 import { consoleWfLogger, type WfLogger } from '../../engine/logger'
 import { RUN_STATE_LEVEL } from '../../engine/stream-sink'
 import type { WfDb } from '../client'
@@ -64,18 +64,22 @@ export async function loadResumeSteps(db: WfDb, runId: string) {
 // completed steps; only the interrupted node and what follows it re-execute.
 // ---------------------------------------------------------------------------
 
-/** The manifest frozen onto the run at its first start, or null if the first
- *  attempt died before `setRunManifest`. */
+/**
+ * The refs frozen onto the run at its first start. Null when the row holds none,
+ * which is the column's `[]` default: the first attempt died before
+ * `setRunManifest`, or this is a spawned run, whose refs are in its params.
+ */
 export async function getRunManifest(
   db: WfDb,
   runId: string,
-): Promise<WfRunManifestEntry[] | null> {
+): Promise<WfRunManifestRef[] | null> {
   const [row] = await db
     .select({ manifest: wfRun.manifest })
     .from(wfRun)
     .where(eq(wfRun.id, runId))
     .limit(1)
-  return (row?.manifest as WfRunManifestEntry[] | null | undefined) ?? null
+  const refs = row?.manifest as WfRunManifestRef[] | null | undefined
+  return refs?.length ? refs : null
 }
 
 /**

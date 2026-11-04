@@ -15,10 +15,11 @@ import {
   type FailureRoute,
 } from '../engine/failure-route'
 import {
+  toManifestRefs,
   workflowGraphSchema,
   type NodeExecution,
   type WfNodeKind,
-  type WfRunManifestEntry,
+  type WfRunManifestRef,
 } from '../engine/graph'
 import { failureHandlerGraphOf } from '../engine/graph-failure-handler'
 import { resolveWfLogger } from '../engine/logger'
@@ -34,6 +35,7 @@ import {
   failRun,
   getRunCancelRequest,
   getVersionGraph,
+  hydrateRunManifest,
   loadResumeSteps,
   loadRunPriceTable,
   markRunCancelled,
@@ -198,14 +200,15 @@ export type GraphWorkflowParams = {
     iterationNodeId?: string
   }
   /**
-   * The parent's frozen run manifest, passed down instead of re-resolved.
+   * The parent's frozen run manifest, passed down as refs instead of
+   * re-resolved. A child stores no copy of its own.
    *
    * Load-bearing: re-resolving in the child would float every reference to
    * whatever is published at *that* moment, so a publish landing mid-run would
    * split one logical run across two prompt versions — the exact failure the
    * manifest exists to prevent.
    */
-  inheritedManifest?: WfRunManifestEntry[]
+  inheritedManifest?: WfRunManifestRef[]
   /**
    * Set when this run IS a failed run's `on-failure` handler: it runs the arm
    * for `route` cut out of the same version (see `failureHandlerGraphOf`), the
@@ -363,25 +366,26 @@ export function makeGraphWorkflow<
       // version once, freeze it onto the run, and reuse it for the whole walk —
       // so a mid-run publish can't split a run across two prompt versions.
       // A child instance INHERITS the parent's frozen manifest — it must not
-      // re-resolve (see `GraphWorkflowParams.subRun`). It still writes the
-      // inherited copy onto its own run, so the child's trace records exactly
-      // which versions it executed, same as any other run.
-      const inherited = p.inheritedManifest
-      const manifest: WfRunManifestEntry[] = inherited
-        ? await stepDo(step, 'inherit-manifest', async () => {
-            await setRunManifest(createWfDb(env.WF_DB), {
-              runId: p.workflowRunId,
-              manifest: inherited,
-            })
-            return inherited
-          })
-        : await stepDo(step, 'resolve-manifest', async () => {
-            const db = createWfDb(env.WF_DB)
-            const graph = workflowGraphSchema.parse(graphJson)
-            const m = await resolveRunManifest(db, graph)
-            await setRunManifest(db, { runId: p.workflowRunId, manifest: m })
-            return m
-          })
+      // re-resolve (see `GraphWorkflowParams.subRun`) — and writes no copy onto
+      // its own run: its steps record which versions it executed.
+      //
+      // Only refs cross the step boundary. The content is loaded on every wake,
+      // outside any step, so the journal never holds it. An instance that started
+      // on an earlier deploy replays a journal entry with the content embedded;
+      // hydrating ignores that copy.
+      const manifestRefs: WfRunManifestRef[] =
+        p.inheritedManifest ??
+        (await stepDo(step, 'resolve-manifest', async () => {
+          const db = createWfDb(env.WF_DB)
+          const graph = workflowGraphSchema.parse(graphJson)
+          const m = await resolveRunManifest(db, graph)
+          await setRunManifest(db, { runId: p.workflowRunId, manifest: m })
+          return toManifestRefs(m)
+        }))
+      const manifest = await hydrateRunManifest(
+        createWfDb(env.WF_DB),
+        manifestRefs,
+      )
 
       // Returns the run's start instant so the run telemetry point can bucket on
       // when the run BEGAN — the point is emitted at finish, and bucketing a

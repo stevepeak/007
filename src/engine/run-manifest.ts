@@ -2,9 +2,9 @@ import type { DecisionAgentConfig } from './decision-agent-schema'
 import type { AgentConfig, WorkflowGraph } from './graph-schema'
 
 // Frozen-at-run-start resolution of every floating reference in a workflow to
-// the exact published version it ran against. Stored on `wf_run.manifest` so a
-// run is fully reproducible even as its leaf agents drift. Entries are
-// self-describing (carry `config`) so a run needs no live agent rows to replay.
+// the exact published version it ran against. An entry carries the version's
+// `config` or `graph` for the engine to execute; what is persisted is the
+// `WfRunManifestRef` below, because version content is immutable.
 export type WfAgentManifestEntry = {
   kind: 'agent'
   /** The stable `wf_agent.id` an agent node references. */
@@ -72,6 +72,49 @@ export type WfRunManifestEntry =
   | WfAgentManifestEntry
   | WfDecisionAgentManifestEntry
   | WfWorkflowManifestEntry
+
+/**
+ * A manifest entry without its version content: what `wf_run.manifest` and a
+ * spawned run's params hold. `hydrateRunManifest` loads the content back by
+ * `versionId`. `name` and `contextLength` stay because no version row holds
+ * them, and they are frozen for the run like everything else here.
+ */
+export type WfRunManifestRef =
+  | Omit<WfAgentManifestEntry, 'config'>
+  | Omit<WfDecisionAgentManifestEntry, 'config'>
+  | Omit<WfWorkflowManifestEntry, 'graph'>
+
+/**
+ * Strip entries down to refs. Builds each ref field by field, since an entry is
+ * assignable to a ref and the type alone would let its content through.
+ */
+export function toManifestRefs(
+  manifest: readonly WfRunManifestRef[],
+): WfRunManifestRef[] {
+  return manifest.map((e): WfRunManifestRef => {
+    const shared = {
+      id: e.id,
+      versionId: e.versionId,
+      versionNumber: e.versionNumber,
+      name: e.name,
+    }
+    if (e.kind === 'workflow') {
+      return { kind: e.kind, ...shared }
+    }
+    const pinnedVersion = e.pinnedVersion ?? null
+    if (e.kind === 'decision-agent') {
+      return { kind: e.kind, pinnedVersion, ...shared }
+    }
+    return {
+      kind: e.kind,
+      pinnedVersion,
+      ...shared,
+      ...(e.contextLength === undefined
+        ? {}
+        : { contextLength: e.contextLength }),
+    }
+  })
+}
 
 /**
  * Look up the resolved agent entry for an `agentId` + version pin in a run

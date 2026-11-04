@@ -1,4 +1,4 @@
-import type { WfRunManifestEntry } from '../engine/graph'
+import { toManifestRefs, type WfRunManifestRef } from '../engine/graph'
 
 import type { GraphWorkflowParams } from './graph-workflow'
 
@@ -128,7 +128,7 @@ export function calleeEventType(nodeId: string, index?: number): string {
 export function iterationItemParams(args: {
   /** The PARENT run's params — the child takes its version and run context. */
   parent: GraphWorkflowParams
-  manifest: WfRunManifestEntry[]
+  manifest: readonly WfRunManifestRef[]
   /** Where to report back. An iteration item is only ever spawned by the
    *  durable backend, so this is always the parent's instance. */
   parentInstanceId: string
@@ -151,7 +151,7 @@ export function iterationItemParams(args: {
     // subgraph the identical value.
     triggerInput: args.item,
     runContext: args.parent.runContext,
-    inheritedManifest: args.manifest,
+    inheritedManifest: toManifestRefs(args.manifest),
     subRun: {
       parent: { kind: 'instance', instanceId: args.parentInstanceId },
       eventType: args.eventType,

@@ -107,6 +107,7 @@ export {
   type WfWorkflowManifestEntry,
   type WfNodeKind,
   type WfRunManifestEntry,
+  type WfRunManifestRef,
   type WorkflowCallNode,
   type WorkflowEdge,
   type WorkflowGraph,

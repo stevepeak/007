@@ -30,6 +30,7 @@ import {
   getRunCancelRequest,
   getRunManifest,
   getVersionGraph,
+  hydrateRunManifest,
   loadModelPriceMap,
   loadResumeSteps,
   markRunCancelled,
@@ -488,8 +489,8 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
     // including the part where a SPAWNED run inherits its caller's manifest
     // instead of resolving its own: re-resolving would float every reference to
     // whatever is published at that instant, splitting one logical run across
-    // two prompt versions. The inherited copy is still written onto this run, so
-    // its trace records exactly which versions it executed.
+    // two prompt versions. A spawned run writes no copy onto its own row: its
+    // steps record which versions it executed.
     //
     // A RESUMED run reads the manifest it already froze rather than resolving
     // again — the whole point of freezing is that a publish between the two
@@ -497,11 +498,13 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
     // a first attempt that died before `setRunManifest` has nothing to read,
     // and it also executed nothing, so resolving fresh is then correct.
     const frozen = resume ? await getRunManifest(db, p.workflowRunId) : null
-    const manifest: WfRunManifestEntry[] =
-      frozen ??
-      p.inheritedManifest ??
-      (await resolveRunManifest(db, version.graph))
-    if (!frozen) await setRunManifest(db, { runId: p.workflowRunId, manifest })
+    const existingRefs = frozen ?? p.inheritedManifest
+    const manifest: WfRunManifestEntry[] = existingRefs
+      ? await hydrateRunManifest(db, existingRefs)
+      : await resolveRunManifest(db, version.graph)
+    if (!existingRefs) {
+      await setRunManifest(db, { runId: p.workflowRunId, manifest })
+    }
 
     // No `cloudflareRunId`: there is no Workflows instance behind this run. The
     // run viewer keys off `wf_run.id` either way; the column stays null, which
