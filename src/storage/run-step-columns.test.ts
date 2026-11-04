@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 
@@ -5,12 +7,17 @@ import { applyMigrations } from './db-test-helpers'
 import { stepColumnsFromMeta } from './run-recorder'
 
 // `wf_run_step`'s promoted columns have two writers: the recorder, for every step
-// from now on, and the migration's backfill, for every step before it. The second
+// from now on, and the hand-run backfill, for every step before it. The second
 // is SQL over raw JSON and the first is JS over `agentUsage`, so this runs both
 // over the same rows and requires the same answer.
 
 /** The last migration whose `wf_run_step` holds these fields only inside `meta`. */
 const BEFORE_PROMOTION = '0042'
+
+const BACKFILL = readFileSync(
+  new URL('./backfill-run-step-columns.sql', import.meta.url),
+  'utf8',
+)
 
 const META_SHAPES: Array<{ name: string; meta: unknown }> = [
   {
@@ -114,6 +121,7 @@ function backfilled(args: { meta: unknown }) {
     )
     .run(JSON.stringify(args.meta))
   applyMigrations({ sqlite, after: BEFORE_PROMOTION })
+  sqlite.prepare(BACKFILL).run({ ':from': 1, ':to': 1 })
   return sqlite
 }
 
