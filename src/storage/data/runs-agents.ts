@@ -188,6 +188,7 @@ function foldCalls(
     status: string
     error: string | null
     meta: unknown
+    costUsdAtRun: number | null
     startedAt: Date | null
     finishedAt: Date | null
   }[],
@@ -239,11 +240,9 @@ function foldCalls(
     turns += meta.steps?.length ?? 0
     inputTokens += stepInput
     outputTokens += stepOutput
-    const stepCost = tokenCostUsd(
-      stepInput,
-      stepOutput,
-      priceMap.get(meta.model),
-    )
+    const stepCost =
+      step.costUsdAtRun ??
+      tokenCostUsd(stepInput, stepOutput, priceMap.get(meta.model))
     // Null stays null only while NO call was priced: one unpriced model in a
     // fan-out shouldn't blank the whole row's cost.
     if (stepCost != null) costUsd = (costUsd ?? 0) + stepCost
@@ -444,6 +443,7 @@ export async function listAgentCalls(
           status: wfRunStep.status,
           error: wfRunStep.error,
           meta: wfRunStep.meta,
+          costUsdAtRun: wfRunStep.costUsdAtRun,
           startedAt: wfRunStep.startedAt,
           finishedAt: wfRunStep.finishedAt,
         })

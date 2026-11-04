@@ -84,7 +84,11 @@ export function createTelemeteredRecorder(deps: {
   logger?: WfLogger
 }): RunRecorder {
   return withStepTelemetry(
-    createDurableRunRecorder({ db: deps.db, runId: deps.runId }),
+    createDurableRunRecorder({
+      db: deps.db,
+      runId: deps.runId,
+      prices: deps.prices,
+    }),
     deps.telemetry,
     deps.dims,
     deps.prices,

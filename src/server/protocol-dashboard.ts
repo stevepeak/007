@@ -67,9 +67,9 @@ export type WfDashboardResult = {
     series: WfDashboardSeries[]
     source: WfDashboardSource
     /**
-     * True when the dollars were priced AT EXECUTION TIME and therefore don't
-     * move when the model catalog does. False on the D1 path, which re-prices
-     * historical usage against today's catalog on every read.
+     * True when every dollar was priced AT EXECUTION TIME, so the total doesn't
+     * move when the model catalog does. False when some steps have no run-time
+     * price and were priced against today's catalog instead.
      */
     pricedAtRunTime: boolean
   }

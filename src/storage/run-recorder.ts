@@ -1,3 +1,4 @@
+import { stepCost, type ModelPriceMap } from '../engine/cost'
 import type { RecordStepArgs, RunRecorder } from '../engine/run-recorder'
 
 import type { WfDb } from './client'
@@ -18,11 +19,16 @@ function isTerminal(status: RecordStepArgs['status']): boolean {
 export function createDurableRunRecorder(deps: {
   db: WfDb
   runId: string
+  /** The run's frozen price table; stamps each step's `cost_usd_at_run`. */
+  prices?: ModelPriceMap
 }): RunRecorder {
   return {
     async record(args) {
       const finishedAt =
         args.finishedAt ?? (isTerminal(args.status) ? new Date() : null)
+      const costUsdAtRun = deps.prices
+        ? (stepCost(args.meta, deps.prices)?.cost ?? null)
+        : null
       // Only overwrite `started_at` when the caller supplies a measured
       // execution start (the terminal record does; the enter record does too).
       // Absent — e.g. an iteration container whose start was stamped at enter
@@ -44,6 +50,7 @@ export function createDurableRunRecorder(deps: {
           output: args.output ?? {},
           branchResult: args.branchResult ?? null,
           meta: args.meta ?? {},
+          costUsdAtRun,
           startedAt: args.startedAt ?? null,
           finishedAt,
           error: args.error ?? null,
@@ -57,6 +64,7 @@ export function createDurableRunRecorder(deps: {
             output: args.output ?? {},
             branchResult: args.branchResult ?? null,
             meta: args.meta ?? {},
+            costUsdAtRun,
             ...startedAtSet,
             finishedAt,
             error: args.error ?? null,

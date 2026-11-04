@@ -23,7 +23,13 @@ import {
 
 import { loadModelPriceMap } from './runs-cost'
 import { listRuns } from './runs-list'
-import { inputTokensExpr, modelExpr, outputTokensExpr } from './runs-usage'
+import {
+  costUsdAtRunExpr,
+  hasRunPriceExpr,
+  inputTokensExpr,
+  modelExpr,
+  outputTokensExpr,
+} from './runs-usage'
 import { selectChunked } from './shared'
 
 // ---------------------------------------------------------------------------
@@ -129,9 +135,9 @@ export type DashboardStats<TFailure> = DashboardWindow & {
     series: DashboardSeries[]
     source: DashboardSource
     /**
-     * True when the dollars were priced AT EXECUTION TIME (the analytics path),
-     * so they don't move when the catalog does. The D1 path re-prices against
-     * the current catalog on every read; the UI footnotes which one it showed.
+     * True when every dollar was priced AT EXECUTION TIME, so the total doesn't
+     * move when the catalog does. False when the D1 path had to price a step
+     * with no run-time price against the current catalog; the UI footnotes it.
      */
     pricedAtRunTime: boolean
   }
@@ -332,6 +338,7 @@ type CostRow = {
   model: string | null
   inputTokens: number
   outputTokens: number
+  costUsdAtRun: number | null
 }
 
 /** One spend row as {@link foldSpend} reads it. `usd` is null when unpriced. */
@@ -390,14 +397,24 @@ function foldSpend<R>(args: {
 }
 
 /**
- * Price the per-model token group-by into dollar series. `tokenCostUsd` returns
- * null for a model the catalog never priced, which leaves those tokens unpriced.
+ * Fold the per-model group-by into dollar series, preferring the dollars priced
+ * at run time. A row without them is priced at today's catalog; `tokenCostUsd`
+ * returns null for a model the catalog never priced, which leaves those tokens
+ * unpriced.
  */
 export function foldCostRows(
   rows: CostRow[],
   priceMap: ModelPriceMap,
   window: DashboardWindow,
 ): DashboardStats<never>['cost'] {
+  const catalogUsd = (r: CostRow) => {
+    if (r.costUsdAtRun != null || !r.model) return null
+    return tokenCostUsd(
+      Number(r.inputTokens) || 0,
+      Number(r.outputTokens) || 0,
+      priceMap.get(r.model),
+    )
+  }
   return foldSpend({
     rows,
     window,
@@ -405,9 +422,7 @@ export function foldCostRows(
       const input = Number(r.inputTokens) || 0
       const output = Number(r.outputTokens) || 0
       const tokens = input + output
-      const usd = r.model
-        ? tokenCostUsd(input, output, priceMap.get(r.model))
-        : null
+      const usd = r.costUsdAtRun ?? catalogUsd(r)
       return {
         ordinal: r.ordinal,
         model: r.model,
@@ -417,9 +432,7 @@ export function foldCostRows(
       }
     },
     source: 'db',
-    // The D1 path multiplies stored tokens by the CURRENT catalog price, so
-    // these dollars move whenever the catalog does.
-    pricedAtRunTime: false,
+    pricedAtRunTime: !rows.some((r) => catalogUsd(r) != null),
   })
 }
 
@@ -611,11 +624,12 @@ export async function loadDashboard(
         model: modelExpr,
         inputTokens: inputTokensExpr,
         outputTokens: outputTokensExpr,
+        costUsdAtRun: costUsdAtRunExpr,
       })
       .from(wfRunStep)
       .innerJoin(wfRun, eq(wfRunStep.runId, wfRun.id))
       .where(and(eq(wfRunStep.nodeKind, 'agent'), inWindow))
-      .groupBy(runBucket, modelExpr)
+      .groupBy(runBucket, modelExpr, hasRunPriceExpr)
   }
 
   const [inFlightRows, queueRows, trendRows] = await Promise.all([

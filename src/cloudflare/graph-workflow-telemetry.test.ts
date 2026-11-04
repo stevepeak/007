@@ -2,8 +2,14 @@ import { describe, expect, test } from 'bun:test'
 
 import { createMemoryRunRecorder, type RecordStepArgs } from '../engine/run-recorder'
 import { createMemoryTelemetrySink } from '../engine/telemetry'
+import { freshDb } from '../storage/db-test-helpers'
+import { wfRunStep } from '../storage/schema'
 
-import { runDims, withRunCounts } from './graph-workflow-telemetry'
+import {
+  createTelemeteredRecorder,
+  runDims,
+  withRunCounts,
+} from './graph-workflow-telemetry'
 import { createRunCounters } from './step-counter'
 
 const RUN_CONTEXT = {
@@ -23,6 +29,38 @@ function record(over: Partial<RecordStepArgs>): RecordStepArgs {
     ...over,
   }
 }
+
+describe('createTelemeteredRecorder', () => {
+  test('D1 and the Analytics Engine point carry the same dollars', async () => {
+    const db = freshDb()
+    const sink = createMemoryTelemetrySink()
+    const recorder = createTelemeteredRecorder({
+      db,
+      runId: 'run-1',
+      telemetry: sink,
+      dims: runDims({
+        workflowId: 'wf-1',
+        workflowVersionId: 'ver-1',
+        runId: 'run-1',
+        runContext: RUN_CONTEXT,
+      }),
+      prices: new Map([['m', { promptPerMTok: 1, completionPerMTok: 2 }]]),
+    })
+    await recorder.record(
+      record({
+        meta: {
+          model: 'm',
+          steps: [],
+          totalUsage: { inputTokens: 1000, outputTokens: 250 },
+        },
+      }),
+    )
+
+    const [step] = await db.select().from(wfRunStep)
+    expect(step?.costUsdAtRun).toBeCloseTo(0.0015, 10)
+    expect(sink.points[0]?.doubles[7]).toBe(1500) // double8 costUsdMicros
+  })
+})
 
 describe('runDims', () => {
   test('carries the eval + simulate signals telemetry partitions on', () => {

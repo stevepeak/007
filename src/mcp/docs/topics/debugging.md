@@ -22,6 +22,8 @@ The overview is deliberately lossy so it fits in context:
 
 Per step you get: `cursor` (the id to drill in by), `sequence` (the order the engine ran things — read a concurrent graph against this), `nodeId`, `nodeKind`, `parentNodeId`, `itemIndex`, `status`, `error`, `costUsd`, `branchResult` (the arm a branch or switch took), `startedAt` / `finishedAt` / `durationMs`, and for agent steps `agentTiming` — per turn its model time, reasoning time, tool-phase time, each tool call's duration, and a one-line `slowest`.
 
+`costUsd` is what the step cost at the prices frozen when its run started, so a later catalog edit does not change it. A step recorded with no price (older runs, or a model the catalog had not priced then) uses today's catalog instead, and that figure can move.
+
 Step statuses: `running`, `completed`, `failed`, `skipped` (an iteration item that never ran because `stopOnError` stopped the loop).
 
 ## Run statuses

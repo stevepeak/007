@@ -15,6 +15,7 @@ import {
   createRun,
   failRun,
   getVersionGraph,
+  loadModelPriceMap,
   markRunDone,
   markRunRunning,
   resolveRunManifest,
@@ -206,13 +207,14 @@ export async function runAgent<TDeps>(opts: {
     await setRunManifest(db, { runId: workflowRunId, manifest })
     await markRunRunning(db, { runId: workflowRunId })
     runContext = { ...runContext, manifest }
+    const prices = await loadModelPriceMap(db)
 
     const result = await executeWorkflow({
       graph,
       triggerInput: {},
       config: execConfig,
       runContext,
-      recorder: createDurableRunRecorder({ db, runId: workflowRunId }),
+      recorder: createDurableRunRecorder({ db, runId: workflowRunId, prices }),
       resolveModelBudget: () => {
         return remainingBudget(callBudget, Date.now() - startedAt)
       },

@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm'
 import {
   index,
   integer,
+  real,
   sqliteTable,
   text,
   uniqueIndex,
@@ -163,6 +164,14 @@ export const wfRunStep = sqliteTable(
     meta: text('meta', { mode: 'json' })
       .notNull()
       .default(sql`'{}'`),
+    /**
+     * What this step cost in USD, priced from the run's frozen price table when
+     * it was recorded, so a later catalog edit cannot rewrite it. This is the
+     * same price Analytics Engine receives. NULL when no price applied: not an
+     * agent step, an unpriced model, or a row older than this column. Readers
+     * price a NULL against today's catalog.
+     */
+    costUsdAtRun: real('cost_usd_at_run'),
     startedAt: integer('started_at', { mode: 'timestamp' }),
     finishedAt: integer('finished_at', { mode: 'timestamp' }),
     error: text('error'),

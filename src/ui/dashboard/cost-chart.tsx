@@ -30,22 +30,27 @@ export function CostChart({ data }: { data: WfDashboardResult }) {
       }
       footnote={
         <>
-          {/* The two paths mean genuinely different things, so the caveat can't
-              be static: analytics figures were priced when the tokens were
-              spent, while the D1 fallback re-prices history on every read. */}
+          {/* The caveat can't be static: steps recorded without a run-time price
+              fall back to the catalog, and only analytics figures are sampled. */}
           {data.cost.pricedAtRunTime ? (
             <>
               Cost was priced when each agent call ran, so it doesn&apos;t
-              change when the model catalog does. Sampled from Analytics Engine
-              — the newest bucket may still be filling in.
+              change when the model catalog does.
             </>
           ) : (
             <>
-              Cost is derived from recorded token usage at the model
-              catalog&apos;s current prices, so historical spend re-prices when
-              the catalog changes.
+              Some of this cost has no price recorded from when it ran, so it
+              uses the model catalog&apos;s current prices and can change when
+              the catalog does.
             </>
           )}
+          {data.cost.source === 'analytics' ? (
+            <>
+              {' '}
+              Sampled from Analytics Engine — the newest bucket may still be
+              filling in.
+            </>
+          ) : null}
           {unpricedTokens > 0 ? (
             <>
               {' '}

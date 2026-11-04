@@ -471,7 +471,7 @@ export function platformReadTools(): WfMcpTool[] {
             source: d.cost.source,
             note: d.cost.pricedAtRunTime
               ? undefined
-              : 'Dollars are token usage × TODAY’s catalog price, so historical spend moves when the catalog does.',
+              : 'Some steps have no price recorded from when they ran, so their dollars are token usage × TODAY’s catalog price and move when the catalog does.',
           },
           feedback: {
             unacknowledged: d.feedback.unacknowledged,
@@ -667,7 +667,7 @@ export function platformWriteTools(): WfMcpTool[] {
         '',
         'Nothing is auto-enabled. Newly discovered models are cached DISABLED and someone opts them in with set_model_enabled; models already in the catalog keep the enabled flag they had. So a refresh cannot change what any agent runs on — it only changes what is available to choose.',
         '',
-        'SLOW: it calls the provider’s API and upserts hundreds of rows, so give it time and do not call it in a loop. It also drops the cached price map, so run costs re-derive against the new prices immediately.',
+        'SLOW: it calls the provider’s API and upserts hundreds of rows, so give it time and do not call it in a loop. It also drops the cached price map, so new runs and steps with no recorded price use the new prices immediately; a step priced when it ran keeps its cost.',
         '',
         'This is per-environment curation. It is NOT how a catalog moves between local and prod — `scripts/sync-model-catalog.ts` owns that, and running both against one database would fight.',
       ].join('\n'),

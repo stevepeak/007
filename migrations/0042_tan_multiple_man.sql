@@ -1,0 +1,1 @@
+ALTER TABLE `wf_run_step` ADD `cost_usd_at_run` real;

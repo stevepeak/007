@@ -210,9 +210,8 @@ export const wfEvalResult = sqliteTable(
     // single call — the numbers existed and were thrown away at the boundary.
     //
     // Tokens are stored and the DOLLARS are derived at read time from
-    // `wf_model`, exactly as a run's cost is: one price table, one fold, so a
-    // decision cell and an agent cell can never disagree about what a token
-    // costs. (`costUsd` is deliberately NOT a column here for that reason.)
+    // `wf_model`, so a catalog edit re-prices these cells. An agent cell keeps
+    // the price its run's steps recorded in `wf_run_step.cost_usd_at_run`.
     inputTokens: integer('input_tokens'),
     outputTokens: integer('output_tokens'),
     createdAt: createdAt(),

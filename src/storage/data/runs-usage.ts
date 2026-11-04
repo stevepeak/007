@@ -11,11 +11,11 @@ import { selectChunked } from './shared'
 // Agent token usage, summed in SQL
 // ---------------------------------------------------------------------------
 //
-// Cost is derived, not stored: a step records its agent's token usage inside
-// the untyped `meta` JSON, and dollars come from multiplying that against the
-// model catalog. The obvious way to aggregate it is to select `meta` and fold
-// in JS — which is what this replaces, because `meta` is where an agent step
-// keeps its ENTIRE transcript.
+// A step records its agent's token usage inside the untyped `meta` JSON and the
+// dollars it was priced at in `cost_usd_at_run`. A step with no recorded dollars
+// is priced by multiplying its tokens against today's model catalog. The obvious
+// way to aggregate that is to select `meta` and fold in JS — which is what this
+// replaces, because `meta` is where an agent step keeps its ENTIRE transcript.
 //
 // Measured on the local D1: an agent step's `meta` averages 6.5 KB and a tool
 // step's 1.3 KB, so 690 steps across 28 runs is ~2 MB of JSON. A 50-row page of
@@ -70,6 +70,14 @@ export const inputTokensExpr = sql<number>`sum(coalesce(json_extract(${wfRunStep
 export const outputTokensExpr = sql<number>`sum(coalesce(json_extract(${wfRunStep.meta}, '$.totalUsage.outputTokens'), json_extract(${wfRunStep.meta}, '$.usage.outputTokens'), 0))`
 
 /**
+ * Dollars priced at run time. Pair it with {@link hasRunPriceExpr} in the GROUP
+ * BY: a group mixing stamped and unstamped steps would sum to a figure that
+ * omits the unstamped steps' cost while still counting their tokens.
+ */
+export const costUsdAtRunExpr = sql<number | null>`sum(${wfRunStep.costUsdAtRun})`
+export const hasRunPriceExpr = sql`${wfRunStep.costUsdAtRun} is not null`
+
+/**
  * Summed agent-call wall clock, in MILLISECONDS.
  *
  * The `* 1000` is load-bearing and easy to lose: these columns are drizzle
@@ -101,12 +109,17 @@ const agentVersionExpr = sql<
   number | null
 >`min(json_extract(${wfRunStep.meta}, '$.agentVersion'))`
 
-/** One run's usage of one model. A run that fired no agents produces no rows. */
+/**
+ * One run's usage of one model. A run that fired no agents produces no rows. A
+ * model yields two rows when only some of its steps carry a run-time price.
+ */
 export type RunUsageRow = {
   runId: string
   model: string | null
   inputTokens: number
   outputTokens: number
+  /** Dollars priced at run time; null prices these tokens at today's catalog. */
+  costUsdAtRun: number | null
   /** Summed agent wall-clock for this (run, model); null when none closed. */
   agentMs: number | null
   /** The frozen agent version stamped on these steps; null when unstamped. */
@@ -129,7 +142,7 @@ export async function selectRunUsage(
   if (runIds.length === 0) return []
   // Chunked, and grouped by the chunked column — so per-chunk results
   // concatenate without merging (see `selectChunked`'s correctness rule). The
-  // second grouping key, `model`, rides along inside a run and never spans one.
+  // other grouping keys ride along inside a run and never span one.
   return await selectChunked(runIds, (ids) => {
     return db
       .select({
@@ -137,12 +150,13 @@ export async function selectRunUsage(
         model: modelExpr,
         inputTokens: inputTokensExpr,
         outputTokens: outputTokensExpr,
+        costUsdAtRun: costUsdAtRunExpr,
         agentMs: agentMsExpr,
         agentVersion: agentVersionExpr,
       })
       .from(wfRunStep)
       .where(and(inArray(wfRunStep.runId, ids), agentStepCondition()))
-      .groupBy(wfRunStep.runId, modelExpr)
+      .groupBy(wfRunStep.runId, modelExpr, hasRunPriceExpr)
   })
 }
 
@@ -168,6 +182,7 @@ export function usageRowFromMeta(
     model: usage.model ? usage.model : null,
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
+    costUsdAtRun: null,
     agentMs: null,
     agentVersion: stepAgentVersion(meta),
   }
@@ -209,7 +224,7 @@ export function foldUsage(
     hasTokens = true
     if (r.model != null) models.add(r.model)
     const price = r.model == null ? undefined : priceMap.get(r.model)
-    const c = tokenCostUsd(input, output, price)
+    const c = r.costUsdAtRun ?? tokenCostUsd(input, output, price)
     if (c != null) {
       cost += c
       hasCost = true

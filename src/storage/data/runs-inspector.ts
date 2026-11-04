@@ -226,8 +226,8 @@ export async function getRun(
       .from(wfRunStep)
       .where(eq(wfRunStep.runId, runId))
       .orderBy(asc(wfRunStep.sequence)),
-    // Derive each step's dollar cost from its token usage × the model's catalog
-    // price, and roll the run's totals up for the header.
+    // Prices a step with no run-time price from its token usage × the model's
+    // catalog price. The run's totals roll up for the header either way.
     loadModelPriceMap(db),
     getRunLogs(db, runId),
     versionOmitted
@@ -272,18 +272,17 @@ export async function getRun(
   ])
   let costUsd: number | null = null
   let totalTokens: number | null = null
-  const steps = rawSteps.map((s) => {
+  const steps = rawSteps.map(({ costUsdAtRun, ...s }) => {
     const c = stepCost(s.meta, priceMap)
-    if (c) {
-      totalTokens = (totalTokens ?? 0) + c.tokens
-      if (c.cost != null) costUsd = (costUsd ?? 0) + c.cost
-    }
+    const cost = costUsdAtRun ?? c?.cost ?? null
+    if (c) totalTokens = (totalTokens ?? 0) + c.tokens
+    if (cost != null) costUsd = (costUsd ?? 0) + cost
     // `-1` is the top-level sentinel (see wfRunStep) — surface it as null so the
     // client's `itemIndex: number | null` reads naturally.
     return {
       ...s,
       itemIndex: s.itemIndex === -1 ? null : s.itemIndex,
-      costUsd: c?.cost ?? null,
+      costUsd: cost,
     }
   })
   // The roll-up above has to visit EVERY step, so the watermark trims what goes

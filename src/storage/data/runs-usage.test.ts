@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
+import { eq } from 'drizzle-orm'
 
 import type { ModelPriceMap } from '../../engine/cost'
 import type { WfDb } from '../client'
@@ -301,6 +302,26 @@ describe('selectRunUsage', () => {
     })
     expect((await selectRunUsage(db, ['run-1']))[0]?.agentVersion).toBe(7)
   })
+
+  test('stamped and unstamped steps of one model stay in separate rows', async () => {
+    const meta = {
+      model: 'm',
+      steps: [],
+      totalUsage: { inputTokens: 10, outputTokens: 0 },
+    }
+    await addStep('run-1', meta)
+    await addStep('run-1', meta)
+    await db.update(wfRunStep).set({ costUsdAtRun: 2 }).where(eq(wfRunStep.id, `step-${seq}`))
+    await addStep('run-1', meta)
+    await db.update(wfRunStep).set({ costUsdAtRun: 3 }).where(eq(wfRunStep.id, `step-${seq}`))
+
+    const rows = await selectRunUsage(db, ['run-1'])
+    const byCost = rows.sort((a, b) => (a.costUsdAtRun ?? 0) - (b.costUsdAtRun ?? 0))
+    expect(byCost.map((r) => [r.costUsdAtRun, r.inputTokens])).toEqual([
+      [null, 10],
+      [5, 20],
+    ])
+  })
 })
 
 describe('foldUsage', () => {
@@ -313,9 +334,32 @@ describe('foldUsage', () => {
     model: 'cheap',
     inputTokens: 0,
     outputTokens: 0,
+    costUsdAtRun: null,
     agentMs: null,
     agentVersion: null,
     ...over,
+  })
+
+  test('the dollars priced at run time beat the catalog, even at zero', async () => {
+    const out = foldUsage(
+      [
+        row({ model: 'dear', inputTokens: 1_000_000, costUsdAtRun: 5 }),
+        row({ model: 'dear', inputTokens: 1_000_000, costUsdAtRun: 0 }),
+      ],
+      priceMap,
+    )
+    expect(out.costUsd).toBe(5)
+  })
+
+  test('tokens with no run-time price fall back to the catalog', async () => {
+    const out = foldUsage(
+      [
+        row({ model: 'cheap', inputTokens: 1_000_000, costUsdAtRun: 5 }),
+        row({ model: 'cheap', inputTokens: 1_000_000 }),
+      ],
+      priceMap,
+    )
+    expect(out.costUsd).toBe(6)
   })
 
   test('prices each model at its own rate', async () => {

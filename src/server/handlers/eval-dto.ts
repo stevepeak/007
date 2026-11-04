@@ -131,9 +131,8 @@ export function evalResultDTO(
  * `measuredCells: 0` until all three were found.
  *
  * The dollars are derived, not stored — from `wf_model`'s price columns, through
- * the same {@link tokenCostUsd} the run fold uses. So a decision cell and an
- * agent cell cannot disagree about what a token costs, and re-pricing the
- * catalog re-prices both.
+ * the same {@link tokenCostUsd} the run fold uses. An agent cell reads its run's
+ * step prices instead, so re-pricing the catalog moves only the decision cell.
  *
  * `durationMs` and `agentVersion` stay null: there was no run to time, and a
  * decision agent's version rides on the result's frozen `snapshot` instead.

@@ -172,12 +172,14 @@ describe('foldCostRows', () => {
           model: PRICED,
           inputTokens: 1_000_000,
           outputTokens: 1_000_000,
+          costUsdAtRun: null,
         },
         {
           ordinal: window.firstOrdinal,
           model: UNPRICED,
           inputTokens: 500_000,
           outputTokens: 0,
+          costUsdAtRun: null,
         },
       ],
       priceMap,
@@ -198,6 +200,7 @@ describe('foldCostRows', () => {
           model: UNPRICED,
           inputTokens: 100,
           outputTokens: 100,
+          costUsdAtRun: null,
         },
       ],
       priceMap,
@@ -205,6 +208,51 @@ describe('foldCostRows', () => {
     )
     expect(cost.totalUsd).toBeNull()
     expect(cost.unpricedTokens).toBe(200)
+  })
+
+  test('uses the run-time dollars and reports them as priced at run time', () => {
+    const cost = foldCostRows(
+      [
+        {
+          ordinal: window.firstOrdinal,
+          model: PRICED,
+          inputTokens: 1_000_000,
+          outputTokens: 1_000_000,
+          costUsdAtRun: 7,
+        },
+      ],
+      priceMap,
+      window,
+    )
+    expect(cost.totalUsd).toBe(7)
+    expect(cost.unpricedTokens).toBe(0)
+    expect(cost.pricedAtRunTime).toBe(true)
+  })
+
+  test('sums a stamped and a catalog-priced row, and says the catalog was used', () => {
+    const cost = foldCostRows(
+      [
+        {
+          ordinal: window.firstOrdinal,
+          model: PRICED,
+          inputTokens: 1_000_000,
+          outputTokens: 0,
+          costUsdAtRun: 7,
+        },
+        {
+          ordinal: window.firstOrdinal,
+          model: PRICED,
+          inputTokens: 1_000_000,
+          outputTokens: 0,
+          costUsdAtRun: null,
+        },
+      ],
+      priceMap,
+      window,
+    )
+    expect(cost.totalUsd).toBe(8)
+    expect(cost.series[0]?.total).toBe(8)
+    expect(cost.pricedAtRunTime).toBe(false)
   })
 })
 
