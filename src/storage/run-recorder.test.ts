@@ -8,8 +8,9 @@ import { loadDashboard } from './data/dashboard'
 import { listAgentCalls } from './data/runs-agents'
 import { aggregateRunCost, invalidateModelPriceMap, loadModelPriceMap } from './data/runs-cost'
 import { getRun } from './data/runs-inspector'
+import { listToolInvocations } from './data/runs-list'
 import { rollUpRunCost } from './data/runs-rollup'
-import { freshDb } from './db-test-helpers'
+import { freshDb, recordedMeta } from './db-test-helpers'
 import { createDurableRunRecorder } from './run-recorder'
 import { wfModel, wfRun, wfRunStep, wfWorkflow, wfWorkflowVersion } from './schema'
 
@@ -134,6 +135,70 @@ describe('createDurableRunRecorder pricing', () => {
   })
 })
 
+describe('createDurableRunRecorder promoted columns', () => {
+  async function storedColumns() {
+    const [row] = await db
+      .select({
+        agentId: wfRunStep.agentId,
+        toolId: wfRunStep.toolId,
+        modelId: wfRunStep.modelId,
+        inputTokens: wfRunStep.inputTokens,
+        outputTokens: wfRunStep.outputTokens,
+      })
+      .from(wfRunStep)
+      .where(eq(wfRunStep.runId, RUN_ID))
+    return row
+  }
+
+  test('the opening record has none; the terminal record stamps over it', async () => {
+    const recorder = createDurableRunRecorder({ db, runId: RUN_ID })
+    await recorder.record({ ...AGENT_STEP, status: 'running', meta: {} })
+    expect(await storedColumns()).toEqual({
+      agentId: null,
+      toolId: null,
+      modelId: null,
+      inputTokens: null,
+      outputTokens: null,
+    })
+
+    await recorder.record(AGENT_STEP)
+    expect(await storedColumns()).toEqual({
+      agentId: AGENT_ID,
+      toolId: null,
+      modelId: MODEL,
+      inputTokens: 1_000_000,
+      outputTokens: 1_000_000,
+    })
+  })
+
+  test('a retried step replaces what the last attempt stamped', async () => {
+    const recorder = createDurableRunRecorder({ db, runId: RUN_ID })
+    await recorder.record(AGENT_STEP)
+    await recorder.record({ ...AGENT_STEP, status: 'failed', meta: {} })
+    expect((await storedColumns())?.inputTokens).toBeNull()
+    expect((await storedColumns())?.modelId).toBeNull()
+  })
+
+  test('a recorded tool step is found by its tool id, and only that one', async () => {
+    const recorder = createDurableRunRecorder({ db, runId: RUN_ID })
+    await recorder.record({
+      ...AGENT_STEP,
+      nodeKind: 'tool',
+      meta: { toolId: 'search', args: {} },
+    })
+    await recorder.record({
+      ...AGENT_STEP,
+      nodeId: 'node-2',
+      sequence: 2,
+      nodeKind: 'tool',
+      meta: { toolId: 'other', args: {} },
+    })
+
+    const rows = await listToolInvocations(db, { toolId: 'search' })
+    expect(rows.map((r) => r.nodeId)).toEqual(['node-1'])
+  })
+})
+
 describe('run-time cost is the one figure', () => {
   test('a catalog edit moves no read of a stamped step', async () => {
     const recorder = createDurableRunRecorder({
@@ -161,7 +226,7 @@ describe('run-time cost is the one figure', () => {
       nodeKind: 'agent',
       sequence: 1,
       status: 'completed',
-      meta: META,
+      ...recordedMeta({ meta: META }),
     })
     await repriceCatalog()
 

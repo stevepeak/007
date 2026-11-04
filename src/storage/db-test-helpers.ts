@@ -6,6 +6,7 @@ import { Database, type SQLQueryBindings } from 'bun:sqlite'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 
 import type { WfDb } from './client'
+import { stepColumnsFromMeta } from './run-recorder'
 import { wfSchema } from './schema'
 
 // The migrated in-memory database every DB-backed test runs against.
@@ -30,6 +31,30 @@ const MIGRATIONS_DIR = fileURLToPath(
 )
 
 /**
+ * Replay the migrations numbered after `after` and up to `through`, inclusive.
+ * Both are 4-digit migration prefixes; omitted, the range is unbounded.
+ */
+export function applyMigrations(args: {
+  sqlite: Database
+  after?: string
+  through?: string
+}): void {
+  const files = readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()
+  for (const f of files) {
+    const prefix = f.slice(0, 4)
+    if (args.after != null && prefix <= args.after) continue
+    if (args.through != null && prefix > args.through) continue
+    const sql = readFileSync(`${MIGRATIONS_DIR}/${f}`, 'utf8')
+    for (const stmt of sql.split('--> statement-breakpoint')) {
+      const trimmed = stmt.trim()
+      if (trimmed) args.sqlite.run(trimmed)
+    }
+  }
+}
+
+/**
  * An in-memory SQLite database with every migration applied, as the raw
  * `bun:sqlite` handle.
  *
@@ -38,16 +63,7 @@ const MIGRATIONS_DIR = fileURLToPath(
  */
 export function migratedSqlite(): Database {
   const sqlite = new Database(':memory:')
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()
-  for (const f of files) {
-    const sql = readFileSync(`${MIGRATIONS_DIR}/${f}`, 'utf8')
-    for (const stmt of sql.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim()
-      if (trimmed) sqlite.run(trimmed)
-    }
-  }
+  applyMigrations({ sqlite })
   return sqlite
 }
 
@@ -170,6 +186,11 @@ export function d1Guard(sqlite: Database): Database {
  */
 export function wrapSqlite(sqlite: Database): WfDb {
   return drizzle(d1Guard(sqlite), { schema: wfSchema }) as unknown as WfDb
+}
+
+/** A step's `meta` plus the columns the recorder promotes from it, for seeding. */
+export function recordedMeta(args: { meta: unknown }) {
+  return { meta: args.meta, ...stepColumnsFromMeta(args) }
 }
 
 /** A migrated, empty {@link WfDb}. One per test — `:memory:` makes it cheap. */

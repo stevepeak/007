@@ -258,7 +258,7 @@ export async function listToolInvocations(
     .where(
       and(
         eq(wfRunStep.nodeKind, 'tool'),
-        eq(sql`json_extract(${wfRunStep.meta}, '$.toolId')`, input.toolId),
+        eq(wfRunStep.toolId, input.toolId),
       ),
     )
     .orderBy(desc(wfRunStep.startedAt))

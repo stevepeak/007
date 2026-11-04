@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
 
 import type { WfDb } from '../client'
-import { freshDb } from '../db-test-helpers'
+import { freshDb, recordedMeta } from '../db-test-helpers'
 import {
   wfModel,
   wfRun,
@@ -64,12 +64,14 @@ async function agentStep(
     nodeKind: 'agent',
     sequence: seq,
     status: 'completed',
-    meta: {
+    ...recordedMeta({
+      meta: {
       model: opts.model ?? 'flash',
       steps: [],
       totalUsage: { inputTokens: tokens, outputTokens: 0 },
       ...(opts.agentVersion != null ? { agentVersion: opts.agentVersion } : {}),
-    },
+      },
+    }),
     ...(opts.seconds != null
       ? {
           startedAt: new Date(0),

@@ -27,7 +27,7 @@ import {
   costUsdAtRunExpr,
   hasRunPriceExpr,
   inputTokensExpr,
-  modelExpr,
+  isModelCall,
   outputTokensExpr,
 } from './runs-usage'
 import { selectChunked } from './shared'
@@ -565,9 +565,8 @@ async function orFallBack<T>(
  * spend per model, the outstanding feedback queue, and the newest failures.
  *
  * Six reads, all issued together and all bounded by the resolved window. The
- * spend query is the expensive one — `json_extract` has to parse each agent
- * step's full `meta` blob (which embeds every turn's tool inputs/outputs) — so
- * the window is clamped server-side rather than trusted off the wire.
+ * spend query is the expensive one — it visits every agent step in the window —
+ * so the window is clamped server-side rather than trusted off the wire.
  */
 export async function loadDashboard(
   db: WfDb,
@@ -613,23 +612,21 @@ export async function loadDashboard(
       .groupBy(wfWorkflowVersion.workflowId, wfWorkflow.name, runBucket)
   }
 
-  // Only agent steps carry usage — generation and decision agents both, under
-  // the key names `runs-usage.ts` reads; the filter through `wf_run` is what
-  // keeps this off a full step-table scan. `json_extract` still has to parse each
-  // step's whole `meta` blob, tool inputs and outputs included.
+  // Only agent steps carry usage — generation and decision agents both; the
+  // filter through `wf_run` is what keeps this off a full step-table scan.
   const d1Spend = () => {
     return db
       .select({
         ordinal: runBucket,
-        model: modelExpr,
+        model: wfRunStep.modelId,
         inputTokens: inputTokensExpr,
         outputTokens: outputTokensExpr,
         costUsdAtRun: costUsdAtRunExpr,
       })
       .from(wfRunStep)
       .innerJoin(wfRun, eq(wfRunStep.runId, wfRun.id))
-      .where(and(eq(wfRunStep.nodeKind, 'agent'), inWindow))
-      .groupBy(runBucket, modelExpr, hasRunPriceExpr)
+      .where(and(eq(wfRunStep.nodeKind, 'agent'), isModelCall, inWindow))
+      .groupBy(runBucket, wfRunStep.modelId, hasRunPriceExpr)
   }
 
   const [inFlightRows, queueRows, trendRows] = await Promise.all([

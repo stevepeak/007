@@ -1,22 +1,21 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
 
-import type { ModelPriceMap } from '../../engine/cost'
+import { agentUsage, type ModelPriceMap } from '../../engine/cost'
 import type { WfDb } from '../client'
-import { freshDb } from '../db-test-helpers'
+import { freshDb, recordedMeta } from '../db-test-helpers'
 import { wfRunStep } from '../schema'
 
-import { foldUsage, selectRunUsage, usageRowFromMeta } from './runs-usage'
+import { foldUsage, selectRunUsage } from './runs-usage'
 
-// Agent usage is now summed in SQLite instead of by folding every step's `meta`
-// in JS (see the module header for the measurement that forced it). That trade
-// buys a large payload win and takes on ONE risk: the SQL deciding a different
-// set of rows are agent calls than `asAgentMeta` does. A step wrongly excluded
-// silently under-reports cost; a step wrongly included reads garbage as tokens.
+// Agent usage is summed in SQLite from columns the recorder promotes out of
+// `meta`. The risk that buys is the SQL deciding a different set of rows are agent
+// calls than `agentUsage` does: a step wrongly excluded silently under-reports
+// cost; a step wrongly included reads garbage as tokens.
 //
 // So the first describe below is a parity harness, not a set of examples: every
-// meta shape goes through BOTH implementations and the answers must match. Add
-// a shape here whenever the recorder learns to write a new one.
+// meta shape goes through BOTH and the answers must match. Add a shape here
+// whenever the recorder learns to write a new one.
 
 let db: WfDb
 
@@ -38,7 +37,7 @@ async function addStep(
     nodeKind: 'agent',
     sequence: seq,
     status: 'completed',
-    meta,
+    ...recordedMeta({ meta }),
     startedAt: window?.startedAt,
     finishedAt: window?.finishedAt ?? undefined,
   })
@@ -56,15 +55,14 @@ const META_SHAPES: Array<{ name: string; meta: unknown }> = [
   },
   {
     name: 'an agent that reported no usage numbers',
-    // `totalUsage` present but empty — JS defaults both fields to 0 and still
-    // counts the call, so SQL must `coalesce` rather than drop the row.
+    // `totalUsage` present but empty — both fields default to 0 and the call
+    // still counts.
     meta: { model: 'm', steps: [], totalUsage: {} },
   },
   {
     name: 'an agent whose usage is explicitly null',
-    // The key exists with a JSON null. `'totalUsage' in meta` is TRUE in JS, so
-    // this IS an agent step — the case `json_type(...) is not null` exists for,
-    // since `json_extract` alone would report nothing here.
+    // The key exists with a JSON null, and `'totalUsage' in meta` is what decides,
+    // so this IS an agent step.
     meta: { model: 'm', steps: [], totalUsage: null },
   },
   {
@@ -114,8 +112,8 @@ const META_SHAPES: Array<{ name: string; meta: unknown }> = [
   { name: 'an empty meta', meta: {} },
   {
     name: 'a meta whose steps is not an array',
-    // Structurally close to an agent step but not one. `asAgentMeta` requires
-    // `Array.isArray(steps)`; `json_type(...) = 'array'` is its translation.
+    // Structurally close to an agent step but not one: `asAgentMeta` requires
+    // `Array.isArray(steps)`.
     meta: { model: 'm', steps: 3, totalUsage: { inputTokens: 1, outputTokens: 1 } },
   },
   {
@@ -124,29 +122,27 @@ const META_SHAPES: Array<{ name: string; meta: unknown }> = [
   },
 ]
 
-describe('the SQL read and asAgentMeta classify identically', () => {
+describe('the SQL read and agentUsage classify identically', () => {
   test.each(META_SHAPES)('$name', async ({ meta }) => {
     await addStep('run-1', meta)
 
     const sqlRows = await selectRunUsage(db, ['run-1'])
-    const jsRow = usageRowFromMeta('run-1', meta)
+    const usage = agentUsage(meta)
 
     // Same verdict on whether this is an agent call at all…
-    expect(sqlRows.length).toBe(jsRow ? 1 : 0)
-    if (!jsRow) return
+    expect(sqlRows.length).toBe(usage ? 1 : 0)
+    if (!usage) return
     // …and the same numbers when it is.
-    expect(sqlRows[0]?.model).toBe(jsRow.model)
-    expect(sqlRows[0]?.inputTokens).toBe(jsRow.inputTokens)
-    expect(sqlRows[0]?.outputTokens).toBe(jsRow.outputTokens)
+    expect(sqlRows[0]?.model).toBe(usage.model ? usage.model : null)
+    expect(sqlRows[0]?.inputTokens).toBe(usage.inputTokens)
+    expect(sqlRows[0]?.outputTokens).toBe(usage.outputTokens)
   })
 
   test('a run of mixed steps counts only the agent ones', async () => {
     for (const { meta } of META_SHAPES) await addStep('run-1', meta)
 
     const rows = await selectRunUsage(db, ['run-1'])
-    const expected = META_SHAPES.filter(
-      (s) => usageRowFromMeta('run-1', s.meta) !== null,
-    ).length
+    const expected = META_SHAPES.filter((s) => agentUsage(s.meta) !== null).length
 
     // Grouped by model, so the count is distinct models, not steps — three of
     // the agent shapes share `model: 'm'` and one has none.

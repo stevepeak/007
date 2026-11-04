@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import type { AnalyticsRow } from '../../analytics/query'
 import type { ModelPriceMap } from '../../engine/cost'
 import type { WfDb } from '../client'
-import { freshDb } from '../db-test-helpers'
+import { freshDb, recordedMeta } from '../db-test-helpers'
 import {
   wfFeedback,
   wfModel,
@@ -93,7 +93,7 @@ async function addAgentStep(
     nodeKind: 'agent',
     sequence: 1,
     status: 'completed',
-    meta: agentMeta(model, inputTokens, outputTokens),
+    ...recordedMeta({ meta: agentMeta(model, inputTokens, outputTokens) }),
   })
 }
 
@@ -373,11 +373,13 @@ describe('loadDashboard', () => {
       nodeKind: 'agent',
       sequence: 1,
       status: 'completed',
-      meta: {
+      ...recordedMeta({
+        meta: {
         modelId: PRICED,
         questionIds: ['q1'],
         usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
-      },
+        },
+      }),
     })
 
     const d = await loadDashboard(db, { since: NOW - 3 * DAY }, NOW)
@@ -393,7 +395,7 @@ describe('loadDashboard', () => {
       nodeKind: 'tool',
       sequence: 1,
       status: 'completed',
-      meta: agentMeta(PRICED, 1_000_000, 1_000_000),
+      ...recordedMeta({ meta: agentMeta(PRICED, 1_000_000, 1_000_000) }),
     })
 
     const d = await loadDashboard(db, { since: NOW - 3 * DAY }, NOW)

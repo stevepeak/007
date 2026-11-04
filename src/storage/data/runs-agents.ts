@@ -291,7 +291,7 @@ function foldCalls(
  * the agent editor's "Recent calls" tab.
  *
  * A call is a `wf_run_step` with `nodeKind = 'agent'` that is attributable to
- * the agent either by its stamped `meta.agentId` (every call recorded since the
+ * the agent either by its stamped `agent_id` (every call recorded since the
  * stamp landed, including spawned sub-agents, which have no graph node) or by
  * having run on a node that references the agent in some published version.
  *
@@ -304,8 +304,8 @@ function foldCalls(
  * query with a join. Joined to `wf_run`, the planner drove the loop from
  * `wf_run` (via `wf_run_eval_created_idx`, since `is_eval = false` matches
  * nearly every run) and read every step of every run to evaluate the
- * `json_extract` — ~44k rows and 200-950ms to return a page of 20. Alone, the
- * step predicate is a `MULTI-INDEX OR` across `wf_run_step_agent_idx` and
+ * attribution — ~44k rows and 200-950ms to return a page of 20. Alone, the
+ * step predicate is a `MULTI-INDEX OR` across `wf_run_step_agent_id_idx` and
  * `wf_run_step_node_idx`, which holds without `sqlite_stat1` — D1 carries no
  * ANALYZE stats, so a plan that only wins once the planner knows the table
  * shapes is a plan that never wins. Keep the joins out of phase 1.
@@ -319,10 +319,7 @@ export async function listAgentCalls(
     max: AGENT_CALL_PAGE_MAX,
   })
   const nodeIds = await agentNodeIds(db, input.agentId)
-  const byStampedAgentId = eq(
-    sql`json_extract(${wfRunStep.meta}, '$.agentId')`,
-    input.agentId,
-  )
+  const byStampedAgentId = eq(wfRunStep.agentId, input.agentId)
 
   // One page per parameter-budget chunk of node ids. This one can't just
   // concatenate chunks the way the plain id lookups do: the node-id list is an

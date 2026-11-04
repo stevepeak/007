@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 
 import type { WfDb } from '../client'
-import { freshDb } from '../db-test-helpers'
+import { freshDb, recordedMeta } from '../db-test-helpers'
 import {
   wfModel,
   wfRun,
@@ -106,10 +106,12 @@ describe('listAgentCalls', () => {
       nodeKind: 'agent',
       sequence: 0,
       status: 'completed',
-      meta: agentMeta({
+      ...recordedMeta({
+        meta: agentMeta({
         agentId: AGENT,
         agentVersion: 7,
         subAgentName: 'Researcher',
+        }),
       }),
       startedAt: new Date(1000),
       finishedAt: new Date(4000),
@@ -147,7 +149,7 @@ describe('listAgentCalls', () => {
       sequence: 0,
       status: 'completed',
       // Recorded before the stamp existed — no agentId in meta.
-      meta: agentMeta(),
+      ...recordedMeta({ meta: agentMeta() }),
       startedAt: new Date(1000),
     })
 
@@ -167,7 +169,7 @@ describe('listAgentCalls', () => {
         nodeKind: 'agent',
         sequence: 0,
         status: 'completed',
-        meta: agentMeta({ agentId: OTHER_AGENT }),
+        ...recordedMeta({ meta: agentMeta({ agentId: OTHER_AGENT }) }),
       },
       {
         runId: 'run-1',
@@ -183,7 +185,7 @@ describe('listAgentCalls', () => {
         nodeKind: 'agent',
         sequence: 0,
         status: 'completed',
-        meta: agentMeta({ agentId: AGENT }),
+        ...recordedMeta({ meta: agentMeta({ agentId: AGENT }) }),
       },
     ])
 
@@ -201,7 +203,7 @@ describe('listAgentCalls', () => {
         nodeKind: 'agent',
         sequence: 0,
         status: 'completed',
-        meta: agentMeta({ agentId: AGENT }),
+        ...recordedMeta({ meta: agentMeta({ agentId: AGENT }) }),
         startedAt: new Date(ts),
       })
     }
@@ -223,7 +225,7 @@ describe('listAgentCalls', () => {
       nodeKind: 'agent',
       sequence: 0,
       status: 'completed',
-      meta: agentMeta({ agentId: AGENT }),
+      ...recordedMeta({ meta: agentMeta({ agentId: AGENT }) }),
       startedAt: new Date(1000),
     })
     await addRun(db, 'run-live', { createdAt: new Date(9000) })
@@ -233,7 +235,7 @@ describe('listAgentCalls', () => {
       nodeKind: 'agent',
       sequence: 0,
       status: 'running',
-      meta: { agentId: AGENT },
+      ...recordedMeta({ meta: { agentId: AGENT } }),
     })
 
     const calls = await listAgentCalls(db, { agentId: AGENT })
@@ -256,7 +258,7 @@ describe('listAgentCalls', () => {
         nodeKind: 'agent',
         sequence: 0,
         status: 'completed',
-        meta: agentMeta({ agentId: AGENT }),
+        ...recordedMeta({ meta: agentMeta({ agentId: AGENT }) }),
         startedAt: new Date(1000),
       },
       {
@@ -265,7 +267,7 @@ describe('listAgentCalls', () => {
         nodeKind: 'agent',
         sequence: 0,
         status: 'completed',
-        meta: agentMeta({ agentId: AGENT }),
+        ...recordedMeta({ meta: agentMeta({ agentId: AGENT }) }),
         startedAt: new Date(5000),
       },
     ])
@@ -287,7 +289,7 @@ describe('listAgentCalls', () => {
         sequence: i,
         status: i === 3 ? ('failed' as const) : ('completed' as const),
         error: i === 3 ? 'item blew up' : null,
-        meta: agentMeta({ agentId: AGENT }),
+        ...recordedMeta({ meta: agentMeta({ agentId: AGENT }) }),
         startedAt: new Date(1000 + i * 1000),
         finishedAt: new Date(2000 + i * 1000),
       })),
@@ -326,7 +328,7 @@ describe('listAgentCalls', () => {
         nodeKind: 'agent',
         sequence: 0,
         status: 'completed',
-        meta: agentMeta({ agentId: AGENT }),
+        ...recordedMeta({ meta: agentMeta({ agentId: AGENT }) }),
         startedAt: new Date(1000),
       },
       {
@@ -337,7 +339,7 @@ describe('listAgentCalls', () => {
         nodeKind: 'agent',
         sequence: 1,
         status: 'completed',
-        meta: agentMeta({ agentId: AGENT }),
+        ...recordedMeta({ meta: agentMeta({ agentId: AGENT }) }),
         startedAt: new Date(2000),
       },
     ])
@@ -356,7 +358,7 @@ describe('listAgentCalls', () => {
       sequence: 0,
       status: 'failed',
       error: 'boom',
-      meta: agentMeta({ agentId: AGENT, model: 'uncatalogued' }),
+      ...recordedMeta({ meta: agentMeta({ agentId: AGENT, model: 'uncatalogued' }) }),
     })
 
     const [call] = await listAgentCalls(db, { agentId: AGENT })

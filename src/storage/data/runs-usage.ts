@@ -1,7 +1,6 @@
-import { and, inArray, sql, type SQL } from 'drizzle-orm'
+import { and, inArray, isNotNull, sql } from 'drizzle-orm'
 
-import { agentUsage, tokenCostUsd, type ModelPriceMap } from '../../engine/cost'
-import { stepAgentVersion } from '../../engine/nodes/agent-generation'
+import { tokenCostUsd, type ModelPriceMap } from '../../engine/cost'
 import type { WfDb } from '../client'
 import { wfRunStep } from '../schema'
 
@@ -11,63 +10,27 @@ import { selectChunked } from './shared'
 // Agent token usage, summed in SQL
 // ---------------------------------------------------------------------------
 //
-// A step records its agent's token usage inside the untyped `meta` JSON and the
-// dollars it was priced at in `cost_usd_at_run`. A step with no recorded dollars
-// is priced by multiplying its tokens against today's model catalog. The obvious
-// way to aggregate that is to select `meta` and fold in JS — which is what this
-// replaces, because `meta` is where an agent step keeps its ENTIRE transcript.
+// A step records its agent's model and token usage in columns the recorder copies
+// out of `meta`, and the dollars it was priced at in `cost_usd_at_run`. A step
+// with no recorded dollars is priced by multiplying its tokens against today's
+// model catalog.
 //
-// Measured on the local D1: an agent step's `meta` averages 6.5 KB and a tool
-// step's 1.3 KB, so 690 steps across 28 runs is ~2 MB of JSON. A 50-row page of
-// the runs explorer already reads megabytes to display two numbers per row, and
-// a recursive roll-up over a 12-item fan-out multiplies that by the fan-out
-// factor. It does not survive.
-//
-// So the extraction moves into SQLite, which returns one small row per (run,
-// model) instead of one fat row per step — the same ~2 MB collapses to a few
-// hundred bytes. PRICING stays in JS: `tokenCostUsd` remains the only place
-// tokens become dollars, and the price map keeps its own precedence rules, so
-// there is no second cost implementation to drift from the first.
+// The sum happens in SQLite, which returns one small row per (run, model) instead
+// of one fat row per step: `meta` is where an agent step keeps its ENTIRE
+// transcript, so folding it in JS reads megabytes to display two numbers per row.
+// PRICING stays in JS: `tokenCostUsd` remains the only place tokens become
+// dollars, and the price map keeps its own precedence rules, so there is no
+// second cost implementation to drift from the first.
+
+/** Tokens are stamped on model calls alone, so this is what makes a step one. */
+export const isModelCall = isNotNull(wfRunStep.inputTokens)
 
 /**
- * The JSON paths below mirror {@link asAgentMeta} / {@link asDecisionMeta} /
- * `agentUsage` exactly, and `runs-usage.test.ts` pins them to each other by
- * running both over the same rows.
- *
- * TWO shapes count as a model call, because the two agent kinds record usage
- * under different keys and share no field:
- *
- *   • generation — a `steps` ARRAY and a `totalUsage` KEY. `json_type` returns
- *     `'null'` (not SQL NULL) for a key present with a JSON null value, which
- *     is what makes it the faithful translation of JS's `'totalUsage' in meta`.
- *   • decision — a `questionIds` ARRAY and a `usage` KEY. `questionIds` is the
- *     discriminator because it is the one key only a decision step writes.
- *
- * Until the second was added, a run whose only model call was a decision agent
- * folded to no rows at all and reported `totalTokens: null` with no cost.
+ * Both sums assume {@link isModelCall}: a group holding only other steps would
+ * sum to NULL rather than the `number` these claim.
  */
-function agentStepCondition(): SQL {
-  return sql`(
-    (json_type(${wfRunStep.meta}, '$.steps') = 'array' and json_type(${wfRunStep.meta}, '$.totalUsage') is not null)
-    or
-    (json_type(${wfRunStep.meta}, '$.questionIds') = 'array' and json_type(${wfRunStep.meta}, '$.usage') is not null)
-  )`
-}
-
-/**
- * The model id the step recorded, or NULL if it recorded none.
- *
- * A generation step writes the provider-native id to `model`; a decision step
- * writes the COMPOSITE catalog id to `modelId`. Both resolve, because the price
- * map is keyed by each.
- */
-export const modelExpr = sql<
-  string | null
->`coalesce(json_extract(${wfRunStep.meta}, '$.model'), json_extract(${wfRunStep.meta}, '$.modelId'))`
-
-/** `coalesce` to 0 mirrors `agentUsage`'s `?? 0` for a usage field never written. */
-export const inputTokensExpr = sql<number>`sum(coalesce(json_extract(${wfRunStep.meta}, '$.totalUsage.inputTokens'), json_extract(${wfRunStep.meta}, '$.usage.inputTokens'), 0))`
-export const outputTokensExpr = sql<number>`sum(coalesce(json_extract(${wfRunStep.meta}, '$.totalUsage.outputTokens'), json_extract(${wfRunStep.meta}, '$.usage.outputTokens'), 0))`
+export const inputTokensExpr = sql<number>`sum(${wfRunStep.inputTokens})`
+export const outputTokensExpr = sql<number>`sum(${wfRunStep.outputTokens})`
 
 /**
  * Dollars priced at run time. Pair it with {@link hasRunPriceExpr} in the GROUP
@@ -147,7 +110,7 @@ export async function selectRunUsage(
     return db
       .select({
         runId: wfRunStep.runId,
-        model: modelExpr,
+        model: wfRunStep.modelId,
         inputTokens: inputTokensExpr,
         outputTokens: outputTokensExpr,
         costUsdAtRun: costUsdAtRunExpr,
@@ -155,37 +118,9 @@ export async function selectRunUsage(
         agentVersion: agentVersionExpr,
       })
       .from(wfRunStep)
-      .where(and(inArray(wfRunStep.runId, ids), agentStepCondition()))
-      .groupBy(wfRunStep.runId, modelExpr, hasRunPriceExpr)
+      .where(and(inArray(wfRunStep.runId, ids), isModelCall))
+      .groupBy(wfRunStep.runId, wfRunStep.modelId, hasRunPriceExpr)
   })
-}
-
-/**
- * The JS half of the same read, for callers that already hold the step rows.
- * Exists so `runs-usage.test.ts` can assert the SQL predicate and this one
- * classify identical rows identically — the drift this module is most exposed
- * to is the SQL quietly disagreeing about what an agent step IS.
- */
-export function usageRowFromMeta(
-  runId: string,
-  meta: unknown,
-): RunUsageRow | null {
-  // Via `agentUsage` rather than the narrowings directly, so this reads exactly
-  // the two shapes `agentStepCondition` accepts and cannot drift from them.
-  const usage = agentUsage(meta)
-  if (!usage) return null
-  return {
-    runId,
-    // Null for a step that recorded no model, whether that reached us as
-    // `undefined` (generation meta missing the key) or `''` (decision meta
-    // missing `modelId`) — the SQL side is a single NULL either way.
-    model: usage.model ? usage.model : null,
-    inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
-    costUsdAtRun: null,
-    agentMs: null,
-    agentVersion: stepAgentVersion(meta),
-  }
 }
 
 /** Tokens + dollars + the models involved, folded from usage rows. */

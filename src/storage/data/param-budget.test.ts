@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 
 import type { WfDb } from '../client'
-import { freshDb } from '../db-test-helpers'
+import { freshDb, recordedMeta } from '../db-test-helpers'
 import {
   wfAgent,
   wfEvalResult,
@@ -86,7 +86,7 @@ describe('D1 parameter budget', () => {
           nodeKind: 'agent',
           sequence,
           status: 'completed' as const,
-          meta: agentMeta('m', 10 + i, 5),
+          ...recordedMeta({ meta: agentMeta('m', 10 + i, 5) }),
         }))
       }), (rows) => db.insert(wfRunStep).values(rows))
 
@@ -119,7 +119,7 @@ describe('D1 parameter budget', () => {
         nodeKind: 'agent',
         sequence: 1,
         status: 'completed' as const,
-        meta: agentMeta('m', 7, 3),
+        ...recordedMeta({ meta: agentMeta('m', 7, 3) }),
       })), (rows) => db.insert(wfRunStep).values(rows))
 
     // 200 is RUN_PAGE_MAX — the largest page a caller can ask for, and twice
@@ -237,7 +237,7 @@ describe('D1 parameter budget', () => {
         nodeKind: 'agent',
         sequence: 1,
         status: 'completed' as const,
-        meta: agentMeta('m', 1, 1),
+        ...recordedMeta({ meta: agentMeta('m', 1, 1) }),
       })), (rows) => db.insert(wfRunStep).values(rows))
 
     const calls = await listAgentCalls(db, { agentId: 'agent-1', limit: 20 })

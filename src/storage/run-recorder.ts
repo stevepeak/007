@@ -1,4 +1,4 @@
-import { stepCost, type ModelPriceMap } from '../engine/cost'
+import { agentUsage, stepCost, type ModelPriceMap } from '../engine/cost'
 import type { RecordStepArgs, RunRecorder } from '../engine/run-recorder'
 
 import type { WfDb } from './client'
@@ -16,6 +16,28 @@ function isTerminal(status: RecordStepArgs['status']): boolean {
   return status === 'completed' || status === 'failed' || status === 'skipped'
 }
 
+/**
+ * The `wf_run_step` columns promoted out of a step's `meta`. This is the one
+ * place the two agent shapes' key names become a single set of fields; `agentUsage`
+ * decides what counts as a model call, so tokens stay NULL for any other step.
+ */
+export function stepColumnsFromMeta(args: { meta: unknown }) {
+  const { meta } = args
+  const ids = (meta && typeof meta === 'object' ? meta : {}) as {
+    agentId?: unknown
+    toolId?: unknown
+  }
+  const usage = agentUsage(meta)
+  return {
+    agentId: typeof ids.agentId === 'string' ? ids.agentId : null,
+    toolId: typeof ids.toolId === 'string' ? ids.toolId : null,
+    // A step with no model reaches here as `undefined` or `''`, per its shape.
+    modelId: usage?.model ? usage.model : null,
+    inputTokens: usage?.inputTokens ?? null,
+    outputTokens: usage?.outputTokens ?? null,
+  }
+}
+
 export function createDurableRunRecorder(deps: {
   db: WfDb
   runId: string
@@ -29,6 +51,7 @@ export function createDurableRunRecorder(deps: {
       const costUsdAtRun = deps.prices
         ? (stepCost(args.meta, deps.prices)?.cost ?? null)
         : null
+      const promoted = stepColumnsFromMeta({ meta: args.meta })
       // Only overwrite `started_at` when the caller supplies a measured
       // execution start (the terminal record does; the enter record does too).
       // Absent — e.g. an iteration container whose start was stamped at enter
@@ -51,6 +74,7 @@ export function createDurableRunRecorder(deps: {
           branchResult: args.branchResult ?? null,
           meta: args.meta ?? {},
           costUsdAtRun,
+          ...promoted,
           startedAt: args.startedAt ?? null,
           finishedAt,
           error: args.error ?? null,
@@ -65,6 +89,7 @@ export function createDurableRunRecorder(deps: {
             branchResult: args.branchResult ?? null,
             meta: args.meta ?? {},
             costUsdAtRun,
+            ...promoted,
             ...startedAtSet,
             finishedAt,
             error: args.error ?? null,

@@ -172,6 +172,18 @@ export const wfRunStep = sqliteTable(
      * price a NULL against today's catalog.
      */
     costUsdAtRun: real('cost_usd_at_run'),
+    /**
+     * The fields queries filter and sum on, copied out of `meta` by the recorder
+     * (`stepColumnsFromMeta`) so a read never parses a step's transcript and
+     * never needs to know which key an agent kind wrote them under.
+     */
+    agentId: text('agent_id'),
+    toolId: text('tool_id'),
+    /** Provider-native for a generation step, composite for a decision step. */
+    modelId: text('model_id'),
+    /** Non-NULL exactly when the step made a model call, even one reporting 0. */
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
     startedAt: integer('started_at', { mode: 'timestamp' }),
     finishedAt: integer('finished_at', { mode: 'timestamp' }),
     error: text('error'),
@@ -183,18 +195,10 @@ export const wfRunStep = sqliteTable(
     // steps that ran on a node referencing the agent, which is how a call
     // recorded before `meta.agentId` was stamped is still found.
     index('wf_run_step_node_idx').on(t.nodeId, t.startedAt),
-    // The OTHER arm — `meta.agentId`, and `meta.toolId` for
-    // `listToolInvocations` — is indexed too, but by EXPRESSION
-    // (`json_extract(meta, '$.agentId')`), which drizzle-kit 0.31 cannot emit:
-    // it splits the expression on its comma and back-quotes the halves. Those
-    // two indexes are therefore hand-written in migration 0036 and deliberately
-    // absent here. Nothing breaks from the omission — `generate` diffs the
-    // schema against its own snapshot, never against the database, so it will
-    // not drop an index it never knew about — but do not add a `drizzle-kit
-    // push` to this package, which WOULD drop them. Why they exist at all: the
-    // id lives in untyped JSON, so without an index SQLite must read every row
-    // of this table to evaluate the extract (measured: ~44k rows and 200-950ms
-    // per call, on a table of 43k steps, to return a page of 20).
+    // The other arm, and `listToolInvocations`. `started_at` is the second key
+    // because both lookups order by it.
+    index('wf_run_step_agent_id_idx').on(t.agentId, t.startedAt),
+    index('wf_run_step_tool_id_idx').on(t.toolId, t.startedAt),
   ],
 )
 
