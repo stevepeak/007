@@ -58,7 +58,7 @@
     "@hookform/resolvers": "^7.0.2",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@sentry/cloudflare": "^11.10.0",
-    "@tanstack/react-query": "^5.105.3",
+    "@tanstack/react-query": "^5.106.0",
     "@tiptap/core": "^3.32.2",
     "@tiptap/extension-placeholder": "^3.32.2",
     "@tiptap/extensions": "^3.32.2",
