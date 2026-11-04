@@ -9,9 +9,7 @@
 //                                        helpers (import-safe from any runtime)
 //   • '@stevepeak/007/cloudflare/runtime' — GraphWorkflow + RunRoom durable classes
 //                                        (Workers runtime ONLY — imports cloudflare:workers)
-//   • '@stevepeak/007/eval'            — testing harness
+//   • '@stevepeak/007/eval'            — agent evals
 
 export * from './engine'
 export * from './storage'
-export { runWorkflowUnderConditions } from './eval'
-export type { WorkflowTestCase, WorkflowTestRun } from './eval'

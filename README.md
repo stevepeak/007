@@ -429,32 +429,11 @@ HTTP one in production, a mock one in tests).
 
 ---
 
-## Eval / testing
+## Evals
 
-`eval/index.ts` runs a graph through the in-process executor with a mock model,
-mock tools, and an in-memory recorder — no DB, no Cloudflare:
-
-```ts
-import { runWorkflowUnderConditions } from '@stevepeak/007/eval'
-import { MockLanguageModelV3 } from 'ai/test'
-
-const run = await runWorkflowUnderConditions({
-  name: 'happy path',
-  graph: myGraph,
-  triggerInput: { chatId: 'c1', userText: 'hello', messages: [] },
-  config: {
-    getModel: () => new MockLanguageModelV3({ doGenerate: async () => ({ text: 'hi' }) }),
-    listModels: () => [],
-    listProviders: () => [],
-    toolRegistry: new Map(),
-    triggers: { chat_message: { description: '', inputSchema: chatInputSchema } },
-    buildRunDeps: () => ({}),
-  },
-})
-
-expect(run.output).toEqual({ text: 'hi' })
-expect(run.steps.map((s) => s.nodeKind)).toEqual(['trigger', 'agent', 'output'])
-```
+`@stevepeak/007/eval` grades agents: a Goal is a set of Samples run against one
+agent, each graded by deterministic checks and judges. Workflows are not eval
+targets.
 
 ---
 

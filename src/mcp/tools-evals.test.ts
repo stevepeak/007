@@ -151,38 +151,12 @@ describe('create_eval_set target preflight', () => {
 })
 
 describe('create_eval_set against a workflow', () => {
-  const workflow = {
-    workflow: { id: 'wf_1', name: 'Intake' },
-    draft: null,
-    currentVersion: {
-      id: 'ver_1',
-      versionNumber: 2,
-      graph: {
-        nodes: [
-          { id: 'n0', kind: 'trigger', config: { triggerKind: 'chat_message' } },
-          { id: 'n1', kind: 'output', config: {} },
-        ],
-        edges: [],
-      },
-    },
-  } as never
-
-  test("takes the trigger kind from the graph, not from the caller's guess", async () => {
-    let seen: unknown
+  test('is refused, even when the caller asks for one by kind', async () => {
+    let created = false
     const client = stubClient({
-      getWorkflow: async () => workflow,
-      listTriggerEvents: async () => { return [
-          {
-            kind: 'chat_message',
-            description: '',
-            fields: [
-              { name: 'text', type: 'string', optional: false },
-              { name: 'threadId', type: 'string', optional: true },
-            ],
-          },
-        ] as never },
-      createEvalSet: async (input) => {
-        seen = input
+      getAgent: async () => null,
+      createEvalSet: async () => {
+        created = true
         return { setId: 'set_2' }
       },
     })
@@ -190,31 +164,9 @@ describe('create_eval_set against a workflow', () => {
       name: 'Goal',
       targetKind: 'workflow',
       targetId: 'wf_1',
-    })) as { target: { sampleInputKind: string; inputTemplate: { payload: unknown } } }
-    // A goal recorded under a trigger the graph doesn't declare runs the
-    // workflow under the wrong contract.
-    expect((seen as { triggerKind: string }).triggerKind).toBe('chat_message')
-    expect(result.target.sampleInputKind).toBe('trigger')
-    expect(result.target.inputTemplate.payload).toEqual({
-      text: null,
-      threadId: null,
-    })
-  })
-
-  test('survives a host whose trigger catalog is unavailable', async () => {
-    const client = stubClient({
-      getWorkflow: async () => workflow,
-      listTriggerEvents: async () => {
-        throw new Error('no registry')
-      },
-      createEvalSet: async () => ({ setId: 'set_2' }),
-    })
-    const result = (await toolNamed('create_eval_set').run(client, {
-      name: 'Goal',
-      targetKind: 'workflow',
-      targetId: 'wf_1',
-    })) as { target: { inputTemplate: { payload: unknown } } }
-    expect(result.target.inputTemplate.payload).toEqual({})
+    })) as { error: string }
+    expect(result.error).toContain('never workflows')
+    expect(created).toBe(false)
   })
 })
 
@@ -223,15 +175,12 @@ describe('create_eval_set against a workflow', () => {
  * lints it returns are checked AGAINST the target (a fixture keyed on a tool the
  * agent doesn't have; a judge `path` naming no declared output field).
  */
-function setDetail(over?: {
-  rows?: unknown[]
-  targetKind?: 'agent' | 'workflow'
-}) {
+function setDetail(over?: { rows?: unknown[] }) {
   return {
     set: {
       id: 'set_1',
       name: 'Goal',
-      targetKind: over?.targetKind ?? 'agent',
+      targetKind: 'agent',
       targetId: 'ag_1',
     },
     rows: over?.rows ?? [],

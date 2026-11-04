@@ -856,29 +856,6 @@ describe('run_eval — grading an unsaved draft', () => {
     expect(started).toHaveLength(0)
   })
 
-  test('refuses a goal that targets a workflow rather than an agent', async () => {
-    const { started, client } = stub({
-      getEvalSet: async () => {
-        return {
-          set: {
-            id: 'set_1',
-            name: 'Intake end to end',
-            rowCount: 1,
-            targetKind: 'workflow',
-            targetId: 'a1',
-          },
-          rows: [{ id: 'row_0', archived: false }],
-        } as never
-      },
-    })
-    const out = (await toolNamed('run_eval').run(client, {
-      setIds: ['set_1'],
-      draftAgentId: 'a1',
-    })) as { error: string }
-    expect(out.error).toContain('Intake end to end')
-    expect(started).toHaveLength(0)
-  })
-
   test('says so rather than silently running the published version', async () => {
     const { started, client } = stub({
       getAgent: async () => {

@@ -1,9 +1,8 @@
 import type { NodeExecution } from '../engine/graph'
 
 // The step policy every eval run's nodes are capped at, applied as a
-// RUN-SCOPED override rather than baked into the graph: an eval may target a
-// workflow the user published, whose declared execution policy is a property of
-// their production graph and not of our harness.
+// RUN-SCOPED override rather than baked into the graph, so it also reaches a
+// hidden wrapper that was cached long ago.
 
 /**
  * `timeoutMs: 12 min` derives (via `modelBudgetFor`) a 9-minute in-process
@@ -16,11 +15,6 @@ import type { NodeExecution } from '../engine/graph'
  * Timeout only, no `retries`: agent-eval wrappers run on the INLINE engine
  * (`buildAgentWrapperGraph`), which has no `step.do` and therefore no step
  * retries to suppress — the in-process model budget is the only bound there.
- * A workflow-target eval whose author chose `engine: 'durable'` keeps that
- * engine's own retry policy; bounding it would mean threading this override
- * through the dispatch hot path of every production run, which is not worth it
- * for one caller. Such a run now merely takes longer to fail — it can no longer
- * fail invisibly, which was the actual defect.
  */
 export const EVAL_NODE_EXECUTION: NodeExecution = {
   timeoutMs: 12 * 60_000,

@@ -36,13 +36,6 @@ describe('eval checks schema', () => {
         match: 'equals',
         value: 100,
       },
-      { type: 'node_visited', nodeId: 'ask_order_id', visited: false },
-      {
-        type: 'node_input_match',
-        nodeId: 'ask_order_id',
-        match: 'contains',
-        value: 'missing id',
-      },
       { type: 'output_match', match: 'regex', value: 'ETA' },
     ] as const) {
       expect(evalCheckSchema.parse(check)).toEqual(check)
@@ -188,14 +181,6 @@ describe('legacy row upgrade', () => {
     expect(
       parseEvalSampleInput({ seededMessages: seeded, promptVariables: {} }),
     ).toEqual({ kind: 'conversation', turns: seeded, variables: {} })
-  })
-
-  test('a bare routed payload becomes a trigger input', () => {
-    expect(parseEvalSampleInput({ triggerInput: { chatId: 'c1' } })).toEqual({
-      kind: 'trigger',
-      payload: { chatId: 'c1' },
-      variables: {},
-    })
   })
 
   test('an empty legacy column is an empty task input', () => {

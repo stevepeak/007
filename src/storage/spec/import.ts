@@ -6,7 +6,7 @@
 //
 // Order matters and is fixed here: agents first (workflow graphs resolve agent
 // slugs → ids), then workflows (two passes so sub-workflow refs resolve before
-// any row is written), then evals (targets resolve to agent/workflow ids).
+// any row is written), then evals (targets resolve to agent ids).
 //
 // `dryRun` computes the change report without writing — the engine behind the
 // CLI's `diff`. `prune` archives slugged entities absent from the bundle.
@@ -486,13 +486,10 @@ async function reconcileEvals(
   )
 
   for (const spec of bundle.evals) {
-    const targetId =
-      spec.targetKind === 'agent'
-        ? maps.agentIdBySlug.get(spec.target)
-        : maps.workflowIdBySlug.get(spec.target)
+    const targetId = maps.agentIdBySlug.get(spec.target)
     if (!targetId) {
       throw new Error(
-        `Eval "${spec.slug}" targets ${spec.targetKind} "${spec.target}", ` +
+        `Eval "${spec.slug}" targets agent "${spec.target}", ` +
           `which is not in the bundle.`,
       )
     }

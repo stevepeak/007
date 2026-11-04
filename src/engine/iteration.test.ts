@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { z } from 'zod'
 
+import { runWorkflowUnderConditions } from './workflow-test-helpers'
+
 import {
   buildIterationSubgraph,
   type ToolRegistry,
   type WfSdkConfig,
-} from '../engine'
-
-import { runWorkflowUnderConditions } from './index'
+} from './index'
 
 // End-to-end: a trigger emits a list, an iteration node maps a subgraph over it
 // (item → shout tool → item result), and the outer output receives the ordered

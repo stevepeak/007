@@ -1,7 +1,5 @@
 import { Plus, X } from 'lucide-react'
 
-import { isRecord } from '../../engine/guards'
-import { toText } from '../../engine/text'
 import type { EvalSampleInput } from '../../server/protocol'
 import { useWfComponents } from '../context'
 import { useAgents } from '../hooks'
@@ -16,7 +14,6 @@ import { ConversationEditor } from './eval-sample-conversation'
 //   • task         — the values the agent's `${vars}` resolve to. Input → output.
 //   • conversation — the thread the agent answers, plus any `${vars}` its system
 //                    prompt still interpolates.
-//   • trigger      — a workflow target's routed payload, verbatim.
 //
 // The variant is picked for the author from the target agent's `inputKind`, not
 // offered as a choice: a sample whose shape disagreed with its target's contract
@@ -31,9 +28,6 @@ export function SampleInputEditor({
   value: EvalSampleInput
   onChange: (next: EvalSampleInput) => void
 }) {
-  if (value.kind === 'trigger') {
-    return <TriggerPayloadEditor value={value} onChange={onChange} />
-  }
   if (value.kind === 'conversation') {
     return (
       <div className="space-y-4">
@@ -181,48 +175,6 @@ function VariablesEditor({
         <Plus className="size-4" />
         Add field
       </Button>
-    </div>
-  )
-}
-
-// ── Trigger payload (workflow targets) ───────────────────────────────────────
-
-function TriggerPayloadEditor({
-  value,
-  onChange,
-}: {
-  value: Extract<EvalSampleInput, { kind: 'trigger' }>
-  onChange: (next: EvalSampleInput) => void
-}) {
-  const { Textarea } = useWfComponents()
-  const field = useCommittedField(
-    value.payload,
-    (payload) => onChange({ ...value, payload }),
-    JSON.stringify,
-  )
-  const text = toText(field.value, { indent: 2 })
-  return (
-    <div className="space-y-2">
-      <p className="px-1 text-xs text-neutral-400">
-        The payload this workflow&apos;s trigger routed — the sample replays the
-        same call.
-      </p>
-      <Textarea
-        value={text}
-        onChange={(e) => {
-          try {
-            const parsed: unknown = JSON.parse(e.target.value)
-            if (isRecord(parsed)) field.onChange(parsed)
-          } catch {
-            // Mid-edit JSON: keep the last valid object rather than dropping the
-            // payload. The textarea reflects the parsed value on blur.
-          }
-        }}
-        onBlur={field.onBlur}
-        rows={10}
-        spellCheck={false}
-        className="font-mono text-[11px]"
-      />
     </div>
   )
 }

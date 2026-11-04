@@ -8,10 +8,9 @@ import { makeAgentConfig } from '../engine/agent-test-helpers'
 import type { SeededMessage } from '../engine/eval-schema'
 import { mockFinish, mockUsage } from '../engine/model-test-helpers'
 import type { AgentNodeMeta } from '../engine/nodes/agent'
+import { runWorkflowUnderConditions } from '../engine/workflow-test-helpers'
 
 import { collectSeededToolCalls, seededMessagesToUiMessages } from './synthesis'
-
-import { runWorkflowUnderConditions } from './index'
 
 // Synthesis eval mode. Two layers:
 //   1. the pure converters (`seededMessagesToUiMessages` / `collectSeededToolCalls`)

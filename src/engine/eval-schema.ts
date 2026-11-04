@@ -85,19 +85,6 @@ export const evalCheckSchema = z.discriminatedUnion('type', [
     value: z.unknown(),
   }),
   z.object({
-    type: z.literal('node_visited'),
-    nodeId: z.string(),
-    visited: z.boolean(),
-  }),
-  z.object({
-    type: z.literal('node_input_match'),
-    nodeId: z.string(),
-    /** Optional JSON path into the node's recorded `input`; omit = whole. */
-    path: z.string().optional(),
-    match: evalMatchSchema,
-    value: z.unknown(),
-  }),
-  z.object({
     type: z.literal('output_match'),
     /** Optional JSON path into the run `output`; omit = whole object. */
     path: z.string().optional(),
@@ -160,13 +147,6 @@ export const evalCheckSchema = z.discriminatedUnion('type', [
      */
     verdict: z.string().optional(),
     expect: z.array(decisionExpectationSchema).default([]),
-    /**
-     * The workflow node whose output to grade. A workflow's output is whatever
-     * its Output node returns — usually not the decision itself, which a Switch
-     * routed on — so a workflow-target sample names the decision node here.
-     * Omit for a decision-agent target, whose output IS the decision.
-     */
-    nodeId: z.string().optional(),
   }),
 ])
 export type EvalCheck = z.infer<typeof evalCheckSchema>
@@ -335,26 +315,12 @@ export const conversationInputSchema = z.object({
 })
 
 /**
- * A Sample's input for a WORKFLOW target — the raw trigger payload, verbatim.
- * A workflow has no single prompt to fill in; what it receives is whatever its
- * trigger routed, so the Sample preserves that object as-is.
- */
-export const triggerInputSchema = z.object({
-  kind: z.literal('trigger'),
-  payload: z.record(z.string(), z.unknown()).default({}),
-  /** Run-level prompt variables, for agents nested inside the workflow. */
-  variables: z.record(z.string(), z.string()).default({}),
-  context: sampleContextSchema,
-})
-
-/**
  * A Sample's input for a DECISION agent — the state every question is judged
  * against, verbatim.
  *
  * None of the other three fit. `task` supplies prompt variables to a template
  * that doesn't exist here; `conversation` supplies a thread to an agent that
- * takes none; `trigger` supplies a routed payload to a workflow. A decision
- * agent's input is one opaque state blob — a string, an object, whatever the
+ * takes none. A decision agent's input is one opaque state blob — a string, an object, whatever the
  * caller would have handed the node — so the Sample preserves it as-is.
  *
  * `variables` rides along for the same reason it does on a conversation input:
@@ -371,7 +337,6 @@ export const decisionInputSchema = z.object({
 export const evalSampleInputSchema = z.discriminatedUnion('kind', [
   taskInputSchema,
   conversationInputSchema,
-  triggerInputSchema,
   decisionInputSchema,
 ])
 export type EvalSampleInput = z.infer<typeof evalSampleInputSchema>
@@ -502,7 +467,6 @@ export function evalSampleLayer(
 // beats a shim at every consumer.
 
 type LegacyInitialCondition = {
-  triggerInput?: Record<string, unknown>
   promptVariables?: Record<string, string>
   seededMessages?: SeededMessage[]
   freezeTools?: boolean
@@ -520,9 +484,7 @@ function isLegacyInput(value: unknown): value is LegacyInitialCondition {
 /**
  * Parse a row's stored `input` column, upgrading the legacy initial-condition
  * shape on the way through. A legacy row becomes a `conversation` input when it
- * seeded turns, a `trigger` input when it carried only a routed payload, and a
- * `task` input otherwise — which is what every agent-target Sample authored so
- * far actually is.
+ * seeded turns, and a `task` input otherwise.
  */
 export function parseEvalSampleInput(value: unknown): EvalSampleInput {
   if (isLegacyInput(value)) {
@@ -530,10 +492,6 @@ export function parseEvalSampleInput(value: unknown): EvalSampleInput {
     const variables = legacy.promptVariables ?? {}
     if (legacy.seededMessages && legacy.seededMessages.length > 0) {
       return { kind: 'conversation', turns: legacy.seededMessages, variables }
-    }
-    const payload = legacy.triggerInput ?? {}
-    if (Object.keys(variables).length === 0 && Object.keys(payload).length > 0) {
-      return { kind: 'trigger', payload, variables }
     }
     return { kind: 'task', variables }
   }

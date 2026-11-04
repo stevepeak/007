@@ -1,16 +1,16 @@
 import { MockLanguageModelV3 } from 'ai/test'
 import { describe, expect, test } from 'bun:test'
 
+import { makeAgentConfig } from './agent-test-helpers'
+import { mockFinish, mockUsage } from './model-test-helpers'
+import { runWorkflowUnderConditions } from './workflow-test-helpers'
+
 import type {
   ToolRegistry,
   WfRunManifestEntry,
   WfSdkConfig,
   WorkflowGraph,
-} from '../engine'
-import { makeAgentConfig } from '../engine/agent-test-helpers'
-import { mockFinish, mockUsage } from '../engine/model-test-helpers'
-
-import { runWorkflowUnderConditions } from './index'
+} from './index'
 
 // End-to-end proof that a `workflow` node calls another workflow and awaits its
 // result: the callee's frozen graph (in the run manifest) runs INLINE as a

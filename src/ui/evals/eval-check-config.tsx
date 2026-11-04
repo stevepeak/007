@@ -3,7 +3,6 @@ import {
   isJudgeCheck,
   type EvalCheck,
   type WfDecisionAgentSummary,
-  type WfEvalTargetKind,
 } from '../../server/protocol'
 
 import { BinaryConfig } from './eval-check-config-binary'
@@ -22,7 +21,6 @@ export {
 export function CheckConfigBody({
   check,
   persist,
-  targetKind,
   hasTools,
   outputSchema,
   allowToolIds,
@@ -30,7 +28,6 @@ export function CheckConfigBody({
 }: {
   check: EvalCheck
   persist: (next: EvalCheck) => void
-  targetKind?: WfEvalTargetKind
   /** Whether the target has any tools at all (null = still resolving). */
   hasTools?: boolean | null
   outputSchema?: JsonSchema | null
@@ -52,7 +49,6 @@ export function CheckConfigBody({
     <BinaryConfig
       check={check}
       persist={persist}
-      targetKind={targetKind}
       hasTools={hasTools}
       outputSchema={outputSchema}
       allowToolIds={allowToolIds}

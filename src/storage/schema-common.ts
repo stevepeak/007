@@ -53,9 +53,10 @@ export const WF_RUN_STEP_STATUSES = [
  */
 export const TOP_LEVEL_ITEM_INDEX = -1
 
+// A Goal targets an agent, never a workflow.
+export const WF_EVAL_TARGET_KINDS = ['agent'] as const
 // An eval run shares the run lifecycle vocabulary; each per-row result is a
 // three-way pass/fail/error.
-export const WF_EVAL_TARGET_KINDS = ['agent', 'workflow'] as const
 export const WF_EVAL_RESULT_STATUSES = ['pass', 'fail', 'error'] as const
 
 // Thumbs feedback a human leaves on an answer — the two sentiments the widget

@@ -5,7 +5,6 @@ import type {
   EvalTools,
   ToolContextField,
   ToolOption,
-  WfEvalTargetKind,
 } from '../../server/protocol'
 import { toolSetting } from '../../server/protocol'
 import { useWfComponents } from '../context'
@@ -34,22 +33,19 @@ function executes(args: { tool: ToolOption; tools: EvalTools }): boolean {
 
 /**
  * The host context fields this sample has to fill: the union of what its
- * executing tools declare via `requiresContext`. A workflow target's tools are
- * spread across nodes we don't resolve here, so it is offered every field.
+ * executing tools declare via `requiresContext`.
  */
 function useNeededContext(args: {
   targetId: string
-  targetKind: WfEvalTargetKind
   tools: EvalTools
 }): { fields: ToolContextField[]; required: Set<string> } {
-  const { targetId, targetKind, tools } = args
+  const { targetId, tools } = args
   const fieldsQuery = useToolContextFields()
   const toolsQuery = useTools()
   const detail = useAgent(targetId)
 
   return useMemo(() => {
     const all = fieldsQuery.data ?? []
-    if (targetKind !== 'agent') return { fields: all, required: new Set() }
     const config =
       detail.data?.agent.kind === 'generation'
         ? ((detail.data.currentVersion?.config ??
@@ -63,25 +59,23 @@ function useNeededContext(args: {
       for (const key of tool.requiresContext ?? []) required.add(key)
     }
     return { fields: all.filter((f) => required.has(f.key)), required }
-  }, [fieldsQuery.data, toolsQuery.data, detail.data, targetKind, tools])
+  }, [fieldsQuery.data, toolsQuery.data, detail.data, tools])
 }
 
 export function SampleContextEditor({
   targetId,
-  targetKind,
   tools,
   value,
   onChange,
 }: {
   targetId: string
-  targetKind: WfEvalTargetKind
   tools: EvalTools
   value: Record<string, string>
   onChange: (next: Record<string, string>) => void
 }) {
   const { Input } = useWfComponents()
   const allFields = useToolContextFields().data
-  const needed = useNeededContext({ targetId, targetKind, tools })
+  const needed = useNeededContext({ targetId, tools })
   const field = useCommittedField(value, onChange, JSON.stringify)
 
   // A value the sample already holds stays visible even once no live tool

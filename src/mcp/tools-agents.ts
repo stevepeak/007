@@ -634,7 +634,7 @@ export function agentWriteTools(): WfMcpTool[] {
             })),
             verdicts: config.verdicts,
             note: 'Version 1 is published. Reachable from the playground, MCP and evals, and from a workflow: point an agent node at it with `config.agentId` (patch_workflow_draft) and bind `config.source` to the value to judge; the node runs these questions and rules, outputting one `verdict`. It floats to the latest published version, frozen into each run manifest at run start.',
-            next: `Smoke-test it with run_decision_preview({ agentId: "${agentId}", state: "…" }), then create_eval_set({ targetId: "${agentId}", targetKind: "agent", … }) and write samples with input.kind "decision".`,
+            next: `Smoke-test it with run_decision_preview({ agentId: "${agentId}", state: "…" }), then create_eval_set({ targetId: "${agentId}", … }) and write samples with input.kind "decision".`,
           }
         }
 
@@ -678,7 +678,7 @@ export function agentWriteTools(): WfMcpTool[] {
             variables.length > 0
               ? `promptVariables: { ${variables.map((v) => `${v}: "…"`).join(', ')} }`
               : 'input: "…"'
-          } }), then create_eval_set({ targetId: "${agentId}", targetKind: "agent", … }) to grade it. Further edits go to the draft via update_agent_draft.`,
+          } }), then create_eval_set({ targetId: "${agentId}", … }) to grade it. Further edits go to the draft via update_agent_draft.`,
         }
       },
     },
@@ -888,7 +888,7 @@ export function agentWriteTools(): WfMcpTool[] {
           answers: result.answers,
           answeredBy: result.modelId,
           usage: result.usage,
-          next: `Pin this as a sample with create_eval_set({ targetId: "${agentId}", targetKind: "agent", … }) + upsert_eval_sample({ input: { kind: "decision", state: "…" }, checks: { op: "and", checks: [{ type: "decision_answers", verdict: "${result.verdict}", expect: [] }] } }).`,
+          next: `Pin this as a sample with create_eval_set({ targetId: "${agentId}", … }) + upsert_eval_sample({ input: { kind: "decision", state: "…" }, checks: { op: "and", checks: [{ type: "decision_answers", verdict: "${result.verdict}", expect: [] }] } }).`,
         }
       },
     },

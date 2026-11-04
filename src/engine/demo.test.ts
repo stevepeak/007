@@ -2,11 +2,11 @@ import { MockLanguageModelV3 } from 'ai/test'
 import { describe, expect, test } from 'bun:test'
 import { z } from 'zod'
 
-import { makeBlobRef, type ToolRegistry, type WfSdkConfig } from '../engine'
-import { makeAgentConfig } from '../engine/agent-test-helpers'
-import { mockFinish, mockUsage } from '../engine/model-test-helpers'
+import { makeAgentConfig } from './agent-test-helpers'
+import { mockFinish, mockUsage } from './model-test-helpers'
+import { runWorkflowUnderConditions } from './workflow-test-helpers'
 
-import { runWorkflowUnderConditions } from './index'
+import { makeBlobRef, type ToolRegistry, type WfSdkConfig } from './index'
 
 // These tests exercise the whole engine integration through the eval harness:
 // the pure Scheduler walk, runNode dispatch, the in-process executor, the

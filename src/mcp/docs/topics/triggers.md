@@ -34,7 +34,7 @@ Each event kind is assigned to **one** workflow, a single global mapping. When t
 There is no "start a run" tool. The ways an MCP session causes executions are:
 
 - `retry_run`: re-run a finished run, either `restart` (fresh, on the latest published version) or `resume` (same version, from the failed step). **It executes real side effects.**
-- `run_eval`: runs samples against an agent or workflow as real (eval-flagged) runs. See [[evals]].
+- `run_eval`: runs samples against an agent as real (eval-flagged) runs. See [[evals]].
 - `run_agent_preview` / `run_decision_preview`: run one agent outside any workflow.
 
 ## The run's identity

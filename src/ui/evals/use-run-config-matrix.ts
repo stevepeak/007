@@ -98,7 +98,7 @@ export function useRunConfigMatrix({
     const vars = new Set<string>()
     for (const id of setIds) {
       const set = sets.find((s) => s.id === id)
-      if (!set || set.targetKind !== 'agent') continue
+      if (!set) continue
       for (const v of agentById.get(set.targetId)?.inputVariables ?? []) {
         vars.add(v)
       }
@@ -112,8 +112,6 @@ export function useRunConfigMatrix({
   // calling for one with tools attached). Several targets union their needs:
   // one model runs every cell. A draft run reads the draft, for the same reason
   // as the variables above.
-  // TODO(ART-201): workflow targets are ungated — their agents live in the
-  // graph, which the list endpoints don't carry.
   const requirements = useMemo<ModelCapabilities | undefined>(() => {
     if (draftConfig) return agentModelRequirements(draftConfig)
     const sets = evalSetsQuery.data ?? []
@@ -121,7 +119,7 @@ export function useRunConfigMatrix({
     const perAgent: ModelCapabilities[] = []
     for (const id of setIds) {
       const set = sets.find((s) => s.id === id)
-      if (!set || set.targetKind !== 'agent') continue
+      if (!set) continue
       const needs = agentById.get(set.targetId)?.modelRequirements
       if (needs) perAgent.push(needs)
     }

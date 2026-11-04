@@ -13,19 +13,13 @@ describe('resolveEvalCellMode', () => {
 
   test('a decision-agent goal runs its cells inline', () => {
     expect(
-      resolveEvalCellMode([{ targetKind: 'agent', targetId: 'dec_1' }], kinds),
+      resolveEvalCellMode([{ targetId: 'dec_1' }], kinds),
     ).toEqual({ mode: 'decision' })
   })
 
-  test('a generation agent and a workflow both run as wf_runs', () => {
+  test('a generation agent runs as wf_runs', () => {
     expect(
-      resolveEvalCellMode(
-        [
-          { targetKind: 'agent', targetId: 'gen_1' },
-          { targetKind: 'workflow', targetId: 'wf_1' },
-        ],
-        kinds,
-      ),
+      resolveEvalCellMode([{ targetId: 'gen_1' }], kinds),
     ).toEqual({ mode: 'run' })
   })
 
@@ -34,8 +28,8 @@ describe('resolveEvalCellMode', () => {
     // per cell; the other has a verdict and a matrix.
     const resolved = resolveEvalCellMode(
       [
-        { targetKind: 'agent', targetId: 'dec_1' },
-        { targetKind: 'agent', targetId: 'gen_1' },
+        { targetId: 'dec_1' },
+        { targetId: 'gen_1' },
       ],
       kinds,
     )
@@ -46,7 +40,7 @@ describe('resolveEvalCellMode', () => {
     // A failed `listAgents` must not turn every goal into a decision sweep.
     expect(
       resolveEvalCellMode(
-        [{ targetKind: 'agent', targetId: 'never_seen' }],
+        [{ targetId: 'never_seen' }],
         new Map(),
       ),
     ).toEqual({ mode: 'run' })

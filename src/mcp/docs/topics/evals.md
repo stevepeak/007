@@ -4,11 +4,11 @@ summary: Goals, Samples and checks; how tools behave under an eval (mocked, live
 order: 85
 ---
 
-An eval runs a **target** (one agent, or one whole workflow) against a set of authored inputs and grades each run with deterministic checks and/or judges. The vocabulary: a **Goal** (wire name `set`) is a named batch of **Samples** (wire name `row`) aimed at one target; an **eval run** is one sweep of one or more Goals; each Sample × matrix cell produces one graded **result**.
+An eval runs a **target** (one agent; never a workflow) against a set of authored inputs and grades each run with deterministic checks and/or judges. The vocabulary: a **Goal** (wire name `set`) is a named batch of **Samples** (wire name `row`) aimed at one target; an **eval run** is one sweep of one or more Goals; each Sample × matrix cell produces one graded **result**.
 
 ## The loop, as MCP calls
 
-1. `create_eval_set` — pick the target (`targetKind` `"agent"` | `"workflow"`, `targetId`). The target is resolved first, and the reply's `target` contract tells you exactly what a Sample must look like: `sampleInputKind`, a ready-to-fill `inputTemplate`, the agent's `toolIds` (the only legal keys for per-tool settings) and its `outputSchema` (the legal `path`s for checks). `get_eval_set` returns the same contract.
+1. `create_eval_set` — pick the target agent (`targetId`). The target is resolved first, and the reply's `target` contract tells you exactly what a Sample must look like: `sampleInputKind`, a ready-to-fill `inputTemplate`, the agent's `toolIds` (the only legal keys for per-tool settings) and its `outputSchema` (the legal `path`s for checks). `get_eval_set` returns the same contract.
 2. `upsert_eval_sample` — one call per Sample. Omit `id` to create; pass it to edit. Editing is a patch at the top level, but `input`, `tools` and `checks` are each **replaced whole** when sent — resend the parts you want to keep. The reply carries lint `warnings` (empty variables, no checks, tool settings keyed on tools the target can't call, check paths that name no output field) and the Sample's `layer`.
 3. `run_eval` — returns an `evalRunId` immediately; the sweep runs on the server.
 4. `get_eval_run` — poll every 20–30 s until `status` is `completed`. Read `errored` separately from `failed`.
@@ -20,7 +20,6 @@ An eval runs a **target** (one agent, or one whole workflow) against a set of au
 
 - **Agent target.** The agent runs inside a hidden, auto-generated `trigger(manual) → agent → output` wrapper workflow on the **inline** engine, so it produces the same trace shape an agent node in a real workflow does. The Goal floats to the agent's latest published version unless `targetVersion` pins one. An agent with no published version has nothing to run.
 - **Decision agent target.** No graph and no run: each cell is one decision-provider call, settled immediately. Grade with `decision_answers`. A single `run_eval` cannot mix decision-agent Goals with anything else — the reports are incomparable and the call is refused.
-- **Workflow target.** The pinned (or latest) published version runs under its own trigger kind and its own `engine`. Workflow **drafts** cannot be evaluated — only published versions. Its tools are spread across many nodes, so the contract carries no `toolIds` and no `outputSchema`, and those lints don't run.
 
 A Goal floats by default, which keeps it grading what ships. Pin `targetVersion` only to reproduce a historical result, and unpin with `floatTargetVersion: true` afterwards. A pin that resolves to nothing fails the run instead of silently floating.
 
@@ -30,11 +29,9 @@ A Goal floats by default, which keeps it grading what ships. Pin `targetVersion`
 | ------ | ------- |
 | task agent | `{ "kind": "task", "variables": { … } }` — values for the agent's `${variables}` |
 | conversation agent | `{ "kind": "conversation", "turns": [ … ], "variables": { … } }` |
-| workflow | `{ "kind": "trigger", "payload": { … }, "variables": { … } }` |
 | decision agent | `{ "kind": "decision", "state": <any JSON>, "variables": { … } }` |
 
 - A **conversation** Sample's `turns` become the agent's message history; the run begins mid-conversation and only the model's next reply is produced and graded. A turn is `{ "role": "user" | "assistant", "text"?, "toolCalls"? }`.
-- A **workflow** Sample's `payload` is the trigger payload, verbatim — the same object the host's event would have routed. `list_trigger_events` lists each event kind's `fields`; the Goal contract pre-fills them. `variables` are run-level prompt variables for agents nested in the workflow.
 - An unfilled `${var}` renders literally into the prompt.
 - Every input except `decision` also takes an optional `"context": { … }`: the run scope that **live** tools read (which client, firm or chat thread), keyed by the host's tool context fields. It is the same bag the agent playground collects, and the agent never sees it. A tool lists the keys it needs as `requiresContext` in `get_tool_catalog`; without them, a live scoped tool matches nothing.
 
@@ -55,7 +52,7 @@ The setting is per tool: `tools: { "fallback": "mocked", "byTool": { "<toolId>":
 Consequences worth knowing:
 
 - **One canned result per tool id, for every call in the run.** Fixtures are keyed by tool id only, so a tool called three times returns the same pinned output three times.
-- **The setting applies run-wide**: to agent tool calls, to Tool nodes, to sub-agents (they inherit the parent's simulate signal and fixtures), and to called child workflows (the child run inherits the parent's run context, simulate signal included).
+- **The setting applies run-wide**: to agent tool calls, to sub-agents (they inherit the parent's simulate signal and fixtures), and to called child workflows (the child run inherits the parent's run context, simulate signal included).
 - A Sample's derived **layer** names what it can claim: `io` (nothing pinned, nothing live), `trajectory` (something pinned), `integration` (anything live — no longer reproducible).
 
 ### Staging documents and other retrieved context
@@ -63,9 +60,8 @@ Consequences worth knowing:
 Pick by what you are testing:
 
 - **Pin the reading tool's result.** If the tool that reads an attachment is tagged `read`, set `byTool["<that tool>"] = { "mode": "mocked", "output": <what it would have returned, document text included> }`. Deterministic, and the agent still has to decide to call it. Copy a real output from `get_run_step` so the shape is right.
-- **Let it run live.** `"mode": "live"` and put real ids/references in the trigger `payload` (or variables) that the tool can resolve, plus whatever `context` it `requiresContext`. Grades the retrieval end to end; the Sample becomes `integration`.
+- **Let it run live.** `"mode": "live"` and put real ids/references in the Sample's variables that the tool can resolve, plus whatever `context` it `requiresContext`. Grades the retrieval end to end; the Sample becomes `integration`.
 - **Synthesis — stage it in the conversation** (conversation agents only). Add an assistant turn with `toolCalls: [{ "tool": "<toolId>", "args": …, "output": <document text> }]`. The model sees a completed tool call it can answer from, and the judges are shown these staged calls. The agent still has its tools; calling one returns `{}` unless pinned.
-- **Workflow target:** there is no per-node input injection. Document text reaches the graph only through the trigger `payload`, a pinned tool output, or a live tool.
 
 If the reading tool is **untagged**, it runs for real no matter what the Sample says — check `get_tool_catalog` before relying on a pin.
 
@@ -77,14 +73,12 @@ If the reading tool is **untagged**, it runs for real no matter what the Sample 
 | ----- | ------ | ----------- |
 | `tool_called` | `toolId`, `called` | the tool was (or wasn't) called |
 | `tool_args_match` | `toolId`, `path?`, `match`, `value` | some call's args match |
-| `node_visited` | `nodeId`, `visited` | the node ran (or didn't) |
-| `node_input_match` | `nodeId`, `path?`, `match`, `value` | the node's recorded input matches |
 | `output_match` | `path?`, `match`, `value` | the run output matches |
-| `decision_answers` | `verdict?`, `expect: [{ questionId, yes? \| key?, minProbability? }]`, `nodeId?` | a decision agent's matrix matches, every miss reported. On a workflow Goal, set `nodeId` to the decision node: the workflow's output is what its Output returns, not the decision |
+| `decision_answers` | `verdict?`, `expect: [{ questionId, yes? \| key?, minProbability? }]` | a decision agent's matrix matches, every miss reported |
 | `decision_judge` | `rubric`, `path?`, `answer?`, `choices?`, `expected?`, `minLevel?`, `threshold?` | the decision model's probability that the row passed ≥ `threshold` (default 0.5) |
 
 - `match` is `equals` (deep equality), `contains` (substring, or array membership), `regex`, or `jsonpath` (currently an alias for `equals` after `path` selection). `path` is a dot/bracket path (`a.b[0].c`) into the output, args or input; omit for the whole value. A path that resolves to nothing grades `undefined`, which reads as a wrong answer.
-- **What checks can see:** the run output and the **top-level** steps — Tool nodes and each agent node's own tool calls (including the synthesized `spawn_*` / `await_subagents` calls of a delegating agent). Steps recorded under a parent — iteration items and a sub-agent's own internal tool calls — are not graded, and neither are a called child workflow's internal steps.
+- **What checks can see:** the run output and the target agent's own tool calls (including the synthesized `spawn_*` / `await_subagents` calls of a delegating agent). Steps recorded under a parent — iteration items and a sub-agent's own internal tool calls — are not graded, and neither are a called child workflow's internal steps.
 - `decision_judge` is the only judge. `rubric` is put to the model as the question itself. `answer` picks the shape and what the probability measures: `boolean` (default) — p(yes); `category` — `choices` are the options and p is the mass on the `expected` ones; `scale` — `choices` are levels lowest-first and p is the mass at or above `minLevel`. A legacy `llm_judge` check is read as a boolean `decision_judge` with the same rubric and path.
 - A Sample's judge checks are asked together: one decider request per output `path`, split only past the model's question cap. Ask one thing per check — splitting a long rubric costs no extra calls.
 - Judges are shown the graded output plus every tool call the checks can see, with outputs, plus any staged synthesis calls — so a rubric can ask about groundedness. When that would exceed the decision model's input limit, the longest tool outputs are trimmed (marked `[truncated …]`) until it fits; the graded output is never trimmed.

@@ -9,8 +9,8 @@ import {
 } from './schema-common'
 
 // ── Evals ────────────────────────────────────────────────────────────────
-// An eval suite ("Goal" in the UI): one target (agent OR workflow, float-to-
-// latest) plus N rows. Part of the same global set — no tenant column; access
+// An eval suite ("Goal" in the UI): one target agent (float-to-latest) plus N
+// rows. Part of the same global set — no tenant column; access
 // is host-gatekept like everything else.
 export const wfEvalSet = sqliteTable(
   'wf_eval_set',
@@ -21,8 +21,8 @@ export const wfEvalSet = sqliteTable(
     name: text('name').notNull(),
     description: text('description'),
     targetKind: text('target_kind', { enum: WF_EVAL_TARGET_KINDS }).notNull(),
-    // Opaque pointer to a wf_agent.id or wf_workflow.id (resolved float-to-
-    // latest at run start). No FK — mirrors the run-identity convention.
+    // Opaque pointer to a wf_agent.id (resolved float-to-latest at run start).
+    // No FK — mirrors the run-identity convention.
     targetId: text('target_id').notNull(),
     // Which published version of the target the goal pins to. NULL floats to the
     // latest published version (the default); a number pins to that exact

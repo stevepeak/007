@@ -136,9 +136,9 @@ describe('evalWrapperName', () => {
 })
 
 describe('goalPinError', () => {
-  test('names the kind, the target and the missing version', () => {
-    expect(goalPinError({ kind: 'workflow', id: 'w1', version: 3 })).toBe(
-      'This goal pins v3 of workflow w1, which has no published version 3. ' +
+  test('names the target and the missing version', () => {
+    expect(goalPinError({ id: 'a1', version: 3 })).toBe(
+      'This goal pins v3 of agent a1, which has no published version 3. ' +
         'Repoint the goal at Latest, or at a version that exists.',
     )
   })

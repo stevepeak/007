@@ -300,10 +300,8 @@ function driftReport(detail: WfEvalRunDetail): unknown {
  * a model that can do both. A draft override replaces the whole config, so its
  * own requirements are the only ones that matter.
  *
- * Returns undefined when nothing can be said: no agent target (workflow goals
- * hold their agents inside the graph, which the list endpoints don't carry —
- * TODO(ART-201), same gap the launch dialog has), or the agent rows are
- * unreadable. Undefined means "don't gate", never "gate everything".
+ * Returns undefined when nothing can be said: the agent rows are unreadable.
+ * Undefined means "don't gate", never "gate everything".
  */
 async function targetRequirements(
   client: WfDataClient,
@@ -312,8 +310,8 @@ async function targetRequirements(
 ): Promise<ModelCapabilities | undefined> {
   if (configOverride) return agentModelRequirements(configOverride)
   const agentIds = sets
-    .filter((s) => s?.set.targetKind === 'agent')
-    .map((s) => s!.set.targetId)
+    .filter((s) => s != null)
+    .map((s) => s.set.targetId)
   if (agentIds.length === 0) return undefined
   const agents = await client.listAgents().catch(() => [])
   const perAgent = agents
@@ -717,10 +715,7 @@ export function evalRunWriteTools(): WfMcpTool[] {
         let unsavedFields: string[] = []
         if (draftAgentId) {
           const mismatched = sets.filter((s) => {
-            return (
-              s &&
-              (s.set.targetKind !== 'agent' || s.set.targetId !== draftAgentId)
-            )
+            return s && s.set.targetId !== draftAgentId
           })
           if (mismatched.length > 0) {
             return {

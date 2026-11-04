@@ -2,8 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { z } from 'zod'
 
 import type { ToolRegistry, WfSdkConfig } from '../engine'
-
-import { runWorkflowUnderConditions } from './index'
+import { runWorkflowUnderConditions } from '../engine/workflow-test-helpers'
 
 // Phase 1 — the eval `simulate` signal + fixtures. Proves that under
 // `runContext.simulate` a side-effecting tool is neutralized by its

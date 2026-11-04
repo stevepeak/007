@@ -194,8 +194,7 @@ export type RunStats = {
    * republishing the agent leaves the sample's snapshot hash IDENTICAL. Same
    * hash, different agent, different score. This is the axis that says so.
    *
-   * Null when no agent step recorded one (a workflow-target eval, or a run that
-   * predates the stamp).
+   * Null when no agent step recorded one (a run that predates the stamp).
    */
   agentVersion: number | null
 }

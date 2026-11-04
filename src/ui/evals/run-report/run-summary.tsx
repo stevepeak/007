@@ -1,4 +1,4 @@
-import { ChevronRight, Goal as GoalIcon, Workflow } from 'lucide-react'
+import { ChevronRight, Goal as GoalIcon } from 'lucide-react'
 import { useMemo } from 'react'
 
 import { agentCallTotals, mean } from '../../../eval/report'
@@ -10,7 +10,7 @@ import type {
 import { agentColor, agentIcon } from '../../agent-appearance'
 import { cn } from '../../cn'
 import { formatDurationMs, formatUsd } from '../../cost'
-import { isEvalRunInFlight, useAgents, useWorkflow } from '../../hooks'
+import { isEvalRunInFlight, useAgents } from '../../hooks'
 import { WfLink } from '../../nav'
 import { pendingLabel } from '../../query-state'
 import { formatTimestamp, PassRate, Score } from '../shared'
@@ -257,11 +257,7 @@ function TargetBreadcrumb({
     <div className="flex flex-wrap items-center gap-1.5">
       {single ? (
         <>
-          {single.targetKind === 'agent' ? (
-            <AgentChip agentId={single.targetId} />
-          ) : (
-            <WorkflowChip workflowId={single.targetId} />
-          )}
+          <AgentChip agentId={single.targetId} />
           {sep}
           <WfLink
             to={`evals/${single.setId}`}
@@ -320,19 +316,5 @@ function AgentChip({ agentId }: { agentId: string }) {
         {pendingLabel(agents, agent?.name, 'Agent')}
       </span>
     </WfLink>
-  )
-}
-
-// Compact workflow chip — same shape as the agent chip, workflow glyph.
-function WorkflowChip({ workflowId }: { workflowId: string }) {
-  const wf = useWorkflow(workflowId)
-  const name = pendingLabel(wf, wf.data?.workflow.name, 'Workflow')
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <span className="inline-flex size-5 shrink-0 items-center justify-center rounded bg-sky-100 text-sky-600">
-        <Workflow className="size-3" />
-      </span>
-      <span className="text-sm font-medium text-neutral-800">{name}</span>
-    </span>
   )
 }

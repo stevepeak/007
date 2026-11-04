@@ -45,7 +45,6 @@ import {
   getEvalRunDrive,
   getEvalRunStatus,
   getAgent,
-  getWorkflow,
   getEvalSet,
   getRunForGrading,
   hashEvalSnapshot,
@@ -96,19 +95,15 @@ import {
 const MAX_RECORDED_ERROR_CHARS = 2000
 
 /**
- * A Goal's target must exist — `target_id` has no foreign key, so a wrong id
- * saves fine and only fails when a run is started against it.
+ * A Goal's target agent must exist — `target_id` has no foreign key, so a wrong
+ * id saves fine and only fails when a run is started against it.
  */
 async function requireEvalTarget(
   db: WfDb,
-  target: { kind: 'agent' | 'workflow'; id: string },
+  target: { id: string },
 ): Promise<void> {
-  const found =
-    target.kind === 'agent'
-      ? await getAgent(db, target.id)
-      : await getWorkflow(db, target.id)
-  if (!found) {
-    throw new NotFoundError(`No ${target.kind} found for id ${target.id}.`)
+  if (!(await getAgent(db, target.id))) {
+    throw new NotFoundError(`No agent found for id ${target.id}.`)
   }
 }
 
@@ -163,17 +158,13 @@ async function writeEvalResult(args: {
 // rows are never read rather than read and discarded.
 function toGradeSteps(
   steps: Array<{
-    nodeId: string
     nodeKind: string
-    input?: unknown
     output?: unknown
     meta?: unknown
   }>,
 ): GradeStep[] {
   return steps.map((s) => ({
-    nodeId: s.nodeId,
     nodeKind: s.nodeKind,
-    input: s.input,
     output: s.output,
     meta: s.meta,
   }))
@@ -204,7 +195,6 @@ async function loadDrift(
     setIds: string[]
     rowIds: string[]
     targetId: string | null
-    targetKind: 'agent' | 'workflow'
     until: Date
   },
 ): Promise<WfEvalRunDrift | null> {
@@ -225,7 +215,7 @@ async function loadDrift(
       input.targetId
         ? changesBetween(
             c.db,
-            [{ entityKind: input.targetKind, entityIds: [input.targetId] }],
+            [{ entityKind: 'agent', entityIds: [input.targetId] }],
             window,
           )
         : Promise.resolve([]),
@@ -342,7 +332,7 @@ export function buildEvalHandlers<TDeps>(
       // defending against a value the dispatcher could not let through.
       const { name, targetId, triggerKind, targetKind } = c.params
       const p = c.params
-      await requireEvalTarget(c.db, { kind: targetKind, id: targetId })
+      await requireEvalTarget(c.db, { id: targetId })
       const setId = await createEvalSet(c.db, {
         name,
         description: p.description,
@@ -366,15 +356,7 @@ export function buildEvalHandlers<TDeps>(
     updateEvalSet: async (c) => {
       const p = c.params
       const { setId } = p
-      if (p.targetKind || p.targetId) {
-        const existing = await getEvalSet(c.db, setId)
-        if (existing) {
-          await requireEvalTarget(c.db, {
-            kind: p.targetKind ?? existing.set.targetKind,
-            id: p.targetId ?? existing.set.targetId,
-          })
-        }
-      }
+      if (p.targetId) await requireEvalTarget(c.db, { id: p.targetId })
       // A Goal has no version history, so the change row's before-image is the
       // only record of what it used to say.
       await recordedUpdate({
@@ -573,27 +555,20 @@ export function buildEvalHandlers<TDeps>(
         throw new NotFoundError('Eval sample not found.')
       }
       const { row, set } = found
-      // The draft override is an AGENT's config. A workflow target has no
-      // config to swap, so applying one there would silently grade the
-      // published graph against nothing the editor showed.
-      if (configOverride && set.targetKind !== 'agent') {
-        throw new BadRequestError(
-          'A draft config only applies to a goal that targets an agent; this one targets a workflow.',
-        )
-      }
-      // Resolve the target to a concrete version (agent → hidden wrapper) and
-      // the trigger kind to start under, before handing the host the run.
+      // Before resolving: a dangling target id would otherwise persist a junk
+      // wrapper for an agent that doesn't exist.
+      await requireEvalTarget(c.db, { id: set.targetId })
+      // Resolve the target to its hidden wrapper's concrete version and the
+      // trigger kind to start under, before handing the host the run.
       const resolved = await resolveEvalTarget(
         c.db,
         {
-          kind: set.targetKind,
           id: set.targetId,
           // The Goal's pin. Passing it is what makes "pinned v3" in the UI and
           // `targetVersion: 3` in the frozen snapshot true statements about the
           // version that actually ran.
           version: set.targetVersion,
         },
-        set.triggerKind,
         { createdBy: c.ctx.userId },
       )
       // The Sample's authored input + tools become the engine's run signals.
@@ -616,8 +591,7 @@ export function buildEvalHandlers<TDeps>(
         promptBody: cell.promptBody,
         configOverride,
         // Cap this run's nodes. Applied per-run rather than baked into the
-        // graph so it covers workflow targets (whose graphs we must not
-        // rewrite) and agent targets whose hidden wrapper was cached long ago.
+        // graph so it covers an agent whose hidden wrapper was cached long ago.
         executionOverride: EVAL_NODE_EXECUTION,
         ctx: c.ctx,
         req: c.req,
@@ -663,11 +637,6 @@ export function buildEvalHandlers<TDeps>(
         throw new NotFoundError('Eval sample not found.')
       }
       const { row, set } = found
-      if (set.targetKind !== 'agent') {
-        throw new BadRequestError(
-          'This goal does not target an agent, so it has no decision agent to run.',
-        )
-      }
       const agent = await getAgent(c.db, set.targetId)
       if (!agent) {
         throw new NotFoundError('The goal’s target agent no longer exists.')
@@ -696,7 +665,6 @@ export function buildEvalHandlers<TDeps>(
             set.targetVersion == null
               ? `Decision agent ${set.targetId} has no published version to eval against.`
               : goalPinError({
-                  kind: 'agent',
                   id: set.targetId,
                   version: set.targetVersion,
                 }),
@@ -727,7 +695,7 @@ export function buildEvalHandlers<TDeps>(
 
       // Graded off the SAME `{ verdict, because, answers }` object the
       // playground shows, with no steps — a decision agent visits no nodes and
-      // calls no tools, so `node_visited` / `tool_called` checks in a tree
+      // calls no tools, so `tool_called` checks in a tree
       // authored for a generation agent correctly fail rather than throw.
       const graded = await gradeRow({
         checks: row.checks,
@@ -975,10 +943,6 @@ export function buildEvalHandlers<TDeps>(
             : [],
           rowIds: [...new Set(result.results.map((r) => r.rowId))],
           targetId: firstSnapshot?.target.targetId ?? null,
-          targetKind:
-            firstSnapshot?.target.targetKind === 'workflow'
-              ? 'workflow'
-              : 'agent',
           until: result.run.createdAt,
         }),
       }

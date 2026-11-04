@@ -21,9 +21,9 @@ export function EvalsHelpDialog({ open, onClose }: EvalsHelpDialogProps) {
     >
         <div className="space-y-5 px-5 py-5">
           <p className="text-sm leading-relaxed text-neutral-600">
-            Evals let you prove your agents and workflows still do the right
-            thing — before your users find out they don't. Every change to an
-            agent or workflow can quietly shift behavior; Evals turn "seems fine"
+            Evals let you prove your agents still do the right thing — before
+            your users find out they don't. Every change to an agent can quietly
+            shift behavior; Evals turn "seems fine"
             into a repeatable, measurable pass/fail with a quality score, run
             safely in simulation so no real emails send and no real data changes.
           </p>
@@ -37,8 +37,7 @@ export function EvalsHelpDialog({ open, onClose }: EvalsHelpDialogProps) {
             >
               A named suite around one goal — e.g. “Escalation Policy” or
               “Document Categorization”. It groups the scenarios that prove that
-              goal holds, and you re-run it any time you touch a related agent or
-              workflow.
+              goal holds, and you re-run it any time you touch a related agent.
             </Level>
 
             <Level
@@ -48,7 +47,7 @@ export function EvalsHelpDialog({ open, onClose }: EvalsHelpDialogProps) {
               subtitle="One concrete scenario"
             >
               A real-world case: a <strong>Given</strong> (the starting inputs),{' '}
-              <strong>what runs</strong> (an agent or a workflow), and the{' '}
+              <strong>what runs</strong> (an agent), and the{' '}
               <strong>Checks</strong> it must satisfy. Samples pin behavior to
               actual situations instead of vibes.
             </Level>

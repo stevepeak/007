@@ -31,7 +31,7 @@ These are the words used in tool results, run traces and the other pages. Where 
 - **Edge**: `{ id, source, target, condition, fastTrack }`. It decides *when* a node may run (sequencing and routing), never *what* it reads. See [[graph]] and [[execution]].
 - **Engine**: `durable` or `inline`, set per workflow on its trigger (`config.engine`, absent means durable). See [[execution]].
 - **Eval run**: one launch of one or more eval sets. It is a resumable sweep with a frozen plan, not a workflow run. Each cell produces a real (eval-flagged) run. See [[evals]].
-- **Eval set / Goal**: a suite that targets one agent or workflow (floating, or pinned to a version) plus its samples. See [[evals]].
+- **Eval set / Goal**: a suite that targets one agent (floating, or pinned to a version) plus its samples. See [[evals]].
 - **Event**: a host-declared trigger kind, such as a chat message arriving. Its `inputSchema` validates the run's input. List them with `list_trigger_events`. See [[triggers]].
 - **Feature request node**: a placeholder for a future idea. It passes its input through unchanged. See [[nodes/feature-request]].
 - **Feedback**: a human thumbs rating on one answer, with triage state. Read it with `list_feedback` and `get_feedback_context`.

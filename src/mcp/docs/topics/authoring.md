@@ -21,7 +21,7 @@ Which tools exist is decided by the scope the session was authorized with, not b
 
 Why publishing an agent takes two calls: a published agent version floats into **every** workflow that references it without a pin, so one publish can change several live workflows at once (a workflow publish changes only what its own trigger runs next). `publish_agent` without `confirm` is a dry run: it publishes nothing, lists what changed, every published workflow that will pick the new version up (`affected.floating`) and the ones pinned to an older version that won't (`affected.pinned`), and returns a `confirm` token. Show the user that list. Calling again with `confirm` and a `changeNote` publishes; the token is bound to the exact draft and live version the dry run saw, so any edit or publish in between is refused and you dry-run again. `baseVersionNumber` is the live version number, as for `publish_workflow`. The version records the authorized user as its publisher; there is no structured approver field, so name a reviewer in `changeNote` if one signed off. There is no tool to archive or delete an agent.
 
-There is **no tool that runs an unpublished workflow draft.** Agents can be previewed and evaluated as drafts; workflows are exercised after publishing (an eval Goal on the workflow, or `retry_run`).
+There is **no tool that runs an unpublished workflow draft.** Agents can be previewed and evaluated as drafts; workflows are exercised after publishing (`retry_run`). Eval Goals only target agents.
 
 ## The workflow loop
 
@@ -30,7 +30,7 @@ There is **no tool that runs an unpublished workflow draft.** Agents can be prev
 3. **Edit the draft** with `patch_workflow_draft` (preferred) or `update_workflow_draft`.
 4. **Validate.** Every draft write already returns the lint; `validate_workflow_graph({ workflowId })` re-runs it on demand. Errors block publishing; warnings are advisory but usually real.
 5. **Publish.** `publish_workflow({ workflowId, baseVersionNumber, changeNote })`.
-6. **Exercise and watch.** Run an eval Goal against the workflow (`run_eval`), or `retry_run` a representative run in `restart` mode, then read it with `get_run` (see [[debugging]], [[evals]]).
+6. **Exercise and watch.** `retry_run` a representative run in `restart` mode, then read it with `get_run` (see [[debugging]], [[evals]]).
 
 To back out: `discard_workflow_draft` before publishing; after publishing, `update_workflow_draft({ fromVersion: N })` copies a known-good version into the draft, then publish that.
 

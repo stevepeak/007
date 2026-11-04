@@ -9,7 +9,6 @@ import type {
   EvalToolSetting,
   EvalTools,
   ToolOption,
-  WfEvalTargetKind,
 } from '../../server/protocol'
 import { toolSetting, withToolSetting } from '../../server/protocol'
 import { cn } from '../cn'
@@ -41,22 +40,13 @@ import { MockOutputEditor } from './eval-sample-mocks'
 
 export function SampleToolsEditor({
   targetId,
-  targetKind,
   value,
   onChange,
 }: {
   targetId: string
-  targetKind: WfEvalTargetKind
   value: EvalTools
   onChange: (next: EvalTools) => void
 }) {
-  if (targetKind !== 'agent') {
-    return (
-      <p className="px-1 py-1 text-xs text-neutral-400">
-        Node mocks arrive with workflow targets.
-      </p>
-    )
-  }
   return <AgentToolList targetId={targetId} value={value} onChange={onChange} />
 }
 
@@ -352,13 +342,8 @@ function StaticBehavior({ write }: { write: boolean }) {
  */
 export function useTargetHasTools(
   targetId: string,
-  targetKind: WfEvalTargetKind,
 ): boolean | null {
   const detail = useAgent(targetId)
-  // A workflow target's tools live on its nodes, not on one agent config, so we
-  // can't resolve them here. Keep the card: its body explains that workflow node
-  // mocks aren't built yet.
-  if (targetKind !== 'agent') return true
   if (!targetId) return false
   // A hook returning a tri-state answer (yes / no / still resolving), not a
   // rendered ladder — `null` here means "don't decide yet", which is why the

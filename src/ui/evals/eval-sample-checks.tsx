@@ -11,7 +11,6 @@ import type {
   CheckTree,
   EvalCheck,
   WfDecisionAgentSummary,
-  WfEvalTargetKind,
 } from '../../server/protocol'
 import { ArchiveButton } from '../archive-button'
 import { cn } from '../cn'
@@ -40,7 +39,6 @@ import {
 
 export function ChecksList({
   checks,
-  targetKind,
   hasTools,
   outputSchema,
   allowToolIds,
@@ -51,8 +49,6 @@ export function ChecksList({
   onAdd,
 }: {
   checks: CheckTree
-  /** The goal's target kind — hides the `node_*` types for an agent. */
-  targetKind?: WfEvalTargetKind
   /** Whether the target has any tools — hides the `tool_*` types when it doesn't. */
   hasTools?: boolean | null
   /** The target agent's output contract, for the output-path pickers. */
@@ -188,7 +184,6 @@ export function ChecksList({
                     <CheckConfigBody
                       check={c}
                       persist={(next) => replace(i, next)}
-                      targetKind={targetKind}
                       hasTools={hasTools}
                       outputSchema={outputSchema}
                       allowToolIds={allowToolIds}

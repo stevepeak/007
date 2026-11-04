@@ -6,8 +6,7 @@ import { agentConfigSchema, type RunContext, type WfSdkConfig } from '../engine'
 import { makeAgentConfig } from '../engine/agent-test-helpers'
 import { mockFinish, mockUsage } from '../engine/model-test-helpers'
 import type { AgentNodeMeta } from '../engine/nodes/agent'
-
-import { runWorkflowUnderConditions } from './index'
+import { runWorkflowUnderConditions } from '../engine/workflow-test-helpers'
 
 // Matrix eval override — proves `runContext.agentOverride` swaps the agent
 // node's model and system prompt at run time (the seam the model×prompt matrix

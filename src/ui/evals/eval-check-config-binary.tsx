@@ -6,7 +6,6 @@ import type { JsonSchema } from '../../engine'
 import type {
   EvalCheck,
   WfDecisionAgentSummary,
-  WfEvalTargetKind,
 } from '../../server/protocol'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
@@ -23,7 +22,6 @@ import {
   BoolPicker,
   MatchRow,
   schemaPathOptions,
-  TextField,
   EvalToolPicker,
 } from './fields'
 
@@ -32,7 +30,6 @@ import {
 export function BinaryConfig({
   check,
   persist,
-  targetKind,
   hasTools,
   outputSchema,
   allowToolIds,
@@ -40,7 +37,6 @@ export function BinaryConfig({
 }: {
   check: EvalCheck
   persist: (next: EvalCheck) => void
-  targetKind?: WfEvalTargetKind
   /** Whether the target has any tools at all (null = still resolving). */
   hasTools?: boolean | null
   outputSchema?: JsonSchema | null
@@ -55,7 +51,6 @@ export function BinaryConfig({
         <Label>What to check</Label>
         <BinaryTypePicker
           value={check.type as BinaryType}
-          targetKind={targetKind}
           hasTools={hasTools}
           isDecisionTarget={decisionContract != null}
           onChange={(t) => persist(defaultCheck(t))}
@@ -79,45 +74,37 @@ export function BinaryConfig({
 // (icon + label + blurb). The open menu is portaled to <body> and fixed-positioned
 // under the trigger so it overlays the content below instead of pushing it down
 // (and so the StepFlow card's `overflow-hidden` can't clip it).
-// Two kinds of assertion are offered only where they could ever hold:
-// `node_*` checks read the workflow step trace, which agents don't produce, so
-// they're only offered when the goal targets a workflow; `tool_*` checks are
+// `tool_*` checks are offered only where they could ever hold: they are
 // unsatisfiable by construction against an agent wired to no tools, so an agent
-// with none is never asked about them. Both are hidden rather than disabled —
-// an option you can't pick is a question you shouldn't have been asked. That
-// holds even when the check ALREADY is one of them (authored before the target
-// lost its tools, or via the family toggle): the type stays visible in the
+// with none is never asked about them. They're hidden rather than disabled — an
+// option you can't pick is a question you shouldn't have been asked. That holds
+// even when the check ALREADY is one of them (authored before the target lost
+// its tools, or via the family toggle): the type stays visible in the
 // trigger, but it isn't offered, and a line underneath says why.
 //
-// `decision_answers` is the third, and it cuts BOTH ways: it can only hold
+// `decision_answers` is the other, and it cuts BOTH ways: it can only hold
 // against a decision agent (nothing else produces a verdict and a matrix), and
 // against one it is the only assertion worth making — a decision agent visits
 // no nodes, calls no tools, and its output is a structure `output_match` can
 // only reach one field of at a time.
-const NODE_TYPES: readonly BinaryType[] = ['node_visited', 'node_input_match']
 const TOOL_TYPES: readonly BinaryType[] = ['tool_called', 'tool_args_match']
 const DECISION_TYPES: readonly BinaryType[] = ['decision_answers']
 
 function BinaryTypePicker({
   value,
   onChange,
-  targetKind,
   hasTools,
   isDecisionTarget,
 }: {
   value: BinaryType
   onChange: (type: BinaryType) => void
-  targetKind?: WfEvalTargetKind
   hasTools?: boolean | null
   isDecisionTarget?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const applies = (t: BinaryType) => {
     if (DECISION_TYPES.includes(t)) return isDecisionTarget === true
-    return (
-      (targetKind !== 'agent' || !NODE_TYPES.includes(t)) &&
-      (hasTools !== false || !TOOL_TYPES.includes(t))
-    )
+    return hasTools !== false || !TOOL_TYPES.includes(t)
   }
   const types = BINARY_TYPES.filter(applies)
   // The stored type can be one this target can't satisfy. The trigger still
@@ -127,9 +114,7 @@ function BinaryTypePicker({
     ? null
     : DECISION_TYPES.includes(value)
       ? 'This goal is not for a decision agent, so there is no verdict or answer matrix to grade.'
-      : TOOL_TYPES.includes(value)
-        ? 'This agent has no tools, so this check can never pass.'
-        : 'This goal runs an agent, which has no workflow nodes, so this check can never pass.'
+      : 'This agent has no tools, so this check can never pass.'
   const [rect, setRect] = useState<DOMRect | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -292,43 +277,6 @@ function BinaryFields({
           persist={persist}
           allowToolIds={allowToolIds}
         />
-      )
-    case 'node_visited':
-      return (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <TextField
-            label="Node id"
-            value={check.nodeId}
-            placeholder="node id from the graph"
-            onCommit={(nodeId) => persist({ ...check, nodeId })}
-          />
-          <BoolPicker
-            label="Expectation"
-            value={check.visited}
-            trueLabel="was visited"
-            falseLabel="was not visited"
-            onChange={(visited) => persist({ ...check, visited })}
-          />
-        </div>
-      )
-    case 'node_input_match':
-      return (
-        <div className="space-y-3">
-          <TextField
-            label="Node id"
-            value={check.nodeId}
-            placeholder="node id from the graph"
-            onCommit={(nodeId) => persist({ ...check, nodeId })}
-          />
-          <MatchRow
-            path={check.path}
-            match={check.match}
-            value={check.value}
-            pathLabel="Input path (optional)"
-            pathPlaceholder="e.g. reason"
-            onChange={(p) => persist({ ...check, ...p })}
-          />
-        </div>
       )
     case 'output_match': {
       const pathOptions = schemaPathOptions(outputSchema)

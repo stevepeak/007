@@ -65,23 +65,13 @@ function invocationInput(
         triggerInput: { messages: seededMessagesToUiMessages(input.turns) },
         promptVariables: input.variables,
       }
-    // A workflow target has no single prompt to fill in — it receives whatever
-    // its trigger routed, verbatim.
-    case 'trigger':
-      return {
-        triggerInput: input.payload,
-        promptVariables: input.variables,
-      }
     // A task agent's only turn is its own `userPrompt`, so the Sample supplies
     // the values that template interpolates from and nothing else.
     case 'task':
       return { triggerInput: {}, promptVariables: input.variables }
     // A decision Sample never reaches the engine: a decision agent runs through
     // the direct invoke path (`runDecisionAgent`), not a graph. This case exists
-    // so the switch stays total, and degrades to "no trigger payload" for the
-    // one way it can be reached — a decision-shaped Sample sitting in a Goal
-    // whose target is a workflow, which the editor doesn't offer and the
-    // runner reports as an unanswered matrix rather than a crash.
+    // so the switch stays total.
     case 'decision':
       return { triggerInput: {}, promptVariables: input.variables }
   }

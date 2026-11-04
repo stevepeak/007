@@ -1,10 +1,8 @@
 import {
-  ArrowRightToLine,
   Braces,
   ListChecks,
   type LucideIcon,
   Text,
-  Waypoints,
   Wrench,
 } from 'lucide-react'
 
@@ -41,16 +39,6 @@ export const BINARY_TYPE_META: Record<
     desc: 'A called tool’s arguments match a value',
     icon: Braces,
   },
-  node_visited: {
-    label: CHECK_TYPE_LABELS.node_visited,
-    desc: 'A workflow node was (or wasn’t) reached',
-    icon: Waypoints,
-  },
-  node_input_match: {
-    label: CHECK_TYPE_LABELS.node_input_match,
-    desc: 'A node’s input matches a value',
-    icon: ArrowRightToLine,
-  },
   output_match: {
     label: CHECK_TYPE_LABELS.output_match,
     desc: 'The final output matches a value',
@@ -73,10 +61,6 @@ export function defaultCheck(type: EvalCheck['type']): EvalCheck {
       return { type, toolId: '', called: true }
     case 'tool_args_match':
       return { type, toolId: '', match: 'contains', value: '' }
-    case 'node_visited':
-      return { type, nodeId: '', visited: true }
-    case 'node_input_match':
-      return { type, nodeId: '', match: 'contains', value: '' }
     case 'output_match':
       return { type, match: 'contains', value: '' }
     case 'decision_judge':

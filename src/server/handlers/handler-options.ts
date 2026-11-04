@@ -274,8 +274,8 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
   }) => Promise<{ runId: string }>
   /**
    * Optional eval-run launcher. The SDK resolves the row, its set's target, and
-   * the concrete `workflowVersionId` to run (for an agent target it creates/reuses
-   * the hidden Phase-5 wrapper workflow), then hands the host a ready descriptor.
+   * the concrete `workflowVersionId` to run (it creates/reuses the target agent's
+   * hidden wrapper workflow), then hands the host a ready descriptor.
    * The host only starts the graph run — `WORKFLOWS.startGraphRun({
    * workflowVersionId, triggerKind, triggerInput, promptVariables, simulate: true,
    * isEval: true, fixtures })` — and returns the new `wf_run` id (its
@@ -287,9 +287,9 @@ export type CreateWfSdkHandlersOptions<TDeps> = {
     evalRunId: string
     rowId: string
     target: { kind: WfEvalTargetKind; id: string }
-    /** The concrete version to run — the workflow's latest, or the agent wrapper's. */
+    /** The concrete version to run — the agent wrapper's. */
     workflowVersionId: string
-    /** The trigger kind to start under (agent wrappers are always `manual`). */
+    /** The trigger kind to start under (a wrapper is always `manual`). */
     triggerKind: string
     /** The row's initial-condition trigger input (`{}` when unset). */
     triggerInput: unknown

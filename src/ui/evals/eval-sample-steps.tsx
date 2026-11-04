@@ -15,7 +15,6 @@ type SampleState = ReturnType<typeof useEvalSampleDraft>
 const INPUT_TITLES: Record<EvalSampleInput['kind'], string> = {
   task: 'Input',
   conversation: 'Conversation',
-  trigger: 'Trigger payload',
   decision: 'State',
 }
 
@@ -33,7 +32,6 @@ export function SampleConfigSteps({
   draft: Draft
 }) {
   const { set, edit } = state
-  const targetKind = set?.targetKind ?? 'agent'
 
   const steps: Step[] = [
     {
@@ -56,7 +54,6 @@ export function SampleConfigSteps({
               />
               <SampleContextEditor
                 targetId={set?.targetId ?? ''}
-                targetKind={targetKind}
                 tools={draft.tools}
                 value={draft.input.context ?? {}}
                 onChange={(context) => {
@@ -77,11 +74,10 @@ export function SampleConfigSteps({
   if (state.hasTools) {
     steps.push({
       key: 'tools',
-      title: targetKind === 'workflow' ? 'Nodes' : 'Tools',
+      title: 'Tools',
       content: (
         <SampleToolsEditor
           targetId={set?.targetId ?? ''}
-          targetKind={targetKind}
           value={draft.tools}
           onChange={(tools) => edit({ ...draft, tools })}
         />
@@ -95,7 +91,6 @@ export function SampleConfigSteps({
     content: (
       <ChecksList
         checks={draft.checks}
-        targetKind={set?.targetKind}
         hasTools={state.hasTools}
         outputSchema={state.outputSchema}
         allowToolIds={state.allowToolIds}

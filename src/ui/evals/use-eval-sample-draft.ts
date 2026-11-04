@@ -104,32 +104,21 @@ export function useEvalSampleDraft({
   // …and whether it HAS tools decides whether the Tools card exists at all. An
   // agent with none behaves identically under all three modes, so the card would
   // be asking a question with no answer.
-  const hasTools = useTargetHasTools(
-    set?.targetId ?? '',
-    set?.targetKind ?? 'agent',
-  )
+  const hasTools = useTargetHasTools(set?.targetId ?? '')
 
-  // When the goal targets an agent, the agent's declared output contract lets us
-  // offer its fields (with descriptions) as the "output path" in a check instead
-  // of a raw free-form path. Only agents have a single known output schema;
-  // workflows keep the free-form path.
+  // The target agent's declared output contract lets us offer its fields (with
+  // descriptions) as the "output path" in a check instead of a raw free-form path.
   const outputSchema = useMemo<JsonSchema | null>(() => {
-    if (set?.targetKind !== 'agent') return null
     // A decision agent declares no output contract — its output is always
     // `{ verdict, because, answers }`, which the `decision_answers` check knows
     // the shape of without a schema.
     const output = targetAgent?.kind === 'decision' ? null : targetAgent?.output
     return output ? agentOutputJsonSchema(output) : null
-  }, [set?.targetKind, targetAgent?.kind, targetAgent?.output])
+  }, [targetAgent?.kind, targetAgent?.output])
 
   // The target agent's wired tools — the only tools a run could ever call, so a
-  // check's tool pickers are scoped to them. Undefined for workflow targets
-  // (tools are spread across nodes), where the picker keeps offering every host
-  // tool.
-  const allowToolIds = useMemo<string[] | undefined>(
-    () => (set?.targetKind === 'agent' ? targetAgent?.toolIds : undefined),
-    [set?.targetKind, targetAgent?.toolIds],
-  )
+  // check's tool pickers are scoped to them.
+  const allowToolIds = targetAgent?.toolIds
 
   // The target's published question set, when it is a decision agent — what the
   // state editor names its variables from and what the `decision_answers` check
@@ -254,7 +243,7 @@ export function useEvalSampleDraft({
   // would be ignored by the run anyway. Recorded as an edit, so it saves with the
   // sample and Cmd+Z can still get the old values back to copy from.
   const expectedKind: EvalSampleInput['kind'] | null =
-    set?.targetKind !== 'agent' || !targetAgent
+    !targetAgent
       ? null
       : targetAgent.kind === 'decision'
         ? 'decision'
@@ -312,8 +301,6 @@ function coerceInput(args: {
       return { kind: 'task', variables, context }
     case 'conversation':
       return { kind: 'conversation', turns: [], variables, context }
-    case 'trigger':
-      return { kind: 'trigger', payload: {}, variables, context }
     case 'decision':
       return { kind: 'decision', state: '', variables }
   }

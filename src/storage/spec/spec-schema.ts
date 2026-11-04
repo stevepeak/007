@@ -122,8 +122,8 @@ export const evalRowSpecSchema = z.object({
   sortOrder: z.number().int().optional(),
 })
 
-// One eval set (Goal). `target` is the slug of the agent/workflow it grades,
-// paired with `targetKind` — the id is resolved on import.
+// One eval set (Goal). `target` is the slug of the agent it grades — the id is
+// resolved on import.
 export const evalSpecSchema = z.object({
   kind: z.literal('eval'),
   slug: z.string().min(1),

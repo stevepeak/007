@@ -108,14 +108,11 @@ export async function exportBundle(db: WfDb): Promise<SpecBundle> {
   }
 
   // 6. Eval sets → specs. Target UUID → slug (skip a set whose target didn't
-  //    export, e.g. it points at a hidden workflow).
+  //    export, e.g. its id no longer names an agent).
   const evalSpecs: EvalSpec[] = []
   const evalSlugsTaken = new Set<string>()
   for (const set of await listEvalSets(db, { includeArchived: true })) {
-    const targetSlug =
-      set.targetKind === 'agent'
-        ? agentSlugById.get(set.targetId)
-        : workflowSlugById.get(set.targetId)
+    const targetSlug = agentSlugById.get(set.targetId)
     if (!targetSlug) continue
     const full = await getEvalSet(db, set.id)
     evalSpecs.push({

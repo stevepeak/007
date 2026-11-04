@@ -55,18 +55,18 @@ import type {
   WF_EVAL_TARGET_KINDS,
 } from '../storage/schema'
 
-/** What an eval set targets — an agent or a workflow, resolved float-to-latest. */
+/** What an eval set targets — always an agent, resolved float-to-latest. */
 export type WfEvalTargetKind = (typeof WF_EVAL_TARGET_KINDS)[number]
 /** A row's verdict after grading its run's trace. */
 export type WfEvalResultStatus = (typeof WF_EVAL_RESULT_STATUSES)[number]
 
-// A "Goal" — a named set of samples run against one target (agent/workflow).
+// A "Goal" — a named set of samples run against one target agent.
 export type WfEvalSetSummary = {
   id: string
   name: string
   description: string | null
   targetKind: WfEvalTargetKind
-  /** Opaque pointer to a wf_agent.id / wf_workflow.id (no FK). */
+  /** Opaque pointer to a wf_agent.id (no FK). */
   targetId: string
   /** Version pin for the target: null floats to the latest published version. */
   targetVersion: number | null
@@ -206,7 +206,7 @@ export type WfEvalResultDTO = {
 
 /** One recorded edit, as the drift banner names it. */
 export type WfEvalDriftChange = {
-  entityKind: 'agent' | 'workflow' | 'eval_set' | 'eval_row'
+  entityKind: 'agent' | 'eval_set' | 'eval_row'
   action: string
   /** Human field labels — "checks", "system prompt". */
   fields: string[]
@@ -246,7 +246,7 @@ export type WfEvalRunDrift = {
   previousJudges: WfEvalRunJudges
   /** Edits to the Goal and its samples between the two runs. */
   goalChanges: WfEvalDriftChange[]
-  /** Edits to the agent (or workflow) under test between the two runs. */
+  /** Edits to the agent under test between the two runs. */
   targetChanges: WfEvalDriftChange[]
 }
 

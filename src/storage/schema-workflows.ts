@@ -23,7 +23,7 @@ export const wfWorkflow = sqliteTable('wf_workflow', {
   // Hidden workflows are machinery, not authored content — kept out of the
   // Workflows list. Used by the auto-generated agent-eval wrapper (a
   // `trigger → agent → output` graph created once per agent target so an agent
-  // eval runs through the same GraphWorkflow path as a workflow eval).
+  // eval runs through the GraphWorkflow path).
   hidden: integer('hidden', { mode: 'boolean' }).notNull().default(false),
   // Archived workflows are retired: kept out of the Workflows list and, most
   // importantly, never resolved for a trigger — an archived workflow does not

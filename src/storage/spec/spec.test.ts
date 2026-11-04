@@ -4,11 +4,12 @@ import { MANUAL_TRIGGER_KIND, type AgentConfig } from '../../engine'
 import { makeAgentConfig } from '../../engine/agent-test-helpers'
 import type { WfDb } from '../client'
 import { freshDb } from '../db-test-helpers'
+import { wfEvalSet } from '../schema'
 
 import { exportBundle } from './export'
 import { graphIdsToSlugs, graphSlugsToIds } from './graph-refs'
 import { importBundle } from './import'
-import type { SpecBundle } from './spec-schema'
+import { evalSpecSchema, type SpecBundle } from './spec-schema'
 
 // ── in-memory WfDb built from the real migration chain ────────────────────────
 
@@ -212,6 +213,29 @@ describe('import/export round-trip', () => {
 
 // An import is held to the UI's archive guard: an agent a live workflow still
 // uses cannot be archived, unless the same bundle archives that workflow too.
+describe('a workflow-target goal', () => {
+  test('cannot be imported from a spec', () => {
+    const parsed = evalSpecSchema.safeParse({
+      kind: 'eval',
+      slug: 'flow-goal',
+      name: 'Flow goal',
+      targetKind: 'workflow',
+      target: 'greet-flow',
+      triggerKind: MANUAL_TRIGGER_KIND,
+    })
+    expect(parsed.success).toBe(false)
+  })
+
+  test('whose target is no longer an agent is left out of an export', async () => {
+    const db = freshDb()
+    await importBundle(db, sampleBundle())
+    await db.update(wfEvalSet).set({ targetId: 'gone' })
+    const out = await exportBundle(db)
+    expect(out.agents.map((a) => a.slug)).toEqual(['greeter'])
+    expect(out.evals).toEqual([])
+  })
+})
+
 describe('archiving an agent through a spec import', () => {
   let db: WfDb
   beforeEach(async () => {

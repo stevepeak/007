@@ -171,7 +171,7 @@ export function draftTools(): WfMcpTool[] {
         if ('error' in drafted) return { error: drafted.error }
 
         const goals = (await client.listEvalSets({}).catch(() => []))
-          .filter((s) => s.targetKind === 'agent' && s.targetId === agentId)
+          .filter((s) => s.targetId === agentId)
           .map((s) => ({ setId: s.id, name: s.name }))
 
         return {

@@ -16,9 +16,7 @@ import {
 // node whose input we can assert on.
 const workflowSteps: GradeStep[] = [
   {
-    nodeId: 'ask_order_id',
     nodeKind: 'agent',
-    input: { reason: 'missing id' },
     output: { text: 'What is your order id?' },
     meta: {
       steps: [
@@ -26,17 +24,11 @@ const workflowSteps: GradeStep[] = [
           stepNumber: 0,
           toolCalls: [
             { toolCallId: '1', toolName: 'lookup_order', input: { id: 'x' }, output: { found: false } },
+            { toolCallId: '2', toolName: 'issue_refund', input: { amount: 100, currency: 'USD' }, output: { ok: true } },
           ],
         },
       ],
     },
-  },
-  {
-    nodeId: 'refund',
-    nodeKind: 'tool',
-    input: { amount: 100 },
-    output: { ok: true },
-    meta: { toolId: 'issue_refund', args: { amount: 100, currency: 'USD' } },
   },
 ]
 
@@ -83,23 +75,6 @@ describe('gradeRow — deterministic checks', () => {
           path: 'amount',
           match: 'equals',
           value: 100,
-        },
-      ],
-    })
-    expect(r.status).toBe('pass')
-  })
-
-  test('node_visited + node_input_match read the step trace', async () => {
-    const r = await grade({
-      op: 'and',
-      checks: [
-        { type: 'node_visited', nodeId: 'ask_order_id', visited: true },
-        {
-          type: 'node_input_match',
-          nodeId: 'ask_order_id',
-          path: 'reason',
-          match: 'contains',
-          value: 'missing id',
         },
       ],
     })

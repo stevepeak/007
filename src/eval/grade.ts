@@ -20,7 +20,6 @@ import {
   type EvalMatch,
   upgradeLegacyChecks,
 } from '../engine/eval-schema'
-import type { ToolNodeMeta } from '../engine/nodes/tool'
 import { stableEqual } from '../engine/stable-stringify'
 import { truncate } from '../engine/text'
 
@@ -39,11 +38,9 @@ import { truncate } from '../engine/text'
 
 /** The minimal `wf_run_step` shape the grader reads. */
 export type GradeStep = {
-  nodeId: string
   nodeKind: string
-  input?: unknown
   output?: unknown
-  /** Tool nodes: `{ toolId, args }`. Agent nodes: an `AgentNodeMeta`. */
+  /** Agent nodes: an `AgentNodeMeta`. */
   meta?: unknown
 }
 
@@ -95,21 +92,12 @@ export type GradeRowResult = {
 type ToolInvocation = { toolId: string; args: unknown; output: unknown }
 
 /**
- * Every tool invocation in the run, from BOTH shapes: a workflow Tool node (a
- * top-level `tool` step with `meta.{toolId,args}`) and an Agent node's internal
- * loop (`meta.steps[].toolCalls[]`). An agent-eval and a workflow-eval therefore
- * grade `tool_called` / `tool_args_match` identically.
+ * Every tool invocation in the target agent's loop (`meta.steps[].toolCalls[]`).
  */
 function collectToolCalls(steps: GradeStep[]): ToolInvocation[] {
   const calls: ToolInvocation[] = []
   for (const s of steps) {
-    if (s.nodeKind === 'tool') {
-      const m = s.meta as Partial<ToolNodeMeta> | undefined
-      if (m?.toolId)
-        calls.push({ toolId: m.toolId, args: m.args, output: s.output })
-    } else if (s.nodeKind === 'agent') {
-      calls.push(...agentToolCalls({ meta: s.meta }))
-    }
+    if (s.nodeKind === 'agent') calls.push(...agentToolCalls({ meta: s.meta }))
   }
   return calls
 }
@@ -207,30 +195,6 @@ function gradeBinary(check: EvalCheck, input: GradeRowInput): CheckResult {
             reason: `no ${check.toolId} call had args${check.path ? `.${check.path}` : ''} ${check.match} ${preview(check.value)}; actual: ${preview(valueAtPath(forTool[0]?.args, check.path))}`,
           }
     }
-    case 'node_visited': {
-      const visited = input.steps.some((s) => s.nodeId === check.nodeId)
-      const pass = visited === check.visited
-      return pass
-        ? { pass }
-        : {
-            pass,
-            reason: `expected node ${check.nodeId} ${check.visited ? 'to run' : 'NOT to run'}, but it ${visited ? 'ran' : 'did not run'}`,
-          }
-    }
-    case 'node_input_match': {
-      const step = input.steps.find((s) => s.nodeId === check.nodeId)
-      if (!step) {
-        return { pass: false, reason: `node ${check.nodeId} did not run` }
-      }
-      const actual = valueAtPath(step.input, check.path)
-      const pass = matches(actual, check.match, check.value)
-      return pass
-        ? { pass }
-        : {
-            pass,
-            reason: `node ${check.nodeId} input${check.path ? `.${check.path}` : ''} did not ${check.match} ${preview(check.value)}; actual: ${preview(actual)}`,
-          }
-    }
     case 'output_match': {
       const actual = valueAtPath(input.output, check.path)
       const pass = matches(actual, check.match, check.value)
@@ -242,12 +206,7 @@ function gradeBinary(check: EvalCheck, input: GradeRowInput): CheckResult {
           }
     }
     case 'decision_answers': {
-      if (check.nodeId == null) return gradeDecisionAnswers(check, input.output)
-      const step = input.steps.find((s) => s.nodeId === check.nodeId)
-      if (!step) {
-        return { pass: false, reason: `node ${check.nodeId} did not run` }
-      }
-      return gradeDecisionAnswers(check, step.output)
+      return gradeDecisionAnswers(check, input.output)
     }
     /* c8 ignore next */
     default:
@@ -282,9 +241,7 @@ function gradeDecisionAnswers(
     return {
       pass: false,
       reason:
-        check.nodeId == null
-          ? 'the run produced no decision answers — this check grades a decision agent, whose output is { verdict, because, answers }. On a workflow, set nodeId to the decision node'
-          : `node ${check.nodeId} produced no decision answers — point nodeId at an agent node that runs a decision agent`,
+        'the run produced no decision answers — this check grades a decision agent, whose output is { verdict, because, answers }',
     }
   }
 

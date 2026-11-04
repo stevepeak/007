@@ -13,18 +13,15 @@ import {
   getLatestVersionId,
   getVersionGraph,
   saveVersion,
-  versionByNumber,
   workflowExists,
 } from '../storage/data'
 
-// Phase 5 — target resolution. An eval always runs through the same
-// GraphWorkflow path, so both target kinds must resolve to a `workflowVersionId`:
-//   • workflow target → the version the Goal pins, or its latest when unpinned.
-//   • agent target    → a hidden, auto-generated `trigger(manual) → agent → output`
-//     wrapper workflow (created once per agent+pin, cached by name). The agent
-//     node carries the Goal's pin, so the eval grades the identical trace shape
-//     a real workflow agent-node would produce — against the version the Goal
-//     actually names. An unpinned Goal floats to latest, as before.
+// Target resolution. An eval always runs through the GraphWorkflow path, so a
+// Goal's target agent resolves to a hidden, auto-generated
+// `trigger(manual) → agent → output` wrapper workflow (created once per
+// agent+pin, cached by name). The agent node carries the Goal's pin, so the eval
+// grades the identical trace shape a real workflow agent-node would produce —
+// against the version the Goal actually names. An unpinned Goal floats to latest.
 //
 // A pin that resolves to nothing THROWS rather than falling back to latest. The
 // UI renders "pinned v3" and `buildEvalSnapshot` freezes `targetVersion: 3` into
@@ -38,16 +35,15 @@ export { EVAL_WRAPPER_NAME_PREFIX, evalWrapperName }
 
 /**
  * The error for a Goal whose `targetVersion` names a version that was never
- * published. Every pin check (agent wrapper, workflow target, decision sweep)
- * throws this same text, so the reader learns which Goal to repoint.
+ * published. Every pin check (agent wrapper, decision sweep) throws this same
+ * text, so the reader learns which Goal to repoint.
  */
 export function goalPinError(args: {
-  kind: 'agent' | 'workflow'
   id: string
   version: number
 }): string {
   return (
-    `This goal pins v${args.version} of ${args.kind} ${args.id}, which has no published version ${args.version}. ` +
+    `This goal pins v${args.version} of agent ${args.id}, which has no published version ${args.version}. ` +
     'Repoint the goal at Latest, or at a version that exists.'
   )
 }
@@ -162,9 +158,7 @@ export async function ensureAgentEvalWrapper(
   // a wrapper naming a phantom version would be cached under that name forever,
   // so every later eval would fail the same opaque way.
   if (version != null && !(await agentVersionByNumber(db, input.agentId, version))) {
-    throw new Error(
-      goalPinError({ kind: 'agent', id: input.agentId, version }),
-    )
+    throw new Error(goalPinError({ id: input.agentId, version }))
   }
   const name = evalWrapperName(input.agentId, version)
   const graph = buildAgentWrapperGraph(input.agentId, version)
@@ -248,42 +242,19 @@ async function currentWrapperVersion(
 }
 
 /**
- * Resolve an eval set's target to the concrete `workflowVersionId` + the
- * trigger kind to start it under. Agent targets run their manual wrapper;
- * workflow targets run the version the set pins, or their latest when unpinned.
- * An unresolvable pin throws — see the module header for why it must not float.
+ * Resolve an eval set's target agent to its manual wrapper's concrete
+ * `workflowVersionId` + the trigger kind to start it under. An unresolvable pin
+ * throws — see the module header for why it must not float.
  */
 export async function resolveEvalTarget(
   db: WfDb,
-  target: { kind: 'agent' | 'workflow'; id: string; version?: number | null },
-  setTriggerKind: string,
+  target: { id: string; version?: number | null },
   opts?: { createdBy?: string },
 ): Promise<{ workflowVersionId: string; triggerKind: string }> {
-  const version = target.version ?? null
-  if (target.kind === 'agent') {
-    const { workflowVersionId } = await ensureAgentEvalWrapper(db, {
-      agentId: target.id,
-      version,
-      createdBy: opts?.createdBy,
-    })
-    return { workflowVersionId, triggerKind: MANUAL_TRIGGER_KIND }
-  }
-  if (version != null) {
-    // Same contract as the agent path: grade the exact version the Goal names,
-    // or fail saying so.
-    const pinned = await versionByNumber(db, target.id, version)
-    if (!pinned) {
-      throw new Error(
-        goalPinError({ kind: 'workflow', id: target.id, version }),
-      )
-    }
-    return { workflowVersionId: pinned.id, triggerKind: setTriggerKind }
-  }
-  const workflowVersionId = await getLatestVersionId(db, target.id)
-  if (!workflowVersionId) {
-    throw new Error(
-      `Workflow target ${target.id} has no published version to eval against.`,
-    )
-  }
-  return { workflowVersionId, triggerKind: setTriggerKind }
+  const { workflowVersionId } = await ensureAgentEvalWrapper(db, {
+    agentId: target.id,
+    version: target.version ?? null,
+    createdBy: opts?.createdBy,
+  })
+  return { workflowVersionId, triggerKind: MANUAL_TRIGGER_KIND }
 }

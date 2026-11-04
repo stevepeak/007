@@ -26,8 +26,6 @@ import {
 export const CHECK_TYPE_LABELS: Record<EvalCheck['type'], string> = {
   tool_called: 'Tool called',
   tool_args_match: 'Tool arguments',
-  node_visited: 'Node visited',
-  node_input_match: 'Node input',
   output_match: 'Output matches',
   decision_judge: 'Judge',
   decision_answers: 'Decision matrix',
@@ -69,12 +67,6 @@ export function heuristicCheckName(check: EvalCheck): string | null {
     case 'tool_args_match':
       if (!check.toolId) return null
       return `Calls ${check.toolId} where ${check.path || 'args'} ${MATCH_VERB[check.match]} ${formatValue(check.value)}`
-    case 'node_visited':
-      if (!check.nodeId) return null
-      return `${check.visited ? 'Reaches' : 'Never reaches'} ${check.nodeId}`
-    case 'node_input_match':
-      if (!check.nodeId) return null
-      return `Reaches ${check.nodeId} where ${check.path || 'input'} ${MATCH_VERB[check.match]} ${formatValue(check.value)}`
     case 'output_match':
       return `Output${check.path ? `.${check.path}` : ''} ${MATCH_VERB[check.match]} ${formatValue(check.value)}`
     case 'decision_answers': {

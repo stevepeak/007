@@ -26,10 +26,7 @@ describe('heuristicCheckName', () => {
     ).toBe('Never calls send_email')
   })
 
-  test('names node visits and output matches', () => {
-    expect(
-      heuristicCheckName({ type: 'node_visited', nodeId: 'draft', visited: true }),
-    ).toBe('Reaches draft')
+  test('names output matches', () => {
     expect(
       heuristicCheckName({
         type: 'output_match',

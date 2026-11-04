@@ -12,7 +12,7 @@ order: 0
 - **References float; runs freeze.** Workflows and agents each have a draft and published versions. A node follows the latest published agent unless it pins a version; a run freezes everything it will use into its manifest at start. → [[versioning]]
 - **Two engines.** `durable` survives eviction, retries nodes and can resume; `inline` is fast, interactive and can stream. The trigger picks one for the whole run. → [[execution]]
 - **The answer can stream before anything else finishes.** On the `inline` engine, a text agent that the `output` names streams its tokens as it generates — edges into the `output` do not hold that back. To gate an answer behind checks, have the `output` name a node *after* the checks. `informUser` controls live progress per node. → [[streaming]]
-- **Evals grade agents and workflows** against samples with checks, optionally across models and prompts. → [[evals]]
+- **Evals grade agents** against samples with checks, optionally across models and prompts. → [[evals]]
 - **Through this MCP you can** read everything, and — on a write connection — create, patch and publish workflows and agents, run previews and evals. Publishing an agent is a dry run first, because it can change several workflows at once. → [[authoring]]
 - **When something went wrong**, start at `list_runs` → `get_run` → `get_run_step`. → [[debugging]]
 - **Words you don't know** are in [[concepts]]; hard numbers are in [[limits]].

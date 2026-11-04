@@ -18,9 +18,9 @@ import { useEvalSampleDraft } from './use-eval-sample-draft'
 // wf_eval_row, and it answers three questions in order:
 //
 //   1. INPUT  — what is the target invoked with? The editor is chosen by the
-//               TARGET's own contract (task variables / a conversation thread /
-//               a workflow's trigger payload), so there is exactly one input
-//               source per sample instead of several competing ones.
+//               TARGET's own contract (task variables / a conversation thread),
+//               so there is exactly one input source per sample instead of
+//               several competing ones.
 //   2. TOOLS  — how do its tools behave? One tri-state: mocked, none, or live.
 //   3. CHECKS — what has to be true of the run? Each check is a collapsible row
 //               authored in place (there is no separate Check page), and gated

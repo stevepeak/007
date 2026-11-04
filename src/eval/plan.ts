@@ -44,8 +44,7 @@ export type EvalMatrix = {
  * How a cell of this sweep is executed — the one structural difference between
  * the two agent kinds, frozen at launch alongside everything else.
  *
- * `'run'` is every sweep before ART-238 and every one against a workflow or a
- * generation agent: the cell STARTS a `wf_run` and later ticks poll it to a
+ * `'run'` is every sweep against a generation agent: the cell STARTS a `wf_run` and later ticks poll it to a
  * terminal status. `'decision'` is a decision-agent target, which has no graph
  * and no run — one provider call, settled inside the tick that started it.
  *
@@ -264,21 +263,18 @@ export function parseEvalDriveState(raw: unknown): EvalDriveState {
  * once for the model gate).
  */
 export function resolveEvalCellMode(
-  targets: readonly { targetKind: string; targetId: string }[],
+  targets: readonly { targetId: string }[],
   agentKinds: ReadonlyMap<string, 'generation' | 'decision'>,
 ): { mode: EvalCellMode } | { error: string } {
   const modes = new Set(
     targets.map((t): EvalCellMode => {
-      return t.targetKind === 'agent' &&
-        agentKinds.get(t.targetId) === 'decision'
-        ? 'decision'
-        : 'run'
+      return agentKinds.get(t.targetId) === 'decision' ? 'decision' : 'run'
     }),
   )
   if (modes.size > 1) {
     return {
       error:
-        'One run cannot cover both a decision agent and a workflow or generation agent — they produce incomparable reports. Run those goals separately.',
+        'One run cannot cover both a decision agent and a generation agent — they produce incomparable reports. Run those goals separately.',
     }
   }
   return { mode: modes.has('decision') ? 'decision' : 'run' }

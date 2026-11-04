@@ -11,14 +11,12 @@ import {
   type CheckTree,
   type EvalTools,
 } from '../engine/eval-schema'
-import { triggerKindOf, type WorkflowGraph } from '../engine/graph'
 import { MANUAL_TRIGGER_KIND } from '../engine/trigger-registry'
 import type {
   AgentConfig,
   AnyAgentConfig,
   WfAgentKind,
   WfDataClient,
-  WfEvalTargetKind,
 } from '../server/protocol'
 
 import { clip } from './clip'
@@ -35,10 +33,9 @@ import { notFound, optString, reqString, type WfMcpTool } from './tools'
 // ── The one thing that makes or breaks a generated Sample ────────────────────
 //
 // A Sample's `input` is a discriminated union, and exactly ONE variant is legal
-// per target: a `task` agent takes `{ kind: 'task', variables }`, a
-// `conversation` agent takes `{ kind: 'conversation', turns, variables }`, and a
-// workflow takes `{ kind: 'trigger', payload, variables }`. A model that guesses
-// gets a validation failure at best and a Sample that grades the wrong thing at
+// per target: a `task` agent takes `{ kind: 'task', variables }`, and a
+// `conversation` agent takes `{ kind: 'conversation', turns, variables }`. A
+// model that guesses gets a validation failure at best and a Sample that grades the wrong thing at
 // worst.
 //
 // So the target's contract is never something the model has to go looking for:
@@ -75,19 +72,17 @@ const SAMPLE_FIELD_CHARS = 8000
  * itself, so the next `upsert_eval_sample` call needs no second lookup.
  */
 type TargetContract = {
-  targetKind: WfEvalTargetKind
   targetId: string
   name: string
   /** The `input.kind` a Sample against this target MUST use. */
-  sampleInputKind: 'task' | 'conversation' | 'trigger' | 'decision'
+  sampleInputKind: 'task' | 'conversation' | 'decision'
   /** A ready-to-fill `input` value in exactly that shape. */
   inputTemplate: Record<string, unknown>
   /** The trigger kind the target is actually invoked under. */
   triggerKind: string
   /**
    * Tool ids this target can actually call — the only legal keys for
-   * `tools.fixtures`. Null for a workflow target, whose tools are spread across
-   * however many agent nodes its graph holds.
+   * `tools.fixtures`. Null when the agent has never been published.
    */
   toolIds: string[] | null
   /**
@@ -117,16 +112,6 @@ function agentInputTemplate(
   return { kind: 'task', variables: vars }
 }
 
-/** The trigger kind a workflow's own graph declares, draft included. */
-function graphTriggerKind(detail: {
-  currentVersion: { graph: WorkflowGraph } | null
-  draft: { graph: WorkflowGraph } | null
-}): string | null {
-  return triggerKindOf({
-    graph: detail.currentVersion?.graph ?? detail.draft?.graph,
-  })
-}
-
 /**
  * The config a Goal's samples will actually be graded against.
  *
@@ -147,121 +132,78 @@ function gradedConfig(detail: {
 }
 
 /**
- * Resolve a target to the Sample shape it accepts, or explain why it can't be
- * a target at all.
+ * Resolve a target agent to the Sample shape it accepts, or explain why it can't
+ * be a target at all.
  */
 async function resolveTargetContract(
   client: WfDataClient,
-  targetKind: WfEvalTargetKind,
   targetId: string,
 ): Promise<TargetContract | { error: string }> {
-  if (targetKind === 'agent') {
-    const detail = await client.getAgent(targetId)
-    if (!detail) {
-      return notFound({
-        kind: 'agent',
-        id: targetId,
-        hint: 'Ids come from list_agents — a name is not an id.',
-      })
-    }
-    const { agent } = detail
-    const warnings: string[] = []
-    if (agent.latestVersionNumber == null) {
-      warnings.push(
-        `Agent "${agent.name}" has no published version, so a run of this goal has nothing to execute. Publish it before running the goal.`,
-      )
-    }
-    // A decision agent's Samples are a different shape entirely: one state
-    // blob, no prompt variables to fill, no tools to pin and no prose to judge.
-    // Describing it with the generation contract would hand the caller a
-    // template that grades nothing.
-    if (agent.kind === 'decision') {
-      const questionIds = agent.decision?.questionIds ?? []
-      if (questionIds.length === 0) {
-        warnings.push(
-          `Decision agent "${agent.name}" declares no questions in its published version, so there is nothing for a sample to expect.`,
-        )
-      }
-      return {
-        targetKind: 'agent',
-        targetId,
-        name: agent.name,
-        sampleInputKind: 'decision',
-        inputTemplate: {
-          kind: 'decision',
-          state: '',
-          variables: Object.fromEntries(
-            (agent.decision?.inputVariables ?? []).map((v) => [v, '']),
-          ),
-        },
-        triggerKind: MANUAL_TRIGGER_KIND,
-        // Neither applies: a decision agent calls no tools, and its output is
-        // always `{ verdict, because, answers }` rather than an authored schema.
-        toolIds: [],
-        outputSchema: null,
-        warnings: [
-          ...warnings,
-          `Grade this with a \`decision_answers\` check: { type: "decision_answers", verdict: "<one of ${(agent.decision?.verdicts ?? []).join(' | ') || '…'}>", expect: [{ questionId: "<${questionIds.join(' | ') || '…'}>", yes: true } ] }. Every cell is one provider call — no tool loop, no wrapper workflow.`,
-        ],
-      }
-    }
-    const config = gradedConfig(detail)
-    return {
-      targetKind: 'agent',
-      targetId,
-      name: agent.name,
-      sampleInputKind: agent.inputKind,
-      inputTemplate: agentInputTemplate(agent.inputKind, agent.inputVariables),
-      // Not the caller's choice: an agent goal is always started through the
-      // manual wrapper (`resolveEvalTarget`), whatever the set records.
-      triggerKind: MANUAL_TRIGGER_KIND,
-      // Null (unknown) rather than [] (known-empty) when the agent has never
-      // been published: the difference decides whether a fixture warning is a
-      // finding or noise.
-      toolIds: config ? config.toolIds : null,
-      outputSchema:
-        config?.output.kind === 'object'
-          ? (config.output.schema)
-          : null,
-      warnings,
-    }
-  }
-
-  const detail = await client.getWorkflow(targetId)
+  const detail = await client.getAgent(targetId)
   if (!detail) {
     return notFound({
-      kind: 'workflow',
+      kind: 'agent',
       id: targetId,
-      hint: 'Ids come from list_workflows.',
+      hint: 'Ids come from list_agents — a name is not an id. Goals only target agents, never workflows.',
     })
   }
+  const { agent } = detail
   const warnings: string[] = []
-  const declared = graphTriggerKind(detail)
-  if (!declared) {
+  if (agent.latestVersionNumber == null) {
     warnings.push(
-      'This workflow has no trigger node, so the goal falls back to the `manual` trigger.',
+      `Agent "${agent.name}" has no published version, so a run of this goal has nothing to execute. Publish it before running the goal.`,
     )
   }
-  const triggerKind = declared ?? MANUAL_TRIGGER_KIND
-  // The trigger's declared payload fields, so the sample's `payload` is written
-  // against the real event shape instead of an invented one.
-  const events = await client.listTriggerEvents().catch(() => [])
-  const event = events.find((e) => e.kind === triggerKind)
-  const payload = Object.fromEntries(
-    (event?.fields ?? []).map((f) => [f.name, null]),
-  )
+  // A decision agent's Samples are a different shape entirely: one state
+  // blob, no prompt variables to fill, no tools to pin and no prose to judge.
+  // Describing it with the generation contract would hand the caller a
+  // template that grades nothing.
+  if (agent.kind === 'decision') {
+    const questionIds = agent.decision?.questionIds ?? []
+    if (questionIds.length === 0) {
+      warnings.push(
+        `Decision agent "${agent.name}" declares no questions in its published version, so there is nothing for a sample to expect.`,
+      )
+    }
+    return {
+      targetId,
+      name: agent.name,
+      sampleInputKind: 'decision',
+      inputTemplate: {
+        kind: 'decision',
+        state: '',
+        variables: Object.fromEntries(
+          (agent.decision?.inputVariables ?? []).map((v) => [v, '']),
+        ),
+      },
+      triggerKind: MANUAL_TRIGGER_KIND,
+      // Neither applies: a decision agent calls no tools, and its output is
+      // always `{ verdict, because, answers }` rather than an authored schema.
+      toolIds: [],
+      outputSchema: null,
+      warnings: [
+        ...warnings,
+        `Grade this with a \`decision_answers\` check: { type: "decision_answers", verdict: "<one of ${(agent.decision?.verdicts ?? []).join(' | ') || '…'}>", expect: [{ questionId: "<${questionIds.join(' | ') || '…'}>", yes: true } ] }. Every cell is one provider call — no tool loop, no wrapper workflow.`,
+      ],
+    }
+  }
+  const config = gradedConfig(detail)
   return {
-    targetKind: 'workflow',
     targetId,
-    name: detail.workflow.name,
-    sampleInputKind: 'trigger',
-    inputTemplate: { kind: 'trigger', payload, variables: {} },
-    triggerKind,
-    // A workflow's tools belong to whichever agent nodes its graph holds, and
-    // its output is the Output node's — neither is one list. get_workflow shows
-    // the graph; this doesn't pretend to summarize it.
-    toolIds: null,
-    outputSchema: null,
+    name: agent.name,
+    sampleInputKind: agent.inputKind,
+    inputTemplate: agentInputTemplate(agent.inputKind, agent.inputVariables),
+    // Not the caller's choice: a goal is always started through the manual
+    // wrapper (`resolveEvalTarget`), whatever the set records.
+    triggerKind: MANUAL_TRIGGER_KIND,
+    // Null (unknown) rather than [] (known-empty) when the agent has never
+    // been published: the difference decides whether a fixture warning is a
+    // finding or noise.
+    toolIds: config ? config.toolIds : null,
+    outputSchema:
+      config?.output.kind === 'object'
+        ? (config.output.schema)
+        : null,
     warnings,
   }
 }
@@ -294,9 +236,9 @@ function outputPaths(schema: JsonSchema | null): string[] | null {
  * the agent doesn't have is exactly as dead as a mock it will never read, and
  * more misleading, because it reads as a deliberate decision to run something.
  *
- * Only ever reported against a KNOWN tool list (`toolIds != null`): a workflow
- * target, or an agent that has never been published, has no list to check
- * against, and guessing there would produce a warning about nothing.
+ * Only ever reported against a KNOWN tool list (`toolIds != null`): an agent
+ * that has never been published has no list to check against, and guessing there
+ * would produce a warning about nothing.
  */
 function deadToolSettings(tools: EvalTools, toolIds: string[] | null): string[] {
   if (!toolIds) return []
@@ -336,7 +278,6 @@ function describeSample(
   tools: unknown,
   checks: unknown,
   target?: { toolIds: string[] | null; outputSchema: JsonSchema | null },
-  targetKind?: string,
 ): { layer: string; warnings: string[] } {
   // Both parses are of payloads the server just ACCEPTED, so neither can throw;
   // re-parsing here applies the same defaults the stored row got.
@@ -366,17 +307,6 @@ function describeSample(
       'This sample has NO checks, so a run of it produces an `error` verdict rather than a pass or a fail — it will read in the report as infrastructure trouble. Add at least one check.',
     )
   }
-  // A workflow's output is what its Output node returns, which is rarely the
-  // decision a Switch routed on — so a matrix check with no node to read grades
-  // the wrong value and fails with "no decision answers".
-  if (
-    targetKind === 'workflow' &&
-    parsedChecks.checks.some((c) => c.type === 'decision_answers' && !c.nodeId)
-  ) {
-    warnings.push(
-      'A `decision_answers` check on a workflow Goal needs `nodeId` — the agent node that runs the decision agent. Without it the check grades the workflow’s final output, which is not the decision, and fails with "no decision answers".',
-    )
-  }
   if (target) {
     const orphaned = deadToolSettings(parsedTools, target.toolIds)
     if (orphaned.length > 0) {
@@ -394,9 +324,6 @@ function describeSample(
   return { layer: evalSampleLayer(parsedInput, parsedTools), warnings }
 }
 
-const TARGET_KIND_DESC =
-  '"agent" (the default) or "workflow". An agent goal grades one agent in isolation; a workflow goal runs the whole graph.'
-
 /**
  * The check vocabulary as the tool description states it — generated, so a new
  * check type or field appears here the moment it is added to the schema.
@@ -411,7 +338,7 @@ export function evalReadTools(): WfMcpTool[] {
       name: 'list_eval_sets',
       title: 'List eval goals',
       description:
-        'List every eval Goal — a named set of Samples run against one agent or workflow and graded by its check tree. Shows what each targets, whether it pins a version, and how many Samples it holds.',
+        'List every eval Goal — a named set of Samples run against one agent and graded by its check tree. Shows what each targets, whether it pins a version, and how many Samples it holds.',
       inputSchema: {
         includeArchived: z
           .boolean()
@@ -449,7 +376,6 @@ export function evalReadTools(): WfMcpTool[] {
         if (!detail) return notFound({ kind: 'eval goal', id: setId })
         const contract = await resolveTargetContract(
           client,
-          detail.set.targetKind,
           detail.set.targetId,
         )
         return {
@@ -468,17 +394,14 @@ export function evalWriteTools(): WfMcpTool[] {
       name: 'create_eval_set',
       title: 'Create eval goal',
       description:
-        'Create a Goal — the named set a batch of Samples belongs to — against one agent or workflow. The target is resolved first, so a wrong id fails here instead of at run time, and the result hands back the exact `input` shape and variable names the Samples must use. Leave targetVersion unset: a goal that floats to the latest published version keeps grading what actually ships.',
+        'Create a Goal — the named set a batch of Samples belongs to — against one agent. The target is resolved first, so a wrong id fails here instead of at run time, and the result hands back the exact `input` shape and variable names the Samples must use. Leave targetVersion unset: a goal that floats to the latest published version keeps grading what actually ships.',
       inputSchema: {
         name: z
           .string()
           .describe(
             'What this goal tests, e.g. "Conflict check — refusal cases".',
           ),
-        targetId: z
-          .string()
-          .describe('Agent id (list_agents) or workflow id (list_workflows).'),
-        targetKind: z.string().nullish().describe(TARGET_KIND_DESC),
+        targetId: z.string().describe('Agent id, from list_agents.'),
         description: z.string().nullish().describe('Optional longer note.'),
         targetVersion: z
           .number()
@@ -486,33 +409,21 @@ export function evalWriteTools(): WfMcpTool[] {
           .describe(
             'Pin to one published version number. Omit (the default) to float to latest — pin only to reproduce a historical result.',
           ),
-        triggerKind: z
-          .string()
-          .nullish()
-          .describe(
-            'Normally omit — derived from the target (agents always run under `manual`; a workflow uses the kind its own trigger node declares).',
-          ),
       },
       readOnly: false,
       run: async (client, args) => {
         const name = reqString(args.name, 'name')
         const targetId = reqString(args.targetId, 'targetId')
-        const targetKind: WfEvalTargetKind =
-          optString(args.targetKind) === 'workflow' ? 'workflow' : 'agent'
-        const contract = await resolveTargetContract(
-          client,
-          targetKind,
-          targetId,
-        )
+        const contract = await resolveTargetContract(client, targetId)
         if ('error' in contract) return contract
         const { setId } = await client.createEvalSet({
           name,
           description: optString(args.description),
-          targetKind,
+          targetKind: 'agent',
           targetId,
           targetVersion:
             typeof args.targetVersion === 'number' ? args.targetVersion : null,
-          triggerKind: optString(args.triggerKind) ?? contract.triggerKind,
+          triggerKind: contract.triggerKind,
         })
         return {
           setId,
@@ -526,7 +437,7 @@ export function evalWriteTools(): WfMcpTool[] {
       name: 'update_eval_set',
       title: 'Update eval goal',
       description: [
-        "Edit a Goal itself: rename it, repoint it at a different target, pin or unpin the target version, archive it or bring it back. Everything except the Samples, which are `upsert_eval_sample`'s job, and the description, which is `update_description`'s.",
+        "Edit a Goal itself: rename it, repoint it at a different agent, pin or unpin the target version, archive it or bring it back. Everything except the Samples, which are `upsert_eval_sample`'s job, and the description, which is `update_description`'s.",
         '',
         'Only the fields you pass are changed; the rest are left alone.',
         '',
@@ -542,10 +453,7 @@ export function evalWriteTools(): WfMcpTool[] {
         targetId: z
           .string()
           .nullish()
-          .describe(
-            'Repoint the goal at a different agent/workflow. Pass targetKind too when the kind changes.',
-          ),
-        targetKind: z.string().nullish().describe(TARGET_KIND_DESC),
+          .describe('Repoint the goal at a different agent.'),
         targetVersion: z
           .number()
           .nullish()
@@ -575,18 +483,11 @@ export function evalWriteTools(): WfMcpTool[] {
           })
         }
         const targetId = optString(args.targetId)
-        const targetKind: WfEvalTargetKind | undefined =
-          optString(args.targetKind) === 'workflow'
-            ? 'workflow'
-            : optString(args.targetKind) === 'agent'
-              ? 'agent'
-              : undefined
         // Resolve a repoint BEFORE writing it, for the same reason
         // `create_eval_set` does: `targetId` has no FK, so a wrong id lands a
         // Goal that fails only when someone runs it.
-        const nextKind = targetKind ?? before.set.targetKind
         const contract = targetId
-          ? await resolveTargetContract(client, nextKind, targetId)
+          ? await resolveTargetContract(client, targetId)
           : null
         if (contract && 'error' in contract) return contract
 
@@ -607,9 +508,7 @@ export function evalWriteTools(): WfMcpTool[] {
           setId,
           name: optString(args.name),
           targetId,
-          // Only sent alongside a repoint: changing the KIND without the id
-          // would leave the Goal pointing an agent id at the workflow table.
-          targetKind: targetId ? targetKind : undefined,
+          targetKind: targetId ? 'agent' : undefined,
           targetVersion: float ? null : pin,
           archived:
             typeof args.archived === 'boolean' ? args.archived : undefined,
@@ -648,7 +547,6 @@ export function evalWriteTools(): WfMcpTool[] {
         "`input` — the target's own contract, and exactly one shape is legal. Take it from the `target` that create_eval_set / get_eval_set returned:",
         '  • task agent:         { "kind": "task", "variables": { … } } — every declared variable filled.',
         '  • conversation agent: { "kind": "conversation", "turns": [ … ], "variables": { … } }',
-        '  • workflow:           { "kind": "trigger", "payload": { … }, "variables": { … } }',
         '',
         'A conversation `turn` is { "role": "user" | "assistant", "text": "…" }. An assistant turn may also carry `toolCalls`: [{ "tool": "<toolId>", "args": …, "output": … }] — the call it is treated as having made and the result it saw. That is how you STAGE retrieved context: seed the search the assistant "already ran" and its chunks, and the run begins mid-conversation with only the final reply left to produce. Leave every tool unpinned to grade the answer it synthesizes from that context alone.',
         '',
@@ -729,7 +627,6 @@ export function evalWriteTools(): WfMcpTool[] {
         }
         const contract = await resolveTargetContract(
           client,
-          detail.set.targetKind,
           detail.set.targetId,
         )
         // Passed through unparsed on purpose: `upsertEvalRow` validates each
@@ -769,7 +666,6 @@ export function evalWriteTools(): WfMcpTool[] {
             merged.tools,
             merged.checks,
             'error' in contract ? undefined : contract,
-            detail.set.targetKind,
           ),
         }
       },

@@ -1,23 +1,17 @@
-import {
-  HelpCircle,
-  Play,
-  Plus,
-  Workflow as WorkflowIcon,
-} from 'lucide-react'
+import { HelpCircle, Play, Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import type {
   WfAgentSummary,
   WfEvalRunSummary,
   WfEvalSetSummary,
-  WfWorkflowSummary,
 } from '../../server/protocol'
 import { agentColor, agentIcon } from '../agent-appearance'
 import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { EmptyState } from '../empty-state'
 import { FilterPill } from '../filters'
-import { useAgents, useEvalRuns, useEvalSets, useWorkflows } from '../hooks'
+import { useAgents, useEvalRuns, useEvalSets } from '../hooks'
 import { useWfNav } from '../nav'
 import { QueryState } from '../query-state'
 
@@ -58,7 +52,7 @@ export function EvalsList({ className }: EvalsListProps) {
     <div className={cn('mx-auto max-w-5xl space-y-5 p-6', className)}>
       <div className="flex items-start justify-between gap-4">
         <p className="max-w-md text-sm text-neutral-500">
-          Test agents and workflows against expected outcomes. Runs execute in
+          Test agents against expected outcomes. Runs execute in
           simulation — write tools no-op and read tools return canned fixtures,
           so no real side effects.
         </p>
@@ -129,7 +123,6 @@ export function EvalsList({ className }: EvalsListProps) {
 function GoalsTable({ goals }: { goals: WfEvalSetSummary[] }) {
   const { navigate } = useWfNav()
   const agentsQuery = useAgents()
-  const workflowsQuery = useWorkflows()
   const agentById = useMemo(
     () => new Map((agentsQuery.data ?? []).map((a) => [a.id, a])),
     [agentsQuery.data],
@@ -150,7 +143,6 @@ function GoalsTable({ goals }: { goals: WfEvalSetSummary[] }) {
         value={targetFilter}
         onChange={setTargetFilter}
         agents={agentsQuery.data ?? []}
-        workflows={workflowsQuery.data ?? []}
       />
       <div className="overflow-hidden rounded-lg border border-neutral-200">
         <div className="grid grid-cols-[1fr_auto_5rem] items-center gap-4 border-b border-neutral-100 bg-neutral-50 px-4 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-neutral-400">
@@ -221,28 +213,15 @@ function GoalsTable({ goals }: { goals: WfEvalSetSummary[] }) {
   )
 }
 
-// A neutral chip holding a workflow's generic glyph — the workflow analog of the
-// agent icon (workflows carry no per-item icon).
-function WorkflowChip() {
-  return (
-    <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
-      <WorkflowIcon className="size-3" />
-    </span>
-  )
-}
-
-// Filter the goals list by target: every agent (its icon on its color tint) and
-// every workflow (generic glyph).
+// Filter the goals list by target: every agent (its icon on its color tint).
 function TargetFilter({
   value,
   onChange,
   agents,
-  workflows,
 }: {
   value: string
   onChange: (targetId: string) => void
   agents: WfAgentSummary[]
-  workflows: WfWorkflowSummary[]
 }) {
   return (
     <FilterPill
@@ -250,29 +229,16 @@ function TargetFilter({
       value={value}
       onChange={onChange}
       searchPlaceholder="Search agents…"
-      options={[
-        ...agents.map((a) => ({
-          value: a.id,
-          label: a.name,
-          node: (
-            <span className="inline-flex items-center gap-1.5">
-              <AgentGlyph agent={a} />
-              {a.name}
-            </span>
-          ),
-        })),
-        ...workflows.map((w, i) => ({
-          value: w.id,
-          label: w.name,
-          separatorBefore: i === 0 && agents.length > 0,
-          node: (
-            <span className="inline-flex items-center gap-1.5">
-              <WorkflowChip />
-              {w.name}
-            </span>
-          ),
-        })),
-      ]}
+      options={agents.map((a) => ({
+        value: a.id,
+        label: a.name,
+        node: (
+          <span className="inline-flex items-center gap-1.5">
+            <AgentGlyph agent={a} />
+            {a.name}
+          </span>
+        ),
+      }))}
     />
   )
 }
@@ -327,7 +293,6 @@ function RunsTable({
 }) {
   const { navigate } = useWfNav()
   const agentsQuery = useAgents()
-  const workflowsQuery = useWorkflows()
   const [goalFilter, setGoalFilter] = useState('')
   const [targetFilter, setTargetFilter] = useState('')
   const goalById = useMemo(
@@ -365,7 +330,6 @@ function RunsTable({
           value={targetFilter}
           onChange={setTargetFilter}
           agents={agentsQuery.data ?? []}
-          workflows={workflowsQuery.data ?? []}
         />
       </div>
       <EvalRunsTable
@@ -404,7 +368,6 @@ function RunsTable({
           <TargetPills
             targetIds={runTargetIds(r)}
             agents={agentsQuery.data ?? []}
-            workflows={workflowsQuery.data ?? []}
           />
         )}
       />
@@ -416,26 +379,20 @@ function RunsTable({
 function TargetPills({
   targetIds,
   agents,
-  workflows,
 }: {
   targetIds: string[]
   agents: WfAgentSummary[]
-  workflows: WfWorkflowSummary[]
 }) {
   const [first, ...rest] = targetIds
   if (!first) return <span className="text-sm text-neutral-400">—</span>
-  const workflow = workflows.find((w) => w.id === first)
+  const agent = agents.find((a) => a.id === first)
   return (
     <span className="inline-flex items-center gap-1.5">
-      {workflow ? (
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white py-0.5 pl-0.5 pr-2.5">
-          <WorkflowChip />
-          <span className="max-w-[10rem] truncate text-xs font-medium text-neutral-700">
-            {workflow.name}
-          </span>
-        </span>
+      {/* Agents have loaded once the list is non-empty, so a miss means no agent. */}
+      {agent || agents.length === 0 ? (
+        <AgentPill agent={agent} />
       ) : (
-        <AgentPill agent={agents.find((a) => a.id === first)} />
+        <span className="text-xs text-neutral-400">Unknown agent</span>
       )}
       {rest.length > 0 ? (
         <span className="text-xs text-neutral-500">+{rest.length}</span>

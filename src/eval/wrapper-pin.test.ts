@@ -1,14 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
 
-import type { AgentConfig, WorkflowGraph } from '../engine/graph'
+import type { AgentConfig } from '../engine/graph'
 import type { WfDb } from '../storage/client'
 import {
   createAgent,
   createWorkflow,
   findWorkflowByName,
   publishAgent,
-  saveVersion,
 } from '../storage/data'
 import { freshDb } from '../storage/db-test-helpers'
 import { wfWorkflow } from '../storage/schema'
@@ -45,35 +44,6 @@ function config(over: Partial<AgentConfig> = {}): AgentConfig {
   } as AgentConfig
 }
 
-/** A minimal valid graph for a workflow target — trigger → output. */
-function trivialGraph(): WorkflowGraph {
-  return {
-    version: 1,
-    nodes: [
-      {
-        id: 'trigger',
-        kind: 'trigger',
-        label: 'Manual start',
-        position: { x: 0, y: 0 },
-        informUser: { mode: 'off' },
-        config: { triggerKind: 'manual' },
-      },
-      {
-        id: 'output',
-        kind: 'output',
-        label: 'Output',
-        position: { x: 280, y: 0 },
-        informUser: { mode: 'off' },
-        config: { source: { kind: 'ref', nodeId: 'trigger', path: '' } },
-      },
-    ],
-    edges: [
-      { id: 'e', source: 'trigger', target: 'output', condition: null },
-    ],
-  } as unknown as WorkflowGraph
-}
-
-/** An agent with two published versions (v1 from create, v2 from publish). */
 async function agentWithTwoVersions(db: WfDb) {
   const { agentId } = await createAgent(db, {
     name: 'Pinned agent',
@@ -90,8 +60,7 @@ describe('resolveEvalTarget — agent version pin', () => {
 
     const resolved = await resolveEvalTarget(
       db,
-      { kind: 'agent', id: agentId, version: 2 },
-      'manual',
+      { id: agentId, version: 2 },
     )
     expect(resolved.triggerKind).toBe('manual')
 
@@ -107,8 +76,7 @@ describe('resolveEvalTarget — agent version pin', () => {
     // so its shape is part of the contract, not an implementation detail.
     const err = await resolveEvalTarget(
       db,
-      { kind: 'agent', id: agentId, version: 9 },
-      'manual',
+      { id: agentId, version: 9 },
     ).then(
       () => null,
       (e: unknown) => e as Error,
@@ -124,13 +92,11 @@ describe('resolveEvalTarget — agent version pin', () => {
 
     const v1 = await resolveEvalTarget(
       db,
-      { kind: 'agent', id: agentId, version: 1 },
-      'manual',
+      { id: agentId, version: 1 },
     )
     const v2 = await resolveEvalTarget(
       db,
-      { kind: 'agent', id: agentId, version: 2 },
-      'manual',
+      { id: agentId, version: 2 },
     )
     // Sharing a cached wrapper across pins is precisely how the pin would be
     // silently lost again.
@@ -143,13 +109,11 @@ describe('resolveEvalTarget — agent version pin', () => {
 
     const first = await resolveEvalTarget(
       db,
-      { kind: 'agent', id: agentId, version: 2 },
-      'manual',
+      { id: agentId, version: 2 },
     )
     const second = await resolveEvalTarget(
       db,
-      { kind: 'agent', id: agentId, version: 2 },
-      'manual',
+      { id: agentId, version: 2 },
     )
     // `ensureAgentEvalWrapper` rebuilds and structurally compares the graph on
     // every call. If a pinned graph didn't compare equal to its stored copy,
@@ -163,65 +127,10 @@ describe('resolveEvalTarget — agent version pin', () => {
 
     const resolved = await resolveEvalTarget(
       db,
-      { kind: 'agent', id: agentId },
-      'manual',
+      { id: agentId },
     )
     expect(resolved.workflowVersionId).toBeTruthy()
     expect(await findWorkflowByName(db, evalWrapperName(agentId))).not.toBeNull()
-  })
-})
-
-describe('resolveEvalTarget — workflow version pin', () => {
-  async function workflowWithTwoVersions(db: WfDb) {
-    const created = await createWorkflow(db, {
-      name: 'Pinned workflow',
-      graph: trivialGraph(),
-    })
-    const v2 = await saveVersion(db, {
-      workflowId: created.workflowId,
-      graph: trivialGraph(),
-    })
-    return { workflowId: created.workflowId, v1: created.versionId, v2: v2.versionId }
-  }
-
-  test('a pinned goal grades the pinned version, not the latest', async () => {
-    const db = freshDb()
-    const { workflowId, v1, v2 } = await workflowWithTwoVersions(db)
-
-    const pinned = await resolveEvalTarget(
-      db,
-      { kind: 'workflow', id: workflowId, version: 1 },
-      'manual',
-    )
-    expect(pinned.workflowVersionId).toBe(v1)
-    expect(pinned.workflowVersionId).not.toBe(v2)
-  })
-
-  test('an unpinned goal floats to the latest version', async () => {
-    const db = freshDb()
-    const { workflowId, v2 } = await workflowWithTwoVersions(db)
-
-    const floating = await resolveEvalTarget(
-      db,
-      { kind: 'workflow', id: workflowId },
-      'manual',
-    )
-    expect(floating.workflowVersionId).toBe(v2)
-  })
-
-  test('a pin that was never published throws', async () => {
-    const db = freshDb()
-    const { workflowId } = await workflowWithTwoVersions(db)
-
-    const err = await resolveEvalTarget(
-      db,
-      { kind: 'workflow', id: workflowId, version: 3 },
-      'manual',
-    ).then(
-      () => null,
-      (e: unknown) => e as Error,
-    )
-    expect(err?.message).toContain('v3')
   })
 })
 

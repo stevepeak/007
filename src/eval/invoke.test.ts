@@ -41,14 +41,6 @@ describe('evalInvocation — input', () => {
     expect(i.promptVariables).toEqual({ userId: 'u1' })
   })
 
-  test('a workflow sample replays its routed payload verbatim', () => {
-    const i = evalInvocation(
-      { kind: 'trigger', payload: { chatId: 'c1' }, variables: {} },
-      defaultEvalTools(),
-    )
-    expect(i.triggerInput).toEqual({ chatId: 'c1' })
-  })
-
   test('a sample’s tool context reaches the run, and defaults to empty', () => {
     const scoped = evalInvocation(
       { ...task, context: { clientOrgId: 'org1' } },
