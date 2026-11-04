@@ -186,6 +186,13 @@ export const wfInputSchemas = {
   // ---- runs ---------------------------------------------------------------
   listRunTriggerKinds: NO_INPUT,
   deleteAllRuns: NO_INPUT,
+  previewRunPrune: z.object({
+    before: z.number().int().positive(),
+  }),
+  pruneRuns: z.object({
+    before: z.number().int().positive(),
+    limit: z.number().int().min(1).max(1000),
+  }),
   listRuns: z.object({
     workflowVersionId: z.string().optional(),
     workflowId: z.string().optional(),

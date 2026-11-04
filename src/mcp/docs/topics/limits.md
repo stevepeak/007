@@ -43,6 +43,7 @@ Sub-agent delegation (see [[agents/sub-agents]]):
 | Large step values | > 128 KB strings are spilled | On the durable engine, oversized strings become blob refs (if the host wired storage), because a step's result is capped near 1 MiB. Readers rehydrate them transparently. |
 | Stored error detail | 16,000 chars | Raw model text inside it: 2,000 chars. |
 | Run note | 8,000 chars | |
+| Run retention | none automatic | Runs are kept until `prune_runs` deletes them: a dry run, then a confirmed call per page (500 by default, 1,000 at most). Its cutoff must be at least 1 day old. Eval runs, unsettled runs and runs with an unsettled parent or child are kept. |
 
 ## Iteration
 

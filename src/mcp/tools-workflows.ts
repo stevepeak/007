@@ -20,6 +20,8 @@ import type { GraphIssue } from '../engine/graph-issues'
 // table sits ABOVE graph-schema (it needs `buildIterationSubgraph`), which is why
 // it is not re-exported there — see its own header.
 import { NODE_KIND_SEEDS } from '../engine/node-kind-seeds'
+import { sha256Hex } from '../engine/sha256'
+import { stableStringify } from '../engine/stable-stringify'
 import {
   MANUAL_TRIGGER_KIND,
   PERIODIC_TRIGGER_KIND,
@@ -33,6 +35,7 @@ import type {
 } from '../server/protocol'
 
 import {
+  boundedLimit,
   formatZodIssues,
   noSuchVersion,
   notFound,
@@ -730,6 +733,10 @@ export function workflowReadTools(): WfMcpTool[] {
   ]
 }
 
+const PRUNE_MIN_AGE_DAYS = 1
+const PRUNE_DEFAULT_PAGE = 500
+const PRUNE_MAX_PAGE = 1000
+
 export function workflowWriteTools(): WfMcpTool[] {
   return [
     {
@@ -1261,6 +1268,90 @@ export function workflowWriteTools(): WfMcpTool[] {
               ? 'Started fresh on the latest published version. Every node runs again, side effects included.'
               : `Resuming on the version the original ran (v${before.versionNumber ?? '—'}), from the failed step. The graph is NOT the latest — publish-then-resume tests the old version.`,
           next: `Poll get_run("${newRunId}") until status is "done" or "completed".`,
+        }
+      },
+    },
+    {
+      name: 'prune_runs',
+      title: 'Prune old runs',
+      description: [
+        'Permanently delete old runs and everything derived from them: steps, logs and notes. THERE IS NO UNDO. Feedback rows survive, with their link to the run cleared. Definitions (workflows, agents, eval sets) are untouched.',
+        '',
+        'Eval runs are kept, because they are the baseline drift reports compare against. So is any run not yet settled (queued, running, done) and any run with an unsettled parent or child.',
+        '',
+        'Two steps, always:',
+        '  1. Without `confirm` — a dry run. Nothing is deleted. The reply counts the runs, steps and logs that would go and returns a `confirm` token. Show the user those counts before going on.',
+        '  2. With `confirm` set to that token — deletes one page, oldest first. Repeat the same call until `remaining` is 0.',
+        '',
+        'The token is bound to `before`, so a different cutoff needs its own dry run.',
+      ].join('\n'),
+      inputSchema: {
+        before: z
+          .string()
+          .describe(
+            `ISO 8601 cutoff. Runs created before it are pruned. Must be at least ${PRUNE_MIN_AGE_DAYS} day old.`,
+          ),
+        limit: z
+          .number()
+          .nullish()
+          .describe(
+            `Runs to delete per call (default ${PRUNE_DEFAULT_PAGE}, max ${PRUNE_MAX_PAGE}).`,
+          ),
+        confirm: z
+          .string()
+          .nullish()
+          .describe('The `confirm` token from this tool’s dry run. Omit to dry-run.'),
+      },
+      readOnly: false,
+      run: async (client, args) => {
+        const raw = reqString(args.before, 'before')
+        const before = Date.parse(raw)
+        if (Number.isNaN(before)) {
+          return { error: `\`before\` is not an ISO 8601 date: "${raw}".` }
+        }
+        if (before > Date.now() - PRUNE_MIN_AGE_DAYS * 86_400_000) {
+          return {
+            error: `Refused: \`before\` must be at least ${PRUNE_MIN_AGE_DAYS} day old.`,
+          }
+        }
+        const cutoff = new Date(before).toISOString()
+        // Bound to the cutoff alone, not the counts: each page changes the counts,
+        // and a fixed past cutoff cannot slide over runs the dry run didn't count.
+        const token = await sha256Hex({
+          text: stableStringify({ tool: 'prune_runs', before }),
+          bytes: 6,
+        })
+        const confirm = optString(args.confirm)
+
+        if (!confirm) {
+          const wouldDelete = await client.previewRunPrune({ before })
+          return {
+            dryRun: true,
+            before: cutoff,
+            wouldDelete,
+            confirm: token,
+            note: 'Nothing was deleted. Show the user these counts. To delete, call again with this `confirm` token and the same `before`.',
+          }
+        }
+        if (confirm !== token) {
+          return {
+            error:
+              'Refused: the `confirm` token does not match this `before`. Dry-run again — call without `confirm` — and review what it reports.',
+          }
+        }
+
+        const { runs, remaining } = await client.pruneRuns({
+          before,
+          limit: boundedLimit(args.limit, PRUNE_DEFAULT_PAGE, PRUNE_MAX_PAGE),
+        })
+        return {
+          before: cutoff,
+          deleted: runs,
+          remaining,
+          next:
+            remaining > 0
+              ? 'Call again with the same `before` and `confirm`.'
+              : 'Nothing left to prune for this cutoff.',
         }
       },
     },

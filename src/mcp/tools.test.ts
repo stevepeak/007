@@ -61,6 +61,7 @@ describe('the tool catalog', () => {
       'discard_agent_draft',
       'discard_workflow_draft',
       'patch_workflow_draft',
+      'prune_runs',
       'publish_agent',
       'publish_workflow',
       'refresh_connector',
@@ -83,10 +84,10 @@ describe('the tool catalog', () => {
     ])
   })
 
-  // Bulk deletion has no gate a tool call can carry. (Publishing an agent and
-  // running a write tool DO have one — a dry run + confirmation token in
-  // `tools-agent-publish.ts`, `allowWrite` on `run_tool`.)
-  test('exposes no bulk deletion', () => {
+  // An unfiltered wipe has no gate a tool call can carry. (`prune_runs` and
+  // `publish_agent` DO have one, a dry run + confirmation token; `run_tool` has
+  // `allowWrite`.)
+  test('exposes no unfiltered bulk deletion', () => {
     const names = new Set(allTools().map((t) => t.name))
     for (const forbidden of [
       'delete_eval_set',

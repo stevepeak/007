@@ -7,6 +7,8 @@ import {
   listChildRuns,
   listRunTriggerKinds,
   listRuns,
+  previewRunPrune,
+  pruneRuns,
   requestRunCancel,
   RUN_NOTE_MAX_LENGTH,
   setRunNote,
@@ -42,6 +44,8 @@ export function buildRunHandlers<TDeps>(
   | 'cancelRun'
   | 'setRunNote'
   | 'deleteAllRuns'
+  | 'previewRunPrune'
+  | 'pruneRuns'
 > {
   return {
     listRuns: async (c) => {
@@ -85,6 +89,17 @@ export function buildRunHandlers<TDeps>(
     // there's no shape in which a mistyped filter silently deletes the wrong
     // slice. See `deleteAllRuns` for exactly what cascades.
     deleteAllRuns: async (c) => await deleteAllRuns(c.db),
+
+    previewRunPrune: async (c) => {
+      return await previewRunPrune(c.db, { before: new Date(c.params.before) })
+    },
+
+    pruneRuns: async (c) => {
+      return await pruneRuns(c.db, {
+        before: new Date(c.params.before),
+        limit: c.params.limit,
+      })
+    },
 
     // The settle check. Deliberately NOT `getRun` with the fields picked off:
     // this is one indexed row, and the whole point is that a poll loop never

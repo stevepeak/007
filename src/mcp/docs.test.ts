@@ -124,7 +124,7 @@ describe('MCP docs ↔ the catalog', () => {
   const toolish =
     /`([a-z]+(?:_[a-z0-9]+)+)(?:\(|`)/g
   const verbs =
-    /^(?:list|get|create|update|delete|run|draft|patch|publish|validate|discard|set|refresh|retry|cancel|resume|triage|upsert)_/
+    /^(?:list|get|create|update|delete|run|draft|patch|prune|publish|validate|discard|set|refresh|retry|cancel|resume|triage|upsert)_/
 
   test('every MCP tool a page names exists', () => {
     const phantom: string[] = []

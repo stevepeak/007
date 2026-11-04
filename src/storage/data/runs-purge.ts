@@ -1,4 +1,4 @@
-import { inArray, isNotNull, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNotNull, lt, sql, type SQL } from 'drizzle-orm'
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core'
 
 import type { WfDb } from '../client'
@@ -11,6 +11,7 @@ import {
   wfRunStep,
 } from '../schema'
 
+import { TERMINAL_RUN_STATUSES } from './runs-children'
 import { chunk, selectChunked } from './shared'
 
 // Wholesale run purge — the "clean slate" the Runs explorer's hidden
@@ -48,8 +49,15 @@ export type DeleteAllRunsResult = {
   feedbackUnlinked: number
 }
 
-async function countRows(db: WfDb, table: SQLiteTable): Promise<number> {
-  const rows = await db.select({ n: sql<number>`count(*)` }).from(table)
+async function countRows(
+  db: WfDb,
+  table: SQLiteTable,
+  where?: SQL,
+): Promise<number> {
+  const rows = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(table)
+    .where(where)
   return Number(rows[0]?.n ?? 0)
 }
 
@@ -127,4 +135,74 @@ export async function deleteRuns(db: WfDb, runIds: readonly string[]) {
   for (const ids of chunk([...evalRunIds].filter((id) => !kept.has(id)))) {
     await db.delete(wfEvalRun).where(inArray(wfEvalRun.id, ids))
   }
+}
+
+export type RunPrunePreview = {
+  runs: number
+  steps: number
+  logs: number
+  /** Feedback rows kept, but with their dangling `run_id` cleared. */
+  feedbackUnlinked: number
+}
+
+/**
+ * The runs a retention prune may delete: settled, created before the cutoff.
+ *
+ * - Eval runs stay: their results are the baseline drift reports compare against.
+ * - `done` is not settled: arms of the graph are still executing.
+ * - A run with an unsettled parent or child stays, because a live parent still
+ *   reads its children. A settled child can outlive its parent; `listRuns` lists
+ *   such an orphan at the top level.
+ */
+function prunableRuns(before: Date): SQL {
+  const conditions = and(
+    lt(wfRun.createdAt, before),
+    eq(wfRun.isEval, false),
+    inArray(wfRun.status, TERMINAL_RUN_STATUSES),
+    sql`not exists (
+      select 1 from wf_run as related
+      where related.status not in ${TERMINAL_RUN_STATUSES}
+        and (related.parent_run_id = ${wfRun.id} or related.id = ${wfRun.parentRunId})
+    )`,
+  )
+  if (!conditions) throw new Error('prunableRuns: no conditions')
+  return conditions
+}
+
+/** What {@link pruneRuns} would delete for this cutoff, across every page. */
+export async function previewRunPrune(
+  db: WfDb,
+  args: { before: Date },
+): Promise<RunPrunePreview> {
+  const prunable = prunableRuns(args.before)
+  const ids = db.select({ id: wfRun.id }).from(wfRun).where(prunable)
+  const [runs, steps, logs, feedbackUnlinked] = await Promise.all([
+    countRows(db, wfRun, prunable),
+    countRows(db, wfRunStep, inArray(wfRunStep.runId, ids)),
+    countRows(db, wfRunLog, inArray(wfRunLog.runId, ids)),
+    countRows(db, wfFeedback, inArray(wfFeedback.runId, ids)),
+  ])
+  return { runs, steps, logs, feedbackUnlinked }
+}
+
+/**
+ * Delete up to `limit` prunable runs, oldest first, and report how many remain.
+ * Paged so one call stays inside a Worker's per-request query budget.
+ */
+export async function pruneRuns(
+  db: WfDb,
+  args: { before: Date; limit: number },
+): Promise<{ runs: number; remaining: number }> {
+  const prunable = prunableRuns(args.before)
+  const page = await db
+    .select({ id: wfRun.id })
+    .from(wfRun)
+    .where(prunable)
+    .orderBy(asc(wfRun.createdAt))
+    .limit(args.limit)
+  await deleteRuns(
+    db,
+    page.map((r) => r.id),
+  )
+  return { runs: page.length, remaining: await countRows(db, wfRun, prunable) }
 }

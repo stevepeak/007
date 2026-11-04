@@ -110,6 +110,8 @@ export function createWfDataClient(call: WfDataTransport): WfDataClient {
     setRunNote: bind('setRunNote'),
     // A full purge sweeps several tables — give it room past the 20s default.
     deleteAllRuns: bind('deleteAllRuns', 120000),
+    previewRunPrune: bind('previewRunPrune', 60000),
+    pruneRuns: bind('pruneRuns', 120000),
     // Six aggregates, one of which parses every agent step's meta JSON over the
     // window — slower than a typical read, so allow past the 20s default.
     getDashboard: bind('getDashboard', 60000),

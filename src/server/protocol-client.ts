@@ -60,6 +60,7 @@ import type {
   WfRunDetail,
   WfRunListInput,
   WfRunListResult,
+  WfRunPrunePreview,
   WfRunPurgeResult,
   WfRunStatusDTO,
   WfRunSummary,
@@ -389,6 +390,21 @@ export interface WfDataClient {
    * press-and-hold confirm.
    */
   deleteAllRuns(): Promise<WfRunPurgeResult>
+  /** Count what {@link pruneRuns} would delete for this cutoff. Deletes nothing. */
+  previewRunPrune(input: {
+    /** Epoch millis. Runs created at or after this are kept. */
+    before: number
+  }): Promise<WfRunPrunePreview>
+  /**
+   * Delete one page of settled, non-eval runs created before the cutoff, oldest
+   * first, with the same cascade as {@link deleteAllRuns}. Runs with an unsettled
+   * parent or child are kept. Irreversible; call again until `remaining` is 0.
+   */
+  pruneRuns(input: {
+    /** Epoch millis. Runs created at or after this are kept. */
+    before: number
+    limit: number
+  }): Promise<{ runs: number; remaining: number }>
   /**
    * The home dashboard's rollup — run volume per workflow, spend per model, the
    * outstanding feedback queue, and the newest failures — in one round trip.

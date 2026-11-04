@@ -958,3 +958,95 @@ describe('retry_run', () => {
     expect(result.error).toContain('"restart" or "resume"')
   })
 })
+
+describe('prune_runs', () => {
+  const tool = toolNamed('prune_runs')
+  const before = '2026-01-01T00:00:00.000Z'
+  const preview = { runs: 2, steps: 5, logs: 9, feedbackUnlinked: 1 }
+
+  async function dryRunToken(): Promise<string> {
+    const client = stubClient({ previewRunPrune: async () => preview })
+    const result = (await tool.run(client, { before })) as { confirm: string }
+    return result.confirm
+  }
+
+  test('without confirm it reports the counts and deletes nothing', async () => {
+    let pruned = false
+    const client = stubClient({
+      previewRunPrune: async () => preview,
+      pruneRuns: async () => {
+        pruned = true
+        return { runs: 0, remaining: 0 }
+      },
+    })
+    const result = (await tool.run(client, { before })) as {
+      dryRun: boolean
+      wouldDelete: unknown
+      confirm: string
+    }
+    expect(result.dryRun).toBe(true)
+    expect(result.wouldDelete).toEqual(preview)
+    expect(result.confirm).toBeTruthy()
+    expect(pruned).toBe(false)
+  })
+
+  test('with the token it deletes a page and says what remains', async () => {
+    let seen: unknown
+    const client = stubClient({
+      pruneRuns: async (input) => {
+        seen = input
+        return { runs: 500, remaining: 3 }
+      },
+    })
+    const result = (await tool.run(client, {
+      before,
+      confirm: await dryRunToken(),
+    })) as { deleted: number; remaining: number; next: string }
+    expect(seen).toEqual({ before: Date.parse(before), limit: 500 })
+    expect(result.deleted).toBe(500)
+    expect(result.remaining).toBe(3)
+    expect(result.next).toContain('Call again')
+  })
+
+  test('the same token works for every page, and limit is clamped', async () => {
+    const limits: number[] = []
+    const client = stubClient({
+      pruneRuns: async (input) => {
+        limits.push(input.limit)
+        return { runs: 1, remaining: 0 }
+      },
+    })
+    const confirm = await dryRunToken()
+    await tool.run(client, { before, confirm, limit: 5 })
+    await tool.run(client, { before, confirm, limit: 999999 })
+    expect(limits).toEqual([5, 1000])
+  })
+
+  test('refuses a token from a different cutoff', async () => {
+    let pruned = false
+    const client = stubClient({
+      pruneRuns: async () => {
+        pruned = true
+        return { runs: 0, remaining: 0 }
+      },
+    })
+    const result = (await tool.run(client, {
+      before: '2026-02-01T00:00:00.000Z',
+      confirm: await dryRunToken(),
+    })) as { error: string }
+    expect(result.error).toContain('does not match')
+    expect(pruned).toBe(false)
+  })
+
+  test('refuses a cutoff that is unparseable or too recent', async () => {
+    const client = stubClient({})
+    const garbage = (await tool.run(client, { before: 'last week' })) as {
+      error: string
+    }
+    expect(garbage.error).toContain('ISO 8601')
+    const recent = (await tool.run(client, {
+      before: new Date().toISOString(),
+    })) as { error: string }
+    expect(recent.error).toContain('at least 1 day old')
+  })
+})

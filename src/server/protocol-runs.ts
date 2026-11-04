@@ -173,6 +173,15 @@ export type WfRunPurgeResult = {
   feedbackUnlinked: number
 }
 
+// What a retention prune would delete for one cutoff, across every page.
+// `feedbackUnlinked` rows are KEPT, with their dangling `runId` cleared.
+export type WfRunPrunePreview = {
+  runs: number
+  steps: number
+  logs: number
+  feedbackUnlinked: number
+}
+
 // How the run viewer's Retry re-dispatches a finished run.
 // `restart` = fresh, from the start, on the latest version; `resume` = reuse the
 // original version and pick up at the failed step.
