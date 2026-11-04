@@ -99,6 +99,8 @@ export function WorkflowSelect({
       value={value}
       onChange={(w) => onChange(w.id)}
       getKey={(w) => w.id}
+      getSearchText={(w) => `${w.name} ${w.description ?? ''}`}
+      searchPlaceholder="Search workflows…"
       placeholder="Select a workflow…"
       empty="No other workflows to call yet."
       triggerLeading={<Workflow className="size-4 shrink-0 text-muted-foreground" />}
@@ -112,7 +114,7 @@ export function WorkflowSelect({
             <span className="block truncate text-sm font-medium text-foreground">
               {w.name}
             </span>
-            <span className="mt-0.5 line-clamp-2 block text-xs text-muted-foreground">
+            <span className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
               {w.description || 'No description yet.'}
             </span>
           </span>
@@ -141,6 +143,8 @@ export function ToolSelect({
       value={value}
       onChange={(t) => onChange(t.id)}
       getKey={(t) => t.id}
+      getSearchText={(t) => `${t.name} ${t.description}`}
+      searchPlaceholder="Search tools…"
       placeholder="Select a tool…"
       empty="No tools registered."
       renderValue={(t) => (
@@ -156,7 +160,7 @@ export function ToolSelect({
             <span className="block truncate text-sm font-medium text-foreground">
               {t.name}
             </span>
-            <span className="mt-0.5 line-clamp-2 block text-xs text-muted-foreground">
+            <span className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
               {t.description}
             </span>
           </span>

@@ -1,4 +1,4 @@
-import { Check, Minus, Plus } from 'lucide-react'
+import { Minus, Plus } from 'lucide-react'
 import { useMemo } from 'react'
 
 import type { WfAgentSummary } from '../server/protocol'
@@ -45,6 +45,8 @@ export function AgentSelect({
       options={agents}
       value={value.agentId}
       getKey={(a) => a.id}
+      getSearchText={(a) => `${a.name} ${a.description ?? ''}`}
+      searchPlaceholder="Search agents…"
       onChange={(a) => {
         // Switching agents resets the pin to Latest — a version number is only
         // meaningful for the agent it came from.
@@ -89,7 +91,7 @@ export function AgentSelect({
           </>
         )
       }}
-      renderOption={(a, isSelected) => {
+      renderOption={(a) => {
         const Icon = agentIcon(a.icon)
         return (
           <>
@@ -105,13 +107,10 @@ export function AgentSelect({
               <span className="block truncate text-sm font-medium text-neutral-900">
                 {a.name}
               </span>
-              <span className="mt-0.5 line-clamp-2 block text-xs text-neutral-500">
+              <span className="mt-0.5 line-clamp-2 text-xs text-neutral-500">
                 {a.description || 'No description yet.'}
               </span>
             </span>
-            {isSelected ? (
-              <Check className="mt-0.5 size-4 shrink-0 text-neutral-900" />
-            ) : null}
           </>
         )
       }}
