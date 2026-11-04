@@ -201,6 +201,9 @@ export function createVersionedEntity<
     }
   }
 
+  // The highest version number is the live version; there is deliberately no
+  // live-version pointer. A rollback publishes a copy of the old version as a
+  // new one, which keeps history linear and needs no second source of truth.
   const latest = async (db: WfDb, ownerId: string) => {
     const rows = await db
       .select()
