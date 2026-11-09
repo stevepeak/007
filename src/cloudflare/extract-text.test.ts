@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 
-import { looksLikeScannedPdf, stripMarkdownMetadata } from './extract-text'
+import {
+  createExtractTextTool,
+  looksLikeScannedPdf,
+  stripMarkdownMetadata,
+} from './extract-text'
 
 // The shape Workers AI `toMarkdown` returns for a PDF.
 const PDF_MARKDOWN = `# report.pdf
@@ -54,5 +58,35 @@ describe('looksLikeScannedPdf', () => {
     expect(looksLikeScannedPdf(PDF_MARKDOWN, { minCharsPerPage: 10 })).toBe(
       false,
     )
+  })
+})
+
+describe('transformBytes', () => {
+  test('toMarkdown reads the transformed bytes; plain text skips it', async () => {
+    const files: Record<string, string> = { 'a.bin': 'raw', 'b.txt': 'raw' }
+    const bucket = {
+      get: async (key: string) => {
+        return { arrayBuffer: async () => new TextEncoder().encode(files[key]).buffer }
+      },
+    }
+    const ai = {
+      toMarkdown: async (input: { name: string; blob: Blob }[]) => {
+        return [{ name: input[0].name, data: await input[0].blob.text() }]
+      },
+    }
+    const run = createExtractTextTool<null>({
+      getBucket: () => bucket as unknown as R2Bucket,
+      getAI: () => ai as unknown as Ai,
+      transformBytes: async () => new TextEncoder().encode('transformed'),
+    }).build(null) as (args: unknown) => Promise<unknown>
+
+    const bin = (await run({ source: 'a.bin', filename: 'a.bin' })) as {
+      text: string
+    }
+    expect(bin.text).toBe('transformed')
+    const txt = (await run({ source: 'b.txt', filename: 'b.txt' })) as {
+      text: string
+    }
+    expect(txt.text).toBe('raw')
   })
 })

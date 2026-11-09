@@ -137,6 +137,14 @@ export type CreateExtractTextToolOptions<TDeps> = {
    * integrity hash.
    */
   getPdfjsBaseUrl?: (deps: TDeps) => string
+  /**
+   * Rewrite the file's bytes before `toMarkdown` / OCR reads them — e.g. to
+   * normalize a format `toMarkdown` reads lossily. Plain text skips it.
+   */
+  transformBytes?: (
+    args: { bytes: Uint8Array<ArrayBuffer>; mimeType: string; filename: string },
+    deps: TDeps,
+  ) => Promise<Uint8Array<ArrayBuffer>>
   /** Workers AI vision model for the default recognizer. */
   visionModel?: string
   /** Override the registry id (default `extract_text`). */
@@ -266,15 +274,26 @@ export function createExtractTextTool<TDeps>(
         if (!obj) {
           throw new Error(`extract_text: R2 object not found: ${args.source}`)
         }
-        const bytes = new Uint8Array(await obj.arrayBuffer())
+        const raw = new Uint8Array(await obj.arrayBuffer())
 
         if (isPlainText(args.mimeType, args.filename)) {
           return await finalize({
-            text: new TextDecoder().decode(bytes),
+            text: new TextDecoder().decode(raw),
             mode: 'passthrough',
             meta: { ocr: false },
           })
         }
+
+        const bytes = opts.transformBytes
+          ? await opts.transformBytes(
+              {
+                bytes: raw,
+                mimeType: args.mimeType,
+                filename: args.filename,
+              },
+              deps,
+            )
+          : raw
 
         const ai = opts.getAI(deps)
         const markdown = await runToMarkdown(
