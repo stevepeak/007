@@ -66,3 +66,4 @@ The chosen model must support what the config needs: tool calling when `toolIds`
 - `run_eval({ draftAgentId })` grades the draft against its eval sets. See [[evals]].
 - `list_agent_calls` shows real executions (turns, tokens, cost, tool usage, early stops) — read it before tuning `maxTurns` or budgets.
 - `update_agent` changes name/icon/colour only; `update_description` the description.
+- `archive_agent` retires an agent. It is refused while any live workflow (draft or latest published version) still references it, and names those workflows.

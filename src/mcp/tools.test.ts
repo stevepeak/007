@@ -52,6 +52,7 @@ describe('the tool catalog', () => {
       .map((t) => t.name)
       .sort()
     expect(writes).toEqual([
+      'archive_agent',
       'cancel_eval_run',
       'cancel_run',
       'create_agent',

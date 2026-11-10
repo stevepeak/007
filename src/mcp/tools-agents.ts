@@ -61,12 +61,10 @@ import {
 //     version floats into nothing. Wiring it into a workflow is a separate act
 //     with its own gates (an agent node in the editor, or `patch_workflow_draft`
 //     + `publish_workflow`, which refuse on a lint error or a stale base).
-//     Deleting one is not here either: `archiveAgent` has no tool, so the
-//     failure mode of a model that over-creates is clutter a person clears, not
-//     a customer-visible change. Note the real consequence of that pairing:
-//     this surface can only ever ADD to the agent catalog, never tidy it — and
-//     there is no unarchive anywhere in the SDK, so the asymmetry is at least
-//     the safe way round.
+//     `archive_agent` is safe for the same reason: the storage layer refuses
+//     while any live workflow references the agent, so archiving can only
+//     retire an agent nothing runs. There is no unarchive anywhere in the SDK,
+//     so restoring one stays a person's job.
 //
 //     ── `publish_agent`: kept out by ART-234, shipped by ART-271 ──
 //
@@ -1092,6 +1090,43 @@ export function agentWriteTools(): WfMcpTool[] {
           // consequence: it changes what a workflow author sees in the picker.
           referencedBy: before.agent.workflows.map((w) => w.name),
           note: 'Display only — no version was created and no workflow changed what it runs.',
+        }
+      },
+    },
+
+    {
+      name: 'archive_agent',
+      title: 'Archive an agent',
+      description: [
+        'Retire an agent: it drops out of list_agents and the node picker. Its versions survive, and past runs that executed it still resolve.',
+        '',
+        'REFUSED while any live workflow (its draft or latest published version) still has an agent node pointing at it — archiving would break that workflow’s next run. The refusal names those workflows: remove the node with patch_workflow_draft, publish_workflow, then archive.',
+        '',
+        'There is no unarchive tool; restoring one takes a person. Lands in the `wf_change` feed attributed to whoever authorized this session.',
+      ].join('\n'),
+      inputSchema: {
+        agentId: agentIdArg,
+      },
+      readOnly: false,
+      run: async (client, args) => {
+        const agentId = reqString(args.agentId, 'agentId')
+        const detail = await client.getAgent(agentId)
+        if (!detail) return notFound({ kind: 'agent', id: agentId })
+        // `archiveAgent` re-checks and throws; checking here first turns that
+        // throw into a refusal that names what to disconnect.
+        const { workflows } = await client.listAgentReferences(agentId)
+        if (workflows.length > 0) {
+          return {
+            error: `Cannot archive "${detail.agent.name}": ${workflows.length} live workflow(s) still reference it. Remove its agent node from each (patch_workflow_draft + publish_workflow, and discard or patch any draft), then retry.`,
+            referencedBy: workflows,
+          }
+        }
+        await client.archiveAgent(agentId)
+        return {
+          ok: true,
+          agentId,
+          name: detail.agent.name,
+          note: 'Archived. It no longer appears in list_agents or the node picker; its versions and run history are untouched.',
         }
       },
     },

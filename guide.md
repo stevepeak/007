@@ -1416,7 +1416,7 @@ scopes, and the client stores and silently refreshes the token from then on.
 `offline_access` is what makes that a one-time cost rather than a prompt at
 every expiry.
 
-**What it exposes.** Fifty-seven tools — twenty-eight reads, and twenty-nine writes
+**What it exposes.** Fifty-eight tools — twenty-eight reads, and thirty writes
 registered only for a session whose token carries the write scope.
 
 | Tool                              | Gate      | What it does                                                        |
@@ -1460,6 +1460,7 @@ registered only for a session whose token carries the write scope.
 | `publish_agent`                   | **write** | an agent's draft → its next version. Called once without `confirm` it is a dry run naming every workflow that floats on the agent; publishing echoes the dry run's token. Refused on a stale `baseVersionNumber` or a draft that would not run |
 | `discard_agent_draft`             | **write** | drop the draft; says what was lost                                  |
 | `update_agent`                    | **write** | rename or restyle an agent. Cosmetic; no version created            |
+| `archive_agent`                   | **write** | retire an agent. Refused while a live workflow still references it  |
 | `triage_feedback`                 | **write** | acknowledge a complaint and write the staff-only resolution note    |
 | `run_agent_preview`               | **write** | one throwaway run of a GENERATION agent. **Every tool simulated**   |
 | `run_decision_preview`            | **write** | judge one state with a DECISION agent — verdict, which rule fired, and the raw distributions |

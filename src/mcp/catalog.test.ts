@@ -72,6 +72,7 @@ const WORDS: Record<number, string> = {
   55: 'fifty-five',
   56: 'fifty-six',
   57: 'fifty-seven',
+  58: 'fifty-eight',
 }
 
 describe('the tool catalog ↔ guide.md', () => {

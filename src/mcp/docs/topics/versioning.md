@@ -58,7 +58,7 @@ At run start every floating reference is resolved, transitively through called w
 
 - `list_workflow_versions` / `list_agent_versions` list each version's number, note and AI summary, newest first. `get_workflow_version` reads one graph. `list_agent_versions({ versionNumber })` reads one config.
 - `list_changes` reads the **change log**, the only who-touched-what record. It covers workflows, agents, eval sets and samples, models, trigger assignments, connectors and connector tools, with the actions create / update / publish / archive / restore / assign / enable / disable. Each entry carries an actor and a source (`ui`, `mcp`, `spec-import`, `system`).
-- Archiving (`update_workflow` / the console) retires an entity without deleting it. An archived workflow never runs on its event. An agent cannot be archived while a live workflow still references it.
+- Archiving (`update_workflow`, `archive_agent`, or the console) retires an entity without deleting it. An archived workflow never runs on its event. An agent cannot be archived while a live workflow still references it.
 - The editor's undo is per browser tab and does not cover MCP edits. From MCP, "undo" means `fromVersion` or a discard.
 
 ## Moving definitions between environments

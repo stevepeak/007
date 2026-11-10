@@ -826,6 +826,43 @@ describe('update_agent', () => {
   })
 })
 
+describe('archive_agent', () => {
+  test('archives an agent no live workflow references', async () => {
+    let archived: string | undefined
+    const client = stubClient({
+      getAgent: async () => detail(),
+      listAgentReferences: async () => ({ workflows: [] }),
+      archiveAgent: async (agentId) => {
+        archived = agentId
+      },
+    })
+    const out = (await toolNamed('archive_agent').run(client, {
+      agentId: 'a1',
+    })) as { ok: boolean }
+    expect(archived).toBe('a1')
+    expect(out.ok).toBe(true)
+  })
+
+  test('refuses, naming the workflows, while one still references it', async () => {
+    let archived = false
+    const client = stubClient({
+      getAgent: async () => detail(),
+      listAgentReferences: async () => ({
+        workflows: [{ id: 'w1', name: 'Ingest document' }],
+      }),
+      archiveAgent: async () => {
+        archived = true
+      },
+    })
+    const out = (await toolNamed('archive_agent').run(client, {
+      agentId: 'a1',
+    })) as { error: string; referencedBy: { name: string }[] }
+    expect(archived).toBe(false)
+    expect(out.error).toContain('still reference it')
+    expect(out.referencedBy.map((w) => w.name)).toEqual(['Ingest document'])
+  })
+})
+
 describe('triage_feedback', () => {
   const row = {
     subjectId: 'msg_1',
