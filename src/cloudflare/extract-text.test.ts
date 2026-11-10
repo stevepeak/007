@@ -90,3 +90,14 @@ describe('transformBytes', () => {
     expect(txt.text).toBe('raw')
   })
 })
+
+describe('createExtractTextTool', () => {
+  // `run_tool` refuses any tool not tagged `read` without `allowWrite`.
+  test('is tagged as a read', () => {
+    const entry = createExtractTextTool<null>({
+      getBucket: () => ({}) as unknown as R2Bucket,
+      getAI: () => ({}) as unknown as Ai,
+    })
+    expect(entry.sideEffect).toBe('read')
+  })
+})

@@ -259,6 +259,10 @@ export function createExtractTextTool<TDeps>(
     name: 'Extract Text',
     description: 'Extract text from an uploaded document.',
     icon: opts.icon,
+    // Reads the stored bytes and changes no record. The one write — spilling a
+    // large result to a key derived from `source` — is a derived artifact that a
+    // re-run overwrites with the same content.
+    sideEffect: 'read',
     kind: 'function',
     inputSchema: extractTextInputSchema,
     outputSchema: extractTextOutputSchema,
