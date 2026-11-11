@@ -15,6 +15,7 @@ import {
   listConnectors,
   listConnections,
   listConnectorTools,
+  listConnectorToolsByConnector,
   setConnectorEnabled,
   setConnectorToolEnabled,
   setConnectorToolSideEffect,
@@ -199,19 +200,19 @@ export function buildConnectorHandlers<TDeps>(
     }),
 
     listConnectors: async (c) => {
-      const [connectors, connections] = await Promise.all([
+      const [connectors, connections, toolsByConnector] = await Promise.all([
         listConnectors(c.db),
         listConnections(c.db),
+        listConnectorToolsByConnector(c.db),
       ])
       const byConnector = new Map(connections.map((r) => [r.connectorId, r]))
-      return await Promise.all(
-        connectors.map(async (connector) => { return toConnectorSummary(
-            connector,
-            byConnector.get(connector.id) ?? null,
-            await listConnectorTools(c.db, connector.id),
-          ) },
-        ),
-      )
+      return connectors.map((connector) => {
+        return toConnectorSummary(
+          connector,
+          byConnector.get(connector.id) ?? null,
+          toolsByConnector.get(connector.id) ?? [],
+        )
+      })
     },
 
     getConnector: async (c): Promise<ConnectorDetail> => {

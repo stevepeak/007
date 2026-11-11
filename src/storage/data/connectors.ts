@@ -322,6 +322,23 @@ export async function listConnectorTools(
     .orderBy(asc(wfConnectorTool.toolName))
 }
 
+/** Every connector's tools in one query, keyed by connector id, for the list page. */
+export async function listConnectorToolsByConnector(
+  db: WfDb,
+): Promise<Map<string, ConnectorToolRow[]>> {
+  const rows = await db
+    .select()
+    .from(wfConnectorTool)
+    .orderBy(asc(wfConnectorTool.toolName))
+  const byConnector = new Map<string, ConnectorToolRow[]>()
+  for (const row of rows) {
+    const list = byConnector.get(row.connectorId)
+    if (list) list.push(row)
+    else byConnector.set(row.connectorId, [row])
+  }
+  return byConnector
+}
+
 /**
  * Every tool that is actually callable right now: enabled, still advertised by
  * its server, and belonging to an enabled connector.

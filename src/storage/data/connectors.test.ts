@@ -11,6 +11,7 @@ import {
   getConnector,
   getConnectorTool,
   listConnectorTools,
+  listConnectorToolsByConnector,
   listEnabledConnectorTools,
   saveConnection,
   saveConnectorClient,
@@ -156,6 +157,22 @@ describe('tool catalog refresh', () => {
       'mcp:linear:a',
     ])
     expect((await upsertConnectorTools(db, 'linear', [])).missing).toEqual([])
+  })
+})
+
+describe('listConnectorToolsByConnector', () => {
+  test('groups every connector\'s tools by connector, sorted by name', async () => {
+    await upsertConnector(db, {
+      id: 'github',
+      label: 'GitHub',
+      url: 'https://api.githubcopilot.com/mcp',
+    })
+    await upsertConnectorTools(db, 'linear', [tool('b'), tool('a')])
+    await upsertConnectorTools(db, 'github', [tool('c')])
+
+    const byConnector = await listConnectorToolsByConnector(db)
+    expect(byConnector.get('linear')?.map((t) => t.toolName)).toEqual(['a', 'b'])
+    expect(byConnector.get('github')?.map((t) => t.toolName)).toEqual(['c'])
   })
 })
 
