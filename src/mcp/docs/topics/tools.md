@@ -57,4 +57,22 @@ Under eval simulation, per tool (keyed by tool id):
 
 `run_tool({ toolId, args, context })` executes one catalog tool **for real**, outside any workflow — the console's tool playground. `args` are validated and defaulted by the tool's input schema; `context` fills its `requiresContext` keys. A tool tagged `write`, or untagged, is refused unless `allowWrite: true`. The call is not recorded as a run, so it does not appear in `list_tool_invocations`.
 
+### Testing `extract_text` on a file of your own
+
+`extract_text` reads its file from R2: `source` is an object key in the bucket the host wired as the tool's `getBucket`, not a path or URL. To try a local file, put it there first with Wrangler — the bytes go from disk to R2 without passing through the model — then call the tool with that key:
+
+```sh
+# --local: the dev bucket the local worker reads; --remote: the deployed bucket
+wrangler r2 object put <bucket>/eval-uploads/sample.pdf --file ./sample.pdf --local
+```
+
+```json
+run_tool({ "toolId": "extract_text", "args": { "source": "eval-uploads/sample.pdf", "filename": "sample.pdf", "mimeType": "application/pdf" } })
+```
+
+- Run Wrangler from the project whose config binds that bucket, with credentials for the account. The bucket name is in that config, not in the catalog.
+- `filename` and `mimeType` choose the path: `.txt`/`.md` pass through, a PDF whose text layer looks empty (or `forceOcr: true`) is OCR'd, everything else goes through markdown conversion. Read `mode` and `meta` in the reply to see which ran; an OCR failure falls back to `mode: "markdown"` with the reason in `meta.notes`.
+- A result larger than the spill threshold comes back as a pointer with a preview; `meta.spilled` says so.
+- Use a dedicated prefix such as `eval-uploads/` and delete test objects afterwards (`wrangler r2 object delete`); nothing cleans them up.
+
 See [[evals]].

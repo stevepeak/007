@@ -56,7 +56,9 @@ export const extractTextInputSchema = z.object({
   source: z
     .string()
     .min(1)
-    .describe('R2 object key of the uploaded file to extract.'),
+    .describe(
+      'R2 object key of the uploaded file to extract. To test a local file, put it in the bucket with Wrangler first — get_docs({ topic: "tools" }).',
+    ),
   mimeType: z.string().default('').describe('MIME type of the file.'),
   filename: z
     .string()
