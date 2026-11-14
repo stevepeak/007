@@ -15,6 +15,41 @@ without you and is still probably wrong to skip.
 
 ---
 
+## 2026-11-14 — `extract_text` and `create_document` are registered by default
+
+`defineWfConfig` from `@stevepeak/007` now adds the two built-ins to
+`toolRegistry`, wired to fixed bindings on the run's env: `UPLOADS` (R2), `AI`
+(Workers AI) and optional `BROWSER` (Browser Rendering). It also defaults
+`resolveBlobRef` to reading `UPLOADS`. `createExtractTextTool`'s `getBrowser`
+may now return `undefined` to skip OCR for a run. See guide.md, "Built-ins are
+registered for you".
+
+**Breaking:** `buildRunDeps` is wrapped (it now always returns a promise), and
+a host that left `resolveBlobRef` unset no longer gets refs passed through
+untouched.
+
+**Action:** bind `UPLOADS`, `AI` and (for OCR) `BROWSER` on every Worker that
+runs tools, or the two tools fail when called. A host that already registers
+its own `extract_text` / `create_document` keeps it; delete it if it only wired
+the same bindings.
+
+---
+
+## 2026-11-14 — Built-in document search: `index_document` + `search_documents`
+
+`@stevepeak/007/cloudflare/vectorize` (also on the `/cloudflare` barrel)
+exports `createIndexDocumentTool` and `createSearchDocumentsTool`: chunk, embed
+(Workers AI, `@cf/baai/bge-m3` by default) and store documents in Cloudflare
+Vectorize, then search them from an agent. Both are `origin: 'sdk'`. See
+guide.md, "Built-in document search".
+
+**Action:** none. Additive. To use them, create a 1024-dim cosine Vectorize
+index, bind it (plus `AI`) on every Worker that runs tools, and register the two
+entries. A host that already registers its own `index_document` /
+`search_documents` should swap to these, or pass `id` to avoid a clash.
+
+---
+
 ## 2026-10-20 — `runAgent`: call one published agent from app code
 
 `@stevepeak/007/server` exports `runAgent({ db, wfConfig, env, slug,

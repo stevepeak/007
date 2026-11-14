@@ -27,7 +27,7 @@ import {
   type FactCheckResult,
 } from './check-facts'
 import { documentModelSchema, type DocumentModel } from './model'
-import { renderDocx, type RenderDocxOptions } from './render-docx'
+import type { RenderDocxOptions } from './render-docx'
 
 /** What a `.docx` is, to Word and to an HTTP `Content-Type`. */
 export const DOCX_MIME_TYPE =
@@ -155,8 +155,8 @@ export function createDocumentTool<TDeps>(
       opts.description ??
       'Author a Word document (.docx) the user can download and edit.',
     icon: opts.icon,
-    iconName: opts.iconName,
-    color: opts.color,
+    iconName: opts.iconName ?? 'Feather',
+    color: opts.color ?? 'fuchsia',
     // Static, and it has to be: a `statusLabel` is interpolated from the tool
     // call's TOP-LEVEL args only (`PROMPT_VARIABLE_RE` is `[\w-]+`, no dots), so
     // `${document.title}` is not a token at all — it would reach the end user as
@@ -188,6 +188,10 @@ export function createDocumentTool<TDeps>(
             // the field carry on as though the document had been created.
             throw new FactCheckFailedError(result)
           }
+          // Loaded here, not at module scope: `docx` is an optional peer, and
+          // this tool is registered by default (cloudflare/builtin-tools), so a
+          // host that never generates a document must not need it installed.
+          const { renderDocx } = await import('./render-docx')
           const bytes = await renderDocx(args.document, {
             extraRenderers: opts.extraRenderers,
           })

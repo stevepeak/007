@@ -4,7 +4,7 @@ summary: Where tools come from, agent tools vs Tool nodes, argument validation, 
 order: 55
 ---
 
-A **tool** is a registered capability with a stable id. 007 ships none of the business logic; every tool comes from one registry the host builds. Read `get_tool_catalog` for the list, and `get_tool_catalog({ toolIds })` for full input/output schemas.
+A **tool** is a registered capability with a stable id. Every tool comes from one registry: the host's own tools, plus 007's built-ins (`extract_text` and document rendering), which `defineWfConfig` registers by default unless the host registers its own under the same id. Read `get_tool_catalog` for the list, and `get_tool_catalog({ toolIds })` for full input/output schemas.
 
 ## Where tools come from (`origin`)
 
@@ -57,9 +57,19 @@ Under eval simulation, per tool (keyed by tool id):
 
 `run_tool({ toolId, args, context })` executes one catalog tool **for real**, outside any workflow — the console's tool playground. `args` are validated and defaulted by the tool's input schema; `context` fills its `requiresContext` keys. A tool tagged `write`, or untagged, is refused unless `allowWrite: true`. The call is not recorded as a run, so it does not appear in `list_tool_invocations`.
 
+### Document search: `index_document` and `search_documents`
+
+When the host wires them, these two built-ins search its documents with Workers AI embeddings stored in Cloudflare Vectorize.
+
+- `index_document` is a Tool node (`write`): `{ documentId, title?, text }` → `{ documentId, chunks }`. It splits the text into ~1500-character paragraph chunks, embeds each one and stores it. Re-indexing the same `documentId` overwrites its chunks. A typical ingest graph is trigger → `extract_text` → `index_document`, with `text` bound to `extract_text`'s `text`.
+- `search_documents` is an agent tool (`read`): `{ query, topK? }` → `{ matches: [{ documentId, title, chunk, text, score }] }`, closest first. Give it to an agent and tell the prompt to search before answering and name the document it used.
+- Both tools are scoped by the run (the host maps run scope to a Vectorize namespace), so a playground or `run_tool` call with a different scope searches a different set of documents.
+- Indexing is eventually consistent. Wait a few seconds after `index_document` before expecting `search_documents` to find the new text.
+- In evals `index_document` is neutralized like every write tool. `search_documents` returns the pinned fixture unless the sample marks it `live`.
+
 ### Testing `extract_text` on a file of your own
 
-`extract_text` reads its file from R2: `source` is an object key in the bucket the host wired as the tool's `getBucket`, not a path or URL. To try a local file, put it there first with Wrangler — the bytes go from disk to R2 without passing through the model — then call the tool with that key:
+`extract_text` reads its file from R2: `source` is an object key in the Worker's `UPLOADS` bucket (unless the host overrode the tool with its own bucket), not a path or URL. To try a local file, put it there first with Wrangler — the bytes go from disk to R2 without passing through the model — then call the tool with that key:
 
 ```sh
 # --local: the dev bucket the local worker reads; --remote: the deployed bucket

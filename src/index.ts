@@ -12,4 +12,7 @@
 //   • '@stevepeak/007/eval'            — agent evals
 
 export * from './engine'
+// Shadows the engine's `defineWfConfig` (an explicit export wins over `export *`):
+// the root one also registers the built-in tools — see cloudflare/builtin-tools.
+export { defineWfConfig } from './cloudflare/builtin-tools'
 export * from './storage'

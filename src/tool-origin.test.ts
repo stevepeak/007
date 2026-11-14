@@ -3,6 +3,10 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, test } from 'bun:test'
 
+import {
+  createIndexDocumentTool,
+  createSearchDocumentsTool,
+} from './cloudflare/vectorize'
 import { createDocumentTool } from './documents/create-document-tool'
 
 // `ToolMeta.origin` defaults to `host`, and that default is load-bearing: it is
@@ -17,11 +21,26 @@ import { createDocumentTool } from './documents/create-document-tool'
 //
 // Add a factory to the SDK → add it here.
 
+const VECTORIZE_OPTS = {
+  getIndex: () => {
+    return {} as never
+  },
+  getAI: () => {
+    return {} as never
+  },
+}
+
 const SDK_TOOL_FACTORIES = {
   create_document: () => {
     return createDocumentTool<unknown>({
       store: () => Promise.resolve({}) as never,
     })
+  },
+  index_document: () => {
+    return createIndexDocumentTool<unknown>(VECTORIZE_OPTS)
+  },
+  search_documents: () => {
+    return createSearchDocumentsTool<unknown>(VECTORIZE_OPTS)
   },
 }
 
@@ -46,7 +65,7 @@ describe('tools the SDK ships', () => {
     expect(renamed.origin).toBe('sdk')
   })
 
-  // `createExtractTextTool` is the third SDK factory and cannot be CALLED from
+  // `createExtractTextTool` is the one SDK factory that cannot be CALLED from
   // here: this project compiles with bun's types alongside the Workers ones, and
   // under bun's global `fetch` (which has `preconnect`) a `Fetcher` no longer
   // satisfies @cloudflare/puppeteer's `BrowserWorker` — so merely importing

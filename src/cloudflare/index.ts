@@ -40,6 +40,24 @@ export {
   type OcrRecognize,
 } from './extract-text'
 export {
+  chunkText,
+  createIndexDocumentTool,
+  createSearchDocumentsTool,
+  DEFAULT_EMBEDDING_MODEL,
+  indexDocumentInputSchema,
+  indexDocumentOutputSchema,
+  searchDocumentsInputSchema,
+  searchDocumentsOutputSchema,
+  type CreateIndexDocumentToolOptions,
+  type CreateSearchDocumentsToolOptions,
+  type IndexDocumentArgs,
+  type IndexDocumentResult,
+  type SearchDocumentsArgs,
+  type SearchDocumentsMatch,
+  type SearchDocumentsResult,
+  type VectorizeToolOptions,
+} from './vectorize'
+export {
   createR2BlobResolver,
   type CreateR2BlobResolverOptions,
 } from './blob-resolver'

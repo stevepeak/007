@@ -125,8 +125,11 @@ export type CreateExtractTextToolOptions<TDeps> = {
   getBucket: (deps: TDeps) => R2Bucket
   /** Workers AI binding — used for `toMarkdown` and the default OCR vision. */
   getAI: (deps: TDeps) => Ai
-  /** Browser Rendering binding. Provide it to enable scanned-PDF OCR. */
-  getBrowser?: (deps: TDeps) => Fetcher
+  /**
+   * Browser Rendering binding. Provide it to enable scanned-PDF OCR; return
+   * `undefined` to skip OCR for this run (e.g. the binding isn't configured).
+   */
+  getBrowser?: (deps: TDeps) => Fetcher | undefined
   /** Custom page → text recognizer; defaults to Workers AI vision. */
   getRecognize?: (deps: TDeps) => OcrRecognize
   /**
@@ -144,7 +147,11 @@ export type CreateExtractTextToolOptions<TDeps> = {
    * normalize a format `toMarkdown` reads lossily. Plain text skips it.
    */
   transformBytes?: (
-    args: { bytes: Uint8Array<ArrayBuffer>; mimeType: string; filename: string },
+    args: {
+      bytes: Uint8Array<ArrayBuffer>
+      mimeType: string
+      filename: string
+    },
     deps: TDeps,
   ) => Promise<Uint8Array<ArrayBuffer>>
   /** Workers AI vision model for the default recognizer. */
@@ -153,6 +160,9 @@ export type CreateExtractTextToolOptions<TDeps> = {
   id?: string
   /** Inline SVG icon for the tool picker. */
   icon?: string
+  /** Lucide icon name + palette color — see `ToolMeta`. */
+  iconName?: string
+  color?: string
   /**
    * Spill the extracted text to R2 (return a `WfBlobRef` pointer) once it
    * exceeds this many bytes. Default {@link DEFAULT_SPILL_THRESHOLD}. Set to
@@ -261,6 +271,8 @@ export function createExtractTextTool<TDeps>(
     name: 'Extract Text',
     description: 'Extract text from an uploaded document.',
     icon: opts.icon,
+    iconName: opts.iconName ?? 'ScanText',
+    color: opts.color ?? 'amber',
     // Reads the stored bytes and changes no record. The one write — spilling a
     // large result to a key derived from `source` — is a derived artifact that a
     // re-run overwrites with the same content.
@@ -311,12 +323,13 @@ export function createExtractTextTool<TDeps>(
         const isPdf =
           args.mimeType === 'application/pdf' ||
           args.filename.toLowerCase().endsWith('.pdf')
+        const browser = opts.getBrowser?.(deps)
         const wantOcr =
-          Boolean(opts.getBrowser) &&
+          Boolean(browser) &&
           isPdf &&
           (args.forceOcr === true || looksLikeScannedPdf(markdown))
 
-        if (wantOcr && opts.getBrowser) {
+        if (wantOcr && browser) {
           const recognize = opts.getRecognize
             ? opts.getRecognize(deps)
             : cloudflareVisionRecognizer(ai, visionModel)
@@ -331,7 +344,7 @@ export function createExtractTextTool<TDeps>(
               // In this package's own program (no bun types) the assertion is
               // a no-op, which is what the lint rule objects to.
               // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- needed only when a host's program also loads @types/bun
-              opts.getBrowser(deps) as unknown as BrowserWorker,
+              browser as unknown as BrowserWorker,
               bytes,
               recognize,
               { pdfjsBaseUrl: opts.getPdfjsBaseUrl?.(deps) },

@@ -22,6 +22,7 @@
     "./cloudflare/blob-spill": "./src/cloudflare/blob-spill.ts",
     "./cloudflare/extract-text": "./src/cloudflare/extract-text.ts",
     "./cloudflare/runtime": "./src/cloudflare/runtime.ts",
+    "./cloudflare/vectorize": "./src/cloudflare/vectorize.ts",
     "./documents": "./src/documents/index.ts",
     "./references": "./src/engine/references.ts",
     "./engine": "./src/engine/index.ts",

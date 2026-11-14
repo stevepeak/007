@@ -65,6 +65,7 @@ that `engine` (layer 0) depends on `ai`, `zod` and `jsonata` and nothing else,
 | `@stevepeak/007/cloudflare/blob-resolver`    | any server route        | `createR2BlobResolver` (engine-only leaf)                                                    |
 | `@stevepeak/007/cloudflare/blob-spill`       | any server route        | `createR2BlobSpiller`, `spillTextIfLarge` (the write half of blob refs)                      |
 | `@stevepeak/007/cloudflare/extract-text`     | any server route¹       | `createExtractTextTool` (R2/Vision OCR tool)                                                 |
+| `@stevepeak/007/cloudflare/vectorize`        | any server route¹       | `createIndexDocumentTool`, `createSearchDocumentsTool` — Workers AI + Vectorize document search |
 | `@stevepeak/007/cloudflare/analytics-engine` | Workers (AE binding)    | `createAnalyticsEngineTelemetry` — the write half of run telemetry (§7b)                     |
 | `@stevepeak/007/server`                      | any server route        | `createWfSdkHandlers`, `createHttpWfDataClient`, `describeToolCatalog`                        |
 | `@stevepeak/007/documents`                   | any (needs `docx`³)     | `documentModelSchema` + `renderDocx` — model → `.docx` bytes                                 |
@@ -75,8 +76,9 @@ that `engine` (layer 0) depends on `ai`, `zod` and `jsonata` and nothing else,
 | `@stevepeak/007/ui/styles.css`               | host CSS (Tailwind v4)  | `@import` once — emits the SDK's utilities + xyflow CSS (§6)                                 |
 | `@stevepeak/007/eval`                        | test, or any server/CLI | `runWorkflowUnderConditions`; `runEval` — the Goal orchestrator, framework-free              |
 
-¹ Import-safe anywhere (no `cloudflare:workers` at module scope), but its OCR
-path only _runs_ with R2 + Workers AI bindings present.
+¹ Import-safe anywhere (no `cloudflare:workers` at module scope), but they only
+_run_ with their bindings present: R2 + Workers AI for OCR, Vectorize + Workers AI
+for document search.
 ² The barrel value-exports only import-safe modules; the two durable classes that
 `import 'cloudflare:workers'` are isolated in `/cloudflare/runtime`.
 ³ `docx` is an **optional** peer dependency (~106 KB gzip, no Node builtins).
@@ -237,14 +239,26 @@ Key rules:
   Built-in / Provided by MCP), badges it on a tool's detail page, and returns it
   from `get_tool_catalog`, so a reader can tell where a change to a tool would
   have to be made. It defaults to `host`; the SDK's own factories
-  (`createExtractTextTool`, `createDocumentTool`) set `sdk` at the source and the
+  (`createExtractTextTool`, `createDocumentTool`, `createIndexDocumentTool`,
+  `createSearchDocumentsTool`) set `sdk` at the source and the
   connector registry sets `connector`. Wiring a built-in's deps — or renaming it
   via `opts.name` — is not authorship and does not change the answer, so there is
   nothing for a host to set.
+- **Built-ins are registered for you.** `defineWfConfig` from the package root
+  adds `extract_text` and `create_document` to `toolRegistry` (a host entry
+  under the same id wins — that is the override). They read fixed bindings off
+  the run's env, which they find through the deps `buildRunDeps` returns (so it
+  must return an object): `UPLOADS` (R2 — the files `extract_text` reads by key,
+  where `create_document` writes `documents/<id>/`, and where large extractions
+  spill), `AI` (Workers AI) and optional `BROWSER` (scanned-PDF OCR). Bind them
+  on every Worker that runs tools, including the one serving previews. A
+  missing binding fails the call with its name, not the listing. The engine's
+  own `defineWfConfig` (`@stevepeak/007/engine`) does not add them.
 - **`resolveBlobRef` is optional.** Supply it only if a tool returns a `WfBlobRef`
   pointer instead of a large value (the built-in `extract_text` tool does when its
   output exceeds ~128 KB); it reads the pointer back to text inside the consuming
-  node's step. Omit it and refs pass through as-is. For R2 the SDK ships
+  node's step. The root `defineWfConfig` defaults it to reading `UPLOADS`, where
+  `extract_text` spills. For R2 the SDK ships
   `createR2BlobResolver` (`@stevepeak/007/cloudflare/blob-resolver` — the narrow
   subpath, **not** the `/cloudflare` barrel; see §0) — point it at the same
   bucket; other storage needs your own resolver.
@@ -265,6 +279,54 @@ Key rules:
   a run's terminal state back onto your own entity — the one named by
   `subjectId`), and `resolveTelemetry` (per-step/per-run analytics — see §7b).
   Omit any you don't use.
+
+### Built-in document search (Vectorize + Workers AI)
+
+Two factories in `@stevepeak/007/cloudflare/vectorize` give a host semantic
+search over its documents on Cloudflare alone:
+
+- `createIndexDocumentTool` → `index_document`, a **Tool node** (`function`,
+  `sideEffect: 'write'`): splits `{ documentId, title?, text }` into paragraph
+  chunks, embeds them with Workers AI and upserts them into Vectorize. Chunk ids
+  derive from `documentId` (hashed to fit Vectorize's 64-byte cap), so a retry or
+  a re-index overwrites rather than duplicates.
+- `createSearchDocumentsTool` → `search_documents`, an **agent tool**
+  (`ai-tool`, `sideEffect: 'read'`): embeds `query` and returns the `topK`
+  closest chunks as `{ documentId, title, chunk, text, score }`.
+
+```ts
+import {
+  createIndexDocumentTool,
+  createSearchDocumentsTool,
+} from '@stevepeak/007/cloudflare/vectorize'
+
+const vectorize = {
+  getIndex: (d: HostDeps) => d.env.DOCUMENTS_INDEX, // a `vectorize` binding
+  getAI: (d: HostDeps) => d.env.AI,
+  // Optional: one Vectorize namespace per scope keeps tenants apart.
+  getNamespace: (d: HostDeps) => d.scopeId || undefined,
+}
+const entries = [
+  createIndexDocumentTool<HostDeps>(vectorize),
+  createSearchDocumentsTool<HostDeps>(vectorize),
+]
+```
+
+- **Create the index to match the model.** The default model is
+  `@cf/baai/bge-m3` (1024-dim):
+  `wrangler vectorize create <name> --dimensions=1024 --metric=cosine`. A
+  different `embeddingModel` means a differently sized index, and both tools must
+  use the same one.
+- **Bind it on every Worker that runs tools** — the workflows Worker, and the
+  host route that serves the tool/agent playgrounds. Vectorize has no local
+  simulator; mark the binding `"remote": true` for `wrangler dev`.
+- **Writes are eventually consistent.** A chunk becomes searchable a few seconds
+  after `index_document` returns.
+- **Feed it with `extract_text`:** trigger → `extract_text` → `index_document`
+  with `text` bound to `extract_text`'s `text` (a spilled pointer is rehydrated
+  before the call).
+- Chunking is tunable (`chunkChars`, `chunkOverlap`) or replaceable (`chunk`).
+  Known gap: re-indexing a document that shrank leaves its old trailing chunks.
 
 ### One catalog table, two catalogs — `ModelKind`
 
