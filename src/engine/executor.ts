@@ -7,6 +7,7 @@ import type { ModelBudget } from './model-budget'
 import { emitNodeStartProgress } from './node-progress'
 import { settleOf, type NodeSettlement } from './node-settlement'
 import { failureMustAbort } from './nodes/decision-agent'
+import type { RunStatusReader } from './nodes/wait'
 import type { ChildWorkflowRunner } from './nodes/workflow'
 import { endEntryOf, stampEntry, startEntryOf } from './run-log-entries'
 import { buildRunNodeContext, errorMessage, runNode } from './run-node'
@@ -65,6 +66,8 @@ export type ExecuteWorkflowDeps<TDeps> = {
    * cannot swallow it. Omitted by evals, tests and the playground.
    */
   isCancelled?: () => Promise<boolean>
+  /** Reads other runs' status, for Wait nodes. Omitted by evals and tests. */
+  getRunStatuses?: RunStatusReader
   /**
    * Called the moment the run's answer is final — BEFORE the walk drains the
    * arms that don't feed it. This is what lets a backend mark the run `done`
@@ -324,6 +327,8 @@ export async function executeWorkflow<TDeps>(
             // Threaded through unchanged, so a workflow node nested in an
             // iteration item spawns its callee exactly like a top-level one.
             runChildWorkflow: deps.runChildWorkflow,
+            isCancelled: deps.isCancelled,
+            getRunStatuses: deps.getRunStatuses,
           }),
         )
       }

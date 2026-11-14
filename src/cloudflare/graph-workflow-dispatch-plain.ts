@@ -13,6 +13,7 @@ import { buildRunNodeContext, runNode } from '../engine/run-node'
 import type { ExecutableNode } from '../engine/scheduler'
 import type { RunLogEntry, StreamSink } from '../engine/stream-sink'
 import { createWfDb } from '../storage/client'
+import { getRunStatuses } from '../storage/data/runs-inspector'
 
 import type { GraphWorkflowEnv } from './graph-workflow'
 import { nodeLabel } from './graph-workflow-dispatch-logs'
@@ -174,6 +175,10 @@ export async function dispatchPlain<TDeps, E extends GraphWorkflowEnv>(
               manifest,
               sink: nodeSink,
               modelBudget,
+              getRunStatuses:
+                node.kind === 'wait'
+                  ? (ids) => getRunStatuses(createWfDb(env.WF_DB), ids)
+                  : undefined,
               // Delegation: an agent node may spawn sub-agents/workflows inline
               // and record each as a child step. Built inside this `run:` closure
               // (a D1 binding can't cross a step boundary); the whole closure

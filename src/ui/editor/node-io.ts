@@ -427,6 +427,7 @@ export function nodeRequires(node: WorkflowNode, maps: IoMaps): NodeInput[] {
     case 'on-failure':
     case 'branch':
     case 'switch':
+    case 'wait':
     case 'feature-request':
     case 'passthrough':
     case 'transform':
@@ -735,6 +736,24 @@ function nodeOutput(
         type: schema ? schemaType(schema) : 'unknown',
       }
     }
+
+    case 'wait':
+      return {
+        fields: fieldsOf(
+          {
+            type: 'object',
+            properties: {
+              satisfied: { type: 'boolean' },
+              waitedMs: { type: 'number' },
+              total: { type: 'number' },
+              done: { type: 'number' },
+              pending: { type: 'array', items: { type: 'string' } },
+            },
+          },
+          '',
+        ),
+        type: 'object',
+      }
 
     case 'trigger': {
       const schema = maps.triggersByKind.get(

@@ -30,6 +30,7 @@ import { executeSwitchNode } from './nodes/switch'
 import { executeTextNode } from './nodes/text'
 import { executeToolNode } from './nodes/tool'
 import { executeTransformNode } from './nodes/transform'
+import { executeWaitNode, type RunStatusReader } from './nodes/wait'
 import { executeWorkflowNode, type ChildWorkflowRunner } from './nodes/workflow'
 import type { ReferenceKind } from './references'
 import type { RunRecorder } from './run-recorder'
@@ -116,6 +117,14 @@ export type RunNodeContext<TDeps> = RunFlags & {
    * graph inline as a subgraph instead — see `executeWorkflowNode`.
    */
   runChildWorkflow?: ChildWorkflowRunner
+  /**
+   * Whether the run has been cancelled. Only a node that waits on purpose (Wait)
+   * polls it; omitted → never cancelled from inside a node.
+   */
+  isCancelled?: () => Promise<boolean>
+  /** Reads other runs' status — what a Wait node waits on. Omitted → a Wait
+   * node with run ids to wait on fails, naming the missing reader. */
+  getRunStatuses?: RunStatusReader
 }
 
 /**
@@ -138,6 +147,8 @@ export function buildRunNodeContext<TDeps>(args: {
   modelBudget?: ModelBudget
   subStepRecorder?: RunRecorder
   runChildWorkflow?: ChildWorkflowRunner
+  isCancelled?: () => Promise<boolean>
+  getRunStatuses?: RunStatusReader
 }): RunNodeContext<TDeps> {
   const { config, runContext } = args
   const getDecider = config.getDecider
@@ -161,6 +172,8 @@ export function buildRunNodeContext<TDeps>(args: {
     modelBudget: args.modelBudget,
     subStepRecorder: args.subStepRecorder,
     runChildWorkflow: args.runChildWorkflow,
+    isCancelled: args.isCancelled,
+    getRunStatuses: args.getRunStatuses,
   }
 }
 
@@ -260,6 +273,18 @@ export async function runNode<TDeps>(
         recordedOutput: r.output,
         meta: r.meta,
       }
+    }
+    case 'wait': {
+      const r = await executeWaitNode({
+        node,
+        nodeOutputs: ctx.nodeOutputs,
+        getRunStatuses: ctx.getRunStatuses,
+        sink: ctx.sink,
+        budgetMs: ctx.modelBudget?.totalMs,
+        isCancelled: ctx.isCancelled,
+        simulate: ctx.simulate,
+      })
+      return { schedulerOutput: r.output, recordedOutput: r.output }
     }
     case 'branch': {
       // A Branch does NOT forward data — its output IS its decision

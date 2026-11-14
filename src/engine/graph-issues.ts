@@ -160,6 +160,15 @@ function configIssue(node: WorkflowNode): GraphIssue | null {
       }
       return null
     }
+    case 'wait':
+      if (node.config.runIds === undefined) {
+        return {
+          ...base,
+          severity: 'error',
+          message: 'No runs bound — pick the list of run ids to wait for.',
+        }
+      }
+      return null
     default:
       return null
   }

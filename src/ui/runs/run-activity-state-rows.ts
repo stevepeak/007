@@ -55,11 +55,13 @@ export function buildStateRows(logs: WfRunLogDTO[]): StateRowPlacement {
   const runStartTs =
     stateLogs.find((l) => readStateStatus(l.meta) === 'running')?.ts ?? null
 
-  const rows: ActivityStateRow[] = stateLogs.map((l) => {
+  // A status can repeat (a resumed run writes `running` again), so the key
+  // carries the marker's position, not just its status.
+  const rows: ActivityStateRow[] = stateLogs.map((l, i) => {
     const status = readStateStatus(l.meta) ?? 'running'
     return {
       kind: 'state' as const,
-      key: `state:${status}`,
+      key: `state:${status}:${i}`,
       status,
       message: l.message,
       ts: l.ts,

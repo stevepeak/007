@@ -28,6 +28,7 @@ import {
   completeRun,
   failRun,
   getRunCancelRequest,
+  getRunStatuses,
   getRunManifest,
   getVersionGraph,
   hydrateRunManifest,
@@ -576,6 +577,7 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
       isCancelled: async () => {
         return (await getRunCancelRequest(db, p.workflowRunId)) != null
       },
+      getRunStatuses: (ids) => getRunStatuses(db, ids),
       // Calling another workflow gives it a run of its own, here as much as on
       // the durable engine. This engine has no `waitForEvent`, so the wait is a
       // promise held by the room (see `waitForCallee`) — but everything either

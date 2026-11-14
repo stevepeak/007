@@ -318,6 +318,32 @@ const toolNodeSchema = baseNode.extend({
   }),
 })
 
+/** Longest a Wait node may wait — kept under the 20 min node timeout so the
+ * wait, not the backstop, is what ends it. */
+export const WAIT_MAX_TIMEOUT_MS = 15 * 60_000
+
+// A Wait node holds the walk until other workflow runs finish. `runIds` refs a
+// list of `wf_run` ids (an empty or unset list passes straight through); the
+// engine re-reads their status until every one has finished or `timeoutMs`
+// passes.
+const waitNodeSchema = baseNode.extend({
+  kind: z.literal('wait'),
+  config: z.object({
+    runIds: refBindingSchema.optional(),
+    timeoutMs: z
+      .number()
+      .int()
+      .positive()
+      .max(WAIT_MAX_TIMEOUT_MS)
+      .default(5 * 60_000),
+    // `continue` emits the result with `satisfied: false`; `fail` fails the node.
+    onTimeout: z.enum(['continue', 'fail']).default('continue'),
+    // User-facing progress line, emitted whenever a run finishes. `${done}` and
+    // `${total}` are filled in.
+    progress: z.string().optional(),
+  }),
+})
+
 // Operators for the deterministic Branch predicate. `is_empty`/`is_not_empty`
 // ignore `value`; the rest compare the resolved value against it. Numeric
 // comparisons coerce both sides to numbers; equality is type-loose (compares
@@ -780,6 +806,7 @@ export const workflowNodeSchema = z.discriminatedUnion('kind', [
   triggerNodeSchema,
   agentNodeSchema,
   toolNodeSchema,
+  waitNodeSchema,
   branchNodeSchema,
   switchNodeSchema,
   workflowCallNodeSchema,
@@ -805,6 +832,7 @@ export const workflowNodeSchema = z.discriminatedUnion('kind', [
 export type TriggerNode = z.infer<typeof triggerNodeSchema>
 export type AgentNode = z.infer<typeof agentNodeSchema>
 export type ToolNode = z.infer<typeof toolNodeSchema>
+export type WaitNode = z.infer<typeof waitNodeSchema>
 export type BranchNode = z.infer<typeof branchNodeSchema>
 export type SwitchNode = z.infer<typeof switchNodeSchema>
 export type WorkflowCallNode = z.infer<typeof workflowCallNodeSchema>
@@ -842,6 +870,7 @@ export type WorkflowNode =
   | TriggerNode
   | AgentNode
   | ToolNode
+  | WaitNode
   | BranchNode
   | SwitchNode
   | WorkflowCallNode

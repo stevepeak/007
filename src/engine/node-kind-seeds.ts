@@ -54,6 +54,12 @@ export const NODE_KIND_SEEDS: { [K in WfNodeKind]: NodeKindSeed<K> } = {
     config: { toolId, args: {} },
   }),
 
+  wait: () => ({
+    kind: 'wait',
+    label: 'New wait',
+    config: { timeoutMs: 5 * 60_000, onTimeout: 'continue' },
+  }),
+
   branch: () => ({
     kind: 'branch',
     label: 'New branch',

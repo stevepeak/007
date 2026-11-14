@@ -102,6 +102,8 @@ export {
   type OutputNode,
   type RaceNode,
   type ToolNode,
+  type WaitNode,
+  WAIT_MAX_TIMEOUT_MS,
   type TriggerNode,
   type WfAgentManifestEntry,
   type WfWorkflowManifestEntry,
@@ -346,6 +348,12 @@ export {
   type ToolNodeMeta,
   type ToolNodeResult,
 } from './nodes/tool'
+export {
+  executeWaitNode,
+  WAIT_POLL_INTERVAL_MS,
+  type RunStatusReader,
+  type WaitNodeOutput,
+} from './nodes/wait'
 export {
   executeFeatureRequestNode,
   type FeatureRequestNodeResult,

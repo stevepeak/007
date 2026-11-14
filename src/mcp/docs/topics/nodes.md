@@ -41,6 +41,7 @@ A literal binding is `{ "kind": "literal", "value": <any JSON> }`.
 | ------------ | --- |
 | call an LLM (generate text, a structured object, a yes/no, or a rubric decision) | `agent` → [[nodes/agent]] |
 | call a registered tool directly, no LLM | `tool` → [[nodes/tool]] |
+| hold the run until other workflow runs have finished | `wait` → [[nodes/wait]] |
 | write deterministic prose with `${values}` filled in | `text` → [[nodes/text]] |
 | reshape data (map rows to messages, concatenate, pick the last N items) | `transform` → [[nodes/transform]] |
 | re-emit an upstream value in a chosen shape, e.g. to make two arms match | `passthrough` → [[nodes/passthrough]] |

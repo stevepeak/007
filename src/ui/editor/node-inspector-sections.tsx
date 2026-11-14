@@ -2,6 +2,7 @@ import {
   ITERATION_ITEM_TRIGGER_KIND,
   MANUAL_TRIGGER_KIND,
   PERIODIC_TRIGGER_KIND,
+  WAIT_MAX_TIMEOUT_MS,
   type WfEngine,
 } from '../../engine'
 import { AgentSelect } from '../agent-select'
@@ -220,6 +221,80 @@ export function ToolInspector({ node, onChange }: NodeInspectorProps) {
         })
       }}
     />
+  )
+}
+
+export function WaitInspector({
+  node,
+  graph,
+  onChange,
+  itemSchema,
+}: NodeInspectorProps) {
+  const { Input, Label, Select } = useWfComponents()
+  if (node.kind !== 'wait') return null
+  const { runIds, timeoutMs, onTimeout, progress } = node.config
+  const patch = (config: Partial<typeof node.config>) => {
+    return onChange({ ...node, config: { ...node.config, ...config } })
+  }
+  const maxMinutes = WAIT_MAX_TIMEOUT_MS / 60_000
+  return (
+    <div className="space-y-3">
+      <div className={field}>
+        <Label>Wait for runs</Label>
+        <DataRefField
+          node={node}
+          graph={graph}
+          value={runIds}
+          itemSchema={itemSchema}
+          onChange={(next) => patch({ runIds: next })}
+        />
+        <p className="text-muted-foreground text-xs">
+          A list of workflow run ids. The step continues once every run has
+          finished — completed, failed or cancelled. An empty list continues
+          immediately.
+        </p>
+      </div>
+      <div className={field}>
+        <Label>Progress line</Label>
+        <Input
+          value={progress ?? ''}
+          placeholder="${done} of ${total} finished"
+          onChange={(e) => patch({ progress: e.target.value || undefined })}
+        />
+        <p className="text-muted-foreground text-xs">
+          Optional. Shown to the user each time a run finishes, with{' '}
+          <code>{'${done}'}</code> and <code>{'${total}'}</code> filled in.
+        </p>
+      </div>
+      <div className={field}>
+        <Label>Give up after (minutes)</Label>
+        <Input
+          type="number"
+          min={1}
+          max={maxMinutes}
+          value={timeoutMs / 60_000}
+          onChange={(e) => {
+            const m = Math.min(
+              maxMinutes,
+              Math.max(1, Number(e.target.value) || 1),
+            )
+            return patch({ timeoutMs: Math.round(m * 60_000) })
+          }}
+        />
+      </div>
+      <div className={field}>
+        <Label>When time runs out</Label>
+        <Select
+          value={onTimeout}
+          onChange={(e) => {
+            return patch({ onTimeout: e.target.value as 'continue' | 'fail' })
+          }}
+        >
+          <option value="continue">Continue (satisfied = false)</option>
+          <option value="fail">Fail the step</option>
+        </Select>
+      </div>
+    </div>
   )
 }
 

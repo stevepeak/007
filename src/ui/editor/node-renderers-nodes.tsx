@@ -154,6 +154,16 @@ export const ToolNodeRenderer = defineNode({
   },
 })
 
+export const WaitNodeRenderer = defineNode({
+  kind: 'wait',
+  subtitle: (data) => {
+    const minutes = Math.round(data.config.timeoutMs / 60_000)
+    return data.config.runIds
+      ? `Waits for runs · up to ${minutes} min`
+      : 'No runs bound'
+  },
+})
+
 export const BranchNodeRenderer = defineNode({
   kind: 'branch',
   source: 'decision',

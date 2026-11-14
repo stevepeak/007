@@ -30,7 +30,7 @@ Sub-agent delegation (see [[agents/sub-agents]]):
 
 | limit | value | notes |
 | ----- | ----- | ----- |
-| Node timeout: `agent`, `workflow`, `iteration` (per item) | 20 min | Override with `execution.timeoutMs`. |
+| Node timeout: `agent`, `workflow`, `iteration` (per item), `wait` | 20 min | Override with `execution.timeoutMs`. A Wait node's own `config.timeoutMs` (max 15 min) ends it first. |
 | Node timeout: everything else | 60 s | |
 | Durable-engine step retries: AI kinds | 3, exponential from 5 s | Default when `execution.retries` is unset. |
 | Durable-engine step retries: other kinds | 2, exponential from 3 s | |

@@ -10,6 +10,7 @@ import {
   Flag,
   Forward,
   GitBranch,
+  Hourglass,
   Layers,
   Lightbulb,
   LogIn,
@@ -257,6 +258,7 @@ export const KIND_STYLE: Record<
   trigger: { icon: LogIn, accent: 'border-l-emerald-400', label: 'Trigger' },
   agent: { icon: Sparkles, accent: 'border-l-violet-400', label: 'Agent' },
   tool: { icon: Wrench, accent: 'border-l-sky-400', label: 'Tool' },
+  wait: { icon: Hourglass, accent: 'border-l-sky-300', label: 'Wait' },
   branch: { icon: GitBranch, accent: 'border-l-orange-400', label: 'Branch' },
   switch: { icon: Split, accent: 'border-l-orange-500', label: 'Switch' },
   iteration: {

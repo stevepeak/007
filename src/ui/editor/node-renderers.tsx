@@ -15,6 +15,7 @@ import {
   RaceNodeRenderer,
   SwitchNodeRenderer,
   ToolNodeRenderer,
+  WaitNodeRenderer,
   TriggerNodeRenderer,
   WorkflowNodeRenderer,
 } from './node-renderers-nodes'
@@ -41,6 +42,7 @@ export const NODE_TYPES = {
   [editorTypeForKind('trigger')]: TriggerNodeRenderer,
   [editorTypeForKind('agent')]: AgentNodeRenderer,
   [editorTypeForKind('tool')]: ToolNodeRenderer,
+  [editorTypeForKind('wait')]: WaitNodeRenderer,
   [editorTypeForKind('branch')]: BranchNodeRenderer,
   [editorTypeForKind('switch')]: SwitchNodeRenderer,
   [editorTypeForKind('iteration')]: IterationNodeRenderer,

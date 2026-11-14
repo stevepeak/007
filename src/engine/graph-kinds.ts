@@ -25,6 +25,7 @@ export type NodeKindCategory = 'Steps' | 'Logic' | 'Other'
  */
 export type NodeKindIconName =
   | 'Flag'
+  | 'Hourglass'
   | 'Forward'
   | 'GitBranch'
   | 'Layers'
@@ -156,6 +157,21 @@ const NODE_KINDS = {
     palette: {
       category: 'Logic',
       description: 'Multi-way routing — match a value to one of many cases.',
+    },
+  },
+  // Waits for other runs to finish. `ai` timeout: a wait is minutes long
+  // by design, and its own `config.timeoutMs` (capped well under 20 min) is what
+  // ends it — the node timeout is only the backstop.
+  wait: {
+    label: 'Wait',
+    icon: 'Hourglass',
+    timeout: 'ai',
+    bookend: false,
+    decision: false,
+    palette: {
+      category: 'Logic',
+      description:
+        'Wait until other workflow runs finish, or a time limit passes.',
     },
   },
   workflow: {

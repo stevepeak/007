@@ -45,6 +45,8 @@ export function nodeRefs(node: WorkflowNode): NodeRef[] {
       ]
     case 'tool':
       return recordRefs('arg', node.config.args)
+    case 'wait':
+      return singleRef('runIds', node.config.runIds)
     case 'branch':
       return singleRef('source', node.config.source)
     case 'switch':
@@ -124,6 +126,14 @@ export function stripNodeRefsTo(
       return {
         ...node,
         config: { ...node.config, args: keepRecord(node.config.args) },
+      }
+    case 'wait':
+      return {
+        ...node,
+        config: {
+          ...node.config,
+          runIds: isGone(node.config.runIds) ? undefined : node.config.runIds,
+        },
       }
     case 'branch':
       return {
