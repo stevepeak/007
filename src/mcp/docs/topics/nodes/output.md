@@ -11,6 +11,7 @@ The `output` node ends the answer phase of a run and names **the value the calle
 | key | meaning |
 | --- | ------- |
 | `source` | A ref binding `{ "kind": "ref", "nodeId": "<id>", "path": "<path>" }` naming the answer. Required in practice: an Output with no `source` is flagged by `validate_workflow_graph` and throws if a run reaches it. `path: ""` returns that node's whole output. |
+| `stopRun` | Optional, default off. `true` ends the run at this Output: once it delivers, no further node starts and no other Output can be reached. Arms that don't feed it are dropped instead of drained; nodes already running still finish, since a running node can't be cancelled. |
 
 ## Output
 
@@ -19,8 +20,8 @@ The resolved `source` value becomes the run's output (`wf_run.output`, what `get
 ## Behavior and gotchas
 
 - **Fires on ANY live incoming edge, not all.** Unlike work nodes (which wait for every live parent), an Output becomes reachable as soon as one incoming edge is live. Several edges into one Output are only for converging **mutually exclusive** branch arms, where only one is ever live; an Output that merges parallel paths is a validation error ("Merges parallel paths"). If you need "release only after X, Y and Z", make the Output's only parent a node that itself depends on X, Y and Z (an `aggregate`, or any work node with all three as parents) — see [[execution]].
-- **Several Outputs are legal** (one per branch arm). The first reachable one in graph declaration order wins; the others are ignored.
-- **`done` vs `completed`.** Reaching the Output marks the run `done`: the answer is final and whoever is waiting is released immediately. Nodes that don't feed the Output keep running (the *drain*), and only then is the run `completed`. A failure during the drain does not fail the run — the answer already went out; it is reported as a drain error. Anything waiting for the answer must treat `done` as finished.
+- **Several Outputs are legal** (one per branch arm). The first one *reached* answers; graph declaration order only breaks a tie between Outputs that become reachable on the same settle. A later Output is recorded in the trace but changes nothing the caller received.
+- **`done` vs `completed`.** Reaching the Output marks the run `done`: the answer is final and whoever is waiting is released immediately. Nodes that don't feed the Output keep running (the *drain*), and only then is the run `completed`. A failure during the drain does not fail the run — the answer already went out; it is reported as a drain error. Anything waiting for the answer must treat `done` as finished. An Output with `stopRun: true` skips the drain: nothing new starts after it.
 - **Streaming.** On the `inline` engine, the agent named by `source` (the "answer node") streams its text to a waiting reader as it is generated — *before* the Output fires and before any later checks run. To hold an answer until checks pass, point `source` at a node downstream of the checks (for example a `text` or `passthrough` node that copies the agent's text), so the drafting agent is not the answer node. See [[streaming]].
 - A run whose routing sends every live path away from all Outputs ends with no output (an intentional "fizzle"); if no routing decision ever fired, that is reported as a stalled graph.
 - `informUser` and `execution` have no effect here.

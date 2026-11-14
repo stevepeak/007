@@ -566,9 +566,9 @@ describe('add_node', () => {
     expect(g.nodes.at(-1)!.label).toBe('Draft the reply')
   })
 
-  // The bookends are seeded with the graph itself, so offering to add one would
-  // produce a second trigger and an invalid graph.
-  test('refuses a bookend kind, and names what it can add', () => {
+  // The trigger is seeded with the graph itself, so adding one would produce a
+  // second trigger and an invalid graph.
+  test('refuses the trigger, and names what it can add', () => {
     const g = structuredClone(published)
     expect(() => applyPatchOp(g, { op: 'add_node', kind: 'trigger' })).toThrow(
       /bookend/,
@@ -693,6 +693,16 @@ describe('ops reach inside an iteration subgraph', () => {
     const g = withIteration()
     expect(() => { return applyPatchOp(g, { op: 'add_node', kind: 'agent', subgraphOf: 't' }) },
     ).toThrow(/must name an iteration node/)
+  })
+
+  test('add_node adds a top-level Output but refuses one inside a subgraph', () => {
+    const g = withIteration()
+    applyPatchOp(g, { op: 'add_node', kind: 'output' })
+    expect(g.nodes.filter((n) => n.kind === 'output')).toHaveLength(2)
+    expect(() => {
+      return applyPatchOp(g, { op: 'add_node', kind: 'output', subgraphOf: 'iter' })
+    }).toThrow(/exactly one Output/)
+    expect(subgraphOf(g).nodes).toHaveLength(1)
   })
 })
 

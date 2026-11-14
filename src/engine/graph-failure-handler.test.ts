@@ -3,9 +3,12 @@ import { describe, expect, test } from 'bun:test'
 import type { RunFailure } from './config'
 import { executeWorkflow } from './executor'
 import { chainGraph, makeConfig } from './executor-test-helpers'
-import { RunCancelledError } from './failure-route'
+import { FAILURE_ROUTES, RunCancelledError } from './failure-route'
 import { workflowGraphSchema } from './graph'
-import { failureHandlerGraphOf } from './graph-failure-handler'
+import {
+  failureHandlerGraphOf,
+  failureHandlerRoutes,
+} from './graph-failure-handler'
 import { createMemoryRunRecorder } from './run-recorder'
 import { RUN_FAILURE_TRIGGER_KIND } from './trigger-registry'
 
@@ -66,7 +69,14 @@ describe('on-failure validation', () => {
     expect(problems(withHandler())).toEqual([])
   })
 
-  test('every edge out of it names a route — there is no catch-all', () => {
+  test('`any` is a route an edge may name', () => {
+    const g = withHandler({
+      edges: [{ id: 'x', source: 'f', target: 'clean2', condition: 'any' }],
+    })
+    expect(problems(g)).toEqual([])
+  })
+
+  test('every edge out of it names a route — an unconditioned edge is rejected', () => {
     const g = withHandler({
       edges: [{ id: 'x', source: 'f', target: 'clean', condition: null }],
     })
@@ -142,6 +152,23 @@ describe('failureHandlerGraphOf', () => {
     ])
   })
 
+  test('an `any` edge joins every route, one live edge per target', () => {
+    const g = withHandler({
+      edges: [
+        { id: 'a1', source: 'f', target: 'clean', condition: 'any' },
+        { id: 'a2', source: 'f', target: 'clean2', condition: 'any' },
+      ],
+    })
+    const cancelled = failureHandlerGraphOf(g, 'f', 'cancelled')
+    expect(cancelled.nodes.map((n) => n.id).sort()).toEqual(['clean', 'clean2', 'f'])
+    expect(cancelled.edges.filter((e) => e.source === 'f')).toEqual([
+      { id: 'h1', source: 'f', target: 'clean', condition: null },
+      { id: 'a2', source: 'f', target: 'clean2', condition: null },
+    ])
+    const invalid = failureHandlerGraphOf(g, 'f', 'invalid_input')
+    expect(invalid.nodes.map((n) => n.id).sort()).toEqual(['clean', 'clean2', 'f'])
+  })
+
   test('another route gets its own arm', () => {
     const g = failureHandlerGraphOf(withHandler(), 'f', 'rate_limited')
     expect(g.nodes.map((n) => n.id).sort()).toEqual(['clean2', 'f', 'wait'])
@@ -163,6 +190,42 @@ describe('failureHandlerGraphOf', () => {
       .map((s) => s.nodeId)
     expect(done).toContain('wait')
     expect(done).toContain('clean2')
+  })
+
+  test('an arm ending in an Output answers with it — the fallback answer', async () => {
+    const graph = withHandler({
+      nodes: [
+        {
+          id: 'sorry',
+          kind: 'text',
+          label: 'Sorry',
+          position: at,
+          config: { body: 'Please try again later.', inputs: {} },
+        },
+        {
+          id: 'fallback',
+          kind: 'output',
+          label: 'Fallback',
+          position: at,
+          config: { source: { kind: 'ref', nodeId: 'sorry', path: '' } },
+        },
+      ],
+      edges: [
+        { id: 'h5', source: 'f', target: 'sorry', condition: 'internal_error' },
+        { id: 'h6', source: 'sorry', target: 'fallback', condition: null },
+      ],
+    })
+    expect(problems(graph)).toEqual([])
+    const result = await executeWorkflow({
+      graph: failureHandlerGraphOf(graph, 'f', 'internal_error'),
+      triggerInput: { route: 'internal_error', error: 'boom', runId: 'r1', input: {} },
+      config: makeConfig(),
+      runContext: { triggerKind: RUN_FAILURE_TRIGGER_KIND },
+      recorder: createMemoryRunRecorder(),
+      spawned: true,
+    })
+    expect(result.outputNodeId).toBe('fallback')
+    expect(result.output).toBe('Please try again later.')
   })
 })
 
@@ -191,3 +254,23 @@ describe('cancelling the in-process walk', () => {
   })
 })
 
+
+describe('failureHandlerRoutes', () => {
+  test('lists the wired routes', () => {
+    const g = workflowGraphSchema.parse(withHandler())
+    expect([...failureHandlerRoutes(g, 'f')].sort()).toEqual([
+      'cancelled',
+      'rate_limited',
+      'timeout',
+    ])
+  })
+
+  test('an `any` edge arms every route', () => {
+    const g = workflowGraphSchema.parse(
+      withHandler({
+        edges: [{ id: 'x', source: 'f', target: 'clean2', condition: 'any' }],
+      }),
+    )
+    expect(failureHandlerRoutes(g, 'f').size).toBe(FAILURE_ROUTES.length)
+  })
+})

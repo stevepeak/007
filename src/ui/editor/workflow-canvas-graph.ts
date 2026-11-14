@@ -7,10 +7,10 @@ import { editorTypeForKind, type EditorNodeData } from './node-renderers'
 export type EditorNode = Node<EditorNodeData>
 export type EditorEdge = Edge
 
-// Trigger + output are the workflow's bookends — exactly one trigger and at
-// least one output are required and there's no palette entry to re-add one, so
-// they're non-deletable end to end. The same kinds serve as an iteration
-// container's `Item` (trigger) and `Result` (output) bookends, likewise fixed.
+// Trigger + output are the workflow's bookends. The one trigger is fixed; a
+// top-level Output is deletable because the palette can add another (a graph
+// with none is a lint error). The same kinds serve as an iteration container's
+// `Item` (trigger) and `Result` (output) bookends, which are always fixed.
 export const BOOKEND_KINDS = new Set(['trigger', 'output'])
 
 // Default size of a freshly-dropped iteration container (px). Persisted per node
@@ -108,7 +108,7 @@ export function engineToFlow(graph: WorkflowGraph): {
         id: n.id,
         type: editorTypeForKind(n.kind),
         position: n.position,
-        deletable: !BOOKEND_KINDS.has(n.kind),
+        deletable: n.kind !== 'trigger',
         data: extractEditorData(n),
       })
     }

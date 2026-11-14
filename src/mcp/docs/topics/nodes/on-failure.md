@@ -14,7 +14,7 @@ An `on-failure` node holds what should happen when the run **fails or is cancell
 
 ## Routes
 
-Every outgoing edge sets `condition` to one route. An unconditioned edge is rejected: there is no catch-all, so wire every route you care about. Connecting several routes to the same node is the way to handle them alike.
+Every outgoing edge sets `condition` to one route, or to `any`. An `any` edge fires for every failure, so one edge is enough to send them all to the same cleanup. An unconditioned edge is rejected. Connecting several routes to the same node is the way to handle some of them alike.
 
 | route | when |
 | ----- | ---- |
@@ -27,7 +27,9 @@ Every outgoing edge sets `condition` to one route. An unconditioned edge is reje
 | `limit_exceeded` | A limit that retrying cannot fix: the node budget, an iteration over `maxItems`, a 402 or exhausted credits. |
 | `cancelled` | Someone called `cancel_run` (or the host's `cancelRun`). This route always wins: a run that was asked to stop is `cancelled` whatever its last node threw. |
 
-Each failure takes exactly one route. A route with no edge does nothing; no run is started. A tool can pick its own route by throwing an error whose `failureRoute` property is one of the names above.
+`any` is an edge condition only, never a route: the output's `route` always names the specific route that fired, so a node behind `any` can still tell them apart.
+
+Each failure takes exactly one route. A route with no edge (and no `any` edge) does nothing; no run is started. A tool can pick its own route by throwing an error whose `failureRoute` property is one of the names above.
 
 ## Output
 
@@ -50,9 +52,9 @@ The node's output, and so what its arm binds to with a `ref` to the node, is the
 ## Behavior and gotchas
 
 - **Detached.** At most one per workflow, never inside an iteration subgraph, no incoming edges. No edge may join a handler node to a main-graph node, and refs may not cross between them in either direction. The handler can read only the failure and its own nodes; take what you need from `input`.
-- **No Output.** The handler has no answer. Its run ends `completed` when its arms finish, or `failed` if one of its nodes fails. A failed handler does not start another handler.
-- **Pruned per route.** Only the nodes reachable from the fired route's edges are in the handler run. A node wired from both `timeout` and `cancelled` waits on just the edge that fired.
-- **When it runs.** After the run is recorded as failed or cancelled, after any in-flight nodes have landed, and after the host's `onRunFailed`. Never for an eval run, and never for a failure in the drain after the answer was delivered: that run kept its answer.
+- **An Output is the fallback answer.** An arm may end in an [[nodes/output]]. The handler run's output is then the failed run's fallback answer: the failed run stays `failed`, and a host reads the answer with `getFailureHandlerRun(db, failedRunId)` (its `status` and `output`) to show something better than the raw error. An arm with no Output is plain cleanup. Either way the handler run ends `completed` when its arms finish, or `failed` if one of its nodes fails. A failed handler does not start another handler.
+- **Pruned per route.** Only the nodes reachable from the fired route's edges and the `any` edges are in the handler run. A node wired from both `timeout` and `cancelled` waits on just the edge that fired; a node wired from both `any` and the fired route runs once.
+- **When it runs.** After any in-flight nodes have landed, and just **before** the run is recorded as failed or cancelled, so a waiter that sees `failed` can already find the handler run (or know there is none). The host's `onRunFailed` comes after both. Never for an eval run, and never for a failure in the drain after the answer was delivered: that run kept its answer.
 - **Cancel is cooperative.** A cancelled run starts no new node. Nodes already running land first, so the handler sees everything they wrote. Child runs are cancelled with their parent.
 - **Retries.** A `retry_run` of a failed run is a new run. If it fails too, the handler runs again, so write handler tools to be idempotent.
 - The handler run shows up as a child of the failed run, under the reserved trigger kind run_failure.

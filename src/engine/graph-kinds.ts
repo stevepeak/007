@@ -272,8 +272,13 @@ const NODE_KINDS = {
     timeout: 'default',
     bookend: true,
     decision: false,
-    // Template-owned, like `trigger`.
-    palette: null,
+    // Seeded with the graph, and addable for workflows whose branch arms end
+    // with different answers — one Output per arm (the first reached wins).
+    palette: {
+      category: 'Logic',
+      description:
+        'End the run with a value — one per arm when arms answer differently.',
+    },
   },
 } as const satisfies Record<string, NodeKindDescriptor>
 

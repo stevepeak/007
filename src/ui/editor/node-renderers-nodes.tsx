@@ -2,8 +2,8 @@ import { Handle, Position, type NodeProps } from '@xyflow/react'
 import { AlertTriangle, StickyNote } from 'lucide-react'
 
 import {
-  FAILURE_ROUTE_LABELS,
-  FAILURE_ROUTES,
+  FAILURE_HANDLER_ROUTE_LABELS,
+  FAILURE_HANDLER_ROUTES,
   ITERATION_ITEM_TRIGGER_KIND,
   MANUAL_TRIGGER_KIND,
   PERIODIC_TRIGGER_KIND,
@@ -313,7 +313,8 @@ const ROUTE_HANDLE_SPACING_PX = 20
 
 // The failure handler: a detached root, so no target handle — and one source
 // handle per route, each `id` the route key, on the same id↔condition contract
-// as a Switch arm. Wiring two routes to one node is how they share a handler.
+// as a Switch arm. Wiring two routes to one node is how they share a handler;
+// the last handle, `any`, catches every route.
 export function OnFailureNodeRenderer(props: NodeProps) {
   const r = useNodeRenderer(props, 'on-failure')
   if (!r) return null
@@ -327,14 +328,14 @@ export function OnFailureNodeRenderer(props: NodeProps) {
         invalid={invalid}
         status={status}
         subtitle={`Runs on ${data.config.engine ?? 'durable'} when the run stops`}
-        minHeight={FAILURE_ROUTES.length * ROUTE_HANDLE_SPACING_PX}
+        minHeight={FAILURE_HANDLER_ROUTES.length * ROUTE_HANDLE_SPACING_PX}
       />
-      {FAILURE_ROUTES.map((route, i) => (
+      {FAILURE_HANDLER_ROUTES.map((route, i) => (
         <RouteHandle
           key={route}
           id={route}
-          label={FAILURE_ROUTE_LABELS[route]}
-          top={handleTop(i, FAILURE_ROUTES.length)}
+          label={FAILURE_HANDLER_ROUTE_LABELS[route]}
+          top={handleTop(i, FAILURE_HANDLER_ROUTES.length)}
           color="rgb(248, 113, 113)"
         />
       ))}

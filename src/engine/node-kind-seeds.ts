@@ -30,8 +30,8 @@ export type WorkflowNodeSeed = WorkflowNode extends infer N
 /**
  * Returns the seed for one kind, typed to THAT kind — a wrong config shape is a
  * compile error at the entry, not a cast swallowed at the call site. `null` for
- * kinds the author can't add: `trigger` and `output` are template-owned bookends
- * seeded with the graph itself.
+ * kinds the author can't add: `trigger` is a template-owned bookend seeded with
+ * the graph itself.
  */
 type NodeKindSeed<K extends WfNodeKind> =
   | ((defaults: NodeSeedDefaults) => Extract<WorkflowNodeSeed, { kind: K }>)
@@ -39,7 +39,10 @@ type NodeKindSeed<K extends WfNodeKind> =
 
 export const NODE_KIND_SEEDS: { [K in WfNodeKind]: NodeKindSeed<K> } = {
   trigger: null,
-  output: null,
+
+  // Drops in unbound, which reads as a blocking "no value" issue until the
+  // author picks what this arm answers with.
+  output: () => ({ kind: 'output', label: 'Output', config: {} }),
 
   agent: () => ({
     // A pointer node — the inspector picks which pre-developed agent to run.

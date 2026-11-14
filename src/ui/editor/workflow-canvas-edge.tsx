@@ -7,8 +7,8 @@ import {
 } from '@xyflow/react'
 
 import {
-  FAILURE_ROUTE_LABELS,
-  isFailureRoute,
+  FAILURE_HANDLER_ROUTE_LABELS,
+  isFailureHandlerRoute,
   switchArmName,
 } from '../../engine'
 
@@ -86,8 +86,8 @@ function conditionLabel(
   condition: string | null,
 ): string | undefined {
   if (!condition) return undefined
-  if (sourceData?.kind === 'on-failure' && isFailureRoute(condition)) {
-    return FAILURE_ROUTE_LABELS[condition]
+  if (sourceData?.kind === 'on-failure' && isFailureHandlerRoute(condition)) {
+    return FAILURE_HANDLER_ROUTE_LABELS[condition]
   }
   if (sourceData?.kind !== 'switch') return condition
   return switchArmName(sourceData.config.cases, condition)

@@ -285,42 +285,10 @@ export async function recordInlineRunFailure<TDeps, E extends GraphWorkflowEnv>(
   const runContext = runContextFor(p, env)
   try {
     const cancel = await getRunCancelRequest(db, p.workflowRunId)
-    if (cancel) {
-      await markRunCancelled(db, { runId: p.workflowRunId, error: message })
-    } else {
-      await failRun(db, { runId: p.workflowRunId, error: message })
-    }
     const route = cancel ? 'cancelled' : classifyFailure(err ?? message)
-    // Wake the caller BEFORE the host callback: a callee that dies silently
-    // leaves its caller parked until the calling node's timeout, turning a
-    // legible failure into a long stall.
-    await reportCalleeResultBestEffort({
-      env,
-      sub: p.subRun,
-      payload: { ok: false, error: message },
-      runId: p.workflowRunId,
-      logger,
-    })
-    await notifyEvalSweep({
-      env,
-      notice: p.sweepNotice,
-      runId: p.workflowRunId,
-      logger,
-    })
-    if (config.onRunFailed) {
-      await notifyHostSafely({
-        name: 'on-failed',
-        fn: () => {
-          return config.onRunFailed!(runContext, {
-            error: message,
-            workflowRunId: p.workflowRunId,
-            route,
-          })
-        },
-        logger,
-      })
-    }
-    // No handler for a handler run.
+    // The handler starts BEFORE the run is marked failed, so anyone who sees
+    // `failed` can already see whether a handler — and with it a fallback
+    // answer — is coming (`getFailureHandlerRun`). No handler for a handler run.
     if (!p.failureHandler) {
       await notifyHostSafely({
         name: 'on-failure-handler',
@@ -346,6 +314,40 @@ export async function recordInlineRunFailure<TDeps, E extends GraphWorkflowEnv>(
               cancelledBy: cancel?.by,
               input: p.triggerInput,
             },
+          })
+        },
+        logger,
+      })
+    }
+    if (cancel) {
+      await markRunCancelled(db, { runId: p.workflowRunId, error: message })
+    } else {
+      await failRun(db, { runId: p.workflowRunId, error: message })
+    }
+    // Wake the caller BEFORE the host callback: a callee that dies silently
+    // leaves its caller parked until the calling node's timeout, turning a
+    // legible failure into a long stall.
+    await reportCalleeResultBestEffort({
+      env,
+      sub: p.subRun,
+      payload: { ok: false, error: message },
+      runId: p.workflowRunId,
+      logger,
+    })
+    await notifyEvalSweep({
+      env,
+      notice: p.sweepNotice,
+      runId: p.workflowRunId,
+      logger,
+    })
+    if (config.onRunFailed) {
+      await notifyHostSafely({
+        name: 'on-failed',
+        fn: () => {
+          return config.onRunFailed!(runContext, {
+            error: message,
+            workflowRunId: p.workflowRunId,
+            route,
           })
         },
         logger,

@@ -160,6 +160,7 @@ export function OutputInspector({
   onChange,
   itemSchema,
 }: NodeInspectorProps) {
+  const { Checkbox } = useWfComponents()
   if (node.kind !== 'output') return null
   return (
     <div className={field}>
@@ -178,6 +179,28 @@ export function OutputInspector({
       <p className="text-muted-foreground text-xs">
         Pick the upstream value the user receives.
       </p>
+      <label className="flex cursor-pointer items-start gap-2.5 pt-2">
+        <span className="min-w-0 flex-1">
+          <span className="text-foreground block text-sm font-medium">
+            Stop the run here
+          </span>
+          <span className="text-muted-foreground mt-0.5 block text-xs">
+            When this Output answers, start no further nodes. Branches that
+            don't feed it are dropped instead of finishing in the background;
+            nodes already running still complete.
+          </span>
+        </span>
+        <Checkbox
+          className="mt-0.5"
+          checked={node.config.stopRun === true}
+          onChange={(e) => {
+            return onChange({
+              ...node,
+              config: { ...node.config, stopRun: e.target.checked || undefined },
+            })
+          }}
+        />
+      </label>
     </div>
   )
 }

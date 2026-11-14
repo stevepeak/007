@@ -88,6 +88,7 @@ export {
   getModelUsage,
   getRun,
   getRunStatus,
+  getFailureHandlerRun,
   getRunLastActivityAt,
   getRunProgressFeed,
   type RunProgressFeed,

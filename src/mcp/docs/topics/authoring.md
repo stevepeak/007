@@ -41,7 +41,7 @@ To back out: `discard_workflow_draft` before publishing; after publishing, `upda
 
 | op | fields | effect |
 | -- | ------ | ------ |
-| `"add_node"` | `kind`, `toolId` (required for `tool`), `label?`, `subgraphOf?` | adds a node with its kind's default config and **no edges**; returns its new id. `trigger` and `output` can't be added. `subgraphOf` = an iteration node's id, to add inside its per-item subgraph |
+| `"add_node"` | `kind`, `toolId` (required for `tool`), `label?`, `subgraphOf?` | adds a node with its kind's default config and **no edges**; returns its new id. `trigger` can't be added; an `output` can, but only at the top level (one per branch arm that answers differently — see [[nodes/output]]). `subgraphOf` = an iteration node's id, to add inside its per-item subgraph |
 | `"set_tool_arg"` | `nodeId`, `arg`, `binding` | sets one Tool-node argument: `{ "kind": "literal", "value": … }` (in the type the tool declares — a real boolean, not `"false"`) or `{ "kind": "ref", "nodeId": …, "path": "" }` |
 | `"remove_tool_arg"` | `nodeId`, `arg` | removes one argument binding |
 | `"set_node_label"` | `nodeId`, `label` | renames the node (display only) |

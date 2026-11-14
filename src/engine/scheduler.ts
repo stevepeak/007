@@ -144,6 +144,9 @@ export class Scheduler {
   // the parsed graph.
   private readonly nodeOutputs: NodeOutputs
   private nodesFired = 0
+  // Set when an Output with `stopRun` is settled: nothing becomes ready after
+  // it, and no later Output is reachable — the walk only lands what's in flight.
+  private stopped = false
   // The runaway-loop backstop for THIS run (host-tunable; defaults to
   // DEFAULT_NODE_BUDGET). Nested subgraph schedulers get their own budget.
   private readonly nodeBudget: number
@@ -259,6 +262,8 @@ export class Scheduler {
   completeOutput(nodeId: string, value: unknown): void {
     this.nodeOutputs.set(nodeId, value)
     this.completed.add(nodeId)
+    const node = this.graph.nodes.find((n) => n.id === nodeId)
+    if (node?.kind === 'output' && node.config.stopRun) this.stopped = true
   }
 
   /**
@@ -303,6 +308,7 @@ export class Scheduler {
 
   private isReady(nodeId: string): boolean {
     if (
+      this.stopped ||
       this.completed.has(nodeId) ||
       this.inFlight.has(nodeId) ||
       this.failed.has(nodeId)
@@ -332,6 +338,7 @@ export class Scheduler {
   // We stop at the first reachable Output in declaration order.
   private reachableOutput():
     Extract<WorkflowNode, { kind: 'output' }> | undefined {
+    if (this.stopped) return undefined
     for (const n of this.graph.nodes) {
       if (n.kind !== 'output') {
         continue

@@ -186,10 +186,17 @@ function CanvasInner({
         if (selectOnly.length > 0) onNodesChange(selectOnly)
         return
       }
-      // Bookends (main trigger/output AND every iteration's Item/Result) can't be
-      // deleted directly.
+      // The main trigger and every iteration's Item/Result can't be deleted
+      // directly. A top-level Output can — another can be added from the palette.
       const bookendIds = new Set(
-        nodes.filter((n) => BOOKEND_KINDS.has(n.data.kind)).map((n) => n.id),
+        nodes
+          .filter((n) => {
+            return (
+              BOOKEND_KINDS.has(n.data.kind) &&
+              (n.data.kind === 'trigger' || n.parentId !== undefined)
+            )
+          })
+          .map((n) => n.id),
       )
       // Deleting an iteration container takes its children with it.
       const removedContainers = new Set(

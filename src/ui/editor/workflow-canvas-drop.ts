@@ -124,13 +124,17 @@ export function useCanvasDrop({
         return
       }
 
-      // Dropping any other node over a container makes it a member of that loop.
-      const container = getIntersectingNodes({
-        x: position.x,
-        y: position.y,
-        width: 1,
-        height: 1,
-      }).find((n) => (n.data as EditorNodeData).kind === 'iteration')
+      // Dropping any other node over a container makes it a member of that loop
+      // — except an Output: a loop has exactly one, its fixed `Result`.
+      const container =
+        newData.kind === 'output'
+          ? undefined
+          : getIntersectingNodes({
+              x: position.x,
+              y: position.y,
+              width: 1,
+              height: 1,
+            }).find((n) => (n.data as EditorNodeData).kind === 'iteration')
       const id = crypto.randomUUID()
       if (container) {
         const cAbs =
@@ -170,8 +174,13 @@ export function useCanvasDrop({
   // container it becomes that container's child (part of the loop).
   const handleNodeDragStop = useCallback(
     (_: unknown, dragged: EditorNode) => {
-      // Notes are free-floating annotations; never fold one into a loop container.
-      if (dragged.data.kind === 'iteration' || dragged.data.kind === 'note')
+      // Notes are free-floating annotations, and a loop's only Output is its
+      // fixed `Result`; never fold either into a loop container.
+      if (
+        dragged.data.kind === 'iteration' ||
+        dragged.data.kind === 'note' ||
+        dragged.data.kind === 'output'
+      )
         return
       // Already inside a loop — `extent: 'parent'` keeps it there, nothing to do.
       if (dragged.parentId) return

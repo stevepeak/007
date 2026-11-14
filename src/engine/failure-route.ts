@@ -46,6 +46,28 @@ export const FAILURE_ROUTE_LABELS: Record<FailureRoute, string> = {
   cancelled: 'Cancelled',
 }
 
+/**
+ * The catch-all handler edge: it fires for every route. It is an edge
+ * condition only, never a classification — a failure's `route` is always one
+ * of {@link FAILURE_ROUTES}.
+ */
+export const ANY_FAILURE_ROUTE = 'any' as const
+
+/** What an `on-failure` edge may name: one route, or every route. */
+export const FAILURE_HANDLER_ROUTES = [...FAILURE_ROUTES, ANY_FAILURE_ROUTE] as const
+export type FailureHandlerRoute = (typeof FAILURE_HANDLER_ROUTES)[number]
+
+export function isFailureHandlerRoute(
+  value: unknown,
+): value is FailureHandlerRoute {
+  return value === ANY_FAILURE_ROUTE || isFailureRoute(value)
+}
+
+export const FAILURE_HANDLER_ROUTE_LABELS: Record<FailureHandlerRoute, string> = {
+  ...FAILURE_ROUTE_LABELS,
+  any: 'Any failure',
+}
+
 /** Who asked for a run to stop. `id` is the host principal, opaque to the SDK. */
 export type CancelledBy = { kind: 'user' | 'system'; id?: string }
 

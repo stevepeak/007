@@ -274,8 +274,8 @@ export function applyPatchOp(graph: WorkflowGraph, op: PatchOp): Applied {
       if (!kind || seed == null) {
         throw new Error(
           `${op.op}: \`kind\` must be one of ${ADDABLE_KINDS.join(', ')}${
-            kind === 'trigger' || kind === 'output'
-              ? ` — a ${kind} node is a bookend seeded with the graph and cannot be added`
+            kind === 'trigger'
+              ? ' — the trigger is a bookend seeded with the graph and cannot be added'
               : ''
           }.`,
         )
@@ -291,6 +291,11 @@ export function applyPatchOp(graph: WorkflowGraph, op: PatchOp): Applied {
         if (owner.kind !== 'iteration') {
           throw new Error(
             `${op.op}: \`subgraphOf\` must name an iteration node; ${subgraphOf} is a ${owner.kind} node.`,
+          )
+        }
+        if (kind === 'output') {
+          throw new Error(
+            `${op.op}: an iteration's subgraph has exactly one Output, its fixed \`Result\` — add the Output at the top level.`,
           )
         }
         target = owner.config.subgraph

@@ -1,4 +1,11 @@
-import { FAILURE_ROUTES, isFailureRoute, type FailureRoute } from './failure-route'
+import {
+  ANY_FAILURE_ROUTE,
+  FAILURE_HANDLER_ROUTES,
+  FAILURE_ROUTES,
+  isFailureHandlerRoute,
+  isFailureRoute,
+  type FailureRoute,
+} from './failure-route'
 import { buildAdjacency } from './graph-adjacency'
 import { nodeRefs } from './graph-bindings'
 import {
@@ -43,16 +50,19 @@ export function failureHandlerNodeIds(
   return seen
 }
 
-/** The routes the handler has an arm for — a route with none spawns nothing. */
+/**
+ * The routes the handler has an arm for — a route with none spawns nothing. An
+ * `any` edge is an arm for every route.
+ */
 export function failureHandlerRoutes(
   graph: WorkflowGraph,
   handlerId: string,
 ): Set<FailureRoute> {
   const routes = new Set<FailureRoute>()
   for (const e of graph.edges) {
-    if (e.source === handlerId && isFailureRoute(e.condition)) {
-      routes.add(e.condition)
-    }
+    if (e.source !== handlerId) continue
+    if (e.condition === ANY_FAILURE_ROUTE) return new Set(FAILURE_ROUTES)
+    if (isFailureRoute(e.condition)) routes.add(e.condition)
   }
   return routes
 }
@@ -73,9 +83,9 @@ export function failureHandlerProblems(graph: WorkflowGraph): string[] {
   for (const e of graph.edges) {
     if (e.target === handler.id) {
       problems.push(`On Failure node ${handler.id} cannot have incoming edges (edge ${e.id}).`)
-    } else if (e.source === handler.id && !isFailureRoute(e.condition)) {
+    } else if (e.source === handler.id && !isFailureHandlerRoute(e.condition)) {
       problems.push(
-        `On Failure node ${handler.id} edge ${e.id} must name a failure route (${FAILURE_ROUTES.join(', ')}), not '${e.condition ?? 'null'}'.`,
+        `On Failure node ${handler.id} edge ${e.id} must name a failure route (${FAILURE_HANDLER_ROUTES.join(', ')}), not '${e.condition ?? 'null'}'.`,
       )
     } else if (inside.has(e.target) && !inside.has(e.source)) {
       // Joining the handler to the main graph would make a handler node wait on
@@ -86,9 +96,6 @@ export function failureHandlerProblems(graph: WorkflowGraph): string[] {
     }
   }
   for (const n of graph.nodes) {
-    if (inside.has(n.id) && n.kind === 'output') {
-      problems.push(`Output node ${n.id} is inside the On Failure handler; a handler has no answer.`)
-    }
     for (const { slot, ref } of nodeRefs(n)) {
       if (inside.has(n.id) === inside.has(ref.nodeId)) continue
       problems.push(
@@ -110,7 +117,9 @@ export function failureHandlerProblems(graph: WorkflowGraph): string[] {
  * Pruning to what the route reaches, rather than keeping the whole handler, is
  * what makes fanning several routes into one node work: a cleanup node wired
  * from both `timeout` and `cancelled` keeps one live edge, instead of waiting
- * forever on the one that did not fire.
+ * forever on the one that did not fire. An `any` edge fires with every route;
+ * where it and the fired route both reach one node, that node keeps a single
+ * live edge from the handler.
  */
 export function failureHandlerGraphOf(
   graphJson: unknown,
@@ -124,8 +133,13 @@ export function failureHandlerGraphOf(
       `On Failure node ${nodeId} is not in this workflow version — its handler cannot be run.`,
     )
   }
+  const armTargets = new Set<string>()
   const liveEdges = graph.edges.filter((e) => {
-    return e.source !== nodeId || e.condition === route
+    if (e.source !== nodeId) return true
+    if (e.condition !== route && e.condition !== ANY_FAILURE_ROUTE) return false
+    if (armTargets.has(e.target)) return false
+    armTargets.add(e.target)
+    return true
   })
   const reached = failureHandlerNodeIds(
     { ...graph, edges: liveEdges },

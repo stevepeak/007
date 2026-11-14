@@ -260,13 +260,18 @@ export {
   toStrictJsonSchema,
 } from './strict-schema'
 export {
+  ANY_FAILURE_ROUTE,
   classifyFailure,
+  FAILURE_HANDLER_ROUTE_LABELS,
+  FAILURE_HANDLER_ROUTES,
   FAILURE_ROUTE_LABELS,
   FAILURE_ROUTES,
+  isFailureHandlerRoute,
   isFailureRoute,
   RunCancelledError,
   tagFailure,
   type CancelledBy,
+  type FailureHandlerRoute,
   type FailureRoute,
   type RunFailurePayload,
 } from './failure-route'

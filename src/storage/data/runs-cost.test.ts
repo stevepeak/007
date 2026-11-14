@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 
+import { RUN_FAILURE_TRIGGER_KIND } from '../../engine/trigger-registry'
 import type { WfDb } from '../client'
 import { freshDb } from '../db-test-helpers'
 import { wfRun, wfSchema, wfModel } from '../schema'
@@ -12,7 +13,11 @@ import {
   loadRunPriceTable,
   priceMapFromTable,
 } from './runs-cost'
-import { getRunStatus, getRunStatuses } from './runs-inspector'
+import {
+  getFailureHandlerRun,
+  getRunStatus,
+  getRunStatuses,
+} from './runs-inspector'
 
 async function addModel(db: WfDb, id: string, modelId: string, price: number) {
   await db.insert(wfModel).values({
@@ -131,6 +136,33 @@ describe('getRunStatus', () => {
 
   test('returns null for an unknown run id', async () => {
     expect(await getRunStatus(db, 'nope')).toBeNull()
+  })
+})
+
+describe('getFailureHandlerRun', () => {
+  test('finds the run_failure child of a failed run, not its other children', async () => {
+    const db = freshDb()
+    await db.insert(wfRun).values([
+      { id: 'run-f', workflowVersionId: 'ver-1', triggerKind: 'chat', status: 'failed', error: 'boom' },
+      { id: 'callee', workflowVersionId: 'ver-1', triggerKind: 'chat', status: 'completed', parentRunId: 'run-f' },
+      {
+        id: 'handler',
+        workflowVersionId: 'ver-1',
+        triggerKind: RUN_FAILURE_TRIGGER_KIND,
+        status: 'done',
+        output: { text: 'sorry' },
+        parentRunId: 'run-f',
+      },
+    ])
+
+    const h = await getFailureHandlerRun(db, 'run-f')
+    expect(h?.id).toBe('handler')
+    expect(h?.status).toBe('done')
+    expect(h?.output).toEqual({ text: 'sorry' })
+  })
+
+  test('null when the failed run spawned no handler', async () => {
+    expect(await getFailureHandlerRun(freshDb(), 'run-x')).toBeNull()
   })
 })
 

@@ -662,49 +662,21 @@ export function makeGraphWorkflow<
         // hold one) or for a handler run (no handler for the handler).
         const runsFailureHandler =
           !p.subRun?.iterationNodeId && !p.failureHandler
-        const outcome = await stepDo(step, 'record-failure', async () => {
-          const db = createWfDb(env.WF_DB)
-          const cancel = await getRunCancelRequest(db, p.workflowRunId)
-          if (cancel) {
-            await markRunCancelled(db, { runId: p.workflowRunId, error: message })
-          } else {
-            await failRun(db, { runId: p.workflowRunId, error: message })
-          }
-          // The last step this run is guaranteed to reach. Up to three more MAY
-          // follow, and whether they do is already decided — so count them here
-          // rather than under-report the billing line on every failure.
-          emitRunPoint(ctx, {
-            status: 'failed',
-            error: message,
-            extraSteps:
-              (p.subRun ? 1 : 0) +
-              (config.onRunFailed ? 1 : 0) +
-              (runsFailureHandler ? 1 : 0),
-          })
+        // The route first, then the handler, then the failure itself: the
+        // handler run exists BEFORE the run reads `failed`, so a waiter that
+        // sees `failed` can already tell whether a fallback answer is coming
+        // (`getFailureHandlerRun`).
+        const outcome = await stepDo(step, 'failure-route', async () => {
+          const cancel = await getRunCancelRequest(
+            createWfDb(env.WF_DB),
+            p.workflowRunId,
+          )
           const route: FailureRoute = cancel ? 'cancelled' : thrownRoute
           const cancelledBy: CancelledBy | undefined = cancel?.by
           return { route, cancelledBy }
         })
         // An instance journaled before the route existed returns nothing here.
         const route = outcome?.route ?? thrownRoute
-        // Wake the parent BEFORE the host callback and before rethrowing: a
-        // spawned callee that dies silently leaves its parent parked until the
-        // node's timeout, turning a legible failure into a long stall.
-        await reportToParent(ctx, { ok: false, error: message })
-        if (config.onRunFailed) {
-          await notifyHost(
-            step,
-            'on-failed',
-            () => {
-              return config.onRunFailed!(runContextFor(p, env), {
-                error: message,
-                workflowRunId: p.workflowRunId,
-                route,
-              })
-            },
-            logger,
-          )
-        }
         if (runsFailureHandler) {
           await notifyHost(
             step,
@@ -725,6 +697,43 @@ export function makeGraphWorkflow<
                   cancelledBy: outcome?.cancelledBy,
                   input: validatedTriggerInput,
                 },
+              })
+            },
+            logger,
+          )
+        }
+        await stepDo(step, 'record-failure', async () => {
+          const db = createWfDb(env.WF_DB)
+          if (route === 'cancelled') {
+            await markRunCancelled(db, { runId: p.workflowRunId, error: message })
+          } else {
+            await failRun(db, { runId: p.workflowRunId, error: message })
+          }
+          // Counts the optional steps around this one (the handler spawn, the
+          // parent report, the host callback), whether they are already decided,
+          // so the billing line isn't under-reported on every failure.
+          emitRunPoint(ctx, {
+            status: 'failed',
+            error: message,
+            extraSteps:
+              (p.subRun ? 1 : 0) +
+              (config.onRunFailed ? 1 : 0) +
+              (runsFailureHandler ? 1 : 0),
+          })
+        })
+        // Wake the parent BEFORE the host callback and before rethrowing: a
+        // spawned callee that dies silently leaves its parent parked until the
+        // node's timeout, turning a legible failure into a long stall.
+        await reportToParent(ctx, { ok: false, error: message })
+        if (config.onRunFailed) {
+          await notifyHost(
+            step,
+            'on-failed',
+            () => {
+              return config.onRunFailed!(runContextFor(p, env), {
+                error: message,
+                workflowRunId: p.workflowRunId,
+                route,
               })
             },
             logger,

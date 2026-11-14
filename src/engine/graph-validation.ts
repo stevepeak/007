@@ -42,7 +42,8 @@ function checkGraphShape(g: GraphShape, ctx: GraphCheckCtx): void {
       message: `Graph must have exactly one trigger node (found ${facts.triggerCount}).`,
     })
   }
-  // A failure handler run has no answer to give: it ends when its arms do.
+  // A failure handler run needs no Output: it ends when its arms do. One it has
+  // is the failed run's fallback answer (see `getFailureHandlerRun`).
   const isFailureHandlerRun = g.nodes.some((n) => {
     return (
       n.kind === 'trigger' && n.config.triggerKind === RUN_FAILURE_TRIGGER_KIND

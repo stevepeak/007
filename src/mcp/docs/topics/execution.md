@@ -77,6 +77,7 @@ When several nodes are ready together, they all start in the same tick. Order ma
 - **Cancel** (`cancel_run`) is cooperative and works the same way: no new node starts, the running ones land, and the run settles `cancelled`. Its child runs are cancelled with it. A single long node (an agent mid-generation) finishes before the run stops.
 - After a run fails or is cancelled before its answer, its [[nodes/on-failure]] arm for that failure's route (if wired) runs as a child run.
 - A node that fails **after** the answer cannot retract it. The run keeps its answer, records a drain error, and stops starting new work while running siblings finish. The failed step is in the trace.
+- An Output with `config.stopRun: true` skips the drain: once it delivers, no further node starts, and the run settles `completed` when the nodes already running land. Use it when a branch's own answer means the other arms must not act (a second escalation, say). See [[nodes/output]].
 - Anything waiting on "the answer" must accept `done`, not only `completed`.
 
 ## Per-node `execution` policy

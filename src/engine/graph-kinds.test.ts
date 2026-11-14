@@ -75,11 +75,11 @@ describe('NODE_KIND_REGISTRY', () => {
     }
   })
 
-  it('leaves exactly the template-owned bookends out of the palette', () => {
+  it('leaves exactly the template-owned trigger out of the palette', () => {
     const unaddable = WF_NODE_KINDS.filter(
       (kind) => !NODE_KIND_REGISTRY[kind].palette,
     )
-    expect(unaddable).toEqual(['trigger', 'output'])
+    expect(unaddable).toEqual(['trigger'])
   })
 })
 

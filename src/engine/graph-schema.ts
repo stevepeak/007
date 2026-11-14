@@ -701,8 +701,15 @@ const outputNodeSchema = baseNode.extend({
   // parsing. The incoming edge is retained purely for readiness/routing: it gates
   // WHEN the Output fires (so one Output per branch arm still works; the scheduler
   // picks the live arm), while `source` names the VALUE. Multiple Outputs in one
-  // graph remain legal.
-  config: z.object({ source: refBindingSchema.optional() }).default({}),
+  // graph remain legal. `stopRun` ends the walk when this Output delivers: no
+  // further node starts, so arms that don't feed it are dropped rather than
+  // drained (nodes already running still finish — they can't be cancelled).
+  config: z
+    .object({
+      source: refBindingSchema.optional(),
+      stopRun: z.boolean().optional(),
+    })
+    .default({}),
 })
 
 // An Iteration node fans out over a list: it runs its embedded `subgraph` once

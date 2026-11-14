@@ -11,6 +11,7 @@ import {
 
 import { stepCost } from '../../engine/cost'
 import type { WorkflowGraph } from '../../engine/graph'
+import { RUN_FAILURE_TRIGGER_KIND } from '../../engine/trigger-registry'
 import type { WfDb } from '../client'
 import {
   TOP_LEVEL_ITEM_INDEX,
@@ -49,6 +50,33 @@ export async function getRunStatus(db: WfDb, runId: string) {
       })
       .from(wfRun)
       .where(eq(wfRun.id, runId))
+      .limit(1)
+  )[0]
+  return row ?? null
+}
+
+/**
+ * The failure-handler run a failed run spawned, in {@link getRunStatus}'s shape,
+ * or null when it spawned none. The handler is created BEFORE its run is marked
+ * failed, so a waiter that sees `failed` and no handler here knows none is
+ * coming; a handler that reaches an Output carries the run's fallback answer.
+ */
+export async function getFailureHandlerRun(db: WfDb, failedRunId: string) {
+  const row = (
+    await db
+      .select({
+        id: wfRun.id,
+        status: wfRun.status,
+        output: wfRun.output,
+        error: wfRun.error,
+      })
+      .from(wfRun)
+      .where(
+        and(
+          eq(wfRun.parentRunId, failedRunId),
+          eq(wfRun.triggerKind, RUN_FAILURE_TRIGGER_KIND),
+        ),
+      )
       .limit(1)
   )[0]
   return row ?? null

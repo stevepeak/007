@@ -266,3 +266,66 @@ describe('executor — draining branches the Output does not feed', () => {
     )
   })
 })
+
+/**
+ * trigger → answer → Output
+ *           answer → side   (ready the same instant the Output becomes reachable)
+ *
+ * Deterministic for `stopRun`: the walk settles the Output before it dispatches
+ * anything that became ready alongside it.
+ */
+function stopGraph(stopRun: boolean) {
+  const g = graph(null)
+  return {
+    ...g,
+    nodes: [
+      ...g.nodes.map((n) => {
+        return n.kind === 'output'
+          ? { ...n, config: { ...n.config, stopRun } }
+          : n
+      }),
+      {
+        id: 'side',
+        kind: 'tool',
+        label: 'Side',
+        position: { x: 400, y: 200 },
+        config: { toolId: 'side', args: {} },
+      },
+    ],
+    edges: [
+      ...g.edges,
+      { id: 'e5', source: 'answer', target: 'side', condition: null },
+    ],
+  }
+}
+
+describe('executor — an Output with stopRun', () => {
+  test('starts nothing after it delivers', async () => {
+    const timeline: string[] = []
+    const recorder = createMemoryRunRecorder()
+    const result = await executeWorkflow({
+      graph: stopGraph(true),
+      triggerInput: { n: 1 },
+      config: makeConfig(timeline),
+      runContext: { subjectId: 'acme', triggerKind: 'go' },
+      recorder,
+    })
+
+    expect(result.output).toEqual({ text: 'hi' })
+    expect(timeline).toEqual(['answer'])
+    expect(recorder.steps.find((s) => s.nodeId === 'side')).toBeUndefined()
+  })
+
+  test('off by default: the same arm drains', async () => {
+    const timeline: string[] = []
+    await executeWorkflow({
+      graph: stopGraph(false),
+      triggerInput: { n: 1 },
+      config: makeConfig(timeline),
+      runContext: { subjectId: 'acme', triggerKind: 'go' },
+      recorder: createMemoryRunRecorder(),
+    })
+
+    expect(timeline).toEqual(['answer', 'side'])
+  })
+})
