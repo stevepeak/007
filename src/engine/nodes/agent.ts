@@ -14,6 +14,8 @@ import type { StreamSink } from '../stream-sink'
 import { buildAgentToolSet, type ToolRegistry } from '../tool-registry'
 
 import {
+  attachPartialMeta,
+  partialMetaOf,
   runAgentGeneration,
   stepAgentVersion,
   type AgentNodeResult,
@@ -315,32 +317,38 @@ export async function executeAgentNode<TDeps>(
         })
       : undefined
 
-  const result = await runAgentConfig({
-    config,
-    modelId,
-    reasoning: agentOverride?.reasoning ?? config.reasoning,
-    promptTemplate,
-    vars,
-    messages,
-    contextLength,
-    stream: { reasoning: streamReasoning, toolCalls: streamToolCalls },
-    label: `Agent ${node.id}`,
-    extraTools: delegation,
-    ctx: { ...deps, referenceKinds },
-  })
   // Stamp WHICH agent this was onto the recorded meta. Generation only knows a
   // prompt and a model; without this, a step can only be traced back to an agent
   // through its workflow version's graph — which the agent editor's "recent
-  // calls" would otherwise have to reverse-engineer for every run.
-  return {
-    ...result,
-    meta: {
-      ...result.meta,
-      agentId: node.config.agentId,
-      // Absent when a draft ran against an agent with no published version —
-      // the field is optional precisely so "no version" stays distinguishable
-      // from "version 0".
-      agentVersion: versionNumber ?? undefined,
-    },
+  // calls" would otherwise have to reverse-engineer for every run. A failed
+  // generation's partial meta gets the same stamp.
+  const stamp = {
+    agentId: node.config.agentId,
+    // Absent when a draft ran against an agent with no published version —
+    // the field is optional precisely so "no version" stays distinguishable
+    // from "version 0".
+    agentVersion: versionNumber ?? undefined,
   }
+  let result: AgentNodeResult
+  try {
+    result = await runAgentConfig({
+      config,
+      modelId,
+      reasoning: agentOverride?.reasoning ?? config.reasoning,
+      promptTemplate,
+      vars,
+      messages,
+      contextLength,
+      stream: { reasoning: streamReasoning, toolCalls: streamToolCalls },
+      label: `Agent ${node.id}`,
+      extraTools: delegation,
+      ctx: { ...deps, referenceKinds },
+    })
+  } catch (err) {
+    const partial = partialMetaOf(err)
+    throw partial && typeof partial === 'object'
+      ? attachPartialMeta(err, { ...partial, ...stamp })
+      : err
+  }
+  return { ...result, meta: { ...result.meta, ...stamp } }
 }

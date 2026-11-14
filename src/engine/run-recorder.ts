@@ -1,5 +1,6 @@
 import { errorStored } from './error-detail'
 import type { WfNodeKind } from './graph'
+import { partialMetaOf } from './nodes/agent-generation-guard'
 
 // The recorder is the engine's only persistence seam. The engine calls
 // `record` once per node (after it completes or fails); implementations decide
@@ -72,7 +73,9 @@ export type StepOutcome =
       }
     }
   | { ok: false; error: unknown }
-  | { ok: false; stored: string }
+  // `meta` is what the live error carried (see `partialMetaOf`), read before
+  // the crossing that dropped it.
+  | { ok: false; stored: string; meta?: unknown }
 
 /**
  * The terminal row for one step — every backend and nested runner (iteration
@@ -105,9 +108,12 @@ export function stepRowFor(args: {
       branchResult: recordedBranchResult(outcome.result),
     }
   }
+  // A failed agent keeps the trace it built before it threw — the turns that
+  // led to the failure are what explain it.
   return {
     ...base,
     status: 'failed',
+    meta: 'stored' in outcome ? outcome.meta : partialMetaOf(outcome.error),
     error: 'stored' in outcome ? outcome.stored : errorStored(outcome.error),
   }
 }

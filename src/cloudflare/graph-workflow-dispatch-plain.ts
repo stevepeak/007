@@ -8,7 +8,10 @@ import {
 import { classifyFailure } from '../engine/failure-route'
 import { modelBudgetFor } from '../engine/model-budget'
 import { emitNodeStartProgress } from '../engine/node-progress'
-import { isFatalAgentError } from '../engine/nodes/agent-generation'
+import {
+  isFatalAgentError,
+  partialMetaOf,
+} from '../engine/nodes/agent-generation'
 import { buildRunNodeContext, runNode } from '../engine/run-node'
 import type { ExecutableNode } from '../engine/scheduler'
 import type { RunLogEntry, StreamSink } from '../engine/stream-sink'
@@ -82,7 +85,12 @@ async function runNodeBody<T>(
     return await body()
   } catch (err) {
     const feed = errorFeedLine(err)
-    onFailure({ stored: errorStored(err), feed, route: classifyFailure(err) })
+    onFailure({
+      stored: errorStored(err),
+      feed,
+      route: classifyFailure(err),
+      meta: partialMetaOf(err),
+    })
     const detail = apiErrorDetail(err)
     // A node that burned its ENTIRE budget — or ran its whole loop without
     // writing an answer — is not worth retrying: the retry repeats the same

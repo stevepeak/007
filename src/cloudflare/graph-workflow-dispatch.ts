@@ -125,6 +125,7 @@ export async function dispatchNode<TDeps, E extends GraphWorkflowEnv>(
     await recordTerminal(ctx, node, seq, input, startEntry, {
       status: 'failed',
       error: failure.stored,
+      meta: failure.meta,
       feed: failure.feed,
       bodyLogs,
     })

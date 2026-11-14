@@ -187,6 +187,8 @@ export async function recordTerminal<TDeps, E extends GraphWorkflowEnv>(
     | {
         status: 'failed'
         error: string
+        /** The failed node's partial trace, captured off the live error. */
+        meta?: unknown
         feed?: string
         /** Entries the node emitted before it threw — persisted so a failed
          * node still shows the work it did get through. */
@@ -211,7 +213,7 @@ export async function recordTerminal<TDeps, E extends GraphWorkflowEnv>(
           node,
           sequence: seq,
           input,
-          outcome: { ok: false, stored: outcome.error },
+          outcome: { ok: false, stored: outcome.error, meta: outcome.meta },
         }),
       )
       await persistLogs(

@@ -8,7 +8,9 @@ order: 92
 
 1. **Find it.** `list_runs` — newest first. Filter by `status`, `workflowId`, `triggerKind`, `workflowVersionId` ("did failures stop after v7?"), `since` / `until` (epoch ms), or `search` (matches workflow name, trigger kind, subject, correlation id and the run's note). Page with `limit` / `offset`. A pasted run URL or a feedback row's `runId` skips this step.
 2. **Overview.** `get_run({ runId })` — the run summary (status, error, cost, tokens, workflow), `versionNumber` / `workflowVersionId` it ran, the log feed, every step, and `children` when it called other workflows.
-3. **Drill in.** `get_run_step({ runId, cursor })` — one step with `input`, `output` and `meta` essentially whole (up to ~60k characters each). `meta` holds an agent step's full system and user prompt, its reasoning, every tool call's arguments and result, and the agent version that actually ran.
+3. **Drill in.** `get_run_step({ runId, cursor })` — one step with `input`, `output` and `meta` essentially whole (up to ~60k characters each). `meta` holds an agent step's full system and user prompt, its reasoning, every tool call's arguments and result, and the agent version that actually ran. Each turn also keeps `rawFinishReason` (what the provider sent, before normalization) and `providerMetadata` (the provider's own detail, such as refusal flags or reasoning-token counts).
+
+A **failed** agent step keeps the same `meta`, holding every turn it finished before it threw. To explain a failure like "produced no answer", read the last turn's `reasoning`, `text`, `rawFinishReason` and `providerMetadata`. Agent steps that failed before this was recorded have an empty `meta`.
 
 `get_run` does not include the graph — read it with `get_workflow`, or `get_workflow_version` for the exact version the run used.
 

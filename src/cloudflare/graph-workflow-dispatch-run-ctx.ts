@@ -97,4 +97,6 @@ export type CapturedFailure = {
   feed: string
   /** Classified here, where the live error still has its class and status. */
   route: FailureRoute
+  /** The partial trace a failed agent attached (see `partialMetaOf`). */
+  meta?: unknown
 }

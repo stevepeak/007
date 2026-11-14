@@ -12,11 +12,17 @@ import {
   mockUsage,
   type MockStreamPart,
 } from '../model-test-helpers'
+import { createMemoryRunRecorder, stepRowFor } from '../run-recorder'
 import type { StreamSink } from '../stream-sink'
 import type { ToolRegistry } from '../tool-registry'
 
 import { executeAgentNode } from './agent'
-import { AGENT_NO_OUTPUT, isFatalAgentError } from './agent-generation'
+import {
+  AGENT_NO_OUTPUT,
+  isFatalAgentError,
+  partialMetaOf,
+  type AgentNodeMeta,
+} from './agent-generation'
 
 // A text agent MUST come back with text. The failure this guards against isn't
 // hypothetical: a model that spends every turn calling tools hits `maxTurns`
@@ -423,5 +429,71 @@ describe('agent node — re-issues a stream cut off before anything happened', (
       'stream closed before the provider sent a finish reason',
     )
     expect(isFatalAgentError(err)).toBe(false)
+  })
+})
+
+// A failed step is only explicable if it keeps what the agent did before it
+// failed. The no-answer throw carries the trace built so far, stamped like a
+// successful step's, and the recorder stores it on the failed row.
+describe('agent node — a failed step keeps its trace', () => {
+  test('an empty stop after a tool turn records both turns, reasoning included', async () => {
+    let call = 0
+    const model = new MockLanguageModelV3({
+      doGenerate: async () => {
+        call++
+        if (call === 1) {
+          return {
+            content: [
+              { type: 'reasoning' as const, text: 'I should look it up.' },
+              {
+                type: 'tool-call' as const,
+                toolCallId: 'c1',
+                toolName: 'lookup',
+                input: JSON.stringify({ q: 'x' }),
+              },
+            ],
+            finishReason: mockFinish('tool-calls'),
+            usage: mockUsage(10, 2),
+            warnings: [],
+          }
+        }
+        return {
+          content: [
+            { type: 'reasoning' as const, text: 'Better not answer this.' },
+          ],
+          finishReason: { unified: 'stop' as const, raw: 'end_turn' },
+          usage: mockUsage(20, 3),
+          providerMetadata: { mock: { refusal: true } },
+          warnings: [],
+        }
+      },
+    })
+
+    const err = await run(model, 10).catch((e: unknown) => e)
+    expect((err as Error).message).toContain('produced no answer')
+
+    const meta = partialMetaOf(err) as AgentNodeMeta
+    expect(meta.agentId).toBe('bot')
+    expect(meta.agentVersion).toBe(1)
+    expect(meta.totalUsage).toEqual({ inputTokens: 30, outputTokens: 5 })
+    expect(meta.steps).toHaveLength(2)
+    expect(meta.steps[0].toolCalls[0].toolName).toBe('lookup')
+    expect(meta.steps[1].reasoning).toBe('Better not answer this.')
+    expect(meta.steps[1].rawFinishReason).toBe('end_turn')
+    expect(meta.steps[1].providerMetadata).toEqual({ mock: { refusal: true } })
+    // Not an own enumerable key: an error serializer never dumps the trace.
+    expect(Object.keys(err as object)).not.toContain('wfPartialMeta')
+
+    const recorder = createMemoryRunRecorder()
+    await recorder.record(
+      stepRowFor({
+        node: { id: 'agent', kind: 'agent' },
+        sequence: 0,
+        input: {},
+        outcome: { ok: false, error: err },
+      }),
+    )
+    expect(recorder.steps[0].status).toBe('failed')
+    expect(recorder.steps[0].meta).toBe(meta)
   })
 })

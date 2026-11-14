@@ -17,6 +17,7 @@ import {
 import type { DriveArgs, LoopOutcome } from './agent-generation-drive'
 import {
   armTotalBudget,
+  attachPartialMeta,
   logModelCallEnd,
   logModelCallStart,
   markNoOutput,
@@ -60,8 +61,10 @@ import {
 // one file and these are the symbols it published.
 export {
   AGENT_NO_OUTPUT,
+  attachPartialMeta,
   isFatalAgentError,
   isTotalBudgetOverrun,
+  partialMetaOf,
   TOTAL_BUDGET_OVERRUN,
 } from './agent-generation-guard'
 export { stepAgentVersion } from './agent-generation-types'
@@ -183,30 +186,7 @@ async function runToolLoop(
   }
 
   let state = createLoopState({ streamToolCalls, toolStatusLabels, sink })
-  const result = await runGuarded(sink, modelId, startedAt, guard, async () => {
-    const first = await attempt(state)
-    if (!closedBeforeAnything(first, state)) return first
-    // The connection was cut before the model did anything a reader saw or a
-    // tool acted on, so the same request can go out again in place. Once only:
-    // a second cut is reported as the cutoff it is.
-    void sink?.log?.({
-      level: 'warn',
-      message: `↻ ${modelId} stream closed before a finish reason; re-issuing once`,
-    })
-    state = createLoopState({ streamToolCalls, toolStatusLabels, sink })
-    return await attempt(state)
-  })
-  logModelCallEnd(sink, modelId, startedAt, {
-    finishReason: result.finishReason,
-    steps: state.stepTraces.length,
-    ...state.totalUsage,
-  })
-
-  if (result.text.trim() === '') {
-    throwForEmptyAnswer(result, state, maxTurns)
-  }
-
-  const meta: AgentNodeMeta = {
+  const metaSoFar = (): AgentNodeMeta => ({
     model: modelId,
     systemPrompt,
     messages: recordedMessages(messages),
@@ -215,21 +195,57 @@ async function runToolLoop(
     ...(contextLength != null ? { contextLength } : {}),
     ...(state.stoppedOnTokenBudget ? { stoppedOnTokenBudget: true } : {}),
     ...(state.stoppedOnContextLimit ? { stoppedOnContextLimit: true } : {}),
-  }
-  if (schema) {
-    // Either the answering turn's parsed text or the transcript call's object.
-    // The one way to get here without one is a failed final round-trip that still
-    // carried text — which a text agent returns as its answer, but a structured
-    // one has nothing to shape.
-    if (result.object === undefined) {
-      throw new Error(
-        `Agent's model call failed after ${state.stepTraces.length} of ${maxTurns} turns ` +
-          `(finish reason: ${result.finishReason}) before it produced the structured result.`,
-      )
+  })
+  // Every throw below leaves carrying the trace built so far, so a failed step
+  // records the turns that led to the failure, as a successful one does.
+  try {
+    const result = await runGuarded(
+      sink,
+      modelId,
+      startedAt,
+      guard,
+      async () => {
+        const first = await attempt(state)
+        if (!closedBeforeAnything(first, state)) return first
+        // The connection was cut before the model did anything a reader saw or
+        // a tool acted on, so the same request can go out again in place. Once
+        // only: a second cut is reported as the cutoff it is.
+        void sink?.log?.({
+          level: 'warn',
+          message: `↻ ${modelId} stream closed before a finish reason; re-issuing once`,
+        })
+        state = createLoopState({ streamToolCalls, toolStatusLabels, sink })
+        return await attempt(state)
+      },
+    )
+    logModelCallEnd(sink, modelId, startedAt, {
+      finishReason: result.finishReason,
+      steps: state.stepTraces.length,
+      ...state.totalUsage,
+    })
+
+    if (result.text.trim() === '') {
+      throwForEmptyAnswer(result, state, maxTurns)
     }
-    return structuredResult(output, result.object, meta)
+
+    const meta = metaSoFar()
+    if (schema) {
+      // Either the answering turn's parsed text or the transcript call's
+      // object. The one way to get here without one is a failed final
+      // round-trip that still carried text — which a text agent returns as its
+      // answer, but a structured one has nothing to shape.
+      if (result.object === undefined) {
+        throw new Error(
+          `Agent's model call failed after ${state.stepTraces.length} of ${maxTurns} turns ` +
+            `(finish reason: ${result.finishReason}) before it produced the structured result.`,
+        )
+      }
+      return structuredResult(output, result.object, meta)
+    }
+    return { output: { text: result.text }, meta }
+  } catch (err) {
+    throw attachPartialMeta(err, metaSoFar())
   }
-  return { output: { text: result.text }, meta }
 }
 
 /**

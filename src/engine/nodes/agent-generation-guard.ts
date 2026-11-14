@@ -69,6 +69,31 @@ export function markNoOutput(err: Error): Error {
   return err
 }
 
+/** Carries the trace a generation built before it threw, so the failed step
+ * records the turns that led to the failure rather than an empty `meta`. */
+export const PARTIAL_META = 'wfPartialMeta'
+
+/** Attach `meta` to a thrown value. A non-object throw can't carry it.
+ * Non-enumerable, so an error serializer never dumps the whole trace. */
+export function attachPartialMeta(err: unknown, meta: unknown): unknown {
+  if (err != null && typeof err === 'object' && Object.isExtensible(err)) {
+    Object.defineProperty(err, PARTIAL_META, {
+      value: meta,
+      configurable: true,
+      writable: true,
+      enumerable: false,
+    })
+  }
+  return err
+}
+
+/** The trace {@link attachPartialMeta} put on an error, if any. Read it off the
+ * live error: an error rebuilt by `step.do` has lost it. */
+export function partialMetaOf(err: unknown): unknown {
+  if (err == null || typeof err !== 'object') return undefined
+  return (err as Record<string, unknown>)[PARTIAL_META]
+}
+
 /** True for an error raised because the agent spent its whole total budget. */
 export function isTotalBudgetOverrun(err: unknown): boolean {
   if (err == null || typeof err !== 'object') return false

@@ -291,6 +291,8 @@ export function createOnStepFinish(
     state.stepTraces.push({
       stepNumber: step.stepNumber,
       finishReason: step.finishReason,
+      rawFinishReason: step.rawFinishReason,
+      providerMetadata: step.providerMetadata,
       reasoning: step.reasoningText,
       text: step.text,
       toolCalls,

@@ -106,6 +106,17 @@ export type AgentNodeMeta = {
     {
       stepNumber: number
       finishReason?: string
+      /**
+       * The finish reason exactly as the provider sent it, before the AI SDK
+       * normalized it into `finishReason`. Absent when the provider sent none,
+       * and on steps recorded before it was kept.
+       */
+      rawFinishReason?: string
+      /**
+       * The provider's own per-turn detail (refusal flags, reasoning-token
+       * counts and the like), keyed by provider. Absent when it sent none.
+       */
+      providerMetadata?: Record<string, unknown>
       /** The model's internal reasoning for this step, if it emitted any. */
       reasoning?: string
       /** The assistant's generated output text for this step. */
