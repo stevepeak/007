@@ -151,3 +151,52 @@ describe('token grants use the discovered server', () => {
     expect(row!.accountLabel).toBe('Zoë Ñúñez')
   })
 })
+
+describe('an authorization is bound to who started it', () => {
+  const tenant = { scope: 'tenant', id: 'brand-1' } as const
+
+  async function startAttempt(state: string) {
+    onExchange = async () => ({ access_token: 'a', token_type: 'Bearer' })
+    await createOauthState(db, {
+      state,
+      connectorId: 'acme',
+      codeVerifier: await encryptSecret('verifier', KEY),
+      redirectUri: 'https://host.example/callback',
+      tokenEndpoint: TOKEN_ENDPOINT,
+      issuer: AS_URL,
+      userId: 'u-1',
+      owner: tenant,
+      expiresAt: new Date(Date.now() + 60_000),
+    })
+  }
+
+  test("stores the credential under the attempt's owner", async () => {
+    await startAttempt('st-owner')
+    await completeAuthorization({
+      db,
+      secret: KEY,
+      state: 'st-owner',
+      code: 'c',
+      userId: 'u-1',
+    })
+    expect((await getConnection(db, 'acme', tenant))?.connectedBy).toBe('u-1')
+    // The workspace credential from the fixture is untouched.
+    expect((await getConnection(db, 'acme'))?.connectedBy).toBeNull()
+  })
+
+  // Otherwise an attacker could start a flow for their own tenant and have a
+  // victim's browser finish it, attaching the victim's account to it.
+  test('refuses to complete for a different user', async () => {
+    await startAttempt('st-other')
+    await expect(
+      completeAuthorization({
+        db,
+        secret: KEY,
+        state: 'st-other',
+        code: 'c',
+        userId: 'u-2',
+      }),
+    ).rejects.toThrow(/started by a different user/)
+    expect(await getConnection(db, 'acme', tenant)).toBeNull()
+  })
+})

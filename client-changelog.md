@@ -15,6 +15,34 @@ without you and is still probably wrong to skip.
 
 ---
 
+## 2026-11-15 — Connector credentials per tenant
+
+A connector (server, catalog, enabled tools) stays shared, but its credential
+can now belong to a tenant (or user) instead of the workspace, so one published
+agent acts for many tenants, each through its own account.
+
+- `WfSdkConfig.resolveConnectionOwner(runContext)` picks whose credential a run
+  uses. Return `{ scope: 'tenant', id }`; a tenant with no credential fails the
+  call naming it — there is no fallback to the workspace credential. Omit it
+  and everything uses the workspace credential, as before.
+- `@stevepeak/007/server` exports `listOwnerConnectors`, `ensureConnector`,
+  `startOwnerConnectorAuth`, `refreshConnectorCatalog` and
+  `disconnectOwnerConnector` for host routes. The SDK cannot know who belongs
+  to a tenant: check that before calling them.
+
+**Breaking:** the OAuth callback now completes a flow only for the user who
+started it, so `createWfConnectorCallback`'s `resolveContext` must return the
+same `userId` the data plane's `resolveContext` returned when the flow
+started. A host whose two `resolveContext`s already agree needs no change.
+
+**Breaking:** changing a connector's URL or auth kind drops every owner's
+credential, not just the workspace's.
+
+**Action:** apply migration `0044` (owner columns on
+`wf_connector_oauth_state`).
+
+---
+
 ## 2026-11-14 — `extract_text` and `create_document` are registered by default
 
 `defineWfConfig` from `@stevepeak/007` now adds the two built-ins to

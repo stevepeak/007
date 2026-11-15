@@ -1,5 +1,9 @@
 import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm'
 
+import {
+  WORKSPACE_CONNECTION_OWNER,
+  type WfConnectionOwner,
+} from '../../engine/connection-owner'
 import { connectorToolId } from '../../engine/connector-tool-id'
 import type { WfDb } from '../client'
 import {
@@ -9,7 +13,6 @@ import {
   wfConnectorConnection,
   wfConnectorOauthState,
   wfConnectorTool,
-  type WfConnectionOwnerScope,
   type WfConnectionStatus,
   type WfConnectorAuthKind,
   type WfConnectorTransport,
@@ -28,19 +31,23 @@ export type ConnectorRow = typeof wfConnector.$inferSelect
 export type ConnectorToolRow = typeof wfConnectorTool.$inferSelect
 export type ConnectorConnectionRow = typeof wfConnectorConnection.$inferSelect
 
-/** The owner of a connection. v1 only ever writes the workspace form. */
-export type ConnectionOwner = {
-  scope: WfConnectionOwnerScope
-  /** Host user id for `user` scope; ignored (and stored as `''`) otherwise. */
-  id?: string
-}
+/** The owner of a connection. See `engine/connection-owner.ts`. */
+export type ConnectionOwner = WfConnectionOwner
 
-export const WORKSPACE_OWNER: ConnectionOwner = { scope: 'workspace' }
+export const WORKSPACE_OWNER: ConnectionOwner = WORKSPACE_CONNECTION_OWNER
 
 function ownerId(owner: ConnectionOwner): string {
-  return owner.scope === 'workspace'
-    ? WF_CONNECTION_WORKSPACE_OWNER
-    : (owner.id ?? '')
+  return owner.scope === 'workspace' ? WF_CONNECTION_WORKSPACE_OWNER : owner.id
+}
+
+/** A stored `(scope, id)` pair back to an owner. */
+export function connectionOwnerOf(row: {
+  ownerScope: ConnectionOwner['scope']
+  ownerId: string
+}): ConnectionOwner {
+  return row.ownerScope === 'workspace'
+    ? WORKSPACE_OWNER
+    : { scope: row.ownerScope, id: row.ownerId }
 }
 
 // ---------------------------------------------------------------------------
@@ -490,11 +497,20 @@ export async function getConnection(
   return row ?? null
 }
 
-/** Every connection, for the list page's status column. */
+/** One owner's connections, for a list page's status column. */
 export async function listConnections(
   db: WfDb,
+  owner: ConnectionOwner = WORKSPACE_OWNER,
 ): Promise<ConnectorConnectionRow[]> {
-  return await db.select().from(wfConnectorConnection)
+  return await db
+    .select()
+    .from(wfConnectorConnection)
+    .where(
+      and(
+        eq(wfConnectorConnection.ownerScope, owner.scope),
+        eq(wfConnectorConnection.ownerId, ownerId(owner)),
+      ),
+    )
 }
 
 /**
@@ -585,6 +601,19 @@ export async function deleteConnection(
     )
 }
 
+/**
+ * Drop EVERY owner's credential for a connector — for when the server or auth
+ * scheme changes and no stored token is valid for it any more.
+ */
+export async function deleteAllConnections(
+  db: WfDb,
+  connectorId: string,
+): Promise<void> {
+  await db
+    .delete(wfConnectorConnection)
+    .where(eq(wfConnectorConnection.connectorId, connectorId))
+}
+
 // ---------------------------------------------------------------------------
 // Registered OAuth clients
 // ---------------------------------------------------------------------------
@@ -643,6 +672,7 @@ export type OauthStateInput = {
   scopes?: string | null
   returnTo?: string | null
   userId?: string | null
+  owner?: ConnectionOwner
   expiresAt: Date
 }
 
@@ -660,6 +690,8 @@ export async function createOauthState(
     scopes: input.scopes ?? null,
     returnTo: input.returnTo ?? null,
     userId: input.userId ?? null,
+    ownerScope: (input.owner ?? WORKSPACE_OWNER).scope,
+    ownerId: ownerId(input.owner ?? WORKSPACE_OWNER),
     expiresAt: input.expiresAt,
   })
 }

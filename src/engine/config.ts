@@ -1,6 +1,7 @@
 import type { LanguageModel } from 'ai'
 
 import type { WfBlobRef } from './blob-ref'
+import type { WfConnectionOwner } from './connection-owner'
 import {
   DECISION_QUESTION_TYPES,
   type Decider,
@@ -541,6 +542,21 @@ export interface WfSdkConfig<TDeps = unknown> {
    * management does not get token storage by default.
    */
   resolveConnectorSecret?: (ctx: { env?: unknown }) => string | undefined
+
+  /**
+   * Optional: whose connector credential this run uses.
+   *
+   * Read once per run, when connector tools join the registry. Return a
+   * `tenant` (or `user`) owner to make every connector call in the run use
+   * that owner's credential — and fail, naming the owner, when it has none.
+   * There is deliberately no fallback to the workspace credential: a run for
+   * one tenant must never act through another's account.
+   *
+   * Return `undefined` (or omit the hook) for the shared workspace credential.
+   * Keep it a pure function of the context: a durable run may call it again on
+   * replay.
+   */
+  resolveConnectionOwner?: (ctx: RunContext) => WfConnectionOwner | undefined
 
   /**
    * Optional: where per-step and per-run telemetry points go. Called once per

@@ -54,15 +54,14 @@ export const WF_CONNECTION_STATUSES = [
 export type WfConnectionStatus = (typeof WF_CONNECTION_STATUSES)[number]
 
 /**
- * Who a connection belongs to.
+ * Who a connection belongs to. See `engine/connection-owner.ts`.
  *
- * v1 only ever writes `workspace`: 007 has no tenant column, and runs are
- * frequently unattended (cron, ingest, evals), so a per-user token would make
- * "does this tool work" depend on who happened to trigger the run. The column
- * exists from day one so per-user connections are a later feature rather than a
- * later migration.
+ * The connectors page manages the `workspace` credential. A host that serves
+ * several tenants stores one credential per tenant and picks it per run with
+ * `WfSdkConfig.resolveConnectionOwner` — never from who happened to trigger
+ * the run, which would make "does this tool work" depend on that.
  */
-export const WF_CONNECTION_OWNER_SCOPES = ['workspace', 'user'] as const
+export const WF_CONNECTION_OWNER_SCOPES = ['workspace', 'user', 'tenant'] as const
 export type WfConnectionOwnerScope =
   (typeof WF_CONNECTION_OWNER_SCOPES)[number]
 
@@ -271,8 +270,19 @@ export const wfConnectorOauthState = sqliteTable('wf_connector_oauth_state', {
   tokenEndpoint: text('token_endpoint').notNull(),
   issuer: text('issuer'),
   scopes: text('scopes'),
-  /** Who started the flow — recorded on the resulting connection. */
+  /**
+   * Who started the flow — recorded on the resulting connection, and the only
+   * user the callback will complete it for.
+   */
   userId: text('user_id'),
+  /**
+   * The owner the resulting credential is stored under, fixed when the flow
+   * starts (where the host authorized it), never read from the callback.
+   */
+  ownerScope: text('owner_scope', { enum: WF_CONNECTION_OWNER_SCOPES })
+    .notNull()
+    .default('workspace'),
+  ownerId: text('owner_id').notNull().default(WF_CONNECTION_WORKSPACE_OWNER),
   expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
   createdAt: createdAt(),
 })

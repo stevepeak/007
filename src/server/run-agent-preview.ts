@@ -101,6 +101,7 @@ export async function executeAgentPreview<TDeps>(opts: {
         {
           resolveDb: () => opts.connectors!.db,
           resolveSecret: () => opts.connectors!.secret,
+          owner: opts.wfConfig.resolveConnectionOwner?.(opts.runContext),
         },
       )
     : opts.wfConfig

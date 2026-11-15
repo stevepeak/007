@@ -1,37 +1,33 @@
-import { discoverCatalog } from '../../connectors/client'
-import { beginAuthorization, saveBearerToken } from '../../connectors/oauth'
-import { withConnectorAuth } from '../../connectors/session'
+import { saveBearerToken } from '../../connectors/oauth'
 import { assertConnectorUrl } from '../../connectors/url'
 import type { JsonSchema } from '../../engine/agent-output'
+import { WORKSPACE_CONNECTION_OWNER } from '../../engine/connection-owner'
 import {
   CONNECTOR_ID_PATTERN,
   slugifyConnectorId,
 } from '../../engine/connector-tool-id'
 import {
-  deleteConnection,
+  deleteAllConnections,
   deleteConnector,
   getConnection,
   getConnector,
   listConnectors,
-  listConnections,
   listConnectorTools,
-  listConnectorToolsByConnector,
   setConnectorEnabled,
   setConnectorToolEnabled,
   setConnectorToolSideEffect,
-  touchConnectorRefreshed,
   upsertConnector,
-  upsertConnectorTools,
-  type ConnectorConnectionRow,
   type ConnectorRow,
   type ConnectorToolRow,
 } from '../../storage/data/connectors'
-import type {
-  ConnectorConnectionInfo,
-  ConnectorDetail,
-  ConnectorSummary,
-  ConnectorToolInfo,
-} from '../protocol-connectors'
+import {
+  disconnectOwnerConnector,
+  listOwnerConnectors,
+  refreshConnectorCatalog,
+  startOwnerConnectorAuth,
+  toConnectorSummary,
+} from '../connector-connections'
+import type { ConnectorDetail, ConnectorToolInfo } from '../protocol-connectors'
 
 import {
   BadRequestError,
@@ -43,6 +39,10 @@ import {
 } from './shared'
 
 // Server handlers for MCP connectors.
+//
+// The connectors page manages the WORKSPACE credential; per-tenant credentials
+// go through `../connector-connections` from the host's own routes. The
+// owner-aware logic lives there and these handlers pin it to the workspace.
 //
 // The one rule that shapes this file: a credential never crosses the wire, in
 // any form. `ConnectorConnectionInfo` describes a connection — its status, who
@@ -66,49 +66,6 @@ type ConnectorHandlerKeys =
   | 'startConnectorAuth'
   | 'saveConnectorToken'
   | 'disconnectConnector'
-
-function connectionInfo(
-  row: ConnectorConnectionRow | null,
-): ConnectorConnectionInfo | null {
-  if (!row) return null
-  return {
-    status: row.status,
-    accountLabel: row.accountLabel,
-    scopes: row.scopes,
-    expiresAt: toEpoch(row.expiresAt),
-    error: row.lastError,
-    connectedAt: toEpoch(row.createdAt),
-    // Whether expiry is self-healing. Reported rather than the token itself:
-    // it is the only thing about the credential a human needs to decide
-    // whether "expired" means "wait" or "go press Reconnect".
-    canRefresh: !!row.refreshToken,
-  }
-}
-
-function toConnectorSummary(
-  connector: ConnectorRow,
-  connection: ConnectorConnectionRow | null,
-  tools: { enabled: boolean }[],
-): ConnectorSummary {
-  return {
-    id: connector.id,
-    label: connector.label,
-    url: connector.url,
-    transport: connector.transport,
-    authKind: connector.authKind,
-    scopes: connector.scopes,
-    enabled: connector.enabled,
-    icon: connector.icon,
-    iconName: connector.iconName,
-    iconUrl: connector.iconUrl,
-    color: connector.color,
-    note: connector.note,
-    lastRefreshedAt: toEpoch(connector.lastRefreshedAt),
-    connection: connectionInfo(connection),
-    toolCount: tools.length,
-    enabledToolCount: tools.filter((t) => t.enabled).length,
-  }
-}
 
 function toolInfo(row: ConnectorToolRow): ConnectorToolInfo {
   return {
@@ -200,18 +157,9 @@ export function buildConnectorHandlers<TDeps>(
     }),
 
     listConnectors: async (c) => {
-      const [connectors, connections, toolsByConnector] = await Promise.all([
-        listConnectors(c.db),
-        listConnections(c.db),
-        listConnectorToolsByConnector(c.db),
-      ])
-      const byConnector = new Map(connections.map((r) => [r.connectorId, r]))
-      return connectors.map((connector) => {
-        return toConnectorSummary(
-          connector,
-          byConnector.get(connector.id) ?? null,
-          toolsByConnector.get(connector.id) ?? [],
-        )
+      return await listOwnerConnectors({
+        db: c.db,
+        owner: WORKSPACE_CONNECTION_OWNER,
       })
     },
 
@@ -270,10 +218,11 @@ export function buildConnectorHandlers<TDeps>(
       // A credential is issued by ONE server for ONE auth scheme. Re-pointing
       // the connector at a different URL, or switching how it authenticates,
       // would otherwise send the old token to the new host on the next call —
-      // so the edit disconnects, and the page asks for a fresh sign-in.
+      // so the edit disconnects EVERY owner, not just the workspace, and each
+      // has to sign in again.
       const credentialInvalidated =
         !!existing && (existing.url !== url || existing.authKind !== authKind)
-      if (credentialInvalidated) await deleteConnection(c.db, id)
+      if (credentialInvalidated) await deleteAllConnections(c.db, id)
 
       await c.change({
         entityKind: 'connector',
@@ -316,28 +265,12 @@ export function buildConnectorHandlers<TDeps>(
 
     refreshConnector: async (c) => {
       const { connectorId } = c.params
-      const connector = await requireConnector(c, connectorId)
-      const secret = await requireSecret(c)
-
-      // A server may expose its catalog unauthenticated, so a missing
-      // credential is not fatal here — try, and let the server object.
-      const { tools, iconUrl } = await withConnectorAuth({
+      const { label, ...result } = await refreshConnectorCatalog({
         db: c.db,
-        connector,
-        secret,
-        requireCredential: false,
-        run: (auth) => {
-          return discoverCatalog({
-            url: connector.url,
-            transport: connector.transport,
-            auth,
-          })
-        },
+        secret: await requireSecret(c),
+        connectorId,
+        owner: WORKSPACE_CONNECTION_OWNER,
       })
-
-      const result = await upsertConnectorTools(c.db, connectorId, tools)
-      const refreshedAt = new Date()
-      await touchConnectorRefreshed(c.db, connectorId, refreshedAt, { iconUrl })
 
       // One change row for the refresh, not one per tool: a catalog pull is a
       // single human action, and thirty rows would bury every other edit in the
@@ -347,21 +280,14 @@ export function buildConnectorHandlers<TDeps>(
         entityId: connectorId,
         action: 'update',
         note:
-          `Refreshed ${connector.label}: ${result.added.length} new, ` +
-          `${result.updated.length} updated, ${result.missing.length} withdrawn` +
+          `Refreshed ${label}: ${result.added} new, ` +
+          `${result.updated} updated, ${result.missing} withdrawn` +
           (result.drifted.length > 0
             ? `, ${result.drifted.length} schema change(s)`
             : ''),
       })
 
-      return {
-        refreshedAt: refreshedAt.getTime(),
-        added: result.added.length,
-        updated: result.updated.length,
-        missing: result.missing.length,
-        drifted: result.drifted,
-        toolCount: tools.length,
-      }
+      return result
     },
 
     setConnectorToolEnabled: async (c) => {
@@ -396,19 +322,12 @@ export function buildConnectorHandlers<TDeps>(
     },
 
     startConnectorAuth: async (c) => {
-      const { connectorId } = c.params
-      const connector = await requireConnector(c, connectorId)
-      if (connector.authKind !== 'oauth2') {
-        throw new BadRequestError(
-          `${connector.label} is configured for ${connector.authKind} auth, not OAuth.`,
-        )
-      }
-      const secret = await requireSecret(c)
-      return await beginAuthorization({
+      return await startOwnerConnectorAuth({
         db: c.db,
-        connector,
+        secret: await requireSecret(c),
+        connectorId: c.params.connectorId,
+        owner: WORKSPACE_CONNECTION_OWNER,
         redirectUri: callbackUrl(c),
-        secret,
         userId: c.ctx.userId,
         returnTo: c.params.returnTo,
       })
@@ -437,7 +356,11 @@ export function buildConnectorHandlers<TDeps>(
     disconnectConnector: async (c) => {
       const { connectorId } = c.params
       const connector = await requireConnector(c, connectorId)
-      await deleteConnection(c.db, connectorId)
+      await disconnectOwnerConnector({
+        db: c.db,
+        connectorId,
+        owner: WORKSPACE_CONNECTION_OWNER,
+      })
       await c.change({
         entityKind: 'connector',
         entityId: connectorId,

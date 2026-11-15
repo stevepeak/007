@@ -1,3 +1,8 @@
+import {
+  describeConnectionOwner,
+  WORKSPACE_CONNECTION_OWNER,
+  type WfConnectionOwner,
+} from '../engine/connection-owner'
 import type { WfDb } from '../storage/client'
 import { getConnection, setConnectionStatus } from '../storage/data/connectors'
 
@@ -23,17 +28,21 @@ export async function withConnectorAuth<T>(args: {
   connector: Parameters<typeof resolveAccessToken>[0]['connector']
   secret: string
   requireCredential: boolean
+  /** Whose credential to use. Defaults to the workspace's. */
+  owner?: WfConnectionOwner
   run: (auth: McpAuth) => Promise<T>
 }): Promise<T> {
   const { db, connector } = args
+  const owner = args.owner ?? WORKSPACE_CONNECTION_OWNER
   const credential = await resolveAccessToken({
     db,
     connector,
     secret: args.secret,
+    owner,
   })
   if (!credential && args.requireCredential) {
     throw new McpUnauthorizedError(
-      `${connector.label} is not connected. Connect it from the connectors page.`,
+      `${connector.label} is not connected${describeConnectionOwner(owner)}. Connect it first.`,
     )
   }
   let result: T
@@ -45,7 +54,7 @@ export async function withConnectorAuth<T>(args: {
     )
   } catch (err) {
     if (err instanceof McpUnauthorizedError && credential) {
-      const connection = await getConnection(db, connector.id)
+      const connection = await getConnection(db, connector.id, owner)
       if (connection) {
         await setConnectionStatus(db, {
           connectionId: connection.id,
@@ -57,7 +66,7 @@ export async function withConnectorAuth<T>(args: {
     throw err
   }
   if (credential) {
-    const connection = await getConnection(db, connector.id)
+    const connection = await getConnection(db, connector.id, owner)
     if (connection && connection.status === 'expired') {
       await setConnectionStatus(db, {
         connectionId: connection.id,

@@ -1,7 +1,8 @@
 import { Validator } from '@cfworker/json-schema'
 import { jsonSchema, tool } from 'ai'
 
-import type { WfSdkConfig } from '../engine/config'
+import type { RunContext, WfSdkConfig } from '../engine/config'
+import type { WfConnectionOwner } from '../engine/connection-owner'
 import type {
   ToolRegistry,
   ToolRegistryEntry,
@@ -99,6 +100,11 @@ export type ConnectorRuntime = {
   resolveSecret: () => string | Promise<string>
   /** Per-call timeout for the remote server. */
   timeoutMs?: number
+  /**
+   * Whose credential every call uses — the run's, from
+   * `WfSdkConfig.resolveConnectionOwner`. Omitted: the workspace's.
+   */
+  owner?: WfConnectionOwner
 }
 
 /**
@@ -155,6 +161,7 @@ function toRegistryEntry<TDeps>(
       >[0]['connector'],
       secret,
       requireCredential: true,
+      owner: runtime.owner,
       run: (auth) => {
         const target: McpTarget = {
           url: entry.connectorUrl,
@@ -238,9 +245,10 @@ export function withConnectorTools<
 /**
  * A run's config with the connector tools joined in, as both engines build it:
  * a catalog snapshot with no credential in it, each token resolved lazily at
- * call time. Off — the config as given — unless the host wired a connector
- * secret. `loadCatalog` wraps the catalog read, so the durable backend can
- * journal it in its own step and freeze the run's tool set across a replay.
+ * call time — under the owner the host picks for `runContext`. Off — the config
+ * as given — unless the host wired a connector secret. `loadCatalog` wraps the
+ * catalog read, so the durable backend can journal it in its own step and
+ * freeze the run's tool set across a replay.
  */
 export async function withRunConnectors<
   TDeps,
@@ -248,6 +256,7 @@ export async function withRunConnectors<
 >(args: {
   config: TConfig
   env: unknown
+  runContext: RunContext
   resolveDb: () => WfDb
   loadCatalog?: (
     load: () => Promise<ConnectorCatalogEntry[]>,
@@ -261,5 +270,6 @@ export async function withRunConnectors<
   return withConnectorTools<TDeps, TConfig>(config, catalog, {
     resolveDb,
     resolveSecret: () => secret,
+    owner: config.resolveConnectionOwner?.(args.runContext),
   })
 }

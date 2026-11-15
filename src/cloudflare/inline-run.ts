@@ -554,6 +554,7 @@ export async function runInlineGraph<TDeps, E extends GraphWorkflowEnv>(
     const runConfig = await withRunConnectors<TDeps, WfSdkConfig<TDeps>>({
       config: execConfig,
       env,
+      runContext,
       resolveDb: () => createWfDb(env.WF_DB),
     })
 

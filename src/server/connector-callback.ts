@@ -20,9 +20,10 @@ export type CreateWfConnectorCallbackOptions = {
   resolveDb: (req: Request) => WfDb | Promise<WfDb>
   /**
    * The authenticated caller. Same contract as the data plane's: throw
-   * `UnauthorizedError` (or anything) to reject. The callback is a
-   * state-changing route that stores a credential, so it must be gated exactly
-   * as tightly as the editor itself.
+   * `UnauthorizedError` (or anything) to reject. The callback stores a
+   * credential: gate it as tightly as the tightest place a flow can START —
+   * the editor, or the host routes that call `startOwnerConnectorAuth`. The
+   * returned `userId` must match the user who started the flow.
    */
   resolveContext: (req: Request) => WfServerContext | Promise<WfServerContext>
   /** The connector encryption key. See `WfSdkConfig.resolveConnectorSecret`. */
@@ -97,12 +98,11 @@ export function createWfConnectorCallback(
     }
 
     try {
-      // `resolveContext` is called for its GATE, not its value: it throws for
-      // anyone who may not manage connectors, and this route stores a
-      // credential. The identity it returns is already recorded on the
-      // authorization attempt (`wf_connector_oauth_state.user_id`), written
-      // when the flow started.
-      const [db, , secret] = await Promise.all([
+      // `resolveContext` gates the route — it stores a credential — and names
+      // who is completing the flow. That must be the user who started it
+      // (`wf_connector_oauth_state.user_id`); the owner the credential is
+      // stored under was fixed then too, where the host authorized it.
+      const [db, ctx, secret] = await Promise.all([
         opts.resolveDb(req),
         opts.resolveContext(req),
         opts.resolveSecret(req),
@@ -117,6 +117,7 @@ export function createWfConnectorCallback(
         secret,
         state,
         code,
+        userId: ctx.userId,
       })
       return Response.redirect(
         landing(req, returnTo, fallback, { connected: connectorId }),

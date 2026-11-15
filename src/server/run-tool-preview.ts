@@ -37,7 +37,10 @@ export async function executeToolPreview<TDeps>(opts: {
    */
   wfConfig: Pick<
     WfSdkConfig<TDeps>,
-    'toolRegistry' | 'buildRunDeps' | 'resolveBlobRef'
+    | 'toolRegistry'
+    | 'buildRunDeps'
+    | 'resolveBlobRef'
+    | 'resolveConnectionOwner'
   >
   /** Per-run context carrying `env` + tenant scope, passed to `buildRunDeps`. */
   runContext: RunContext
@@ -53,11 +56,15 @@ export async function executeToolPreview<TDeps>(opts: {
         TDeps,
         Pick<
           WfSdkConfig<TDeps>,
-          'toolRegistry' | 'buildRunDeps' | 'resolveBlobRef'
+          | 'toolRegistry'
+          | 'buildRunDeps'
+          | 'resolveBlobRef'
+          | 'resolveConnectionOwner'
         >
       >(opts.wfConfig, await loadConnectorCatalog(opts.connectors.db), {
         resolveDb: () => opts.connectors!.db,
         resolveSecret: () => opts.connectors!.secret,
+        owner: opts.wfConfig.resolveConnectionOwner?.(runContext),
       })
     : opts.wfConfig
 

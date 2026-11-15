@@ -109,3 +109,69 @@ describe('withConnectorAuth', () => {
     ).rejects.toThrow(McpUnauthorizedError)
   })
 })
+
+describe('withConnectorAuth for an owner', () => {
+  const tenantA = { scope: 'tenant', id: 'a' } as const
+  const tenantB = { scope: 'tenant', id: 'b' } as const
+
+  async function setupTenants() {
+    const { db, connector } = await setup({ connected: true })
+    await saveBearerToken({
+      db,
+      connectorId: 'acme',
+      token: 'tok-a',
+      secret: SECRET,
+      owner: tenantA,
+    })
+    return { db, connector }
+  }
+
+  test("uses the owner's own credential", async () => {
+    const { db, connector } = await setupTenants()
+    let seen: McpAuth | undefined
+    await withConnectorAuth({
+      db,
+      connector,
+      secret: SECRET,
+      requireCredential: true,
+      owner: tenantA,
+      run: (auth) => {
+        seen = auth
+        return Promise.resolve(null)
+      },
+    })
+    expect(seen).toEqual({ kind: 'bearer', token: 'tok-a' })
+  })
+
+  // A run for one tenant must never act through another's account — the
+  // workspace's included.
+  test('never falls back to the workspace credential', async () => {
+    const { db, connector } = await setupTenants()
+    await expect(
+      withConnectorAuth({
+        db,
+        connector,
+        secret: SECRET,
+        requireCredential: true,
+        owner: tenantB,
+        run: () => Promise.resolve(null),
+      }),
+    ).rejects.toThrow("Acme is not connected for tenant 'b'")
+  })
+
+  test("a 401 expires only that owner's connection", async () => {
+    const { db, connector } = await setupTenants()
+    await expect(
+      withConnectorAuth({
+        db,
+        connector,
+        secret: SECRET,
+        requireCredential: true,
+        owner: tenantA,
+        run: () => Promise.reject(new McpUnauthorizedError('401')),
+      }),
+    ).rejects.toThrow('401')
+    expect((await getConnection(db, 'acme', tenantA))?.status).toBe('expired')
+    expect((await getConnection(db, 'acme'))?.status).toBe('connected')
+  })
+})

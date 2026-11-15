@@ -309,6 +309,13 @@
       "when": 1793803378408,
       "tag": "0043_fair_punisher",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "6",
+      "when": 1794766960313,
+      "tag": "0044_shocking_purifiers",
+      "breakpoints": true
     }
   ]
 }

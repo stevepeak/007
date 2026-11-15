@@ -19,6 +19,7 @@ import {
   createOauthState,
   getConnection,
   getConnector,
+  connectionOwnerOf,
   getConnectorClient,
   saveConnection,
   saveConnectorClient,
@@ -201,6 +202,8 @@ export async function beginAuthorization(input: {
   secret: string
   userId?: string
   returnTo?: string
+  /** Who the resulting credential belongs to. Defaults to the workspace. */
+  owner?: ConnectionOwner
 }): Promise<{ authorizationUrl: string }> {
   const { db, connector, redirectUri, secret } = input
   const discovery = await discoverConnectorAuth(connector.url)
@@ -245,6 +248,7 @@ export async function beginAuthorization(input: {
     scopes: connector.scopes ?? null,
     returnTo: input.returnTo ?? null,
     userId: input.userId ?? null,
+    owner: input.owner,
     expiresAt: new Date(Date.now() + AUTH_ATTEMPT_TTL_MS),
   })
 
@@ -289,20 +293,31 @@ function expiresAtFrom(tokens: OAuthTokens): Date | null {
  * Finish an authorization started by {@link beginAuthorization}.
  *
  * The `state` row is consumed (read-and-deleted) before anything else, so a
- * replayed callback fails here rather than minting a second credential.
+ * replayed callback fails here rather than minting a second credential. The
+ * credential is stored under the owner the attempt was started for.
+ *
+ * `userId` is whoever is completing it. An attempt started by one user cannot
+ * be completed by another: otherwise anyone could start a flow for their own
+ * tenant and get someone else's browser to finish it, attaching the victim's
+ * account to the attacker's tenant.
  */
 export async function completeAuthorization(input: {
   db: WfDb
   secret: string
   state: string
   code: string
-  owner?: ConnectionOwner
+  userId?: string
 }): Promise<{ connectorId: string; returnTo: string | null }> {
   const { db, secret } = input
   const attempt = await consumeOauthState(db, input.state)
   if (!attempt) {
     throw new ConnectorAuthError(
       'This authorization link has expired or was already used. Start again from the connectors page.',
+    )
+  }
+  if (attempt.userId && attempt.userId !== input.userId) {
+    throw new ConnectorAuthError(
+      'This authorization was started by a different user. Start again from the connectors page.',
     )
   }
 
@@ -340,7 +355,7 @@ export async function completeAuthorization(input: {
 
   await saveConnection(db, {
     connectorId: attempt.connectorId,
-    owner: input.owner ?? WORKSPACE_OWNER,
+    owner: connectionOwnerOf(attempt),
     accessToken: await encryptSecret(tokens.access_token, secret),
     refreshToken: tokens.refresh_token
       ? await encryptSecret(tokens.refresh_token, secret)

@@ -430,6 +430,7 @@ export function makeGraphWorkflow<
       const runConfig = await withRunConnectors<TDeps, WfSdkConfig<TDeps>>({
         config,
         env,
+        runContext: runContextFor(p, env),
         resolveDb: () => createWfDb(env.WF_DB),
         loadCatalog: (load) => stepDo(step, 'load-connectors', load),
       })

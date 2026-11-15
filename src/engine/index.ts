@@ -307,6 +307,10 @@ export {
 } from './stream-sink'
 export type { StartGraphRunInput, StartGraphRunResult } from './run-input'
 export {
+  WORKSPACE_CONNECTION_OWNER,
+  type WfConnectionOwner,
+} from './connection-owner'
+export {
   deriveRunProgress,
   type ProgressStep,
   type WfRunProgress,

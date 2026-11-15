@@ -9,6 +9,14 @@ export {
   createWfConnectorCallback,
   type CreateWfConnectorCallbackOptions,
 } from './connector-callback'
+// Per-owner connector credentials, for host routes (tenants' own accounts).
+export {
+  disconnectOwnerConnector,
+  ensureConnector,
+  listOwnerConnectors,
+  refreshConnectorCatalog,
+  startOwnerConnectorAuth,
+} from './connector-connections'
 export {
   createHttpWfDataClient,
   type HttpWfDataClientOptions,

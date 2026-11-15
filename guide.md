@@ -1862,6 +1862,31 @@ For pointing a local build at an MCP server on `http://localhost:…`, pass
 rather than an environment sniff, so nothing decides on its own that a
 deployment is "dev enough".
 
+#### Credentials per tenant
+
+By default a connector has one credential, the workspace's, connected from the
+connectors page. When each of your tenants (an org, a brand, a client) must
+use its own account, keep the connector shared and store a credential per
+tenant:
+
+```ts
+// host config — whose credential this run uses
+resolveConnectionOwner: (ctx) => {
+  const brandId = ctx.hostContext?.brandId
+  return brandId ? { scope: 'tenant', id: brandId } : undefined
+},
+```
+
+A tenant with no credential fails the call with a message naming it; there is
+no fallback to the workspace credential. `undefined` means the workspace's.
+
+Tenants connect from YOUR UI, not the connectors page: call
+`startOwnerConnectorAuth`, `listOwnerConnectors`, `refreshConnectorCatalog` and
+`disconnectOwnerConnector` (`@stevepeak/007/server`) from routes that first
+check the caller may act for that tenant. `ensureConnector` creates a connector
+your app knows by id. The same callback route finishes every flow, and only for
+the user who started it.
+
 #### What to expect once it is on
 
 - **Nothing a server advertises is callable until a human enables it.** Discovery
