@@ -14,6 +14,7 @@ export {
   disconnectOwnerConnector,
   ensureConnector,
   listOwnerConnectors,
+  ownerConnectorFetch,
   refreshConnectorCatalog,
   startOwnerConnectorAuth,
 } from './connector-connections'

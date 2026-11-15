@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 
 import { saveBearerToken } from '../connectors/oauth'
 import { withRunConnectors } from '../connectors/registry'
@@ -16,6 +16,7 @@ import {
   disconnectOwnerConnector,
   ensureConnector,
   listOwnerConnectors,
+  ownerConnectorFetch,
 } from './connector-connections'
 
 const SECRET = 'test-key-do-not-use-in-prod'
@@ -82,6 +83,53 @@ describe('per-owner connections', () => {
       url: 'https://mcp.zernio.com/mcp',
     })
     expect((await getConnector(db, 'zernio'))?.authKind).toBe('oauth2')
+  })
+})
+
+describe('ownerConnectorFetch', () => {
+  const fetchSpy = spyOn(globalThis, 'fetch')
+  afterEach(() => fetchSpy.mockReset())
+
+  test("sends the owner's token to the service's own API", async () => {
+    const db = await setup()
+    fetchSpy.mockResolvedValue(Response.json({ ok: true }))
+    const response = await ownerConnectorFetch({
+      db,
+      secret: SECRET,
+      connectorId: 'acme',
+      owner: brandA,
+      url: 'https://api.example.com/v1/things',
+    })
+    expect(await response.json()).toEqual({ ok: true })
+    const [, init] = fetchSpy.mock.calls[0] ?? []
+    expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer tok-a')
+  })
+
+  test('a 401 marks the connection expired', async () => {
+    const db = await setup()
+    fetchSpy.mockResolvedValue(new Response(null, { status: 401 }))
+    const call = ownerConnectorFetch({
+      db,
+      secret: SECRET,
+      connectorId: 'acme',
+      owner: brandA,
+      url: 'https://api.example.com/v1/things',
+    })
+    await expect(call).rejects.toThrow('rejected')
+    expect((await getConnection(db, 'acme', brandA))?.status).toBe('expired')
+  })
+
+  test('an owner with no connection fails before calling out', async () => {
+    const db = await setup()
+    const call = ownerConnectorFetch({
+      db,
+      secret: SECRET,
+      connectorId: 'acme',
+      owner: brandB,
+      url: 'https://api.example.com/v1/things',
+    })
+    await expect(call).rejects.toThrow('not connected')
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 })
 

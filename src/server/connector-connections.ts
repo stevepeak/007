@@ -1,4 +1,4 @@
-import { discoverCatalog } from '../connectors/client'
+import { discoverCatalog, McpUnauthorizedError } from '../connectors/client'
 import { beginAuthorization } from '../connectors/oauth'
 import { withConnectorAuth } from '../connectors/session'
 import { assertConnectorUrl } from '../connectors/url'
@@ -215,6 +215,44 @@ export async function refreshConnectorCatalog(args: {
     drifted: result.drifted,
     toolCount: tools.length,
   }
+}
+
+/**
+ * `fetch` the connector's service as `owner`, outside MCP — for a service
+ * whose OAuth token also authorizes its own REST API. The token is refreshed
+ * first when it has expired, and a 401 marks the connection `expired` (and
+ * throws), exactly as a tool call would.
+ */
+export async function ownerConnectorFetch(args: {
+  db: WfDb
+  secret: string
+  connectorId: string
+  owner: WfConnectionOwner
+  url: string
+  init?: RequestInit
+}): Promise<Response> {
+  const { db, connectorId } = args
+  const connector = await requireConnector(db, connectorId)
+  return await withConnectorAuth({
+    db,
+    connector,
+    secret: args.secret,
+    requireCredential: true,
+    owner: args.owner,
+    run: async (auth) => {
+      const headers = new Headers(args.init?.headers)
+      if (auth.kind === 'bearer') {
+        headers.set('Authorization', `Bearer ${auth.token}`)
+      }
+      const response = await fetch(args.url, { ...args.init, headers })
+      if (response.status === 401) {
+        throw new McpUnauthorizedError(
+          `${connector.label} rejected the stored credential (401).`,
+        )
+      }
+      return response
+    },
+  })
 }
 
 /** Forget `owner`'s credential; the connector and other owners' are kept. */
