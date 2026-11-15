@@ -1,4 +1,5 @@
-// The tools 007 registers on its own — `extract_text` and `create_document` —
+// The tools 007 registers on its own — `extract_text`, `create_document` and
+// `generate_image` —
 // wired to fixed Worker binding names, so a host gets them without writing any
 // tool code. `defineWfConfig` from the package root (`src/index.ts`) merges them
 // into every config; the engine's own `defineWfConfig` stays unchanged, because
@@ -8,8 +9,9 @@
 // the web Worker that serves tool/agent previews):
 //
 //   UPLOADS  R2 bucket   uploaded files `extract_text` reads (by key); where
-//                        `create_document` writes and large extractions spill
-//   AI       Workers AI  `toMarkdown` and the default vision OCR
+//                        `create_document` and `generate_image` write and
+//                        large extractions spill
+//   AI       Workers AI  `toMarkdown`, the default vision OCR and image models
 //   BROWSER  Browser     optional — rasterizes scanned PDFs for OCR
 //
 // A missing binding fails the CALL with an error naming it; the tool is still
@@ -32,6 +34,7 @@ import type { ToolRegistryEntry } from '../engine/tool-registry'
 
 import { createR2BlobResolver } from './blob-resolver'
 import { createExtractTextTool } from './extract-text'
+import { createGenerateImageTool } from './generate-image'
 
 /** The bindings the built-ins read off the run's Worker env. */
 type BuiltinBindings = {
@@ -95,12 +98,16 @@ export function builtinToolEntries<TDeps>(): ToolRegistryEntry<TDeps>[] {
       getBrowser: (deps) => envOf(deps).BROWSER,
     }),
     createDocumentTool<TDeps>({ store: storeDocument }),
+    createGenerateImageTool<TDeps>({
+      getAI: (deps) => binding(deps, 'AI'),
+      getBucket: (deps) => binding(deps, 'UPLOADS'),
+    }),
   ]
 }
 
 /**
  * {@link defineEngineConfig} plus the built-ins: validates the host config,
- * then joins `extract_text` / `create_document` into its registry (host entries
+ * then joins `extract_text` / `create_document` / `generate_image` into its registry (host entries
  * win on an id collision) and, unless the host set one, a `resolveBlobRef` that
  * reads `extract_text`'s spilled text back from `UPLOADS`.
  */

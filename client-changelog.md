@@ -15,6 +15,20 @@ without you and is still probably wrong to skip.
 
 ---
 
+## 2026-11-15 — Built-in `generate_image`
+
+`defineWfConfig` now also registers `generate_image` (`origin: 'sdk'`): a text
+prompt → Workers AI FLUX schnell → a JPEG in `UPLOADS` at
+`generatedImageKey(imageId)` (`images/<id>`). It returns
+`{ imageId, contentType, size }`, never the bytes. `createGenerateImageTool`
+and `generatedImageKey` are exported from `@stevepeak/007/cloudflare`.
+
+**Action:** none — it uses the `AI` and `UPLOADS` bindings the other built-ins
+already need. To keep a generated image, read the object at
+`generatedImageKey(imageId)` from `UPLOADS` in a host tool.
+
+---
+
 ## 2026-11-15 — Whole tool groups, searchable tools, no per-tool enable
 
 An agent can attach a whole connector (`mcp:<id>:*`) or host group

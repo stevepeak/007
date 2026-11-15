@@ -4,7 +4,7 @@ summary: Where tools come from, agent tools vs Tool nodes, argument validation, 
 order: 55
 ---
 
-A **tool** is a registered capability with a stable id. Every tool comes from one registry: the host's own tools, plus 007's built-ins (`extract_text` and document rendering), which `defineWfConfig` registers by default unless the host registers its own under the same id. Read `get_tool_catalog` for the list, and `get_tool_catalog({ toolIds })` for full input/output schemas.
+A **tool** is a registered capability with a stable id. Every tool comes from one registry: the host's own tools, plus 007's built-ins (`extract_text`, document rendering and `generate_image`), which `defineWfConfig` registers by default unless the host registers its own under the same id. Read `get_tool_catalog` for the list, and `get_tool_catalog({ toolIds })` for full input/output schemas.
 
 ## Where tools come from (`origin`)
 

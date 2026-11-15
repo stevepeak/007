@@ -65,6 +65,7 @@ describe('built-in tools', () => {
     const { toolRegistry } = defineWfConfig(baseConfig())
     expect(toolRegistry.get('extract_text')?.origin).toBe('sdk')
     expect(toolRegistry.get('create_document')?.origin).toBe('sdk')
+    expect(toolRegistry.get('generate_image')?.origin).toBe('sdk')
   })
 
   test("a host's own entry under the same id wins", () => {

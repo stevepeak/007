@@ -251,12 +251,15 @@ Key rules:
   via `opts.name` — is not authorship and does not change the answer, so there is
   nothing for a host to set.
 - **Built-ins are registered for you.** `defineWfConfig` from the package root
-  adds `extract_text` and `create_document` to `toolRegistry` (a host entry
-  under the same id wins — that is the override). They read fixed bindings off
-  the run's env, which they find through the deps `buildRunDeps` returns (so it
-  must return an object): `UPLOADS` (R2 — the files `extract_text` reads by key,
-  where `create_document` writes `documents/<id>/`, and where large extractions
-  spill), `AI` (Workers AI) and optional `BROWSER` (scanned-PDF OCR). Bind them
+  adds `extract_text`, `create_document` and `generate_image` to
+  `toolRegistry` (a host entry under the same id wins — that is the override).
+  They read fixed bindings off the run's env, which they find through the deps
+  `buildRunDeps` returns (so it must return an object): `UPLOADS` (R2 — the
+  files `extract_text` reads by key, where `create_document` writes
+  `documents/<id>/`, where `generate_image` writes `generatedImageKey(imageId)`
+  (`images/<id>`), and where large extractions spill), `AI` (Workers AI) and
+  optional `BROWSER` (scanned-PDF OCR). `generate_image` returns only the image
+  id; a host saves the picture by reading that key. Bind them
   on every Worker that runs tools, including the one serving previews. A
   missing binding fails the call with its name, not the listing. The engine's
   own `defineWfConfig` (`@stevepeak/007/engine`) does not add them.

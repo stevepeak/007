@@ -58,6 +58,12 @@ export {
   type VectorizeToolOptions,
 } from './vectorize'
 export {
+  createGenerateImageTool,
+  type CreateGenerateImageToolOptions,
+  generatedImageKey,
+  type GenerateImageResult,
+} from './generate-image'
+export {
   createR2BlobResolver,
   type CreateR2BlobResolverOptions,
 } from './blob-resolver'
