@@ -1,4 +1,5 @@
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react'
+import { useState } from 'react'
 
 import type { ToolContextField, ToolOption } from '../../server/protocol'
 import { cn } from '../cn'
@@ -7,6 +8,11 @@ import { ToolAvatar } from '../tool-appearance'
 import { Tooltip } from '../tooltip'
 
 import { contextLabelsFor } from './agent-editor-context'
+import {
+  groupTools,
+  nameInGroup,
+  type ToolGroup,
+} from './tool-selection'
 
 // Per-tool live/simulated switches for the agent playground.
 //
@@ -19,6 +25,9 @@ import { contextLabelsFor } from './agent-editor-context'
 // look at data, so they start live and the playground exercises the real thing;
 // anything that can write — or that never declared what it does — starts
 // simulated and has to be switched on deliberately, with a warning.
+//
+// An MCP server can bring dozens of tools, so each one folds into a group whose
+// header says how many of its tools run live.
 
 /** Is this tool safe to run for real without being asked? */
 export function defaultsToLive(tool: ToolOption): boolean {
@@ -55,6 +64,8 @@ export function ToolModeList({
   const liveCount = tools.filter((t) => live.has(t.id)).length
   // Only *these* need a warning: a live read tool is the intended default.
   const risky = tools.filter((t) => live.has(t.id) && isRiskyLive(t))
+  const { plain, groups } = groupTools(tools)
+  const rowProps = { live, contextFields, unmetContext, onToggle, disabled }
 
   return (
     <div className="space-y-2">
@@ -65,49 +76,18 @@ export function ToolModeList({
         </span>
       </div>
 
-      <ul className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-neutral-200 bg-white">
-        {tools.map((t) => {
-          const isLive = live.has(t.id)
-          return (
-            <li key={t.id} className="flex items-center gap-2.5 px-2.5 py-2">
-              <ToolAvatar tool={t} size="sm" iconClassName="size-3.5" />
-              <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-1.5">
-                  <span className="min-w-0 truncate text-xs font-medium text-neutral-800">
-                    {t.name}
-                  </span>
-                  <ContextChip
-                    tool={t}
-                    fields={contextFields}
-                    live={isLive}
-                    unmet={unmetContext}
-                  />
-                </span>
-                <CapabilityBadge tool={t} />
-              </span>
-              <span
-                className={cn(
-                  'shrink-0 text-[11px] font-medium',
-                  !isLive
-                    ? 'text-neutral-400'
-                    : isRiskyLive(t)
-                      ? 'text-rose-600'
-                      : 'text-emerald-600',
-                )}
-              >
-                {isLive ? 'Live' : 'Simulated'}
-              </span>
-              <Switch
-                checked={isLive}
-                tone={isRiskyLive(t) ? 'risk' : 'ok'}
-                disabled={disabled}
-                ariaLabel={`Run ${t.name} ${isLive ? 'live' : 'simulated'}`}
-                onChange={(next) => onToggle(t.id, next)}
-              />
-            </li>
-          )
-        })}
-      </ul>
+      <div className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-neutral-200 bg-white">
+        {plain.length > 0 ? (
+          <ul className="divide-y divide-neutral-100">
+            {plain.map((t) => (
+              <ToolModeRow key={t.id} tool={t} name={t.name} {...rowProps} />
+            ))}
+          </ul>
+        ) : null}
+        {groups.map((g) => (
+          <ToolModeGroup key={g.id} group={g} {...rowProps} />
+        ))}
+      </div>
 
       {risky.length > 0 ? (
         <p className="flex items-start gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-[11px] text-rose-700">
@@ -127,6 +107,112 @@ export function ToolModeList({
         </p>
       )}
     </div>
+  )
+}
+
+type RowProps = {
+  live: ReadonlySet<string>
+  contextFields: readonly ToolContextField[]
+  unmetContext: ReadonlySet<string>
+  onToggle: (toolId: string, live: boolean) => void
+  disabled?: boolean
+}
+
+/** One MCP server's tools, folded until opened. The header carries the live
+ * count — in red when a live tool can write — so nothing risky hides inside. */
+function ToolModeGroup({ group, ...rowProps }: RowProps & { group: ToolGroup }) {
+  const [open, setOpen] = useState(false)
+  const liveTools = group.tools.filter((t) => rowProps.live.has(t.id))
+  const riskyLive = liveTools.some(isRiskyLive)
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left hover:bg-neutral-50"
+      >
+        {open ? (
+          <ChevronDown className="size-3.5 shrink-0 text-neutral-400" />
+        ) : (
+          <ChevronRight className="size-3.5 shrink-0 text-neutral-400" />
+        )}
+        <ToolAvatar tool={group.tools[0]} size="sm" iconClassName="size-3.5" />
+        <span className="min-w-0 flex-1 truncate text-xs font-medium text-neutral-800">
+          {group.label}
+        </span>
+        <span
+          className={cn(
+            'shrink-0 text-[11px]',
+            riskyLive ? 'font-medium text-rose-600' : 'text-neutral-400',
+          )}
+        >
+          {liveTools.length} of {group.tools.length} live
+        </span>
+      </button>
+      {open ? (
+        <ul className="divide-y divide-neutral-100 border-t border-neutral-100 bg-neutral-50/50 pl-5">
+          {group.tools.map((t) => (
+            <ToolModeRow
+              key={t.id}
+              tool={t}
+              name={nameInGroup(t, group)}
+              {...rowProps}
+            />
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+
+function ToolModeRow({
+  tool: t,
+  name,
+  live,
+  contextFields,
+  unmetContext,
+  onToggle,
+  disabled,
+}: RowProps & { tool: ToolOption; name: string }) {
+  const isLive = live.has(t.id)
+  return (
+    <li className="flex items-center gap-2.5 px-2.5 py-2">
+      <ToolAvatar tool={t} size="sm" iconClassName="size-3.5" />
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5">
+          <span className="min-w-0 truncate text-xs font-medium text-neutral-800">
+            {name}
+          </span>
+          <ContextChip
+            tool={t}
+            fields={contextFields}
+            live={isLive}
+            unmet={unmetContext}
+          />
+        </span>
+        <CapabilityBadge tool={t} />
+      </span>
+      <span
+        className={cn(
+          'shrink-0 text-[11px] font-medium',
+          !isLive
+            ? 'text-neutral-400'
+            : isRiskyLive(t)
+              ? 'text-rose-600'
+              : 'text-emerald-600',
+        )}
+      >
+        {isLive ? 'Live' : 'Simulated'}
+      </span>
+      <Switch
+        checked={isLive}
+        tone={isRiskyLive(t) ? 'risk' : 'ok'}
+        disabled={disabled}
+        ariaLabel={`Run ${t.name} ${isLive ? 'live' : 'simulated'}`}
+        onChange={(next) => onToggle(t.id, next)}
+      />
+    </li>
   )
 }
 

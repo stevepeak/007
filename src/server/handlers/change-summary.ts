@@ -82,6 +82,12 @@ export function heuristicAgentChangeSummary(
   const toolsRemoved = prev.toolIds.filter((t) => !nextTools.has(t)).length
   if (toolsAdded) parts.push(`added ${plural(toolsAdded, 'tool')}`)
   if (toolsRemoved) parts.push(`removed ${plural(toolsRemoved, 'tool')}`)
+  if (
+    !stableEqual(prev.deferredToolIds, next.deferredToolIds) ||
+    !stableEqual(prev.disabledToolIds, next.disabledToolIds)
+  ) {
+    parts.push('changed which tools are in context, searchable or off')
+  }
 
   if (prev.maxTurns !== next.maxTurns) parts.push('changed the turn limit')
   if (prev.inputKind !== next.inputKind) parts.push('changed the input kind')

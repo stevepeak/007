@@ -65,6 +65,9 @@ export type WfAgentSummary = {
    * {@link WfDataClient.listTools}.
    */
   toolIds: string[]
+  /** Tools a whole connector in `toolIds` would include but this agent may
+   * not call. */
+  disabledToolIds: string[]
   /**
    * What the agent's model must support (`agentModelRequirements` over the
    * same config). Lets a picker standing in for the agent's model — the eval

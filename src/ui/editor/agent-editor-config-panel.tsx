@@ -205,9 +205,13 @@ export function AgentConfigPanel({
       >
         <ToolPicker
           tools={aiTools}
-          selectedIds={config.toolIds}
-          onChange={(toolIds) => {
-            return patchToolsAndRetireLoop({ toolIds })
+          value={{
+            toolIds: config.toolIds,
+            deferredToolIds: config.deferredToolIds,
+            disabledToolIds: config.disabledToolIds,
+          }}
+          onChange={(next) => {
+            return patchToolsAndRetireLoop(next)
           }}
           disabled={modelLacksTools}
           disabledReason={`${selectedModel?.label ?? 'The selected model'} can’t call tools — pick a tool-calling model to attach tools.`}

@@ -233,6 +233,12 @@ Key rules:
   _inside_ each `step.do`, where live bindings exist. Do the work there.
 - **`toolRegistry` is a `Map<string, ToolRegistryEntry<TDeps>>`.** Each entry's
   `build(deps)` is called per-run with your `TDeps`.
+- **A tool id is `<name>` or `<group>:<name>`.** A group (lowercase letters,
+  digits and dashes; not `mcp`, which connectors own) lets an agent attach
+  every tool in it as `<group>:*`, expanded at run time — so a tool you add to
+  the group later reaches those agents without editing them. Set the same
+  `groupLabel` on each tool of a group; the console shows the group under it.
+  `defineWfConfig` refuses any other id containing `:`.
 - **Leave `origin` alone.** `ToolMeta.origin` says who wrote a tool — `sdk` for
   one 007 ships, `host` for one you wrote, `connector` for one proxied from a
   connected MCP server — and the console groups the Tools page by it (Custom /
@@ -1889,10 +1895,13 @@ the user who started it.
 
 #### What to expect once it is on
 
-- **Nothing a server advertises is callable until a human enables it.** Discovery
-  inserts every tool **disabled**; a refresh preserves what was enabled and never
-  re-enables what was turned off. A catalog pull that quietly widened what your
-  agents could do would be the wrong default.
+- **Agents choose their tools; the connector does not gate them.** An agent
+  names single tools (`mcp:<connector>:<tool>`) or the whole connector
+  (`mcp:<connector>:*`), and can mark either searchable (`deferredToolIds`: the
+  model sees the name and loads the schema through `search_tools`) or exclude
+  single tools (`disabledToolIds`). The flip side: a refresh that adds a tool
+  hands it to every agent that attached the whole connector, with no notice
+  yet.
 - **`authKind` is `oauth2`, `bearer` or `none`.** A pasted API key / PAT is a
   first-class option, and the only one for servers that publish no OAuth
   metadata at all — including, usually, your own app's MCP endpoint.
@@ -1902,7 +1911,8 @@ the user who started it.
 - **The catalog is frozen per run**, in its own durable step, exactly as prompts
   and agents already are. A refresh mid-run cannot change what that run is doing.
 - **Remote tool descriptions are untrusted text that reaches your model.** They
-  are rendered as text and never as markup, and each tool is enabled by hand.
+  are rendered as text and never as markup, and only reach an agent that names
+  them or their whole connector.
 - **A server's own icon is used, but kept at arm's length.** Servers on MCP
   2025-11-25+ may advertise `icons` on `initialize`; a Refresh stores the best
   `https:` / `data:image/*` candidate as `iconUrl` and the UI shows it as an

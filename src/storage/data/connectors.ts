@@ -200,11 +200,9 @@ export type DiscoveredTool = {
  * The refreshable columns, taken from the row being inserted, so the conflict
  * path costs no extra bound parameters.
  *
- * `enabled` is absent by design — that is the curation flag a human owns, and a
- * refresh that re-enabled a tool someone had switched off would quietly widen
- * what every agent can call. `side_effect` is absent for the same reason and
- * restored conditionally below. `missing_since` is cleared: a tool that came
- * back is no longer missing.
+ * `side_effect` is restored conditionally below, so a human's override
+ * survives. `missing_since` is cleared: a tool that came back is no longer
+ * missing.
  */
 const TOOL_REFRESH_SET = {
   toolName: sql`excluded.tool_name`,
@@ -224,12 +222,10 @@ const TOOL_REFRESH_SET = {
 /**
  * Persist a connector's freshly-discovered catalog.
  *
- * New tools are ALWAYS inserted disabled — nothing a server advertises becomes
- * callable until a human enables it — and existing rows keep `enabled` and any
- * side-effect override while their metadata refreshes. Tools that have vanished
- * from the server are marked `missingSince` rather than deleted, because an
- * agent may still reference one and "withdrawn by the server" is a better
- * answer than an unresolvable id.
+ * Existing rows keep any side-effect override while their metadata refreshes.
+ * Tools that have vanished from the server are marked `missingSince` rather
+ * than deleted, because an agent may still reference one and "withdrawn by the
+ * server" is a better answer than an unresolvable id.
  *
  * Returns what changed, which is what the caller turns into `wf_change` rows and
  * what the UI reports after a Refresh.
@@ -276,7 +272,6 @@ export async function upsertConnectorTools(
       sideEffect: t.sideEffect,
       // Only meaningful on INSERT; the conflict path never touches it.
       sideEffectOverridden: false,
-      enabled: false,
       schemaHash: t.schemaHash,
       lastSeenAt: now,
       missingSince: null,
@@ -347,12 +342,12 @@ export async function listConnectorToolsByConnector(
 }
 
 /**
- * Every tool that is actually callable right now: enabled, still advertised by
- * its server, and belonging to an enabled connector.
+ * Every tool that is actually callable right now: still advertised by its
+ * server, and belonging to an enabled connector.
  *
- * This is the resolver's and the editor's view. The three conditions are ANDed
- * here rather than at the call sites so "callable" cannot come to mean two
- * different things in the picker and at execution time.
+ * This is the resolver's and the editor's view. The conditions are ANDed here
+ * rather than at the call sites so "callable" cannot come to mean two different
+ * things in the picker and at execution time.
  */
 export async function listEnabledConnectorTools(
   db: WfDb,
@@ -363,7 +358,6 @@ export async function listEnabledConnectorTools(
     .innerJoin(wfConnector, eq(wfConnector.id, wfConnectorTool.connectorId))
     .where(
       and(
-        eq(wfConnectorTool.enabled, true),
         eq(wfConnector.enabled, true),
         isNull(wfConnectorTool.missingSince),
       ),
@@ -384,16 +378,6 @@ export async function getConnectorTool(
     .where(eq(wfConnectorTool.id, toolId))
     .limit(1)
   return row ?? null
-}
-
-export async function setConnectorToolEnabled(
-  db: WfDb,
-  input: { toolId: string; enabled: boolean },
-): Promise<void> {
-  await db
-    .update(wfConnectorTool)
-    .set({ enabled: input.enabled, updatedAt: new Date() })
-    .where(eq(wfConnectorTool.id, input.toolId))
 }
 
 /**

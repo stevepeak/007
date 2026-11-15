@@ -139,8 +139,6 @@ function ConnectorCard({ connector }: { connector: ConnectorSummary }) {
 
   const needsAttention =
     !!connector.connection && connector.connection.status !== 'connected'
-  const noneEnabled =
-    connector.toolCount > 0 && connector.enabledToolCount === 0
 
   return (
     <button
@@ -172,23 +170,10 @@ function ConnectorCard({ connector }: { connector: ConnectorSummary }) {
         <p className="mt-0.5 truncate font-mono text-xs text-neutral-500">
           {connector.url}
         </p>
-        {/*
-          The tool count doubles as the call to action. "0 of 66" is the state
-          every freshly-refreshed connector sits in, and it is the one that
-          most needs a human to go do something — so it is coloured as a
-          prompt, not reported as a fact.
-        */}
-        <p
-          className={cn(
-            'mt-1.5 text-xs',
-            noneEnabled ? 'text-amber-700' : 'text-neutral-500',
-          )}
-        >
+        <p className="mt-1.5 text-xs text-neutral-500">
           {connector.toolCount === 0
             ? 'No tools discovered yet — open to refresh its catalog.'
-            : noneEnabled
-              ? `${connector.toolCount} tools discovered, none enabled yet — open to choose which agents may call.`
-              : `${connector.enabledToolCount} of ${connector.toolCount} tools enabled`}
+            : `${connector.toolCount} tools`}
         </p>
         {connector.connection?.error ? (
           <p className="mt-1 text-xs text-amber-700">

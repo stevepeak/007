@@ -1,6 +1,8 @@
 import type { Tool } from 'ai'
 import type { z } from 'zod'
 
+import { parseGroupWildcard, toolGroupOf } from './connector-tool-id'
+
 // The SDK is generic over an opaque per-run dependency bundle `TDeps`. The host
 // supplies `TDeps` (via `WfSdkConfig.buildRunDeps`) and the tools that consume
 // it. The engine never inspects `TDeps` — it only threads it from the run
@@ -117,6 +119,13 @@ export type ToolMeta = {
    * checked against what a run actually saw, wherever the id came from.
    */
   produces?: readonly string[]
+  /**
+   * Display name of the tool's group, for a host tool registered as
+   * `<group>:<name>` (see `toolGroupOf`) — what the agent editor shows the
+   * group as, and what `<group>:*` attaches whole. Set the same label on every
+   * tool of a group. Omitted → the group's key.
+   */
+  groupLabel?: string
 }
 
 /** How a tool behaves under the eval `simulate` signal. See {@link ToolMeta}. */
@@ -182,6 +191,61 @@ export type ToolRegistryEntry<TDeps> =
     })
 
 export type ToolRegistry<TDeps> = Map<string, ToolRegistryEntry<TDeps>>
+
+/**
+ * An agent's `toolIds` as concrete registry ids, with the ones it should load
+ * on demand rather than see up front.
+ *
+ * A `<group>:*` entry — a whole connector (`mcp:<connector>:*`) or host group
+ * (`app:*`) — expands to every known id in that group, in catalog order. A tool
+ * listed by its own id wins over the wildcard that also covers it, so "all of
+ * Zernio, searchable, but `create_post` in context" is two entries rather than
+ * an exception list.
+ */
+export function resolveAgentToolIds(args: {
+  toolIds: readonly string[]
+  deferredToolIds: readonly string[]
+  /** Skipped when a whole group expands; see `disabledToolIds`. */
+  disabledToolIds?: readonly string[]
+  knownIds: Iterable<string>
+}): { ids: string[]; deferred: Set<string> } {
+  const known = [...args.knownIds]
+  const deferredEntries = new Set(args.deferredToolIds)
+  const disabled = new Set(args.disabledToolIds)
+  const explicit = new Set(
+    args.toolIds.filter((id) => parseGroupWildcard(id) == null),
+  )
+  const ids: string[] = []
+  const deferred = new Set<string>()
+  const add = (id: string, isDeferred: boolean): void => {
+    if (ids.includes(id)) return
+    ids.push(id)
+    if (isDeferred) deferred.add(id)
+  }
+  for (const entry of args.toolIds) {
+    const group = parseGroupWildcard(entry)
+    if (group == null) {
+      add(entry, deferredEntries.has(entry))
+      continue
+    }
+    for (const id of known) {
+      if (explicit.has(id) || disabled.has(id)) continue
+      if (toolGroupOf(id) !== group) continue
+      add(id, deferredEntries.has(entry))
+    }
+  }
+  return { ids, deferred }
+}
+
+/** An agent's `toolIds` as the concrete ids it can call — whole groups
+ * expanded against `knownIds`. */
+export function expandToolIds(args: {
+  toolIds: readonly string[]
+  disabledToolIds?: readonly string[]
+  knownIds: Iterable<string>
+}): string[] {
+  return resolveAgentToolIds({ ...args, deferredToolIds: [] }).ids
+}
 
 /**
  * Resolves the AI-tool subset of the registry into an AI SDK ToolSet

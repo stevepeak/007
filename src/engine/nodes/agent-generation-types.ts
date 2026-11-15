@@ -214,6 +214,12 @@ export type RunAgentGenerationArgs = {
   messages: UIMessage[]
   tools: ToolSet
   /**
+   * Names in `tools` the model does not see until it loads them through the
+   * synthesized `search_tools` tool. Omitted or empty → every tool up front.
+   * See `./agent-generation-tool-search`.
+   */
+  deferredTools?: readonly string[]
+  /**
    * Per-tool human-readable status templates, keyed by tool id (== the tool name
    * the model calls). When `streamToolCalls` is on, a matching template is
    * interpolated with the call's input and streamed to the user; tools without a

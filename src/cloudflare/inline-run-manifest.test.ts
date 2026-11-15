@@ -116,7 +116,7 @@ describe('runInlineGraph — the run manifest', () => {
           },
         })
       },
-      toolRegistry: {},
+      toolRegistry: new Map(),
       triggers: {},
     } as unknown as WfSdkConfig<unknown>
     ;({ agentId } = await createAgent(db, {

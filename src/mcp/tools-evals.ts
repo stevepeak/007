@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import type { JsonSchema } from '../engine'
+import { parseGroupWildcard } from '../engine/connector-tool-id'
 import {
   checkTreeSchema,
   describeCheckVocabulary,
@@ -11,6 +12,7 @@ import {
   type CheckTree,
   type EvalTools,
 } from '../engine/eval-schema'
+import { expandToolIds } from '../engine/tool-registry'
 import { MANUAL_TRIGGER_KIND } from '../engine/trigger-registry'
 import type {
   AgentConfig,
@@ -199,7 +201,15 @@ async function resolveTargetContract(
     // Null (unknown) rather than [] (known-empty) when the agent has never
     // been published: the difference decides whether a fixture warning is a
     // finding or noise.
-    toolIds: config ? config.toolIds : null,
+    toolIds: config
+      ? config.toolIds.some((id) => parseGroupWildcard(id) != null)
+        ? expandToolIds({
+            toolIds: config.toolIds,
+            disabledToolIds: config.disabledToolIds,
+            knownIds: (await client.listTools()).map((t) => t.id),
+          })
+        : config.toolIds
+      : null,
     outputSchema:
       config?.output.kind === 'object'
         ? (config.output.schema)

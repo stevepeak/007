@@ -169,17 +169,12 @@ export interface WfDataClient {
     enabled: boolean
   }): Promise<{ ok: true }>
   /**
-   * Pull the server's `tools/list` and persist it, preserving which tools are
-   * enabled and any side-effect overrides.
+   * Pull the server's `tools/list` and persist it, preserving any side-effect
+   * overrides.
    */
   refreshConnector(input: {
     connectorId: string
   }): Promise<ConnectorRefreshResult>
-  /** Make one discovered tool available to agents and Tool nodes. */
-  setConnectorToolEnabled(input: {
-    toolId: string
-    enabled: boolean
-  }): Promise<{ ok: true }>
   /**
    * Override a tool's read/write classification. Sticky: the next refresh
    * leaves it alone rather than reverting to the server's annotation.

@@ -6,7 +6,6 @@ import { cn } from '../cn'
 import { useWfComponents } from '../context'
 import { DataView } from '../data-view'
 import { EmptyState } from '../empty-state'
-import { Tabs } from '../filters'
 import {
   useConnector,
   useConnectorCapability,
@@ -14,7 +13,6 @@ import {
   useRefreshConnector,
   useSaveConnectorToken,
   useSetConnectorEnabled,
-  useSetConnectorToolEnabled,
   useSetConnectorToolSideEffect,
   useStartConnectorAuth,
 } from '../hooks-connectors'
@@ -27,12 +25,9 @@ import { ConnectionBadge, ConnectorIcon } from './status'
 
 // One connector: its connection, and the catalog of tools it advertises.
 //
-// The tool table is the point of the page. Everything a server advertises
-// arrives DISABLED, and enabling one is the moment a third party's code becomes
-// callable by an agent — so the row shows what it does, what it takes, and
-// whether it writes, before the toggle.
-
-type ToolFilter = 'all' | 'enabled' | 'available'
+// The tool table is the point of the page: what each tool does, what it takes,
+// and whether it writes. Which tools an agent may call is chosen on the agent,
+// not here — an agent attaches single tools or the whole connector.
 
 export type ConnectorDetailProps = {
   connectorId: string
@@ -44,15 +39,12 @@ export function ConnectorDetail({
   className,
 }: ConnectorDetailProps) {
   const { data, isLoading, error } = useConnector(connectorId)
-  const [filter, setFilter] = useState<ToolFilter>('all')
   const [query, setQuery] = useState('')
 
   const tools = useMemo(() => {
     const all = data?.tools ?? []
     const q = query.trim().toLowerCase()
     return all.filter((t) => {
-      if (filter === 'enabled' && !t.enabled) return false
-      if (filter === 'available' && t.enabled) return false
       if (!q) return true
       return (
         t.toolName.toLowerCase().includes(q) ||
@@ -60,7 +52,7 @@ export function ConnectorDetail({
         (t.description ?? '').toLowerCase().includes(q)
       )
     })
-  }, [data?.tools, filter, query])
+  }, [data?.tools, query])
 
   return (
     <div className={cn('mx-auto max-w-4xl space-y-4 p-6', className)}>
@@ -75,9 +67,8 @@ export function ConnectorDetail({
                     Tools
                   </h2>
                   <p className="mt-0.5 text-xs text-neutral-500">
-                    Everything the server advertises arrives off. Tick{' '}
-                    <span className="font-medium text-neutral-700">Enabled</span>{' '}
-                    on a tool to let agents and Tool nodes call it.
+                    Agents pick these on the agent: single tools, or the whole
+                    connector.
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -87,29 +78,24 @@ export function ConnectorDetail({
                     placeholder="Search tools"
                     // A raw input, not the injected one: the injected primitive
                     // can't be resized by className (there is no tailwind-merge
-                    // in this UI), and a full-height field here would tower over
-                    // the filter tabs beside it.
+                    // in this UI).
                     className="h-8 w-48 rounded-md border border-neutral-300 px-2 text-sm outline-none focus:border-neutral-400"
-                  />
-                  <Tabs
-                    active={filter}
-                    onChange={(v) => setFilter(v as ToolFilter)}
-                    tabs={[
-                      { key: 'all', label: 'All', count: detail.tools.length },
-                      {
-                        key: 'enabled',
-                        label: 'Enabled',
-                        count: detail.tools.filter((t) => t.enabled).length,
-                      },
-                      { key: 'available', label: 'Available' },
-                    ]}
                   />
                 </div>
               </div>
+              {/*
+                TODO: a scheduled refresh that alerts on added/changed tools.
+                Until then this warning is the only signal.
+              */}
+              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Tools this server adds on a refresh reach every agent that
+                attached the whole connector — with no notice yet. Review new
+                tools here after refreshing.
+              </p>
               {detail.tools.length === 0 ? (
                 <EmptyState message="No tools discovered yet. Refresh to pull this server’s catalog." />
               ) : tools.length === 0 ? (
-                <EmptyState message="No tools match that filter." />
+                <EmptyState message="No tools match that search." />
               ) : (
                 <div className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-neutral-200 bg-white">
                   {tools.map((tool) => (
@@ -319,7 +305,6 @@ function TokenForm({ connectorId }: { connectorId: string }) {
 }
 
 function ToolRow({ tool }: { tool: ConnectorToolInfo }) {
-  const setEnabled = useSetConnectorToolEnabled()
   const setSideEffect = useSetConnectorToolSideEffect()
   const [open, setOpen] = useState(false)
 
@@ -362,7 +347,7 @@ function ToolRow({ tool }: { tool: ConnectorToolInfo }) {
           </div>
           {/*
             The server's own description — third-party text that will be read by
-            a model once this tool is enabled. Rendered as plain text, never as
+            a model once an agent attaches this tool. Rendered as plain text, never as
             markup.
           */}
           {tool.description ? (
@@ -392,8 +377,8 @@ function ToolRow({ tool }: { tool: ConnectorToolInfo }) {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {/*
-            Raw controls rather than the injected primitives: these sit inside a
-            dense table row, and the injected Select/Checkbox can't be resized by
+            A raw control rather than the injected primitive: it sits inside a
+            dense table row, and the injected Select can't be resized by
             className in this UI.
           */}
           <select
@@ -413,20 +398,6 @@ function ToolRow({ tool }: { tool: ConnectorToolInfo }) {
             <option value="read">read</option>
             <option value="write">write</option>
           </select>
-          <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-neutral-600">
-            <input
-              type="checkbox"
-              checked={tool.enabled}
-              disabled={withdrawn || setEnabled.isPending}
-              onChange={(e) => { return setEnabled.mutate({
-                  toolId: tool.id,
-                  enabled: e.target.checked,
-                }) }
-              }
-              className="h-3.5 w-3.5"
-            />
-            Enabled
-          </label>
         </div>
       </div>
     </div>

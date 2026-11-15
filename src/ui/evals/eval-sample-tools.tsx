@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 
 import { asRecord } from '../../engine/guards'
 import { truncate } from '../../engine/text'
+import { expandToolIds } from '../../engine/tool-registry'
 import type {
   AgentConfig,
   EvalToolMode,
@@ -65,16 +66,22 @@ function AgentToolList({
   // a column of open JSON editors stops being a list of tools.
   const [editing, setEditing] = useState<string | null>(null)
 
-  const toolIds = useMemo(() => {
+  const rawConfig = useMemo(() => {
     // Generation agents only. A decision agent has no `toolIds` at all, and
     // `useTargetHasTools` already answers `false` for one, so this list is
     // never rendered against it — the guard keeps that true structurally
     // rather than by coincidence of call order.
-    if (detail.data?.agent.kind !== 'generation') return []
-    const config = (detail.data.currentVersion?.config ??
+    if (detail.data?.agent.kind !== 'generation') return null
+    return (detail.data.currentVersion?.config ??
       detail.data.draft?.config) as AgentConfig | undefined
-    return config?.toolIds ?? []
   }, [detail.data])
+  const toolIds = useMemo(() => {
+    return expandToolIds({
+      toolIds: rawConfig?.toolIds ?? [],
+      disabledToolIds: rawConfig?.disabledToolIds,
+      knownIds: (toolsQuery.data ?? []).map((t) => t.id),
+    })
+  }, [rawConfig, toolsQuery.data])
 
   const byId = useMemo(
     () => new Map((toolsQuery.data ?? []).map((t) => [t.id, t])),

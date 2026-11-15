@@ -1,6 +1,7 @@
 import { Link2 } from 'lucide-react'
 
 import type { AgentConfig } from '../../engine'
+import { expandToolIds } from '../../engine/tool-registry'
 import type { ToolOption } from '../../server/protocol-tools'
 import { useWfComponents } from '../context'
 import { useReferenceKinds } from '../hooks-tools'
@@ -29,6 +30,11 @@ export function AgentReferencesSection({
   if (catalog.length === 0) return null
 
   const textOutput = config.output.kind === 'text'
+  const attached = expandToolIds({
+    toolIds: config.toolIds,
+    disabledToolIds: config.disabledToolIds,
+    knownIds: aiTools.map((t) => t.id),
+  })
   const enabled = new Set(config.referenceKinds)
   // A kind the agent has selected that the host no longer declares would make
   // every run throw — say so instead of hiding it.
@@ -68,9 +74,7 @@ export function AgentReferencesSection({
       >
         {catalog.map((kind) => {
           const feeders = aiTools.filter((t) => {
-            return (
-              t.produces?.includes(kind.id) && config.toolIds.includes(t.id)
-            )
+            return t.produces?.includes(kind.id) && attached.includes(t.id)
           })
           const suggested = feeders.length > 0 && !enabled.has(kind.id)
           return (

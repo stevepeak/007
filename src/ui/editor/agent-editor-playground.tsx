@@ -16,9 +16,11 @@ import { useState } from 'react'
 import type { AgentConfig } from '../../engine'
 import { tokenCostUsd } from '../../engine/cost'
 import { truncate } from '../../engine/text'
+import { expandToolIds } from '../../engine/tool-registry'
 import type {
   AgentPreviewResult,
   ToolContextField,
+  ToolOption,
 } from '../../server/protocol'
 import { WfAutoForm } from '../autoform/wf-auto-form'
 import { cn } from '../cn'
@@ -220,6 +222,7 @@ function PlaygroundRunCard({
   onRestore?: () => void
 }) {
   const isCurrent = changed.length === 0
+  const { attached } = useAttachedTools(run)
 
   return (
     <section className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
@@ -291,7 +294,7 @@ function PlaygroundRunCard({
             <PlaygroundResult
               result={run.result}
               liveToolIds={run.liveToolIds}
-              attachedToolIds={run.config.toolIds}
+              attachedToolIds={attached}
             />
           ) : null}
 
@@ -333,14 +336,28 @@ function PlaygroundRunCard({
   )
 }
 
+/** The concrete tools a run's agent had — whole groups (`mcp:<id>:*`,
+ * `app:*`) expanded against the current catalog. */
+function useAttachedTools(run: PlaygroundRun): {
+  tools: ToolOption[] | undefined
+  attached: string[]
+} {
+  const tools = useTools().data
+  const attached = expandToolIds({
+    toolIds: run.config.toolIds,
+    disabledToolIds: run.config.disabledToolIds,
+    knownIds: (tools ?? []).map((t) => t.id),
+  })
+  return { tools, attached }
+}
+
 /**
  * Which tools were real in this run. Worth a line of its own in the record: the
  * same agent, the same input and the same prompt can answer differently
  * depending on whether its search actually ran.
  */
 function RunToolModes({ run }: { run: PlaygroundRun }) {
-  const tools = useTools().data
-  const attached = run.config.toolIds
+  const { tools, attached } = useAttachedTools(run)
   if (attached.length === 0) return null
   const name = (id: string) => tools?.find((t) => t.id === id)?.name ?? id
   const liveNames = run.liveToolIds.filter((id) => attached.includes(id))

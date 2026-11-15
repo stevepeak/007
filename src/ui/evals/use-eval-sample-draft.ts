@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { agentOutputJsonSchema, type JsonSchema } from '../../engine'
+import { expandToolIds } from '../../engine/tool-registry'
 import type {
   CheckTree,
   EvalCheck,
@@ -12,6 +13,7 @@ import {
   useAgents,
   useDeleteEvalRow,
   useEvalSet,
+  useTools,
   useUpsertEvalRow,
 } from '../hooks'
 import { useUndoStack } from '../undo/use-undo-stack'
@@ -118,7 +120,17 @@ export function useEvalSampleDraft({
 
   // The target agent's wired tools — the only tools a run could ever call, so a
   // check's tool pickers are scoped to them.
-  const allowToolIds = targetAgent?.toolIds
+  const allTools = useTools().data
+  const targetToolIds = targetAgent?.toolIds
+  const targetDisabledToolIds = targetAgent?.disabledToolIds
+  const allowToolIds = useMemo(() => {
+    if (!targetToolIds) return
+    return expandToolIds({
+      toolIds: targetToolIds,
+      disabledToolIds: targetDisabledToolIds,
+      knownIds: (allTools ?? []).map((t) => t.id),
+    })
+  }, [targetToolIds, targetDisabledToolIds, allTools])
 
   // The target's published question set, when it is a decision agent — what the
   // state editor names its variables from and what the `decision_answers` check

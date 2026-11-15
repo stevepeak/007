@@ -1,7 +1,15 @@
+import { ChevronDown, ChevronRight } from 'lucide-react'
+import { useState } from 'react'
+
 import type { ToolOption } from '../server/protocol'
 
 import { AssetCard } from './asset-card'
 import { cn } from './cn'
+import {
+  groupTools,
+  nameInGroup,
+  type ToolGroup,
+} from './editor/tool-selection'
 import { useTools } from './hooks'
 import { ListQueryState } from './query-state'
 import { ToolAvatar } from './tool-appearance'
@@ -18,6 +26,9 @@ import { ToolAvatar } from './tool-appearance'
 // connector at runtime, so it can appear, change, or start failing without
 // either repo being touched. That is the first thing anyone asks on being handed
 // an unfamiliar console, and it used to be unanswerable from the UI.
+//
+// Grouped tools fold into one section per group — an MCP server, or a host
+// group registered as `<group>:<name>` — since a group can bring dozens.
 
 export type ToolsListProps = {
   className?: string
@@ -65,7 +76,7 @@ export function ToolsList({ className }: ToolsListProps) {
           someone came here to look at. */}
       {data
         ? GROUPS.map((group) => (
-            <ToolGroup
+            <OriginSection
               key={group.origin}
               title={group.title}
               note={group.note}
@@ -77,7 +88,7 @@ export function ToolsList({ className }: ToolsListProps) {
   )
 }
 
-function ToolGroup({
+function OriginSection({
   title,
   note,
   tools,
@@ -88,6 +99,7 @@ function ToolGroup({
 }) {
   // A host with no built-ins registered gets no empty heading.
   if (tools.length === 0) return null
+  const { plain, groups } = groupTools(tools)
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-baseline gap-x-2">
@@ -97,17 +109,71 @@ function ToolGroup({
         </h2>
         <p className="text-xs text-neutral-500">{note}</p>
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {tools.map((t) => (
-          <AssetCard
-            key={t.id}
-            to={`tools/${t.id}`}
-            avatar={<ToolAvatar tool={t} size="lg" />}
-            title={t.name}
-            description={t.description}
-          />
-        ))}
-      </div>
+      {plain.length > 0 ? (
+        <ToolCards tools={plain} name={(t) => t.name} />
+      ) : null}
+      {groups.length > 0 ? (
+        <div className="divide-y divide-neutral-200 overflow-hidden rounded-lg border border-neutral-200 bg-white">
+          {groups.map((g) => (
+            <GroupSection key={g.id} group={g} />
+          ))}
+        </div>
+      ) : null}
     </section>
+  )
+}
+
+/** One group's tools, folded until opened. */
+function GroupSection({ group }: { group: ToolGroup }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-neutral-50"
+      >
+        {open ? (
+          <ChevronDown className="size-4 shrink-0 text-neutral-400" />
+        ) : (
+          <ChevronRight className="size-4 shrink-0 text-neutral-400" />
+        )}
+        <ToolAvatar tool={group.tools[0]} size="md" />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-neutral-900">
+          {group.label}
+        </span>
+        <span className="shrink-0 text-xs text-neutral-400">
+          {group.tools.length} tools
+        </span>
+      </button>
+      {open ? (
+        <div className="border-t border-neutral-100 bg-neutral-50/50 p-3">
+          <ToolCards tools={group.tools} name={(t) => nameInGroup(t, group)} />
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function ToolCards({
+  tools,
+  name,
+}: {
+  tools: ToolOption[]
+  name: (tool: ToolOption) => string
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {tools.map((t) => (
+        <AssetCard
+          key={t.id}
+          to={`tools/${t.id}`}
+          avatar={<ToolAvatar tool={t} size="lg" />}
+          title={name(t)}
+          description={t.description}
+        />
+      ))}
+    </div>
   )
 }

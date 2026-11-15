@@ -6,7 +6,6 @@ import type { WfSdkConfig } from '../engine/config'
 import {
   getConnection,
   getConnector,
-  setConnectorToolEnabled,
   upsertConnector,
   upsertConnectorTools,
 } from '../storage/data/connectors'
@@ -139,7 +138,6 @@ describe('a run uses the owner the host resolves', () => {
     await upsertConnectorTools(db, 'acme', [
       { name: 'post', sideEffect: 'write', schemaHash: 'h' },
     ])
-    await setConnectorToolEnabled(db, { toolId: 'mcp:acme:post', enabled: true })
     const config = {
       toolRegistry: new Map(),
       resolveConnectorSecret: () => SECRET,

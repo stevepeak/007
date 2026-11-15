@@ -40,7 +40,6 @@ function connector(over: Record<string, unknown> = {}): never {
     note: null,
     lastRefreshedAt: 1_700_000_000_000,
     toolCount: 12,
-    enabledToolCount: 3,
     connection: {
       status: 'connected',
       accountLabel: 'steve@…',
@@ -159,7 +158,6 @@ describe('list_connectors — the tool drill-in', () => {
         description: 'Creates an issue.',
         inputSchema: { type: 'object', properties: { title: { type: 'string' } } },
         outputSchema: { type: 'object' },
-        enabled: true,
         sideEffect: 'write',
         sideEffectOverridden: false,
         missingSince: null,
@@ -173,7 +171,6 @@ describe('list_connectors — the tool drill-in', () => {
         description: 'Archives one.',
         inputSchema: undefined,
         outputSchema: undefined,
-        enabled: false,
         sideEffect: 'write',
         sideEffectOverridden: false,
         missingSince: 1_700_000_000_000,
@@ -188,7 +185,6 @@ describe('list_connectors — the tool drill-in', () => {
       args,
     ) as Promise<{
       tools: Record<string, unknown>[]
-      hiddenDisabledTools?: number
       note: string
     }> }
 
@@ -202,23 +198,17 @@ describe('list_connectors — the tool drill-in', () => {
     })
   })
 
-  test('hides disabled tools by default and counts them', async () => {
-    const out = await run({ connectorId: 'linear' })
-    expect(out.tools).toHaveLength(1)
-    expect(out.hiddenDisabledTools).toBe(1)
-  })
-
   // A tool the server stopped advertising is still referenced by whatever bound
   // it, and will now fail.
   test('surfaces a tool the server no longer advertises', async () => {
-    const out = await run({ connectorId: 'linear', includeDisabledTools: true })
+    const out = await run({ connectorId: 'linear' })
     const gone = out.tools.find((t) => t.id === 'mcp:linear:archive_issue')
     expect(gone?.missingSince).toContain('2023')
   })
 
-  test('says enabling a tool is not something to do from here', async () => {
+  test('says how to attach the whole connector', async () => {
     const out = await run({ connectorId: 'linear' })
-    expect(out.note).toContain('person’s decision')
+    expect(out.note).toContain('mcp:linear:*')
   })
 
   test('a missing connector names the id shape rather than throwing', async () => {

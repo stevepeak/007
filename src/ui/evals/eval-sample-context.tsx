@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 
+import { expandToolIds } from '../../engine/tool-registry'
 import type {
   AgentConfig,
   EvalTools,
@@ -53,7 +54,11 @@ function useNeededContext(args: {
         : undefined
     const byId = new Map((toolsQuery.data ?? []).map((t) => [t.id, t]))
     const required = new Set<string>()
-    for (const id of config?.toolIds ?? []) {
+    for (const id of expandToolIds({
+      toolIds: config?.toolIds ?? [],
+      disabledToolIds: config?.disabledToolIds,
+      knownIds: byId.keys(),
+    })) {
       const tool = byId.get(id)
       if (!tool || !executes({ tool, tools })) continue
       for (const key of tool.requiresContext ?? []) required.add(key)

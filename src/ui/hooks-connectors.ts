@@ -1,14 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import type { ConnectorDetail, ConnectorToolInfo } from '../server/protocol-connectors'
+
 import { useWfClient } from './context'
 import { keys } from './hooks-shared'
 
 // Query hooks for MCP connectors.
 //
 // Every mutation that changes which tools are callable also invalidates
-// `keys.tools`: the agent editor's tool picker reads that list, and a connector
-// tool someone just enabled has to appear there without a reload — otherwise
+// `keys.tools`: the agent editor's tool picker reads that list, and a tool a
+// refresh just discovered has to appear there without a reload — otherwise
 // the two surfaces disagree about what the platform can do.
 
 export function useConnectors() {
@@ -62,7 +63,7 @@ function useConnectorMutation<TInput, TResult>(
   return useMutation({
     mutationFn: (input: TInput) => run(client, input),
     onMutate: async (input: TInput) => {
-      if (!opts.optimistic) return undefined
+      if (!opts.optimistic) return
       await qc.cancelQueries({ queryKey: keys.connectorAll })
       const previous = qc.getQueriesData<ConnectorDetail>({
         queryKey: keys.connectorAll,
@@ -122,24 +123,7 @@ function patchTool(
 ): ConnectorDetail {
   if (!detail.tools.some((t) => t.id === toolId)) return detail
   const tools = detail.tools.map((t) => (t.id === toolId ? { ...t, ...patch } : t))
-  return {
-    ...detail,
-    tools,
-    connector: {
-      ...detail.connector,
-      enabledToolCount: tools.filter((t) => t.enabled).length,
-    },
-  }
-}
-
-export function useSetConnectorToolEnabled() {
-  return useConnectorMutation(
-    (client, input: { toolId: string; enabled: boolean }) => { return client.setConnectorToolEnabled(input) },
-    {
-      invalidatesTools: true,
-      optimistic: (input, detail) => { return patchTool(detail, input.toolId, { enabled: input.enabled }) },
-    },
-  )
+  return { ...detail, tools }
 }
 
 export function useSetConnectorToolSideEffect() {

@@ -16,7 +16,6 @@ import {
   saveConnection,
   saveConnectorClient,
   setConnectorEnabled,
-  setConnectorToolEnabled,
   setConnectorToolSideEffect,
   touchConnectorRefreshed,
   updateConnectionTokens,
@@ -48,10 +47,9 @@ function tool(name: string, over: Partial<DiscoveredTool> = {}): DiscoveredTool 
 }
 
 describe('tool catalog refresh', () => {
-  // The single most important property of the whole feature: connecting a
-  // server must not make anything callable. A server ships write tools, and a
-  // refresh that enabled them would widen every agent's reach silently.
-  test('new tools arrive disabled', async () => {
+  // Which tools an agent calls is the agent's choice, so a discovered tool is
+  // callable as soon as it is in the catalog.
+  test('new tools are callable once discovered', async () => {
     const result = await upsertConnectorTools(db, 'linear', [
       tool('list_issues'),
       tool('create_issue'),
@@ -62,24 +60,19 @@ describe('tool catalog refresh', () => {
     ])
     const rows = await listConnectorTools(db, 'linear')
     expect(rows).toHaveLength(2)
-    expect(rows.every((r) => !r.enabled)).toBe(true)
-    expect(await listEnabledConnectorTools(db)).toEqual([])
+    expect((await listEnabledConnectorTools(db)).map((r) => r.tool.id)).toEqual(
+      ['mcp:linear:create_issue', 'mcp:linear:list_issues'],
+    )
   })
 
-  test('a refresh preserves what a human enabled', async () => {
+  test('a refresh updates a tool in place', async () => {
     await upsertConnectorTools(db, 'linear', [tool('list_issues')])
-    await setConnectorToolEnabled(db, {
-      toolId: 'mcp:linear:list_issues',
-      enabled: true,
-    })
-
     await upsertConnectorTools(db, 'linear', [
       tool('list_issues', { description: 'now with a better description' }),
     ])
-
-    const [row] = await listConnectorTools(db, 'linear')
-    expect(row.enabled).toBe(true)
-    expect(row.description).toBe('now with a better description')
+    const rows = await listConnectorTools(db, 'linear')
+    expect(rows).toHaveLength(1)
+    expect(rows[0].description).toBe('now with a better description')
   })
 
   // The server's annotation is a hint; a human who read the docs outranks it,
@@ -129,7 +122,6 @@ describe('tool catalog refresh', () => {
   // and "the server withdrew this" beats an unresolvable id.
   test('marks vanished tools missing rather than deleting them', async () => {
     await upsertConnectorTools(db, 'linear', [tool('a'), tool('b')])
-    await setConnectorToolEnabled(db, { toolId: 'mcp:linear:b', enabled: true })
 
     const result = await upsertConnectorTools(db, 'linear', [tool('a')])
     expect(result.missing).toEqual(['mcp:linear:b'])
@@ -138,9 +130,10 @@ describe('tool catalog refresh', () => {
     expect(rows).toHaveLength(2)
     const b = rows.find((r) => r.id === 'mcp:linear:b')
     expect(b?.missingSince).toBeTruthy()
-    // Still enabled, but no longer resolvable — it cannot be called.
-    expect(b?.enabled).toBe(true)
-    expect(await listEnabledConnectorTools(db)).toEqual([])
+    // Still listed, but no longer resolvable — it cannot be called.
+    expect((await listEnabledConnectorTools(db)).map((r) => r.tool.id)).toEqual(
+      ['mcp:linear:a'],
+    )
   })
 
   test('a returning tool is no longer missing', async () => {
@@ -198,12 +191,11 @@ describe('server icon', () => {
 describe('what is callable', () => {
   beforeEach(async () => {
     await upsertConnectorTools(db, 'linear', [tool('a'), tool('b')])
-    await setConnectorToolEnabled(db, { toolId: 'mcp:linear:a', enabled: true })
   })
 
-  test('an enabled tool on an enabled connector resolves', async () => {
+  test('every tool on an enabled connector resolves', async () => {
     const rows = await listEnabledConnectorTools(db)
-    expect(rows.map((r) => r.tool.id)).toEqual(['mcp:linear:a'])
+    expect(rows.map((r) => r.tool.id)).toEqual(['mcp:linear:a', 'mcp:linear:b'])
     expect(rows[0].connector.label).toBe('Linear')
   })
 

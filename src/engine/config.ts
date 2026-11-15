@@ -2,6 +2,7 @@ import type { LanguageModel } from 'ai'
 
 import type { WfBlobRef } from './blob-ref'
 import type { WfConnectionOwner } from './connection-owner'
+import { isConnectorToolId, toolGroupOf } from './connector-tool-id'
 import {
   DECISION_QUESTION_TYPES,
   type Decider,
@@ -605,6 +606,17 @@ export function defineWfConfig<TDeps = unknown>(
   for (const [id, entry] of config.toolRegistry instanceof Map
     ? config.toolRegistry
     : []) {
+    // `mcp:` is the connectors' namespace, and a `:` anywhere else names a
+    // group (`<group>:<name>`) — so a malformed one would silently be no
+    // group at all, and `<group>:*` would attach nothing.
+    if (
+      id.includes(':') &&
+      (isConnectorToolId(id) || toolGroupOf(id) == null || id.endsWith(':*'))
+    ) {
+      problems.push(
+        `tool '${id}' is not a valid id: a host tool is \`<name>\` or \`<group>:<name>\`, with a lowercase-and-dashes group other than \`mcp\``,
+      )
+    }
     for (const kind of entry.produces ?? []) {
       if (!(config.referenceKinds ?? []).some((k) => k.id === kind)) {
         problems.push(

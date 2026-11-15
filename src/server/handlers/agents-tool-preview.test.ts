@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 
 import type { WfDb } from '../../storage/client'
 import {
-  setConnectorToolEnabled,
+  setConnectorEnabled,
   upsertConnector,
   upsertConnectorTools,
 } from '../../storage/data/connectors'
@@ -12,7 +12,7 @@ import { buildAgentHandlers } from './agents'
 import { testHandlerCtx, testHandlerOptions } from './handler-test-helpers'
 
 // The tool playground accepts exactly what `listTools` advertises: host tools
-// and enabled connector tools. Anything else is refused before the host hook
+// and tools of enabled connectors. Anything else is refused before the host hook
 // builds live deps.
 
 describe('runToolPreview — which tools it accepts', () => {
@@ -46,13 +46,13 @@ describe('runToolPreview — which tools it accepts', () => {
     return h.runToolPreview(testHandlerCtx(db, { toolId, args: {} }))
   }
 
-  test('runs an enabled connector tool', async () => {
-    await setConnectorToolEnabled(db, { toolId: 'mcp:acme:search', enabled: true })
+  test('runs a connector tool', async () => {
     await run('mcp:acme:search')
     expect(ran).toEqual(['mcp:acme:search'])
   })
 
-  test('refuses a connector tool nobody enabled', async () => {
+  test('refuses a tool of a disabled connector', async () => {
+    await setConnectorEnabled(db, { connectorId: 'acme', enabled: false })
     await expect(run('mcp:acme:search')).rejects.toThrow('is not registered')
     expect(ran).toEqual([])
   })

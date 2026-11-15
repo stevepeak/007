@@ -34,7 +34,9 @@ There is **no implicit channel**. An incoming edge is sequencing only; it never 
 | `modelId` | required | Composite `provider:model` id from `list_models`. |
 | `prompt` | required | System prompt. Put **instructions only** here: it is the provider's cache prefix, so per-call data in it defeats prompt caching. |
 | `userPrompt` | `""` | The user turn. Required for `task`; optional for `conversation`. Per-call data goes here. |
-| `toolIds` | `[]` | Registry tool ids (from `get_tool_catalog`). Only `ai-tool` entries; a function-only tool cannot be given to an agent. See [[tools]]. |
+| `toolIds` | `[]` | Registry tool ids (from `get_tool_catalog`). Only `ai-tool` entries; a function-only tool cannot be given to an agent. `mcp:<connectorId>:*` attaches a whole connector — every tool it advertises at run time, including ones it adds later — and `<group>:*` a whole host group (e.g. `app:*`). See [[tools]]. |
+| `deferredToolIds` | `[]` | Entries of `toolIds` the model does not see up front: it gets their names through a synthesized `search_tools` tool and loads a tool's schema when it needs it, then calls it by its own id. Use it for a whole connector or group with many tools. An entry listed by its own id overrides the connector covering it. |
+| `disabledToolIds` | `[]` | Tools a whole connector or group would include that this agent must not call. Tools added to it later still arrive. |
 | `maxTurns` | 5 (1–100) | Rounds of tool calling before the model must answer. One turn never offers tools. |
 | `toolTokenBudget` | `null` | Tokens (summed across turns) the agent may spend researching; reaching it denies tools on the next turn, forcing the answer. Bounds research, not the final answer. `null` = no ceiling. |
 | `answerReservePercent` | 10 (2–50) | Share of the model's context window kept free for the answer. The loop stops calling tools when one more turn (measured from real per-turn growth) would eat into it. |

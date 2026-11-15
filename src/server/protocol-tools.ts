@@ -32,6 +32,10 @@ export type ToolOption = {
    * somebody else's — it can change, or vanish, without either repo moving.
    */
   origin: ToolOrigin
+  /** The group's display name — the connector's label for a `connector` tool,
+   * `ToolMeta.groupLabel` for a grouped host tool. What the agent editor groups
+   * its tools under. */
+  groupLabel?: string
   /**
    * Side-effect classification, when the tool declares one: `read` → it only
    * looks at data, `write` → calling it can change real data or bill an external

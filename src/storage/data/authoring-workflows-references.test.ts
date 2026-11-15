@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
 
-import type { AgentConfig, WorkflowGraph } from '../../engine/graph'
 import { evalWrapperName } from '../../engine/eval-wrapper-name'
+import type { AgentConfig, WorkflowGraph } from '../../engine/graph'
 import type { WfDb } from '../client'
 import { freshDb } from '../db-test-helpers'
 import {  wfWorkflow } from '../schema'
@@ -62,6 +62,8 @@ describe('agent workflow references', () => {
         prompt: 'Decide whether this is a duplicate.',
         userPrompt: 'Recipe: ${recipe}',
         toolIds: [],
+        deferredToolIds: [],
+        disabledToolIds: [],
         maxTurns: 1,
         toolTokenBudget: null,
         answerReservePercent: 10,

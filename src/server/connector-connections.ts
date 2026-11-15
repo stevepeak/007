@@ -55,7 +55,7 @@ export function connectionInfo(
 export function toConnectorSummary(
   connector: ConnectorRow,
   connection: ConnectorConnectionRow | null,
-  tools: { enabled: boolean }[],
+  tools: { missingSince: Date | null }[],
 ): ConnectorSummary {
   return {
     id: connector.id,
@@ -72,8 +72,7 @@ export function toConnectorSummary(
     note: connector.note,
     lastRefreshedAt: toEpoch(connector.lastRefreshedAt),
     connection: connectionInfo(connection),
-    toolCount: tools.length,
-    enabledToolCount: tools.filter((t) => t.enabled).length,
+    toolCount: tools.filter((t) => !t.missingSince).length,
   }
 }
 

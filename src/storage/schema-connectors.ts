@@ -8,11 +8,13 @@ import { createdAt } from './schema-common'
 // how an external client (Claude, Cursor) points itself at *us*.
 //
 // The shape follows `wf_model_provider` / `wf_model` deliberately: a connector
-// is the configured service, its tools are a CACHED CATALOG refreshed from the
-// server's `tools/list`, and each tool carries its own `enabled` flag that a
-// human curates. A refresh inserts new tools DISABLED and preserves the flag on
-// existing ones, so pulling a server's catalog can never silently widen what an
-// agent is allowed to call.
+// is the configured service and its tools are a CACHED CATALOG refreshed from
+// the server's `tools/list`. Which of those tools an agent may call is the
+// AGENT's choice (`toolIds`, which can name the whole connector as
+// `mcp:<id>:*`), not a flag here — so a refresh that adds a tool widens every
+// agent that attached the whole connector.
+// TODO: a scheduled refresh that alerts on added/changed tools, since today a
+// new tool reaches those agents silently.
 //
 // Where it departs from the model catalog is credentials. `wf_model_provider`
 // says "credentials live in the host env, never here", and that holds for a key
@@ -205,8 +207,6 @@ export const wfConnectorTool = sqliteTable(
     sideEffectOverridden: integer('side_effect_overridden', { mode: 'boolean' })
       .notNull()
       .default(false),
-    /** Curation flag. New tools arrive disabled; a refresh preserves this. */
-    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(false),
     /**
      * Hash of the input+output schema as last seen. A run manifest freezes this
      * so a Tool node whose bound args were authored against an older shape can
@@ -225,7 +225,6 @@ export const wfConnectorTool = sqliteTable(
   },
   (t) => [
     index('wf_connector_tool_connector_idx').on(t.connectorId),
-    index('wf_connector_tool_enabled_idx').on(t.enabled),
   ],
 )
 

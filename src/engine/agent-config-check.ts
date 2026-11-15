@@ -1,5 +1,6 @@
 import { agentModelRequirements, type AgentConfig } from './agent-config-schema'
 import type { WfAgentKind } from './agent-kind'
+import { parseGroupWildcard, toolGroupOf } from './connector-tool-id'
 import { unsupportedQuestionTypes, type DecisionModelOption } from './decision'
 import {
   decisionAgentConfigIssues,
@@ -70,7 +71,13 @@ function checkGeneration(args: {
       )}`,
     )
   }
-  const unknown = config.toolIds.filter((id) => !args.toolIds.has(id))
+  // A whole group (`mcp:<id>:*`, `app:*`) is known when the catalog has any
+  // tool in it — a group with nothing to call is as wrong as a typo.
+  const knownGroups = new Set([...args.toolIds].map((id) => toolGroupOf(id)))
+  const unknown = config.toolIds.filter((id) => {
+    const group = parseGroupWildcard(id)
+    return group == null ? !args.toolIds.has(id) : !knownGroups.has(group)
+  })
   if (unknown.length > 0) {
     issues.push(
       `These tool ids are not in the catalog: ${unknown.join(', ')}. An agent can only be given a registered tool.`,

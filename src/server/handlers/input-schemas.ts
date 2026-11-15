@@ -122,10 +122,6 @@ export const wfInputSchemas = {
     enabled: z.boolean(),
   }),
   refreshConnector: idInput('connectorId'),
-  setConnectorToolEnabled: z.object({
-    toolId: z.string().min(1),
-    enabled: z.boolean(),
-  }),
   setConnectorToolSideEffect: z.object({
     toolId: z.string().min(1),
     sideEffect: z.enum(['read', 'write']),

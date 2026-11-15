@@ -94,6 +94,7 @@ export function createLoopState(
 export type PreparedStep = {
   toolChoice?: 'none' | 'required'
   model?: LanguageModel
+  activeTools?: string[]
 }
 
 export type TurnPolicyArgs = {

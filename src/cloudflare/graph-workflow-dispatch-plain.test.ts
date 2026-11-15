@@ -86,7 +86,7 @@ beforeEach(() => {
       getModel: () => {
         throw new Error('a text node must not resolve a model')
       },
-      toolRegistry: {},
+      toolRegistry: new Map(),
     } as unknown as WfSdkConfig<unknown>,
     logger: { error: () => {}, warn: () => {}, info: () => {} },
     p: {

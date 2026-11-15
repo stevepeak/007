@@ -146,6 +146,7 @@ function agentSummary(
     // that reported a null model would look unpublished on every card.
     modelId: cfg?.modelId ?? decisionModelId(kind, config),
     toolIds: cfg?.toolIds ?? [],
+    disabledToolIds: cfg?.disabledToolIds ?? [],
     modelRequirements: cfg ? agentModelRequirements(cfg) : null,
     inputKind: cfg?.inputKind ?? 'task',
     latestVersionNumber,

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { simulatedToolOutput } from './tool-registry'
+import { resolveAgentToolIds, simulatedToolOutput } from './tool-registry'
 
 // The one place a tool's eval behavior is decided, shared by both dispatch paths
 // (an Agent node's tool set and a Tool node) so neutering can't diverge between
@@ -67,5 +67,69 @@ describe('simulatedToolOutput', () => {
     expect(
       simulatedToolOutput({ id: 'other', sideEffect: 'read' }, ctx),
     ).toBeUndefined()
+  })
+})
+
+const KNOWN = ['lookup', 'mcp:acme:a', 'mcp:acme:b', 'mcp:other:c']
+
+describe('resolveAgentToolIds', () => {
+  test('a whole connector expands to its tools only', () => {
+    const r = resolveAgentToolIds({
+      toolIds: ['lookup', 'mcp:acme:*'],
+      deferredToolIds: [],
+      knownIds: KNOWN,
+    })
+    expect(r.ids).toEqual(['lookup', 'mcp:acme:a', 'mcp:acme:b'])
+    expect([...r.deferred]).toEqual([])
+  })
+
+  test('a deferred connector defers each of its tools', () => {
+    const r = resolveAgentToolIds({
+      toolIds: ['lookup', 'mcp:acme:*'],
+      deferredToolIds: ['mcp:acme:*'],
+      knownIds: KNOWN,
+    })
+    expect([...r.deferred]).toEqual(['mcp:acme:a', 'mcp:acme:b'])
+  })
+
+  // "All of Acme, searchable, but `b` in context" is two entries.
+  test('a tool listed on its own wins over the connector covering it', () => {
+    const r = resolveAgentToolIds({
+      toolIds: ['mcp:acme:*', 'mcp:acme:b'],
+      deferredToolIds: ['mcp:acme:*'],
+      knownIds: KNOWN,
+    })
+    expect(r.ids).toEqual(['mcp:acme:a', 'mcp:acme:b'])
+    expect([...r.deferred]).toEqual(['mcp:acme:a'])
+  })
+
+  test('a disabled tool is skipped, the rest of the connector kept', () => {
+    const r = resolveAgentToolIds({
+      toolIds: ['mcp:acme:*'],
+      deferredToolIds: [],
+      disabledToolIds: ['mcp:acme:a'],
+      knownIds: KNOWN,
+    })
+    expect(r.ids).toEqual(['mcp:acme:b'])
+  })
+
+  test('an unknown connector expands to nothing', () => {
+    const r = resolveAgentToolIds({
+      toolIds: ['mcp:gone:*'],
+      deferredToolIds: [],
+      knownIds: KNOWN,
+    })
+    expect(r.ids).toEqual([])
+  })
+
+  test('a host group expands like a connector, and stays apart from it', () => {
+    const r = resolveAgentToolIds({
+      toolIds: ['app:*', 'mcp:acme:*'],
+      deferredToolIds: ['app:*'],
+      disabledToolIds: ['app:delete'],
+      knownIds: [...KNOWN, 'app:list', 'app:delete', 'apple'],
+    })
+    expect(r.ids).toEqual(['app:list', 'mcp:acme:a', 'mcp:acme:b'])
+    expect([...r.deferred]).toEqual(['app:list'])
   })
 })

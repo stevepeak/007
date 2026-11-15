@@ -53,8 +53,8 @@ export type ConnectorSummary = {
   lastRefreshedAt: number | null
   /** Null when nobody has connected it yet — a setup state, not a failure. */
   connection: ConnectorConnectionInfo | null
+  /** Tools the server still advertises. */
   toolCount: number
-  enabledToolCount: number
 }
 
 /** One discovered tool, as the connector detail page shows it. */
@@ -65,13 +65,12 @@ export type ConnectorToolInfo = {
   title: string | null
   /**
    * The server's own description. UNTRUSTED text authored by a third party and
-   * shown to both a human and (when enabled) a model — render as text, never as
+   * shown to both a human and (when attached to an agent) a model — render as text, never as
    * markup.
    */
   description: string | null
   inputSchema: JsonSchema | undefined
   outputSchema: JsonSchema | undefined
-  enabled: boolean
   sideEffect: 'read' | 'write'
   /** True when a human set `sideEffect` by hand; a refresh then leaves it be. */
   sideEffectOverridden: boolean

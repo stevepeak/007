@@ -30,10 +30,16 @@ import {
   withResponseFormat,
 } from './agent-generation-structured'
 import {
+  createToolSearch,
+  TOOL_SEARCH_NAME,
+  type ToolSearch,
+} from './agent-generation-tool-search'
+import {
   createLoopState,
   createOnStepFinish,
   createPrepareStep,
   type AgentLoopState,
+  type PreparedStep,
 } from './agent-generation-turn'
 import {
   recordedMessages,
@@ -56,6 +62,7 @@ import {
 //   • `-turn`       per-turn policy (`prepareStep`) and tracing (`onStepFinish`)
 //   • `-drive`      the two ways the one options object is run
 //   • `-structured` everything about asking for an object rather than prose
+//   • `-tool-search` deferred tools, loaded by the model on demand
 
 // Re-exported so every consumer's import path is unchanged — the loop used to be
 // one file and these are the symbols it published.
@@ -86,6 +93,7 @@ export type {
  */
 async function runToolLoop(
   args: RunAgentGenerationArgs,
+  toolSearch: ToolSearch | null,
 ): Promise<AgentNodeResult> {
   const {
     model,
@@ -131,18 +139,21 @@ async function runToolLoop(
       messages: messagesForModel,
       tools,
       stopWhen: stepCountIs(maxTurns),
-      prepareStep: createPrepareStep({
-        state,
-        modelId,
-        maxTurns,
-        answeringModel,
-        hasTools: Object.keys(tools).length > 0,
-        contextLength,
-        answerReservePercent,
-        toolTokenBudget,
-        requireToolFirstTurn,
-        sink,
-      }),
+      prepareStep: withActiveTools(
+        createPrepareStep({
+          state,
+          modelId,
+          maxTurns,
+          answeringModel,
+          hasTools: Object.keys(tools).length > 0,
+          contextLength,
+          answerReservePercent,
+          toolTokenBudget,
+          requireToolFirstTurn,
+          sink,
+        }),
+        toolSearch,
+      ),
       // Per-round-trip and per-tool watchdogs, native to the AI SDK: each is armed
       // and cleared around its own call, so a single stalled request or hung tool
       // fails fast instead of silently consuming the node's whole window.
@@ -357,9 +368,17 @@ export async function runAgentGeneration(
   // is the one place the strict-dialect conversion belongs. Doing it per tool
   // definition instead would mean a tool authored anywhere else silently ships a
   // schema the provider drops. See `../strict-schema`.
+  const toolSearch = createToolSearch({
+    tools: args.tools,
+    deferred: args.deferredTools ?? [],
+  })
   const prepared: RunAgentGenerationArgs = {
     ...args,
-    tools: strictifyToolSet(args.tools),
+    tools: strictifyToolSet(
+      toolSearch
+        ? { ...args.tools, [TOOL_SEARCH_NAME]: toolSearch.tool }
+        : args.tools,
+    ),
   }
   // A structured agent takes the single-call path only when the loop would have
   // nothing to do: no tools, or one turn — which `prepareStep` makes the
@@ -374,5 +393,18 @@ export async function runAgentGeneration(
   if (structured && nothingToCall) {
     return await runStructuredGeneration(prepared)
   }
-  return await runToolLoop(prepared)
+  return await runToolLoop(prepared, toolSearch)
+}
+
+/** The per-turn policy, narrowed to the tools loaded so far when some are
+ * deferred. Re-read every turn, so a tool loaded on turn 2 is callable on 3. */
+function withActiveTools(
+  prepareStep: (opts: { stepNumber: number }) => PreparedStep,
+  toolSearch: ToolSearch | null,
+): (opts: { stepNumber: number }) => PreparedStep {
+  if (!toolSearch) return prepareStep
+  return (opts) => ({
+    ...prepareStep(opts),
+    activeTools: toolSearch.activeTools(),
+  })
 }

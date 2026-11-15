@@ -8,9 +8,9 @@ A **tool** is a registered capability with a stable id. Every tool comes from on
 
 ## Where tools come from (`origin`)
 
-- `host` — written by this deployment. The default.
+- `host` — written by this deployment. The default. A host tool may be registered in a **group** as `<group>:<name>` (e.g. `app:list_tags`, group a lowercase-and-dashes slug other than `mcp`); `<group>:*` attaches the whole group, exactly like a whole connector, and picks up tools the host adds to it later.
 - `sdk` — shipped by 007 itself (for example text extraction, document rendering); fixed until the package is upgraded.
-- `connector` — proxied from a remote MCP server the host connected. Id shape `mcp:<connectorId>:<toolName>`, which never collides with a host id. Its read/write classification comes from the remote tool's `readOnlyHint` annotation (absent = write). Changes on the remote side need a connector refresh (`refresh_connector`, `list_connectors`).
+- `connector` — proxied from a remote MCP server the host connected. Id shape `mcp:<connectorId>:<toolName>`, which never collides with a host id. Its read/write classification comes from the remote tool's `readOnlyHint` annotation (absent = write). Changes on the remote side need a connector refresh (`refresh_connector`, `list_connectors`). An agent attaches one connector tool by its id, or the whole connector as `mcp:<connectorId>:*` — which also picks up any tool a later refresh discovers. Every tool of an enabled connector is callable; there is no per-tool switch.
 
 Each tool also declares (visible in the catalog): `sideEffect` (`read`/`write`/untagged — drives eval behaviour), `requiresContext` (ambient run scope the host supplies, never an argument; an empty scope usually means "matches nothing", not an error), and an optional `statusLabel` (the user-facing line shown when an agent calls it — see [[streaming]]).
 

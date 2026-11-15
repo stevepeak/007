@@ -15,9 +15,35 @@ without you and is still probably wrong to skip.
 
 ---
 
+## 2026-11-15 — Whole tool groups, searchable tools, no per-tool enable
+
+An agent can attach a whole connector (`mcp:<id>:*`) or host group
+(`<group>:*`) in `toolIds`, expanded at run time. `deferredToolIds` keeps
+entries out of the model's context until it loads them through a synthesized
+`search_tools` tool; `disabledToolIds` drops single tools from a whole group.
+Both default to `[]`. A host tool registered as `<group>:<name>` forms a group;
+set `ToolMeta.groupLabel` on each for its display name. See guide.md, "A tool
+id is `<name>` or `<group>:<name>`".
+
+**Breaking:** connector tools no longer carry an `enabled` flag. Every
+non-missing tool of an enabled connector is callable by an agent that names it.
+`setConnectorToolEnabled`, the connector tool's `enabled` and the summary's
+`enabledToolCount` are gone; `toolCount` counts non-missing tools.
+
+**Breaking:** `defineWfConfig` refuses a tool id containing `:` unless it is
+`<group>:<name>` with a lowercase-and-dashes group other than `mcp`.
+
+**Breaking:** a host tool named `search_tools` fails any agent with deferred
+tools — rename it.
+
+**Action:** generate and apply the migration dropping
+`wf_connector_tool.enabled` and its index.
+
+---
+
 ## 2026-11-15 — Connector credentials per tenant
 
-A connector (server, catalog, enabled tools) stays shared, but its credential
+A connector (server and tool catalog) stays shared, but its credential
 can now belong to a tenant (or user) instead of the workspace, so one published
 agent acts for many tenants, each through its own account.
 

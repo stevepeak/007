@@ -52,6 +52,63 @@ export function connectorToolId(connectorId: string, toolName: string): string {
   return `${CONNECTOR_TOOL_PREFIX}:${connectorId}:${toolName}`
 }
 
+/**
+ * The id that attaches a WHOLE connector to an agent — `mcp:<connectorId>:*`.
+ * A connector is one kind of tool group; see {@link groupWildcardToolId}.
+ */
+export function connectorWildcardToolId(connectorId: string): string {
+  return groupWildcardToolId(connectorGroup(connectorId))
+}
+
+// Tool groups.
+//
+// A group is the prefix of a tool id up to its last structural `:` — a
+// connector's tools share `mcp:<connectorId>`, and a host tool registered as
+// `<group>:<name>` (e.g. `app:list_tags`) shares `<group>`. Like a connector,
+// the group is recoverable from the id ALONE, so a frozen config still says
+// what `<group>:*` meant without a lookup. `<group>:*` attaches the whole
+// group: expanded at run time to every tool in it (see `resolveAgentToolIds`),
+// so tools added later reach the agent without anyone editing it. `*` cannot
+// be a real tool name: MCP limits names to `[A-Za-z0-9_.-]`, and host groups
+// follow {@link CONNECTOR_ID_PATTERN}.
+
+/** The group a connector's tools share — `mcp:<connectorId>`. */
+export function connectorGroup(connectorId: string): string {
+  return `${CONNECTOR_TOOL_PREFIX}:${connectorId}`
+}
+
+/**
+ * The group a tool id belongs to — `mcp:<connectorId>` for a connector tool,
+ * `<group>` for a host tool registered as `<group>:<name>` — or null for an
+ * ungrouped id.
+ */
+export function toolGroupOf(id: string): string | null {
+  const connector = parseConnectorToolId(id)
+  if (connector) return connectorGroup(connector.connectorId)
+  if (isConnectorToolId(id)) return null
+  const split = id.indexOf(':')
+  if (split <= 0) return null
+  const group = id.slice(0, split)
+  return CONNECTOR_ID_PATTERN.test(group) ? group : null
+}
+
+/** The id that attaches a whole group — `<group>:*`. */
+export function groupWildcardToolId(group: string): string {
+  return `${group}:*`
+}
+
+/** The group a `<group>:*` id attaches, or null if it isn't one. */
+export function parseGroupWildcard(id: string): string | null {
+  return id.endsWith(':*') ? toolGroupOf(id) : null
+}
+
+/** The connector a group belongs to, or null for a host group. */
+export function connectorOfGroup(group: string): string | null {
+  return group.startsWith(`${CONNECTOR_TOOL_PREFIX}:`)
+    ? group.slice(CONNECTOR_TOOL_PREFIX.length + 1)
+    : null
+}
+
 /** Whether an id belongs to a connector (vs. the host's static registry). */
 export function isConnectorToolId(id: string): boolean {
   return id.startsWith(`${CONNECTOR_TOOL_PREFIX}:`)

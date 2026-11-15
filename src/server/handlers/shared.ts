@@ -245,6 +245,8 @@ const GENERATION_ONLY_KEYS = [
   'prompt',
   'userPrompt',
   'toolIds',
+  'deferredToolIds',
+  'disabledToolIds',
   'maxTurns',
   'output',
   'inputKind',

@@ -79,7 +79,6 @@ export function createWfDataClient(call: WfDataTransport): WfDataClient {
     // A refresh opens a session to a third-party server and re-reads its whole
     // catalog; give it the same longer budget a model-catalog refresh gets.
     refreshConnector: bind('refreshConnector', 120000),
-    setConnectorToolEnabled: bind('setConnectorToolEnabled'),
     setConnectorToolSideEffect: bind('setConnectorToolSideEffect'),
     // Discovery + dynamic client registration are two round trips to servers we
     // don't control before this returns a URL.

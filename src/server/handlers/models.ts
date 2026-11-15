@@ -149,6 +149,7 @@ export function buildModelHandlers<TDeps>(
       ? [...entry.requiresContext]
       : undefined,
     produces: entry.produces ? [...entry.produces] : undefined,
+    groupLabel: entry.groupLabel,
     inputSchema: toJsonSchema({ schema: entry.inputSchema, io: 'input' }),
     outputSchema: toJsonSchema({ schema: entry.outputSchema, io: 'output' }),
   }))
@@ -364,6 +365,7 @@ export function buildModelHandlers<TDeps>(
           // can change without either repo being touched — the distinction
           // `origin` is actually drawing.
           origin: 'connector' as const,
+          groupLabel: entry.connectorLabel,
           sideEffect: entry.sideEffect,
           inputSchema: (entry.inputSchema as JsonSchema | null) ?? undefined,
           outputSchema: (entry.outputSchema as JsonSchema | null) ?? undefined,

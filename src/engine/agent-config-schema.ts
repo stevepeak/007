@@ -138,8 +138,19 @@ const agentConfigObjectSchema = z.object({
   // Optional for `inputKind: 'conversation'`, where it is appended after the
   // bound thread as the current turn; empty means the thread IS the whole input.
   userPrompt: z.string().default(''),
-  // Tool registry keys. Each id must resolve in the host tool registry.
+  // Tool registry keys. Each id must resolve in the host tool registry, or be a
+  // whole connector (`mcp:<connectorId>:*`), which expands at run time to every
+  // tool that connector currently advertises. See `resolveAgentToolIds`.
   toolIds: z.array(z.string()).default([]),
+  // Entries of `toolIds` the model does NOT see up front. They are offered by
+  // name through a `search_tools` tool instead, and join the tool set once the
+  // model loads them — so a connector with eighty tools costs eighty names, not
+  // eighty schemas. An id here that is not in `toolIds` is ignored.
+  deferredToolIds: z.array(z.string()).default([]),
+  // Tools a whole connector (`mcp:<id>:*`) would include but this agent must not
+  // call. Narrows the connector without freezing it: tools the server adds later
+  // still arrive.
+  disabledToolIds: z.array(z.string()).default([]),
   // How many turns (rounds of tool-calling) the agent may take before it must
   // give a final answer.
   //

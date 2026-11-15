@@ -231,6 +231,8 @@ describe('runDecisionEvalCell', () => {
         prompt: 'Hi.',
         userPrompt: 'Say hi to ${name}',
         toolIds: [],
+        deferredToolIds: [],
+        disabledToolIds: [],
         maxTurns: 1,
         toolTokenBudget: null,
         answerReservePercent: 10,

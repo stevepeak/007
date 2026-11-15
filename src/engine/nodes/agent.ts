@@ -11,7 +11,11 @@ import {
 import type { ModelBudget } from '../model-budget'
 import type { ReferenceKind } from '../references'
 import type { StreamSink } from '../stream-sink'
-import { buildAgentToolSet, type ToolRegistry } from '../tool-registry'
+import {
+  buildAgentToolSet,
+  resolveAgentToolIds,
+  type ToolRegistry,
+} from '../tool-registry'
 
 import {
   attachPartialMeta,
@@ -182,12 +186,20 @@ export async function runAgentConfig<TDeps>(args: {
     webSearch: config.webSearch,
     webCitations: config.webCitations,
   })
+  // Whole connectors expand against THIS run's registry, whose connector
+  // catalog is a journaled snapshot — so the set cannot shift mid-run.
+  const resolved = resolveAgentToolIds({
+    toolIds: config.toolIds,
+    deferredToolIds: config.deferredToolIds,
+    disabledToolIds: config.disabledToolIds,
+    knownIds: ctx.toolRegistry.keys(),
+  })
   // Synthesis eval: an empty tool set forces the model to answer from its seeded
   // history alone. Otherwise resolve the agent's real tools (neutralized under
   // simulate).
   const tools = ctx.freezeTools
     ? {}
-    : buildAgentToolSet(ctx.toolRegistry, config.toolIds, ctx.toolDeps, {
+    : buildAgentToolSet(ctx.toolRegistry, resolved.ids, ctx.toolDeps, {
         simulate: ctx.simulate,
         fixtures: ctx.fixtures,
         liveReads: ctx.liveReads,
@@ -204,7 +216,7 @@ export async function runAgentConfig<TDeps>(args: {
   // it matches `toolName` at call time). Only tools that declare a `statusLabel`
   // appear here; the emission is further gated on `stream.toolCalls`.
   const toolStatusLabels: Record<string, string> = {}
-  for (const id of config.toolIds) {
+  for (const id of resolved.ids) {
     const label = ctx.toolRegistry.get(id)?.statusLabel
     if (label) toolStatusLabels[id] = label
   }
@@ -228,6 +240,9 @@ export async function runAgentConfig<TDeps>(args: {
     systemPrompt: withReferencePrompt(authorPrompt, kinds),
     messages: args.messages,
     tools: { ...tools, ...args.extraTools },
+    deferredTools: resolved.ids.filter(
+      (id) => resolved.deferred.has(id) && Object.hasOwn(tools, id),
+    ),
     toolStatusLabels,
     sink: ctx.sink,
     budget: ctx.modelBudget,

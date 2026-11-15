@@ -15,7 +15,7 @@ export function DeleteConnectorButton({
 }: {
   connector: Pick<
     ConnectorSummary,
-    'id' | 'label' | 'enabledToolCount' | 'connection'
+    'id' | 'label' | 'toolCount' | 'connection'
   >
   /** Fired once the delete lands — a detail page uses it to leave. */
   onDeleted?: () => void
@@ -36,13 +36,13 @@ export function DeleteConnectorButton({
             {connector.connection ? ' and the stored credential' : ''}, and
             can’t be undone.
           </p>
-          {connector.enabledToolCount > 0 ? (
+          {connector.toolCount > 0 ? (
             <p className="mt-2">
-              {connector.enabledToolCount} enabled tool
-              {connector.enabledToolCount === 1 ? '' : 's'} will disappear from
-              every agent and Tool node that uses{' '}
-              {connector.enabledToolCount === 1 ? 'it' : 'them'} — those will
-              fail until they’re re-pointed.
+              Its {connector.toolCount} tool
+              {connector.toolCount === 1 ? '' : 's'} will disappear from every
+              agent and Tool node that uses{' '}
+              {connector.toolCount === 1 ? 'it' : 'them'} — those will fail
+              until they’re re-pointed.
             </p>
           ) : null}
         </>

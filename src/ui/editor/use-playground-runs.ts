@@ -3,6 +3,7 @@ import { useMemo, useRef, useState } from 'react'
 import { agentInputVariables, type AgentConfig } from '../../engine'
 import { errorMessage } from '../../engine/error-message'
 import { toText } from '../../engine/text'
+import { expandToolIds } from '../../engine/tool-registry'
 import type {
   AgentPreviewMessage,
   AgentPreviewResult,
@@ -110,10 +111,14 @@ export function usePlaygroundRuns(config: AgentConfig) {
   const allTools = useTools().data
   const attachedTools = useMemo(() => {
     const byId = new Map((allTools ?? []).map((t) => [t.id, t]))
-    return config.toolIds
+    return expandToolIds({
+      toolIds: config.toolIds,
+      disabledToolIds: config.disabledToolIds,
+      knownIds: byId.keys(),
+    })
       .map((id) => byId.get(id))
       .filter((t): t is ToolOption => t !== undefined && t.kind === 'ai-tool')
-  }, [allTools, config.toolIds])
+  }, [allTools, config.toolIds, config.disabledToolIds])
 
   // Explicit per-tool choices only. Everything else falls back to the tool's
   // default, so attaching a tool picks up the right mode without any bookkeeping

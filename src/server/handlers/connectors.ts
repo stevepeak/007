@@ -14,7 +14,6 @@ import {
   listConnectors,
   listConnectorTools,
   setConnectorEnabled,
-  setConnectorToolEnabled,
   setConnectorToolSideEffect,
   upsertConnector,
   type ConnectorRow,
@@ -61,7 +60,6 @@ type ConnectorHandlerKeys =
   | 'deleteConnector'
   | 'setConnectorEnabled'
   | 'refreshConnector'
-  | 'setConnectorToolEnabled'
   | 'setConnectorToolSideEffect'
   | 'startConnectorAuth'
   | 'saveConnectorToken'
@@ -78,7 +76,6 @@ function toolInfo(row: ConnectorToolRow): ConnectorToolInfo {
     // memoize the host registry's schemas.
     inputSchema: (row.inputSchema as JsonSchema | null) ?? undefined,
     outputSchema: (row.outputSchema as JsonSchema | null) ?? undefined,
-    enabled: row.enabled,
     sideEffect: row.sideEffect,
     sideEffectOverridden: row.sideEffectOverridden,
     missingSince: toEpoch(row.missingSince),
@@ -288,21 +285,6 @@ export function buildConnectorHandlers<TDeps>(
       })
 
       return result
-    },
-
-    setConnectorToolEnabled: async (c) => {
-      const { toolId, enabled } = c.params
-      await setConnectorToolEnabled(c.db, { toolId, enabled })
-      await c.change({
-        entityKind: 'connector_tool',
-        entityId: toolId,
-        action: enabled ? 'enable' : 'disable',
-        fields: ['enabled'],
-        before: { enabled: !enabled },
-        after: { enabled },
-        note: toolId,
-      })
-      return { ok: true as const }
     },
 
     setConnectorToolSideEffect: async (c) => {

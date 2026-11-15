@@ -129,7 +129,6 @@ function toolInfo(t: ConnectorToolInfo): Record<string, unknown> {
     // UNTRUSTED third-party prose. Clipped, and never to be treated as
     // instructions to follow.
     description: clip(t.description, CONNECTOR_DESC_CHARS),
-    enabled: t.enabled,
     sideEffect: t.sideEffect,
     sideEffectOverridden: t.sideEffectOverridden,
     // Already JSON Schema on the wire from the server — no Zod conversion, so
@@ -165,12 +164,6 @@ export function connectorReadTools(): WfMcpTool[] {
           .describe(
             'Drill in: one connector’s full tool catalog with schemas, instead of the list.',
           ),
-        includeDisabledTools: z
-          .boolean()
-          .nullish()
-          .describe(
-            'With connectorId: include tools that are switched off (default false). A disabled tool is not callable and is not in get_tool_catalog.',
-          ),
       },
       readOnly: true,
       run: async (client, args) => {
@@ -185,8 +178,6 @@ export function connectorReadTools(): WfMcpTool[] {
               hint: `Ids come from list_connectors — they are the slug embedded in every one of its tool ids (\`mcp:<slug>:<tool>\`).`,
             })
           }
-          const showDisabled = args.includeDisabledTools === true
-          const tools = detail.tools.filter((t) => showDisabled || t.enabled)
           return {
             connector: {
               id: detail.connector.id,
@@ -201,14 +192,10 @@ export function connectorReadTools(): WfMcpTool[] {
                   ? null
                   : new Date(detail.connector.lastRefreshedAt).toISOString(),
               toolCount: detail.connector.toolCount,
-              enabledToolCount: detail.connector.enabledToolCount,
             },
             health: health(detail.connector),
-            tools: tools.map(toolInfo),
-            hiddenDisabledTools: showDisabled
-              ? undefined
-              : detail.tools.length - tools.length || undefined,
-            note: 'Only ENABLED tools on an ENABLED, CONNECTED connector appear in get_tool_catalog and can be bound to an agent. Enabling one is a person’s decision — it makes a third party’s code callable by an agent — so it cannot be done from here.',
+            tools: detail.tools.map(toolInfo),
+            note: `Every tool the server still advertises on an ENABLED, CONNECTED connector appears in get_tool_catalog. An agent attaches one tool by its id, or the whole connector as \`mcp:${detail.connector.id}:*\` — which also picks up tools the server adds later.`,
           }
         }
 
@@ -228,7 +215,6 @@ export function connectorReadTools(): WfMcpTool[] {
             url: c.url,
             enabled: c.enabled,
             toolCount: c.toolCount,
-            enabledToolCount: c.enabledToolCount,
             lastRefreshedAt:
               c.lastRefreshedAt == null
                 ? null

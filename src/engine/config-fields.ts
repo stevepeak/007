@@ -20,6 +20,8 @@ export const CONFIG_FIELDS: { key: keyof AgentConfig; label: string }[] = [
   { key: 'prompt', label: 'system prompt' },
   { key: 'userPrompt', label: 'user message' },
   { key: 'toolIds', label: 'tools' },
+  { key: 'deferredToolIds', label: 'tool visibility' },
+  { key: 'disabledToolIds', label: 'disabled tools' },
   { key: 'subAgents', label: 'sub-agents' },
   { key: 'output', label: 'output' },
   { key: 'maxTurns', label: 'max turns' },

@@ -123,6 +123,8 @@ export function AgentsList({ className }: AgentsListProps) {
           prompt: STARTER_PROMPT,
           userPrompt: STARTER_USER_PROMPT,
           toolIds: [],
+          deferredToolIds: [],
+          disabledToolIds: [],
           maxTurns: 5,
           requireToolFirstTurn: false,
           // A new agent doesn't think until its author decides it needs to —
