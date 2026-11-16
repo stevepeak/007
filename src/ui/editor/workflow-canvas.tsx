@@ -258,6 +258,8 @@ function CanvasInner({
         >
           <InvalidNodesProvider ids={invalidNodeIds ?? EMPTY_INVALID}>
             <ReactFlow
+              // 007's UI is light-only; xyflow otherwise follows the OS theme.
+              forceColorMode="light"
               nodes={nodes}
               edges={edges}
               onNodesChange={handleNodesChange}
