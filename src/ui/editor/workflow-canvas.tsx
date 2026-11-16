@@ -6,6 +6,7 @@ import {
   Controls,
   MarkerType,
   MiniMap,
+  NodeChangeset,
   Panel,
   ReactFlow,
   ReactFlowProvider,
@@ -180,12 +181,15 @@ function CanvasInner({
   )
 
   const handleNodesChange = useCallback(
-    (changes: Parameters<typeof onNodesChange>[0]) => {
+    (changeset: NodeChangeset<EditorNode>) => {
       if (readOnly) {
-        const selectOnly = changes.filter((c) => c.type === 'select')
-        if (selectOnly.length > 0) onNodesChange(selectOnly)
+        const selectOnly = changeset.getByType('select')
+        if (selectOnly.length > 0) {
+          onNodesChange(new NodeChangeset<EditorNode>(selectOnly))
+        }
         return
       }
+      const changes = changeset.toArray()
       // The main trigger and every iteration's Item/Result can't be deleted
       // directly. A top-level Output can — another can be added from the palette.
       const bookendIds = new Set(
@@ -218,7 +222,9 @@ function CanvasInner({
           : nodes
               .filter((n) => n.parentId && removedContainers.has(n.parentId))
               .map((n) => ({ type: 'remove' as const, id: n.id }))
-      onNodesChange([...filtered, ...childRemovals])
+      onNodesChange(
+        new NodeChangeset<EditorNode>([...filtered, ...childRemovals]),
+      )
 
       // A deleted node takes its readers' data links with it. Left in place, a
       // ref to the gone id survives invisibly (no edge draws it) and fails the
