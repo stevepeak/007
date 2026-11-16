@@ -32,6 +32,7 @@ import {
 } from '../storage/data/connectors'
 
 import { McpUnauthorizedError } from './client'
+import { connectorFetch } from './fetch'
 import { decryptSecret, encryptSecret, fromBase64Url } from './crypto'
 
 // The OAuth half of a connector: discovery, registration, the authorization
@@ -86,7 +87,11 @@ export async function discoverConnectorAuth(
 ): Promise<ConnectorDiscovery> {
   let resourceMetadata: OAuthProtectedResourceMetadata | undefined
   try {
-    resourceMetadata = await discoverOAuthProtectedResourceMetadata(serverUrl)
+    resourceMetadata = await discoverOAuthProtectedResourceMetadata(
+      serverUrl,
+      undefined,
+      connectorFetch,
+    )
   } catch {
     // No `.well-known/oauth-protected-resource`. Not fatal — fall through to
     // the origin-as-issuer assumption below.
@@ -97,7 +102,9 @@ export async function discoverConnectorAuth(
 
   let metadata: AuthorizationServerMetadata | undefined
   try {
-    metadata = await discoverAuthorizationServerMetadata(authorizationServerUrl)
+    metadata = await discoverAuthorizationServerMetadata(authorizationServerUrl, {
+      fetchFn: connectorFetch,
+    })
   } catch {
     // Leave undefined; the SDK's primitives fall back to the default endpoint
     // paths (`/authorize`, `/token`, `/register`) when metadata is absent.
@@ -166,6 +173,7 @@ async function ensureClient(
         token_endpoint_auth_method: 'none',
       },
       scope: connector.scopes ?? undefined,
+      fetchFn: connectorFetch,
     })
   } catch (err) {
     throw new ConnectorAuthError(
@@ -346,6 +354,7 @@ export async function completeAuthorization(input: {
       codeVerifier: await decryptSecret(attempt.codeVerifier, secret),
       redirectUri: attempt.redirectUri,
       resource,
+      fetchFn: connectorFetch,
     })
   } catch (err) {
     throw new ConnectorAuthError(
@@ -469,6 +478,7 @@ export async function resolveAccessToken(input: {
       clientInformation: await clientInformation({ client, secret }),
       refreshToken: await decryptSecret(connection.refreshToken, secret),
       resource: discovery.resource,
+      fetchFn: connectorFetch,
     })
   } catch (err) {
     // A concurrent caller may have spent this refresh token first: providers

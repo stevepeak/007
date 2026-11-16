@@ -12,6 +12,8 @@ import { schemaHash } from '../engine/connector-tool-id'
 import { toText } from '../engine/text'
 import type { DiscoveredTool } from '../storage/data/connectors'
 
+import { connectorFetch } from './fetch'
+
 // The MCP client, as this SDK is allowed to construct one.
 //
 // ─── Why the factory exists ────────────────────────────────────────────────
@@ -154,8 +156,14 @@ export async function withMcpSession<T>(
   const url = new URL(target.url)
   const transport =
     target.transport === 'sse'
-      ? new SSEClientTransport(url, { requestInit: { headers } })
-      : new StreamableHTTPClientTransport(url, { requestInit: { headers } })
+      ? new SSEClientTransport(url, {
+          requestInit: { headers },
+          fetch: connectorFetch,
+        })
+      : new StreamableHTTPClientTransport(url, {
+          requestInit: { headers },
+          fetch: connectorFetch,
+        })
 
   // One budget for the whole session. The signal goes on each REQUEST, not on
   // the transport's `requestInit`: the transports overwrite `requestInit.signal`
