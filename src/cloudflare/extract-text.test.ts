@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   createExtractTextTool,
   looksLikeScannedPdf,
+  stripFilenameHeading,
   stripMarkdownMetadata,
 } from './extract-text'
 
@@ -41,6 +42,28 @@ describe('stripMarkdownMetadata', () => {
   test('leaves markdown without a metadata block unchanged', () => {
     const md = '# a.docx\n\nHello world.\n'
     expect(stripMarkdownMetadata(md)).toBe(md)
+  })
+})
+
+describe('stripFilenameHeading', () => {
+  test('drops the filename heading toMarkdown adds', () => {
+    const out = stripFilenameHeading({
+      markdown: stripMarkdownMetadata(PDF_MARKDOWN),
+      name: 'report.pdf',
+    })
+    expect(out).not.toContain('report.pdf')
+    expect(out.startsWith('## Contents')).toBe(true)
+    expect(out).toContain('First page body text.')
+  })
+
+  test("keeps a document's own leading H1", () => {
+    const md = '# Master Services Agreement\n\nBody.\n'
+    expect(stripFilenameHeading({ markdown: md, name: 'msa.docx' })).toBe(md)
+  })
+
+  test('does not strip a heading that only starts with the name', () => {
+    const md = '# a.docx draft\n\nBody.\n'
+    expect(stripFilenameHeading({ markdown: md, name: 'a.docx' })).toBe(md)
   })
 })
 

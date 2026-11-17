@@ -201,6 +201,20 @@ export function stripMarkdownMetadata(markdown: string): string {
   return markdown.replace(/^## Metadata[\s\S]*?(?=^##|(?![\s\S]))/m, '')
 }
 
+// toMarkdown also opens with a `# <filename>` heading it adds itself. The name
+// is not document content, so it is dropped too. Only an exact first-line match
+// is removed, so a document whose own text starts with an H1 keeps it.
+export function stripFilenameHeading(args: {
+  markdown: string
+  name: string
+}): string {
+  const heading = `# ${args.name}`
+  if (!args.markdown.startsWith(heading)) return args.markdown
+  const rest = args.markdown.slice(heading.length)
+  if (rest !== '' && !/^\r?\n/.test(rest)) return args.markdown
+  return rest.replace(/^\r?\n/, '')
+}
+
 // Heuristic: is this `toMarkdown` output suspiciously empty for its page count?
 // toMarkdown emits a `### Page N` heading per PDF page; a scanned PDF has the
 // headings but almost no body text under them.
@@ -212,7 +226,6 @@ export function looksLikeScannedPdf(
   const pageHeaders = markdown.match(/^### Page \d+\s*$/gm) ?? []
   if (pageHeaders.length === 0) return false
   const body = stripMarkdownMetadata(markdown)
-    .replace(/^# .+\n/m, '')
     .replaceAll(/^### Page \d+\s*$/gm, '')
     .replaceAll(/\s+/g, ' ')
     .trim()
@@ -225,7 +238,10 @@ async function runToMarkdown(
   blob: Blob,
 ): Promise<string> {
   const res = await (ai as unknown as ToMarkdownAI).toMarkdown([{ name, blob }])
-  return stripMarkdownMetadata(res[0]?.data ?? '')
+  return stripFilenameHeading({
+    markdown: stripMarkdownMetadata(res[0]?.data ?? ''),
+    name,
+  })
 }
 
 // When the freshly extracted text is larger than the spill threshold, write it
