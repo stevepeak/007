@@ -200,10 +200,18 @@ export function useNodeRenderer<K extends EditorNodeData['kind']>(
  */
 export const NOT_RUN_STATUS = 'not-run'
 
-/** Dimming for a node the run never reached, and for one it skipped. */
+/**
+ * Synthetic status for a graph node a LIVE run hasn't reached yet — no step
+ * recorded so far. Greyed like `not-run` so what is running stands out; once
+ * the run settles, any node still without a step becomes `not-run`.
+ */
+export const PENDING_STATUS = 'pending'
+
+/** Dimming for a node the run hasn't reached (yet, or ever), and for one it skipped. */
 function notRunClass(status: string | undefined): string | false {
   return (
-    (status === NOT_RUN_STATUS && 'opacity-40 saturate-0') ||
+    ((status === NOT_RUN_STATUS || status === PENDING_STATUS) &&
+      'opacity-40 saturate-0') ||
     (status === 'skipped' && 'opacity-60')
   )
 }
@@ -234,19 +242,20 @@ export function nodeStatusFrameClass(args: {
 // A small corner badge marking a node's run status — sits just outside the card
 // so it reads at a glance without crowding the label.
 export function RunStatusDot({ status }: { status: string }) {
-  const notRun = status === NOT_RUN_STATUS
+  const notRun = status === NOT_RUN_STATUS || status === PENDING_STATUS
+  const label = status === PENDING_STATUS ? 'not run yet' : 'did not run'
   return (
     <span
       className={cn(
         'absolute -top-1 -right-1 size-2.5 rounded-full ring-2 ring-white',
-        // Hollow for a node that never ran: a filled dot reads as an outcome,
-        // and the whole point is that there wasn't one.
+        // Hollow for a node that hasn't run: a filled dot reads as an outcome,
+        // and the whole point is that there isn't one.
         notRun
           ? 'border border-neutral-300 bg-transparent'
           : (runStatusDotClass[status] ?? 'bg-neutral-300'),
       )}
-      aria-label={notRun ? 'Status: did not run' : `Status: ${status}`}
-      title={notRun ? 'did not run' : status}
+      aria-label={`Status: ${notRun ? label : status}`}
+      title={notRun ? label : status}
     />
   )
 }

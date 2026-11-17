@@ -1,7 +1,7 @@
 import type { WorkflowGraph, WorkflowNode } from '../../engine'
 import { iterationItemTitle } from '../../engine/item-title'
 import type { WfRunStepDTO } from '../../server/protocol'
-import { NOT_RUN_STATUS } from '../editor/node-renderers-shared'
+import { NOT_RUN_STATUS, PENDING_STATUS } from '../editor/node-renderers-shared'
 
 import { readIterationTotal } from './run-activity-tree'
 
@@ -80,27 +80,35 @@ export function iterationItemCount(
 }
 
 /**
+ * The synthetic status for a node with no step: `pending` while the run is
+ * live (not reached YET), `not-run` once it has settled (never reached).
+ */
+function unreachedStatus(runStatus: string): string {
+  return isRunLive(runStatus) ? PENDING_STATUS : NOT_RUN_STATUS
+}
+
+/**
  * Statuses for one iteration container's inner nodes at the focused item —
- * what actually ran for that item, plus `not-run` for the rest once the run has
- * settled. Empty when the container isn't in the graph (a version since gone).
+ * what actually ran for that item, plus `unreached` for the rest. Empty when
+ * the container isn't in the graph (a version since gone).
  */
 function innerStatuses(
   graph: WorkflowGraph | null,
   steps: readonly WfRunStepDTO[],
   containerId: string,
   itemIndex: number,
-  settled: boolean,
+  unreached: string,
 ): Array<[string, string]> {
   const out: Array<[string, string]> = steps
     .filter((s) => s.parentNodeId === containerId && s.itemIndex === itemIndex)
     .map((s) => [s.nodeId, s.status])
-  if (!settled || !graph) return out
+  if (!graph) return out
   const container = graph.nodes.find((n) => n.id === containerId)
   if (container?.kind !== 'iteration') return out
   const ran = new Set(out.map(([id]) => id))
   for (const n of container.config.subgraph.nodes) {
     if (n.kind === 'note' || ran.has(n.id)) continue
-    out.push([n.id, NOT_RUN_STATUS])
+    out.push([n.id, unreached])
   }
   return out
 }
@@ -110,12 +118,11 @@ function innerStatuses(
  * tint + status dots. Iteration inner steps are keyed per item and layered on
  * separately (see `resolveRunSelection`) so they don't collide here.
  *
- * Once the run has SETTLED, every top-level node still missing a step is marked
- * `not-run` so the canvas dims it. Absence of a step is the only evidence
- * either way, and it covers both reasons a node goes untouched — an arm a
- * branch routed away from, and a node with no live path into it at all. Gated
- * on settled because until then "no step" means "not yet", and dimming the
- * whole graph at run start would say the opposite of what it means.
+ * Every top-level node still missing a step is greyed: `pending` while the run
+ * is live, so what IS running stands out, and `not-run` once it has settled.
+ * Absence of a step is the only evidence either way, and after settling it
+ * covers both reasons a node goes untouched — an arm a branch routed away
+ * from, and a node with no live path into it at all.
  */
 export function topLevelStatuses(
   graph: WorkflowGraph | null | undefined,
@@ -125,12 +132,13 @@ export function topLevelStatuses(
   const map = new Map(
     steps.filter((s) => !s.parentNodeId).map((s) => [s.nodeId, s.status]),
   )
-  if (graph && runStatus && !isRunLive(runStatus)) {
+  if (graph && runStatus) {
+    const unreached = unreachedStatus(runStatus)
     for (const n of graph.nodes) {
       // A Note is a canvas annotation, never executed — dimming it would
       // report a non-event.
       if (n.kind === 'note' || map.has(n.id)) continue
-      map.set(n.id, NOT_RUN_STATUS)
+      map.set(n.id, unreached)
     }
   }
   return map
@@ -224,7 +232,7 @@ export function resolveRunSelection(input: {
   // inner nodes is selected — that iteration's inner nodes tinted by the focused
   // item, so stepping through items lights up the subgraph item by item.
   //
-  // The inner nodes of a container get `not-run` only while that container
+  // The inner nodes of a container get greyed only while that container
   // is FOCUSED, because only then are we layering an item's steps and can
   // tell "didn't run for this item" from "no item selected". Blanket-
   // dimming every subgraph would mark a perfectly successful loop as
@@ -237,7 +245,7 @@ export function resolveRunSelection(input: {
           steps,
           iterationId,
           itemIndex,
-          !isRunLive(runStatus),
+          unreachedStatus(runStatus),
         ),
       ])
     : topLevel

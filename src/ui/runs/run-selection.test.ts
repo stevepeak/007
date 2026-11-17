@@ -3,7 +3,11 @@ import { describe, expect, test } from 'bun:test'
 import type { WorkflowGraph } from '../../engine'
 import type { WfRunStepDTO } from '../../server/protocol'
 
-import { canSpawnChildRuns, resolveRunSelection } from './run-selection'
+import {
+  canSpawnChildRuns,
+  resolveRunSelection,
+  topLevelStatuses,
+} from './run-selection'
 
 // `canSpawnChildRuns` is the gate on the run viewer's child-runs fetch. Getting
 // it wrong is silent in both directions: too permissive adds a query and a
@@ -209,5 +213,29 @@ describe("resolveRunSelection — the focused item's title", () => {
         topLevel: new Map(),
       }).itemTitle,
     ).toBeNull()
+  })
+})
+
+// A node with no step is greyed on the canvas: `pending` while the run can
+// still reach it, `not-run` once it has settled and never did.
+describe('topLevelStatuses — nodes without a step', () => {
+  const graph = graphOf([
+    { id: 'a', kind: 'agent', label: 'A', position: { x: 0, y: 0 } },
+    { id: 'b', kind: 'tool', label: 'B', position: { x: 0, y: 0 } },
+    { id: 'n', kind: 'note', label: 'N', position: { x: 0, y: 0 } },
+  ])
+  const steps = [
+    { nodeId: 'a', parentNodeId: null, status: 'running' },
+  ] as unknown as WfRunStepDTO[]
+
+  test('a live run marks unreached nodes pending', () => {
+    const map = topLevelStatuses(graph, steps, 'running')
+    expect(map.get('a')).toBe('running')
+    expect(map.get('b')).toBe('pending')
+    expect(map.has('n')).toBe(false)
+  })
+
+  test('a settled run marks them not-run', () => {
+    expect(topLevelStatuses(graph, steps, 'failed').get('b')).toBe('not-run')
   })
 })
