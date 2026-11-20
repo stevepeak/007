@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, spyOn, test } from 'bun:test'
+import { afterAll, afterEach, describe, expect, spyOn, test } from 'bun:test'
 
 import { saveBearerToken } from '../connectors/oauth'
 import { withRunConnectors } from '../connectors/registry'
@@ -88,6 +88,9 @@ describe('per-owner connections', () => {
 describe('ownerConnectorFetch', () => {
   const fetchSpy = spyOn(globalThis, 'fetch')
   afterEach(() => fetchSpy.mockReset())
+  // Bun runs every test file in one process: a spy left in place hands the
+  // files after this one a `fetch` that resolves to undefined.
+  afterAll(() => fetchSpy.mockRestore())
 
   test("sends the owner's token to the service's own API", async () => {
     const db = await setup()
