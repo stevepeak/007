@@ -13,6 +13,7 @@ import type { WfFeedbackRating } from '../server/protocol'
 
 import { cn } from './cn'
 import { useSubmitFeedback } from './hooks-feedback'
+import { Tooltip } from './tooltip'
 
 // The reusable thumbs strip shown under an assistant answer, in two forms:
 //
@@ -206,25 +207,27 @@ function ThumbButton({
   const Icon = kind === 'up' ? ThumbsUp : ThumbsDown
   const label = kind === 'up' ? 'Good response' : 'Bad response'
   return (
-    <button
-      type="button"
-      aria-label={active ? `${label} (click to edit)` : label}
-      aria-pressed={active}
-      onClick={onClick}
-      disabled={pending}
-      className={cn(
-        'inline-flex h-6 w-6 items-center justify-center rounded-md text-neutral-500 transition-opacity hover:bg-neutral-100 hover:text-neutral-900',
-        'focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-neutral-400',
-        active
-          ? 'text-neutral-900 opacity-100'
-          : alwaysVisible
-            ? 'opacity-100'
-            : 'opacity-0 group-hover:opacity-100',
-        pending && 'opacity-60',
-      )}
-    >
-      <Icon className={cn('h-3.5 w-3.5', active && 'fill-current')} aria-hidden />
-    </button>
+    <Tooltip content={active ? `${label} (click to edit)` : label}>
+      <button
+        type="button"
+        aria-label={active ? `${label} (click to edit)` : label}
+        aria-pressed={active}
+        onClick={onClick}
+        disabled={pending}
+        className={cn(
+          'inline-flex h-6 w-6 items-center justify-center rounded-md text-neutral-500 transition-opacity hover:bg-neutral-100 hover:text-neutral-900',
+          'focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-neutral-400',
+          active
+            ? 'text-neutral-900 opacity-100'
+            : alwaysVisible
+              ? 'opacity-100'
+              : 'opacity-0 group-hover:opacity-100',
+          pending && 'opacity-60',
+        )}
+      >
+        <Icon className={cn('h-3.5 w-3.5', active && 'fill-current')} aria-hidden />
+      </button>
+    </Tooltip>
   )
 }
 
