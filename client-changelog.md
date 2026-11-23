@@ -15,6 +15,21 @@ without you and is still probably wrong to skip.
 
 ---
 
+## 2026-11-23 — Scheduled catalog refresh
+
+`refreshAllCatalogs({ config, db, env })` is exported from
+`@stevepeak/007/server`: one pass that re-reads every model provider's catalog
+and every enabled connector's tool list — what the two Refresh buttons do, for a
+cron. Failures are isolated per catalog and returned in the report; nothing is
+auto-enabled.
+
+**Action:** add a cron trigger to a Worker that has `WF_DB`, the provider API
+keys and `WF_CONNECTOR_KEY`, and call it from `scheduled` (guide §4, "Scheduled
+catalog refresh"). `0 */3 * * *` is the suggested schedule. Without it the
+catalogs only move on a manual Refresh, as before.
+
+---
+
 ## 2026-11-15 — Built-in `generate_image`
 
 `defineWfConfig` now also registers `generate_image` (`origin: 'sdk'`): a text

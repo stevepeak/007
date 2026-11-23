@@ -17,9 +17,8 @@ import {
   listModelProviders,
   listToolInvocations,
   setModelEnabled,
-  touchModelProvider,
-  upsertModels,
 } from '../../storage/data'
+import { refreshProviderModels } from '../catalog-refresh'
 import type {
   JsonSchema,
   ModelOption,
@@ -284,32 +283,12 @@ export function buildModelHandlers<TDeps>(
     },
 
     refreshModels: async (c) => {
-      const { providerId } = c.params
-      const fetchCatalog = opts.config.fetchModelCatalog
-      if (!fetchCatalog) {
-        throw new Error(
-          'This host does not support refreshing models (no `fetchModelCatalog` configured).',
-        )
-      }
-      const env = await c.env()
-      const entries = await fetchCatalog({ env }, providerId)
-      // Refresh never auto-enables anything: newly discovered models are inserted
-      // DISABLED and the admin opts them in explicitly. (Existing rows keep their
-      // `enabled` flag — see `upsertModels`.) A fresh DB thus starts with zero
-      // enabled models until someone turns them on.
-      const count = await upsertModels(c.db, providerId, entries)
-      // Prices just moved — drop the memo so run costs re-derive off the new
-      // catalog now rather than after the TTL.
-      invalidateModelPriceMap(c.db)
-      const refreshedAt = new Date()
-      const providers = await opts.config.listProviders({ env })
-      const provider = providers.find((p) => p.id === providerId) ?? {
-        id: providerId,
-        label: providerId,
-        kind: 'custom' as const,
-      }
-      await touchModelProvider(c.db, provider, refreshedAt)
-      return { count, refreshedAt: refreshedAt.getTime() }
+      return await refreshProviderModels({
+        config: opts.config,
+        db: c.db,
+        env: await c.env(),
+        providerId: c.params.providerId,
+      })
     },
 
     setModelEnabled: async (c) => {

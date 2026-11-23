@@ -1073,6 +1073,56 @@ Secrets are per-Worker, so anything BOTH runtimes read has to be set twice with
 the same value — `WF_CONNECTOR_KEY` most of all, since the web Worker encrypts a
 connector credential and this one decrypts it mid-run (§5c).
 
+### Scheduled catalog refresh (cron)
+
+Two catalogs are cached in `wf_*` and go stale on their own: each model
+provider's `/models` (`fetchModelCatalog`, §2) and each connector's tool list
+(§5c). The Refresh buttons re-read them on demand; a **cron trigger** keeps them
+current without anyone pressing one. The SDK owns the pass, your Worker owns the
+schedule:
+
+```jsonc
+// wrangler.jsonc — every three hours
+"triggers": { "crons": ["0 */3 * * *"] },
+```
+
+```ts
+import { refreshAllCatalogs } from '@stevepeak/007/server'
+import { createWfDb } from '@stevepeak/007/storage'
+
+export default {
+  // Awaited, not `waitUntil` — a scheduled invocation lives as long as this
+  // promise.
+  async scheduled(_controller: ScheduledController, env: Env) {
+    await refreshAllCatalogs({
+      config: wfConfig,
+      db: createWfDb(env.WF_DB),
+      env,
+    })
+  },
+}
+```
+
+If the Worker already serves other schedules, branch on `controller.cron`.
+
+- **It runs wherever the secrets are.** `env` is handed to `fetchModelCatalog`
+  and `resolveConnectorSecret`, so the Worker with the cron needs the provider
+  API keys and `WF_CONNECTOR_KEY`. With no `fetchModelCatalog` the model half is
+  skipped; with no connector key the connector half is.
+- **Nothing is auto-enabled.** New models still arrive disabled. A new connector
+  tool reaches only agents that attached the whole connector (`mcp:<id>:*`),
+  exactly as with a manual Refresh.
+- **One failure costs nothing else.** Each provider and connector is tried on
+  its own; a failure goes to `config.logger.error` and into the returned report
+  (`{ models, connectors }`, each entry `ok: true | false`).
+- **Disabled connectors are skipped**, and connectors are read with the
+  workspace credential.
+- **The activity feed stays quiet.** A connector pass writes a `system` change
+  row only when tools were added, updated, withdrawn or drifted.
+
+Skip the cron and everything still works — the catalogs just move only when
+someone presses Refresh.
+
 If your web Worker starts runs, add a **service binding** from web → workflows
 (this repo calls it `WORKFLOWS`) and call `startGraphRun` over RPC, falling back
 to `POST /graph-runs` in local dev. For that fallback, don't hand-roll the fetch —

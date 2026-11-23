@@ -663,7 +663,7 @@ export function platformWriteTools(): WfMcpTool[] {
       name: 'refresh_model_catalog',
       title: 'Refresh a provider’s model catalog',
       description: [
-        'Re-read one provider’s `/models` endpoint and cache what it reports. This is the only way a model the provider has newly shipped becomes visible here at all — until it runs, list_models keeps returning the same stale set, and the reason (`lastRefreshedAt`) is the only hint.',
+        'Re-read one provider’s `/models` endpoint and cache what it reports. A model the provider has newly shipped is invisible here until a refresh caches it — this call, or the host’s scheduled refresh if it runs one. Until then list_models keeps returning the same stale set, and the reason (`lastRefreshedAt`) is the only hint.',
         '',
         'Nothing is auto-enabled. Newly discovered models are cached DISABLED and someone opts them in with set_model_enabled; models already in the catalog keep the enabled flag they had. So a refresh cannot change what any agent runs on — it only changes what is available to choose.',
         '',

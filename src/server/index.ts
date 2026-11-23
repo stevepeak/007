@@ -18,6 +18,12 @@ export {
   refreshConnectorCatalog,
   startOwnerConnectorAuth,
 } from './connector-connections'
+// The scheduled counterpart of the two Refresh buttons, for the host's cron.
+export {
+  refreshAllCatalogs,
+  type CatalogRefreshOutcome,
+  type CatalogRefreshReport,
+} from './catalog-refresh'
 export {
   createHttpWfDataClient,
   type HttpWfDataClientOptions,
